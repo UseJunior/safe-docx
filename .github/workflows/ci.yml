@@ -50,7 +50,7 @@ jobs:
         run: |
           npm run test:run -w @usejunior/docx-comparison
           npm run test:run -w @usejunior/docx-primitives
-          npm run test:run -w @usejunior/safedocx
+          npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
 
   mcpb-bundle:

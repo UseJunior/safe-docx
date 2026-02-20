@@ -21,7 +21,7 @@ describe('OpenSpec traceability: add-multi-platform-mcp-discovery', () => {
       expect(manifest.mcpServers).toBeDefined();
       expect(manifest.mcpServers['safe-docx']).toBeDefined();
       expect(manifest.mcpServers['safe-docx'].command).toBe('npx');
-      expect(manifest.mcpServers['safe-docx'].args).toContain('@usejunior/safedocx');
+      expect(manifest.mcpServers['safe-docx'].args).toContain('@usejunior/safe-docx');
     },
   );
 
@@ -50,7 +50,7 @@ describe('OpenSpec traceability: add-multi-platform-mcp-discovery', () => {
 
       const content = fs.readFileSync(installGuidePath, 'utf-8');
       expect(content).toContain('npx');
-      expect(content).toContain('@usejunior/safedocx');
+      expect(content).toContain('@usejunior/safe-docx');
       expect(content).toContain('Claude Desktop');
       expect(content).toContain('Claude Code');
       expect(content).toContain('Gemini CLI');

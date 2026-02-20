@@ -42,7 +42,7 @@ describe('OpenSpec traceability: add-typescript-mcp-server', () => {
     const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
     const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as Record<string, any>;
 
-    expect(pkg.name).toBe('@usejunior/safedocx');
+    expect(pkg.name).toBe('@usejunior/safe-docx');
     expect(pkg.bin?.['safe-docx']).toBe('dist/cli.js');
     expect(pkg.main).toBe('dist/index.js');
     expect(pkg.types).toBe('dist/index.d.ts');

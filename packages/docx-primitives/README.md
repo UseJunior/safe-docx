@@ -1,6 +1,6 @@
 # @usejunior/docx-primitives
 
-Internal(ish) OOXML primitives used by `@usejunior/safedocx`.
+Internal(ish) OOXML primitives used by `@usejunior/safe-docx`.
 OpenAgreements project, built by the UseJunior team.
 
 This package focuses on:

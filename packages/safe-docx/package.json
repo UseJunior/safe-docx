@@ -1,5 +1,5 @@
 {
-  "name": "@usejunior/safedocx",
+  "name": "@usejunior/safe-docx",
   "version": "0.1.0",
   "description": "Safe Docx MCP server (TypeScript)",
   "type": "module",

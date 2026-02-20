@@ -2,18 +2,18 @@
   "name": "@usejunior/safedocx-mcpb",
   "version": "0.1.0",
   "private": true,
-  "description": "Claude Desktop MCP Bundle (.mcpb) wrapper for @usejunior/safedocx",
+  "description": "Claude Desktop MCP Bundle (.mcpb) wrapper for @usejunior/safe-docx",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "npm run build -w @usejunior/docx-comparison && npm run build -w @usejunior/docx-primitives && npm run build -w @usejunior/safedocx && node esbuild.config.mjs",
+    "build": "npm run build -w @usejunior/docx-comparison && npm run build -w @usejunior/docx-primitives && npm run build -w @usejunior/safe-docx && node esbuild.config.mjs",
     "pack:mcpb": "npm run build && npx -y @anthropic-ai/mcpb validate . && npx -y @anthropic-ai/mcpb pack . safe-docx.mcpb",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@usejunior/safedocx": "^0.1.0"
+    "@usejunior/safe-docx": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

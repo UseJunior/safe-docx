@@ -1,1 +1,1 @@
-export * from '@usejunior/safedocx';
+export * from '@usejunior/safe-docx';

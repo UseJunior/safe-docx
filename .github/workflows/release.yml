@@ -69,7 +69,7 @@ jobs:
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           VERSION="${TAG_REF#v}"
-          for pkg in @usejunior/docx-primitives @usejunior/docx-comparison @usejunior/safedocx safedocx; do
+          for pkg in @usejunior/docx-primitives @usejunior/docx-comparison @usejunior/safe-docx safedocx; do
             if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
               echo "$pkg@$VERSION already exists on npm."
               exit 1
@@ -87,7 +87,7 @@ jobs:
         run: |
           npm run test:run -w @usejunior/docx-comparison
           npm run test:run -w @usejunior/docx-primitives
-          npm run test:run -w @usejunior/safedocx
+          npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
 
       - name: Package coverage ratchet
@@ -145,7 +145,7 @@ jobs:
           npm config delete //registry.npmjs.org/:_authToken || true
 
           # Publish in dependency order.
-          for entry in "@usejunior/docx-primitives:packages/docx-primitives" "@usejunior/docx-comparison:packages/docx-comparison" "@usejunior/safedocx:packages/safe-docx" "safedocx:packages/safedocx"; do
+          for entry in "@usejunior/docx-primitives:packages/docx-primitives" "@usejunior/docx-comparison:packages/docx-comparison" "@usejunior/safe-docx:packages/safe-docx" "safedocx:packages/safedocx"; do
             PKG_NAME="${entry%%:*}"
             PKG_DIR="${entry##*:}"
             if npm view "$PKG_NAME@$VERSION" version >/dev/null 2>&1; then

@@ -1,6 +1,6 @@
 # SafeDocX — AI Document Editing (MCP Server)
 
-SafeDocX is a local MCP server for editing `.docx` files with full formatting preservation and tracked changes. It runs via `npx -y @usejunior/safedocx` using stdio transport.
+SafeDocX is a local MCP server for editing `.docx` files with full formatting preservation and tracked changes. It runs via `npx -y @usejunior/safe-docx` using stdio transport.
 
 ## Trust Boundary
 

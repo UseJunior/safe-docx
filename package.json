@@ -19,8 +19,8 @@
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:run": "npm run test:run --workspaces --if-present",
-    "check:spec-coverage": "npm run check:spec-coverage -w @usejunior/safedocx",
-    "test:coverage:packages": "npm run test:coverage -w @usejunior/docx-comparison && npm run test:coverage -w @usejunior/docx-primitives && npm run test:coverage -w @usejunior/safedocx",
+    "check:spec-coverage": "npm run check:spec-coverage -w @usejunior/safe-docx",
+    "test:coverage:packages": "npm run test:coverage -w @usejunior/docx-comparison && npm run test:coverage -w @usejunior/docx-primitives && npm run test:coverage -w @usejunior/safe-docx",
     "coverage:packages:report": "node scripts/report_package_coverage.mjs --baseline coverage/package-coverage-baseline.json --output coverage/package-coverage-summary.json",
     "coverage:packages:check": "node scripts/report_package_coverage.mjs --baseline coverage/package-coverage-baseline.json --output coverage/package-coverage-summary.json --enforce",
     "pack:mcpb": "npm run pack:mcpb -w @usejunior/safedocx-mcpb"

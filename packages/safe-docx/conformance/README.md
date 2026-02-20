@@ -10,11 +10,11 @@
 ## Commands
 
 - Discover fixture candidates (one-time, with provenance and SHA-256):
-  - `npm run conformance:discover -w @usejunior/safedocx`
+  - `npm run conformance:discover -w @usejunior/safe-docx`
 - Run full conformance harness:
-  - `npm run conformance:run -w @usejunior/safedocx`
+  - `npm run conformance:run -w @usejunior/safe-docx`
 - Run fast smoke subset:
-  - `npm run conformance:smoke -w @usejunior/safedocx`
+  - `npm run conformance:smoke -w @usejunior/safe-docx`
 
 ## Fixture Entry Fields
 

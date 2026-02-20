@@ -7,11 +7,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 describe('safe-docx-mcpb entrypoint wiring', () => {
-  it('delegates runtime to @usejunior/safedocx runServer', async () => {
+  it('delegates runtime to @usejunior/safe-docx runServer', async () => {
     const entryPath = path.join(__dirname, 'index.ts');
     const source = await fs.readFile(entryPath, 'utf8');
 
-    expect(source).toContain("import { runServer } from '@usejunior/safedocx'");
+    expect(source).toContain("import { runServer } from '@usejunior/safe-docx'");
     expect(source).toContain('runServer().catch');
   });
 });

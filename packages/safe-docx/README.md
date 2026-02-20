@@ -1,4 +1,4 @@
-# @usejunior/safedocx
+# @usejunior/safe-docx
 
 Safe Docx is an MCP (Model Context Protocol) server that enables AI assistants to safely edit `.docx` files while preserving formatting, using DOM-based OOXML editing (`@xmldom/xmldom`).
 In this package, Safe Docx runs as a local MCP server and local desktop extension runtime (stdio), not a hosted editor service.
@@ -8,7 +8,7 @@ OpenAgreements project, built by the UseJunior team.
 
 Safe Docx editor is local-only in this package:
 
-- Fully local package execution (`npx -y @usejunior/safedocx`)
+- Fully local package execution (`npx -y @usejunior/safe-docx`)
 - Local Claude extension/stdio workflows
 
 Safe Docx document editing is not offered as a hosted remote MCP endpoint.
@@ -24,7 +24,7 @@ Mode-by-mode data flow summary: `docs/safe-docx/trust-checklist.md`.
 ## Run (Local Package Execution)
 
 ```bash
-npx -y @usejunior/safedocx
+npx -y @usejunior/safe-docx
 ```
 
 ## Installation
@@ -38,7 +38,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/safedocx"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }
@@ -47,7 +47,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 ### Claude Code
 
 ```bash
-claude mcp add safe-docx -- npx -y @usejunior/safedocx
+claude mcp add safe-docx -- npx -y @usejunior/safe-docx
 ```
 
 ### Gemini CLI
@@ -59,7 +59,7 @@ Install from the Gemini CLI extension gallery, or add manually to your Gemini CL
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/safedocx"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }
@@ -74,7 +74,7 @@ Add to your Cline MCP settings (`cline_mcp_settings.json`):
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/safedocx"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }
@@ -85,14 +85,14 @@ Add to your Cline MCP settings (`cline_mcp_settings.json`):
 Any MCP client supporting stdio transport can use SafeDocX:
 
 - **Command:** `npx`
-- **Arguments:** `["-y", "@usejunior/safedocx"]`
+- **Arguments:** `["-y", "@usejunior/safe-docx"]`
 - **Transport:** stdio
 
 ## Development (Repo)
 
 ```bash
-npm run build -w @usejunior/safedocx
-npm run test:run -w @usejunior/safedocx
+npm run build -w @usejunior/safe-docx
+npm run test:run -w @usejunior/safe-docx
 ```
 
 Assumptions and verification matrix:
@@ -105,14 +105,14 @@ Assumptions and verification matrix:
 Deterministic fixture conformance checks are available for trust/reliability evidence:
 
 ```bash
-npm run conformance:smoke -w @usejunior/safedocx
-npm run conformance:run -w @usejunior/safedocx
+npm run conformance:smoke -w @usejunior/safe-docx
+npm run conformance:run -w @usejunior/safe-docx
 ```
 
 Optional OpenAgreements fixture root (if present locally):
 
 ```bash
-SAFE_DOCX_CONFORMANCE_OPEN_AGREEMENTS_ROOT=/Users/stevenobiajulu/Projects/open-agreements npm run conformance:run -w @usejunior/safedocx
+SAFE_DOCX_CONFORMANCE_OPEN_AGREEMENTS_ROOT=/Users/stevenobiajulu/Projects/open-agreements npm run conformance:run -w @usejunior/safe-docx
 ```
 
 Pinned fixture manifest:
@@ -347,7 +347,7 @@ This package depends on `@usejunior/docx-comparison` and `@usejunior/docx-primit
 ```bash
 npm publish -w @usejunior/docx-comparison --access public
 npm publish -w @usejunior/docx-primitives --access public
-npm publish -w @usejunior/safedocx --access public
+npm publish -w @usejunior/safe-docx --access public
 ```
 
 If your machine has a broken npm cache ownership, add `--cache /tmp/npm-cache`.

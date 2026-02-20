@@ -6,7 +6,7 @@ Monorepo for the Safe DOCX package family.
 
 - `@usejunior/docx-primitives`
 - `@usejunior/docx-comparison`
-- `@usejunior/safedocx`
+- `@usejunior/safe-docx`
 - `safedocx` (unscoped alias package)
 - `@usejunior/safedocx-mcpb` (private MCP bundle wrapper)
 
@@ -36,5 +36,5 @@ Packages to configure:
 
 - `@usejunior/docx-primitives`
 - `@usejunior/docx-comparison`
-- `@usejunior/safedocx`
+- `@usejunior/safe-docx`
 - `safedocx`

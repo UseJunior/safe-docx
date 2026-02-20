@@ -1,8 +1,8 @@
 # SafeDocX MCP Server — Installation Guide
 
-SafeDocX (`@usejunior/safedocx`) is a local MCP server for AI-powered DOCX editing with tracked changes, redlining, and formatting preservation.
+SafeDocX (`@usejunior/safe-docx`) is a local MCP server for AI-powered DOCX editing with tracked changes, redlining, and formatting preservation.
 
-**Server command:** `npx -y @usejunior/safedocx`
+**Server command:** `npx -y @usejunior/safe-docx`
 **Transport:** stdio
 **Runtime:** Node.js >= 18
 
@@ -15,7 +15,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/safedocx"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }
@@ -26,7 +26,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 Run in your terminal:
 
 ```bash
-claude mcp add safe-docx -- npx -y @usejunior/safedocx
+claude mcp add safe-docx -- npx -y @usejunior/safe-docx
 ```
 
 ## Gemini CLI
@@ -38,7 +38,7 @@ Install from the extension gallery (requires `gemini-cli-extension` GitHub topic
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/safedocx"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }
@@ -53,7 +53,7 @@ Add to your Cline MCP settings (`cline_mcp_settings.json`):
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/safedocx"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }
@@ -64,7 +64,7 @@ Add to your Cline MCP settings (`cline_mcp_settings.json`):
 Any MCP client that supports stdio transport can use SafeDocX. Configure with:
 
 - **Command:** `npx`
-- **Arguments:** `["-y", "@usejunior/safedocx"]`
+- **Arguments:** `["-y", "@usejunior/safe-docx"]`
 - **Transport:** stdio
 
 Example JSON config:
@@ -74,7 +74,7 @@ Example JSON config:
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/safedocx"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }

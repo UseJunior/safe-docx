@@ -1,7 +1,7 @@
 {
   "name": "safedocx",
   "version": "0.1.0",
-  "description": "Unscoped alias package for @usejunior/safedocx",
+  "description": "Unscoped alias package for @usejunior/safe-docx",
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
@@ -21,7 +21,7 @@
     "lint": "echo 'no lint for alias package'"
   },
   "dependencies": {
-    "@usejunior/safedocx": "0.1.0"
+    "@usejunior/safe-docx": "0.1.0"
   },
   "publishConfig": {
     "access": "public"
