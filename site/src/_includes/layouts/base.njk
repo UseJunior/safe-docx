@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or 'Safe DOCX' }}</title>
+    {% if description %}<meta name="description" content="{{ description }}" />{% endif %}
+    <link rel="stylesheet" href="{{ page.url | rootHref('assets/site.css') }}" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="header">
+        <a class="brand" href="{{ page.url | rootHref('index.html') }}">Safe DOCX</a>
+        <nav class="nav">
+          <a href="{{ page.url | rootHref('index.html') }}">Home</a>
+          <a href="{{ page.url | rootHref('trust/index.html') }}">Trust</a>
+          <a href="{{ page.url | rootHref('trust/system-card/index.html') }}">System Card</a>
+        </nav>
+      </header>
+      <main{% if contentClass %} class="{{ contentClass }}"{% endif %}>{{ content | safe }}</main>
+      <footer class="footer">Local-first DOCX editing for AI systems.</footer>
+    </div>
+  </body>
+</html>
