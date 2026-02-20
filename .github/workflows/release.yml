@@ -137,7 +137,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Publish to npm (trusted publishing + provenance)
+      - name: Publish to npm (trusted publishing)
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           VERSION="${TAG_REF#v}"
@@ -153,7 +153,7 @@ jobs:
               exit 1
             fi
             echo "Publishing $PKG_NAME from $PKG_DIR"
-            (cd "$PKG_DIR" && npm publish --provenance --access public)
+            (cd "$PKG_DIR" && npm publish --access public)
           done
 
   publish-mcpb-asset:
