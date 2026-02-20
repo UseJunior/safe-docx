@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "safe-docx-conformance-report/v1",
+  "title": "Safe Docx Conformance Report v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "generated_at",
+    "mode",
+    "repo_root",
+    "options",
+    "fixtures_total",
+    "fixtures_passed",
+    "fixtures_failed",
+    "checks_passed",
+    "checks_failed",
+    "not_covered_count",
+    "fixtures"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "safe-docx-conformance-report/v1"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": ["full", "smoke"]
+    },
+    "repo_root": {
+      "type": "string"
+    },
+    "options": {
+      "type": "object",
+      "required": ["deterministic_runs"],
+      "additionalProperties": false,
+      "properties": {
+        "deterministic_runs": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "open_agreements_root": {
+          "type": "string"
+        }
+      }
+    },
+    "fixtures_total": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fixtures_passed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fixtures_failed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "checks_passed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "checks_failed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "not_covered_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fixture_result"
+      }
+    }
+  },
+  "$defs": {
+    "check_id": {
+      "enum": [
+        "zip_open",
+        "opc_part_document_xml",
+        "xml_parse",
+        "toon_roundtrip_equivalence",
+        "deterministic_smart_edit_toon",
+        "tracked_changes_output",
+        "placeholder_leak"
+      ]
+    },
+    "failure_code": {
+      "enum": [
+        "ZIP_OPEN_FAILED",
+        "OPC_PART_MISSING",
+        "XML_PARSE_FAILED",
+        "PLACEHOLDER_LEAK",
+        "UNEXPECTED_TEXT_MUTATION",
+        "TRACKED_CHANGES_OUTPUT_FAILED",
+        "NON_DETERMINISTIC_RESULT",
+        "TOOL_OPERATION_FAILED",
+        "NOT_COVERED"
+      ]
+    },
+    "check_result": {
+      "type": "object",
+      "required": ["check_id", "status", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "$ref": "#/$defs/check_id"
+        },
+        "status": {
+          "enum": ["PASS", "FAIL", "NOT_COVERED"]
+        },
+        "failure_code": {
+          "$ref": "#/$defs/failure_code"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "fixture_result": {
+      "type": "object",
+      "required": [
+        "fixture_id",
+        "source_path",
+        "source_type",
+        "category",
+        "status",
+        "checks"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fixture_id": {
+          "type": "string"
+        },
+        "source_path": {
+          "type": "string"
+        },
+        "source_type": {
+          "enum": ["local_repo", "open_agreements_optional"]
+        },
+        "category": {
+          "type": "string"
+        },
+        "status": {
+          "enum": ["PASS", "FAIL", "NOT_COVERED"]
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check_result"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "name": "@usejunior/docx-primitives",
+  "version": "0.1.0",
+  "description": "OOXML (.docx) primitives for Safe Docx (DOM-based, round-trip safe)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc --watch",
+    "test": "node ../../node_modules/vitest/vitest.mjs",
+    "test:run": "node ../../node_modules/vitest/vitest.mjs run",
+    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary",
+    "check:spec-coverage": "node scripts/validate_openspec_coverage.mjs",
+    "prepack": "npm run build",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.10",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.4",
+    "@types/node": "^22.10.0",
+    "allure-vitest": "^3.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/usejunior/safe-docx"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}

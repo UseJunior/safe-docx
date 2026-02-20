@@ -1,0 +1,37 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+allure-results/
+allure-report/
+coverage/
+!coverage/
+coverage/*
+!coverage/package-coverage-baseline.json
+
+# Draft change proposals (unimplemented roadmap — keep private until shipped)
+# Archived (implemented) changes are safe to track
+openspec/changes/add-*/
+!openspec/changes/archive/
+.vercel
+
+# Build artifacts
+_site/
+site/docs/*.md
+site/downloads/
+site/schemas/
+packages/contracts-workspace/schemas/
+
+# Python virtual env
+.venv/
+
+# Git worktrees
+.worktrees/
+
+# CI / test artifacts
+artifacts/
+integration-tests/OPENSPEC_TRACEABILITY.md
+
+# MCP bundle artifacts
+*.mcpb
+*.dxt

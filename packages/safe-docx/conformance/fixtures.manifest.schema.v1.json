@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "safe-docx-fixture-manifest/v1",
+  "title": "Safe Docx Fixture Manifest v1",
+  "type": "object",
+  "required": ["schema_version", "fixtures"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "safe-docx-fixture-manifest/v1"
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fixture"
+      }
+    }
+  },
+  "$defs": {
+    "operation_id": {
+      "enum": [
+        "preflight",
+        "toon_roundtrip",
+        "deterministic_smart_edit",
+        "tracked_changes_output",
+        "placeholder_leak_scan"
+      ]
+    },
+    "check_id": {
+      "enum": [
+        "zip_open",
+        "opc_part_document_xml",
+        "xml_parse",
+        "toon_roundtrip_equivalence",
+        "deterministic_smart_edit_toon",
+        "tracked_changes_output",
+        "placeholder_leak"
+      ]
+    },
+    "fixture": {
+      "type": "object",
+      "required": [
+        "fixture_id",
+        "source_path",
+        "source_type",
+        "category",
+        "operations_to_run",
+        "expected_checks",
+        "notes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fixture_id": {
+          "type": "string"
+        },
+        "source_path": {
+          "type": "string"
+        },
+        "source_type": {
+          "enum": ["local_repo", "open_agreements_optional"]
+        },
+        "category": {
+          "type": "string"
+        },
+        "operations_to_run": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation_id"
+          },
+          "minItems": 1
+        },
+        "expected_checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check_id"
+          },
+          "minItems": 1
+        },
+        "notes": {
+          "type": "string"
+        },
+        "edit_spec": {
+          "type": "object",
+          "required": ["old_string", "new_string"],
+          "additionalProperties": false,
+          "properties": {
+            "old_string": {
+              "type": "string"
+            },
+            "new_string": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

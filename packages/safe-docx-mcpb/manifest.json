@@ -1,0 +1,97 @@
+{
+  "manifest_version": "0.3",
+  "name": "safe-docx",
+  "display_name": "Safe Docx",
+  "version": "0.1.0",
+  "description": "AI-native Word document editing for legal documents with stable paragraph anchors and deterministic DOCX operations.",
+  "long_description": "Safe Docx lets Claude work directly with .docx files on your local filesystem. It provides stable paragraph IDs (jr_para_*) for precise editing while preserving formatting and structure.\n\nCore capabilities include reading/searching content, formatting-preserving edits and inserts, deterministic layout controls, tracked-changes generation, comments, comparisons, and revision extraction.",
+  "author": {
+    "name": "OpenAgreements",
+    "url": "https://openagreements.ai"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"]
+    }
+  },
+  "tools": [
+    {
+      "name": "open_document",
+      "description": "Open a Word document for editing."
+    },
+    {
+      "name": "read_file",
+      "description": "Read document content with stable paragraph IDs."
+    },
+    {
+      "name": "grep",
+      "description": "Search for text patterns in the document."
+    },
+    {
+      "name": "smart_edit",
+      "description": "Replace text in a paragraph while preserving formatting."
+    },
+    {
+      "name": "smart_insert",
+      "description": "Insert a new paragraph relative to an anchor paragraph."
+    },
+    {
+      "name": "download",
+      "description": "Save clean/tracked output document variants to disk."
+    },
+    {
+      "name": "format_layout",
+      "description": "Apply deterministic paragraph/table layout formatting controls."
+    },
+    {
+      "name": "accept_changes",
+      "description": "Accept tracked changes in the document body."
+    },
+    {
+      "name": "get_session_status",
+      "description": "Get editing session metadata and status."
+    },
+    {
+      "name": "clear_session",
+      "description": "Clear one session or all sessions."
+    },
+    {
+      "name": "duplicate_document",
+      "description": "Duplicate a document and open a fresh session."
+    },
+    {
+      "name": "add_comment",
+      "description": "Add a comment or threaded reply."
+    },
+    {
+      "name": "compare_documents",
+      "description": "Create a tracked-changes redline between original and revised documents."
+    },
+    {
+      "name": "extract_revisions",
+      "description": "Extract tracked-change revisions as structured JSON."
+    }
+  ],
+  "keywords": [
+    "docx",
+    "word",
+    "document",
+    "editing",
+    "legal",
+    "contracts",
+    "redline",
+    "tracked-changes",
+    "mcp"
+  ],
+  "license": "MIT",
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}

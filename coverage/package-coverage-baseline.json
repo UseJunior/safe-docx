@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-02-19T09:39:40.344Z",
+  "packages": {
+    "docx-comparison": {
+      "lines": 90.77,
+      "branches": 85.66,
+      "functions": 92.97,
+      "statements": 90.77
+    },
+    "docx-primitives": {
+      "lines": 88.77,
+      "branches": 71.18,
+      "functions": 89.87,
+      "statements": 88.77
+    },
+    "safe-docx": {
+      "lines": 87.13,
+      "branches": 75.28,
+      "functions": 97.74,
+      "statements": 87.13
+    }
+  }
+}

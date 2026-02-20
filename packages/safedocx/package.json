@@ -1,0 +1,44 @@
+{
+  "name": "safedocx",
+  "version": "0.1.0",
+  "description": "Unscoped alias package for @usejunior/safedocx",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "bin": {
+    "safedocx": "bin/safedocx.js"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "bin"
+  ],
+  "scripts": {
+    "build": "echo 'no build needed for alias package'",
+    "test": "echo 'no tests for alias package'",
+    "test:run": "echo 'no tests for alias package'",
+    "test:coverage": "echo 'no coverage for alias package'",
+    "lint": "echo 'no lint for alias package'"
+  },
+  "dependencies": {
+    "@usejunior/safedocx": "0.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/usejunior/safe-docx.git"
+  },
+  "homepage": "https://github.com/usejunior/safe-docx/tree/main/packages/safedocx",
+  "bugs": {
+    "url": "https://github.com/usejunior/safe-docx/issues"
+  },
+  "license": "MIT",
+  "keywords": [
+    "docx",
+    "mcp",
+    "safe-docx",
+    "alias"
+  ]
+}

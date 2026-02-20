@@ -1,0 +1,287 @@
+import { describe, expect } from 'vitest';
+import { testAllure as test } from '../test/helpers/allure-test.js';
+import { buildNodesForDocumentView, renderToon } from './document_view.js';
+import { parseXml } from './xml.js';
+import type { RelsMap } from './relationships.js';
+
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function wrapInDoc(bodyXml: string): string {
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="${W_NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<w:body>${bodyXml}</w:body>` +
+    `</w:document>`
+  );
+}
+
+function makeParagraphs(bodyXml: string): Array<{ id: string; p: Element }> {
+  const doc = parseXml(wrapInDoc(bodyXml));
+  const ps = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'));
+  return ps.map((p, i) => ({ id: `jr_para_${i + 1}`, p }));
+}
+
+function makeStylesXml(styles: string): Document {
+  return parseXml(
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:styles xmlns:w="${W_NS}">${styles}</w:styles>`,
+  );
+}
+
+describe('document_view formatting tags', () => {
+  test('show_formatting=false produces output identical to legacy path', () => {
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:rPr><w:b/></w:rPr><w:t>Bold Header.</w:t></w:r>` +
+      `<w:r><w:t> Normal body text here.</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+
+    const withFmt = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: false,
+      include_semantic_tags: true,
+    });
+    const withoutFmt = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      include_semantic_tags: true,
+    });
+
+    expect(withFmt.nodes.length).toBe(withoutFmt.nodes.length);
+    for (let i = 0; i < withFmt.nodes.length; i++) {
+      expect(withFmt.nodes[i]!.tagged_text).toBe(withoutFmt.nodes[i]!.tagged_text);
+      expect(withFmt.nodes[i]!.clean_text).toBe(withoutFmt.nodes[i]!.clean_text);
+    }
+  });
+
+  test('mixed bold/normal paragraph emits <b> tags on bold run', () => {
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:t>Normal text </w:t></w:r>` +
+      `<w:r><w:rPr><w:b/></w:rPr><w:t>bold clause</w:t></w:r>` +
+      `<w:r><w:t> end.</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+    const { nodes } = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    expect(nodes.length).toBe(1);
+    expect(nodes[0]!.tagged_text).toContain('<b>bold clause</b>');
+    expect(nodes[0]!.tagged_text).toContain('Normal text ');
+    expect(nodes[0]!.tagged_text).toContain(' end.');
+  });
+
+  test('uniform formatting paragraph suppresses tags (all bold)', () => {
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:rPr><w:b/></w:rPr><w:t>All bold text here and more body text.</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+    const { nodes } = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    expect(nodes.length).toBe(1);
+    // When 100% of chars are bold, baseline suppression should hide <b> tags.
+    expect(nodes[0]!.tagged_text).not.toContain('<b>');
+    expect(nodes[0]!.tagged_text).not.toContain('</b>');
+  });
+
+  test('paragraph with hyperlinks emits <a> tags', () => {
+    const relsMap: RelsMap = new Map([['rId1', 'https://example.com']]);
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:t>Click </w:t></w:r>` +
+      `<w:hyperlink r:id="rId1"><w:r><w:t>here</w:t></w:r></w:hyperlink>` +
+      `<w:r><w:t> for details.</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+    const { nodes } = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+      relsMap,
+    });
+
+    expect(nodes.length).toBe(1);
+    expect(nodes[0]!.tagged_text).toContain('<a href="https://example.com">here</a>');
+    expect(nodes[0]!.tagged_text).toContain('Click ');
+  });
+
+  test('run-in header prefix is emitted plain (no formatting tags)', () => {
+    // Bold header followed by normal body.
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:rPr><w:b/></w:rPr><w:t>Definitions.</w:t></w:r>` +
+      `<w:r><w:t> The following terms shall apply.</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+    const { nodes } = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    expect(nodes.length).toBe(1);
+    // The header "Definitions" should be detected and stripped from tagged_text by renderToon.
+    // But in tagged_text it should be present as plain text (no <b> tags on it).
+    const toon = renderToon(nodes);
+    expect(toon).toContain('Definitions');
+    // The body part should not have <b> tags on it (since body is not bold).
+    expect(nodes[0]!.tagged_text).not.toMatch(/<b>Definitions/);
+  });
+
+  test('rStyle character style resolves bold from style definition', () => {
+    const stylesDoc = makeStylesXml(
+      `<w:style w:type="character" w:styleId="Strong">` +
+      `<w:name w:val="Strong"/>` +
+      `<w:rPr><w:b/></w:rPr>` +
+      `</w:style>`,
+    );
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:t>Normal text </w:t></w:r>` +
+      `<w:r><w:rPr><w:rStyle w:val="Strong"/></w:rPr><w:t>strong text</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+    const { nodes } = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: stylesDoc,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    expect(nodes.length).toBe(1);
+    expect(nodes[0]!.tagged_text).toContain('<b>strong text</b>');
+  });
+
+  test('definition tags coexist with formatting tags', () => {
+    // A paragraph with a quoted definition like "Company" means ...
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:rPr><w:b/></w:rPr><w:t>"Company"</w:t></w:r>` +
+      `<w:r><w:t> means the entity described herein in all of these extra words for padding.</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+    const { nodes } = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    expect(nodes.length).toBe(1);
+    const tagged = nodes[0]!.tagged_text;
+    // Both <definition> and <b> should appear.
+    expect(tagged).toContain('<definition>');
+    expect(tagged).toContain('</definition>');
+    expect(tagged).toContain('Company');
+  });
+
+  test('highlighting emits <highlighting> tags when show_formatting=true', () => {
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:t>Normal text </w:t></w:r>` +
+      `<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>highlighted</w:t></w:r>` +
+      `<w:r><w:t> text end for padding to ensure body baseline.</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+    const { nodes } = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    expect(nodes.length).toBe(1);
+    expect(nodes[0]!.tagged_text).toContain('<highlighting>highlighted</highlighting>');
+  });
+
+  test('60% threshold boundary: 59% does NOT suppress, 61% DOES suppress', () => {
+    // 59 chars plain + 41 chars bold = 59% plain = suppressed=false (because 59 < 60 threshold)
+    // Actually 59% IS < 60%, so suppressed should be false.
+    const plain59 = 'A'.repeat(59);
+    const bold41 = 'B'.repeat(41);
+    const bodyXml59 =
+      `<w:p>` +
+      `<w:r><w:t>${plain59}</w:t></w:r>` +
+      `<w:r><w:rPr><w:b/></w:rPr><w:t>${bold41}</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs59 = makeParagraphs(bodyXml59);
+    const { nodes: nodes59 } = buildNodesForDocumentView({
+      paragraphs: paragraphs59,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    // With 59% plain, suppressed=false → all runs get absolute tags.
+    // The plain text gets no tags (bold=false), the bold text gets <b>.
+    expect(nodes59[0]!.tagged_text).toContain(`<b>${bold41}</b>`);
+
+    // 61 chars plain + 39 chars bold = 61% plain → suppressed=true
+    const plain61 = 'A'.repeat(61);
+    const bold39 = 'B'.repeat(39);
+    const bodyXml61 =
+      `<w:p>` +
+      `<w:r><w:t>${plain61}</w:t></w:r>` +
+      `<w:r><w:rPr><w:b/></w:rPr><w:t>${bold39}</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs61 = makeParagraphs(bodyXml61);
+    const { nodes: nodes61 } = buildNodesForDocumentView({
+      paragraphs: paragraphs61,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    // With 61% plain, suppressed=true → only deviations get tags.
+    // Bold is a deviation, so it gets <b>.
+    expect(nodes61[0]!.tagged_text).toContain(`<b>${bold39}</b>`);
+    // The plain portion should NOT be tagged.
+    expect(nodes61[0]!.tagged_text).not.toMatch(new RegExp(`<b>${plain61}`));
+  });
+
+  test('italic + underline mixed formatting emits correct nested tags', () => {
+    const bodyXml =
+      `<w:p>` +
+      `<w:r><w:t>Start text for baseline padding longer text. </w:t></w:r>` +
+      `<w:r><w:rPr><w:i/><w:u w:val="single"/></w:rPr><w:t>styled</w:t></w:r>` +
+      `<w:r><w:t> end.</w:t></w:r>` +
+      `</w:p>`;
+    const paragraphs = makeParagraphs(bodyXml);
+    const { nodes } = buildNodesForDocumentView({
+      paragraphs,
+      stylesXml: null,
+      numberingXml: null,
+      show_formatting: true,
+      include_semantic_tags: true,
+    });
+
+    expect(nodes.length).toBe(1);
+    // Nesting order: <a> → <b> → <i> → <u> → <highlighting>
+    expect(nodes[0]!.tagged_text).toContain('<i><u>styled</u></i>');
+  });
+});

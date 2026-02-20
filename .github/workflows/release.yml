@@ -1,0 +1,186 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to publish (for example: v0.1.1)"
+        required: true
+        type: string
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+    concurrency:
+      group: npm-release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Verify tag matches package suite versions
+        run: |
+          TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
+          TAG_VERSION="${TAG_REF#v}"
+          for pkg in packages/docx-comparison packages/docx-primitives packages/safe-docx packages/safedocx packages/safe-docx-mcpb; do
+            PKG_VERSION="$(node -p "require('./${pkg}/package.json').version")"
+            if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+              echo "Tag version ($TAG_VERSION) must match ${pkg}/package.json version ($PKG_VERSION)."
+              exit 1
+            fi
+          done
+          MANIFEST_VERSION="$(node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('./packages/safe-docx-mcpb/manifest.json','utf8'));process.stdout.write(m.version)")"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) must match packages/safe-docx-mcpb/manifest.json version ($MANIFEST_VERSION)."
+            exit 1
+          fi
+
+      - name: Verify release commit is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"; then
+            echo "Release tag commit is not contained in origin/main."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Guard against duplicate publish
+        run: |
+          TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
+          VERSION="${TAG_REF#v}"
+          for pkg in @usejunior/docx-primitives @usejunior/docx-comparison @usejunior/safedocx safedocx; do
+            if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
+              echo "$pkg@$VERSION already exists on npm."
+              exit 1
+            fi
+            echo "$pkg@$VERSION not yet published."
+          done
+
+      - name: Build workspaces
+        run: npm run build
+
+      - name: Test workspaces
+        run: npm run test
+
+      - name: Package-level smoke tests
+        run: |
+          npm run test:run -w @usejunior/docx-comparison
+          npm run test:run -w @usejunior/docx-primitives
+          npm run test:run -w @usejunior/safedocx
+          npm run test:run -w @usejunior/safedocx-mcpb
+
+      - name: Package coverage ratchet
+        run: |
+          npm run test:coverage:packages
+          npm run coverage:packages:check
+
+      - name: Validate OpenSpec traceability coverage
+        run: npm run check:spec-coverage
+
+      - name: Verify package contents (dry-run)
+        run: |
+          for pkg in packages/docx-primitives packages/docx-comparison packages/safe-docx packages/safedocx; do
+            echo "Dry-run pack: $pkg"
+            (cd "$pkg" && npm pack --dry-run)
+          done
+
+      - name: Build and pack safe-docx MCP bundle
+        run: npm run pack:mcpb
+
+  publish-suite:
+    name: Publish package suite
+    needs: preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+    concurrency:
+      group: npm-release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
+
+      - name: Publish to npm (trusted publishing + provenance)
+        run: |
+          TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
+          VERSION="${TAG_REF#v}"
+          unset NODE_AUTH_TOKEN
+          npm config delete //registry.npmjs.org/:_authToken || true
+
+          # Publish in dependency order.
+          for entry in "@usejunior/docx-primitives:packages/docx-primitives" "@usejunior/docx-comparison:packages/docx-comparison" "@usejunior/safedocx:packages/safe-docx" "safedocx:packages/safedocx"; do
+            PKG_NAME="${entry%%:*}"
+            PKG_DIR="${entry##*:}"
+            if npm view "$PKG_NAME@$VERSION" version >/dev/null 2>&1; then
+              echo "$PKG_NAME@$VERSION already exists on npm."
+              exit 1
+            fi
+            echo "Publishing $PKG_NAME from $PKG_DIR"
+            (cd "$PKG_DIR" && npm publish --provenance --access public)
+          done
+
+  publish-mcpb-asset:
+    name: Publish safe-docx MCP bundle asset
+    needs: [preflight, publish-suite]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+    concurrency:
+      group: npm-release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build and pack safe-docx MCP bundle
+        run: npm run pack:mcpb
+
+      - name: Attach safe-docx.mcpb to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: packages/safe-docx-mcpb/safe-docx.mcpb
+          fail_on_unmatched_files: true
+          generate_release_notes: true

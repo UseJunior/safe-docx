@@ -1,0 +1,12 @@
+{
+  "name": "Safe-Docx TS — Allure Report",
+  "output": "./allure-report",
+  "plugins": {
+    "awesome": {
+      "options": {
+        "groupBy": ["epic", "feature", "story"],
+        "reportName": "Safe-Docx TS"
+      }
+    }
+  }
+}

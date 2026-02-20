@@ -1,0 +1,102 @@
+{
+  "schema_version": "safe-docx-fixture-manifest/v1",
+  "fixtures": [
+    {
+      "fixture_id": "cmp_simple_word_change_original",
+      "source_path": "packages/docx-comparison/src/testing/fixtures/simple-word-change/original.docx",
+      "source_type": "local_repo",
+      "category": "docx_comparison_fixture",
+      "operations_to_run": [
+        "preflight",
+        "toon_roundtrip",
+        "deterministic_smart_edit",
+        "tracked_changes_output",
+        "placeholder_leak_scan"
+      ],
+      "expected_checks": [
+        "zip_open",
+        "opc_part_document_xml",
+        "xml_parse",
+        "toon_roundtrip_equivalence",
+        "deterministic_smart_edit_toon",
+        "tracked_changes_output",
+        "placeholder_leak"
+      ],
+      "edit_spec": {
+        "old_string": "quick fox",
+        "new_string": "swift fox"
+      },
+      "notes": "Primary deterministic smart-edit and tracked-output fixture."
+    },
+    {
+      "fixture_id": "cmp_paragraph_insert_original",
+      "source_path": "packages/docx-comparison/src/testing/fixtures/paragraph-insert/original.docx",
+      "source_type": "local_repo",
+      "category": "docx_comparison_fixture",
+      "operations_to_run": [
+        "preflight",
+        "toon_roundtrip",
+        "placeholder_leak_scan"
+      ],
+      "expected_checks": [
+        "zip_open",
+        "opc_part_document_xml",
+        "xml_parse",
+        "toon_roundtrip_equivalence",
+        "placeholder_leak"
+      ],
+      "notes": "Paragraph-structure fixture for roundtrip and placeholder leak checks."
+    },
+    {
+      "fixture_id": "golden_edit_simple_replacement_input",
+      "source_path": "tests/golden/document_editing/scenarios/edit_simple_replacement/input.docx",
+      "source_type": "local_repo",
+      "category": "golden_document_editing",
+      "operations_to_run": [
+        "preflight",
+        "toon_roundtrip"
+      ],
+      "expected_checks": [
+        "zip_open",
+        "opc_part_document_xml",
+        "xml_parse",
+        "toon_roundtrip_equivalence"
+      ],
+      "notes": "Golden editing scenario input for canonical TOON roundtrip checks."
+    },
+    {
+      "fixture_id": "contract_sample_nda_example",
+      "source_path": "test_contracts/NDA_Example.docx",
+      "source_type": "local_repo",
+      "category": "contract_sample",
+      "operations_to_run": [
+        "preflight",
+        "toon_roundtrip"
+      ],
+      "expected_checks": [
+        "zip_open",
+        "opc_part_document_xml",
+        "xml_parse",
+        "toon_roundtrip_equivalence"
+      ],
+      "notes": "Larger contract sample fixture from local test corpus."
+    },
+    {
+      "fixture_id": "oa_common_paper_mutual_nda_template",
+      "source_path": "templates/common-paper-mutual-nda/template.docx",
+      "source_type": "open_agreements_optional",
+      "category": "openagreements_template",
+      "operations_to_run": [
+        "preflight",
+        "toon_roundtrip"
+      ],
+      "expected_checks": [
+        "zip_open",
+        "opc_part_document_xml",
+        "xml_parse",
+        "toon_roundtrip_equivalence"
+      ],
+      "notes": "Optional external fixture from OpenAgreements when local path is configured."
+    }
+  ]
+}

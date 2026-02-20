@@ -1,0 +1,11 @@
+{
+  "name": "safe-docx",
+  "version": "0.1.0",
+  "description": "AI-powered DOCX editing with tracked changes, redlining, and formatting preservation",
+  "mcpServers": {
+    "safe-docx": {
+      "command": "npx",
+      "args": ["-y", "@usejunior/safedocx"]
+    }
+  }
+}

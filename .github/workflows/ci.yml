@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  spec-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Validate OpenSpec traceability coverage
+        run: npm run check:spec-coverage
+
+  workspace-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - name: Build workspaces
+        run: npm run build
+      - name: Test workspaces
+        run: npm run test
+
+  package-smoke:
+    runs-on: ubuntu-latest
+    needs: workspace-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Package-level smoke tests
+        run: |
+          npm run test:run -w @usejunior/docx-comparison
+          npm run test:run -w @usejunior/docx-primitives
+          npm run test:run -w @usejunior/safedocx
+          npm run test:run -w @usejunior/safedocx-mcpb
+
+  mcpb-bundle:
+    runs-on: ubuntu-latest
+    needs: package-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build and pack safe-docx MCP bundle
+        run: npm run pack:mcpb
+      - name: Upload MCPB bundle artifact (main only)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: safe-docx-mcpb
+          if-no-files-found: error
+          path: packages/safe-docx-mcpb/safe-docx.mcpb
+
+  package-coverage:
+    runs-on: ubuntu-latest
+    needs: workspace-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run package coverage suites
+        run: npm run test:coverage:packages
+      - name: Generate package coverage dashboard + enforce ratchet
+        run: |
+          mkdir -p coverage
+          npm run coverage:packages:check > coverage/package-coverage-table.txt
+          cat coverage/package-coverage-table.txt
+      - name: Upload package coverage artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-coverage
+          if-no-files-found: error
+          path: |
+            coverage/package-coverage-baseline.json
+            coverage/package-coverage-summary.json
+            coverage/package-coverage-table.txt
+            packages/docx-comparison/coverage/coverage-summary.json
+            packages/docx-primitives/coverage/coverage-summary.json
+            packages/safe-docx/coverage/coverage-summary.json
