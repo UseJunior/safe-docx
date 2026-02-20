@@ -1,11 +1,12 @@
 {
-  "name": "safedocx",
+  "name": "safe-docx",
   "version": "0.1.0",
   "description": "Unscoped alias package for @usejunior/safe-docx",
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {
+    "safe-docx": "bin/safedocx.js",
     "safedocx": "bin/safedocx.js"
   },
   "files": [
