@@ -5,7 +5,7 @@
   "description": "Monorepo for Safe DOCX packages",
   "repository": {
     "type": "git",
-    "url": "https://github.com/usejunior/safe-docx.git"
+    "url": "git+https://github.com/usejunior/safe-docx.git"
   },
   "homepage": "https://github.com/usejunior/safe-docx#readme",
   "bugs": {
