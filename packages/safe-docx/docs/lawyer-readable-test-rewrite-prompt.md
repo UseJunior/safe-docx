@@ -46,6 +46,11 @@ Rewrite one scenario so the Allure output reads like a clear story for a lawyer 
 - Open/closed: make assertion helpers reusable for nearby scenarios without editing helper internals.
 - Keep dependencies explicit and narrow.
 
+7. TypeScript correctness for Allure paths.
+- Do not use `any` for Allure runtime or step context in migrated code.
+- Prefer typed wrappers/interfaces for runtime calls and step parameter contexts.
+- Keep fallbacks for adapter capability differences (`tags`/`tag`/`label`) without unsafe typing.
+
 ## Preferred Test Pattern
 Use this shape (adapt to existing code):
 - `fixture` object for scenario data

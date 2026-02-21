@@ -41,6 +41,8 @@ metadata:
   - `packages/docx-comparison/src/testing/allure-test.ts` (`itAllure`, helpers)
 - Do not import from `allure-vitest` in tests.
 - If direct Allure calls are needed, use `allure-js-commons` and `await` every call.
+- Avoid `any` in Allure paths; prefer typed runtime/context wrappers.
+- Keep adapter-compatibility shims typed (`tags`/`tag`/`label`) instead of untyped direct access.
 
 ### Allure Vitest compatibility
 - `allure.tags(...)` is not consistently available across adapter versions.

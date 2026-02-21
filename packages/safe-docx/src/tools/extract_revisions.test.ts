@@ -12,6 +12,8 @@ import {
   testAllure,
   allureStep,
   allureJsonAttachment,
+  getAllureRuntime,
+  type AllureStepContext,
 } from '../testing/allure-test.js';
 import {
   assertSuccess,
@@ -22,8 +24,6 @@ import {
   openSession,
 } from '../testing/session-test-utils.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
-
-declare const allure: any;
 
 const TEST_FEATURE = 'add-extract-revisions-tool';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -41,22 +41,44 @@ type RevisionSummary = {
   author?: string;
 };
 
+type ExtractedChange = {
+  para_id?: string;
+  before_text?: string;
+  after_text?: string;
+  revisions?: RevisionSummary[];
+  comments?: unknown[];
+};
+
+type ExtractRevisionsSuccess = Awaited<ReturnType<typeof extractRevisions_tool>> & {
+  success: true;
+  changes: ExtractedChange[];
+  total_changes: number;
+  has_more: boolean;
+};
+
+function asExtractRevisionsSuccess(
+  result: Awaited<ReturnType<typeof extractRevisions_tool>> & { success: true },
+): ExtractRevisionsSuccess {
+  return result as ExtractRevisionsSuccess;
+}
+
 async function addAllureTags(...tags: string[]): Promise<void> {
-  if (typeof allure === 'undefined') {
+  const allureRuntime = getAllureRuntime();
+  if (!allureRuntime) {
     return;
   }
 
   for (const tag of tags) {
-    if (typeof allure.tags === 'function') {
-      await allure.tags(tag);
+    if ('tags' in allureRuntime && typeof (allureRuntime as { tags?: (v: string) => Promise<void> | void }).tags === 'function') {
+      await (allureRuntime as { tags: (v: string) => Promise<void> | void }).tags(tag);
       continue;
     }
-    if (typeof allure.tag === 'function') {
-      await allure.tag(tag);
+    if ('tag' in allureRuntime && typeof (allureRuntime as { tag?: (v: string) => Promise<void> | void }).tag === 'function') {
+      await (allureRuntime as { tag: (v: string) => Promise<void> | void }).tag(tag);
       continue;
     }
-    if (typeof allure.label === 'function') {
-      await allure.label('tag', tag);
+    if (typeof allureRuntime.label === 'function') {
+      await allureRuntime.label('tag', tag);
     }
   }
 }
@@ -66,10 +88,18 @@ async function applyReadableScenarioMetadata(params: {
   audience?: string;
   descriptionLines: string[];
 }): Promise<void> {
-  await allure.description(params.descriptionLines.join('\n'));
+  const allureRuntime = getAllureRuntime();
+  if (allureRuntime && 'description' in allureRuntime) {
+    const describe = (allureRuntime as { description?: (v: string) => Promise<void> | void }).description;
+    if (typeof describe === 'function') {
+      await describe(params.descriptionLines.join('\n'));
+    }
+  }
   await addAllureTags('lawyer-readable');
-  await allure.parameter('scenario_id', params.scenarioId);
-  await allure.parameter('audience', params.audience ?? 'non-technical');
+  if (allureRuntime && typeof allureRuntime.parameter === 'function') {
+    await allureRuntime.parameter('scenario_id', params.scenarioId);
+    await allureRuntime.parameter('audience', params.audience ?? 'non-technical');
+  }
 }
 
 async function allureStepWithParameters(
@@ -77,9 +107,17 @@ async function allureStepWithParameters(
   parameters: Record<string, StepValue>,
   run: () => void | Promise<void>,
 ): Promise<void> {
-  await allure.step(name, async (stepContext: any) => {
+  const allureRuntime = getAllureRuntime();
+  if (!allureRuntime) {
+    await run();
+    return;
+  }
+
+  await allureRuntime.step(name, async (stepContext: AllureStepContext) => {
     for (const [key, value] of Object.entries(parameters)) {
-      await stepContext.parameter(key, String(value));
+      if (typeof stepContext.parameter === 'function') {
+        await stepContext.parameter(key, String(value));
+      }
     }
     await run();
   });
@@ -198,19 +236,19 @@ describe('extract_revisions tool', () => {
 
       const { mgr, sessionId } = await openSession([], { xml: docXml });
       let result: Awaited<ReturnType<typeof extractRevisions_tool>>;
-      await allure.step('When I run extract_revisions on the session', async (stepContext: any) => {
-        await stepContext.parameter('session_id', sessionId);
+      await allureStepWithParameters('When I run extract_revisions on the session', { session_id: sessionId }, async () => {
         result = await extractRevisions_tool(mgr, { session_id: sessionId });
         assertSuccess(result, 'extract_revisions');
       });
+      const extracted = asExtractRevisionsSuccess(result!);
 
-      const changes = result!.changes as any[];
+      const changes = extracted.changes;
       const change = changes[0];
       const revisions = Array.isArray(change?.revisions) ? change.revisions : [];
-      const insertionRevision = revisions.find((revision: any) => revision.type === 'INSERTION');
-      const deletionRevision = revisions.find((revision: any) => revision.type === 'DELETION');
+      const insertionRevision = revisions.find((revision) => revision.type === 'INSERTION');
+      const deletionRevision = revisions.find((revision) => revision.type === 'DELETION');
 
-      await assertStepEqual('Then exactly 1 changed paragraph is returned', 1, Number(result!.total_changes ?? -1));
+      await assertStepEqual('Then exactly 1 changed paragraph is returned', 1, Number(extracted.total_changes ?? -1));
       await assertStepEqual('And exactly one changed paragraph entry exists', 1, changes.length);
       await assertStepEqual(
         `And the before text is "${expectedBefore}"`,
@@ -239,7 +277,7 @@ describe('extract_revisions tool', () => {
 
       // Keep technical JSON artifacts at the bottom so the narrative steps stay contiguous.
       await allureJsonAttachment('Readable input summary', readableInputSummary);
-      await allureJsonAttachment('Raw result (engineer view)', result!);
+      await allureJsonAttachment('Raw result (engineer view)', extracted);
     },
   );
 
@@ -269,19 +307,19 @@ describe('extract_revisions tool', () => {
         { paragraph_count: readableInputSummary.paragraphs.length },
         async () => {},
       );
-      await allure.step('When I run extract_revisions on the clean document', async (stepContext: any) => {
-        await stepContext.parameter('session_id', sessionId);
+      await allureStepWithParameters('When I run extract_revisions on the clean document', { session_id: sessionId }, async () => {
         result = await extractRevisions_tool(mgr, { session_id: sessionId });
         assertSuccess(result, 'extract_revisions');
       });
+      const extracted = asExtractRevisionsSuccess(result!);
 
-      await assertStepEqual('Then total_changes is 0', 0, Number(result!.total_changes ?? -1));
-      await assertStepEqual('And changes array length is 0', 0, Array.isArray(result!.changes) ? result!.changes.length : -1);
-      await assertStepEqual('And has_more is false', false, Boolean(result!.has_more));
+      await assertStepEqual('Then total_changes is 0', 0, Number(extracted.total_changes ?? -1));
+      await assertStepEqual('And changes array length is 0', 0, extracted.changes.length);
+      await assertStepEqual('And has_more is false', false, Boolean(extracted.has_more));
 
       // Keep technical JSON artifacts at the bottom so the narrative steps stay contiguous.
       await allureJsonAttachment('Readable input summary', readableInputSummary);
-      await allureJsonAttachment('Raw result (engineer view)', result!);
+      await allureJsonAttachment('Raw result (engineer view)', extracted);
     },
   );
 
