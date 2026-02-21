@@ -1,6 +1,6 @@
 export type ToolResponse =
   | { success: true; [key: string]: unknown }
-  | { success: false; error: { code: string; message: string; hint?: string } };
+  | { success: false; error: { code: string; message: string; hint?: string }; [key: string]: unknown };
 
 export function ok(extra: Record<string, unknown> = {}): ToolResponse {
   return { success: true, ...extra };

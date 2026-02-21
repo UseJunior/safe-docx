@@ -7,13 +7,13 @@ contentClass: content
 
 # Safe DOCX System Card
 
-Last updated (UTC): `2026-02-20T22:11:04.715Z`
+Last updated (UTC): `2026-02-20T22:16:05.862Z`
 
 ## Executive Summary
 
 <div class="summary-banner">
 <h2>Needs attention before relying on this run</h2>
-<p>202 of 202 spec scenarios are mapped to tests in the currently measured packages. 7773 automated checks were recorded, with 12 non-passing outcomes.</p>
+<p>202 of 202 spec scenarios are mapped to tests in the currently measured packages. 8311 automated checks were recorded, with 12 non-passing outcomes.</p>
 </div>
 
 - This card focuses on reliability signals developers can scan quickly.
@@ -24,8 +24,8 @@ Last updated (UTC): `2026-02-20T22:11:04.715Z`
 <div class="chart">
 <div class="chart-row"><div class="chart-label">Safe DOCX: spec scenario mapping<span class="chart-detail">119/119 scenarios</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
 <div class="chart-row"><div class="chart-label">DOCX Primitives: spec scenario mapping<span class="chart-detail">83/83 scenarios</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
-<div class="chart-row"><div class="chart-label">Safe DOCX: test run pass rate<span class="chart-detail">2422 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:99.8%"></span></div><div class="chart-value">99.8%</div></div>
-<div class="chart-row"><div class="chart-label">DOCX Primitives: test run pass rate<span class="chart-detail">2969 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:99.8%"></span></div><div class="chart-value">99.8%</div></div>
+<div class="chart-row"><div class="chart-label">Safe DOCX: test run pass rate<span class="chart-detail">2677 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:99.8%"></span></div><div class="chart-value">99.8%</div></div>
+<div class="chart-row"><div class="chart-label">DOCX Primitives: test run pass rate<span class="chart-detail">3252 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:99.8%"></span></div><div class="chart-value">99.8%</div></div>
 <div class="chart-row"><div class="chart-label">DOCX Comparison: test run pass rate<span class="chart-detail">2370 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
 </div>
 
@@ -47,8 +47,8 @@ No unmapped scenarios were found in the currently measured scope for this run.
 
 | Package | Recorded checks | Passing | Non-passing | Skipped | Last observed update (UTC) |
 |---|---:|---:|---:|---:|---|
-| Safe DOCX | 2428 | 2422 | 6 | 0 | 2026-02-20T21:54:13.906Z |
-| DOCX Primitives | 2975 | 2969 | 6 | 0 | 2026-02-20T21:54:01.313Z |
+| Safe DOCX | 2683 | 2677 | 6 | 0 | 2026-02-20T22:15:50.617Z |
+| DOCX Primitives | 3258 | 3252 | 6 | 0 | 2026-02-20T22:15:57.353Z |
 | DOCX Comparison | 2370 | 2370 | 0 | 0 | 2026-02-20T21:53:56.889Z |
 
 ## Discussion
@@ -75,5 +75,5 @@ No unmapped scenarios were found in the currently measured scope for this run.
 - [Safe DOCX scenario mapping table](../traceability/safe-docx/index.html)
 - [DOCX Primitives scenario mapping table](../traceability/docx-primitives/index.html)
 
-Data snapshot timestamp for run-status metrics: `2026-02-20T21:54:13.906Z`
+Data snapshot timestamp for run-status metrics: `2026-02-20T22:15:57.353Z`
 

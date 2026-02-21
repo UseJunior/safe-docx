@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import JSZip from 'jszip';
+import { createZipBuffer, readZipText } from '@usejunior/docx-primitives';
 
 function xmlEscape(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -16,18 +16,19 @@ export async function makeMinimalDocx(paragraphTexts: string[]): Promise<Buffer>
 }
 
 export async function makeDocxWithDocumentXml(documentXml: string, extraFiles?: Record<string, string>): Promise<Buffer> {
-  const zip = new JSZip();
-  zip.file('word/document.xml', documentXml);
-  if (extraFiles) {
-    for (const [name, text] of Object.entries(extraFiles)) zip.file(name, text);
-  }
-  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+  return createZipBuffer({
+    'word/document.xml': documentXml,
+    ...(extraFiles ?? {}),
+  });
 }
 
 export async function readDocumentXmlFromPath(filePath: string): Promise<string> {
   const outBuf = await fs.readFile(filePath);
-  const outZip = await JSZip.loadAsync(outBuf);
-  return outZip.file('word/document.xml')!.async('text');
+  const text = await readZipText(outBuf, 'word/document.xml');
+  if (text === null) {
+    throw new Error('Missing file in .docx: word/document.xml');
+  }
+  return text;
 }
 
 export function extractParaIdsFromToon(content: string): string[] {

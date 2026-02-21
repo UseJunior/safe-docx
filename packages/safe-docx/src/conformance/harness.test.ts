@@ -142,7 +142,7 @@ describe('safe-docx conformance harness', () => {
     });
   });
 
-  test('verifies deterministic smart-edit equivalence across two runs', async () => {
+  test('verifies deterministic replace_text equivalence across two runs', async () => {
     await withTempRepo(async (repoRoot) => {
       const fixturePath = path.join(repoRoot, 'fixture-deterministic.docx');
       await fs.writeFile(fixturePath, await makeMinimalDocx(['The quick fox jumps over the fence.']));
@@ -155,18 +155,18 @@ describe('safe-docx conformance harness', () => {
             source_path: 'fixture-deterministic.docx',
             source_type: 'local_repo',
             category: 'test_fixture',
-            operations_to_run: ['preflight', 'deterministic_smart_edit'],
+            operations_to_run: ['preflight', 'deterministic_replace_text'],
             expected_checks: [
               'zip_open',
               'opc_part_document_xml',
               'xml_parse',
-              'deterministic_smart_edit_toon',
+              'deterministic_replace_text_toon',
             ],
             edit_spec: {
               old_string: 'quick fox',
               new_string: 'swift fox',
             },
-            notes: 'deterministic smart-edit check should pass for repeated runs',
+            notes: 'deterministic replace_text check should pass for repeated runs',
           },
         ],
       });
@@ -178,10 +178,10 @@ describe('safe-docx conformance harness', () => {
       });
 
       const deterministic = report.fixtures[0]!.checks.find(
-        (check) => check.check_id === 'deterministic_smart_edit_toon'
+        (check) => check.check_id === 'deterministic_replace_text_toon'
       );
       expect(deterministic?.status).toBe('PASS');
-      expect(deterministic?.message).toContain('matched across 2 deterministic smart-edit runs');
+      expect(deterministic?.message).toContain('matched across 2 deterministic replace_text runs');
       expect(report.checks_failed).toBe(0);
     });
   });

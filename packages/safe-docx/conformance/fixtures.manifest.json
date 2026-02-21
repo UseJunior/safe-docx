@@ -9,7 +9,7 @@
       "operations_to_run": [
         "preflight",
         "toon_roundtrip",
-        "deterministic_smart_edit",
+        "deterministic_replace_text",
         "tracked_changes_output",
         "placeholder_leak_scan"
       ],
@@ -18,7 +18,7 @@
         "opc_part_document_xml",
         "xml_parse",
         "toon_roundtrip_equivalence",
-        "deterministic_smart_edit_toon",
+        "deterministic_replace_text_toon",
         "tracked_changes_output",
         "placeholder_leak"
       ],
@@ -26,7 +26,7 @@
         "old_string": "quick fox",
         "new_string": "swift fox"
       },
-      "notes": "Primary deterministic smart-edit and tracked-output fixture."
+      "notes": "Primary deterministic replace_text and tracked-output fixture."
     },
     {
       "fixture_id": "cmp_paragraph_insert_original",

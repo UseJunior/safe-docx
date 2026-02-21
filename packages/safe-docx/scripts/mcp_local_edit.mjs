@@ -82,7 +82,7 @@ try {
 
   const edited = toolJson(
     await client.callTool({
-      name: 'smart_edit',
+      name: 'replace_text',
       arguments: {
         session_id: sessionId,
         target_paragraph_id: paraId,

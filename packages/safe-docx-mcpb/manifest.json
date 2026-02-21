@@ -3,8 +3,8 @@
   "name": "safe-docx",
   "display_name": "Safe Docx",
   "version": "0.1.0",
-  "description": "AI-native Word document editing for legal documents with stable paragraph anchors and deterministic DOCX operations.",
-  "long_description": "Safe Docx lets Claude work directly with .docx files on your local filesystem. It provides stable paragraph IDs (jr_para_*) for precise editing while preserving formatting and structure.\n\nCore capabilities include reading/searching content, formatting-preserving edits and inserts, deterministic layout controls, tracked-changes generation, comments, comparisons, and revision extraction.",
+  "description": "AI-native Word document editing with stable paragraph anchors and deterministic DOCX operations.",
+  "long_description": "Safe Docx lets Claude work directly with .docx files on your local filesystem. It provides stable paragraph IDs (jr_para_*) for precise editing while preserving formatting and structure.\n\nCore capabilities include reading/searching content, formatting-preserving edits and inserts, deterministic layout controls, tracked-changes output, comments, footnote tools, document comparison, and revision extraction.",
   "author": {
     "name": "OpenAgreements",
     "url": "https://openagreements.ai"
@@ -19,10 +19,6 @@
   },
   "tools": [
     {
-      "name": "open_document",
-      "description": "Open a Word document for editing."
-    },
-    {
       "name": "read_file",
       "description": "Read document content with stable paragraph IDs."
     },
@@ -31,12 +27,20 @@
       "description": "Search for text patterns in the document."
     },
     {
-      "name": "smart_edit",
+      "name": "init_plan",
+      "description": "Initialize revision-bound metadata for coordinated planning."
+    },
+    {
+      "name": "merge_plans",
+      "description": "Merge multiple sub-agent plans and detect conflicts."
+    },
+    {
+      "name": "replace_text",
       "description": "Replace text in a paragraph while preserving formatting."
     },
     {
-      "name": "smart_insert",
-      "description": "Insert a new paragraph relative to an anchor paragraph."
+      "name": "insert_paragraph",
+      "description": "Insert a new paragraph before or after an anchor paragraph."
     },
     {
       "name": "download",
@@ -49,6 +53,10 @@
     {
       "name": "accept_changes",
       "description": "Accept tracked changes in the document body."
+    },
+    {
+      "name": "has_tracked_changes",
+      "description": "Check whether the current document body contains tracked-change markers."
     },
     {
       "name": "get_session_status",
@@ -68,7 +76,23 @@
     },
     {
       "name": "compare_documents",
-      "description": "Create a tracked-changes redline between original and revised documents."
+      "description": "Compare two documents and write a tracked-changes output document."
+    },
+    {
+      "name": "get_footnotes",
+      "description": "Get all footnotes with IDs, display numbers, text, and anchors."
+    },
+    {
+      "name": "add_footnote",
+      "description": "Add a footnote anchored to a paragraph."
+    },
+    {
+      "name": "update_footnote",
+      "description": "Update the text content of an existing footnote."
+    },
+    {
+      "name": "delete_footnote",
+      "description": "Delete a footnote and its reference from the document."
     },
     {
       "name": "extract_revisions",

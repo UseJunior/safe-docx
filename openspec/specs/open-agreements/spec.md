@@ -467,17 +467,6 @@ The NVCA SPA test suite SHALL include interaction-focused coverage that asserts 
 - **AND** when courts are selected and judicial district is omitted, computed outputs derive judicial district defaults
 - **AND** the exported trace shows the dependency chain
 
-### Requirement: Safe Docx Suite Migrates Atomically
-The repository SHALL migrate `safe-docx`, `docx-primitives`, `docx-comparison`, and `safe-docx-mcpb` as one package suite without partial package cutover.
-
-#### Scenario: destination package suite paths all exist
-- **WHEN** migration is complete
-- **THEN** `packages/safe-docx`, `packages/docx-primitives`, `packages/docx-comparison`, and `packages/safe-docx-mcpb` all exist
-
-#### Scenario: CI verifies all suite packages in workspace mode
-- **WHEN** CI executes migration-aware checks
-- **THEN** workspace build/test commands include all four suite packages
-
 ### Requirement: MCPB Bundle Distribution Is Built in CI and Released
 The repository SHALL build `safe-docx.mcpb` from `packages/safe-docx-mcpb` and distribute it as a GitHub release asset.
 
@@ -490,4 +479,3 @@ The repository SHALL build `safe-docx.mcpb` from `packages/safe-docx-mcpb` and d
 - **WHEN** the release workflow runs for a release tag
 - **THEN** it packs `safe-docx.mcpb` from `@usejunior/safedocx-mcpb`
 - **AND** attaches the `.mcpb` file to the corresponding GitHub release
-

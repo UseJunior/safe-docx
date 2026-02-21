@@ -43,6 +43,8 @@ Safe-Docx runtime distribution SHALL remain Node/TypeScript-only and SHALL NOT r
 - **WHEN** a user installs and runs `npx @usejunior/safe-docx`
 - **THEN** layout formatting functionality SHALL be available without Python or Aspose runtime installation
 
-#### Scenario: build-time tooling may be external but optional
-- **WHEN** teams use external local build-time formatting scripts
-- **THEN** those scripts SHALL be optional and SHALL NOT be required for core Safe-Docx MCP runtime behavior
+#### Scenario: format_layout does not invoke external process tooling at runtime
+- **GIVEN** a running Safe-Docx MCP session
+- **WHEN** `format_layout` is called
+- **THEN** the operation SHALL complete without invoking external process execution APIs
+- **AND** no Python/Aspose runtime process SHALL be required

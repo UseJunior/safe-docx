@@ -308,15 +308,3 @@ The docx-primitives library SHALL consolidate adjacent tracked-change wrappers o
 - **WHEN** `simplify_redlines` is called
 - **THEN** the wrappers SHALL NOT be merged
 
-### Requirement: Docx Primitives Package Migrates with Canonical Naming
-The repository SHALL provide a `docx-primitives` package in `packages/docx-primitives` published as `@usejunior/docx-primitives`.
-
-#### Scenario: canonical package identity is declared
-- **WHEN** `packages/docx-primitives/package.json` is evaluated
-- **THEN** the package name is `@usejunior/docx-primitives`
-- **AND** licensing remains MIT
-
-#### Scenario: canonical OpenSpec capability is present
-- **WHEN** destination OpenSpec specs are listed
-- **THEN** a canonical `docx-primitives` capability spec is present
-

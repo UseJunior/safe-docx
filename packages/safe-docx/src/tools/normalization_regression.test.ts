@@ -13,7 +13,7 @@ import {
 import { makeDocxWithDocumentXml, extractParaIdsFromToon } from '../testing/docx_test_utils.js';
 import { openDocument } from './open_document.js';
 import { readFile } from './read_file.js';
-import { smartEdit } from './smart_edit.js';
+import { replaceText } from './replace_text.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -126,7 +126,7 @@ describe('normalization regression tests', () => {
 
       // The field text "100" should still be protected. Editing across field
       // boundaries should fail.
-      const edited = await smartEdit(mgr, {
+      const edited = await replaceText(mgr, {
         session_id: sessionId,
         target_paragraph_id: firstParaId,
         old_string: 'Amount: 100 due.',

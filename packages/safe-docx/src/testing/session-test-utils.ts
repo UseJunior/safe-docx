@@ -2,7 +2,7 @@ import { expect, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { Document as XmlDocument, Element as XmlElement } from '@xmldom/xmldom';
+import { parseXml } from '@usejunior/docx-primitives';
 
 import { SessionManager } from '../session/manager.js';
 import { openDocument } from '../tools/open_document.js';
@@ -122,44 +122,43 @@ export function assertFailure<T extends { success: boolean; error?: { code?: str
 // ---------------------------------------------------------------------------
 
 interface ParsedOutputXml {
-  dom: XmlDocument;
-  runs: XmlElement[];
-  runText: (r: XmlElement) => string;
-  hasBold: (r: XmlElement) => boolean;
-  hasItalic: (r: XmlElement) => boolean;
-  hasUnderline: (r: XmlElement) => boolean;
-  hasHighlight: (r: XmlElement) => boolean;
+  dom: Document;
+  runs: Element[];
+  runText: (r: Element) => string;
+  hasBold: (r: Element) => boolean;
+  hasItalic: (r: Element) => boolean;
+  hasUnderline: (r: Element) => boolean;
+  hasHighlight: (r: Element) => boolean;
 }
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 export async function parseOutputXml(outputPath: string): Promise<ParsedOutputXml> {
   const { readDocumentXmlFromPath } = await import('./docx_test_utils.js');
-  const { DOMParser } = await import('@xmldom/xmldom');
   const outXml = await readDocumentXmlFromPath(outputPath);
-  const dom = new DOMParser().parseFromString(outXml, 'text/xml');
-  const runs = Array.from(dom.getElementsByTagNameNS(W_NS, 'r')) as XmlElement[];
+  const dom = parseXml(outXml);
+  const runs = Array.from(dom.getElementsByTagNameNS(W_NS, 'r')) as Element[];
 
-  const runText = (r: XmlElement) =>
+  const runText = (r: Element) =>
     Array.from(r.getElementsByTagNameNS(W_NS, 't'))
       .map((t) => t.textContent ?? '')
       .join('');
 
-  const hasBold = (r: XmlElement) => !!r.getElementsByTagNameNS(W_NS, 'b').item(0);
+  const hasBold = (r: Element) => !!r.getElementsByTagNameNS(W_NS, 'b').item(0);
 
-  const hasItalic = (r: XmlElement) => !!r.getElementsByTagNameNS(W_NS, 'i').item(0);
+  const hasItalic = (r: Element) => !!r.getElementsByTagNameNS(W_NS, 'i').item(0);
 
-  const hasUnderline = (r: XmlElement) => {
-    const rPr = r.getElementsByTagNameNS(W_NS, 'rPr').item(0) as XmlElement | null;
+  const hasUnderline = (r: Element) => {
+    const rPr = r.getElementsByTagNameNS(W_NS, 'rPr').item(0) as Element | null;
     if (!rPr) return false;
-    const u = rPr.getElementsByTagNameNS(W_NS, 'u').item(0) as XmlElement | null;
+    const u = rPr.getElementsByTagNameNS(W_NS, 'u').item(0) as Element | null;
     if (!u) return false;
     const val = u.getAttribute('w:val') ?? u.getAttribute('val');
     return val !== 'none';
   };
 
-  const hasHighlight = (r: XmlElement) => {
-    const rPr = r.getElementsByTagNameNS(W_NS, 'rPr').item(0) as XmlElement | null;
+  const hasHighlight = (r: Element) => {
+    const rPr = r.getElementsByTagNameNS(W_NS, 'rPr').item(0) as Element | null;
     if (!rPr) return false;
     return !!rPr.getElementsByTagNameNS(W_NS, 'highlight').item(0);
   };

@@ -16,14 +16,14 @@ The TypeScript Safe-Docx MCP server SHALL match the Python editing pipeline’s 
   - `style` as a stable, fingerprint-derived style ID (e.g., `body_1`, `section`)
   - `text` as the paragraph’s LLM-visible text (with header stripped when header column is populated)
 
-#### Scenario: smart_edit preserves mixed-run formatting
+#### Scenario: replace_text preserves mixed-run formatting
 - **GIVEN** a paragraph whose visible text spans multiple runs with different formatting (e.g., underline on one run, plain on the next)
-- **WHEN** `smart_edit` replaces a substring spanning those runs
+- **WHEN** `replace_text` replaces a substring spanning those runs
 - **THEN** the output paragraph SHALL preserve the original mixed formatting structure as closely as possible
 - **AND** SHALL NOT flatten the entire replacement span to a single run’s formatting template
 
-#### Scenario: smart_insert preserves header/definition semantics
-- **WHEN** `smart_insert` inserts content that includes explicit definitions and/or a run-in header
+#### Scenario: insert_paragraph preserves header/definition semantics
+- **WHEN** `insert_paragraph` inserts content that includes explicit definitions and/or a run-in header
 - **THEN** the inserted paragraph(s) SHALL preserve formatting conventions via role models
 - **AND** run-in headers SHALL populate the `header` column rather than being duplicated inline
 
@@ -90,7 +90,7 @@ The server SHALL use a deterministic formatting surgeon for edits that require r
 
 #### Scenario: field-aware visible text does not destroy fields
 - **GIVEN** a paragraph containing Word fields (e.g., `MERGEFIELD`, `REF`, etc.)
-- **WHEN** a `smart_edit` targets visible text adjacent to fields
+- **WHEN** a `replace_text` call targets visible text adjacent to fields
 - **THEN** the server SHALL preserve field structure (`w:fldChar`, `w:instrText`, etc.)
 - **AND** SHALL refuse edits that would require unsafe field rewrites
 

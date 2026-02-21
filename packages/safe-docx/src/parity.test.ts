@@ -1,6 +1,7 @@
 import { describe, expect } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { testAllure } from './testing/allure-test.js';
 import {
@@ -20,10 +21,14 @@ import {
 import { openDocument } from './tools/open_document.js';
 import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
-import { smartEdit } from './tools/smart_edit.js';
-import { smartInsert } from './tools/smart_insert.js';
+import { replaceText } from './tools/replace_text.js';
+import { insertParagraph } from './tools/insert_paragraph.js';
 import { download } from './tools/download.js';
 import { getSessionStatus } from './tools/get_session_status.js';
+
+const SIMPLE_WORD_CHANGE_FIXTURE = fileURLToPath(
+  new URL('../../docx-comparison/src/testing/fixtures/simple-word-change/original.docx', import.meta.url),
+);
 
 describe('Parity regression', () => {
   const test = testAllure.epic('Document Editing').withLabels({ feature: 'Parity' });
@@ -69,7 +74,7 @@ describe('Parity regression', () => {
     expect(typeof (grepRes.matches as any[])[0].list_label).toBe('string');
     expect(typeof (grepRes.matches as any[])[0].header).toBe('string');
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: 'Hello',
@@ -82,7 +87,7 @@ describe('Parity regression', () => {
     assertSuccess(read2, 'read2');
     expect(String(read2.content)).toContain('Hi world');
 
-    const inserted = await smartInsert(mgr, {
+    const inserted = await insertParagraph(mgr, {
       session_id: sessionId,
       positional_anchor_node_id: paraId,
       new_string: 'Second paragraph',
@@ -244,7 +249,7 @@ describe('Parity regression', () => {
     const out = String(read1.content);
     expect(out).toContain('jr_para_keepme | Target paragraph text.');
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: 'jr_para_keepme',
       old_string: 'Target paragraph',
@@ -280,7 +285,7 @@ describe('Parity regression', () => {
     const mgr = createTestSessionManager();
 
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
-    const inputPath = path.resolve(process.cwd(), '../docx-comparison/src/testing/fixtures/simple-word-change/original.docx');
+    const inputPath = SIMPLE_WORD_CHANGE_FIXTURE;
     const trackedPath = path.join(tmpDir, 'tracked.docx');
 
     const opened = await openDocument(mgr, { file_path: inputPath });
@@ -295,7 +300,7 @@ describe('Parity regression', () => {
       .split('|')[0]!
       .trim();
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: 'The',
@@ -326,7 +331,7 @@ describe('Parity regression', () => {
     const mgr = createTestSessionManager();
 
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
-    const inputPath = path.resolve(process.cwd(), '../docx-comparison/src/testing/fixtures/simple-word-change/original.docx');
+    const inputPath = SIMPLE_WORD_CHANGE_FIXTURE;
     const cleanPath = path.join(tmpDir, 'output.clean.docx');
 
     const opened = await openDocument(mgr, { file_path: inputPath });
@@ -341,7 +346,7 @@ describe('Parity regression', () => {
       .split('|')[0]!
       .trim();
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: 'The',
@@ -371,7 +376,7 @@ describe('Parity regression', () => {
     const mgr = createTestSessionManager();
 
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
-    const inputPath = path.resolve(process.cwd(), '../docx-comparison/src/testing/fixtures/simple-word-change/original.docx');
+    const inputPath = SIMPLE_WORD_CHANGE_FIXTURE;
     const cleanPath = path.join(tmpDir, 'output.clean.docx');
     const trackedPath = path.join(tmpDir, 'output.redline.docx');
 
@@ -387,7 +392,7 @@ describe('Parity regression', () => {
       .split('|')[0]!
       .trim();
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: 'The',
@@ -477,7 +482,7 @@ describe('Parity regression', () => {
   test('download reuses cached artifacts for same session revision and invalidates on edit', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
-    const inputPath = path.resolve(process.cwd(), '../docx-comparison/src/testing/fixtures/simple-word-change/original.docx');
+    const inputPath = SIMPLE_WORD_CHANGE_FIXTURE;
     const cleanPath1 = path.join(tmpDir, 'rev0.clean.docx');
     const cleanPath2 = path.join(tmpDir, 'rev0.clean.second.docx');
     const cleanPath3 = path.join(tmpDir, 'rev1.clean.docx');
@@ -494,7 +499,7 @@ describe('Parity regression', () => {
       .split('|')[0]!
       .trim();
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: 'The',
@@ -522,7 +527,7 @@ describe('Parity regression', () => {
     expect(dl2.edit_revision).toBe(1);
     expect(dl2.exported_at_utc).toBe(dl1.exported_at_utc);
 
-    const edited2 = await smartEdit(mgr, {
+    const edited2 = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: 'TheX',
@@ -594,7 +599,7 @@ describe('Parity regression', () => {
     expect(out).toContain('<highlighting>[PLACEHOLDER]</highlighting>');
   });
 
-  test('smart_edit clears placeholder highlight by default and treats <definition> as plain quoted text', async () => {
+  test('replace_text clears placeholder highlight by default and treats <definition> as plain quoted text', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
@@ -630,7 +635,7 @@ describe('Parity regression', () => {
     const pid = nodes.find((n) => String(n.clean_text).includes('[PLACEHOLDER]'))?.id;
     expect(pid).toMatch(/^jr_para_[0-9a-f]{12}$/);
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: pid!,
       old_string: '[PLACEHOLDER]',
@@ -661,7 +666,7 @@ describe('Parity regression', () => {
     expect(editedParaText).toContain('the "R&D Business"');
   });
 
-  test('smart_edit supports explicit <b>/<i>/<u> tags in new_string', async () => {
+  test('replace_text supports explicit <b>/<i>/<u> tags in new_string', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
@@ -686,7 +691,7 @@ describe('Parity regression', () => {
     const pid = nodes.find((n) => String(n.clean_text).includes('[X]'))?.id;
     expect(pid).toMatch(/^jr_para_[0-9a-f]{12}$/);
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: pid!,
       old_string: '[X]',
@@ -723,7 +728,7 @@ describe('Parity regression', () => {
     expect(hasUnderline(plainRun!)).toBe(false);
   });
 
-  test('smart_edit supports legacy definition role-model behavior behind env flag', async () => {
+  test('replace_text supports legacy definition role-model behavior behind env flag', async () => {
     const prevLegacy = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
     process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = '1';
 
@@ -761,7 +766,7 @@ describe('Parity regression', () => {
       const pid = nodes.find((n) => String(n.clean_text).includes('[PLACEHOLDER]'))?.id;
       expect(pid).toMatch(/^jr_para_[0-9a-f]{12}$/);
 
-      const edited = await smartEdit(mgr, {
+      const edited = await replaceText(mgr, {
         session_id: sessionId,
         target_paragraph_id: pid!,
         old_string: '[PLACEHOLDER]',
@@ -802,7 +807,7 @@ describe('Parity regression', () => {
     }
   });
 
-  test('smart_edit supports explicit <highlighting> tags in new_string', async () => {
+  test('replace_text supports explicit <highlighting> tags in new_string', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
@@ -830,7 +835,7 @@ describe('Parity regression', () => {
     const pid = nodes.find((n) => String(n.clean_text).includes('[VALUE]'))?.id;
     expect(pid).toMatch(/^jr_para_[0-9a-f]{12}$/);
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: pid!,
       old_string: '[VALUE]',
@@ -854,7 +859,7 @@ describe('Parity regression', () => {
     expect(hasHighlight(runs[idx]!)).toBe(true);
   });
 
-  test('smart_edit falls back to quote-normalized matching', async () => {
+  test('replace_text falls back to quote-normalized matching', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
@@ -880,7 +885,7 @@ describe('Parity regression', () => {
       .split('|')[0]!
       .trim();
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: '"Company" means ABC Corp.',
@@ -894,7 +899,7 @@ describe('Parity regression', () => {
     expect(String(read2.content)).toContain('XYZ Corp.');
   });
 
-  test('smart_edit falls back to flexible whitespace matching', async () => {
+  test('replace_text falls back to flexible whitespace matching', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
@@ -920,7 +925,7 @@ describe('Parity regression', () => {
       .split('|')[0]!
       .trim();
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: 'The Purchase Price',
@@ -934,7 +939,7 @@ describe('Parity regression', () => {
     expect(String(read2.content)).toContain('The Final Price');
   });
 
-  test('smart_edit falls back to quote-optional matching', async () => {
+  test('replace_text falls back to quote-optional matching', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
@@ -960,7 +965,7 @@ describe('Parity regression', () => {
       .split('|')[0]!
       .trim();
 
-    const edited = await smartEdit(mgr, {
+    const edited = await replaceText(mgr, {
       session_id: sessionId,
       target_paragraph_id: paraId,
       old_string: 'Company',

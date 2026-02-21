@@ -1,21 +1,16 @@
 import { describe, expect } from 'vitest';
 import { itAllure as it } from '../testing/allure-test.js';
-import JSZip from 'jszip';
+import { createZipBuffer } from '@usejunior/docx-primitives';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
 
 async function makeZipBuffer(
   files: Record<string, string>,
   opts?: { compression?: 'STORE' | 'DEFLATE' }
 ): Promise<Buffer> {
-  const zip = new JSZip();
-  for (const [name, text] of Object.entries(files)) {
-    zip.file(name, text);
-  }
-  return (await zip.generateAsync({
-    type: 'nodebuffer',
+  return createZipBuffer(files, {
     compression: opts?.compression ?? 'STORE',
-    compressionOptions: { level: 9 },
-  })) as Buffer;
+    compressionLevel: 9,
+  });
 }
 
 async function withEnv(
@@ -37,11 +32,16 @@ async function withEnv(
   }
 }
 
+function getErrorCode(value: { response?: unknown }): string | undefined {
+  const payload = value.response as { error?: { code?: string } } | undefined;
+  return payload?.error?.code;
+}
+
 describe('docx archive safety guard', () => {
   it('rejects invalid non-zip buffers', async () => {
     const res = await validateDocxArchiveSafety(Buffer.from('not a zip archive'));
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.response.error.code).toBe('INVALID_DOCX_ARCHIVE');
+    if (!res.ok) expect(getErrorCode(res)).toBe('INVALID_DOCX_ARCHIVE');
   });
 
   it('rejects archives with too many entries', async () => {
@@ -53,7 +53,7 @@ describe('docx archive safety guard', () => {
     await withEnv({ SAFE_DOCX_MAX_ARCHIVE_ENTRIES: '2' }, async () => {
       const res = await validateDocxArchiveSafety(buf);
       expect(res.ok).toBe(false);
-      if (!res.ok) expect(res.response.error.code).toBe('DOCX_ARCHIVE_TOO_MANY_ENTRIES');
+      if (!res.ok) expect(getErrorCode(res)).toBe('DOCX_ARCHIVE_TOO_MANY_ENTRIES');
     });
   });
 
@@ -64,7 +64,7 @@ describe('docx archive safety guard', () => {
     await withEnv({ SAFE_DOCX_MAX_ENTRY_UNCOMPRESSED_BYTES: '16' }, async () => {
       const res = await validateDocxArchiveSafety(oneBig);
       expect(res.ok).toBe(false);
-      if (!res.ok) expect(res.response.error.code).toBe('DOCX_ARCHIVE_ENTRY_TOO_LARGE');
+      if (!res.ok) expect(getErrorCode(res)).toBe('DOCX_ARCHIVE_ENTRY_TOO_LARGE');
     });
 
     const totalBig = await makeZipBuffer({
@@ -79,7 +79,7 @@ describe('docx archive safety guard', () => {
       async () => {
         const res = await validateDocxArchiveSafety(totalBig);
         expect(res.ok).toBe(false);
-        if (!res.ok) expect(res.response.error.code).toBe('DOCX_ARCHIVE_UNCOMPRESSED_TOO_LARGE');
+        if (!res.ok) expect(getErrorCode(res)).toBe('DOCX_ARCHIVE_UNCOMPRESSED_TOO_LARGE');
       }
     );
   });
@@ -102,7 +102,7 @@ describe('docx archive safety guard', () => {
       async () => {
         const res = await validateDocxArchiveSafety(highlyCompressible);
         expect(res.ok).toBe(false);
-        if (!res.ok) expect(res.response.error.code).toBe('DOCX_ARCHIVE_COMPRESSION_RATIO_TOO_HIGH');
+        if (!res.ok) expect(getErrorCode(res)).toBe('DOCX_ARCHIVE_COMPRESSION_RATIO_TOO_HIGH');
       }
     );
   });
@@ -114,5 +114,24 @@ describe('docx archive safety guard', () => {
     });
     const res = await validateDocxArchiveSafety(buf);
     expect(res).toEqual({ ok: true });
+  });
+
+  it('falls back to defaults for invalid numeric guard env values', async () => {
+    const buf = await makeZipBuffer({
+      'word/document.xml': '<w:document/>',
+      'word/styles.xml': '<w:styles/>',
+    });
+    await withEnv(
+      {
+        SAFE_DOCX_MAX_ARCHIVE_ENTRIES: '0',
+        SAFE_DOCX_MAX_UNCOMPRESSED_BYTES: '-1',
+        SAFE_DOCX_MAX_ENTRY_UNCOMPRESSED_BYTES: 'not-a-number',
+        SAFE_DOCX_MAX_COMPRESSION_RATIO: '',
+      },
+      async () => {
+        const res = await validateDocxArchiveSafety(buf);
+        expect(res).toEqual({ ok: true });
+      },
+    );
   });
 });

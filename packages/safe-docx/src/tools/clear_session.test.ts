@@ -63,7 +63,8 @@ describe('clear_session tool', () => {
     if (clearedByPath.success) {
       expect(clearedByPath.clear_mode).toBe('file_path');
       expect(clearedByPath.cleared_count).toBe(2);
-      expect(clearedByPath.cleared_session_ids.sort()).toEqual(
+      const clearedIds = (clearedByPath.cleared_session_ids as string[]).slice().sort();
+      expect(clearedIds).toEqual(
         [String(a1.session_id), String(a2.session_id)].sort()
       );
     }

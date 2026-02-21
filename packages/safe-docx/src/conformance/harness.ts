@@ -6,7 +6,7 @@ import { DocxZip, parseXml } from '@usejunior/docx-primitives';
 import { SessionManager } from '../session/manager.js';
 import { openDocument } from '../tools/open_document.js';
 import { readFile } from '../tools/read_file.js';
-import { smartEdit } from '../tools/smart_edit.js';
+import { replaceText } from '../tools/replace_text.js';
 import { download } from '../tools/download.js';
 
 export const CONFORMANCE_REPORT_SCHEMA_VERSION = 'safe-docx-conformance-report/v1';
@@ -33,14 +33,14 @@ export type FixtureCheckId =
   | 'opc_part_document_xml'
   | 'xml_parse'
   | 'toon_roundtrip_equivalence'
-  | 'deterministic_smart_edit_toon'
+  | 'deterministic_replace_text_toon'
   | 'tracked_changes_output'
   | 'placeholder_leak';
 
 export type FixtureOperationId =
   | 'preflight'
   | 'toon_roundtrip'
-  | 'deterministic_smart_edit'
+  | 'deterministic_replace_text'
   | 'tracked_changes_output'
   | 'placeholder_leak_scan';
 
@@ -348,7 +348,7 @@ async function runToonRoundtripCheck(absPath: string): Promise<ConformanceCheckR
   };
 }
 
-async function runDeterministicSmartEditOnce(
+async function runDeterministicReplaceTextOnce(
   absPath: string,
   edit: FixtureEditSpec
 ): Promise<{
@@ -388,7 +388,7 @@ async function runDeterministicSmartEditOnce(
     };
   }
 
-  const edited = await smartEdit(mgr, {
+  const edited = await replaceText(mgr, {
     session_id: sessionId,
     target_paragraph_id: target.id,
     old_string: edit.old_string,
@@ -399,7 +399,7 @@ async function runDeterministicSmartEditOnce(
     return {
       ok: false,
       code: 'TOOL_OPERATION_FAILED',
-      message: `smart_edit failed: ${edited.error.code} ${edited.error.message}`,
+      message: `replace_text failed: ${edited.error.code} ${edited.error.message}`,
     };
   }
 
@@ -422,25 +422,25 @@ async function runDeterministicSmartEditOnce(
   });
 }
 
-async function runDeterministicSmartEditCheck(
+async function runDeterministicReplaceTextCheck(
   absPath: string,
   edit: FixtureEditSpec | undefined,
   runs: number
 ): Promise<ConformanceCheckResult> {
   if (!edit) {
     return {
-      check_id: 'deterministic_smart_edit_toon',
+      check_id: 'deterministic_replace_text_toon',
       status: 'NOT_COVERED',
       failure_code: 'NOT_COVERED',
-      message: 'No edit_spec provided for deterministic smart edit check.',
+      message: 'No edit_spec provided for deterministic replace_text check.',
     };
   }
   const outputs: string[] = [];
   for (let i = 0; i < runs; i++) {
-    const result = await runDeterministicSmartEditOnce(absPath, edit);
+    const result = await runDeterministicReplaceTextOnce(absPath, edit);
     if (!result.ok) {
       return {
-        check_id: 'deterministic_smart_edit_toon',
+        check_id: 'deterministic_replace_text_toon',
         status: 'FAIL',
         failure_code: result.code,
         message: result.message,
@@ -452,16 +452,16 @@ async function runDeterministicSmartEditCheck(
   const mismatch = outputs.find((o) => o !== first);
   if (mismatch) {
     return {
-      check_id: 'deterministic_smart_edit_toon',
+      check_id: 'deterministic_replace_text_toon',
       status: 'FAIL',
       failure_code: 'NON_DETERMINISTIC_RESULT',
       message: `Canonical TOON differs across ${runs} runs.`,
     };
   }
   return {
-    check_id: 'deterministic_smart_edit_toon',
+    check_id: 'deterministic_replace_text_toon',
     status: 'PASS',
-    message: `Canonical TOON matched across ${runs} deterministic smart-edit runs.`,
+    message: `Canonical TOON matched across ${runs} deterministic replace_text runs.`,
   };
 }
 
@@ -510,7 +510,7 @@ async function runTrackedChangesCheck(
     };
   }
 
-  const edited = await smartEdit(mgr, {
+  const edited = await replaceText(mgr, {
     session_id: sessionId,
     target_paragraph_id: target.id,
     old_string: edit.old_string,
@@ -522,7 +522,7 @@ async function runTrackedChangesCheck(
       check_id: 'tracked_changes_output',
       status: 'FAIL',
       failure_code: 'TOOL_OPERATION_FAILED',
-      message: `smart_edit failed: ${edited.error.code} ${edited.error.message}`,
+      message: `replace_text failed: ${edited.error.code} ${edited.error.message}`,
     };
   }
 
@@ -733,9 +733,9 @@ export async function runConformanceHarness(options: HarnessOptions): Promise<Co
     if (runOperations.has('toon_roundtrip')) {
       checks.push(await runToonRoundtripCheck(absPath));
     }
-    if (runOperations.has('deterministic_smart_edit')) {
+    if (runOperations.has('deterministic_replace_text')) {
       checks.push(
-        await runDeterministicSmartEditCheck(absPath, fixture.edit_spec, deterministicRuns)
+        await runDeterministicReplaceTextCheck(absPath, fixture.edit_spec, deterministicRuns)
       );
     }
     if (runOperations.has('tracked_changes_output')) {

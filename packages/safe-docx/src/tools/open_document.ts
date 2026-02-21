@@ -4,6 +4,7 @@ import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
+import { SAFE_DOCX_MCP_TOOLS } from '../tool_catalog.js';
 
 function getAvailableToolsSchema(): Array<{
   name: string;
@@ -11,47 +12,30 @@ function getAvailableToolsSchema(): Array<{
   parameters: string[];
   defaults?: Record<string, unknown>;
 }> {
-  // Mirrors app/mcp_server/server.py:_get_available_tools_schema()
-  return [
-    { name: 'read_file', description: 'Read document content with paragraph IDs', parameters: ['session_id', 'file_path', 'offset', 'limit', 'node_ids', 'format', 'show_formatting'] },
-    {
-      name: 'grep',
-      description: 'Search for patterns, returns paragraph IDs',
-      parameters: ['session_id', 'file_path', 'patterns', 'max_results', 'case_sensitive', 'whole_word', 'context_chars', 'dedupe_by_paragraph'],
-      defaults: { dedupe_by_paragraph: true },
+  const toolDefaultsByName: Record<string, Record<string, unknown>> = {
+    grep: { dedupe_by_paragraph: true },
+    download: {
+      download_format: 'both',
+      clean_bookmarks: true,
+      returned_variants: ['clean', 'tracked'],
     },
-    { name: 'smart_edit', description: 'Replace text in a specific paragraph', parameters: ['session_id', 'file_path', 'target_paragraph_id', 'old_string', 'new_string', 'instruction'] },
-    { name: 'smart_insert', description: 'Insert new paragraph after anchor', parameters: ['session_id', 'file_path', 'positional_anchor_node_id', 'new_string', 'instruction', 'position'] },
-    {
-      name: 'format_layout',
-      description: 'Apply deterministic layout controls (paragraph spacing, row height, cell padding) without inserting spacer paragraphs',
-      parameters: ['session_id', 'file_path', 'strict', 'paragraph_spacing', 'row_height', 'cell_padding'],
-    },
-    {
-      name: 'download',
-      description: 'Save clean and/or tracked changes output. Defaults to both clean and tracked when no format override is provided.',
-      parameters: [
-        'session_id',
-        'file_path',
-        'save_to_local_path',
-        'clean_bookmarks',
-        'download_format',
-        'allow_overwrite',
-        'tracked_save_to_local_path',
-        'tracked_changes_author',
-        'tracked_changes_engine',
-      ],
-      defaults: {
-        download_format: 'both',
-        clean_bookmarks: true,
-        returned_variants: ['clean', 'redline'],
-      },
-    },
-    { name: 'get_session_status', description: 'Get session metadata', parameters: ['session_id', 'file_path'] },
-    { name: 'clear_session', description: 'Clear one session, all sessions for a file path, or all sessions.', parameters: ['session_id', 'file_path', 'clear_all', 'confirm'] },
-    { name: 'duplicate_document', description: 'Duplicate a source .docx and auto-open a fresh editing session for the copy.', parameters: ['source_file_path', 'destination_file_path', 'overwrite'] },
-    { name: 'add_comment', description: 'Add a comment or threaded reply. Provide target_paragraph_id for root comments, or parent_comment_id for replies.', parameters: ['session_id', 'file_path', 'target_paragraph_id', 'anchor_text', 'parent_comment_id', 'author', 'text', 'initials'] },
-  ];
+  };
+
+  return SAFE_DOCX_MCP_TOOLS.map((tool) => {
+    const parameters = getTopLevelPropertyNames(tool.inputSchema);
+    const defaults = toolDefaultsByName[tool.name];
+    return defaults
+      ? { name: tool.name, description: tool.description, parameters, defaults }
+      : { name: tool.name, description: tool.description, parameters };
+  });
+}
+
+function getTopLevelPropertyNames(inputSchema: Record<string, unknown>): string[] {
+  const rawProperties = inputSchema['properties'];
+  if (!rawProperties || typeof rawProperties !== 'object' || Array.isArray(rawProperties)) {
+    return [];
+  }
+  return Object.keys(rawProperties);
 }
 
 export async function openDocument(
@@ -99,8 +83,6 @@ export async function openDocument(
     return ok({
       session_id: session.sessionId,
       expires_at: session.expiresAt.toISOString(),
-      deprecation_warning:
-        "open_document is deprecated as the primary entrypoint. Prefer calling read_file, grep, smart_edit, smart_insert, download, or get_session_status with file_path for automatic session resolution.",
       document: {
         filename,
         paragraphs: info.paragraphCount,

@@ -7,8 +7,8 @@ import { SessionManager } from '../dist/session/manager.js';
 import { openDocument } from '../dist/tools/open_document.js';
 import { readFile } from '../dist/tools/read_file.js';
 import { grep } from '../dist/tools/grep.js';
-import { smartEdit } from '../dist/tools/smart_edit.js';
-import { smartInsert } from '../dist/tools/smart_insert.js';
+import { replaceText } from '../dist/tools/replace_text.js';
+import { insertParagraph } from '../dist/tools/insert_paragraph.js';
 import { download } from '../dist/tools/download.js';
 
 import { compareDocuments } from '../../docx-comparison/dist/index.js';
@@ -55,26 +55,26 @@ async function findParaIdLiteral(mgr, sessionId, literalSubstr) {
   return m.para_id;
 }
 
-async function doSmartEdit(mgr, sessionId, pid, oldStr, newStr, instruction) {
-  const r = await smartEdit(mgr, {
+async function doReplaceText(mgr, sessionId, pid, oldStr, newStr, instruction) {
+  const r = await replaceText(mgr, {
     session_id: sessionId,
     target_paragraph_id: pid,
     old_string: oldStr,
     new_string: newStr,
     instruction,
   });
-  if (!r.success) throw new Error(`smart_edit failed: ${r.error?.message ?? 'unknown'}`);
+  if (!r.success) throw new Error(`replace_text failed: ${r.error?.message ?? 'unknown'}`);
 }
 
-async function doSmartInsertAfter(mgr, sessionId, anchorPid, newStr, instruction) {
-  const r = await smartInsert(mgr, {
+async function doInsertParagraphAfter(mgr, sessionId, anchorPid, newStr, instruction) {
+  const r = await insertParagraph(mgr, {
     session_id: sessionId,
     positional_anchor_node_id: anchorPid,
     position: 'AFTER',
     new_string: newStr,
     instruction,
   });
-  if (!r.success) throw new Error(`smart_insert failed: ${r.error?.message ?? 'unknown'}`);
+  if (!r.success) throw new Error(`insert_paragraph failed: ${r.error?.message ?? 'unknown'}`);
 }
 
 async function runCase(params) {
@@ -174,7 +174,7 @@ results.push(
       // Effective date
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'is made as of the ______ day of');
-        await doSmartEdit(
+        await doReplaceText(
           mgr,
           sessionId,
           pid,
@@ -187,7 +187,7 @@ results.push(
       // Counterparty
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'and [Counterparty], located at [Address]');
-        await doSmartEdit(
+        await doReplaceText(
           mgr,
           sessionId,
           pid,
@@ -200,7 +200,7 @@ results.push(
       // Purpose (definition-style introduction: (the "R&D Business"))
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'for the purpose of [describe specific purpose of disclosure]');
-        await doSmartEdit(
+        await doReplaceText(
           mgr,
           sessionId,
           pid,
@@ -216,19 +216,19 @@ results.push(
         const old = 'or (iv) is approved for release or is no longer treated as confidential or proprietary by Disclosing Party.';
         const add =
           'or (iv) is approved for release or is no longer treated as confidential or proprietary by Disclosing Party; or (v) consists of filings and communications with the Securities and Exchange Commission regarding the possible spin-out of the R&D Business and separate public offering of equity in the R&D Business.';
-        await doSmartEdit(mgr, sessionId, pid, old, add, 'Add SEC filings/communications exception.');
+        await doReplaceText(mgr, sessionId, pid, old, add, 'Add SEC filings/communications exception.');
       }
 
       // Term to 5 years
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'This Agreement shall be effective for a period');
-        await doSmartEdit(mgr, sessionId, pid, '[three (3) years]', 'five (5) years', 'Set NDA term to 5 years.');
+        await doReplaceText(mgr, sessionId, pid, '[three (3) years]', 'five (5) years', 'Set NDA term to 5 years.');
       }
 
       // Insert breach notice paragraph
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'Confidentiality Obligations');
-        await doSmartInsertAfter(
+        await doInsertParagraphAfter(
           mgr,
           sessionId,
           pid,
@@ -240,7 +240,7 @@ results.push(
       // Fill signature block counterparty placeholder (highlighted in template).
       {
         const pid = await findParaIdLiteral(mgr, sessionId, '[Counterparty Name]');
-        await doSmartEdit(
+        await doReplaceText(
           mgr,
           sessionId,
           pid,
@@ -262,7 +262,7 @@ results.push(
       // Title
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'Form of Participant Agreement');
-        await doSmartEdit(
+        await doReplaceText(
           mgr,
           sessionId,
           pid,
@@ -275,15 +275,15 @@ results.push(
       // Date + participant name
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'This Participant Agreement (this');
-        await doSmartEdit(mgr, sessionId, pid, 'January 1, 2024', 'January 15, 2025', 'Update Agreement date.');
-        await doSmartEdit(mgr, sessionId, pid, 'Emily Morgan', 'Jordan Lee', 'Update Participant name.');
+        await doReplaceText(mgr, sessionId, pid, 'January 1, 2024', 'January 15, 2025', 'Update Agreement date.');
+        await doReplaceText(mgr, sessionId, pid, 'Emily Morgan', 'Jordan Lee', 'Update Participant name.');
       }
 
       // Units granted + hurdle amount
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'The Company hereby grants [Number of Units] Class P Units');
-        await doSmartEdit(mgr, sessionId, pid, '[Number of Units]', '50,000', 'Set number of units granted.');
-        await doSmartEdit(
+        await doReplaceText(mgr, sessionId, pid, '[Number of Units]', '50,000', 'Set number of units granted.');
+        await doReplaceText(
           mgr,
           sessionId,
           pid,
@@ -296,7 +296,7 @@ results.push(
       // Insert a new paragraph after NOW, THEREFORE (non-numbered), to test insertion.
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'NOW, THEREFORE, in consideration of the mutual promises');
-        await doSmartInsertAfter(
+        await doInsertParagraphAfter(
           mgr,
           sessionId,
           pid,
@@ -317,13 +317,13 @@ results.push(
       // Adjust a numeric definition.
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'Prime Rate" means 5%');
-        await doSmartEdit(mgr, sessionId, pid, '5%', '6.25%', 'Update Prime Rate numeric definition.');
+        await doReplaceText(mgr, sessionId, pid, '5%', '6.25%', 'Update Prime Rate numeric definition.');
       }
 
       // Change a definition sentence to ensure <definition> handling works when present.
       {
         const pid = await findParaIdLiteral(mgr, sessionId, 'Agreement" means this Purchase Agreement');
-        await doSmartEdit(
+        await doReplaceText(
           mgr,
           sessionId,
           pid,

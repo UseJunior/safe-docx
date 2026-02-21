@@ -15,6 +15,11 @@ async function createDoc(paragraphs: string[], name = 'input.docx'): Promise<str
   return filePath;
 }
 
+function getErrorCode(value: { response?: unknown }): string | undefined {
+  const payload = value.response as { error?: { code?: string } } | undefined;
+  return payload?.error?.code;
+}
+
 describe('session resolution helpers', () => {
   registerCleanup();
 
@@ -22,14 +27,14 @@ describe('session resolution helpers', () => {
     const mgr = createTestSessionManager();
     const missing = await validateAndLoadDocxFromPath(mgr, '/definitely/missing/file.docx');
     expect(missing.ok).toBe(false);
-    if (!missing.ok) expect(missing.response.error.code).toBe('FILE_NOT_FOUND');
+    if (!missing.ok) expect(getErrorCode(missing)).toBe('FILE_NOT_FOUND');
 
     const dir = await createTrackedTempDir('safe-docx-session-resolution-');
     const txtPath = path.join(dir, 'bad.txt');
     await fs.writeFile(txtPath, 'not a docx');
     const invalidType = await validateAndLoadDocxFromPath(mgr, txtPath);
     expect(invalidType.ok).toBe(false);
-    if (!invalidType.ok) expect(invalidType.response.error.code).toBe('INVALID_FILE_TYPE');
+    if (!invalidType.ok) expect(getErrorCode(invalidType)).toBe('INVALID_FILE_TYPE');
 
     const largePath = path.join(dir, 'large.docx');
     const fd = await fs.open(largePath, 'w');
@@ -37,7 +42,7 @@ describe('session resolution helpers', () => {
     await fd.close();
     const tooLarge = await validateAndLoadDocxFromPath(mgr, largePath);
     expect(tooLarge.ok).toBe(false);
-    if (!tooLarge.ok) expect(tooLarge.response.error.code).toBe('VALIDATION_ERROR');
+    if (!tooLarge.ok) expect(getErrorCode(tooLarge)).toBe('VALIDATION_ERROR');
   });
 
   it('handles open/reuse/explicit/conflict session resolution modes', async () => {
@@ -46,7 +51,7 @@ describe('session resolution helpers', () => {
 
     const missingContext = await resolveSessionForTool(mgr, {}, { toolName: 'read_file' });
     expect(missingContext.ok).toBe(false);
-    if (!missingContext.ok) expect(missingContext.response.error.code).toBe('MISSING_SESSION_CONTEXT');
+    if (!missingContext.ok) expect(getErrorCode(missingContext)).toBe('MISSING_SESSION_CONTEXT');
 
     const opened = await resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
     expect(opened.ok).toBe(true);
@@ -75,7 +80,7 @@ describe('session resolution helpers', () => {
       { toolName: 'read_file' }
     );
     expect(conflict.ok).toBe(false);
-    if (!conflict.ok) expect(conflict.response.error.code).toBe('SESSION_FILE_CONFLICT');
+    if (!conflict.ok) expect(getErrorCode(conflict)).toBe('SESSION_FILE_CONFLICT');
   });
 
   it('maps explicit invalid session IDs and expired/not-found sessions', async () => {
@@ -91,7 +96,7 @@ describe('session resolution helpers', () => {
       { toolName: 'grep' }
     );
     expect(invalid.ok).toBe(false);
-    if (!invalid.ok) expect(invalid.response.error.code).toBe('INVALID_SESSION_ID');
+    if (!invalid.ok) expect(getErrorCode(invalid)).toBe('INVALID_SESSION_ID');
 
     // Force expiry path.
     await new Promise((r) => setTimeout(r, 15));
@@ -101,6 +106,6 @@ describe('session resolution helpers', () => {
       { toolName: 'grep' }
     );
     expect(expired.ok).toBe(false);
-    if (!expired.ok) expect(['SESSION_EXPIRED', 'SESSION_NOT_FOUND']).toContain(expired.response.error.code);
+    if (!expired.ok) expect(['SESSION_EXPIRED', 'SESSION_NOT_FOUND']).toContain(getErrorCode(expired));
   });
 });

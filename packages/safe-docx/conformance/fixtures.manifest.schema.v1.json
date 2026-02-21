@@ -21,7 +21,7 @@
       "enum": [
         "preflight",
         "toon_roundtrip",
-        "deterministic_smart_edit",
+        "deterministic_replace_text",
         "tracked_changes_output",
         "placeholder_leak_scan"
       ]
@@ -32,7 +32,7 @@
         "opc_part_document_xml",
         "xml_parse",
         "toon_roundtrip_equivalence",
-        "deterministic_smart_edit_toon",
+        "deterministic_replace_text_toon",
         "tracked_changes_output",
         "placeholder_leak"
       ]

@@ -83,7 +83,7 @@
         "opc_part_document_xml",
         "xml_parse",
         "toon_roundtrip_equivalence",
-        "deterministic_smart_edit_toon",
+        "deterministic_replace_text_toon",
         "tracked_changes_output",
         "placeholder_leak"
       ]

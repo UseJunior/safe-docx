@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import { inspectZipEntries } from '@usejunior/docx-primitives';
 import { err, type ToolResponse } from './types.js';
 
 export type ArchiveGuardOutcome =
@@ -18,20 +18,10 @@ const MAX_TOTAL_UNCOMPRESSED_BYTES = () => readIntEnv('SAFE_DOCX_MAX_UNCOMPRESSE
 const MAX_SINGLE_ENTRY_UNCOMPRESSED_BYTES = () => readIntEnv('SAFE_DOCX_MAX_ENTRY_UNCOMPRESSED_BYTES', 50 * 1024 * 1024);
 const MAX_COMPRESSION_RATIO = () => readIntEnv('SAFE_DOCX_MAX_COMPRESSION_RATIO', 200);
 
-type ZipEntryStats = {
-  compressedSize: number;
-  uncompressedSize: number;
-};
-
-function safeNumber(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-}
-
 export async function validateDocxArchiveSafety(buffer: Buffer): Promise<ArchiveGuardOutcome> {
-  let zip: JSZip;
+  let entries: Awaited<ReturnType<typeof inspectZipEntries>>;
   try {
-    zip = await JSZip.loadAsync(buffer);
+    entries = await inspectZipEntries(buffer);
   } catch (e: any) {
     return {
       ok: false,
@@ -43,7 +33,7 @@ export async function validateDocxArchiveSafety(buffer: Buffer): Promise<Archive
     };
   }
 
-  const files = Object.values(zip.files).filter((file) => !file.dir);
+  const files = entries.filter((entry) => !entry.isDirectory);
   if (files.length > MAX_ARCHIVE_ENTRIES()) {
     return {
       ok: false,
@@ -57,9 +47,8 @@ export async function validateDocxArchiveSafety(buffer: Buffer): Promise<Archive
 
   let totalUncompressed = 0;
   for (const file of files) {
-    const stats = (file as any)?._data as ZipEntryStats | undefined;
-    const compressedSize = safeNumber(stats?.compressedSize);
-    const uncompressedSize = safeNumber(stats?.uncompressedSize);
+    const compressedSize = file.compressedSize;
+    const uncompressedSize = file.uncompressedSize;
     totalUncompressed += uncompressedSize;
 
     if (uncompressedSize > MAX_SINGLE_ENTRY_UNCOMPRESSED_BYTES()) {

@@ -127,7 +127,7 @@ try {
     if (!oldStr) oldStr = pickUniqueOldString(txt, 'Emily') ?? pickUniqueOldString(txt, 'Participant');
     if (!newStr) newStr = oldStr?.replace(/Emily Morgan|Emily|Participant/g, 'Jordan Lee') ?? null;
     if (oldStr && newStr && oldStr !== newStr) {
-      const res = await callTool(client, 'smart_edit', {
+      const res = await callTool(client, 'replace_text', {
         session_id: sessionId,
         target_paragraph_id: targets.grantee.paraId,
         old_string: oldStr,
@@ -150,7 +150,7 @@ try {
       ? oldStr.replace(/Delaware/gi, 'New York').replace(/Texas/gi, 'New York')
       : null;
     if (oldStr && newStr && oldStr !== newStr) {
-      const res = await callTool(client, 'smart_edit', {
+      const res = await callTool(client, 'replace_text', {
         session_id: sessionId,
         target_paragraph_id: targets.governingLaw.paraId,
         old_string: oldStr,
@@ -171,7 +171,7 @@ try {
       const oldStr = pickUniqueOldString(txt, `${m[1]} Units`) ?? pickUniqueOldString(txt, m[0]);
       const newStr = oldStr ? oldStr.replace(m[1], '5,000') : null;
       if (oldStr && newStr && oldStr !== newStr) {
-        const res = await callTool(client, 'smart_edit', {
+        const res = await callTool(client, 'replace_text', {
           session_id: sessionId,
           target_paragraph_id: targets.units.paraId,
           old_string: oldStr,
@@ -193,7 +193,7 @@ try {
       const oldStr = pickUniqueOldString(txt, m[0]);
       const newStr = '$250,000.00';
       if (oldStr && oldStr !== newStr) {
-        const res = await callTool(client, 'smart_edit', {
+        const res = await callTool(client, 'replace_text', {
           session_id: sessionId,
           target_paragraph_id: targets.hurdle.paraId,
           old_string: oldStr,
@@ -217,7 +217,7 @@ try {
     ];
     let anchor = provisoAnchor;
     for (const pText of paragraphsToInsert) {
-      const ins = await callTool(client, 'smart_insert', {
+      const ins = await callTool(client, 'insert_paragraph', {
         session_id: sessionId,
         positional_anchor_node_id: anchor,
         new_string: pText,

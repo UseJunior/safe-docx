@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Run-Level Formatting Visibility
-The Safe-Docx MCP server SHALL display inline formatting tags in `read_file` TOON output to expose run-level formatting boundaries, using the same tag vocabulary that `smart_edit` accepts.
+The Safe-Docx MCP server SHALL display inline formatting tags in `read_file` TOON output to expose run-level formatting boundaries, using the same tag vocabulary that `replace_text` accepts.
 
 #### Scenario: TOON output shows inline formatting tags at run boundaries by default
 - **GIVEN** a document with mixed formatting (e.g., bold mid-sentence, italic terms)
@@ -14,8 +14,8 @@ The Safe-Docx MCP server SHALL display inline formatting tags in `read_file` TOO
 - **THEN** the TOON `text` column SHALL contain plain text without any inline formatting tags
 - **AND** output SHALL be identical to the current untagged behavior
 
-#### Scenario: writable tag vocabulary matches smart_edit new_string vocabulary
+#### Scenario: writable tag vocabulary matches replace_text new_string vocabulary
 - **WHEN** `read_file` emits inline formatting tags
 - **THEN** the writable tag vocabulary SHALL be: `<b>`, `<i>`, `<u>`, `<highlighting>`
-- **AND** these writable tags SHALL be accepted by `smart_edit` in the `new_string` parameter
-- **AND** `<a href="...">` SHALL be emitted as a read-only tag (rendered in `read_file` output but NOT accepted in `smart_edit` `new_string`)
+- **AND** these writable tags SHALL be accepted by `replace_text` in the `new_string` parameter
+- **AND** `<a href="...">` SHALL be emitted as a read-only tag (rendered in `read_file` output but NOT accepted in `replace_text` `new_string`)

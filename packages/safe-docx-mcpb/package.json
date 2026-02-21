@@ -16,7 +16,9 @@
     "@usejunior/safe-docx": "^0.1.0"
   },
   "devDependencies": {
+    "@vitest/runner": "^3.2.4",
     "@types/node": "^22.10.0",
+    "allure-vitest": "^3.0.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.2",
     "vitest": "^3.2.4"
