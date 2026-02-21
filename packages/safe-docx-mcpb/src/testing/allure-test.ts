@@ -1,9 +1,38 @@
 import { expect, it as vitestIt, test as vitestTest } from 'vitest';
 
-declare const allure: any;
+export type AllureStepContext = {
+  parameter?(name: string, value: string): void | Promise<void>;
+};
 
-type AnyFn = (...args: any[]) => any;
+type AllureStepBody<T> =
+  | (() => T | Promise<T>)
+  | ((context: AllureStepContext) => T | Promise<T>);
+
+export type AllureRuntime = {
+  epic(name: string): void | Promise<void>;
+  feature(name: string): void | Promise<void>;
+  parentSuite(name: string): void | Promise<void>;
+  suite(name: string): void | Promise<void>;
+  subSuite?(name: string): void | Promise<void>;
+  severity(level: string): void | Promise<void>;
+  story(name: string): void | Promise<void>;
+  id?(id: string): void | Promise<void>;
+  label?(name: string, value: string): void | Promise<void>;
+  step<T>(name: string, body: AllureStepBody<T>): Promise<T>;
+  parameter?(name: string, value: string): void | Promise<void>;
+  attachment?(name: string, content: string, contentType?: string): void | Promise<void>;
+};
+
+export function getAllureRuntime(): AllureRuntime | undefined {
+  return (globalThis as { allure?: AllureRuntime }).allure;
+}
+
+type UnknownFn = (...args: unknown[]) => unknown;
 type WrappedTestFn = typeof vitestIt;
+type TestName = Parameters<WrappedTestFn>[0];
+type TestBody = Parameters<WrappedTestFn>[1];
+type TestTimeout = Parameters<WrappedTestFn>[2];
+type TestBodyFn = Extract<NonNullable<TestBody>, UnknownFn>;
 
 type EpicName =
   | 'Safe DOCX MCP Bundle'
@@ -40,7 +69,8 @@ function resolveEpic(feature: string, fullName: string, defaults?: AllureLabelDe
 }
 
 async function applyDefaultAllureLabels(defaults?: AllureLabelDefaults): Promise<void> {
-  if (typeof allure === 'undefined') {
+  const allureRuntime = getAllureRuntime();
+  if (!allureRuntime) {
     return;
   }
 
@@ -53,16 +83,16 @@ async function applyDefaultAllureLabels(defaults?: AllureLabelDefaults): Promise
   const epic = resolveEpic(feature, fullName, defaults);
   const parentSuite = defaults?.parentSuite ?? epic;
 
-  await allure.epic(epic);
-  await allure.feature(feature);
-  await allure.parentSuite(parentSuite);
+  await allureRuntime.epic(epic);
+  await allureRuntime.feature(feature);
+  await allureRuntime.parentSuite(parentSuite);
   if (suite) {
-    await allure.suite(suite);
+    await allureRuntime.suite(suite);
   }
-  if (subSuite && typeof allure.subSuite === 'function') {
-    await allure.subSuite(subSuite);
+  if (subSuite && typeof allureRuntime.subSuite === 'function') {
+    await allureRuntime.subSuite(subSuite);
   }
-  await allure.severity('normal');
+  await allureRuntime.severity('normal');
 }
 
 function resolveStoryLabel(explicitName: unknown, nameParts: string[]): string {
@@ -90,12 +120,13 @@ function extractScenarioId(story: string): string | null {
   return match ? match[1].trim() : null;
 }
 
-function wrapWithAllure(fn?: AnyFn, explicitName?: unknown, defaults?: AllureLabelDefaults): AnyFn | undefined {
+function wrapWithAllure(fn?: TestBody, explicitName?: unknown, defaults?: AllureLabelDefaults): TestBody {
   if (!fn) {
-    return undefined;
+    return fn;
   }
 
-  return async (...args: any[]) => {
+  const run = fn as TestBodyFn;
+  return (async (...args: unknown[]) => {
     await applyDefaultAllureLabels(defaults);
 
     const nameParts = parseCurrentTestName();
@@ -104,31 +135,32 @@ function wrapWithAllure(fn?: AnyFn, explicitName?: unknown, defaults?: AllureLab
       ? scenarioIds
       : [resolveStoryLabel(explicitName, nameParts)];
 
-    if (typeof allure !== 'undefined') {
+    const allureRuntime = getAllureRuntime();
+    if (allureRuntime) {
       const scenarioSerials = new Set<string>();
       for (const story of storyLabels) {
-        await allure.story(story);
+        await allureRuntime.story(story);
         const id = extractScenarioId(story);
         if (id) scenarioSerials.add(id);
       }
-      if (scenarioSerials.size === 1 && typeof allure.id === 'function') {
-        await allure.id([...scenarioSerials][0]);
+      if (scenarioSerials.size === 1 && typeof allureRuntime.id === 'function') {
+        await allureRuntime.id([...scenarioSerials][0]);
       }
-      if (typeof allure.label === 'function') {
+      if (typeof allureRuntime.label === 'function') {
         for (const id of scenarioSerials) {
-          await allure.label('openspecScenarioId', id);
+          await allureRuntime.label('openspecScenarioId', id);
         }
       }
     }
 
     try {
-      return await fn(...args);
+      return await run(...args);
     } catch (error) {
       const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
       await allureAttachment('execution-error.txt', message, TEXT_CONTENT_TYPE);
       throw error;
     }
-  };
+  }) as TestBody;
 }
 
 type WrappedAllureTestFn = WrappedTestFn & {
@@ -137,22 +169,22 @@ type WrappedAllureTestFn = WrappedTestFn & {
   openspec: (...scenarioIds: Array<string | string[]>) => WrappedAllureTestFn;
 };
 
-function withAllure(base: any, defaults?: AllureLabelDefaults): WrappedAllureTestFn {
-  const wrapped: any = (name: any, fn?: AnyFn, timeout?: number) =>
-    base(name, wrapWithAllure(fn, name, defaults), timeout);
+function withAllure(base: WrappedTestFn, defaults?: AllureLabelDefaults): WrappedAllureTestFn {
+  const wrapped = ((name: TestName, fn?: TestBody, timeout?: TestTimeout) =>
+    base(name, wrapWithAllure(fn, name, defaults), timeout)) as WrappedAllureTestFn;
 
-  wrapped.only = (name: any, fn?: AnyFn, timeout?: number) =>
+  wrapped.only = (name: TestName, fn?: TestBody, timeout?: TestTimeout) =>
     base.only(name, wrapWithAllure(fn, name, defaults), timeout);
   wrapped.skip = base.skip.bind(base);
   wrapped.todo = base.todo.bind(base);
-  wrapped.fails = (name: any, fn?: AnyFn, timeout?: number) =>
+  wrapped.fails = (name: TestName, fn?: TestBody, timeout?: TestTimeout) =>
     base.fails(name, wrapWithAllure(fn, name, defaults), timeout);
-  wrapped.concurrent = (name: any, fn?: AnyFn, timeout?: number) =>
+  wrapped.concurrent = (name: TestName, fn?: TestBody, timeout?: TestTimeout) =>
     base.concurrent(name, wrapWithAllure(fn, name, defaults), timeout);
 
-  wrapped.each = (...tableArgs: any[]) => {
-    const eachBase = base.each(...tableArgs);
-    return (name: any, fn?: AnyFn, timeout?: number) =>
+  wrapped.each = (...tableArgs: unknown[]) => {
+    const eachBase = (base.each as (...args: unknown[]) => WrappedTestFn)(...tableArgs);
+    return (name: TestName, fn?: TestBody, timeout?: TestTimeout) =>
       eachBase(name, wrapWithAllure(fn, name, defaults), timeout);
   };
 
@@ -166,28 +198,31 @@ function withAllure(base: any, defaults?: AllureLabelDefaults): WrappedAllureTes
       openspecScenarioIds: normalizeOpenSpecScenarioIds(scenarioIds),
     });
 
-  return wrapped as WrappedAllureTestFn;
+  return wrapped;
 }
 
 export const itAllure = withAllure(vitestIt);
 export const testAllure = withAllure(vitestTest);
 
 export async function allureStep<T>(name: string, run: () => T | Promise<T>): Promise<T> {
-  if (typeof allure !== 'undefined' && typeof allure.step === 'function') {
-    return allure.step(name, run);
+  const allureRuntime = getAllureRuntime();
+  if (allureRuntime) {
+    return allureRuntime.step(name, run);
   }
   return run();
 }
 
 export async function allureParameter(name: string, value: string): Promise<void> {
-  if (typeof allure !== 'undefined' && typeof allure.parameter === 'function') {
-    await allure.parameter(name, value);
+  const allureRuntime = getAllureRuntime();
+  if (allureRuntime && typeof allureRuntime.parameter === 'function') {
+    await allureRuntime.parameter(name, value);
   }
 }
 
 export async function allureAttachment(name: string, content: string, contentType = TEXT_CONTENT_TYPE): Promise<void> {
-  if (typeof allure !== 'undefined' && typeof allure.attachment === 'function') {
-    await allure.attachment(name, content, contentType);
+  const allureRuntime = getAllureRuntime();
+  if (allureRuntime && typeof allureRuntime.attachment === 'function') {
+    await allureRuntime.attachment(name, content, contentType);
   }
 }
 
