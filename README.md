@@ -1,6 +1,37 @@
 # Safe DOCX Suite
 
-Monorepo for the Safe DOCX package family.
+[![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
+[![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
+
+Safe DOCX helps coding agents work with Microsoft Word files in headless local mode.
+
+If you are a developer who needs to edit contracts or other paperwork, this repo gives you an MCP server with deterministic `.docx` operations instead of manual Word UI steps.
+
+## Start Here
+
+For actual usage and setup, go to:
+
+- `packages/safe-docx/README.md`
+
+Quick run:
+
+```bash
+npx -y @usejunior/safe-docx
+```
+
+## Key Workflows
+
+- Apply edits to one document with formatting preservation
+- Compare two documents and produce a tracked-changes output document
+- Extract revisions as structured JSON for downstream automation
+
+Golden prompts:
+
+- `packages/safe-docx/docs/golden-prompts.md`
+
+Generated tool reference (from Zod schemas):
+
+- `packages/safe-docx/docs/tool-reference.generated.md`
 
 ## Packages
 
@@ -15,26 +46,23 @@ Monorepo for the Safe DOCX package family.
 ```bash
 npm ci
 npm run build
+npm run lint --workspaces --if-present
 npm run test:run
 npm run check:spec-coverage
+npm run test:coverage:packages
+npm run coverage:packages:check
+npm run coverage:matrix
 ```
 
-## npm Trusted Publishing (GitHub OIDC)
+## Quality Gates
 
-Releases are configured to publish from GitHub Actions using npm Trusted Publishing (OIDC), not long-lived `NPM_TOKEN` secrets.
+- Coverage is uploaded to Codecov from CI using package `lcov.info` reports.
+- Per-package coverage ratchet is enforced via `npm run coverage:packages:check`.
+- Coverage matrix (without stale checked-in docs): `npm run coverage:matrix`.
 
-One-time npm setup per package:
+## Governance
 
-1. In npm package settings, add a trusted publisher.
-2. Provider: GitHub Actions.
-3. Owner: `UseJunior`
-4. Repository: `safe-docx`
-5. Workflow file: `.github/workflows/release.yml`
-6. Environment: leave empty (unless you later add an Actions environment constraint).
-
-Packages to configure:
-
-- `@usejunior/docx-primitives`
-- `@usejunior/docx-comparison`
-- `@usejunior/safe-docx`
-- `safedocx`
+- [Contributing Guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)

@@ -65,6 +65,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Lint/typecheck workspaces
+        run: npm run lint:workspaces
+
       - name: Guard against duplicate publish
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
@@ -97,6 +100,9 @@ jobs:
 
       - name: Validate OpenSpec traceability coverage
         run: npm run check:spec-coverage
+
+      - name: Validate Allure hierarchy labels
+        run: npm run check:allure-labels
 
       - name: Verify package contents (dry-run)
         run: |

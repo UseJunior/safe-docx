@@ -7,6 +7,18 @@ on:
     branches: [main]
 
 jobs:
+  workspace-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Lint/typecheck workspaces
+        run: npm run lint:workspaces
+
   spec-coverage:
     runs-on: ubuntu-latest
     steps:
@@ -19,8 +31,23 @@ jobs:
       - name: Validate OpenSpec traceability coverage
         run: npm run check:spec-coverage
 
+  allure-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Validate Allure hierarchy labels
+        run: npm run check:allure-labels
+      - name: Enforce Allure filename migration policy
+        run: npm run check:allure-filenames
+
   workspace-test:
     runs-on: ubuntu-latest
+    needs: workspace-lint
     strategy:
       matrix:
         node-version: [20, 22]
@@ -76,6 +103,9 @@ jobs:
   package-coverage:
     runs-on: ubuntu-latest
     needs: workspace-test
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -103,3 +133,13 @@ jobs:
             packages/docx-comparison/coverage/coverage-summary.json
             packages/docx-primitives/coverage/coverage-summary.json
             packages/safe-docx/coverage/coverage-summary.json
+            packages/docx-comparison/coverage/lcov.info
+            packages/docx-primitives/coverage/lcov.info
+            packages/safe-docx/coverage/lcov.info
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./packages/docx-comparison/coverage/lcov.info,./packages/docx-primitives/coverage/lcov.info,./packages/safe-docx/coverage/lcov.info
+          use_oidc: true
+          fail_ci_if_error: true

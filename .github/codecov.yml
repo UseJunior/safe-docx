@@ -1,0 +1,16 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 0.5%
+        if_ci_failed: error
+    patch:
+      default:
+        target: 85%
+        threshold: 5%
+        if_ci_failed: error
+
+# Policy:
+# - Project status enforces a minimum 80% overall coverage floor.
+# - Patch status keeps new/changed code at 85% target.

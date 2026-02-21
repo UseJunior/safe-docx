@@ -16,8 +16,8 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 
 ### Editing
 
-- **smart_edit** — Find-and-replace within a single paragraph by `jr_para_*` ID. Preserves formatting across run boundaries. Supports inline tags: `<b>`, `<i>`, `<u>`, `<highlighting>`.
-- **smart_insert** — Insert a new paragraph before or after an anchor paragraph by `jr_para_*` ID.
+- **replace_text** — Find-and-replace within a single paragraph by `jr_para_*` ID. Preserves formatting across run boundaries. Supports inline tags: `<b>`, `<i>`, `<u>`, `<highlighting>`.
+- **insert_paragraph** — Insert a new paragraph before or after an anchor paragraph by `jr_para_*` ID.
 - **add_comment** — Add comments or threaded replies anchored to paragraphs.
 - **accept_changes** — Accept all tracked changes in the document body, producing a clean document.
 
@@ -33,7 +33,6 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 
 ### Session Management
 
-- **open_document** — Explicitly open a document session (deprecated; prefer passing `file_path` directly to other tools).
 - **clear_session** — Clear one session, all sessions for a file, or all sessions.
 - **duplicate_document** — Copy a source `.docx` and open a fresh session for the copy.
 
@@ -43,7 +42,7 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 
 1. Call `read_file` with `file_path` to see content and get `jr_para_*` IDs.
 2. Use `grep` to find specific text and get target paragraph IDs.
-3. Call `smart_edit` with `target_paragraph_id`, `old_string`, `new_string`, and `instruction`.
+3. Call `replace_text` with `target_paragraph_id`, `old_string`, `new_string`, and `instruction`.
 4. Call `download` with `save_to_local_path` to save (defaults to both clean + tracked outputs).
 
 ### Compare Two Documents
@@ -58,6 +57,6 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 
 ## Session Behavior
 
-- Tools accept `file_path` directly — no need to call `open_document` first.
+- Tools accept `file_path` directly for session auto-resolution.
 - The server auto-resolves sessions per file path, reusing the most recent active session.
 - Documents are automatically normalized on open (run merging, redline simplification) for better text matching.
