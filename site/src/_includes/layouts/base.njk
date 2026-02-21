@@ -1,10 +1,45 @@
 <!doctype html>
 <html lang="en">
   <head>
+    {% set pageTitle = title or site.defaultTitle %}
+    {% set pageDescription = description or site.defaultDescription %}
+    {% set pageCanonical = site.url ~ (page.url or '/') %}
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ title or 'Safe DOCX' }}</title>
-    {% if description %}<meta name="description" content="{{ description }}" />{% endif %}
+    <title>{{ pageTitle }}</title>
+    <meta name="description" content="{{ pageDescription }}" />
+    <meta name="robots" content="{% if noindex %}noindex,nofollow{% else %}index,follow{% endif %}" />
+    <link rel="canonical" href="{{ pageCanonical }}" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="{{ site.name }}" />
+    <meta property="og:title" content="{{ pageTitle }}" />
+    <meta property="og:description" content="{{ pageDescription }}" />
+    <meta property="og:url" content="{{ pageCanonical }}" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{{ pageTitle }}" />
+    <meta name="twitter:description" content="{{ pageDescription }}" />
+
+    {% if page.url == '/' %}
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Safe Docx",
+        "description": "Deterministic DOCX operations for AI systems. Fast, safe, composable edits that preserve document integrity.",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Any",
+        "url": "https://safedocx.com",
+        "license": "https://opensource.org/licenses/MIT",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
+    {% endif %}
     <link rel="stylesheet" href="{{ page.url | rootHref('assets/site.css') }}" />
   </head>
   <body>
