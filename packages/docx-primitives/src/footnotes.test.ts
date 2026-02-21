@@ -18,6 +18,10 @@ import { allureJsonAttachment, allureStep, testAllure } from '../test/helpers/al
 
 const TEST_FEATURE = 'add-footnote-support';
 const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const lawyerReadableTest = test.allure({
+  tags: ['lawyer-readable'],
+  parameters: { audience: 'non-technical' },
+});
 
 function makeDocument(bodyXml: string): Document {
   return parseXml(
@@ -112,7 +116,7 @@ function findFootnoteById(doc: Document, id: number): Element | null {
 
 describe('footnotes', () => {
   describe('bootstrapFootnoteParts', () => {
-    test.openspec('bootstrap creates footnotes.xml when missing')(
+    lawyerReadableTest.openspec('bootstrap creates footnotes.xml when missing')(
       'Scenario: bootstrap creates footnotes.xml when missing',
       async () => {
         const documentXml = makeDocument('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>');
@@ -139,7 +143,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('bootstrap is idempotent')('Scenario: bootstrap is idempotent', async () => {
+    lawyerReadableTest.openspec('bootstrap is idempotent')('Scenario: bootstrap is idempotent', async () => {
       const documentXml = makeDocument('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>');
       const zip = await makeZipFromDocument(documentXml);
 
@@ -178,7 +182,7 @@ describe('footnotes', () => {
       expect(rels).toContain('Target="footnotes.xml"');
     });
 
-    test.openspec('bootstrap preserves existing reserved entries')(
+    lawyerReadableTest.openspec('bootstrap preserves existing reserved entries')(
       'Scenario: bootstrap preserves existing reserved entries',
       async () => {
         const existingFootnotes = makeFootnotesXml([
@@ -211,7 +215,7 @@ describe('footnotes', () => {
   });
 
   describe('reading', () => {
-    test.openspec('read from empty document returns empty array')(
+    lawyerReadableTest.openspec('read from empty document returns empty array')(
       'Scenario: read from empty document returns empty array',
       async () => {
         const doc = makeDocument('<w:p><w:r><w:t>No notes</w:t></w:r></w:p>');
@@ -222,7 +226,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('read footnotes from document with multiple footnotes')(
+    lawyerReadableTest.openspec('read footnotes from document with multiple footnotes')(
       'Scenario: read footnotes from document with multiple footnotes',
       async () => {
         const doc = makeDocument(
@@ -249,7 +253,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('display numbers follow document order')(
+    lawyerReadableTest.openspec('display numbers follow document order')(
       'Scenario: display numbers follow document order',
       async () => {
         const doc = makeDocument(
@@ -277,7 +281,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('anchored paragraph IDs resolved')(
+    lawyerReadableTest.openspec('anchored paragraph IDs resolved')(
       'Scenario: anchored paragraph IDs resolved',
       async () => {
         const doc = makeDocument(
@@ -304,7 +308,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('mixed-run references handled')(
+    lawyerReadableTest.openspec('mixed-run references handled')(
       'Scenario: mixed-run references handled',
       async () => {
         const doc = makeDocument(
@@ -350,7 +354,7 @@ describe('footnotes', () => {
   });
 
   describe('addFootnote', () => {
-    test.openspec('add footnote at end of paragraph')(
+    lawyerReadableTest.openspec('add footnote at end of paragraph')(
       'Scenario: add footnote at end of paragraph',
       async () => {
         const doc = makeDocument('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
@@ -369,7 +373,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('add footnote after specific text with mid-run split')(
+    lawyerReadableTest.openspec('add footnote after specific text with mid-run split')(
       'Scenario: add footnote after specific text with mid-run split',
       async () => {
         const doc = makeDocument('<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>');
@@ -417,7 +421,7 @@ describe('footnotes', () => {
       expect(secondRun).toBeGreaterThan(refRun);
     });
 
-    test.openspec('ID allocation skips reserved entries by type')(
+    lawyerReadableTest.openspec('ID allocation skips reserved entries by type')(
       'Scenario: ID allocation skips reserved entries by type',
       async () => {
         const doc = makeDocument('<w:p><w:r><w:t>Allocate</w:t></w:r></w:p>');
@@ -439,7 +443,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('footnote body includes Word-compatible skeleton')(
+    lawyerReadableTest.openspec('footnote body includes Word-compatible skeleton')(
       'Scenario: footnote body includes Word-compatible skeleton',
       async () => {
         const doc = makeDocument('<w:p><w:r><w:t>Body</w:t></w:r></w:p>');
@@ -489,7 +493,7 @@ describe('footnotes', () => {
   });
 
   describe('updateFootnoteText', () => {
-    test.openspec('update changes text content')(
+    lawyerReadableTest.openspec('update changes text content')(
       'Scenario: update changes text content',
       async () => {
         const doc = makeDocument('<w:p><w:r><w:t>Body</w:t></w:r></w:p>');
@@ -516,7 +520,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('update preserves other footnotes')(
+    lawyerReadableTest.openspec('update preserves other footnotes')(
       'Scenario: update preserves other footnotes',
       async () => {
         const doc = makeDocument('<w:p><w:r><w:t>Body</w:t></w:r></w:p>');
@@ -558,7 +562,7 @@ describe('footnotes', () => {
   });
 
   describe('deleteFootnote', () => {
-    test.openspec('delete removes footnoteReference from mixed run without losing text')(
+    lawyerReadableTest.openspec('delete removes footnoteReference from mixed run without losing text')(
       'Scenario: delete removes footnoteReference from mixed run without losing text',
       async () => {
         const doc = makeDocument(
@@ -580,7 +584,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('delete removes dedicated reference run')(
+    lawyerReadableTest.openspec('delete removes dedicated reference run')(
       'Scenario: delete removes dedicated reference run',
       async () => {
         const doc = makeDocument(
@@ -605,7 +609,7 @@ describe('footnotes', () => {
       },
     );
 
-    test.openspec('delete refuses reserved type entries')(
+    lawyerReadableTest.openspec('delete refuses reserved type entries')(
       'Scenario: delete refuses reserved type entries',
       async () => {
         const doc = makeDocument('<w:p><w:r><w:t>Body</w:t></w:r></w:p>');
@@ -634,7 +638,7 @@ describe('footnotes', () => {
   });
 
   describe('round-trip', () => {
-    test.openspec('round-trip preserves footnotes')(
+    lawyerReadableTest.openspec('round-trip preserves footnotes')(
       'Scenario: round-trip preserves footnotes',
       async () => {
         const doc = makeDocument(
