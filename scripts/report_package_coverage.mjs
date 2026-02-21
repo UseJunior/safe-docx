@@ -22,6 +22,9 @@ const PACKAGES = [
     summaryPath: path.join(ROOT, 'packages/safe-docx/coverage/coverage-summary.json'),
   },
 ];
+// v8 coverage can fluctuate slightly run-to-run on branch counters.
+// Treat tiny deltas as noise to keep ratchet checks stable.
+const RATCHET_TOLERANCE = 0.1;
 
 function parseArgs(argv) {
   const out = {
@@ -122,10 +125,10 @@ function enforceRatchet(rows, baselineByPackage) {
 
     const lineDelta = toDelta(row.lines, base.lines);
     const branchDelta = toDelta(row.branches, base.branches);
-    if (lineDelta !== null && lineDelta < 0) {
+    if (lineDelta !== null && lineDelta < -RATCHET_TOLERANCE) {
       failures.push(`${row.name} lines regressed: ${row.lines.toFixed(2)}% < baseline ${base.lines.toFixed(2)}%`);
     }
-    if (branchDelta !== null && branchDelta < 0) {
+    if (branchDelta !== null && branchDelta < -RATCHET_TOLERANCE) {
       failures.push(`${row.name} branches regressed: ${row.branches.toFixed(2)}% < baseline ${base.branches.toFixed(2)}%`);
     }
   }

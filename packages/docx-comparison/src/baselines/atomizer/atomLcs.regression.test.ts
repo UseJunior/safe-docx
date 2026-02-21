@@ -71,8 +71,8 @@ describe('atomLcs Regression Tests', () => {
    * FILE: src/baselines/atomizer/atomLcs.ts:359-360
    * DATE: 2026-01-15
    */
-  describe('BUG-001: MovedSource paragraph index lookup', () => {
-    it('MovedSource atoms should use originalToOutputPara for paragraph index assignment', () => {
+  describe('MovedSource paragraph index lookup', () => {
+    it('assigns MovedSource atoms using original paragraph mapping', () => {
       // Setup: Create atoms simulating the bug scenario
       // Original paragraph 0: "Hello world"
       // Revised paragraph 0: "Hello" (Equal) + "universe" (Inserted/MovedDestination)
@@ -136,7 +136,7 @@ describe('atomLcs Regression Tests', () => {
       expect(movedSourceAtom!.paragraphIndex).toBe(equalAtom!.paragraphIndex);
     });
 
-    it('MovedSource atoms should stay with their original paragraph siblings after reject', () => {
+    it('keeps MovedSource atoms with their original paragraph siblings after reject', () => {
       // This test verifies the higher-level behavior:
       // Content marked as MovedSource should remain in the correct paragraph
       // when changes are rejected

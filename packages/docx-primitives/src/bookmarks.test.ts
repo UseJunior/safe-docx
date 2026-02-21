@@ -17,7 +17,7 @@ function makeDoc(bodyXml: string): Document {
   return parseXml(xml);
 }
 
-describe('OpenSpec traceability: docx-primitives — Paragraph Bookmarks', () => {
+describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
   it.openspec('insertParagraphBookmarks mints IDs matching expected pattern')('Scenario: insertParagraphBookmarks mints IDs matching expected pattern', async () => {
     const doc = makeDoc('<w:p><w:r><w:t>First</w:t></w:r></w:p><w:p><w:r><w:t>Second</w:t></w:r></w:p>');
 

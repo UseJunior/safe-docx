@@ -6,6 +6,7 @@ import { parseStylesXml, type StylesModel, extractParagraphFormatting, extractEf
 import { emitDefinitionTagsFromString, detectDefinitionSpans, HIGHLIGHT_TAG } from './semantic_tags.js';
 import { type AnnotatedRun, type FormattingBaseline, computeModalBaseline, emitFormattingTags, mergeAdjacentTags } from './formatting_tags.js';
 import type { RelsMap } from './relationships.js';
+import { isReservedFootnote } from './footnotes.js';
 
 const SHORT_HEADER_MAX_LENGTH = 50;
 const MAX_HEADER_TEXT_LENGTH = 60;
@@ -417,6 +418,140 @@ function buildAnnotatedRuns(params: {
   return annotated;
 }
 
+// ── Footnote marker helpers (view-only) ─────────────────────────────
+
+/**
+ * Build a map from footnote ID → display number by scanning documentXml
+ * for w:footnoteReference elements in DOM order (skipping reserved IDs).
+ */
+function buildFootnoteDisplayMap(documentXml: Document, footnotesXml: Document | null): Map<number, number> {
+  const reservedIds = new Set<number>();
+  if (footnotesXml) {
+    const fnEls = footnotesXml.getElementsByTagNameNS(OOXML.W_NS, W.footnotes);
+    const container = fnEls.length > 0 ? fnEls.item(0) as Element : footnotesXml.documentElement;
+    const footnoteEls = container.getElementsByTagNameNS(OOXML.W_NS, W.footnote);
+    for (let i = 0; i < footnoteEls.length; i++) {
+      const el = footnoteEls.item(i) as Element;
+      if (isReservedFootnote(el)) {
+        const idStr = getWAttr(el, 'id');
+        if (idStr) reservedIds.add(parseInt(idStr, 10));
+      }
+    }
+  }
+
+  const refs = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference);
+  const map = new Map<number, number>();
+  let displayNum = 1;
+
+  for (let i = 0; i < refs.length; i++) {
+    const ref = refs.item(i) as Element;
+    const idStr = getWAttr(ref, 'id');
+    if (!idStr) continue;
+    const id = parseInt(idStr, 10);
+    if (reservedIds.has(id)) continue;
+    if (!map.has(id)) {
+      map.set(id, displayNum++);
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Compute footnote marker insertion points for a paragraph.
+ * Returns an array of { offset, marker } sorted by offset descending
+ * for safe right-to-left insertion into the text string.
+ *
+ * Self-contained: only inspects the paragraph DOM for w:footnoteReference
+ * elements. Does NOT modify getParagraphRuns or getParagraphText.
+ */
+function getFootnoteMarkersForParagraph(
+  p: Element,
+  displayMap: Map<number, number>,
+): Array<{ offset: number; marker: string }> {
+  if (displayMap.size === 0) return [];
+
+  // Walk through direct children (and hyperlink children) to find w:r elements
+  // and their visible text, tracking position. When we find a footnoteReference,
+  // record its position.
+  const markers: Array<{ offset: number; marker: string }> = [];
+  let visibleOffset = 0;
+
+  // We need to iterate runs in paragraph order. Use the same approach as getParagraphRuns
+  // but also detect footnoteReference elements.
+  const rElems = Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.r));
+
+  // Track field state to skip field codes (same as getParagraphRuns)
+  let fieldState = 0; // 0=outside, 1=in_code, 2=in_result
+
+  for (const r of rElems) {
+    let runVisibleLen = 0;
+    let hasFootnoteRef = false;
+    let footnoteId = -1;
+
+    for (const child of Array.from(r.childNodes)) {
+      if (child.nodeType !== 1) continue;
+      const el = child as Element;
+      if (el.namespaceURI !== OOXML.W_NS) continue;
+
+      if (el.localName === W.fldChar) {
+        const typ = getWAttr(el, 'fldCharType') ?? '';
+        if (typ === 'begin') fieldState = 1;
+        else if (typ === 'separate') fieldState = 2;
+        else if (typ === 'end') fieldState = 0;
+        continue;
+      }
+
+      if (fieldState === 1) continue; // skip field code
+
+      if (el.localName === W.t) {
+        runVisibleLen += (el.textContent ?? '').length;
+      } else if (el.localName === W.tab || el.localName === W.br) {
+        runVisibleLen += 1;
+      } else if (el.localName === W.footnoteReference) {
+        hasFootnoteRef = true;
+        const idStr = getWAttr(el, 'id');
+        if (idStr) footnoteId = parseInt(idStr, 10);
+      }
+    }
+
+    // The footnote reference position is at the end of this run's visible text
+    if (hasFootnoteRef && footnoteId >= 0) {
+      const displayNum = displayMap.get(footnoteId);
+      if (displayNum != null) {
+        markers.push({
+          offset: visibleOffset + runVisibleLen,
+          marker: `[^${displayNum}]`,
+        });
+      }
+    }
+
+    visibleOffset += runVisibleLen;
+  }
+
+  // Sort descending by offset for safe right-to-left insertion
+  markers.sort((a, b) => b.offset - a.offset);
+  return markers;
+}
+
+/**
+ * Inject footnote markers into a text string at the given offsets.
+ * Markers must be sorted descending by offset.
+ */
+function injectFootnoteMarkers(
+  text: string,
+  markers: Array<{ offset: number; marker: string }>,
+): string {
+  if (markers.length === 0) return text;
+  let result = text;
+  for (const { offset, marker } of markers) {
+    // Clamp offset to text length
+    const pos = Math.min(offset, result.length);
+    result = result.slice(0, pos) + marker + result.slice(pos);
+  }
+  return result;
+}
+
 export function buildNodesForDocumentView(params: {
   paragraphs: Array<{ id: string; p: Element }>;
   stylesXml: Document | null;
@@ -424,10 +559,17 @@ export function buildNodesForDocumentView(params: {
   include_semantic_tags?: boolean;
   show_formatting?: boolean;
   relsMap?: RelsMap;
+  documentXml?: Document;
+  footnotesXml?: Document | null;
 }): { nodes: DocumentViewNode[]; styles: DocumentStyles } {
   const { paragraphs, stylesXml, numberingXml, relsMap } = params;
   const includeSemantic = params.include_semantic_tags ?? true;
   const showFormatting = params.show_formatting ?? false;
+
+  // Build footnote display number map if documentXml is provided
+  const footnoteDisplayMap = params.documentXml
+    ? buildFootnoteDisplayMap(params.documentXml, params.footnotesXml ?? null)
+    : new Map<number, number>();
 
   const stylesModel = parseStylesXml(stylesXml);
   const numberingModel = parseNumberingXml(numberingXml);
@@ -664,6 +806,12 @@ export function buildNodesForDocumentView(params: {
       }
     } catch {
       bodyFmt = null;
+    }
+
+    // Inject footnote [^N] markers into view text (view-only, not shared text primitives)
+    const fnMarkers = getFootnoteMarkersForParagraph(p, footnoteDisplayMap);
+    if (fnMarkers.length > 0) {
+      tagged = injectFootnoteMarkers(tagged, fnMarkers);
     }
 
     nodes.push({

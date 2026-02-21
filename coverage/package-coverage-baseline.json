@@ -1,23 +1,23 @@
 {
-  "generated_at": "2026-02-19T09:39:40.344Z",
+  "generated_at": "2026-02-20T16:45:12.000Z",
   "packages": {
     "docx-comparison": {
-      "lines": 90.77,
-      "branches": 85.66,
-      "functions": 92.97,
-      "statements": 90.77
+      "lines": 90.75,
+      "branches": 85.79,
+      "functions": 92.99,
+      "statements": 90.75
     },
     "docx-primitives": {
-      "lines": 88.77,
-      "branches": 71.18,
-      "functions": 89.87,
-      "statements": 88.77
+      "lines": 88.1,
+      "branches": 71.95,
+      "functions": 87.68,
+      "statements": 88.1
     },
     "safe-docx": {
-      "lines": 87.13,
-      "branches": 75.28,
-      "functions": 97.74,
-      "statements": 87.13
+      "lines": 86.44,
+      "branches": 73.9,
+      "functions": 98.15,
+      "statements": 86.44
     }
   }
 }

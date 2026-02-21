@@ -18,5 +18,6 @@ export * from './accept_changes.js';
 export * from './reject_changes.js';
 export * from './extract_revisions.js';
 export * from './comments.js';
+export * from './footnotes.js';
 export * from './relationships.js';
 export * from './formatting_tags.js';

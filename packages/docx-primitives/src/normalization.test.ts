@@ -36,7 +36,7 @@ function countWrappers(doc: Document, localName: string): number {
   return doc.getElementsByTagNameNS(W_NS, localName).length;
 }
 
-describe('OpenSpec traceability: add-auto-normalization-on-open — Run Merging', () => {
+describe('Traceability: Auto-Normalization on Open — Run Merging', () => {
   it.openspec('merge adjacent runs with equivalent formatting')('Scenario: merge adjacent runs with equivalent formatting', async () => {
     const doc = makeDoc(
       '<w:p>' +
@@ -162,7 +162,7 @@ describe('OpenSpec traceability: add-auto-normalization-on-open — Run Merging'
   });
 });
 
-describe('OpenSpec traceability: add-auto-normalization-on-open — Redline Simplification', () => {
+describe('Traceability: Auto-Normalization on Open — Redline Simplification', () => {
   it.openspec('merge adjacent same-author same-type tracked-change wrappers')('Scenario: merge adjacent same-author same-type tracked-change wrappers', async () => {
     const doc = makeDoc(
       '<w:p>' +

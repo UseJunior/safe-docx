@@ -66,7 +66,7 @@ describe('DocxDocument', () => {
     expect(second.nodes).toBe(first.nodes);
 
     const paraId = first.nodes[0]!.id;
-    doc.smartEdit({
+    doc.replaceText({
       targetParagraphId: paraId,
       findText: 'Alpha',
       replaceText: 'Omega',
@@ -89,7 +89,7 @@ describe('DocxDocument', () => {
     const anchorId = base.nodes.find((n) => n.clean_text === 'Anchor')?.id;
     expect(anchorId).toBeTruthy();
 
-    const after = doc.smartInsert({
+    const after = doc.insertParagraph({
       positionalAnchorNodeId: anchorId!,
       relativePosition: 'AFTER',
       newText: 'After One\n\nAfter Two',
@@ -98,7 +98,7 @@ describe('DocxDocument', () => {
     expect(after.newParagraphIds[0]).toMatch(/^jr_para_[0-9a-f]{12}$/);
     expect(after.newParagraphIds[1]).toMatch(/^jr_para_[0-9a-f]{12}$/);
 
-    const before = doc.smartInsert({
+    const before = doc.insertParagraph({
       positionalAnchorNodeId: anchorId!,
       relativePosition: 'BEFORE',
       newText: 'Before One',

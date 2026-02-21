@@ -22,7 +22,7 @@ function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`);
 }
 
-describe('OpenSpec traceability: docx-primitives — OOXML Layout', () => {
+describe('Traceability: docx-primitives — OOXML Layout', () => {
   it.openspec('setParagraphSpacing creates missing pPr and spacing containers')('Scenario: setParagraphSpacing creates missing pPr and spacing containers', async () => {
     const doc = makeDoc('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>');
     insertParagraphBookmarks(doc, 'test-attachment');

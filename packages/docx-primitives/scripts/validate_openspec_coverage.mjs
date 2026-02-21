@@ -15,6 +15,10 @@ const CANONICAL_SPEC = path.join(REPO_ROOT, 'openspec', 'specs', 'docx-primitive
 const CHANGES_ROOT = path.join(REPO_ROOT, 'openspec', 'changes');
 const DEFAULT_MATRIX_PATH = path.join(TEST_ROOT, 'DOCX_PRIMITIVES_OPENSPEC_TRACEABILITY.md');
 
+function isTraceabilityTestFile(filePath) {
+  return filePath.endsWith('.test.ts');
+}
+
 /**
  * Requirements tested in the docx-comparison package, NOT in docx-primitives-ts.
  * These are excluded from coverage checks here.
@@ -291,7 +295,8 @@ function buildMatrixMarkdown({ canonicalScenarios, deltaFeatureScenarios, storyS
 function parseArgs() {
   const args = process.argv.slice(2);
   const features = [];
-  let writeMatrixPath = DEFAULT_MATRIX_PATH;
+  let writeMatrixPath = null;
+  let strict = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--feature') {
@@ -306,12 +311,18 @@ function parseArgs() {
       if (value && !value.startsWith('--')) {
         writeMatrixPath = path.resolve(process.cwd(), value);
         i += 1;
+      } else {
+        writeMatrixPath = DEFAULT_MATRIX_PATH;
       }
+      continue;
+    }
+    if (arg === '--strict') {
+      strict = true;
       continue;
     }
     throw new Error(`Unknown argument: ${arg}`);
   }
-  return { features, writeMatrixPath };
+  return { features, writeMatrixPath, strict };
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +330,7 @@ function parseArgs() {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { features: requestedFeatures, writeMatrixPath } = parseArgs();
+  const { features: requestedFeatures, writeMatrixPath, strict } = parseArgs();
 
   // 1. Read canonical spec
   let specContent;
@@ -359,10 +370,10 @@ async function main() {
     deltaFeatureScenarios.set(feature, scenarios);
   }
 
-  // 3. Read all allure test files (feature-aware) — search both test/ and src/
-  const allureTestFiles = [
-    ...(await listFilesRecursively(TEST_ROOT, (f) => f.endsWith('.allure.test.ts'))),
-    ...(await listFilesRecursively(SRC_ROOT, (f) => f.endsWith('.allure.test.ts'))),
+  // 3. Read all traceability test files (feature-aware) — search both test/ and src/
+  const traceabilityTestFiles = [
+    ...(await listFilesRecursively(TEST_ROOT, isTraceabilityTestFile)),
+    ...(await listFilesRecursively(SRC_ROOT, isTraceabilityTestFile)),
   ];
 
   const allStorySet = new Set();
@@ -370,7 +381,7 @@ async function main() {
   const allStoryToFiles = new Map();
   const testsByFeature = new Map();
 
-  for (const tf of allureTestFiles) {
+  for (const tf of traceabilityTestFiles) {
     const content = await fs.readFile(tf, 'utf-8');
     const relTestFile = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
     const featureId = parseFeatureIdFromTest(content, tf);
@@ -471,6 +482,7 @@ async function main() {
 
   // Per-feature delta reporting
   const featureReports = [];
+  let deltaFailures = 0;
   const activeFeatures = [...deltaFeatureScenarios.keys()].sort();
   if (activeFeatures.length > 0) {
     console.log('');
@@ -508,32 +520,43 @@ async function main() {
           : '';
         console.log(`PASS ${feature}: ${sortedScenarios.length} scenarios covered by ${featureStorySet.size} story mappings${extraSuffix}`);
       } else {
-        console.error(`WARN ${feature}: ${missing.length}/${sortedScenarios.length} delta scenarios missing`);
+        if (strict) {
+          deltaFailures += 1;
+          console.error(`FAIL ${feature}: ${missing.length}/${sortedScenarios.length} delta scenarios missing`);
+        } else {
+          console.error(`WARN ${feature}: ${missing.length}/${sortedScenarios.length} delta scenarios missing`);
+        }
         for (const s of missing) console.error(`  - ${s}`);
       }
     }
   }
 
-  // Write matrix
-  const matrix = buildMatrixMarkdown({
-    canonicalScenarios: sortedCanonical,
-    deltaFeatureScenarios,
-    storySet: allStorySet,
-    storyToFiles: allStoryToFiles,
-    skippedStorySet: allSkippedStorySet,
-    excludedScenarios,
-    featureReports,
-  });
-  await fs.mkdir(path.dirname(writeMatrixPath), { recursive: true });
-  await fs.writeFile(writeMatrixPath, matrix, 'utf-8');
-  console.log(`\nWrote traceability matrix: ${path.relative(REPO_ROOT, writeMatrixPath)}`);
+  if (writeMatrixPath) {
+    const matrix = buildMatrixMarkdown({
+      canonicalScenarios: sortedCanonical,
+      deltaFeatureScenarios,
+      storySet: allStorySet,
+      storyToFiles: allStoryToFiles,
+      skippedStorySet: allSkippedStorySet,
+      excludedScenarios,
+      featureReports,
+    });
+    await fs.mkdir(path.dirname(writeMatrixPath), { recursive: true });
+    await fs.writeFile(writeMatrixPath, matrix, 'utf-8');
+    console.log(`\nWrote traceability matrix: ${path.relative(REPO_ROOT, writeMatrixPath)}`);
+  }
 
   // Exit code: fail only for canonical spec gaps
-  if (canonicalMissing.length > 0) {
+  if (canonicalMissing.length > 0 || (strict && deltaFailures > 0)) {
     process.exitCode = 1;
-    console.error('\nFAIL: Canonical spec coverage gaps detected.');
+    if (canonicalMissing.length > 0) {
+      console.error('\nFAIL: Canonical spec coverage gaps detected.');
+    }
+    if (strict && deltaFailures > 0) {
+      console.error(`FAIL: ${deltaFailures} change delta(s) contain unmapped scenarios.`);
+    }
   } else {
-    console.log('\nPASS: All canonical scenarios covered.');
+    console.log('\nPASS: Canonical scenarios covered.');
   }
 }
 

@@ -6,7 +6,7 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
-describe('OpenSpec traceability: docx-primitives — List Label Extraction', () => {
+describe('Traceability: docx-primitives — List Label Extraction', () => {
   it.openspec('extract parenthesized letter labels')('Scenario: extract parenthesized letter labels', async () => {
     const text = '(a) First item of the agreement';
 

@@ -10,7 +10,7 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
-describe('OpenSpec traceability: docx-primitives — Semantic Tags', () => {
+describe('Traceability: docx-primitives — Semantic Tags', () => {
   it.openspec('emit definition tags for quoted term before definition verb')('Scenario: emit definition tags for quoted term before definition verb', async () => {
     const text = '"Company" means the entity described herein';
 

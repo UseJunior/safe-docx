@@ -6,7 +6,7 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
-describe('OpenSpec traceability: docx-primitives — Unique Substring Matching', () => {
+describe('Traceability: docx-primitives — Unique Substring Matching', () => {
   it.openspec('exact match found for literal substring')('Scenario: exact match found for literal substring', async () => {
     const haystack = 'The Purchase Price shall be paid at Closing.';
     const needle = 'Purchase Price';

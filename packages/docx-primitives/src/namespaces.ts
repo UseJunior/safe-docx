@@ -103,4 +103,12 @@ export const W = {
   commentRangeEnd: 'commentRangeEnd',
   commentReference: 'commentReference',
   annotationRef: 'annotationRef',
+
+  // Footnotes
+  footnote: 'footnote',
+  footnotes: 'footnotes',
+  footnoteReference: 'footnoteReference',
+  footnoteRef: 'footnoteRef',
+  separator: 'separator',
+  continuationSeparator: 'continuationSeparator',
 } as const;

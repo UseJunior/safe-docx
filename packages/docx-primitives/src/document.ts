@@ -38,6 +38,16 @@ import {
   type BootstrapResult,
   type Comment,
 } from './comments.js';
+import {
+  bootstrapFootnoteParts,
+  getFootnotes as getFootnotesImpl,
+  getFootnote as getFootnoteImpl,
+  addFootnote as addFootnoteImpl,
+  updateFootnoteText as updateFootnoteTextImpl,
+  deleteFootnote as deleteFootnoteImpl,
+  type Footnote,
+  type AddFootnoteResult,
+} from './footnotes.js';
 
 export type NormalizationResult = {
   runsMerged: number;
@@ -77,15 +87,17 @@ export class DocxDocument {
   private documentXml: Document;
   private stylesXml: Document | null;
   private numberingXml: Document | null;
+  private footnotesXml: Document | null;
   private relsMap: RelsMap;
   private dirty: boolean;
   private documentViewCache: { includeSemanticTags: boolean; showFormatting: boolean; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
 
-  private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, numberingXml: Document | null, relsMap: RelsMap) {
+  private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap) {
     this.zip = zip;
     this.documentXml = documentXml;
     this.stylesXml = stylesXml;
     this.numberingXml = numberingXml;
+    this.footnotesXml = footnotesXml;
     this.relsMap = relsMap;
     this.dirty = false;
     this.documentViewCache = null;
@@ -102,11 +114,15 @@ export class DocxDocument {
     const stylesXml = stylesText ? parseXml(stylesText) : null;
     const numberingXml = numberingText ? parseXml(numberingText) : null;
 
+    // Load footnotes for [^N] marker rendering in document view.
+    const footnotesText = await zip.readTextOrNull('word/footnotes.xml');
+    const footnotesXml = footnotesText ? parseXml(footnotesText) : null;
+
     // Load document relationships for hyperlink resolution.
     const relsText = await zip.readTextOrNull('word/_rels/document.xml.rels');
     const relsMap = relsText ? parseDocumentRels(parseXml(relsText)) : new Map<string, string>();
 
-    return new DocxDocument(zip, doc, stylesXml, numberingXml, relsMap);
+    return new DocxDocument(zip, doc, stylesXml, numberingXml, footnotesXml, relsMap);
   }
 
   getParagraphs(): Element[] {
@@ -237,6 +253,8 @@ export class DocxDocument {
       include_semantic_tags: includeSemanticTags,
       show_formatting: showFormatting,
       relsMap: this.relsMap,
+      documentXml: this.documentXml,
+      footnotesXml: this.footnotesXml,
     });
 
     this.documentViewCache = { includeSemanticTags, showFormatting, nodes, styles };
@@ -244,7 +262,7 @@ export class DocxDocument {
     return { nodes, styles };
   }
 
-  smartEdit(params: { targetParagraphId: string; findText: string; replaceText: string | ReplacementPart[] }): void {
+  replaceText(params: { targetParagraphId: string; findText: string; replaceText: string | ReplacementPart[] }): void {
     const { targetParagraphId, findText, replaceText } = params;
     const p = findParagraphByBookmarkId(this.documentXml, targetParagraphId);
     if (!p) throw new Error(`Paragraph not found: ${targetParagraphId}`);
@@ -263,7 +281,7 @@ export class DocxDocument {
     this.documentViewCache = null;
   }
 
-  smartInsert(params: {
+  insertParagraph(params: {
     positionalAnchorNodeId: string;
     relativePosition: 'BEFORE' | 'AFTER';
     newText: string;
@@ -497,6 +515,68 @@ export class DocxDocument {
 
   async getComment(commentId: number): Promise<Comment | null> {
     return getCommentImpl(this.zip, this.documentXml, commentId);
+  }
+
+  // ── Footnote methods ──────────────────────────────────────────────────
+
+  private async refreshFootnotesXml(): Promise<void> {
+    const text = await this.zip.readTextOrNull('word/footnotes.xml');
+    this.footnotesXml = text ? parseXml(text) : null;
+  }
+
+  async getFootnotes(): Promise<Footnote[]> {
+    return getFootnotesImpl(this.zip, this.documentXml);
+  }
+
+  async getFootnote(noteId: number): Promise<Footnote | null> {
+    return getFootnoteImpl(this.zip, this.documentXml, noteId);
+  }
+
+  /**
+   * Add a footnote anchored to a paragraph, optionally after specific text.
+   *
+   * Bootstraps footnote parts if missing (idempotent).
+   * Returns the allocated footnote ID.
+   */
+  async addFootnote(params: {
+    paragraphId: string;
+    afterText?: string;
+    text: string;
+  }): Promise<AddFootnoteResult> {
+    const p = findParagraphByBookmarkId(this.documentXml, params.paragraphId);
+    if (!p) throw new Error(`Paragraph not found: ${params.paragraphId}`);
+
+    await bootstrapFootnoteParts(this.zip);
+    const result = await addFootnoteImpl(this.documentXml, this.zip, {
+      paragraphEl: p,
+      afterText: params.afterText,
+      text: params.text,
+    });
+
+    await this.refreshFootnotesXml();
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
+  /**
+   * Update the text content of an existing footnote.
+   */
+  async updateFootnoteText(params: { noteId: number; newText: string }): Promise<void> {
+    await updateFootnoteTextImpl(this.zip, params);
+    await this.refreshFootnotesXml();
+    this.dirty = true;
+    this.documentViewCache = null;
+  }
+
+  /**
+   * Delete a footnote and its references from the document.
+   */
+  async deleteFootnote(params: { noteId: number }): Promise<void> {
+    await deleteFootnoteImpl(this.documentXml, this.zip, params);
+    await this.refreshFootnotesXml();
+    this.dirty = true;
+    this.documentViewCache = null;
   }
 
   /**

@@ -43,8 +43,8 @@ function createMockAtom(
 }
 
 describe('atomLcs Regression Tests (Allure)', () => {
-  describe('BUG-001: MovedSource paragraph index lookup', () => {
-    it('MovedSource atoms should use originalToOutputPara for paragraph index assignment', async () => {
+  describe('MovedSource paragraph index lookup', () => {
+    it('assigns MovedSource atoms using original paragraph mapping (allure)', async () => {
       // Allure metadata
       await allure.epic('Document Comparison');
       await allure.feature('Atom LCS Algorithm');

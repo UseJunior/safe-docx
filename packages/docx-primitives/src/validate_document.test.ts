@@ -161,6 +161,26 @@ describe('validate_document', () => {
       );
       expect(tcWarnings).toHaveLength(0);
     });
+
+    it('accepts well-formed moveFrom/moveTo wrappers', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+        '<w:moveFrom w:id="10" w:author="Alice" w:date="2025-01-01T00:00:00Z">' +
+        '<w:r><w:t>Old</w:t></w:r>' +
+        '</w:moveFrom>' +
+        '<w:moveTo w:id="11" w:author="Alice" w:date="2025-01-01T00:00:00Z">' +
+        '<w:r><w:t>New</w:t></w:r>' +
+        '</w:moveTo>' +
+        '</w:p>',
+      );
+
+      const result = validateDocument(doc);
+
+      const tcWarnings = result.warnings.filter(
+        w => w.code === 'MALFORMED_TRACKED_CHANGE' || w.code === 'EMPTY_TRACKED_CHANGE',
+      );
+      expect(tcWarnings).toHaveLength(0);
+    });
   });
 
   describe('field marker balance', () => {

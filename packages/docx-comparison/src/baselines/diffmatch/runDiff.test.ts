@@ -35,7 +35,7 @@ describe('runDiff helpers', () => {
       text: 'abcdef',
       start: 10,
       end: 16,
-      properties: { bold: true, font: 'Calibri' },
+      properties: { bold: true, fontFamily: 'Calibri' },
     };
     const [left, right] = splitRun(run, 2);
 
@@ -43,13 +43,13 @@ describe('runDiff helpers', () => {
       text: 'ab',
       start: 10,
       end: 12,
-      properties: { bold: true, font: 'Calibri' },
+      properties: { bold: true, fontFamily: 'Calibri' },
     });
     expect(right).toEqual({
       text: 'cdef',
       start: 12,
       end: 16,
-      properties: { bold: true, font: 'Calibri' },
+      properties: { bold: true, fontFamily: 'Calibri' },
     });
   });
 
@@ -75,7 +75,7 @@ describe('runDiff helpers', () => {
     ];
     const revisedRuns: RunInfo[] = [
       { text: 'Alpha ', start: 0, end: 6, properties: { italic: true } },
-      { text: 'epsilon', start: 6, end: 13, properties: { underline: true } },
+      { text: 'epsilon', start: 6, end: 13, properties: { underline: 'single' } },
     ];
 
     const result = diffRuns(originalRuns, revisedRuns);

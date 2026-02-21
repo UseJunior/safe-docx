@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { itAllure } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
@@ -11,6 +11,7 @@ function countParagraphs(xml: string): number {
 }
 
 describe('Paragraph-Level Track Changes Markers (Aspose-Style)', () => {
+  const it = itAllure.epic('DOCX Comparison').withLabels({ feature: 'Paragraph-level markers' });
   const projectRoot = join(dirname(import.meta.url.replace('file://', '')), '../../../..');
 
   it('encodes inserted/deleted paragraphs with pPr-level marker and rejects without stubs', async () => {

@@ -1,6 +1,5 @@
 import { describe, expect } from 'vitest';
 import { itAllure as it } from '../test/helpers/allure-test.js';
-import * as allure from 'allure-js-commons';
 import JSZip from 'jszip';
 import { parseXml, serializeXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
@@ -10,6 +9,7 @@ import { bootstrapCommentParts, addComment, addCommentReply, getComments, getCom
 
 const W_NS = OOXML.W_NS;
 const W15_NS = OOXML.W15_NS;
+declare const allure: any;
 
 function makeDocXml(bodyXml: string): string {
   return (

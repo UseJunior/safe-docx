@@ -7,53 +7,51 @@
 
 | Scenario | Status | Allure Test Files | Notes |
 |---|---|---|---|
-| accept deletions by removing w:del elements and content | missing | n/a | No Allure story mapping found |
-| accept insertions by unwrapping w:ins wrappers | missing | n/a | No Allure story mapping found |
-| accept moves by keeping destination and removing source | missing | n/a | No Allure story mapping found |
-| accept property changes by removing change records | missing | n/a | No Allure story mapping found |
-| bottom-up processing resolves nested revisions | missing | n/a | No Allure story mapping found |
-| canonical OpenSpec capability is present | missing | n/a | No Allure story mapping found |
-| canonical package identity is declared | missing | n/a | No Allure story mapping found |
-| emit definition tags for quoted term before definition verb | covered | `src/semantic_tags.allure.test.ts` |  |
-| emit definition tags for smart/curly quotes | covered | `src/semantic_tags.allure.test.ts` |  |
-| exact match found for literal substring | covered | `src/matching.allure.test.ts` |  |
-| exact mode preferred over quote_normalized when both match | covered | `src/matching.allure.test.ts` |  |
-| extract article labels with roman numeral support | covered | `src/list_labels.allure.test.ts` |  |
-| extract multi-char roman numeral labels | covered | `src/list_labels.allure.test.ts` |  |
-| extract numbered heading labels | covered | `src/list_labels.allure.test.ts` |  |
-| extract parenthesized letter labels | covered | `src/list_labels.allure.test.ts` |  |
-| extract section labels with sub-paragraph support | covered | `src/list_labels.allure.test.ts` |  |
-| flexible_whitespace matches across spacing variance | covered | `src/matching.allure.test.ts` |  |
-| getParagraphBookmarkId retrieves minted ID | covered | `src/bookmarks.allure.test.ts` |  |
-| insertParagraphBookmarks mints IDs matching expected pattern | covered | `src/bookmarks.allure.test.ts` |  |
-| merge adjacent runs with equivalent formatting | covered | `src/normalization.allure.test.ts` |  |
-| merge adjacent same-author same-type tracked-change wrappers | covered | `src/normalization.allure.test.ts` |  |
-| multiple when needle appears more than once | covered | `src/matching.allure.test.ts` |  |
-| namespaced XML preserved through round-trip | covered | `src/xml.allure.test.ts` |  |
-| never merge across bookmark boundaries | covered | `src/normalization.allure.test.ts` |  |
-| never merge across comment range boundaries | covered | `src/normalization.allure.test.ts` |  |
-| never merge across different change types | covered | `src/normalization.allure.test.ts` |  |
-| never merge across field boundaries | covered | `src/normalization.allure.test.ts` |  |
-| never merge across tracked-change wrapper boundaries | covered | `src/normalization.allure.test.ts` |  |
-| never merge wrappers from different authors | covered | `src/normalization.allure.test.ts` |  |
-| no tags emitted for text without definitions | covered | `src/semantic_tags.allure.test.ts` |  |
-| not_found for empty needle | covered | `src/matching.allure.test.ts` |  |
-| not_found when needle is absent | covered | `src/matching.allure.test.ts` |  |
-| null label for plain text without list patterns | covered | `src/list_labels.allure.test.ts` |  |
-| orphaned moves handled with safe fallback | missing | n/a | No Allure story mapping found |
-| parse and serialize preserves element structure | covered | `src/xml.allure.test.ts` |  |
-| quote_normalized matches curly quotes against straight quotes | covered | `src/matching.allure.test.ts` |  |
-| quote_optional matches quoted and unquoted term references | covered | `src/matching.allure.test.ts` |  |
-| setParagraphSpacing creates missing pPr and spacing containers | covered | `src/layout.allure.test.ts` |  |
-| setParagraphSpacing preserves unrelated formatting nodes | covered | `src/layout.allure.test.ts` |  |
-| setTableCellPadding creates tcPr and tcMar containers | covered | `src/layout.allure.test.ts` |  |
-| setTableRowHeight reports missing indexes | covered | `src/layout.allure.test.ts` |  |
-| single-char roman-like letters classified as LETTER not ROMAN | covered | `src/list_labels.allure.test.ts` |  |
-| strip definition tags replaces with quotes | covered | `src/semantic_tags.allure.test.ts` |  |
-| strip highlight tags leaves content intact | covered | `src/semantic_tags.allure.test.ts` |  |
-| stripListLabel removes label and leading whitespace | covered | `src/list_labels.allure.test.ts` |  |
-| textContent returns concatenated text of nested elements | covered | `src/xml.allure.test.ts` |  |
-| textContent returns empty string for null or undefined input | covered | `src/xml.allure.test.ts` |  |
+| accept deletions by removing w:del elements and content | covered | `src/accept_changes.test.ts` |  |
+| accept insertions by unwrapping w:ins wrappers | covered | `src/accept_changes.test.ts` |  |
+| accept moves by keeping destination and removing source | covered | `src/accept_changes.test.ts` |  |
+| accept property changes by removing change records | covered | `src/accept_changes.test.ts` |  |
+| bottom-up processing resolves nested revisions | covered | `src/accept_changes.test.ts` |  |
+| emit definition tags for quoted term before definition verb | covered | `src/semantic_tags.traceability.test.ts` |  |
+| emit definition tags for smart/curly quotes | covered | `src/semantic_tags.traceability.test.ts` |  |
+| exact match found for literal substring | covered | `src/matching.traceability.test.ts` |  |
+| exact mode preferred over quote_normalized when both match | covered | `src/matching.traceability.test.ts` |  |
+| extract article labels with roman numeral support | covered | `src/list_labels.traceability.test.ts` |  |
+| extract multi-char roman numeral labels | covered | `src/list_labels.traceability.test.ts` |  |
+| extract numbered heading labels | covered | `src/list_labels.traceability.test.ts` |  |
+| extract parenthesized letter labels | covered | `src/list_labels.traceability.test.ts` |  |
+| extract section labels with sub-paragraph support | covered | `src/list_labels.traceability.test.ts` |  |
+| flexible_whitespace matches across spacing variance | covered | `src/matching.traceability.test.ts` |  |
+| getParagraphBookmarkId retrieves minted ID | covered | `src/bookmarks.test.ts` |  |
+| insertParagraphBookmarks mints IDs matching expected pattern | covered | `src/bookmarks.test.ts` |  |
+| merge adjacent runs with equivalent formatting | covered | `src/normalization.test.ts` |  |
+| merge adjacent same-author same-type tracked-change wrappers | covered | `src/normalization.test.ts` |  |
+| multiple when needle appears more than once | covered | `src/matching.traceability.test.ts` |  |
+| namespaced XML preserved through round-trip | covered | `src/xml.traceability.test.ts` |  |
+| never merge across bookmark boundaries | covered | `src/normalization.test.ts` |  |
+| never merge across comment range boundaries | covered | `src/normalization.test.ts` |  |
+| never merge across different change types | covered | `src/normalization.test.ts` |  |
+| never merge across field boundaries | covered | `src/normalization.test.ts` |  |
+| never merge across tracked-change wrapper boundaries | covered | `src/normalization.test.ts` |  |
+| never merge wrappers from different authors | covered | `src/normalization.test.ts` |  |
+| no tags emitted for text without definitions | covered | `src/semantic_tags.traceability.test.ts` |  |
+| not_found for empty needle | covered | `src/matching.traceability.test.ts` |  |
+| not_found when needle is absent | covered | `src/matching.traceability.test.ts` |  |
+| null label for plain text without list patterns | covered | `src/list_labels.traceability.test.ts` |  |
+| orphaned moves handled with safe fallback | covered | `src/accept_changes.test.ts` |  |
+| parse and serialize preserves element structure | covered | `src/xml.traceability.test.ts` |  |
+| quote_normalized matches curly quotes against straight quotes | covered | `src/matching.traceability.test.ts` |  |
+| quote_optional matches quoted and unquoted term references | covered | `src/matching.traceability.test.ts` |  |
+| setParagraphSpacing creates missing pPr and spacing containers | covered | `src/layout.traceability.test.ts` |  |
+| setParagraphSpacing preserves unrelated formatting nodes | covered | `src/layout.traceability.test.ts` |  |
+| setTableCellPadding creates tcPr and tcMar containers | covered | `src/layout.traceability.test.ts` |  |
+| setTableRowHeight reports missing indexes | covered | `src/layout.traceability.test.ts` |  |
+| single-char roman-like letters classified as LETTER not ROMAN | covered | `src/list_labels.traceability.test.ts` |  |
+| strip definition tags replaces with quotes | covered | `src/semantic_tags.traceability.test.ts` |  |
+| strip highlight tags leaves content intact | covered | `src/semantic_tags.traceability.test.ts` |  |
+| stripListLabel removes label and leading whitespace | covered | `src/list_labels.traceability.test.ts` |  |
+| textContent returns concatenated text of nested elements | covered | `src/xml.traceability.test.ts` |  |
+| textContent returns empty string for null or undefined input | covered | `src/xml.traceability.test.ts` |  |
 
 ### Excluded (tested in docx-comparison)
 
@@ -69,42 +67,58 @@
 
 | Scenario | Status | Allure Test Files | Notes |
 |---|---|---|---|
-| accept deletions by removing w:del elements and content | missing | n/a | No Allure story mapping found |
-| accept insertions by unwrapping w:ins wrappers | missing | n/a | No Allure story mapping found |
-| accept moves by keeping destination and removing source | missing | n/a | No Allure story mapping found |
-| accept property changes by removing change records | missing | n/a | No Allure story mapping found |
-| bottom-up processing resolves nested revisions | missing | n/a | No Allure story mapping found |
-| orphaned moves handled with safe fallback | missing | n/a | No Allure story mapping found |
+| accept deletions by removing w:del elements and content | covered | `src/accept_changes.test.ts` |  |
+| accept insertions by unwrapping w:ins wrappers | covered | `src/accept_changes.test.ts` |  |
+| accept moves by keeping destination and removing source | covered | `src/accept_changes.test.ts` |  |
+| accept property changes by removing change records | covered | `src/accept_changes.test.ts` |  |
+| bottom-up processing resolves nested revisions | covered | `src/accept_changes.test.ts` |  |
+| orphaned moves handled with safe fallback | covered | `src/accept_changes.test.ts` |  |
 
 ### Change: `add-auto-normalization-on-open`
 
 | Scenario | Status | Allure Test Files | Notes |
 |---|---|---|---|
-| merge adjacent runs with equivalent formatting | covered | `src/normalization.allure.test.ts` |  |
-| merge adjacent same-author same-type tracked-change wrappers | covered | `src/normalization.allure.test.ts` |  |
-| never merge across bookmark boundaries | covered | `src/normalization.allure.test.ts` |  |
-| never merge across comment range boundaries | covered | `src/normalization.allure.test.ts` |  |
-| never merge across different change types | covered | `src/normalization.allure.test.ts` |  |
-| never merge across field boundaries | covered | `src/normalization.allure.test.ts` |  |
-| never merge across tracked-change wrapper boundaries | covered | `src/normalization.allure.test.ts` |  |
-| never merge wrappers from different authors | covered | `src/normalization.allure.test.ts` |  |
+| merge adjacent runs with equivalent formatting | covered | `src/normalization.test.ts` |  |
+| merge adjacent same-author same-type tracked-change wrappers | covered | `src/normalization.test.ts` |  |
+| never merge across bookmark boundaries | covered | `src/normalization.test.ts` |  |
+| never merge across comment range boundaries | covered | `src/normalization.test.ts` |  |
+| never merge across different change types | covered | `src/normalization.test.ts` |  |
+| never merge across field boundaries | covered | `src/normalization.test.ts` |  |
+| never merge across tracked-change wrapper boundaries | covered | `src/normalization.test.ts` |  |
+| never merge wrappers from different authors | covered | `src/normalization.test.ts` |  |
+
+### Change: `add-footnote-support`
+
+| Scenario | Status | Allure Test Files | Notes |
+|---|---|---|---|
+| ID allocation skips reserved entries by type | covered | `src/footnotes.test.ts` |  |
+| add footnote after specific text with mid-run split | covered | `src/footnotes.test.ts` |  |
+| add footnote at end of paragraph | covered | `src/footnotes.test.ts` |  |
+| anchored paragraph IDs resolved | covered | `src/footnotes.test.ts` |  |
+| bootstrap creates footnotes.xml when missing | covered | `src/footnotes.test.ts` |  |
+| bootstrap is idempotent | covered | `src/footnotes.test.ts` |  |
+| bootstrap preserves existing reserved entries | covered | `src/footnotes.test.ts` |  |
+| delete refuses reserved type entries | covered | `src/footnotes.test.ts` |  |
+| delete removes dedicated reference run | covered | `src/footnotes.test.ts` |  |
+| delete removes footnoteReference from mixed run without losing text | covered | `src/footnotes.test.ts` |  |
+| display numbers follow document order | covered | `src/footnotes.test.ts` |  |
+| footnote body includes Word-compatible skeleton | covered | `src/footnotes.test.ts` |  |
+| mixed-run references handled | covered | `src/footnotes.test.ts` |  |
+| read footnotes from document with multiple footnotes | covered | `src/footnotes.test.ts` |  |
+| read from empty document returns empty array | covered | `src/footnotes.test.ts` |  |
+| round-trip preserves footnotes | covered | `src/footnotes.test.ts` |  |
+| update changes text content | covered | `src/footnotes.test.ts` |  |
+| update preserves other footnotes | covered | `src/footnotes.test.ts` |  |
 
 ### Change: `add-run-level-formatting-visibility`
 
 | Scenario | Status | Allure Test Files | Notes |
 |---|---|---|---|
-| char-weighted modal baseline selects dominant formatting tuple | missing | n/a | No Allure story mapping found |
-| detect hyperlink runs and extract href | missing | n/a | No Allure story mapping found |
-| extract bold, italic, underline, highlighting tuple per run | missing | n/a | No Allure story mapping found |
-| suppression disabled when baseline coverage below 60% | missing | n/a | No Allure story mapping found |
-| tags nested in consistent order | missing | n/a | No Allure story mapping found |
-| tie-break by earliest run when modal weights are equal | missing | n/a | No Allure story mapping found |
-
-### Change: `add-safe-docx-suite-migration`
-
-| Scenario | Status | Allure Test Files | Notes |
-|---|---|---|---|
-| canonical OpenSpec capability is present | missing | n/a | No Allure story mapping found |
-| canonical package identity is declared | missing | n/a | No Allure story mapping found |
+| char-weighted modal baseline selects dominant formatting tuple | covered | `src/document_view_formatting.test.ts` |  |
+| detect hyperlink runs and extract href | covered | `src/document_view_formatting.test.ts` |  |
+| extract bold, italic, underline, highlighting tuple per run | covered | `src/document_view_formatting.test.ts` |  |
+| suppression disabled when baseline coverage below 60% | covered | `src/document_view_formatting.test.ts` |  |
+| tags nested in consistent order | covered | `src/document_view_formatting.test.ts` |  |
+| tie-break by earliest run when modal weights are equal | covered | `src/document_view_formatting.test.ts` |  |
 
 

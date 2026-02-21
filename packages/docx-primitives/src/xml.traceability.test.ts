@@ -6,7 +6,7 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
-describe('OpenSpec traceability: docx-primitives — XML Round-Trip', () => {
+describe('Traceability: docx-primitives — XML Round-Trip', () => {
   it.openspec('parse and serialize preserves element structure')('Scenario: parse and serialize preserves element structure', async () => {
     const input = '<root><child attr="val">hello</child><sibling/></root>';
 

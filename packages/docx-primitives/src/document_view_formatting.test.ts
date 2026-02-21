@@ -1,8 +1,12 @@
 import { describe, expect } from 'vitest';
-import { testAllure as test } from '../test/helpers/allure-test.js';
+import { testAllure } from '../test/helpers/allure-test.js';
 import { buildNodesForDocumentView, renderToon } from './document_view.js';
 import { parseXml } from './xml.js';
 import type { RelsMap } from './relationships.js';
+import { computeModalBaseline, type AnnotatedRun } from './formatting_tags.js';
+
+const TEST_FEATURE = 'add-run-level-formatting-visibility';
+const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -58,27 +62,33 @@ describe('document_view formatting tags', () => {
     }
   });
 
-  test('mixed bold/normal paragraph emits <b> tags on bold run', () => {
-    const bodyXml =
-      `<w:p>` +
-      `<w:r><w:t>Normal text </w:t></w:r>` +
-      `<w:r><w:rPr><w:b/></w:rPr><w:t>bold clause</w:t></w:r>` +
-      `<w:r><w:t> end.</w:t></w:r>` +
-      `</w:p>`;
-    const paragraphs = makeParagraphs(bodyXml);
-    const { nodes } = buildNodesForDocumentView({
-      paragraphs,
-      stylesXml: null,
-      numberingXml: null,
-      show_formatting: true,
-      include_semantic_tags: true,
-    });
+  test.openspec('extract bold, italic, underline, highlighting tuple per run')(
+    'extract bold, italic, underline, highlighting tuple per run',
+    () => {
+      const bodyXml =
+        `<w:p>` +
+        `<w:r><w:rPr><w:b/></w:rPr><w:t>BBBBBBBBBBBBBBBBBBBB</w:t></w:r>` +
+        `<w:r><w:rPr><w:i/></w:rPr><w:t>IIIIIIIIIIIIIIIIIIII</w:t></w:r>` +
+        `<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>UUUUUUUUUUUUUUUUUUUU</w:t></w:r>` +
+        `<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>HHHHHHHHHHHHHHHHHHHH</w:t></w:r>` +
+        `<w:r><w:t>PPPPPPPPPPPPPPPPPPPP</w:t></w:r>` +
+        `</w:p>`;
+      const paragraphs = makeParagraphs(bodyXml);
+      const { nodes } = buildNodesForDocumentView({
+        paragraphs,
+        stylesXml: null,
+        numberingXml: null,
+        show_formatting: true,
+        include_semantic_tags: true,
+      });
 
-    expect(nodes.length).toBe(1);
-    expect(nodes[0]!.tagged_text).toContain('<b>bold clause</b>');
-    expect(nodes[0]!.tagged_text).toContain('Normal text ');
-    expect(nodes[0]!.tagged_text).toContain(' end.');
-  });
+      expect(nodes.length).toBe(1);
+      expect(nodes[0]!.tagged_text).toContain('<b>BBBBBBBBBBBBBBBBBBBB</b>');
+      expect(nodes[0]!.tagged_text).toContain('<i>IIIIIIIIIIIIIIIIIIII</i>');
+      expect(nodes[0]!.tagged_text).toContain('<u>UUUUUUUUUUUUUUUUUUUU</u>');
+      expect(nodes[0]!.tagged_text).toContain('<highlighting>HHHHHHHHHHHHHHHHHHHH</highlighting>');
+    },
+  );
 
   test('uniform formatting paragraph suppresses tags (all bold)', () => {
     const bodyXml =
@@ -100,28 +110,87 @@ describe('document_view formatting tags', () => {
     expect(nodes[0]!.tagged_text).not.toContain('</b>');
   });
 
-  test('paragraph with hyperlinks emits <a> tags', () => {
-    const relsMap: RelsMap = new Map([['rId1', 'https://example.com']]);
-    const bodyXml =
-      `<w:p>` +
-      `<w:r><w:t>Click </w:t></w:r>` +
-      `<w:hyperlink r:id="rId1"><w:r><w:t>here</w:t></w:r></w:hyperlink>` +
-      `<w:r><w:t> for details.</w:t></w:r>` +
-      `</w:p>`;
-    const paragraphs = makeParagraphs(bodyXml);
-    const { nodes } = buildNodesForDocumentView({
-      paragraphs,
-      stylesXml: null,
-      numberingXml: null,
-      show_formatting: true,
-      include_semantic_tags: true,
-      relsMap,
-    });
+  test.openspec('char-weighted modal baseline selects dominant formatting tuple')(
+    'char-weighted modal baseline selects dominant formatting tuple',
+    () => {
+      const runs: AnnotatedRun[] = [
+        {
+          text: 'AAAAAAAAAA',
+          formatting: { bold: true, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
+          hyperlinkUrl: null,
+          charCount: 10,
+          isHeaderRun: false,
+        },
+        {
+          text: 'BBBB',
+          formatting: { bold: false, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
+          hyperlinkUrl: null,
+          charCount: 4,
+          isHeaderRun: false,
+        },
+      ];
 
-    expect(nodes.length).toBe(1);
-    expect(nodes[0]!.tagged_text).toContain('<a href="https://example.com">here</a>');
-    expect(nodes[0]!.tagged_text).toContain('Click ');
-  });
+      const baseline = computeModalBaseline(runs);
+
+      expect(baseline.bold).toBe(true);
+      expect(baseline.italic).toBe(false);
+      expect(baseline.underline).toBe(false);
+      expect(baseline.suppressed).toBe(true);
+    },
+  );
+
+  test.openspec('tie-break by earliest run when modal weights are equal')(
+    'tie-break by earliest run when modal weights are equal',
+    () => {
+      const runs: AnnotatedRun[] = [
+        {
+          text: 'AAAAAA',
+          formatting: { bold: true, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
+          hyperlinkUrl: null,
+          charCount: 6,
+          isHeaderRun: false,
+        },
+        {
+          text: 'BBBBBB',
+          formatting: { bold: false, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
+          hyperlinkUrl: null,
+          charCount: 6,
+          isHeaderRun: false,
+        },
+      ];
+
+      const baseline = computeModalBaseline(runs);
+
+      expect(baseline.bold).toBe(true);
+      expect(baseline.suppressed).toBe(false);
+    },
+  );
+
+  test.openspec('detect hyperlink runs and extract href')(
+    'detect hyperlink runs and extract href',
+    () => {
+      const relsMap: RelsMap = new Map([['rId1', 'https://example.com']]);
+      const bodyXml =
+        `<w:p>` +
+        `<w:r><w:t>Click </w:t></w:r>` +
+        `<w:hyperlink r:id="rId1"><w:r><w:t>here</w:t></w:r></w:hyperlink>` +
+        `<w:r><w:t> for details.</w:t></w:r>` +
+        `</w:p>`;
+      const paragraphs = makeParagraphs(bodyXml);
+      const { nodes } = buildNodesForDocumentView({
+        paragraphs,
+        stylesXml: null,
+        numberingXml: null,
+        show_formatting: true,
+        include_semantic_tags: true,
+        relsMap,
+      });
+
+      expect(nodes.length).toBe(1);
+      expect(nodes[0]!.tagged_text).toContain('<a href="https://example.com">here</a>');
+      expect(nodes[0]!.tagged_text).toContain('Click ');
+    },
+  );
 
   test('run-in header prefix is emitted plain (no formatting tags)', () => {
     // Bold header followed by normal body.
@@ -217,7 +286,9 @@ describe('document_view formatting tags', () => {
     expect(nodes[0]!.tagged_text).toContain('<highlighting>highlighted</highlighting>');
   });
 
-  test('60% threshold boundary: 59% does NOT suppress, 61% DOES suppress', () => {
+  test.openspec('suppression disabled when baseline coverage below 60%')(
+    'suppression disabled when baseline coverage below 60%',
+    () => {
     // 59 chars plain + 41 chars bold = 59% plain = suppressed=false (because 59 < 60 threshold)
     // Actually 59% IS < 60%, so suppressed should be false.
     const plain59 = 'A'.repeat(59);
@@ -262,9 +333,12 @@ describe('document_view formatting tags', () => {
     expect(nodes61[0]!.tagged_text).toContain(`<b>${bold39}</b>`);
     // The plain portion should NOT be tagged.
     expect(nodes61[0]!.tagged_text).not.toMatch(new RegExp(`<b>${plain61}`));
-  });
+    },
+  );
 
-  test('italic + underline mixed formatting emits correct nested tags', () => {
+  test.openspec('tags nested in consistent order')(
+    'tags nested in consistent order',
+    () => {
     const bodyXml =
       `<w:p>` +
       `<w:r><w:t>Start text for baseline padding longer text. </w:t></w:r>` +
@@ -283,5 +357,6 @@ describe('document_view formatting tags', () => {
     expect(nodes.length).toBe(1);
     // Nesting order: <a> → <b> → <i> → <u> → <highlighting>
     expect(nodes[0]!.tagged_text).toContain('<i><u>styled</u></i>');
-  });
+    },
+  );
 });
