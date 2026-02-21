@@ -14,13 +14,6 @@ npm run test:run
 npm run check:spec-coverage
 ```
 
-## Before Opening a PR
-
-1. Run build, lint, and tests locally.
-2. Keep OpenSpec traceability checks green.
-3. Keep package coverage from regressing.
-4. Update docs/specs when behavior changes.
-
 ## Repository Layout
 
 - `packages/docx-primitives`: OOXML primitives and invariants.
@@ -30,11 +23,69 @@ npm run check:spec-coverage
 - `packages/safe-docx-mcpb`: private MCP bundle wrapper.
 - `openspec/`: specs and change deltas.
 
-## Commit and PR Guidance
+## Branch Naming
 
-- Prefer focused PRs with one concern per change.
+Create a branch for every change — never commit directly to `main`.
+
+- **Issue branches**: `{issue}-{description}-{YYYYMMDD}`
+  - Example: `42-add-redline-support-20260221`
+  - The date suffix is recommended (helps sort stale branches) but not required
+- **Tweak branches**: `tweak-{description}` for changes too small to warrant an issue
+  - Example: `tweak-fix-typo-in-readme`
+
+## Conventional Commits
+
+We use [Conventional Commits](https://www.conventionalcommits.org/) for clear, machine-readable history.
+
+**Format:**
+```
+type(scope): imperative subject
+
+Body explaining WHY this change was made, not just what changed.
+Context, trade-offs, and alternatives considered are all welcome here.
+Longer is better — think essay, not tweet.
+
+Fixes: #42
+```
+
+**Valid types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`, `style`
+
+**Scopes** should match the package or area you're changing — this is a monorepo with 5 packages:
+- `fix(docx-primitives):` — bug fix in the primitives package
+- `feat(safe-docx):` — new feature in the MCP server
+- `refactor(docx-comparison):` — refactoring the comparison engine
+- `docs(contributing):` — documentation updates
+- `chore(ci):` — CI/CD changes
+
+Scope your commits to one package when possible. Cross-package changes should use the primary package as scope.
+
+**Reference issues** in the commit body: `Fixes: #N` (closes the issue) or `Ref: #N` (related but doesn't close).
+
+## Pull Request Guidelines
+
+- **Keep PRs small and focused.** 10 small PRs are better than 1 monolithic one.
+- **A PR doesn't have to be done** — or even work — but it should represent clean progress in one direction.
+- **Decompose where possible.** For example, submit regexes + tests in one PR, then the feature that uses them in another.
+- **Include screenshots or gifs** for any PR that touches something visual (diff output, formatting changes, etc.).
 - Include test evidence for behavior changes.
 - For new capabilities or behavior shifts, include an OpenSpec change.
+
+## Code Review Etiquette
+
+- **Before your first review:** interactive rebase to clean up history is fine and encouraged.
+- **After review begins:** do NOT force push. Reviewers need to see incremental changes on top of what they already reviewed.
+- **After review completes:** squash merge or rebase to produce a clean history on `main`.
+
+## Before Opening a PR
+
+1. **Build**: `npm run build` passes
+2. **Lint**: `npm run lint:workspaces` passes
+3. **Test**: `npm run test:run` passes
+4. **Spec coverage**: `npm run check:spec-coverage` passes
+5. Keep OpenSpec traceability checks green
+6. Update docs/specs when behavior changes
+
+All checks must pass locally before pushing.
 
 ## License
 

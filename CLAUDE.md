@@ -16,3 +16,7 @@ Use `@/openspec/AGENTS.md` to learn:
 Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
+
+## Workflow Conventions
+
+Follow all branching, commit, and PR conventions documented in [AGENTS.md](AGENTS.md). These are MANDATORY for AI agents.

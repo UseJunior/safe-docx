@@ -17,6 +17,30 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
+## Workflow Conventions
+
+Follow all conventions in [CONTRIBUTING.md](CONTRIBUTING.md). The rules below are **mandatory** for AI agents:
+
+### Branch Naming
+- ALWAYS create a branch before committing. Never commit directly to `main`.
+- Issue work: `{issue}-{short-description}-{YYYYMMDD}` (e.g., `42-add-redline-support-20260221`)
+- Minor fixes: `tweak-{description}` (e.g., `tweak-fix-typo-in-readme`)
+
+### Commits
+- Use conventional commit format: `type(scope): imperative description`
+- Valid types: feat, fix, refactor, test, docs, chore, ci, perf, style
+- Scope to the package: `feat(docx-primitives):`, `fix(safe-docx):`, `refactor(docx-comparison):`
+- Body MUST explain WHY, not just what. Longer is better.
+- Reference the issue: `Fixes: #N` or `Ref: #N`
+
+### Pull Requests
+- Keep PRs small and focused — one concern per PR.
+- NEVER force push after a review has started.
+- Include screenshots for any visual changes.
+
+### Pre-submit
+- All CI checks must pass locally before pushing: `npm run build && npm run lint:workspaces && npm run test:run && npm run check:spec-coverage`
+
 ## Skills
 
 A skill is a set of local instructions stored in a `SKILL.md` file.
