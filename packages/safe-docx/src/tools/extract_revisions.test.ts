@@ -57,8 +57,10 @@ type ExtractRevisionsSuccess = Awaited<ReturnType<typeof extractRevisions_tool>>
 };
 
 function asExtractRevisionsSuccess(
-  result: Awaited<ReturnType<typeof extractRevisions_tool>> & { success: true },
+  result: Awaited<ReturnType<typeof extractRevisions_tool>>,
+  label = 'extract_revisions',
 ): ExtractRevisionsSuccess {
+  assertSuccess(result, label);
   return result as ExtractRevisionsSuccess;
 }
 
@@ -174,11 +176,25 @@ async function createRealTrackedChangesFixture(): Promise<string> {
 
 describe('extract_revisions tool', () => {
   const test = testAllure.epic('Document Reading').withLabels({ feature: TEST_FEATURE });
+  const lawyerReadableTest = test.allure({
+    tags: ['lawyer-readable'],
+    parameters: { audience: 'non-technical' },
+  });
   registerCleanup();
 
   // ── Insertion + deletion extraction ──────────────────────────────
 
-  test.openspec('[SDX-ER-001] extracting revisions from a document with insertions and deletions')(
+  lawyerReadableTest
+    .allure({
+      description: [
+        'This test checks revision extraction using one inserted phrase and one deleted phrase.',
+        'It is written for non-technical review and should read like a plain-English story.',
+        'Expected outcome: exactly one changed paragraph is returned with correct before/after text,',
+        'correct revision types, correct revision text, and correct authors.',
+      ].join('\n'),
+      parameters: { scenario_id: 'SDX-ER-001' },
+    })
+    .openspec('[SDX-ER-001] extracting revisions from a document with insertions and deletions')(
     'Scenario: [SDX-ER-001] extracting revisions from a document with insertions and deletions',
     async () => {
       const scenarioId = 'SDX-ER-001';
@@ -189,16 +205,6 @@ describe('extract_revisions tool', () => {
         deletedText: 'removed',
         deletedAuthor: 'Bob',
       } as const;
-
-      await applyReadableScenarioMetadata({
-        scenarioId,
-        descriptionLines: [
-          'This test checks revision extraction using one inserted phrase and one deleted phrase.',
-          'It is written for non-technical review and should read like a plain-English story.',
-          'Expected outcome: exactly one changed paragraph is returned with correct before/after text,',
-          'correct revision types, correct revision text, and correct authors.',
-        ],
-      });
 
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -235,20 +241,20 @@ describe('extract_revisions tool', () => {
       );
 
       const { mgr, sessionId } = await openSession([], { xml: docXml });
-      let result: Awaited<ReturnType<typeof extractRevisions_tool>>;
+      let extracted: ExtractRevisionsSuccess | undefined;
       await allureStepWithParameters('When I run extract_revisions on the session', { session_id: sessionId }, async () => {
-        result = await extractRevisions_tool(mgr, { session_id: sessionId });
-        assertSuccess(result, 'extract_revisions');
+        const result = await extractRevisions_tool(mgr, { session_id: sessionId });
+        extracted = asExtractRevisionsSuccess(result);
       });
-      const extracted = asExtractRevisionsSuccess(result!);
+      const result = extracted!;
 
-      const changes = extracted.changes;
+      const changes = result.changes;
       const change = changes[0];
       const revisions = Array.isArray(change?.revisions) ? change.revisions : [];
       const insertionRevision = revisions.find((revision) => revision.type === 'INSERTION');
       const deletionRevision = revisions.find((revision) => revision.type === 'DELETION');
 
-      await assertStepEqual('Then exactly 1 changed paragraph is returned', 1, Number(extracted.total_changes ?? -1));
+      await assertStepEqual('Then exactly 1 changed paragraph is returned', 1, Number(result.total_changes ?? -1));
       await assertStepEqual('And exactly one changed paragraph entry exists', 1, changes.length);
       await assertStepEqual(
         `And the before text is "${expectedBefore}"`,
@@ -277,7 +283,7 @@ describe('extract_revisions tool', () => {
 
       // Keep technical JSON artifacts at the bottom so the narrative steps stay contiguous.
       await allureJsonAttachment('Readable input summary', readableInputSummary);
-      await allureJsonAttachment('Raw result (engineer view)', extracted);
+      await allureJsonAttachment('Raw result (engineer view)', result);
     },
   );
 
@@ -301,25 +307,25 @@ describe('extract_revisions tool', () => {
         paragraphs: ['Hello world', 'Second paragraph'],
       };
 
-      let result: Awaited<ReturnType<typeof extractRevisions_tool>>;
+      let extracted: ExtractRevisionsSuccess | undefined;
       await allureStepWithParameters(
         'Given a clean document with no tracked changes',
         { paragraph_count: readableInputSummary.paragraphs.length },
         async () => {},
       );
       await allureStepWithParameters('When I run extract_revisions on the clean document', { session_id: sessionId }, async () => {
-        result = await extractRevisions_tool(mgr, { session_id: sessionId });
-        assertSuccess(result, 'extract_revisions');
+        const result = await extractRevisions_tool(mgr, { session_id: sessionId });
+        extracted = asExtractRevisionsSuccess(result);
       });
-      const extracted = asExtractRevisionsSuccess(result!);
+      const result = extracted!;
 
-      await assertStepEqual('Then total_changes is 0', 0, Number(extracted.total_changes ?? -1));
-      await assertStepEqual('And changes array length is 0', 0, extracted.changes.length);
-      await assertStepEqual('And has_more is false', false, Boolean(extracted.has_more));
+      await assertStepEqual('Then total_changes is 0', 0, Number(result.total_changes ?? -1));
+      await assertStepEqual('And changes array length is 0', 0, result.changes.length);
+      await assertStepEqual('And has_more is false', false, Boolean(result.has_more));
 
       // Keep technical JSON artifacts at the bottom so the narrative steps stay contiguous.
       await allureJsonAttachment('Readable input summary', readableInputSummary);
-      await allureJsonAttachment('Raw result (engineer view)', extracted);
+      await allureJsonAttachment('Raw result (engineer view)', result);
     },
   );
 

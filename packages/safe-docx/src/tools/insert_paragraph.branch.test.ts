@@ -12,6 +12,11 @@ import { firstParaIdFromToon } from '../testing/docx_test_utils.js';
 
 const test = it.epic('Document Editing').withLabels({ feature: 'Insert Paragraph' });
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item));
+}
+
 describe('insert_paragraph branch coverage', () => {
   registerCleanup();
 
@@ -29,11 +34,12 @@ describe('insert_paragraph branch coverage', () => {
       position: 'AFTER',
     });
     assertSuccess(inserted, 'insert_paragraph balanced tags');
-    expect(inserted.new_paragraph_ids.length).toBe(2);
+    const newParagraphIds = asStringArray((inserted as { new_paragraph_ids?: unknown }).new_paragraph_ids);
+    expect(newParagraphIds.length).toBe(2);
 
     const read = await readFile(opened.mgr, {
       session_id: opened.sessionId,
-      node_ids: inserted.new_paragraph_ids.map((id) => String(id)),
+      node_ids: newParagraphIds,
       format: 'simple',
     });
     assertSuccess(read, 'read inserted paragraphs');
