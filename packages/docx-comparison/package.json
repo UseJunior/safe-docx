@@ -6,11 +6,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run clean:dist && tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
-    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary",
+    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "lint": "tsc --noEmit",
     "benchmark": "tsx src/benchmark/runner.ts"
   },

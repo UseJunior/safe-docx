@@ -6,10 +6,10 @@ type AnyFn = (...args: any[]) => any;
 type WrappedTestFn = typeof vitestIt;
 
 type EpicName =
-  | 'DOCX Comparison'
+  | 'Safe DOCX MCP Bundle'
   | 'OpenSpec Traceability';
 
-const DEFAULT_EPIC: EpicName = 'DOCX Comparison';
+const DEFAULT_EPIC: EpicName = 'Safe DOCX MCP Bundle';
 const JSON_CONTENT_TYPE = 'application/json';
 const TEXT_CONTENT_TYPE = 'text/plain';
 

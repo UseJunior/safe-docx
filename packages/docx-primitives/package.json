@@ -6,11 +6,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run clean:dist && tsc -p tsconfig.build.json",
     "dev": "tsc --watch",
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
-    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary",
+    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "check:spec-coverage": "node scripts/validate_openspec_coverage.mjs",
     "prepack": "npm run build",
     "lint": "tsc --noEmit"
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/runner": "^3.2.4",
     "@types/node": "^22.10.0",
     "allure-vitest": "^3.0.0",
     "typescript": "^5.7.2",

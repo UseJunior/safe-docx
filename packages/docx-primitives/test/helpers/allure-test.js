@@ -56,6 +56,10 @@ function normalizeOpenSpecScenarioIds(values) {
         .filter((value) => value.length > 0);
     return [...new Set(ids)];
 }
+function extractScenarioId(story) {
+    const match = story.trim().match(/^\[([^\]]+)\]/);
+    return match ? match[1].trim() : null;
+}
 function wrapWithAllure(fn, explicitName, defaults) {
     if (!fn) {
         return undefined;
@@ -63,39 +67,29 @@ function wrapWithAllure(fn, explicitName, defaults) {
     return async (...args) => {
         await applyDefaultAllureLabels(defaults);
         const nameParts = parseCurrentTestName();
-        const hierarchyParts = nameParts.slice(0, -1);
-        const fullName = nameParts.join(' > ');
-        const feature = defaults?.feature ?? hierarchyParts[0] ?? nameParts[0] ?? 'General';
-        const suite = defaults?.suite ?? hierarchyParts[1] ?? '';
-        const epic = resolveEpic(feature, fullName, defaults);
         const scenarioIds = defaults?.openspecScenarioIds ?? [];
         const storyLabels = scenarioIds.length > 0
             ? scenarioIds
             : [resolveStoryLabel(explicitName, nameParts)];
         if (typeof allure !== 'undefined') {
+            const scenarioSerials = new Set();
             for (const story of storyLabels) {
                 await allure.story(story);
+                const id = extractScenarioId(story);
+                if (id)
+                    scenarioSerials.add(id);
+            }
+            if (scenarioSerials.size === 1 && typeof allure.id === 'function') {
+                await allure.id([...scenarioSerials][0]);
+            }
+            if (typeof allure.label === 'function') {
+                for (const id of scenarioSerials) {
+                    await allure.label('openspecScenarioId', id);
+                }
             }
         }
-        await allureParameter('epic', epic);
-        await allureParameter('feature', feature);
-        if (suite.length > 0) {
-            await allureParameter('suite', suite);
-        }
-        await allureParameter('test_name', fullName);
-        if (scenarioIds.length > 0) {
-            await allureParameter('openspec_scenario_ids', scenarioIds.join(' | '));
-        }
-        await allureJsonAttachment('test-context', {
-            epic,
-            feature,
-            suite: suite.length > 0 ? suite : undefined,
-            testName: fullName,
-            stories: storyLabels,
-            openspecScenarioIds: scenarioIds,
-        });
         try {
-            return await allureStep('Execute test body', async () => fn(...args));
+            return await fn(...args);
         }
         catch (error) {
             const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);

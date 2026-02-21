@@ -16,6 +16,8 @@ function resolveAllureEntry(kind: 'setup' | 'reporter'): string | null {
   }
 
   const fallbackCandidates = [
+    resolve(__dirname, '../safe-docx/node_modules/allure-vitest/dist', `${kind}.js`),
+    resolve(__dirname, '../docx-primitives/node_modules/allure-vitest/dist', `${kind}.js`),
     resolve(__dirname, '../docx-comparison/node_modules/allure-vitest/dist', `${kind}.js`),
     resolve(__dirname, '../../frontend/node_modules/allure-vitest/dist', `${kind}.js`),
   ];
@@ -31,13 +33,10 @@ const allureSetup = resolveAllureEntry('setup');
 const allureReporter = resolveAllureEntry('reporter');
 const hasAllure = Boolean(allureSetup && allureReporter);
 const allureResultsDir = resolve(__dirname, 'allure-results');
-const pathRootsSetup = resolve(__dirname, 'src/testing/setup-path-roots.ts');
 
 if (!hasAllure) {
-  // Keep tests runnable even in offline/dev shells where allure-vitest isn't installed locally.
-  // Reporter is enabled automatically when dependency is available.
   // eslint-disable-next-line no-console
-  console.warn('[safe-docx-ts] allure-vitest not found; running Vitest with default reporter only.');
+  console.warn('[safe-docx-mcpb] allure-vitest not found; running Vitest with default reporter only.');
 }
 
 export default defineConfig({
@@ -45,22 +44,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
-    coverage: {
-      provider: 'v8',
-      all: true,
-      include: ['src/**/*.ts'],
-      reporter: ['text', 'json', 'html', 'json-summary'],
-      exclude: [
-        'node_modules',
-        'dist',
-        'src/**/*.test.ts',
-        'src/**/*.allure.test.ts',
-        // Keep runtime coverage focused on MCP/session code paths.
-        'src/testing/**',
-        'src/conformance/**',
-      ],
-    },
-    setupFiles: hasAllure ? [pathRootsSetup, allureSetup!] : [pathRootsSetup],
+    setupFiles: hasAllure ? [allureSetup!] : [],
     reporters: hasAllure
       ? [
           'default',

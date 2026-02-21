@@ -17,20 +17,32 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "lint:workspaces": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:run": "npm run test:run --workspaces --if-present",
-    "check:spec-coverage": "npm run check:spec-coverage -w @usejunior/safe-docx",
+    "allure:version": "allure --version",
+    "allure:generate": "rm -rf allure-report-repo && allure generate -o allure-report-repo \"packages/*/allure-results\" && npm run allure:brand",
+    "allure:brand": "node scripts/brand_allure_report.mjs --report-dir allure-report-repo",
+    "allure:open": "allure open allure-report-repo --port 9098",
+    "allure:serve": "npm run allure:generate && npm run allure:open",
+    "generate:system-card": "node scripts/generate_system_card.mjs --output site/src/trust/system-card.md",
+    "site:build": "npm --prefix site run build",
+    "site:dev": "npm --prefix site run dev",
+    "check:spec-coverage": "npm run check:spec-coverage -w @usejunior/docx-primitives -- --strict && npm run check:spec-coverage -w @usejunior/safe-docx -- --strict",
+    "check:allure-labels": "node scripts/validate_allure_test_labels.mjs",
+    "check:allure-filenames": "node scripts/check_allure_test_filename_policy.mjs --baseline coverage/allure-test-filename-baseline.json",
     "test:coverage:packages": "npm run test:coverage -w @usejunior/docx-comparison && npm run test:coverage -w @usejunior/docx-primitives && npm run test:coverage -w @usejunior/safe-docx",
+    "coverage:matrix": "node scripts/print_coverage_matrix.mjs",
     "coverage:packages:report": "node scripts/report_package_coverage.mjs --baseline coverage/package-coverage-baseline.json --output coverage/package-coverage-summary.json",
     "coverage:packages:check": "node scripts/report_package_coverage.mjs --baseline coverage/package-coverage-baseline.json --output coverage/package-coverage-summary.json --enforce",
     "pack:mcpb": "npm run pack:mcpb -w @usejunior/safedocx-mcpb"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^3.2.4",
-    "allure-vitest": "^3.4.5",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "vitest": "^3.2.4"
+    "@vitest/runner": "3.2.4",
+    "allure": "3.2.0"
+  },
+  "overrides": {
+    "@vitest/runner": "3.2.4"
   },
   "engines": {
     "node": ">=20"

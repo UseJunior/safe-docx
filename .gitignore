@@ -4,15 +4,21 @@ dist/
 .DS_Store
 allure-results/
 allure-report/
+allure-report-repo/
+allure-report-brand-preview/
+**/allure-results.bak.*/
 coverage/
 !coverage/
 coverage/*
 !coverage/package-coverage-baseline.json
+!coverage/allure-test-filename-baseline.json
+packages/*/coverage/
+.claude/settings.local.json
 
-# Draft change proposals (unimplemented roadmap — keep private until shipped)
-# Archived (implemented) changes are safe to track
-openspec/changes/add-*/
-!openspec/changes/archive/
+# OpenSpec private drafts (local brainstorming only)
+openspec/private/*
+!openspec/private/.gitkeep
+!openspec/private/README.md
 .vercel
 
 # Build artifacts

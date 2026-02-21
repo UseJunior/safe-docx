@@ -350,7 +350,7 @@ The Safe-Docx MCP server SHALL automatically normalize documents on open by runn
 
 The `extract_revisions` tool SHALL walk tracked-change markup in a session document and return a JSON array of per-paragraph revision records, each containing before text, after text, individual revision details, and associated comments. Paragraph matching uses `jr_para_*` bookmark IDs as primary keys across accepted/rejected clones, not positional traversal.
 
-#### Scenario: extracting revisions from a document with insertions and deletions
+#### Scenario: [SDX-ER-001] extracting revisions from a document with insertions and deletions
 - **GIVEN** a session containing a document with `w:ins` and `w:del` tracked changes
 - **WHEN** `extract_revisions` is called with that session
 - **THEN** the response contains a `changes` array with one entry per changed paragraph
@@ -359,7 +359,7 @@ The `extract_revisions` tool SHALL walk tracked-change markup in a session docum
 - **AND** `after_text` reflects the document state with all changes accepted
 - **AND** each revision has `type` (one of `INSERTION`, `DELETION`, `MOVE_FROM`, `MOVE_TO`, `FORMAT_CHANGE`), `text`, and `author`
 
-#### Scenario: extracting revisions from a document with no tracked changes
+#### Scenario: [SDX-ER-002] extracting revisions from a document with no tracked changes
 - **GIVEN** a session containing a clean document with no tracked changes
 - **WHEN** `extract_revisions` is called
 - **THEN** the response has `total_changes: 0` and an empty `changes` array
@@ -589,7 +589,8 @@ Safe-Docx runtime distribution SHALL remain Node/TypeScript-only and SHALL NOT r
 - **WHEN** a user installs and runs `npx @usejunior/safe-docx`
 - **THEN** layout formatting functionality SHALL be available without Python or Aspose runtime installation
 
-#### Scenario: build-time tooling may be external but optional
-- **WHEN** teams use external local build-time formatting scripts
-- **THEN** those scripts SHALL be optional and SHALL NOT be required for core Safe-Docx MCP runtime behavior
-
+#### Scenario: format_layout does not invoke external process tooling at runtime
+- **GIVEN** a running Safe-Docx MCP session
+- **WHEN** `format_layout` is called
+- **THEN** the operation SHALL complete without invoking external process execution APIs
+- **AND** no Python/Aspose runtime process SHALL be required
