@@ -1,0 +1,141 @@
+/*
+ * SafeDocX Allure CSS branding template.
+ * Tokens replaced by scripts/brand_allure_report.mjs:
+ * - __ICON_FILE_WITH_VERSION__
+ * - __LEGACY_ICON_ID__
+ */
+:root,
+      :root:not([data-theme=dark]),
+      :root[data-theme=light] {
+        --on-border-primary: rgba(5, 28, 73, 0.26);
+        --on-border-muted: rgba(5, 28, 73, 0.14);
+        --bg-base-secondary: #ddccba !important;
+        --bg-base-neutral: #ddccba !important;
+        --bg-base-primary: #fffaf3 !important;
+      }
+
+      body {
+        background:
+          radial-gradient(1200px 700px at 80% -20%, rgba(212, 115, 84, 0.24), rgba(246, 243, 238, 0)),
+          radial-gradient(900px 540px at 5% 5%, rgba(204, 149, 70, 0.19), rgba(246, 243, 238, 0)),
+          #ddccba !important;
+      }
+
+      html,
+      body,
+      #app,
+      .P1qG0zXS,
+      .q6NnC3sf,
+      .s5e3ntNr,
+      .X1bxR0kX {
+        background-color: #ddccba !important;
+      }
+
+      #app,
+      #app .X1bxR0kX,
+      #app .q6NnC3sf,
+      #app .s5e3ntNr,
+      #app .OyL7dy7N,
+      #app .t22uAI7s,
+      #app .sgMxjSNq {
+        --bg-base-secondary: #ddccba !important;
+        --bg-base-neutral: #ddccba !important;
+        --bg-base-primary: #fffaf3 !important;
+        background-color: #ddccba !important;
+      }
+
+      div:has(> img[src*="__ICON_FILE_WITH_VERSION__"]) {
+        background: transparent !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+      }
+
+      img[src*="__ICON_FILE_WITH_VERSION__"] {
+        object-fit: contain !important;
+      }
+
+      .fma_u1MG svg,
+      .fma_u1MG .styles_logo__jHlBl {
+        display: none !important;
+      }
+
+      /* Keep dark mode disabled in branded report */
+      button[aria-label*="theme" i],
+      button[aria-label*="dark" i],
+      button[aria-label*="light" i] {
+        display: none !important;
+      }
+
+      .KayT_VKx .ChConoqG[role="link"] .vCHAp_yZ {
+        text-decoration: underline;
+        text-decoration-color: transparent;
+        text-underline-offset: 2px;
+      }
+
+      .KayT_VKx .ChConoqG[role="link"]:hover .vCHAp_yZ,
+      .KayT_VKx .ChConoqG[role="link"]:focus-visible .vCHAp_yZ {
+        text-decoration-color: currentColor;
+      }
+
+      .KayT_VKx .ChConoqG[role="link"]:focus-visible {
+        outline: 2px solid rgba(5, 28, 73, 0.35);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+
+      /* Unify code block palette for markdown blocks and JSON attachment blocks */
+      pre,
+      pre code,
+      pre[data-testid="code-attachment-content"],
+      pre[data-testid="code-attachment-content"] code,
+      pre[class*="language-"],
+      pre[class*="language-"] code {
+        background: #f6efe3 !important;
+        color: #2f2a24 !important;
+      }
+
+      /* Make HTML attachments feel inlined/readable without cramped iframe viewports */
+      [data-testid="test-result-attachment"] [class*="html-attachment-preview"] {
+        min-height: 0 !important;
+        max-height: 72vh !important;
+        overflow-x: hidden;
+        overflow-y: hidden;
+      }
+
+      [data-testid="test-result-attachment"] [class*="html-attachment-preview"] iframe {
+        width: 100% !important;
+        min-height: 0 !important;
+        border: 0 !important;
+      }
+
+      /* Expanded attachment modal should be larger than inline preview */
+      [role="dialog"] [data-testid="test-result-attachment"] [class*="html-attachment-preview"],
+      [role="dialog"] [class*="html-attachment-preview"] {
+        min-height: 0 !important;
+        max-height: 90vh !important;
+      }
+
+      [role="dialog"] [data-testid="test-result-attachment"] [class*="html-attachment-preview"] iframe,
+      [role="dialog"] [class*="html-attachment-preview"] iframe {
+        min-height: 0 !important;
+      }
+
+      [data-testid="test-result-attachment"] .Yino1buJ,
+      [data-testid="test-result-attachment"] .Px8Q9Npk {
+        overflow: visible !important;
+      }
+
+      /* Fallback in case runtime patch hasn't executed yet */
+      use[href="__LEGACY_ICON_ID__"],
+      use[xlink\:href="__LEGACY_ICON_ID__"] {
+        display: none !important;
+      }
+
+      svg[data-brand-icon-patched="1"] {
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+        min-height: 28px !important;
+        background-size: 100% 100% !important;
+      }

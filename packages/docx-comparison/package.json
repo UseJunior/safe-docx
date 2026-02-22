@@ -14,7 +14,8 @@
     "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "check:spec-coverage": "node scripts/validate_openspec_coverage.mjs",
     "lint": "tsc --noEmit",
-    "benchmark": "tsx src/benchmark/runner.ts"
+    "benchmark": "tsx src/benchmark/runner.ts",
+    "cli": "node dist/cli/index.js"
   },
   "dependencies": {
     "diff-match-patch": "^1.0.5",
@@ -44,5 +45,9 @@
     "ooxml",
     "word"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "bin": {
+    "docx-comparison": "dist/cli/index.js",
+    "safe-docx-compare": "dist/cli/index.js"
+  }
 }
