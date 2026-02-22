@@ -18,9 +18,16 @@ const BRANDING_CONFIG = Object.freeze({
   reportName: 'SafeDocX Quality Report (Preview)',
   iconFileName: 'safe-docx-mark.svg',
 });
+const SECURITY_PROFILES = Object.freeze({
+  strict: Object.freeze({
+    id: 'strict',
+    sandboxValue: 'allow-same-origin',
+  }),
+});
+const DEFAULT_SECURITY_PROFILE = 'strict';
 
 function parseArgs(argv) {
-  const out = { reportDirs: [] };
+  const out = { reportDirs: [], uxOnly: false, securityProfile: DEFAULT_SECURITY_PROFILE };
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--report-dir' && argv[i + 1]) {
@@ -31,6 +38,19 @@ function parseArgs(argv) {
       out.reportDirs.push(arg.slice('--report-dir='.length));
       continue;
     }
+    if (arg === '--ux-only') {
+      out.uxOnly = true;
+      continue;
+    }
+    if (arg === '--security-profile' && argv[i + 1]) {
+      out.securityProfile = String(argv[++i]).trim();
+      continue;
+    }
+    if (arg.startsWith('--security-profile=')) {
+      out.securityProfile = arg.slice('--security-profile='.length).trim();
+      continue;
+    }
+    throw new Error(`Unknown argument: ${arg}`);
   }
   if (out.reportDirs.length === 0) {
     out.reportDirs = ['allure-report-pilot'];
@@ -135,6 +155,16 @@ function indentBlock(text, spaces) {
     .join('\n');
 }
 
+function resolveSecurityProfile(profileName) {
+  const normalized = String(profileName || '').trim().toLowerCase();
+  const profile = SECURITY_PROFILES[normalized];
+  if (!profile) {
+    const available = Object.keys(SECURITY_PROFILES).join(', ');
+    throw new Error(`Unknown security profile '${profileName}'. Expected one of: ${available}`);
+  }
+  return profile;
+}
+
 function makeBrandingBlock(iconFileWithVersion) {
   const templates = loadBrandingTemplates();
   const runtime = renderTemplate(templates.runtime, {
@@ -157,45 +187,58 @@ function makeBrandingBlock(iconFileWithVersion) {
     BRANDING_END,
   ].join('\n');
 }
-// Declarative JS bundle patch list to keep downstream Allure tweaks explicit and reorderable.
-const REPORT_JS_PATCHES = [
-  {
-    id: 'rename-report-section',
-    kind: 'regexReplaceAll',
-    find: /"sections":\{"report":"Report"/g,
-    replacement: `"sections":{"report":"${BRANDING_CONFIG.reportSectionLabel}"`,
-  },
-  {
-    id: 'inline-preview-for-rich-attachments',
-    kind: 'replaceOnceIfPresentAndMissing',
-    needle: 'children:V2(Rw,{item:e,i18n:{imageDiff:e=>i(`imageDiff.${e}`)}})',
-    replacement:
-      'children:V2(Rw,{item:e,previewable:"html"===s||"svg"===s||"image"===s,i18n:{imageDiff:e=>i(`imageDiff.${e}`)}})',
-    skipIfContains: 'previewable:"html"===s||"svg"===s||"image"===s',
-  },
-  {
-    id: 'html-fallback-renderer',
-    kind: 'replaceOnceIfPresentAndMissing',
-    needle: 'const p=Nw[u];return p?Tc(p,{attachment:s.value,item:t,i18n:h}):null',
-    replacement: 'const p="html"===u&&Ow.html?Ow.html:Nw[u];return p?Tc(p,{attachment:s.value,item:t,i18n:h}):null',
-    skipIfContains: '"html"===u&&Ow.html?Ow.html:Nw[u]',
-  },
-  {
-    id: 'disable-html-sanitizer',
-    kind: 'replaceOnceIfPresentAndMissing',
-    needle: 'i=r.length>0?(e=>Wy.sanitize(e,void 0))(r):""',
-    replacement: 'i=r.length>0?r:""',
-    skipIfContains: 'i=r.length>0?r:""',
-  },
-  {
-    id: 'iframe-sandbox-open-links',
-    kind: 'replaceAllIfPresentAndMissing',
-    needle: 'sandbox:"allow-same-origin"',
-    replacement:
-      'sandbox:"allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-downloads"',
-    skipIfContains: 'allow-popups-to-escape-sandbox',
-  },
-];
+
+function buildReportJsPatches(securityProfile) {
+  const SANITIZED_HTML_RENDERER = 'i=r.length>0?(e=>Wy.sanitize(e,void 0))(r):""';
+  const SANITIZED_HTML_RENDERER_ALLOWLIST =
+    'i=r.length>0?(e=>Wy.sanitize(e,{WHOLE_DOCUMENT:!0,USE_PROFILES:{html:!0},ADD_TAGS:["html","head","body","style"],ADD_ATTR:["class"],FORBID_TAGS:["script","iframe","object","embed","form","input","button","textarea","select","option","meta","base","link"]}))(r):""';
+  const UNSANITIZED_HTML_RENDERER = 'i=r.length>0?r:""';
+
+  const patches = [
+    {
+      id: 'rename-report-section',
+      kind: 'regexReplaceAll',
+      find: /"sections":\{"report":"Report"/g,
+      replacement: `"sections":{"report":"${BRANDING_CONFIG.reportSectionLabel}"`,
+    },
+    {
+      id: 'inline-preview-for-rich-attachments',
+      kind: 'replaceOnceIfPresentAndMissing',
+      needle: 'children:V2(Rw,{item:e,i18n:{imageDiff:e=>i(`imageDiff.${e}`)}})',
+      replacement:
+        'children:V2(Rw,{item:e,previewable:"html"===s||"svg"===s||"image"===s,i18n:{imageDiff:e=>i(`imageDiff.${e}`)}})',
+      skipIfContains: 'previewable:"html"===s||"svg"===s||"image"===s',
+    },
+    {
+      id: 'html-fallback-renderer',
+      kind: 'replaceOnceIfPresentAndMissing',
+      needle: 'const p=Nw[u];return p?Tc(p,{attachment:s.value,item:t,i18n:h}):null',
+      replacement:
+        'const p="html"===u&&Ow.html?Ow.html:Nw[u];return p?Tc(p,{attachment:s.value,item:t,i18n:h}):null',
+      skipIfContains: '"html"===u&&Ow.html?Ow.html:Nw[u]',
+    },
+    {
+      id: 'sandbox-normalization',
+      kind: 'regexReplaceAll',
+      find: /sandbox:"allow-same-origin(?: [^"]*)?"/g,
+      replacement: `sandbox:"${securityProfile.sandboxValue}"`,
+    },
+    {
+      id: 'enable-html-sanitizer-allowlist',
+      kind: 'replaceAll',
+      needle: UNSANITIZED_HTML_RENDERER,
+      replacement: SANITIZED_HTML_RENDERER_ALLOWLIST,
+    },
+    {
+      id: 'normalize-html-sanitizer-to-allowlist',
+      kind: 'replaceAll',
+      needle: SANITIZED_HTML_RENDERER,
+      replacement: SANITIZED_HTML_RENDERER_ALLOWLIST,
+    },
+  ];
+
+  return patches;
+}
 
 function applyReportJsPatch(source, patch) {
   if (patch.skipIfContains && source.includes(patch.skipIfContains)) {
@@ -218,35 +261,42 @@ function applyReportJsPatch(source, patch) {
     return source.replaceAll(patch.needle, patch.replacement);
   }
 
+  if (patch.kind === 'replaceAll') {
+    return source.replaceAll(patch.needle, patch.replacement);
+  }
+
   throw new Error(`Unknown report JS patch kind: ${patch.kind}`);
 }
 
-function applyReportJsPatches(source) {
-  return REPORT_JS_PATCHES.reduce((next, patch) => applyReportJsPatch(next, patch), source);
+function applyReportJsPatches(source, patches) {
+  return patches.reduce((next, patch) => applyReportJsPatch(next, patch), source);
 }
 
-function patchReportJs(reportDir) {
+function patchReportJs(reportDir, securityProfile) {
+  const patches = buildReportJsPatches(securityProfile);
   const names = fs.readdirSync(reportDir);
   for (const fileName of names) {
     if (!/(^|\.)app-.*\.js$/.test(fileName)) continue;
     const filePath = path.join(reportDir, fileName);
     const raw = readUtf8(filePath);
-    const patched = applyReportJsPatches(raw);
+    const patched = applyReportJsPatches(raw, patches);
     if (patched !== raw) {
       writeUtf8(filePath, patched);
     }
   }
 }
 
-function patchReportIndex(reportDir, iconFileWithVersion) {
+function patchReportIndex(reportDir, iconFileWithVersion, options) {
   const indexPath = path.join(reportDir, 'index.html');
   if (!fs.existsSync(indexPath)) {
     throw new Error(`Missing report index: ${indexPath}`);
   }
 
   let html = readUtf8(indexPath);
-  html = upsertFaviconLinks(html, iconFileWithVersion);
-  html = updateAllureOptions(html, iconFileWithVersion);
+  if (options.applyIdentityBranding) {
+    html = upsertFaviconLinks(html, iconFileWithVersion);
+    html = updateAllureOptions(html, iconFileWithVersion);
+  }
   html = stripBlock(html, BRANDING_START, BRANDING_END);
   html = stripLegacyManualBranding(html);
 
@@ -264,18 +314,26 @@ function ensureDir(dirPath) {
   }
 }
 
-function brandReport(reportDirArg) {
+function brandReport(reportDirArg, options) {
   const reportDir = path.resolve(ROOT, reportDirArg);
   ensureDir(reportDir);
 
-  const iconBuffer = fs.readFileSync(ICON_SOURCE);
-  const iconHash = crypto.createHash('sha1').update(iconBuffer).digest('hex').slice(0, 8);
   const iconFileName = BRANDING_CONFIG.iconFileName;
-  const iconVersioned = `${iconFileName}?v=${iconHash}`;
+  const targetIconPath = path.join(reportDir, iconFileName);
+  let iconVersioned = iconFileName;
 
-  fs.copyFileSync(ICON_SOURCE, path.join(reportDir, iconFileName));
-  patchReportIndex(reportDir, iconVersioned);
-  patchReportJs(reportDir);
+  if (options.applyIdentityBranding) {
+    const iconBuffer = fs.readFileSync(ICON_SOURCE);
+    const iconHash = crypto.createHash('sha1').update(iconBuffer).digest('hex').slice(0, 8);
+    iconVersioned = `${iconFileName}?v=${iconHash}`;
+  }
+
+  if (options.applyIdentityBranding || !fs.existsSync(targetIconPath)) {
+    fs.copyFileSync(ICON_SOURCE, targetIconPath);
+  }
+
+  patchReportIndex(reportDir, iconVersioned, options);
+  patchReportJs(reportDir, options.securityProfile);
 }
 
 function main() {
@@ -286,10 +344,19 @@ function main() {
     }
   }
 
-  const { reportDirs } = parseArgs(process.argv);
+  const { reportDirs, uxOnly, securityProfile: securityProfileName } = parseArgs(process.argv);
+  const securityProfile = resolveSecurityProfile(securityProfileName);
+  const options = {
+    applyIdentityBranding: !uxOnly,
+    securityProfile,
+  };
+
   for (const reportDir of reportDirs) {
-    brandReport(reportDir);
-    process.stdout.write(`Branded Allure report: ${reportDir}\n`);
+    brandReport(reportDir, options);
+    const modeLabel = options.applyIdentityBranding ? 'full' : 'ux-only';
+    process.stdout.write(
+      `Branded Allure report (${modeLabel}, security=${securityProfile.id}): ${reportDir}\n`,
+    );
   }
 }
 

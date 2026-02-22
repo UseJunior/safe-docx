@@ -10,13 +10,20 @@ const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUTPUT_DIR = 'allure-report-repo';
 const DEFAULT_GROUP_BY = 'epic,feature,suite,story';
+const DEFAULT_SECURITY_PROFILE = 'strict';
 const MERGED_RESULTS_DIR = '.allure-results-merged';
 const LOCAL_ALLURE_BIN = path.join(ROOT, 'node_modules', '.bin', 'allure');
+const BRAND_REPORT_NAME = 'SafeDocX Quality Report (Preview)';
+const BRAND_THEME = 'light';
+const BRAND_LOGO_FILE = 'safe-docx-mark.svg';
+const BRAND_LOGO_SOURCE = path.join(ROOT, 'scripts', 'assets', BRAND_LOGO_FILE);
+const SECURITY_PROFILES = new Set(['strict']);
 
 function parseArgs(argv) {
   const parsed = {
     outputDir: DEFAULT_OUTPUT_DIR,
     groupBy: DEFAULT_GROUP_BY,
+    securityProfile: DEFAULT_SECURITY_PROFILE,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -44,7 +51,24 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (arg === '--security-profile' && argv[i + 1]) {
+      parsed.securityProfile = String(argv[i + 1]).trim();
+      i += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--security-profile=')) {
+      parsed.securityProfile = arg.slice('--security-profile='.length).trim();
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  if (!SECURITY_PROFILES.has(parsed.securityProfile)) {
+    throw new Error(
+      `Unsupported security profile '${parsed.securityProfile}'. Expected one of: ${Array.from(SECURITY_PROFILES).join(', ')}`,
+    );
   }
 
   return parsed;
@@ -140,12 +164,15 @@ function runCommand(command, args) {
 }
 
 function main() {
-  const { outputDir, groupBy } = parseArgs(process.argv.slice(2));
+  const { outputDir, groupBy, securityProfile } = parseArgs(process.argv.slice(2));
   const grouping = normalizeGroupBy(groupBy);
   const resultsDirs = discoverResultsDirectories();
 
   if (resultsDirs.length === 0) {
     throw new Error('No non-empty allure-results directories found under packages/.');
+  }
+  if (!fs.existsSync(BRAND_LOGO_SOURCE)) {
+    throw new Error(`Missing logo asset: ${BRAND_LOGO_SOURCE}`);
   }
 
   const mergedResultsDir = mergeResultsDirectories(resultsDirs);
@@ -157,14 +184,30 @@ function main() {
     path.relative(ROOT, mergedResultsDir),
     '--output',
     outputDir,
+    '--report-name',
+    BRAND_REPORT_NAME,
+    '--theme',
+    BRAND_THEME,
+    '--logo',
+    `./${BRAND_LOGO_FILE}`,
     '--group-by',
     grouping.join(','),
   ];
 
   runCommand('allure', allureArgs);
-  runCommand('node', ['scripts/brand_allure_report.mjs', '--report-dir', outputDir]);
+  fs.copyFileSync(BRAND_LOGO_SOURCE, path.join(outputPath, BRAND_LOGO_FILE));
+  runCommand('node', [
+    'scripts/brand_allure_report.mjs',
+    '--report-dir',
+    outputDir,
+    '--ux-only',
+    '--security-profile',
+    securityProfile,
+  ]);
 
-  console.log(`Generated Allure report at ${outputDir} grouped by ${grouping.join(' > ')}`);
+  console.log(
+    `Generated Allure report at ${outputDir} grouped by ${grouping.join(' > ')} (security profile: ${securityProfile})`,
+  );
 }
 
 main();
