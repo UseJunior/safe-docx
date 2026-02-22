@@ -11,9 +11,14 @@
 
 import { describe, expect, beforeAll } from 'vitest';
 import { itAllure as it } from '../testing/allure-test.js';
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { compareDocuments, type CompareResult } from '../index.js';
+import {
+  FIXTURE_STABLE_DATE,
+  getIntegrationOutputModeLabel,
+  writeIntegrationArtifact,
+} from './output-artifacts.js';
 
 // Path to test documents (relative to project root)
 // The test file is at packages/docx-comparison/src/integration/
@@ -27,9 +32,6 @@ const REVISED_DOC = join(
   projectRoot,
   'tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx'
 );
-
-// Output directory for inspection
-const OUTPUT_DIR = join(dirname(import.meta.url.replace('file://', '')), '../testing/outputs');
 
 describe('Document Comparison Parity Test', () => {
   let originalBuffer: Buffer;
@@ -49,14 +51,14 @@ describe('Document Comparison Parity Test', () => {
     // Run comparison
     result = await compareDocuments(originalBuffer, revisedBuffer, {
       author: 'IntegrationTest',
+      date: FIXTURE_STABLE_DATE,
       engine: 'diffmatch',
     });
 
     // Save output for inspection (optional)
     try {
-      await mkdir(OUTPUT_DIR, { recursive: true });
-      await writeFile(join(OUTPUT_DIR, 'typescript_redline.docx'), result.document);
-      console.log(`Output saved to: ${join(OUTPUT_DIR, 'typescript_redline.docx')}`);
+      const outputPath = await writeIntegrationArtifact('typescript_redline.docx', result.document);
+      console.log(`Output saved to (${getIntegrationOutputModeLabel()}): ${outputPath}`);
     } catch (err) {
       console.warn('Could not save output file:', err);
     }

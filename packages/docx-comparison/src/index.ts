@@ -13,6 +13,11 @@ import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
 export interface CompareOptions {
   /** Author name for revision tracking. Default: "Comparison" */
   author?: string;
+  /**
+   * Revision timestamp used for generated track changes (`w:date`).
+   * Default: current time.
+   */
+  date?: Date;
   /** Ignore formatting differences. Default: true (v1) */
   ignoreFormatting?: boolean;
   /**
@@ -189,12 +194,13 @@ export async function compareDocuments(
   revised: Buffer,
   options: CompareOptions = {}
 ): Promise<CompareResult> {
-  const { engine = 'auto', author, reconstructionMode, premergeRuns } = options;
+  const { engine = 'auto', author, date, reconstructionMode, premergeRuns } = options;
 
   // Atomizer engine (recommended) - character-level with move detection
   if (engine === 'atomizer' || engine === 'auto') {
     return compareDocumentsAtomizer(original, revised, {
       author,
+      date,
       reconstructionMode,
       premergeRuns,
     });
@@ -202,7 +208,7 @@ export async function compareDocuments(
 
   // Diffmatch engine - paragraph-level (fallback)
   if (engine === 'diffmatch') {
-    return compareDocumentsBaselineB(original, revised, { author });
+    return compareDocumentsBaselineB(original, revised, { author, date });
   }
 
   // WmlComparer engine requires --docxodus option at CLI level

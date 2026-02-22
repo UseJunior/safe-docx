@@ -11,7 +11,7 @@
 
 import { describe, expect, beforeAll } from 'vitest';
 import { itAllure as it } from '../testing/allure-test.js';
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { compareDocuments } from '../index.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
@@ -22,6 +22,11 @@ import {
   extractTextWithParagraphs,
   compareTexts,
 } from '../baselines/atomizer/trackChangesAcceptorAst.js';
+import {
+  FIXTURE_STABLE_DATE,
+  getIntegrationOutputModeLabel,
+  writeIntegrationArtifact,
+} from './output-artifacts.js';
 
 // Path to test documents
 const projectRoot = join(dirname(import.meta.url.replace('file://', '')), '../../../..');
@@ -36,9 +41,6 @@ const REVISED_DOC = join(
 
 // Test fixtures
 const fixturesPath = join(dirname(import.meta.url.replace('file://', '')), '../testing/fixtures');
-
-// Output directory for debugging
-const OUTPUT_DIR = join(dirname(import.meta.url.replace('file://', '')), '../testing/outputs');
 
 describe('Round-Trip Tests - Accept All Changes', () => {
   describe('Simple Fixtures', () => {
@@ -159,10 +161,8 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       revisedBuffer = await readFile(REVISED_DOC);
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
         engine: 'atomizer',
+        date: FIXTURE_STABLE_DATE,
       });
-
-      // Save for debugging
-      await mkdir(OUTPUT_DIR, { recursive: true });
     }, 120000);
 
     it('accept all changes should produce text matching revised document', async () => {
@@ -178,8 +178,8 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       const revisedText = extractTextWithParagraphs(revisedXml);
 
       // Save for debugging
-      await writeFile(join(OUTPUT_DIR, 'accepted_text.txt'), acceptedText);
-      await writeFile(join(OUTPUT_DIR, 'revised_text.txt'), revisedText);
+      await writeIntegrationArtifact('accepted_text.txt', acceptedText);
+      await writeIntegrationArtifact('revised_text.txt', revisedText);
 
       const comparison = compareTexts(revisedText, acceptedText);
 
@@ -192,6 +192,7 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       if (!comparison.normalizedIdentical) {
         console.log('  First differences:', comparison.differences.slice(0, 3));
       }
+      console.log(`  Debug output mode: ${getIntegrationOutputModeLabel()}`);
 
       // This is the critical assertion
       expect(comparison.normalizedIdentical).toBe(true);
@@ -315,9 +316,8 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       revisedBuffer = await readFile(REVISED_DOC);
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
         engine: 'atomizer',
+        date: FIXTURE_STABLE_DATE,
       });
-
-      await mkdir(OUTPUT_DIR, { recursive: true });
     }, 120000);
 
     it('reject all changes should produce text matching original document', async () => {
@@ -326,12 +326,12 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       const resultXml = await resultArchive.getDocumentXml();
 
       // Save comparison result XML for debugging
-      await writeFile(join(OUTPUT_DIR, 'comparison_result.xml'), resultXml);
+      await writeIntegrationArtifact('comparison_result.xml', resultXml);
 
       const rejectedXml = rejectAllChanges(resultXml);
 
       // Save rejected XML for debugging
-      await writeFile(join(OUTPUT_DIR, 'rejected.xml'), rejectedXml);
+      await writeIntegrationArtifact('rejected.xml', rejectedXml);
 
       const rejectedText = extractTextWithParagraphs(rejectedXml);
 
@@ -341,8 +341,8 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       const originalText = extractTextWithParagraphs(originalXml);
 
       // Save for debugging
-      await writeFile(join(OUTPUT_DIR, 'rejected_text.txt'), rejectedText);
-      await writeFile(join(OUTPUT_DIR, 'original_text.txt'), originalText);
+      await writeIntegrationArtifact('rejected_text.txt', rejectedText);
+      await writeIntegrationArtifact('original_text.txt', originalText);
 
       const comparison = compareTexts(originalText, rejectedText);
 
@@ -355,6 +355,7 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       if (!comparison.normalizedIdentical) {
         console.log('  First differences:', comparison.differences.slice(0, 3));
       }
+      console.log(`  Debug output mode: ${getIntegrationOutputModeLabel()}`);
 
       // This is the critical assertion
       expect(comparison.normalizedIdentical).toBe(true);
