@@ -20,6 +20,10 @@ const featureAssignmentRe =
 const directFeatureUsageRe = /\ballure\.feature\(/;
 const openSpecFeatureConstRe = /const\s+TEST_FEATURE\s*=\s*['"`][^'"`]+['"`]/;
 const legacyReadableTagRe = /['"`]lawyer-readable['"`]/;
+const slugFeatureValueRe = /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/i;
+const withLabelsFeatureLiteralRe = /\.withLabels\(\s*\{[\s\S]*?\bfeature\s*:\s*(['"`])([^'"`]+)\1[\s\S]*?\}\s*\)/g;
+const directFeatureLiteralRe = /\ballure\.feature\(\s*(['"`])([^'"`]+)\1\s*\)/g;
+const FEATURE_LABEL_ACRONYMS = new Set(['AI', 'API', 'AST', 'CLI', 'DOCX', 'ID', 'JSON', 'MCP', 'MCPB', 'OOXML', 'SDK', 'UI', 'WML', 'XML']);
 
 function walk(dir, out) {
   if (!existsSync(dir)) return;
@@ -71,6 +75,44 @@ function parseVitestImports(body) {
   return imports;
 }
 
+function toReadableFeatureLabel(value) {
+  const raw = value.trim();
+  if (!slugFeatureValueRe.test(raw)) {
+    return raw;
+  }
+  return raw
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((segment) => {
+      const upper = segment.toUpperCase();
+      if (FEATURE_LABEL_ACRONYMS.has(upper)) {
+        return upper;
+      }
+      if (/^\d+$/.test(segment)) {
+        return segment;
+      }
+      return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
+    })
+    .join(' ');
+}
+
+function findSlugFeatureLiteralValues(body) {
+  const values = new Set();
+
+  for (const re of [withLabelsFeatureLiteralRe, directFeatureLiteralRe]) {
+    re.lastIndex = 0;
+    let match = re.exec(body);
+    while (match) {
+      const featureValue = match[2]?.trim() ?? '';
+      if (slugFeatureValueRe.test(featureValue)) {
+        values.add(featureValue);
+      }
+      match = re.exec(body);
+    }
+  }
+
+  return [...values].sort();
+}
 function validateFile(relativePath) {
   const absolutePath = join(ROOT, relativePath);
   const body = readFileSync(absolutePath, 'utf-8');
@@ -112,6 +154,14 @@ function validateFile(relativePath) {
 
   if (legacyReadableTagRe.test(body)) {
     errors.push('must use `human-readable` tag; `lawyer-readable` is deprecated.');
+  }
+
+  const slugFeatureLiteralValues = findSlugFeatureLiteralValues(body);
+  if (slugFeatureLiteralValues.length > 0) {
+    const suggestions = slugFeatureLiteralValues
+      .map((value) => `"${value}" -> "${toReadableFeatureLabel(value)}"`)
+      .join(', ');
+    errors.push(`feature labels must be reader-friendly (Title Case) instead of slug literals: ${suggestions}.`);
   }
 
   return errors;

@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_OUTPUT_DIR = 'allure-report-repo';
-const DEFAULT_GROUP_BY = 'epic,feature,story';
+const DEFAULT_GROUP_BY = 'epic,feature,suite,story';
 const MERGED_RESULTS_DIR = '.allure-results-merged';
 const LOCAL_ALLURE_BIN = path.join(ROOT, 'node_modules', '.bin', 'allure');
 

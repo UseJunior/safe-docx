@@ -28,6 +28,7 @@ import {
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
 
 const TEST_FEATURE = 'add-extract-revisions-tool';
+const REPORT_FEATURE = 'extract-revisions-tool';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SIMPLE_FIXTURE_DIR = path.resolve(
@@ -113,7 +114,7 @@ async function createRealTrackedChangesFixture(): Promise<string> {
 }
 
 describe('extract_revisions tool', () => {
-  const test = testAllure.epic('Document Reading').withLabels({ feature: TEST_FEATURE });
+  const test = testAllure.epic('Document Reading').withLabels({ feature: REPORT_FEATURE });
   const humanReadableTest = test.allure({
     tags: ['human-readable'],
     parameters: { audience: 'non-technical' },
@@ -124,14 +125,8 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest
     .allure({
-      id: 'SDX-ER-001',
       title: 'Extract revisions from a paragraph with insertion and deletion',
-      description: [
-        'This test checks revision extraction using one inserted phrase and one deleted phrase.',
-        'It is written for non-technical review and should read like a plain-English story.',
-        'Expected outcome: exactly one changed paragraph is returned with correct before/after text,',
-        'correct revision types, correct revision text, and correct authors.',
-      ].join('\n'),
+      description: 'Extracting revisions from a document with insertions and deletions returns a response that correctly describes the inserted and deleted text and the author of each change.',
     })
     .openspec('[SDX-ER-001] extracting revisions from a document with insertions and deletions')(
     'Scenario: extracting revisions from a document with insertions and deletions',
@@ -183,13 +178,12 @@ describe('extract_revisions tool', () => {
         deletion: { text: fixture.deletedText, author: fixture.deletedAuthor },
         expected_before: expectedBefore,
         expected_after: expectedAfter,
-        fixture_xml: docXml,
       } as const;
 
       let debugResult: ExtractRevisionsSuccess | null = null;
       try {
         await given(
-          'a paragraph with one insertion and one deletion',
+          'a session containing a paragraph with tracked insertion and deletion',
           async () => {
             await attachXmlPreviews(docXml, {
               wordLikeName: '01 Word-like visual preview',
@@ -203,10 +197,19 @@ describe('extract_revisions tool', () => {
               },
             });
           },
+        );
+        await and(
+          `inserted_text is "${fixture.insertedText}" by "${fixture.insertedAuthor}"`,
+          async () => {},
           {
-            base_text: fixture.baseText,
             inserted_text: fixture.insertedText,
             inserted_author: fixture.insertedAuthor,
+          },
+        );
+        await and(
+          `deleted_text is "${fixture.deletedText}" by "${fixture.deletedAuthor}"`,
+          async () => {},
+          {
             deleted_text: fixture.deletedText,
             deleted_author: fixture.deletedAuthor,
           },
@@ -227,9 +230,8 @@ describe('extract_revisions tool', () => {
         );
 
         const result = await when(
-          'I run extract_revisions on the session',
+          'extract_revisions is run in the session',
           async () => asExtractRevisionsSuccess(await extractRevisions_tool(mgr, { session_id: sessionId })),
-          { session_id: sessionId },
         );
         debugResult = result;
 
@@ -240,24 +242,27 @@ describe('extract_revisions tool', () => {
         const deletionRevision = revisions.find((revision) => revision.type === 'DELETION');
 
         await then(
-          'exactly 1 changed paragraph is returned',
+          'the tool reports the correct number of changed paragraphs',
           async () => {
             expect(Number(result.total_changes ?? -1)).toBe(1);
           },
           {
-            expected: 1,
-            actual: Number(result.total_changes ?? -1),
+            expected_changed_paragraph_count: 1,
+            actual_changed_paragraph_count: Number(result.total_changes ?? -1),
           },
         );
         await then(
-          'exactly one changed paragraph entry exists',
+          'the tool reports the correct number of changed entries',
           async () => {
             expect(changes).toHaveLength(1);
           },
-          { expected: 1, actual: changes.length },
+          {
+            expected_entry_count: 1,
+            actual_entry_count: changes.length,
+          },
         );
         await then(
-          `the before text is "${expectedBefore}"`,
+          'before_text equals expected_before_text',
           async () => {
             expect(String(change.before_text ?? '')).toBe(expectedBefore);
           },
@@ -266,8 +271,38 @@ describe('extract_revisions tool', () => {
             actual_before: String(change.before_text ?? ''),
           },
         );
+        await and(
+          'before_text includes base_text',
+          async () => {
+            expect(String(change.before_text ?? '')).toContain(fixture.baseText);
+          },
+          {
+            base_text: fixture.baseText,
+            actual_before: String(change.before_text ?? ''),
+          },
+        );
+        await and(
+          'before_text omits inserted_text',
+          async () => {
+            expect(String(change.before_text ?? '')).not.toContain(fixture.insertedText);
+          },
+          {
+            inserted_text: fixture.insertedText,
+            actual_before: String(change.before_text ?? ''),
+          },
+        );
+        await and(
+          'before_text includes deleted_text',
+          async () => {
+            expect(String(change.before_text ?? '')).toContain(fixture.deletedText);
+          },
+          {
+            deleted_text: fixture.deletedText,
+            actual_before: String(change.before_text ?? ''),
+          },
+        );
         await then(
-          `the after text is "${expectedAfter}"`,
+          'after_text equals expected_after_text',
           async () => {
             expect(String(change.after_text ?? '')).toBe(expectedAfter);
           },
@@ -276,9 +311,39 @@ describe('extract_revisions tool', () => {
             actual_after: String(change.after_text ?? ''),
           },
         );
+        await and(
+          'after_text includes base_text',
+          async () => {
+            expect(String(change.after_text ?? '')).toContain(fixture.baseText);
+          },
+          {
+            base_text: fixture.baseText,
+            actual_after: String(change.after_text ?? ''),
+          },
+        );
+        await and(
+          'after_text includes inserted_text',
+          async () => {
+            expect(String(change.after_text ?? '')).toContain(fixture.insertedText);
+          },
+          {
+            inserted_text: fixture.insertedText,
+            actual_after: String(change.after_text ?? ''),
+          },
+        );
+        await and(
+          'after_text omits deleted_text',
+          async () => {
+            expect(String(change.after_text ?? '')).not.toContain(fixture.deletedText);
+          },
+          {
+            deleted_text: fixture.deletedText,
+            actual_after: String(change.after_text ?? ''),
+          },
+        );
 
         await and(
-          `an INSERTION revision exists for "${fixture.insertedText}" by ${fixture.insertedAuthor}`,
+          'the insertion record shows correct type/text/author',
           async () => {
             expect(insertionRevision).toBeDefined();
             expect(String(insertionRevision?.text ?? '').trim()).toBe(fixture.insertedText);
@@ -295,7 +360,7 @@ describe('extract_revisions tool', () => {
         );
 
         await and(
-          `a DELETION revision exists for "${fixture.deletedText}" by ${fixture.deletedAuthor}`,
+          'the deletion record shows correct type/text/author',
           async () => {
             expect(deletionRevision).toBeDefined();
             expect(String(deletionRevision?.text ?? '').trim()).toBe(fixture.deletedText);
@@ -346,7 +411,7 @@ describe('extract_revisions tool', () => {
         { paragraph_count: readableInputSummary.paragraphs.length },
         async () => {},
       );
-      await allureStepWithParameters('When I run extract_revisions on the clean document', { session_id: sessionId }, async () => {
+      await allureStep('When extract_revisions is run on the clean document', async () => {
         const result = await extractRevisions_tool(mgr, { session_id: sessionId });
         extracted = asExtractRevisionsSuccess(result);
       });

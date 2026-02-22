@@ -33,7 +33,7 @@ interface ToolDocMetadata {
 }
 
 describe('TypeScript MCP server behavior', () => {
-  const test = testAllure.epic('Document Editing').withLabels({ feature: 'mcp-server-behavior' });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: 'MCP Server Behavior' });
   const humanReadableTest = test.allure({
     tags: ['human-readable'],
     parameters: { audience: 'non-technical' },

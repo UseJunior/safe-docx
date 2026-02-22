@@ -371,14 +371,134 @@ ${BRANDING_START}
           });
         };
 
-        const autoExpandAttachments = () => {
-          const classNameToString = (value) =>
-            typeof value === "string" ? value : value?.baseVal || "";
+        const resolveBooleanSetting = (key, fallback) => {
+          try {
+            const config = window.__SDX_ALLURE_CONFIG__;
+            if (config && typeof config[key] === "boolean") {
+              return config[key];
+            }
+            const raw = new URL(window.location.href).searchParams.get(key);
+            if (!raw) return fallback;
+            const normalized = raw.trim().toLowerCase();
+            if (["1", "true", "yes", "on"].includes(normalized)) return true;
+            if (["0", "false", "no", "off"].includes(normalized)) return false;
+          } catch {
+            // Ignore malformed URL/config and keep defaults.
+          }
+          return fallback;
+        };
 
+        const resolveEnumSetting = (key, allowedValues, fallback) => {
+          try {
+            const allowed = new Set(allowedValues);
+            const config = window.__SDX_ALLURE_CONFIG__;
+            if (config && typeof config[key] === "string") {
+              const normalizedConfigValue = config[key].trim().toLowerCase();
+              if (allowed.has(normalizedConfigValue)) {
+                return normalizedConfigValue;
+              }
+            }
+            const raw = new URL(window.location.href).searchParams.get(key);
+            if (!raw) return fallback;
+            const normalized = raw.trim().toLowerCase();
+            if (allowed.has(normalized)) return normalized;
+          } catch {
+            // Ignore malformed URL/config and keep defaults.
+          }
+          return fallback;
+        };
+
+        const EXPAND_MODES = ["compact", "moderate", "verbose"];
+        const settings = {
+          expandMode: resolveEnumSetting("sdxExpandMode", EXPAND_MODES, "moderate"),
+          autoExpandAttachmentsOverride: resolveBooleanSetting("sdxAutoExpandAttachments", null),
+          autoExpandStepsOverride: resolveBooleanSetting("sdxAutoExpandSteps", null),
+        };
+
+        const resolveModeDefault = (mode) => {
+          if (mode === "compact") return false;
+          if (mode === "verbose") return true;
+          // moderate
+          return true;
+        };
+
+        const getAttachmentExpansionPolicies = (mode) => {
+          if (mode === "verbose") {
+            return [{ id: "default", autoExpand: true, when: () => true }];
+          }
+
+          if (mode === "moderate") {
+            return [
+              {
+                id: "word-like-preview",
+                autoExpand: true,
+                when: (meta) =>
+                  meta.contentType === "text/html" &&
+                  /\bword-like\b/.test(meta.title.toLowerCase()),
+              },
+              {
+                id: "debug-json",
+                autoExpand: false,
+                when: (meta) =>
+                  meta.contentType === "application/json" &&
+                  (meta.title === "Test context (debug JSON)" ||
+                    meta.title === "Final result (debug JSON)"),
+              },
+              {
+                id: "json",
+                autoExpand: false,
+                when: (meta) => /json/i.test(meta.contentType),
+              },
+              {
+                id: "xml",
+                autoExpand: false,
+                when: (meta) =>
+                  /xml/i.test(meta.contentType) || /\bxml\b/i.test(meta.title),
+              },
+              { id: "default", autoExpand: true, when: () => true },
+            ];
+          }
+
+          // compact
+          return [{ id: "default", autoExpand: false, when: () => true }];
+        };
+
+        const attachmentExpansionPolicies = getAttachmentExpansionPolicies(settings.expandMode);
+
+        const readAttachmentMeta = (header) => {
+          const title = compactLabel(
+            header.querySelector(".YYCSAKki")?.textContent || "",
+          );
+          const contentMetaTokens = Array.from(
+            header.querySelectorAll(".sXJUrXQT .paragraphs-text-s"),
+          )
+            .map((node) => compactLabel(node.textContent || ""))
+            .filter(Boolean);
+          const contentType =
+            contentMetaTokens.find((token) => token.includes("/")) || "";
+          return { title, contentType };
+        };
+
+        const resolveAttachmentAutoExpand = (meta) => {
+          const policy = attachmentExpansionPolicies.find((entry) => entry.when(meta));
+          return policy ? policy.autoExpand : true;
+        };
+
+        const autoExpandAttachments = () => {
           document.querySelectorAll('[data-testid="test-result-attachment"]').forEach((attachment) => {
             if (attachment.dataset.autoExpanded === "1") return;
             const header = attachment.querySelector('[data-testid="test-result-attachment-header"]');
             if (!header) return;
+            if (!attachment.dataset.sdxAutoExpand) {
+              const meta = readAttachmentMeta(header);
+              const policy = attachmentExpansionPolicies.find((entry) => entry.when(meta));
+              attachment.dataset.sdxAutoExpandPolicy = policy?.id || "default";
+              attachment.dataset.sdxAutoExpand = resolveAttachmentAutoExpand(meta) ? "1" : "0";
+            }
+            if (attachment.dataset.sdxAutoExpand === "0") {
+              attachment.dataset.autoExpanded = "1";
+              return;
+            }
             const toggle = header.querySelector('button[class*="arrow-button"]');
             if (!toggle) return;
             const icon = toggle.querySelector("svg");
@@ -389,6 +509,24 @@ ${BRANDING_START}
             }
             attachment.dataset.autoExpanded = "1";
           });
+        };
+
+        const autoExpandTestSteps = () => {
+          document
+            .querySelectorAll('button[data-testid="test-result-step-arrow-button"]')
+            .forEach((toggle) => {
+              const row = toggle.closest('[data-testid="test-result-step"]');
+              if (row?.dataset?.autoExpanded === "1") return;
+              const icon = toggle.querySelector("svg");
+              const iconClass = classNameToString(icon?.className);
+              const isExpanded = /opened/.test(iconClass);
+              if (!isExpanded) {
+                toggle.click();
+              }
+              if (row) {
+                row.dataset.autoExpanded = "1";
+              }
+            });
         };
 
         const autoSizeHtmlAttachmentFrames = () => {
@@ -418,8 +556,8 @@ ${BRANDING_START}
                 preview.style.height = String(previewTarget) + 'px';
                 preview.style.minHeight = '0px';
                 preview.style.maxHeight = String(max) + 'px';
-                preview.style.overflowY = overflowNeeded ? 'auto' : 'hidden';
-                preview.style.overflowX = 'hidden';
+                preview.style.setProperty('overflow-y', overflowNeeded ? 'auto' : 'hidden', 'important');
+                preview.style.setProperty('overflow-x', 'hidden', 'important');
               }
               frame.setAttribute('scrolling', 'no');
               frame.style.height = String(contentTarget) + 'px';
@@ -447,7 +585,21 @@ ${BRANDING_START}
           hideThemeToggle();
           patchHomeButtonBehavior();
           patchBreadcrumbLinks();
-          autoExpandAttachments();
+          const autoExpandAttachmentsEnabled =
+            typeof settings.autoExpandAttachmentsOverride === "boolean"
+              ? settings.autoExpandAttachmentsOverride
+              : resolveModeDefault(settings.expandMode);
+          const autoExpandStepsEnabled =
+            typeof settings.autoExpandStepsOverride === "boolean"
+              ? settings.autoExpandStepsOverride
+              : resolveModeDefault(settings.expandMode);
+
+          if (autoExpandAttachmentsEnabled) {
+            autoExpandAttachments();
+          }
+          if (autoExpandStepsEnabled) {
+            autoExpandTestSteps();
+          }
           autoSizeHtmlAttachmentFrames();
         };
 
@@ -557,7 +709,8 @@ ${BRANDING_START}
       [data-testid="test-result-attachment"] [class*="html-attachment-preview"] {
         min-height: 0 !important;
         max-height: 72vh !important;
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: hidden;
       }
 
       [data-testid="test-result-attachment"] [class*="html-attachment-preview"] iframe {

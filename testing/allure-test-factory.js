@@ -1,6 +1,7 @@
 import { expect, it as vitestIt, test as vitestTest } from 'vitest';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 import Prism from 'prismjs';
+import 'prismjs/components/prism-json.js';
 
 const JSON_CONTENT_TYPE = 'application/json';
 const TEXT_CONTENT_TYPE = 'text/plain';
@@ -60,6 +61,19 @@ function highlightXmlForHtml(xml) {
   }
 }
 
+function highlightJsonForHtml(json) {
+  const source = String(json);
+  const language = Prism.languages.json;
+  if (!language) {
+    return escapeForHtml(source);
+  }
+  try {
+    return Prism.highlight(source, language, 'json');
+  } catch {
+    return escapeForHtml(source);
+  }
+}
+
 function buildHtmlAttachment(body, extraStyles = '') {
   return [
     '<!doctype html>',
@@ -78,6 +92,11 @@ function buildHtmlAttachment(body, extraStyles = '') {
     '.xml-source .token.tag,.xml-source .token.punctuation{color:#0c5a41;}',
     '.xml-source .token.attr-name{color:#4b5565;}',
     '.xml-source .token.attr-value,.xml-source .token.attr-value .token.punctuation{color:#7a2ce8;}',
+    '.json-source .token.property{color:#0c5a41;}',
+    '.json-source .token.string{color:#7a2ce8;}',
+    '.json-source .token.number{color:#b35309;}',
+    '.json-source .token.boolean,.json-source .token.null{color:#4b5565;font-weight:600;}',
+    '.json-source .token.operator,.json-source .token.punctuation{color:#6b6560;}',
     extraStyles,
     '</style></head><body>',
     `<div id="allure-auto-size-root">${body}</div>`,
@@ -119,6 +138,16 @@ function buildPrettyXmlHtml(xml) {
   ].join(''));
 }
 
+function buildPrettyJsonHtml(payload) {
+  const prettyJson = JSON.stringify(payload, null, 2);
+  const highlighted = highlightJsonForHtml(prettyJson);
+  return buildHtmlAttachment([
+    '<pre><code class="json-source">',
+    highlighted,
+    '</code></pre>',
+  ].join(''));
+}
+
 function valueToString(value) {
   if (value === null || value === undefined) {
     return '';
@@ -154,6 +183,47 @@ function normalizeTags(values) {
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
   return [...new Set(normalized)];
+}
+
+const ALLURE_FEATURE_ACRONYMS = new Set([
+  'AI',
+  'API',
+  'AST',
+  'CLI',
+  'DOCX',
+  'ID',
+  'JSON',
+  'MCP',
+  'MCPB',
+  'OOXML',
+  'SDK',
+  'UI',
+  'WML',
+  'XML',
+]);
+
+function normalizeFeatureLabel(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (raw.length === 0) {
+    return 'General';
+  }
+  if (!/^[a-z0-9]+(?:[-_][a-z0-9]+)+$/i.test(raw)) {
+    return raw;
+  }
+  return raw
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((segment) => {
+      const upper = segment.toUpperCase();
+      if (ALLURE_FEATURE_ACRONYMS.has(upper)) {
+        return upper;
+      }
+      if (/^\d+$/.test(segment)) {
+        return segment;
+      }
+      return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
+    })
+    .join(' ');
 }
 
 function mergeAllureDefaults(current, next) {
@@ -227,15 +297,19 @@ export function createAllureTestHelpers(config) {
     const nameParts = parseCurrentTestName();
     const hierarchyParts = nameParts.slice(0, -1);
     const fullName = nameParts.join(' > ');
-    const feature = defaults?.feature ?? hierarchyParts[0] ?? nameParts[0] ?? 'General';
-    const suite = defaults?.suite ?? hierarchyParts[1];
-    const subSuite = defaults?.subSuite ?? hierarchyParts[2];
-    const epic = resolveEpic(feature, fullName, defaults);
-    const parentSuite = defaults?.parentSuite ?? epic;
+    const rawFeature = defaults?.feature ?? hierarchyParts[0] ?? nameParts[0] ?? 'General';
+    const feature = normalizeFeatureLabel(rawFeature);
+    const hasExplicitFeature = typeof defaults?.feature === 'string' && defaults.feature.trim().length > 0;
+    const suite = defaults?.suite ?? (hasExplicitFeature ? hierarchyParts[0] : hierarchyParts[1]);
+    const subSuite = defaults?.subSuite ?? (hasExplicitFeature ? hierarchyParts[1] : hierarchyParts[2]);
+    const epic = resolveEpic(rawFeature, fullName, defaults);
+    const parentSuite = defaults?.parentSuite;
 
     await allureRuntime.epic(epic);
     await allureRuntime.feature(feature);
-    await allureRuntime.parentSuite(parentSuite);
+    if (parentSuite) {
+      await allureRuntime.parentSuite(parentSuite);
+    }
     if (suite) {
       await allureRuntime.suite(suite);
     }
@@ -320,6 +394,8 @@ export function createAllureTestHelpers(config) {
       attachHtml: (name, html) => allureAttachment(name, html, HTML_CONTENT_TYPE),
       attachMarkdown: (name, markdown) => allureAttachment(name, markdown, MARKDOWN_CONTENT_TYPE),
       attachJson: (name, payload) => allureJsonAttachment(name, payload),
+      attachPrettyJson: (name, payload) =>
+        allureAttachment(name, buildPrettyJsonHtml(payload), HTML_CONTENT_TYPE),
       attachPrettyXml: (name, xml) =>
         allureAttachment(name, buildPrettyXmlHtml(xml), HTML_CONTENT_TYPE),
       attachWordLikePreview: (name, preview) =>
@@ -352,16 +428,25 @@ export function createAllureTestHelpers(config) {
           debugState.result = options.result;
         }
 
-        await allureStep(options.stepName ?? 'Attach debug JSON (context + result)', async () => {
-          await allureJsonAttachment(
+        const attachDebugJson = async () => {
+          await allureAttachment(
             options.contextAttachmentName ?? 'Test context (debug JSON)',
-            debugState.context ?? null,
+            buildPrettyJsonHtml(debugState.context ?? null),
+            HTML_CONTENT_TYPE,
           );
-          await allureJsonAttachment(
+          await allureAttachment(
             options.resultAttachmentName ?? 'Final result (debug JSON)',
-            debugState.result ?? null,
+            buildPrettyJsonHtml(debugState.result ?? null),
+            HTML_CONTENT_TYPE,
           );
-        });
+        };
+
+        // Default behavior: attach debug JSON at the test root (not inside a no-op step).
+        if (options.attachAsStep === true) {
+          await allureStep(options.stepName ?? 'Attach debug JSON (context + result)', attachDebugJson);
+        } else {
+          await attachDebugJson();
+        }
       },
       parameter: (name, value) => allureParameter(name, valueToString(value)),
     };
@@ -375,16 +460,21 @@ export function createAllureTestHelpers(config) {
     return (async (...args) => {
       const nameParts = parseCurrentTestName();
       const scenarioIds = defaults?.openspecScenarioIds ?? [];
-      const storyLabels = scenarioIds.length > 0
+      const baseStoryLabels = scenarioIds.length > 0
         ? scenarioIds
         : [resolveStoryLabel(explicitName, nameParts)];
+      const storyLabels = baseStoryLabels.map((story) =>
+        /^Scenario:\s*/i.test(story) || /^\[[^\]]+\]\s*/.test(story)
+          ? normalizeScenarioText(story)
+          : story,
+      );
       const scenarioSerials = new Set();
-      for (const story of storyLabels) {
+      for (const story of baseStoryLabels) {
         const id = extractScenarioId(story);
         if (id) scenarioSerials.add(id);
       }
 
-      const isScenarioStyle = storyLabels.some((story) => /^Scenario:\s*/i.test(story));
+      const isScenarioStyle = baseStoryLabels.some((story) => /^Scenario:\s*/i.test(story));
       let effectiveDefaults = defaults;
       if (scenarioIds.length > 0 || isScenarioStyle) {
         const firstStory = storyLabels[0] ?? '';
@@ -399,7 +489,8 @@ export function createAllureTestHelpers(config) {
           tags: ['human-readable'],
           parameters: { audience: 'non-technical' },
         };
-        effectiveDefaults = mergeAllureDefaults(defaults, autoDefaults);
+        // Keep auto defaults for tags/parameters, but never override explicit test metadata.
+        effectiveDefaults = mergeAllureDefaults(autoDefaults, defaults);
       }
 
       await applyDefaultAllureLabels(effectiveDefaults);

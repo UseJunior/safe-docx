@@ -82,6 +82,7 @@ export type AllureBddContext = {
   attachHtml: (name: string, html: string) => Promise<void>;
   attachMarkdown: (name: string, markdown: string) => Promise<void>;
   attachJson: (name: string, payload: unknown) => Promise<void>;
+  attachPrettyJson: (name: string, payload: unknown) => Promise<void>;
   attachPrettyXml: (name: string, xml: string) => Promise<void>;
   attachWordLikePreview: (name: string, preview: AllureWordLikePreview) => Promise<void>;
   attachXmlPreviews: (xml: string, options?: AllureXmlPreviewOptions) => Promise<void>;
@@ -93,6 +94,7 @@ export type AllureBddContext = {
     contextAttachmentName?: string;
     resultAttachmentName?: string;
     stepName?: string;
+    attachAsStep?: boolean;
   }) => Promise<void>;
   parameter: (name: string, value: string | number | boolean | null | undefined) => Promise<void>;
 };

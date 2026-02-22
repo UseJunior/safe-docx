@@ -1,8 +1,8 @@
 ## 1. Implementation
-- [ ] 1.1 Add `attachPrettyJson(name, payload)` to shared Allure BDD context in `testing/allure-test-factory.js`
-- [ ] 1.2 Add TypeScript declarations for `attachPrettyJson` in `testing/allure-test-factory.d.ts`
-- [ ] 1.3 Update `attachJsonLastStep` to render evidence as a neutral step name (no forced BDD prefix)
-- [ ] 1.4 Update branded report sizing in `scripts/brand_allure_report.mjs` to prevent nested vertical scrollbars for HTML attachments
+- [x] 1.1 Add `attachPrettyJson(name, payload)` to shared Allure BDD context in `testing/allure-test-factory.js`
+- [x] 1.2 Add TypeScript declarations for `attachPrettyJson` in `testing/allure-test-factory.d.ts`
+- [x] 1.3 Verify `attachJsonLastStep` renders as a neutral step name (no forced BDD prefix) — verification-only, no code change needed
+- [x] 1.4 Update branded report sizing in `scripts/brand_allure_report.mjs` to prevent nested vertical scrollbars for HTML attachments
 
 ## 2. Testing
 - [ ] 2.1 Add/update targeted tests to verify pretty JSON attachment usage
