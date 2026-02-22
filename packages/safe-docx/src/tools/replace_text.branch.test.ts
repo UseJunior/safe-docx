@@ -327,7 +327,7 @@ describe('replace_text branch coverage', () => {
       attachXmlPreviews,
       attachJsonLastStep,
     }: AllureBddContext) => {
-      const inputParagraphs = ['Hello world', 'Second paragraph'] as const;
+      const inputParagraphs = ['Hello world', 'Second paragraph'];
       const replacement = {
         old_string: 'Hello world',
         new_string: 'Hi world',

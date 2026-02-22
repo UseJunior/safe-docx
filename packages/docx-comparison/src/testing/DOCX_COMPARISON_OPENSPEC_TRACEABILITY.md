@@ -7,60 +7,60 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
-| Atom from deleted revision | missing | n/a | No scenario mapping found in current tests |
-| Atom from inserted revision | missing | n/a | No scenario mapping found in current tests |
-| Atom marked as format-changed | missing | n/a | No scenario mapping found in current tests |
-| Atom marked as moved destination | missing | n/a | No scenario mapping found in current tests |
-| Atom marked as moved source | missing | n/a | No scenario mapping found in current tests |
-| Atom with ancestor tracking | missing | n/a | No scenario mapping found in current tests |
-| Below threshold treated as separate changes | missing | n/a | No scenario mapping found in current tests |
-| Bold added | missing | n/a | No scenario mapping found in current tests |
-| Bold added markup | missing | n/a | No scenario mapping found in current tests |
-| Bold removed markup | missing | n/a | No scenario mapping found in current tests |
-| Building footnote mapping | missing | n/a | No scenario mapping found in current tests |
-| Continuation pattern inherits formatting | missing | n/a | No scenario mapping found in current tests |
-| Creating atom with revision detection | missing | n/a | No scenario mapping found in current tests |
-| Creating atom without revision context | missing | n/a | No scenario mapping found in current tests |
-| Custom footnote marks respected | missing | n/a | No scenario mapping found in current tests |
-| Custom threshold applied | missing | n/a | No scenario mapping found in current tests |
-| Different properties | missing | n/a | No scenario mapping found in current tests |
-| Element with attributes | missing | n/a | No scenario mapping found in current tests |
-| Element with text content | missing | n/a | No scenario mapping found in current tests |
-| Empty properties equal | missing | n/a | No scenario mapping found in current tests |
-| First footnote displays as 1 | missing | n/a | No scenario mapping found in current tests |
-| Format change markup structure | missing | n/a | No scenario mapping found in current tests |
-| Format detection disabled | missing | n/a | No scenario mapping found in current tests |
-| Format detection enabled by default | missing | n/a | No scenario mapping found in current tests |
-| Format detection with text change | missing | n/a | No scenario mapping found in current tests |
-| Get format change revisions | missing | n/a | No scenario mapping found in current tests |
-| Hash calculation for content identity | missing | n/a | No scenario mapping found in current tests |
-| Identical text returns 1.0 | missing | n/a | No scenario mapping found in current tests |
-| Move destination markup structure | missing | n/a | No scenario mapping found in current tests |
-| Move detected between similar blocks | missing | n/a | No scenario mapping found in current tests |
-| Move detection disabled | missing | n/a | No scenario mapping found in current tests |
-| Move source markup structure | missing | n/a | No scenario mapping found in current tests |
-| Multiple properties changed | missing | n/a | No scenario mapping found in current tests |
-| No common words returns 0.0 | missing | n/a | No scenario mapping found in current tests |
-| No format change | missing | n/a | No scenario mapping found in current tests |
-| Normalize null properties | missing | n/a | No scenario mapping found in current tests |
-| Orphan list item renders with parent format | missing | n/a | No scenario mapping found in current tests |
-| Part from main document | missing | n/a | No scenario mapping found in current tests |
-| Partial overlap | missing | n/a | No scenario mapping found in current tests |
-| Proper nested list renders hierarchically | missing | n/a | No scenario mapping found in current tests |
-| Range IDs properly paired | missing | n/a | No scenario mapping found in current tests |
-| Remove existing revision tracking | missing | n/a | No scenario mapping found in current tests |
-| Reserved footnote IDs excluded from numbering | missing | n/a | No scenario mapping found in current tests |
-| Run with properties | missing | n/a | No scenario mapping found in current tests |
-| Run without properties | missing | n/a | No scenario mapping found in current tests |
-| Same properties different order | missing | n/a | No scenario mapping found in current tests |
-| Sequential numbering ignores XML IDs | missing | n/a | No scenario mapping found in current tests |
-| Short blocks ignored | missing | n/a | No scenario mapping found in current tests |
-| Status assigned during comparison | missing | n/a | No scenario mapping found in current tests |
-| Status for deleted content | missing | n/a | No scenario mapping found in current tests |
-| Status for format-changed content | missing | n/a | No scenario mapping found in current tests |
-| Status for moved destination content | missing | n/a | No scenario mapping found in current tests |
-| Status for moved source content | missing | n/a | No scenario mapping found in current tests |
-| Status for unmatched atoms | missing | n/a | No scenario mapping found in current tests |
-| Text becomes bold | missing | n/a | No scenario mapping found in current tests |
-| Unknown property name | missing | n/a | No scenario mapping found in current tests |
+| Atom from deleted revision | covered | `src/openspec.traceability.test.ts` |  |
+| Atom from inserted revision | covered | `src/openspec.traceability.test.ts` |  |
+| Atom marked as format-changed | covered | `src/openspec.traceability.test.ts` |  |
+| Atom marked as moved destination | covered | `src/openspec.traceability.test.ts` |  |
+| Atom marked as moved source | covered | `src/openspec.traceability.test.ts` |  |
+| Atom with ancestor tracking | covered | `src/openspec.traceability.test.ts` |  |
+| Below threshold treated as separate changes | covered | `src/openspec.traceability.test.ts` |  |
+| Bold added | covered | `src/openspec.traceability.test.ts` |  |
+| Bold added markup | covered | `src/openspec.traceability.test.ts` |  |
+| Bold removed markup | covered | `src/openspec.traceability.test.ts` |  |
+| Building footnote mapping | covered | `src/openspec.traceability.test.ts` |  |
+| Continuation pattern inherits formatting | covered | `src/openspec.traceability.test.ts` |  |
+| Creating atom with revision detection | covered | `src/openspec.traceability.test.ts` |  |
+| Creating atom without revision context | covered | `src/openspec.traceability.test.ts` |  |
+| Custom footnote marks respected | covered | `src/openspec.traceability.test.ts` |  |
+| Custom threshold applied | covered | `src/openspec.traceability.test.ts` |  |
+| Different properties | covered | `src/openspec.traceability.test.ts` |  |
+| Element with attributes | covered | `src/openspec.traceability.test.ts` |  |
+| Element with text content | covered | `src/openspec.traceability.test.ts` |  |
+| Empty properties equal | covered | `src/openspec.traceability.test.ts` |  |
+| First footnote displays as 1 | covered | `src/openspec.traceability.test.ts` |  |
+| Format change markup structure | covered | `src/openspec.traceability.test.ts` |  |
+| Format detection disabled | covered | `src/openspec.traceability.test.ts` |  |
+| Format detection enabled by default | covered | `src/openspec.traceability.test.ts` |  |
+| Format detection with text change | covered | `src/openspec.traceability.test.ts` |  |
+| Get format change revisions | covered | `src/openspec.traceability.test.ts` |  |
+| Hash calculation for content identity | covered | `src/openspec.traceability.test.ts` |  |
+| Identical text returns 1.0 | covered | `src/openspec.traceability.test.ts` |  |
+| Move destination markup structure | covered | `src/openspec.traceability.test.ts` |  |
+| Move detected between similar blocks | covered | `src/openspec.traceability.test.ts` |  |
+| Move detection disabled | covered | `src/openspec.traceability.test.ts` |  |
+| Move source markup structure | covered | `src/openspec.traceability.test.ts` |  |
+| Multiple properties changed | covered | `src/openspec.traceability.test.ts` |  |
+| No common words returns 0.0 | covered | `src/openspec.traceability.test.ts` |  |
+| No format change | covered | `src/openspec.traceability.test.ts` |  |
+| Normalize null properties | covered | `src/openspec.traceability.test.ts` |  |
+| Orphan list item renders with parent format | covered | `src/openspec.traceability.test.ts` |  |
+| Part from main document | covered | `src/openspec.traceability.test.ts` |  |
+| Partial overlap | covered | `src/openspec.traceability.test.ts` |  |
+| Proper nested list renders hierarchically | covered | `src/openspec.traceability.test.ts` |  |
+| Range IDs properly paired | covered | `src/openspec.traceability.test.ts` |  |
+| Remove existing revision tracking | covered | `src/openspec.traceability.test.ts` |  |
+| Reserved footnote IDs excluded from numbering | covered | `src/openspec.traceability.test.ts` |  |
+| Run with properties | covered | `src/openspec.traceability.test.ts` |  |
+| Run without properties | covered | `src/openspec.traceability.test.ts` |  |
+| Same properties different order | covered | `src/openspec.traceability.test.ts` |  |
+| Sequential numbering ignores XML IDs | covered | `src/openspec.traceability.test.ts` |  |
+| Short blocks ignored | covered | `src/openspec.traceability.test.ts` |  |
+| Status assigned during comparison | covered | `src/openspec.traceability.test.ts` |  |
+| Status for deleted content | covered | `src/openspec.traceability.test.ts` |  |
+| Status for format-changed content | covered | `src/openspec.traceability.test.ts` |  |
+| Status for moved destination content | covered | `src/openspec.traceability.test.ts` |  |
+| Status for moved source content | covered | `src/openspec.traceability.test.ts` |  |
+| Status for unmatched atoms | covered | `src/openspec.traceability.test.ts` |  |
+| Text becomes bold | covered | `src/openspec.traceability.test.ts` |  |
+| Unknown property name | covered | `src/openspec.traceability.test.ts` |  |
 

@@ -915,7 +915,7 @@ describe('extract_revisions tool', () => {
       and,
       attachJsonLastStep,
     }: AllureBddContext) => {
-      const inputParagraphs = ['Hello world', 'Second paragraph'] as const;
+      const inputParagraphs = ['Hello world', 'Second paragraph'];
       const replaceInstruction = {
         old_string: 'Hello world',
         new_string: 'Hi world',
