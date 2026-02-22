@@ -1,0 +1,88 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/dist/mcpb-manifest.schema.json",
+  "manifest_version": "0.3",
+  "name": "safe-docx",
+  "display_name": "Safe Docx",
+  "version": "1.0.0",
+  "description": "Format-preserving Word document editing using atomic node operations - never corrupts your .docx files",
+  "long_description": "Safe Docx enables Claude to edit Microsoft Word documents (.docx) using atomic node operations that preserve all formatting - bold, italic, underline, styles, and structure. Unlike direct XML manipulation, Safe Docx operates on document nodes individually, ensuring edits never corrupt your files.\n\nWhy Safe Docx?\n- Atomic operations: Each edit targets specific nodes, not raw XML strings\n- Format preservation: Bold, italic, fonts, and styles survive every edit\n- Stable paragraph IDs: Bookmarks (jr_para_*) provide reliable targeting across sessions\n- Predictable results: What you edit is exactly what changes - nothing more\n\nKey features:\n- Open any .docx file from your local filesystem\n- Search for text with grep (supports regex)\n- Edit specific paragraphs with smart_edit (preserves formatting)\n- Insert new paragraphs with smart_insert (copies formatting from anchor)\n- Save edited documents back to your filesystem\n\nPerfect for contracts, NDAs, agreements, and any Word documents where formatting integrity matters.",
+  "author": {
+    "name": "UseJunior",
+    "email": "support@usejunior.com",
+    "url": "https://github.com/usejunior"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/usejunior/safe-docx"
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server/main.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "python",
+        "${__dirname}/server/main.py"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "open_document",
+      "description": "Open a Word document (.docx) for editing. Provide the local file path. Read-only operation."
+    },
+    {
+      "name": "read_file",
+      "description": "Read document content with stable paragraph IDs (jr_para_*) for precise editing. Read-only operation."
+    },
+    {
+      "name": "grep",
+      "description": "Search for text patterns in the document. Returns paragraph IDs for matches. Read-only operation."
+    },
+    {
+      "name": "smart_edit",
+      "description": "Replace text in a specific paragraph while preserving all formatting. Modifies document."
+    },
+    {
+      "name": "smart_insert",
+      "description": "Insert a new paragraph before or after an existing one, copying its formatting. Modifies document."
+    },
+    {
+      "name": "download",
+      "description": "Save the edited document to a specified path on your local filesystem. Writes to disk."
+    },
+    {
+      "name": "get_session_status",
+      "description": "Check the status of the current editing session. Read-only operation."
+    }
+  ],
+  "tools_generated": false,
+  "keywords": [
+    "word",
+    "docx",
+    "document",
+    "editor",
+    "legal",
+    "contracts",
+    "formatting",
+    "safe",
+    "atomic",
+    "microsoft-word"
+  ],
+  "license": "MIT",
+  "homepage": "https://usejunior.com",
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "python": ">=3.10.0 <4"
+    }
+  },
+  "privacy_policies": [
+    "https://usejunior.com/privacy"
+  ],
+  "icon": "icon.png"
+}
