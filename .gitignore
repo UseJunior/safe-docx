@@ -2,10 +2,14 @@ node_modules/
 dist/
 *.tgz
 .DS_Store
+# Allure report artifacts (any depth)
 allure-results/
 allure-report/
 allure-report-repo/
 allure-report-brand-preview/
+allure-report-pilot/
+sdx-allure-fresh-local/
+.allure-results-merged/
 **/allure-results.bak.*/
 coverage/
 !coverage/

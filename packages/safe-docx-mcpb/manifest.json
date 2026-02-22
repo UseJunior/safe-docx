@@ -75,6 +75,14 @@
       "description": "Add a comment or threaded reply."
     },
     {
+      "name": "get_comments",
+      "description": "Get all comments with IDs, anchors, authors, dates, and threaded replies."
+    },
+    {
+      "name": "delete_comment",
+      "description": "Delete a comment and all threaded replies."
+    },
+    {
       "name": "compare_documents",
       "description": "Compare two documents and write a tracked-changes output document."
     },
@@ -106,7 +114,7 @@
     "editing",
     "legal",
     "contracts",
-    "redline",
+    "document-comparison",
     "tracked-changes",
     "mcp"
   ],

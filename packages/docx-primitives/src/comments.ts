@@ -646,6 +646,193 @@ function findCommentById(comments: Comment[], id: number): Comment | null {
   return null;
 }
 
+// ── Comment deletion ─────────────────────────────────────────────────
+
+/**
+ * Delete a comment and all its descendants from the document.
+ *
+ * - Removes comment elements from comments.xml
+ * - Removes commentEx entries from commentsExtended.xml (if present)
+ * - For root comments: removes commentRangeStart, commentRangeEnd, and
+ *   commentReference from document.xml (element-level; run removed only if empty)
+ * - Transitive cascade: deleting any node also deletes all descendants
+ */
+export async function deleteComment(
+  documentXml: Document,
+  zip: DocxZip,
+  params: { commentId: number },
+): Promise<void> {
+  const { commentId } = params;
+
+  const commentsText = await zip.readTextOrNull('word/comments.xml');
+  if (!commentsText) throw new Error(`Comment ID ${commentId} not found`);
+
+  const commentsDoc = parseXml(commentsText);
+
+  // Find the target comment element and its paraId
+  const targetEl = findCommentElementById(commentsDoc, commentId);
+  if (!targetEl) throw new Error(`Comment ID ${commentId} not found`);
+
+  const targetParaId = getCommentElParaId(targetEl);
+
+  // Collect all IDs to delete: the target + all transitive descendants
+  const idsToDelete = new Set<number>([commentId]);
+  const paraIdsToDelete = new Set<string>();
+  if (targetParaId) paraIdsToDelete.add(targetParaId);
+
+  // Build paraId→commentId and paraId→commentEl maps for all comments
+  const paraIdToId = new Map<string, number>();
+  const allCommentEls = commentsDoc.getElementsByTagNameNS(OOXML.W_NS, W.comment);
+  for (let i = 0; i < allCommentEls.length; i++) {
+    const el = allCommentEls.item(i) as Element;
+    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const id = idStr ? parseInt(idStr, 10) : -1;
+    if (id < 0) continue;
+    const pid = getCommentElParaId(el);
+    if (pid) paraIdToId.set(pid, id);
+  }
+
+  // Read commentsExtended.xml to find descendants via paraIdParent graph
+  const extText = await zip.readTextOrNull('word/commentsExtended.xml');
+  if (extText) {
+    const extDoc = parseXml(extText);
+    const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
+
+    // Build parent→children map
+    const childrenOf = new Map<string, string[]>();
+    for (let i = 0; i < exEls.length; i++) {
+      const ex = exEls.item(i) as Element;
+      const childPid = ex.getAttributeNS(OOXML.W15_NS, 'paraId') ?? ex.getAttribute('w15:paraId');
+      const parentPid = ex.getAttributeNS(OOXML.W15_NS, 'paraIdParent') ?? ex.getAttribute('w15:paraIdParent');
+      if (childPid && parentPid) {
+        const arr = childrenOf.get(parentPid);
+        if (arr) arr.push(childPid);
+        else childrenOf.set(parentPid, [childPid]);
+      }
+    }
+
+    // BFS from target paraId to collect all descendant paraIds
+    const queue = targetParaId ? [targetParaId] : [];
+    while (queue.length > 0) {
+      const pid = queue.shift()!;
+      const children = childrenOf.get(pid);
+      if (!children) continue;
+      for (const childPid of children) {
+        if (!paraIdsToDelete.has(childPid)) {
+          paraIdsToDelete.add(childPid);
+          const childId = paraIdToId.get(childPid);
+          if (childId != null) idsToDelete.add(childId);
+          queue.push(childPid);
+        }
+      }
+    }
+  }
+
+  // 1. Remove comment elements from comments.xml
+  const elsToRemove: Element[] = [];
+  for (let i = 0; i < allCommentEls.length; i++) {
+    const el = allCommentEls.item(i) as Element;
+    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const id = idStr ? parseInt(idStr, 10) : -1;
+    if (idsToDelete.has(id)) elsToRemove.push(el);
+  }
+  for (const el of elsToRemove) {
+    el.parentNode?.removeChild(el);
+  }
+  zip.writeText('word/comments.xml', serializeXml(commentsDoc));
+
+  // 2. Remove commentEx entries from commentsExtended.xml (if present)
+  if (extText) {
+    const extDoc = parseXml(extText);
+    const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
+    const exToRemove: Element[] = [];
+    for (let i = 0; i < exEls.length; i++) {
+      const ex = exEls.item(i) as Element;
+      const pid = ex.getAttributeNS(OOXML.W15_NS, 'paraId') ?? ex.getAttribute('w15:paraId');
+      if (pid && paraIdsToDelete.has(pid)) exToRemove.push(ex);
+    }
+    for (const ex of exToRemove) {
+      ex.parentNode?.removeChild(ex);
+    }
+    zip.writeText('word/commentsExtended.xml', serializeXml(extDoc));
+  }
+
+  // 3. Remove range markers and commentReference from document.xml (for root comments)
+  for (const cid of idsToDelete) {
+    removeCommentMarkersFromDocument(documentXml, cid);
+  }
+}
+
+function findCommentElementById(commentsDoc: Document, commentId: number): Element | null {
+  const commentEls = commentsDoc.getElementsByTagNameNS(OOXML.W_NS, W.comment);
+  for (let i = 0; i < commentEls.length; i++) {
+    const el = commentEls.item(i) as Element;
+    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    if (idStr && parseInt(idStr, 10) === commentId) return el;
+  }
+  return null;
+}
+
+function getCommentElParaId(commentEl: Element): string | null {
+  const paras = commentEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
+  if (paras.length === 0) return null;
+  const p = paras.item(0) as Element;
+  return p.getAttributeNS(OOXML.W14_NS, 'paraId') ?? p.getAttribute('w14:paraId') ?? null;
+}
+
+function removeCommentMarkersFromDocument(documentXml: Document, commentId: number): void {
+  const cidStr = String(commentId);
+
+  // Remove commentRangeStart elements
+  const rangeStarts = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.commentRangeStart);
+  const startsToRemove: Element[] = [];
+  for (let i = 0; i < rangeStarts.length; i++) {
+    const el = rangeStarts.item(i) as Element;
+    const id = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    if (id === cidStr) startsToRemove.push(el);
+  }
+  for (const el of startsToRemove) el.parentNode?.removeChild(el);
+
+  // Remove commentRangeEnd elements
+  const rangeEnds = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.commentRangeEnd);
+  const endsToRemove: Element[] = [];
+  for (let i = 0; i < rangeEnds.length; i++) {
+    const el = rangeEnds.item(i) as Element;
+    const id = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    if (id === cidStr) endsToRemove.push(el);
+  }
+  for (const el of endsToRemove) el.parentNode?.removeChild(el);
+
+  // Remove commentReference elements (safe: remove element, then run only if empty)
+  const refs = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.commentReference);
+  const refsToRemove: Element[] = [];
+  for (let i = 0; i < refs.length; i++) {
+    const el = refs.item(i) as Element;
+    const id = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    if (id === cidStr) refsToRemove.push(el);
+  }
+  for (const ref of refsToRemove) {
+    const run = ref.parentNode as Element | null;
+    if (!run) continue;
+    run.removeChild(ref);
+    // Remove run only if it has no visible content after removing the reference
+    if (!hasVisibleRunContent(run)) {
+      run.parentNode?.removeChild(run);
+    }
+  }
+}
+
+function hasVisibleRunContent(run: Element): boolean {
+  for (const child of Array.from(run.childNodes)) {
+    if (child.nodeType !== 1) continue;
+    const el = child as Element;
+    if (el.namespaceURI !== OOXML.W_NS) continue;
+    if (el.localName === W.rPr) continue;
+    return true;
+  }
+  return false;
+}
+
 function extractCommentText(commentEl: Element): string {
   const parts: string[] = [];
   const runs = commentEl.getElementsByTagNameNS(OOXML.W_NS, W.r);

@@ -223,6 +223,16 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
+    name: 'delete_comment',
+    description:
+      'Delete a comment and all its threaded replies from the document. Cascade-deletes all descendants.',
+    input: z.object({
+      ...SESSION_OR_FILE_FIELDS,
+      comment_id: z.number().describe('Comment ID to delete.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
     name: 'compare_documents',
     description:
       'Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or session_id/file_path to compare session edits against the original.',

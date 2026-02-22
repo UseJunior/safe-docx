@@ -216,6 +216,31 @@ Add a comment or threaded reply to a document. Provide target_paragraph_id + anc
 | `text` | `string` | yes | Comment body text. |
 | `initials` | `string` | no | Author initials (defaults to first letter of author name). |
 
+## `get_comments`
+
+Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies. Read-only.
+
+- readOnly: `true`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `session_id` | `string` | no |  |
+| `file_path` | `string` | no |  |
+
+## `delete_comment`
+
+Delete a comment and all its threaded replies from the document. Cascade-deletes all descendants.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `session_id` | `string` | no |  |
+| `file_path` | `string` | no |  |
+| `comment_id` | `number` | yes | Comment ID to delete. |
+
 ## `compare_documents`
 
 Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or session_id/file_path to compare session edits against the original.

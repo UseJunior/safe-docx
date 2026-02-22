@@ -33,6 +33,7 @@ import {
   addCommentReply as addCommentReplyImpl,
   getComments as getCommentsImpl,
   getComment as getCommentImpl,
+  deleteComment as deleteCommentImpl,
   type AddCommentResult,
   type AddCommentReplyResult,
   type BootstrapResult,
@@ -515,6 +516,12 @@ export class DocxDocument {
 
   async getComment(commentId: number): Promise<Comment | null> {
     return getCommentImpl(this.zip, this.documentXml, commentId);
+  }
+
+  async deleteComment(params: { commentId: number }): Promise<void> {
+    await deleteCommentImpl(this.documentXml, this.zip, params);
+    this.dirty = true;
+    this.documentViewCache = null;
   }
 
   // ── Footnote methods ──────────────────────────────────────────────────

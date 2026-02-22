@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { itAllure } from './testing/allure-test.js';
+import { SAFE_DOCX_MCP_TOOLS } from '../../safe-docx/src/tool_catalog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,25 +34,20 @@ describe('safe-docx-mcpb manifest contract', () => {
       tools?: Array<{ name?: string }>;
     };
 
-    const names = new Set((manifest.tools ?? []).map((tool) => tool.name));
+    const manifestToolNames = (manifest.tools ?? [])
+      .map((tool) => tool.name)
+      .filter((name): name is string => typeof name === 'string');
+    const canonicalToolNames = SAFE_DOCX_MCP_TOOLS.map((tool) => tool.name);
 
-    expect(names.has('read_file')).toBe(true);
-    expect(names.has('grep')).toBe(true);
-    expect(names.has('replace_text')).toBe(true);
-    expect(names.has('insert_paragraph')).toBe(true);
-    expect(names.has('download')).toBe(true);
-    expect(names.has('format_layout')).toBe(true);
-    expect(names.has('accept_changes')).toBe(true);
-    expect(names.has('has_tracked_changes')).toBe(true);
-    expect(names.has('add_comment')).toBe(true);
-    expect(names.has('compare_documents')).toBe(true);
-    expect(names.has('get_footnotes')).toBe(true);
-    expect(names.has('add_footnote')).toBe(true);
-    expect(names.has('update_footnote')).toBe(true);
-    expect(names.has('delete_footnote')).toBe(true);
-    expect(names.has('extract_revisions')).toBe(true);
-    expect(names.has('open_document')).toBe(false);
-    expect(names.has('smart_edit')).toBe(false);
-    expect(names.has('smart_insert')).toBe(false);
+    const manifestSet = new Set(manifestToolNames);
+    const canonicalSet = new Set(canonicalToolNames);
+
+    const duplicates = manifestToolNames.filter((name, index) => manifestToolNames.indexOf(name) !== index);
+    const missing = canonicalToolNames.filter((name) => !manifestSet.has(name));
+    const extra = manifestToolNames.filter((name) => !canonicalSet.has(name));
+
+    expect(duplicates).toEqual([]);
+    expect(missing).toEqual([]);
+    expect(extra).toEqual([]);
   });
 });
