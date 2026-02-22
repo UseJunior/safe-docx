@@ -28,11 +28,15 @@
     "allure:serve": "npm run allure:generate && npm run allure:open",
     "generate:system-card": "node scripts/generate_system_card.mjs --output site/src/trust/system-card.md",
     "check:system-card": "npm run generate:system-card && git diff --exit-code -- packages/docx-comparison/src/testing/DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md packages/docx-primitives/test/DOCX_PRIMITIVES_OPENSPEC_TRACEABILITY.md packages/safe-docx/src/testing/SAFE_DOCX_OPENSPEC_TRACEABILITY.md site/src/trust/system-card.md site/src/trust/traceability/docx-comparison.md site/src/trust/traceability/docx-primitives.md site/src/trust/traceability/safe-docx.md",
+    "check:tool-docs": "npm run docs:generate:tools -w @usejunior/safe-docx && git diff --exit-code -- packages/safe-docx/docs/tool-reference.generated.md",
     "site:build": "npm --prefix site run build",
     "site:dev": "npm --prefix site run dev",
+    "check:site-links": "node scripts/check_site_internal_links.mjs",
+    "check:site": "npm run site:build && npm run check:site-links",
     "check:spec-coverage": "npm run check:spec-coverage -w @usejunior/docx-comparison -- --strict && npm run check:spec-coverage -w @usejunior/docx-primitives -- --strict && npm run check:spec-coverage -w @usejunior/safe-docx -- --strict",
     "check:allure-labels": "node scripts/validate_allure_test_labels.mjs",
     "check:allure-filenames": "node scripts/check_allure_test_filename_policy.mjs --baseline coverage/allure-test-filename-baseline.json",
+    "check:mcpb-manifest": "npm run check:manifest-contract -w @usejunior/safedocx-mcpb",
     "test:coverage:packages": "npm run test:coverage -w @usejunior/docx-comparison && npm run test:coverage -w @usejunior/docx-primitives && npm run test:coverage -w @usejunior/safe-docx",
     "coverage:matrix": "node scripts/print_coverage_matrix.mjs",
     "coverage:packages:report": "node scripts/report_package_coverage.mjs --baseline coverage/package-coverage-baseline.json --output coverage/package-coverage-summary.json",
@@ -46,7 +50,9 @@
     "@typescript-eslint/parser": "^8.56.0",
     "@vitest/runner": "3.2.4",
     "allure": "3.2.0",
-    "eslint": "^10.0.1"
+    "eslint": "^10.0.1",
+    "fast-xml-parser": "^4.5.3",
+    "prismjs": "^1.30.0"
   },
   "overrides": {
     "@vitest/runner": "3.2.4"

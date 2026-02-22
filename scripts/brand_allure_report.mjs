@@ -311,6 +311,43 @@ ${BRANDING_START}
           return first;
         };
 
+        const validatedTestResultIds = new Set();
+        const staleHashChecksInFlight = new Set();
+
+        const recoverFromStaleTestResultHash = async () => {
+          const activeId = getActiveTestResultId();
+          if (!activeId) return;
+          if (validatedTestResultIds.has(activeId)) return;
+          if (staleHashChecksInFlight.has(activeId)) return;
+
+          staleHashChecksInFlight.add(activeId);
+          try {
+            const testResultPath = "data/test-results/" + activeId + ".json";
+            let response = await fetch(testResultPath, {
+              method: "HEAD",
+              cache: "no-store",
+            });
+            if (response.status === 405 || response.status === 501) {
+              response = await fetch(testResultPath, {
+                cache: "no-store",
+              });
+            }
+
+            if (!response.ok) {
+              clearQueryParam();
+              setSearchInputValueWithRetry("", 2);
+              window.location.hash = "#/";
+              return;
+            }
+
+            validatedTestResultIds.add(activeId);
+          } catch {
+            // Do not force navigation on transient network failures.
+          } finally {
+            staleHashChecksInFlight.delete(activeId);
+          }
+        };
+
         const navigateFromBreadcrumb = (label, isLeaf) => {
           if (isLeaf) {
             const activeId = getActiveTestResultId();
@@ -585,6 +622,7 @@ ${BRANDING_START}
           hideThemeToggle();
           patchHomeButtonBehavior();
           patchBreadcrumbLinks();
+          recoverFromStaleTestResultHash();
           const autoExpandAttachmentsEnabled =
             typeof settings.autoExpandAttachmentsOverride === "boolean"
               ? settings.autoExpandAttachmentsOverride

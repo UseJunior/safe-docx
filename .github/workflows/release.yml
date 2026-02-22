@@ -68,6 +68,15 @@ jobs:
       - name: Lint/typecheck workspaces
         run: npm run lint:workspaces
 
+      - name: Regenerate and verify tool reference docs are committed
+        run: npm run check:tool-docs
+
+      - name: Build site and validate internal links
+        run: npm run check:site
+
+      - name: Validate MCPB manifest/tool contract
+        run: npm run check:mcpb-manifest
+
       - name: Guard against duplicate publish
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
@@ -192,10 +201,16 @@ jobs:
       - name: Build and pack safe-docx MCP bundle
         run: npm run pack:mcpb
 
+      - name: Generate MCP bundle checksum
+        run: |
+          sha256sum packages/safe-docx-mcpb/safe-docx.mcpb > packages/safe-docx-mcpb/safe-docx.mcpb.sha256
+
       - name: Attach safe-docx.mcpb to GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: packages/safe-docx-mcpb/safe-docx.mcpb
+          files: |
+            packages/safe-docx-mcpb/safe-docx.mcpb
+            packages/safe-docx-mcpb/safe-docx.mcpb.sha256
           fail_on_unmatched_files: true
           generate_release_notes: true
