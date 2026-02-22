@@ -128,6 +128,90 @@ function buildWordLikePreviewHtml(preview) {
   ].join(''));
 }
 
+const DOC_PREVIEW_EXTRA_STYLES = [
+  '.doc-move-from{color:#7a2ce8;text-decoration:line-through;text-decoration-thickness:1.5px;}',
+  '.doc-move-to{color:#7a2ce8;text-decoration:underline;text-underline-offset:2px;}',
+  '.doc-footnote-sep{border:none;border-top:1px solid #d7c7b5;margin:12px 0 6px;}',
+  '.doc-footnote{font-family:Georgia,"Times New Roman",serif;font-size:13px;line-height:1.5;color:#4b5565;margin:4px 0 4px 6px;}',
+  '.doc-preview-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#6b6560;margin:0 0 6px;}',
+].join('');
+
+const DOC_REVISION_CLASS_MAP = {
+  'insertion': 'doc-ins',
+  'deletion': 'doc-del',
+  'move-from': 'doc-move-from',
+  'move-to': 'doc-move-to',
+};
+
+function buildDocPreviewHtml(options) {
+  const runs = options?.runs ?? [];
+  const footnotes = options?.footnotes ?? [];
+  const label = options?.label;
+
+  const bodyParts = ['<section class="panel">'];
+
+  if (typeof label === 'string' && label.length > 0) {
+    bodyParts.push(`<p class="doc-preview-label">${escapeForHtml(label)}</p>`);
+  }
+
+  const lineParts = [];
+  for (const run of runs) {
+    if (!run.text && run.text !== '') continue;
+    if (run.text.length === 0) continue;
+
+    let content = escapeForHtml(run.text);
+
+    if (run.script === 'subscript') {
+      content = `<sub>${content}</sub>`;
+    } else if (run.script === 'superscript') {
+      content = `<sup>${content}</sup>`;
+    }
+
+    if (run.underline) {
+      content = `<u>${content}</u>`;
+    }
+    if (run.italic) {
+      content = `<i>${content}</i>`;
+    }
+    if (run.bold) {
+      content = `<b>${content}</b>`;
+    }
+
+    const needsSpan = run.revision || (typeof run.positionHpt === 'number' && run.positionHpt !== 0);
+    if (needsSpan) {
+      const classes = run.revision ? DOC_REVISION_CLASS_MAP[run.revision] : '';
+      const posStyle = typeof run.positionHpt === 'number' && run.positionHpt !== 0
+        ? `position:relative;top:${-(run.positionHpt / 2)}pt`
+        : '';
+      const title = run.revision && typeof run.revisionAuthor === 'string' && run.revisionAuthor.length > 0
+        ? ` title="${escapeForHtml(run.revisionAuthor)}"`
+        : '';
+      const classAttr = classes ? ` class="${classes}"` : '';
+      const styleAttr = posStyle ? ` style="${posStyle}"` : '';
+      content = `<span${classAttr}${styleAttr}${title}>${content}</span>`;
+    }
+
+    lineParts.push(content);
+  }
+
+  if (lineParts.length > 0) {
+    bodyParts.push(`<p class="doc-line">${lineParts.join('')}</p>`);
+  }
+
+  if (footnotes.length > 0) {
+    bodyParts.push('<hr class="doc-footnote-sep">');
+    for (const fn of footnotes) {
+      const marker = escapeForHtml(fn.marker);
+      const text = escapeForHtml(fn.text);
+      bodyParts.push(`<p class="doc-footnote"><sup>${marker}</sup> ${text}</p>`);
+    }
+  }
+
+  bodyParts.push('</section>');
+
+  return buildHtmlAttachment(bodyParts.join(''), DOC_PREVIEW_EXTRA_STYLES);
+}
+
 function buildPrettyXmlHtml(xml) {
   const prettyXml = formatXmlForDisplay(xml);
   const highlighted = highlightXmlForHtml(prettyXml);
@@ -400,7 +484,16 @@ export function createAllureTestHelpers(config) {
         allureAttachment(name, buildPrettyXmlHtml(xml), HTML_CONTENT_TYPE),
       attachWordLikePreview: (name, preview) =>
         allureAttachment(name, buildWordLikePreviewHtml(preview), HTML_CONTENT_TYPE),
+      attachDocPreview: (name, options) =>
+        allureAttachment(name, buildDocPreviewHtml(options), HTML_CONTENT_TYPE),
       attachXmlPreviews: async (xml, options = {}) => {
+        if (options.docPreview) {
+          await allureAttachment(
+            options.docPreviewName ?? 'Document preview',
+            buildDocPreviewHtml(options.docPreview),
+            HTML_CONTENT_TYPE,
+          );
+        }
         if (options.wordLike) {
           await allureAttachment(
             options.wordLikeName ?? 'Word-like visual preview',

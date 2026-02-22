@@ -191,7 +191,7 @@ function makeBrandingBlock(iconFileWithVersion) {
 function buildReportJsPatches(securityProfile) {
   const SANITIZED_HTML_RENDERER = 'i=r.length>0?(e=>Wy.sanitize(e,void 0))(r):""';
   const SANITIZED_HTML_RENDERER_ALLOWLIST =
-    'i=r.length>0?(e=>Wy.sanitize(e,{WHOLE_DOCUMENT:!0,USE_PROFILES:{html:!0},ADD_TAGS:["html","head","body","style"],ADD_ATTR:["class"],FORBID_TAGS:["script","iframe","object","embed","form","input","button","textarea","select","option","meta","base","link"]}))(r):""';
+    'i=r.length>0?(e=>Wy.sanitize(e,{WHOLE_DOCUMENT:!0,USE_PROFILES:{html:!0},ADD_TAGS:["html","head","body","style"],ADD_ATTR:["class","style","title"],FORBID_TAGS:["script","iframe","object","embed","form","input","button","textarea","select","option","meta","base","link"]}))(r):""';
   const UNSANITIZED_HTML_RENDERER = 'i=r.length>0?r:""';
 
   const patches = [

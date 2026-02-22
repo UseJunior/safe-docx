@@ -66,10 +66,38 @@ export type AllureWordLikePreview = {
   deletedAuthor?: string;
 };
 
+export type DocPreviewRun = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** Superscript or subscript. Mutually exclusive. */
+  script?: 'superscript' | 'subscript';
+  /** Position offset in OOXML half-points (positive = up). Converted to CSS internally. */
+  positionHpt?: number;
+  /** Tracked change type */
+  revision?: 'insertion' | 'deletion' | 'move-from' | 'move-to';
+  /** Tracked change author (shown as tooltip) */
+  revisionAuthor?: string;
+};
+
+export type DocPreviewFootnote = {
+  marker: string;
+  text: string;
+};
+
+export type DocPreviewOptions = {
+  runs: DocPreviewRun[];
+  footnotes?: DocPreviewFootnote[];
+  label?: string;
+};
+
 export type AllureXmlPreviewOptions = {
   xmlName?: string;
   wordLikeName?: string;
   wordLike?: AllureWordLikePreview;
+  docPreview?: DocPreviewOptions;
+  docPreviewName?: string;
 };
 
 export type AllureBddContext = {
@@ -85,6 +113,7 @@ export type AllureBddContext = {
   attachPrettyJson: (name: string, payload: unknown) => Promise<void>;
   attachPrettyXml: (name: string, xml: string) => Promise<void>;
   attachWordLikePreview: (name: string, preview: AllureWordLikePreview) => Promise<void>;
+  attachDocPreview: (name: string, options: DocPreviewOptions) => Promise<void>;
   attachXmlPreviews: (xml: string, options?: AllureXmlPreviewOptions) => Promise<void>;
   setDebugContext: (payload: unknown) => void;
   setDebugResult: (payload: unknown) => void;
