@@ -70,6 +70,8 @@ Scope your commits to one package when possible. Cross-package changes should us
 - Include test evidence for behavior changes.
 - For new capabilities or behavior shifts, include an OpenSpec change.
 
+**Maintainer exception:** During early development, maintainers may use larger PRs that bundle related changes. The small-PR guidance is most important for external contributions and for mature codebases where review load matters.
+
 ## Code Review Etiquette
 
 - **Before your first review:** interactive rebase to clean up history is fine and encouraged.
