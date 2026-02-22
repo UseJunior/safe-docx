@@ -25,6 +25,11 @@ function normalizeScenarioName(value) {
     .replace(/\s+/g, ' ');
 }
 
+function extractScenarioId(value) {
+  const match = value.trim().match(/^\[([^\]]+)\]/);
+  return match ? match[1].trim() : null;
+}
+
 async function listFilesRecursively(rootDir, predicate) {
   const out = [];
   async function walk(dir) {
@@ -58,29 +63,42 @@ function parseFeatureIdFromTest(content, testFile) {
 
 function parseStoriesFromTest(content) {
   const stories = new Set();
+  const storyIdsByName = new Map();
+
+  function addStory(rawValue) {
+    const normalized = normalizeScenarioName(rawValue);
+    stories.add(normalized);
+    const id = extractScenarioId(rawValue);
+    if (!id) {
+      return;
+    }
+    const ids = storyIdsByName.get(normalized) ?? new Set();
+    ids.add(id);
+    storyIdsByName.set(normalized, ids);
+  }
 
   const viaHelper = /tagScenario\(\s*(['"`])([\s\S]*?)\1\s*,/g;
   let m = viaHelper.exec(content);
   while (m) {
-    stories.add(normalizeScenarioName(m[2]));
+    addStory(m[2]);
     m = viaHelper.exec(content);
   }
 
   const direct = /allure\.story\(\s*(['"`])([\s\S]*?)\1\s*\)/g;
   m = direct.exec(content);
   while (m) {
-    stories.add(normalizeScenarioName(m[2]));
+    addStory(m[2]);
     m = direct.exec(content);
   }
 
   const viaOpenspec = /\.openspec\(\s*(['"`])([\s\S]*?)\1\s*\)/g;
   m = viaOpenspec.exec(content);
   while (m) {
-    stories.add(normalizeScenarioName(m[2]));
+    addStory(m[2]);
     m = viaOpenspec.exec(content);
   }
 
-  return stories;
+  return { stories, storyIdsByName };
 }
 
 function parseSkippedStoriesFromTest(content) {
@@ -108,14 +126,26 @@ function parsePendingMarkersFromTest(content) {
 }
 
 function parseScenariosFromSpec(content) {
-  const scenarios = new Set();
+  const scenarioEntries = [];
+  const seen = new Set();
   const scenarioHeader = /^\s*####\s+Scenario:\s*(.+?)\s*$/gm;
   let m = scenarioHeader.exec(content);
   while (m) {
-    scenarios.add(normalizeScenarioName(m[1]));
+    const raw = m[1].trim();
+    const name = normalizeScenarioName(raw);
+    if (seen.has(name)) {
+      m = scenarioHeader.exec(content);
+      continue;
+    }
+    seen.add(name);
+    scenarioEntries.push({
+      raw,
+      name,
+      id: extractScenarioId(raw),
+    });
     m = scenarioHeader.exec(content);
   }
-  return scenarios;
+  return scenarioEntries;
 }
 
 async function listSpecFilesForFeature(feature) {
@@ -200,15 +230,24 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
   const storySet = new Set();
   const skippedStorySet = new Set();
   const pendingMarkerSet = new Set();
+  const storyIdsByName = new Map();
   const storyToFiles = new Map();
   for (const tf of testFiles) {
     const content = await fs.readFile(tf, 'utf-8');
     const relTestFile = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
-    for (const story of parseStoriesFromTest(content)) {
+    const parsedStories = parseStoriesFromTest(content);
+    for (const story of parsedStories.stories) {
       storySet.add(story);
       const files = storyToFiles.get(story) ?? new Set();
       files.add(relTestFile);
       storyToFiles.set(story, files);
+    }
+    for (const [story, ids] of parsedStories.storyIdsByName.entries()) {
+      const existing = storyIdsByName.get(story) ?? new Set();
+      for (const id of ids) {
+        existing.add(id);
+      }
+      storyIdsByName.set(story, existing);
     }
     for (const story of parseSkippedStoriesFromTest(content)) skippedStorySet.add(story);
     for (const marker of parsePendingMarkersFromTest(content)) pendingMarkerSet.add(marker);
@@ -222,6 +261,7 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
       reason: `No OpenSpec files found for feature '${feature}' in active/archive mcp-server deltas`,
       missing: [],
       extra: [],
+      scenarioIdIssues: [],
       skippedStories: [...skippedStorySet].sort(),
       pendingMarkers: [...pendingMarkerSet].sort(),
       stories: [...storySet].sort(),
@@ -232,19 +272,27 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
     };
   }
 
-  const scenarioSet = new Set();
+  const scenarioEntries = [];
+  const seenScenarios = new Set();
   for (const sf of specFiles) {
     const content = await fs.readFile(sf, 'utf-8');
-    for (const scenario of parseScenariosFromSpec(content)) scenarioSet.add(scenario);
+    for (const scenario of parseScenariosFromSpec(content)) {
+      if (seenScenarios.has(scenario.name)) {
+        continue;
+      }
+      seenScenarios.add(scenario.name);
+      scenarioEntries.push(scenario);
+    }
   }
 
-  if (scenarioSet.size === 0) {
+  if (scenarioEntries.length === 0) {
     return {
       feature,
       ok: false,
       reason: `No '#### Scenario:' entries found for feature '${feature}'`,
       missing: [],
       extra: [],
+      scenarioIdIssues: [],
       skippedStories: [...skippedStorySet].sort(),
       pendingMarkers: [...pendingMarkerSet].sort(),
       stories: [...storySet].sort(),
@@ -255,13 +303,34 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
     };
   }
 
-  const scenarios = [...scenarioSet].sort();
+  const scenarios = scenarioEntries.map((entry) => entry.name).sort();
   const stories = [...storySet].sort();
   const storyLookup = new Set(stories);
   const scenarioLookup = new Set(scenarios);
 
   const missing = scenarios.filter((s) => !storyLookup.has(s));
   const extra = stories.filter((s) => !scenarioLookup.has(s));
+  const scenarioIdIssues = [];
+  for (const scenario of scenarioEntries) {
+    if (!scenario.id) {
+      continue;
+    }
+    if (!storyLookup.has(scenario.name)) {
+      continue;
+    }
+    const mappedIds = storyIdsByName.get(scenario.name) ?? new Set();
+    if (mappedIds.size === 0) {
+      scenarioIdIssues.push(
+        `${scenario.name}: expected ID [${scenario.id}] in test .openspec(...) mapping, but no ID was found`,
+      );
+      continue;
+    }
+    if (!mappedIds.has(scenario.id)) {
+      scenarioIdIssues.push(
+        `${scenario.name}: expected ID [${scenario.id}], but found [${[...mappedIds].sort().join(', ')}]`,
+      );
+    }
+  }
   const skippedStories = [...skippedStorySet].sort();
   const pendingMarkers = [...pendingMarkerSet].sort();
 
@@ -270,11 +339,13 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
     // Extra stories beyond the spec are fine — more coverage is better.
     // Only missing spec scenarios and skipped/pending tests are failures.
     ok: missing.length === 0
+      && scenarioIdIssues.length === 0
       && skippedStories.length === 0
       && pendingMarkers.length === 0,
     reason: '',
     missing,
     extra,
+    scenarioIdIssues,
     skippedStories,
     pendingMarkers,
     stories,
@@ -386,6 +457,12 @@ function buildMatrixMarkdown({ reports, unknownTraceabilityFeatures }) {
       for (const value of report.pendingMarkers) lines.push(`- ${value}`);
     }
 
+    if (report.scenarioIdIssues && report.scenarioIdIssues.length > 0) {
+      lines.push('');
+      lines.push('Scenario ID mismatches:');
+      for (const value of report.scenarioIdIssues) lines.push(`- ${value}`);
+    }
+
     lines.push('');
   }
 
@@ -469,6 +546,7 @@ async function main() {
         reason: `Feature '${feature}' is missing traceability tests.`,
         missing: [],
         extra: [],
+        scenarioIdIssues: [],
         skippedStories: [],
         pendingMarkers: [],
         stories: [],
@@ -500,6 +578,7 @@ async function main() {
       console.error(`  ${report.reason}`);
     }
     printSet('Missing stories for spec scenarios', report.missing);
+    printSet('Scenario ID mismatches', report.scenarioIdIssues ?? []);
     if (report.extra.length > 0) {
       printSet('Extra stories beyond spec (informational, not a failure)', report.extra);
     }

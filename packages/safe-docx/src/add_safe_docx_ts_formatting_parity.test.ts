@@ -27,16 +27,20 @@ const TEST_FEATURE = 'add-safe-docx-ts-formatting-parity';
 
 describe('Traceability: TypeScript Formatting Parity', () => {
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
 
   registerCleanup();
 
-  test.openspec('read_file returns TOON schema with structure columns')('Scenario: read_file returns TOON schema with structure columns', async () => {
+  humanReadableTest.openspec('read_file returns TOON schema with structure columns')('Scenario: read_file returns TOON schema with structure columns', async () => {
     const { content } = await openSession(['Body paragraph']);
     expect(content).toContain('#SCHEMA id | list_label | header | style | text');
     expect(content).toContain('Body paragraph');
   });
 
-  test.openspec('read_file JSON mode returns node metadata')('Scenario: read_file JSON mode returns node metadata', async () => {
+  humanReadableTest.openspec('read_file JSON mode returns node metadata')('Scenario: read_file JSON mode returns node metadata', async () => {
     const { mgr, sessionId } = await openSession(['Alpha']);
 
     const read = await readFile(mgr, { session_id: sessionId, format: 'json' });
@@ -54,7 +58,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(node).toHaveProperty('numbering');
   });
 
-  test.openspec('fingerprint ignores volatile attributes')('Scenario: fingerprint ignores volatile attributes', async () => {
+  humanReadableTest.openspec('fingerprint ignores volatile attributes')('Scenario: fingerprint ignores volatile attributes', async () => {
     const base =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -88,7 +92,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(nodeA.style).toEqual(nodeB.style);
   });
 
-  test.openspec('stable style IDs within a session')('Scenario: stable style IDs within a session', async () => {
+  humanReadableTest.openspec('stable style IDs within a session')('Scenario: stable style IDs within a session', async () => {
     const { mgr, sessionId } = await openSession(['One', 'Two']);
 
     const read1 = await readFile(mgr, { session_id: sessionId, format: 'json' });
@@ -101,7 +105,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(nodes1.map((n) => n.style)).toEqual(nodes2.map((n) => n.style));
   });
 
-  test.openspec('formatting-based header detection')('Scenario: formatting-based header detection', async () => {
+  humanReadableTest.openspec('formatting-based header detection')('Scenario: formatting-based header detection', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -127,7 +131,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(cols[4]).not.toContain('Security Incidents:');
   });
 
-  test.openspec('defined term bolding via <definition> role model')('Scenario: defined term bolding via <definition> role model', async () => {
+  humanReadableTest.openspec('defined term bolding via <definition> role model')('Scenario: defined term bolding via <definition> role model', async () => {
     const prevLegacy = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
     process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = '1';
     try {
@@ -182,7 +186,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     }
   });
 
-  test.openspec('replace_text preserves mixed-run formatting')('Scenario: replace_text preserves mixed-run formatting', async () => {
+  humanReadableTest.openspec('replace_text preserves mixed-run formatting')('Scenario: replace_text preserves mixed-run formatting', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -230,7 +234,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(hasItalic(r3!)).toBe(true);
   });
 
-  test.openspec('insert_paragraph preserves header/definition semantics')('Scenario: insert_paragraph preserves header/definition semantics', async () => {
+  humanReadableTest.openspec('insert_paragraph preserves header/definition semantics')('Scenario: insert_paragraph preserves header/definition semantics', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -305,7 +309,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(hasBold(termRun!)).toBe(true);
   });
 
-  test.openspec('auto-tagged explicit definition gets role model styling')('Scenario: auto-tagged explicit definition gets role model styling', async () => {
+  humanReadableTest.openspec('auto-tagged explicit definition gets role model styling')('Scenario: auto-tagged explicit definition gets role model styling', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -356,7 +360,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(paragraphText).toContain('Insert: "Closing Cash" means all unrestricted cash.');
   });
 
-  test.openspec('header semantics accepted via tags for backward compatibility')('Scenario: header semantics accepted via tags for backward compatibility', async () => {
+  humanReadableTest.openspec('header semantics accepted via tags for backward compatibility')('Scenario: header semantics accepted via tags for backward compatibility', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -442,7 +446,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(headerRuns.every((r) => hasBold(r))).toBe(true);
   });
 
-  test.openspec('field-aware visible text does not destroy fields')('Scenario: field-aware visible text does not destroy fields', async () => {
+  humanReadableTest.openspec('field-aware visible text does not destroy fields')('Scenario: field-aware visible text does not destroy fields', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -471,7 +475,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(edited.error.message).toContain('unsupported');
   });
 
-  test.openspec('pagination rules deterministic for zero offset')('Scenario: pagination rules deterministic for offset=0', async () => {
+  humanReadableTest.openspec('pagination rules deterministic for zero offset')('Scenario: pagination rules deterministic for offset=0', async () => {
     const { mgr, sessionId } = await openSession(['A', 'B']);
 
     const read = await readFile(mgr, { session_id: sessionId, offset: 0, limit: 1, format: 'simple' });
@@ -479,7 +483,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(String(read.content)).toContain(' | A');
   });
 
-  test.openspec('post-edit invariants prevent empty paragraph stubs')('Scenario: post-edit invariants prevent empty paragraph stubs', async () => {
+  humanReadableTest.openspec('post-edit invariants prevent empty paragraph stubs')('Scenario: post-edit invariants prevent empty paragraph stubs', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +

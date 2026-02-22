@@ -15,15 +15,15 @@ import { replaceText } from './replace_text.js';
 
 const TEST_FEATURE = 'add-footnote-support';
 const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
-const lawyerReadableTest = test.allure({
-  tags: ['lawyer-readable'],
+const humanReadableTest = test.allure({
+  tags: ['human-readable'],
   parameters: { audience: 'non-technical' },
 });
 
 describe('OpenSpec traceability: add-footnote-support', () => {
   registerCleanup();
 
-  lawyerReadableTest.openspec('read all footnotes')('Scenario: read all footnotes', async () => {
+  humanReadableTest.openspec('read all footnotes')('Scenario: read all footnotes', async () => {
     const opened = await openSession([
       'Alpha paragraph for note one.',
       'Beta paragraph for note two.',
@@ -63,7 +63,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     }));
   });
 
-  lawyerReadableTest.openspec('empty document returns empty array')(
+  humanReadableTest.openspec('empty document returns empty array')(
     'Scenario: empty document returns empty array',
     async () => {
       const opened = await openSession(['No footnotes in this paragraph.']);
@@ -74,7 +74,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 
-  lawyerReadableTest.openspec('add footnote successfully')('Scenario: add footnote successfully', async () => {
+  humanReadableTest.openspec('add footnote successfully')('Scenario: add footnote successfully', async () => {
     const opened = await openSession(['Contract text paragraph.']);
 
     const result = await addFootnote(opened.mgr, {
@@ -88,7 +88,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     expect(result.session_id).toBe(opened.sessionId);
   });
 
-  lawyerReadableTest.openspec('error when anchor paragraph not found')(
+  humanReadableTest.openspec('error when anchor paragraph not found')(
     'Scenario: error when anchor paragraph not found',
     async () => {
       const opened = await openSession(['Anchor validation.']);
@@ -103,7 +103,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 
-  lawyerReadableTest.openspec('error when after_text not found')(
+  humanReadableTest.openspec('error when after_text not found')(
     'Scenario: error when after_text not found',
     async () => {
       const opened = await openSession(['Anchor text present here.']);
@@ -119,7 +119,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 
-  lawyerReadableTest.openspec('update footnote successfully')(
+  humanReadableTest.openspec('update footnote successfully')(
     'Scenario: update footnote successfully',
     async () => {
       const opened = await openSession(['Update flow paragraph.']);
@@ -144,7 +144,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 
-  lawyerReadableTest.openspec('error when note not found')('Scenario: error when note not found', async () => {
+  humanReadableTest.openspec('error when note not found')('Scenario: error when note not found', async () => {
     const opened = await openSession(['Missing-note validation paragraph.']);
 
     const result = await updateFootnote(opened.mgr, {
@@ -156,7 +156,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     assertFailure(result, 'NOTE_NOT_FOUND', 'update_footnote');
   });
 
-  lawyerReadableTest.openspec('delete footnote successfully')(
+  humanReadableTest.openspec('delete footnote successfully')(
     'Scenario: delete footnote successfully',
     async () => {
       const opened = await openSession(['Delete flow paragraph.']);
@@ -179,7 +179,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 
-  lawyerReadableTest.openspec('error when note not found')(
+  humanReadableTest.openspec('error when note not found')(
     'Scenario: error when note not found',
     async () => {
       const opened = await openSession(['Delete-missing validation paragraph.']);
@@ -193,7 +193,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 
-  lawyerReadableTest.openspec('error when deleting reserved type')(
+  humanReadableTest.openspec('error when deleting reserved type')(
     'Scenario: error when deleting reserved type',
     async () => {
       const opened = await openSession(['Reserved delete validation paragraph.']);
@@ -213,7 +213,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 
-  lawyerReadableTest.openspec('markers present in document view')(
+  humanReadableTest.openspec('markers present in document view')(
     'Scenario: markers present in document view',
     async () => {
       const opened = await openSession(['Marker display paragraph.']);
@@ -235,7 +235,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     },
   );
 
-  lawyerReadableTest.openspec('markers absent from edit matching')(
+  humanReadableTest.openspec('markers absent from edit matching')(
     'Scenario: markers absent from edit matching',
     async () => {
       const opened = await openSession(['Replace target sentence.']);

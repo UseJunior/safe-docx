@@ -214,6 +214,15 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
+    name: 'get_comments',
+    description:
+      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies. Read-only.',
+    input: z.object({
+      ...SESSION_OR_FILE_FIELDS,
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
     name: 'compare_documents',
     description:
       'Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or session_id/file_path to compare session edits against the original.',

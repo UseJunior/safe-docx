@@ -10,8 +10,16 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
+const humanReadableIt = it.allure({
+  
+  tags: ['human-readable'],
+  
+  parameters: { audience: 'non-technical' },
+  
+});
+
 describe('Traceability: docx-primitives — Semantic Tags', () => {
-  it.openspec('emit definition tags for quoted term before definition verb')('Scenario: emit definition tags for quoted term before definition verb', async () => {
+  humanReadableIt.openspec('emit definition tags for quoted term before definition verb')('Scenario: emit definition tags for quoted term before definition verb', async () => {
     const text = '"Company" means the entity described herein';
 
     const result = await allureStep('When emitDefinitionTagsFromString is called', async () => {
@@ -27,7 +35,7 @@ describe('Traceability: docx-primitives — Semantic Tags', () => {
     });
   });
 
-  it.openspec('emit definition tags for smart/curly quotes')('Scenario: emit definition tags for smart/curly quotes', async () => {
+  humanReadableIt.openspec('emit definition tags for smart/curly quotes')('Scenario: emit definition tags for smart/curly quotes', async () => {
     const text = '\u201CCompany\u201D means the entity described herein';
 
     const result = await allureStep('When emitDefinitionTagsFromString is called', async () => {
@@ -42,7 +50,7 @@ describe('Traceability: docx-primitives — Semantic Tags', () => {
     });
   });
 
-  it.openspec('no tags emitted for text without definitions')('Scenario: no tags emitted for text without definitions', async () => {
+  humanReadableIt.openspec('no tags emitted for text without definitions')('Scenario: no tags emitted for text without definitions', async () => {
     const text = 'This is a normal sentence without any definitions.';
 
     const result = await allureStep('When emitDefinitionTagsFromString is called', async () => {
@@ -56,7 +64,7 @@ describe('Traceability: docx-primitives — Semantic Tags', () => {
     });
   });
 
-  it.openspec('strip definition tags replaces with quotes')('Scenario: strip definition tags replaces with quotes', async () => {
+  humanReadableIt.openspec('strip definition tags replaces with quotes')('Scenario: strip definition tags replaces with quotes', async () => {
     const text = 'The <definition>Company</definition> is defined herein';
 
     const result = await allureStep('When stripDefinitionTags is called', async () => {
@@ -71,7 +79,7 @@ describe('Traceability: docx-primitives — Semantic Tags', () => {
     });
   });
 
-  it.openspec('strip highlight tags leaves content intact')('Scenario: strip highlight tags leaves content intact', async () => {
+  humanReadableIt.openspec('strip highlight tags leaves content intact')('Scenario: strip highlight tags leaves content intact', async () => {
     const text = 'Some <highlighting>important</highlighting> text';
 
     const result = await allureStep('When stripHighlightTags is called', async () => {

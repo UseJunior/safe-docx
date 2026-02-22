@@ -34,10 +34,14 @@ interface ToolDocMetadata {
 
 describe('TypeScript MCP server behavior', () => {
   const test = testAllure.epic('Document Editing').withLabels({ feature: 'mcp-server-behavior' });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
 
   registerCleanup();
 
-  test.openspec('Zero-friction installation on Claude Desktop')('Scenario: Zero-friction installation on Claude Desktop + core tools registered', async () => {
+  humanReadableTest.openspec('Zero-friction installation on Claude Desktop')('Scenario: Zero-friction installation on Claude Desktop + core tools registered', async () => {
     const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
     const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as Record<string, any>;
 
@@ -65,7 +69,7 @@ describe('TypeScript MCP server behavior', () => {
     }
   });
 
-  test.openspec('NPM package availability')('Scenario: NPM package availability metadata includes type definitions', async () => {
+  humanReadableTest.openspec('NPM package availability')('Scenario: NPM package availability metadata includes type definitions', async () => {
     const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
     const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as Record<string, any>;
     expect(pkg.types).toBe('dist/index.d.ts');
@@ -73,7 +77,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(pkg.license).toBe('MIT');
   });
 
-  test.openspec('Read-only tools annotated correctly')('Scenario: Read-only tools annotated correctly', async () => {
+  humanReadableTest.openspec('Read-only tools annotated correctly')('Scenario: Read-only tools annotated correctly', async () => {
     const readOnlyTools = new Set(['read_file', 'grep', 'init_plan', 'merge_plans', 'has_tracked_changes', 'get_session_status']);
     for (const tool of MCP_TOOLS) {
       if (!readOnlyTools.has(tool.name)) continue;
@@ -82,7 +86,7 @@ describe('TypeScript MCP server behavior', () => {
     }
   });
 
-  test.openspec('Destructive tools annotated correctly')('Scenario: Destructive tools annotated correctly', async () => {
+  humanReadableTest.openspec('Destructive tools annotated correctly')('Scenario: Destructive tools annotated correctly', async () => {
     const destructiveTools = new Set(['replace_text', 'insert_paragraph', 'format_layout', 'download']);
     for (const tool of MCP_TOOLS) {
       if (!destructiveTools.has(tool.name)) continue;
@@ -91,7 +95,7 @@ describe('TypeScript MCP server behavior', () => {
     }
   });
 
-  test.openspec('Session creation')('Scenario: Session creation', async () => {
+  humanReadableTest.openspec('Session creation')('Scenario: Session creation', async () => {
     const mgr = createTestSessionManager();
     const { sessionId } = await openSession(['Hello world'], { mgr });
     expect(sessionId).toMatch(/^ses_[A-Za-z0-9]{12}$/);
@@ -103,7 +107,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(statusMeta.download_defaults?.default_download_format).toBe('both');
   });
 
-  test.openspec('Session expiration')('Scenario: Session expiration', async () => {
+  humanReadableTest.openspec('Session expiration')('Scenario: Session expiration', async () => {
     const mgr = createTestSessionManager({ ttlMs: 5 });
     const { sessionId } = await openSession(['Hello world'], { mgr });
     await sleep(15);
@@ -113,7 +117,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(read.error.code).toBe('SESSION_EXPIRED');
   });
 
-  test.openspec('Concurrent sessions')('Scenario: Concurrent sessions', async () => {
+  humanReadableTest.openspec('Concurrent sessions')('Scenario: Concurrent sessions', async () => {
     const mgr = createTestSessionManager();
     const a = await openSession(['Alpha value'], { mgr });
     const b = await openSession(['Beta value'], { mgr });
@@ -135,7 +139,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(String(readB.content)).toContain('Beta value');
   });
 
-  test.openspec('macOS compatibility')('Scenario: macOS compatibility (~ path expansion + stdio transport)', async () => {
+  humanReadableTest.openspec('macOS compatibility')('Scenario: macOS compatibility (~ path expansion + stdio transport)', async () => {
     const mgr = createTestSessionManager();
     const tempHome = await createTrackedTempDir('safe-docx-home-');
     const inputName = 'tilde-open.docx';
@@ -154,7 +158,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(MCP_TRANSPORT).toBe('stdio');
   });
 
-  test.openspec('Windows compatibility')('Scenario: Windows compatibility (backslash path handling + stdio transport)', async () => {
+  humanReadableTest.openspec('Windows compatibility')('Scenario: Windows compatibility (backslash path handling + stdio transport)', async () => {
     expect(MCP_TRANSPORT).toBe('stdio');
     if (process.platform !== 'win32') {
       await allureStep('Non-Windows runner: backslash path behavior validated in win32 CI only', async () => {});
@@ -171,7 +175,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(opened.success).toBe(true);
   });
 
-  test.openspec('File not found error')('Scenario: File not found error', async () => {
+  humanReadableTest.openspec('File not found error')('Scenario: File not found error', async () => {
     const mgr = createTestSessionManager();
     const opened = await openDocument(mgr, { file_path: '/definitely/not/found/input.docx' });
     expect(opened.success).toBe(false);
@@ -179,7 +183,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(opened.error.code).toBe('FILE_NOT_FOUND');
   });
 
-  test.openspec('Invalid file type error')('Scenario: Invalid file type error', async () => {
+  humanReadableTest.openspec('Invalid file type error')('Scenario: Invalid file type error', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('safe-docx-invalid-type-');
     const txtPath = path.join(tmpDir, 'input.txt');
@@ -191,7 +195,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(opened.error.code).toBe('INVALID_FILE_TYPE');
   });
 
-  test.openspec('Session not found error')('Scenario: Session not found error', async () => {
+  humanReadableTest.openspec('Session not found error')('Scenario: Session not found error', async () => {
     const mgr = createTestSessionManager();
     const res = await readFile(mgr, { session_id: 'ses_aaaaaaaaaaaa' });
     expect(res.success).toBe(false);
@@ -199,7 +203,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(res.error.code).toBe('SESSION_NOT_FOUND');
   });
 
-  test.openspec('open_document tool')('Scenario: open_document tool', async () => {
+  humanReadableTest.openspec('open_document tool')('Scenario: open_document tool', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('safe-docx-open-tool-');
     const inputPath = path.join(tmpDir, 'input.docx');
@@ -213,7 +217,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(typeof openMeta.document?.paragraphs).toBe('number');
   });
 
-  test.openspec('read_file tool')('Scenario: read_file tool', async () => {
+  humanReadableTest.openspec('read_file tool')('Scenario: read_file tool', async () => {
     const mgr = createTestSessionManager();
     const { sessionId } = await openSession(['Read tool paragraph'], { mgr });
     const read = await readFile(mgr, { session_id: sessionId, format: 'simple' });
@@ -223,7 +227,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(Array.isArray(read.paragraph_ids)).toBe(true);
   });
 
-  test.openspec('grep tool')('Scenario: grep tool', async () => {
+  humanReadableTest.openspec('grep tool')('Scenario: grep tool', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('safe-docx-grep-tool-');
     const inputPath = path.join(tmpDir, 'input.docx');
@@ -245,7 +249,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(typeof (res.matches as Array<{ header: string }>)[0]?.header).toBe('string');
   });
 
-  test.openspec('replace_text tool')('Scenario: replace_text tool', async () => {
+  humanReadableTest.openspec('replace_text tool')('Scenario: replace_text tool', async () => {
     const mgr = createTestSessionManager();
     const { sessionId, firstParaId: paraId } = await openSession(['Edit me'], { mgr });
     const edited = await replaceText(mgr, {
@@ -259,7 +263,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(edited.replacements_made).toBe(1);
   });
 
-  test.openspec('insert_paragraph tool')('Scenario: insert_paragraph tool', async () => {
+  humanReadableTest.openspec('insert_paragraph tool')('Scenario: insert_paragraph tool', async () => {
     const mgr = createTestSessionManager();
     const { sessionId, firstParaId: paraId } = await openSession(['Anchor paragraph'], { mgr });
     const inserted = await insertParagraph(mgr, {
@@ -273,7 +277,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(String(inserted.new_paragraph_id)).toMatch(/^jr_para_[0-9a-f]{12}$/);
   });
 
-  test.openspec('download tool')('Scenario: download tool', async () => {
+  humanReadableTest.openspec('download tool')('Scenario: download tool', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('safe-docx-download-tool-');
     const inputPath = path.join(tmpDir, 'input.docx');
@@ -293,7 +297,7 @@ describe('TypeScript MCP server behavior', () => {
     await expect(fs.stat(outputPath)).resolves.toBeTruthy();
   });
 
-  test.openspec('get_session_status tool')('Scenario: get_session_status tool', async () => {
+  humanReadableTest.openspec('get_session_status tool')('Scenario: get_session_status tool', async () => {
     const mgr = createTestSessionManager();
     const { sessionId } = await openSession(['Status paragraph'], { mgr });
     const status = await getSessionStatus(mgr, { session_id: sessionId });
@@ -303,7 +307,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(typeof status.edit_revision).toBe('number');
   });
 
-  test.openspec('Format-preserving text replacement')('Scenario: Format-preserving text replacement + bookmark-based targeting', async () => {
+  humanReadableTest.openspec('Format-preserving text replacement')('Scenario: Format-preserving text replacement + bookmark-based targeting', async () => {
     const mgr = createTestSessionManager();
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -357,7 +361,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(outXml.includes('<w:b')).toBe(true);
   });
 
-  test.openspec('Bookmark-based targeting')('Scenario: Bookmark-based targeting', async () => {
+  humanReadableTest.openspec('Bookmark-based targeting')('Scenario: Bookmark-based targeting', async () => {
     const mgr = createTestSessionManager();
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -398,7 +402,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(String(secondOnly.content)).toContain('Updated paragraph text');
   });
 
-  test.openspec('No XML corruption')('Scenario: No XML corruption after edit + insert + download workflow', async () => {
+  humanReadableTest.openspec('No XML corruption')('Scenario: No XML corruption after edit + insert + download workflow', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('safe-docx-ooxml-');
     const inputPath = path.join(tmpDir, 'input.docx');

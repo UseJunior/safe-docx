@@ -7,6 +7,10 @@ import { computeModalBaseline, type AnnotatedRun } from './formatting_tags.js';
 
 const TEST_FEATURE = 'add-run-level-formatting-visibility';
 const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const humanReadableTest = test.allure({
+  tags: ['human-readable'],
+  parameters: { audience: 'non-technical' },
+});
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -62,7 +66,7 @@ describe('document_view formatting tags', () => {
     }
   });
 
-  test.openspec('extract bold, italic, underline, highlighting tuple per run')(
+  humanReadableTest.openspec('extract bold, italic, underline, highlighting tuple per run')(
     'extract bold, italic, underline, highlighting tuple per run',
     () => {
       const bodyXml =
@@ -110,7 +114,7 @@ describe('document_view formatting tags', () => {
     expect(nodes[0]!.tagged_text).not.toContain('</b>');
   });
 
-  test.openspec('char-weighted modal baseline selects dominant formatting tuple')(
+  humanReadableTest.openspec('char-weighted modal baseline selects dominant formatting tuple')(
     'char-weighted modal baseline selects dominant formatting tuple',
     () => {
       const runs: AnnotatedRun[] = [
@@ -139,7 +143,7 @@ describe('document_view formatting tags', () => {
     },
   );
 
-  test.openspec('tie-break by earliest run when modal weights are equal')(
+  humanReadableTest.openspec('tie-break by earliest run when modal weights are equal')(
     'tie-break by earliest run when modal weights are equal',
     () => {
       const runs: AnnotatedRun[] = [
@@ -166,7 +170,7 @@ describe('document_view formatting tags', () => {
     },
   );
 
-  test.openspec('detect hyperlink runs and extract href')(
+  humanReadableTest.openspec('detect hyperlink runs and extract href')(
     'detect hyperlink runs and extract href',
     () => {
       const relsMap: RelsMap = new Map([['rId1', 'https://example.com']]);
@@ -286,7 +290,7 @@ describe('document_view formatting tags', () => {
     expect(nodes[0]!.tagged_text).toContain('<highlighting>highlighted</highlighting>');
   });
 
-  test.openspec('suppression disabled when baseline coverage below 60%')(
+  humanReadableTest.openspec('suppression disabled when baseline coverage below 60%')(
     'suppression disabled when baseline coverage below 60%',
     () => {
     // 59 chars plain + 41 chars bold = 59% plain = suppressed=false (because 59 < 60 threshold)
@@ -336,7 +340,7 @@ describe('document_view formatting tags', () => {
     },
   );
 
-  test.openspec('tags nested in consistent order')(
+  humanReadableTest.openspec('tags nested in consistent order')(
     'tags nested in consistent order',
     () => {
     const bodyXml =

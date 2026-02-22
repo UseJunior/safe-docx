@@ -5,6 +5,10 @@ import { itAllure, allureStep, allureJsonAttachment } from '../test/helpers/allu
 
 const TEST_FEATURE = 'add-accept-tracked-changes';
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const humanReadableIt = it.allure({
+  tags: ['human-readable'],
+  parameters: { audience: 'non-technical' },
+});
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -25,7 +29,7 @@ function runAcceptChanges(bodyXml: string): { xml: string; summary: ReturnType<t
 }
 
 describe('Traceability: Accept Tracked Changes', () => {
-  it.openspec('accept insertions by unwrapping w:ins wrappers')(
+  humanReadableIt.openspec('accept insertions by unwrapping w:ins wrappers')(
     'accept insertions by unwrapping w:ins wrappers',
     async () => {
       const input = '<w:p><w:ins><w:r><w:t>Inserted text</w:t></w:r></w:ins></w:p>';
@@ -39,7 +43,7 @@ describe('Traceability: Accept Tracked Changes', () => {
     },
   );
 
-  it.openspec('accept deletions by removing w:del elements and content')(
+  humanReadableIt.openspec('accept deletions by removing w:del elements and content')(
     'accept deletions by removing w:del elements and content',
     async () => {
       const input = [
@@ -59,7 +63,7 @@ describe('Traceability: Accept Tracked Changes', () => {
     },
   );
 
-  it.openspec('accept property changes by removing change records')(
+  humanReadableIt.openspec('accept property changes by removing change records')(
     'accept property changes by removing change records',
     async () => {
       const input = [
@@ -80,7 +84,7 @@ describe('Traceability: Accept Tracked Changes', () => {
     },
   );
 
-  it.openspec('accept moves by keeping destination and removing source')(
+  humanReadableIt.openspec('accept moves by keeping destination and removing source')(
     'accept moves by keeping destination and removing source',
     async () => {
       const input = [
@@ -101,7 +105,7 @@ describe('Traceability: Accept Tracked Changes', () => {
     },
   );
 
-  it.openspec('bottom-up processing resolves nested revisions')(
+  humanReadableIt.openspec('bottom-up processing resolves nested revisions')(
     'bottom-up processing resolves nested revisions',
     async () => {
       const input = [
@@ -125,7 +129,7 @@ describe('Traceability: Accept Tracked Changes', () => {
     },
   );
 
-  it.openspec('orphaned moves handled with safe fallback')(
+  humanReadableIt.openspec('orphaned moves handled with safe fallback')(
     'orphaned moves handled with safe fallback',
     async () => {
       const input = [

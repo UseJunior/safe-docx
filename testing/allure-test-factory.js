@@ -1,10 +1,129 @@
 import { expect, it as vitestIt, test as vitestTest } from 'vitest';
+import { XMLBuilder, XMLParser } from 'fast-xml-parser';
+import Prism from 'prismjs';
 
 const JSON_CONTENT_TYPE = 'application/json';
 const TEXT_CONTENT_TYPE = 'text/plain';
+const MARKDOWN_CONTENT_TYPE = 'text/markdown';
+const HTML_CONTENT_TYPE = 'text/html';
 
 export function getAllureRuntime() {
   return globalThis.allure;
+}
+
+function escapeForHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+const XML_PRETTY_PRINT_PARSER = new XMLParser({
+  ignoreAttributes: false,
+  preserveOrder: true,
+  processEntities: false,
+});
+
+const XML_PRETTY_PRINT_BUILDER = new XMLBuilder({
+  ignoreAttributes: false,
+  preserveOrder: true,
+  processEntities: false,
+  format: true,
+  indentBy: '  ',
+  suppressEmptyNode: false,
+});
+
+function formatXmlForDisplay(xml) {
+  const source = String(xml).trim();
+  if (source.length === 0) {
+    return '';
+  }
+  try {
+    return XML_PRETTY_PRINT_BUILDER.build(XML_PRETTY_PRINT_PARSER.parse(source));
+  } catch {
+    return source;
+  }
+}
+
+function highlightXmlForHtml(xml) {
+  const source = String(xml);
+  const language = Prism.languages.xml ?? Prism.languages.markup;
+  if (!language) {
+    return escapeForHtml(source);
+  }
+  try {
+    return Prism.highlight(source, language, 'xml');
+  } catch {
+    return escapeForHtml(source);
+  }
+}
+
+function buildHtmlAttachment(body, extraStyles = '') {
+  return [
+    '<!doctype html>',
+    '<html><head><meta charset="utf-8">',
+    '<style>',
+    'html,body{margin:0;padding:0;overflow:hidden;}',
+    'body{font-family:ui-sans-serif,system-ui,sans-serif;padding:12px;color:#2f2a24;line-height:1.45;box-sizing:border-box;}',
+    'p{margin:8px 0;}',
+    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}',
+    'pre{background:#f7f3eb;padding:12px;border-radius:8px;white-space:pre-wrap;overflow-x:auto;overflow-y:hidden;}',
+    'pre code{white-space:pre-wrap !important;overflow-wrap:break-word;word-break:normal;}',
+    '.panel{border:1px solid #d7c7b5;border-radius:8px;padding:8px;background:#fffdf8;}',
+    '.doc-line{font-family:Georgia,"Times New Roman",serif;font-size:17px;line-height:1.6;padding:8px 10px;border:1px solid #d7c7b5;border-radius:6px;background:#fff;white-space:pre-line;}',
+    '.doc-ins{color:#1f4f8f;text-decoration:underline;text-underline-offset:2px;}',
+    '.doc-del{color:#b42318;text-decoration:line-through;text-decoration-thickness:1.5px;}',
+    '.xml-source .token.tag,.xml-source .token.punctuation{color:#0c5a41;}',
+    '.xml-source .token.attr-name{color:#4b5565;}',
+    '.xml-source .token.attr-value,.xml-source .token.attr-value .token.punctuation{color:#7a2ce8;}',
+    extraStyles,
+    '</style></head><body>',
+    `<div id="allure-auto-size-root">${body}</div>`,
+    '</body></html>',
+  ].join('');
+}
+
+function buildWordLikePreviewHtml(preview) {
+  const baseText = escapeForHtml(preview?.baseText ?? '');
+  const insertedText = typeof preview?.insertedText === 'string'
+    ? `<span class="doc-ins"> ${escapeForHtml(preview.insertedText)}</span>`
+    : '';
+  const deletedText = typeof preview?.deletedText === 'string'
+    ? `<span class="doc-del"> ${escapeForHtml(preview.deletedText)}</span>`
+    : '';
+  const insertionAuthor = typeof preview?.insertedAuthor === 'string'
+    ? `Insertion author: <code>${escapeForHtml(preview.insertedAuthor)}</code>`
+    : '';
+  const deletionAuthor = typeof preview?.deletedAuthor === 'string'
+    ? `Deletion author: <code>${escapeForHtml(preview.deletedAuthor)}</code>`
+    : '';
+  const authorLine = [insertionAuthor, deletionAuthor].filter(Boolean).join(' | ');
+
+  return buildHtmlAttachment([
+    '<section class="panel">',
+    `<p class="doc-line">${baseText}${insertedText}${deletedText}</p>`,
+    authorLine.length > 0 ? `<p>${authorLine}</p>` : '',
+    '</section>',
+  ].join(''));
+}
+
+function buildPrettyXmlHtml(xml) {
+  const prettyXml = formatXmlForDisplay(xml);
+  const highlighted = highlightXmlForHtml(prettyXml);
+  return buildHtmlAttachment([
+    '<pre><code class="xml-source">',
+    highlighted,
+    '</code></pre>',
+  ].join(''));
+}
+
+function valueToString(value) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return typeof value === 'string' ? value : String(value);
 }
 
 function parseCurrentTestName() {
@@ -22,6 +141,11 @@ function normalizeOpenSpecScenarioIds(values) {
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
   return [...new Set(ids)];
+}
+
+function normalizeScenarioText(story) {
+  const withoutPrefix = story.replace(/^Scenario:\s*/i, '').trim();
+  return withoutPrefix.replace(/^\[[^\]]+\]\s*/, '').trim();
 }
 
 function normalizeTags(values) {
@@ -118,7 +242,19 @@ export function createAllureTestHelpers(config) {
     if (subSuite && typeof allureRuntime.subSuite === 'function') {
       await allureRuntime.subSuite(subSuite);
     }
-    await allureRuntime.severity('normal');
+    if (typeof defaults?.title === 'string' && defaults.title.length > 0 && typeof allureRuntime.displayName === 'function') {
+      await allureRuntime.displayName(defaults.title);
+    }
+
+    if (typeof defaults?.id === 'string' && defaults.id.length > 0) {
+      if (typeof allureRuntime.id === 'function') {
+        await allureRuntime.id(defaults.id);
+      } else if (typeof allureRuntime.allureId === 'function') {
+        await allureRuntime.allureId(defaults.id);
+      }
+    }
+
+    await allureRuntime.severity(defaults?.severity ?? 'normal');
 
     if (typeof defaults?.description === 'string' && defaults.description.length > 0 && typeof allureRuntime.description === 'function') {
       await allureRuntime.description(defaults.description);
@@ -126,7 +262,7 @@ export function createAllureTestHelpers(config) {
 
     if (defaults?.parameters && typeof allureRuntime.parameter === 'function') {
       for (const [key, value] of Object.entries(defaults.parameters)) {
-        await allureRuntime.parameter(key, String(value));
+        await allureRuntime.parameter(key, valueToString(value));
       }
     }
 
@@ -136,29 +272,144 @@ export function createAllureTestHelpers(config) {
     }
   }
 
+  function createBddContext(debugState) {
+    let givenCallCount = 0;
+    let whenCallCount = 0;
+    let thenCallCount = 0;
+
+    const runBddStep = async (prefix, name, run, params) => {
+      const stepName = `${prefix} ${name}`.trim();
+      return allureStep(stepName, async (stepContext) => {
+        if (params && typeof stepContext?.parameter === 'function') {
+          for (const [key, value] of Object.entries(params)) {
+            await stepContext.parameter(key, valueToString(value));
+          }
+        }
+        return run();
+      });
+    };
+
+    const given = async (name, run, params) => {
+      const prefix = givenCallCount === 0 ? 'GIVEN:' : 'AND:';
+      givenCallCount += 1;
+      return runBddStep(prefix, name, run, params);
+    };
+
+    const when = async (name, run, params) => {
+      const prefix = whenCallCount === 0 ? 'WHEN:' : 'AND:';
+      whenCallCount += 1;
+      return runBddStep(prefix, name, run, params);
+    };
+
+    const then = async (name, run, params) => {
+      const prefix = thenCallCount === 0 ? 'THEN:' : 'AND:';
+      thenCallCount += 1;
+      return runBddStep(prefix, name, run, params);
+    };
+
+    const and = async (name, run, params) => runBddStep('AND:', name, run, params);
+
+    return {
+      given,
+      when,
+      then,
+      and,
+      attach: (name, content, contentType = TEXT_CONTENT_TYPE) =>
+        allureAttachment(name, content, contentType),
+      attachText: (name, text) => allureAttachment(name, text, TEXT_CONTENT_TYPE),
+      attachHtml: (name, html) => allureAttachment(name, html, HTML_CONTENT_TYPE),
+      attachMarkdown: (name, markdown) => allureAttachment(name, markdown, MARKDOWN_CONTENT_TYPE),
+      attachJson: (name, payload) => allureJsonAttachment(name, payload),
+      attachPrettyXml: (name, xml) =>
+        allureAttachment(name, buildPrettyXmlHtml(xml), HTML_CONTENT_TYPE),
+      attachWordLikePreview: (name, preview) =>
+        allureAttachment(name, buildWordLikePreviewHtml(preview), HTML_CONTENT_TYPE),
+      attachXmlPreviews: async (xml, options = {}) => {
+        if (options.wordLike) {
+          await allureAttachment(
+            options.wordLikeName ?? 'Word-like visual preview',
+            buildWordLikePreviewHtml(options.wordLike),
+            HTML_CONTENT_TYPE,
+          );
+        }
+        await allureAttachment(
+          options.xmlName ?? 'Input XML fixture (pretty XML)',
+          buildPrettyXmlHtml(xml),
+          HTML_CONTENT_TYPE,
+        );
+      },
+      setDebugContext: (payload) => {
+        debugState.context = payload;
+      },
+      setDebugResult: (payload) => {
+        debugState.result = payload;
+      },
+      attachJsonLastStep: async (options = {}) => {
+        if (Object.prototype.hasOwnProperty.call(options, 'context')) {
+          debugState.context = options.context;
+        }
+        if (Object.prototype.hasOwnProperty.call(options, 'result')) {
+          debugState.result = options.result;
+        }
+
+        await allureStep(options.stepName ?? 'Attach debug JSON (context + result)', async () => {
+          await allureJsonAttachment(
+            options.contextAttachmentName ?? 'Test context (debug JSON)',
+            debugState.context ?? null,
+          );
+          await allureJsonAttachment(
+            options.resultAttachmentName ?? 'Final result (debug JSON)',
+            debugState.result ?? null,
+          );
+        });
+      },
+      parameter: (name, value) => allureParameter(name, valueToString(value)),
+    };
+  }
+
   function wrapWithAllure(fn, explicitName, defaults) {
     if (!fn) {
       return fn;
     }
 
     return (async (...args) => {
-      await applyDefaultAllureLabels(defaults);
-
       const nameParts = parseCurrentTestName();
       const scenarioIds = defaults?.openspecScenarioIds ?? [];
       const storyLabels = scenarioIds.length > 0
         ? scenarioIds
         : [resolveStoryLabel(explicitName, nameParts)];
+      const scenarioSerials = new Set();
+      for (const story of storyLabels) {
+        const id = extractScenarioId(story);
+        if (id) scenarioSerials.add(id);
+      }
+
+      const isScenarioStyle = storyLabels.some((story) => /^Scenario:\s*/i.test(story));
+      let effectiveDefaults = defaults;
+      if (scenarioIds.length > 0 || isScenarioStyle) {
+        const firstStory = storyLabels[0] ?? '';
+        const scenarioText = normalizeScenarioText(firstStory);
+        const autoDefaults = {
+          description: scenarioText.length > 0
+            ? [
+              `This test validates the OpenSpec scenario: ${scenarioText}.`,
+              'Expected outcome: implementation behavior matches this scenario.',
+            ].join('\n')
+            : undefined,
+          tags: ['human-readable'],
+          parameters: { audience: 'non-technical' },
+        };
+        effectiveDefaults = mergeAllureDefaults(defaults, autoDefaults);
+      }
+
+      await applyDefaultAllureLabels(effectiveDefaults);
 
       const allureRuntime = getAllureRuntime();
       if (allureRuntime) {
-        const scenarioSerials = new Set();
         for (const story of storyLabels) {
           await allureRuntime.story(story);
-          const id = extractScenarioId(story);
-          if (id) scenarioSerials.add(id);
         }
-        if (scenarioSerials.size === 1 && typeof allureRuntime.id === 'function') {
+        if (!defaults?.id && scenarioSerials.size === 1 && typeof allureRuntime.id === 'function') {
           await allureRuntime.id([...scenarioSerials][0]);
         }
         if (typeof allureRuntime.label === 'function') {
@@ -168,8 +419,18 @@ export function createAllureTestHelpers(config) {
         }
       }
 
+      const debugState = { context: null, result: null };
+      const bddContext = createBddContext(debugState);
+      const callArgs = (() => {
+        const firstArg = args[0];
+        if (firstArg && typeof firstArg === 'object') {
+          return [{ ...firstArg, ...bddContext }, ...args.slice(1)];
+        }
+        return [bddContext, ...args];
+      })();
+
       try {
-        return await fn(...args);
+        return await fn(...callArgs);
       } catch (error) {
         const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
         await allureAttachment('execution-error.txt', message, TEXT_CONTENT_TYPE);

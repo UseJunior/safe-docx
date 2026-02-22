@@ -25,9 +25,13 @@ function getWAttr(el: Element, localName: string): string | null {
 
 describe('Traceability: Layout Format Controls', () => {
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
   registerCleanup();
 
-  test.openspec('format paragraph spacing by paragraph ID')('Scenario: format paragraph spacing by paragraph ID', async () => {
+  humanReadableTest.openspec('format paragraph spacing by paragraph ID')('Scenario: format paragraph spacing by paragraph ID', async () => {
     const opened = await openSession(['Alpha clause', 'Beta clause']);
     const paraId = firstParaIdFromToon(opened.content);
 
@@ -66,7 +70,7 @@ describe('Traceability: Layout Format Controls', () => {
     expect(getWAttr(spacing!, 'lineRule')).toBe('auto');
   });
 
-  test.openspec('format table row height and cell padding')('Scenario: format table row height and cell padding', async () => {
+  humanReadableTest.openspec('format table row height and cell padding')('Scenario: format table row height and cell padding', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W_NS}">` +
@@ -138,7 +142,7 @@ describe('Traceability: Layout Format Controls', () => {
     expect(getWAttr(right!, 'w')).toBe('60');
   });
 
-  test.openspec('invalid layout values are rejected with structured error')('Scenario: invalid layout values are rejected with structured error', async () => {
+  humanReadableTest.openspec('invalid layout values are rejected with structured error')('Scenario: invalid layout values are rejected with structured error', async () => {
     const opened = await openSession(['Alpha clause']);
     const paraId = firstParaIdFromToon(opened.content);
 
@@ -153,7 +157,7 @@ describe('Traceability: Layout Format Controls', () => {
     expect(invalid.error.hint).toContain('non-negative');
   });
 
-  test.openspec('no spacer paragraphs are introduced')('Scenario: no spacer paragraphs are introduced', async () => {
+  humanReadableTest.openspec('no spacer paragraphs are introduced')('Scenario: no spacer paragraphs are introduced', async () => {
     const opened = await openSession(['One', 'Two', 'Three']);
     const beforeIds = extractParaIdsFromToon(opened.content);
 
@@ -173,7 +177,7 @@ describe('Traceability: Layout Format Controls', () => {
     expect(afterIds.length).toBe(beforeIds.length);
   });
 
-  test.openspec('paragraph IDs remain stable after layout formatting')('Scenario: paragraph IDs remain stable after layout formatting', async () => {
+  humanReadableTest.openspec('paragraph IDs remain stable after layout formatting')('Scenario: paragraph IDs remain stable after layout formatting', async () => {
     const opened = await openSession(['First', 'Second', 'Third']);
     const beforeIds = extractParaIdsFromToon(opened.content);
 
@@ -193,7 +197,7 @@ describe('Traceability: Layout Format Controls', () => {
     expect(afterIds).toEqual(beforeIds);
   });
 
-  test.openspec('npx runtime remains Python-free')('Scenario: npx runtime remains Python-free', async () => {
+  humanReadableTest.openspec('npx runtime remains Python-free')('Scenario: npx runtime remains Python-free', async () => {
     const packageJsonPath = fileURLToPath(new URL('../../package.json', import.meta.url));
     const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as {
       dependencies?: Record<string, string>;
@@ -209,7 +213,7 @@ describe('Traceability: Layout Format Controls', () => {
     expect(depNames.includes('aspose')).toBe(false);
   });
 
-  test.openspec('format_layout does not invoke external process tooling at runtime')(
+  humanReadableTest.openspec('format_layout does not invoke external process tooling at runtime')(
     'Scenario: format_layout does not invoke external process tooling at runtime',
     async () => {
       const opened = await openSession(['Runtime boundary']);

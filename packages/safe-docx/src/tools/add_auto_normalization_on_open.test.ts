@@ -37,11 +37,15 @@ async function writeTestDocx(tmpDir: string, xml: string, filename = 'input.docx
 
 describe('Traceability: Auto-Normalization on Open', () => {
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
   registerCleanup();
 
   // ── ADDED: Automatic Document Normalization ─────────────────────────
 
-  test.openspec('document is normalized on open by default')('Scenario: document is normalized on open by default', async () => {
+  humanReadableTest.openspec('document is normalized on open by default')('Scenario: document is normalized on open by default', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-default-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
@@ -60,7 +64,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  test.openspec('skip_normalization bypasses preprocessing')('Scenario: skip_normalization bypasses preprocessing', async () => {
+  humanReadableTest.openspec('skip_normalization bypasses preprocessing')('Scenario: skip_normalization bypasses preprocessing', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-skip-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
@@ -78,7 +82,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  test.openspec('normalization stats in session metadata')('Scenario: normalization stats in session metadata', async () => {
+  humanReadableTest.openspec('normalization stats in session metadata')('Scenario: normalization stats in session metadata', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-stats-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
@@ -106,7 +110,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  test.openspec('jr_para_* IDs stable across normalization')('Scenario: jr_para_* IDs stable across normalization', async () => {
+  humanReadableTest.openspec('jr_para_* IDs stable across normalization')('Scenario: jr_para_* IDs stable across normalization', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W_NS}">` +
@@ -149,7 +153,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
 
   // ── MODIFIED: Tool Session Entry ────────────────────────────────────
 
-  test.openspec('document tools accept file-first entry without pre-open')('Scenario: document tools accept file-first entry without pre-open', async () => {
+  humanReadableTest.openspec('document tools accept file-first entry without pre-open')('Scenario: document tools accept file-first entry without pre-open', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-filefirst-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
@@ -168,7 +172,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  test.openspec('reuse policy selects most-recently-used session')('Scenario: reuse policy selects most-recently-used session', async () => {
+  humanReadableTest.openspec('reuse policy selects most-recently-used session')('Scenario: reuse policy selects most-recently-used session', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-reuse-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
@@ -192,7 +196,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  test.openspec('existing session reuse is non-blocking and warns via metadata')('Scenario: existing session reuse is non-blocking and warns via metadata', async () => {
+  humanReadableTest.openspec('existing session reuse is non-blocking and warns via metadata')('Scenario: existing session reuse is non-blocking and warns via metadata', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-warn-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
@@ -224,7 +228,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  test.openspec('conflicting `session_id` and `file_path` is rejected')('Scenario: conflicting session_id and file_path is rejected', async () => {
+  humanReadableTest.openspec('conflicting `session_id` and `file_path` is rejected')('Scenario: conflicting session_id and file_path is rejected', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-conflict-');
     const inputPath1 = await writeTestDocx(tmpDir, MERGEABLE_XML, 'doc1.docx');
@@ -250,7 +254,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  test.openspec('new session creation includes normalization')('Scenario: new session creation includes normalization', async () => {
+  humanReadableTest.openspec('new session creation includes normalization')('Scenario: new session creation includes normalization', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-newsession-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);

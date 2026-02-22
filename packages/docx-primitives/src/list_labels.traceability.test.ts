@@ -6,8 +6,16 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
+const humanReadableIt = it.allure({
+  
+  tags: ['human-readable'],
+  
+  parameters: { audience: 'non-technical' },
+  
+});
+
 describe('Traceability: docx-primitives — List Label Extraction', () => {
-  it.openspec('extract parenthesized letter labels')('Scenario: extract parenthesized letter labels', async () => {
+  humanReadableIt.openspec('extract parenthesized letter labels')('Scenario: extract parenthesized letter labels', async () => {
     const text = '(a) First item of the agreement';
 
     const result = await allureStep('When extractListLabel is called', async () => {
@@ -22,7 +30,7 @@ describe('Traceability: docx-primitives — List Label Extraction', () => {
     });
   });
 
-  it.openspec('single-char roman-like letters classified as LETTER not ROMAN')('Scenario: single-char roman-like letters classified as LETTER not ROMAN', async () => {
+  humanReadableIt.openspec('single-char roman-like letters classified as LETTER not ROMAN')('Scenario: single-char roman-like letters classified as LETTER not ROMAN', async () => {
     const text = '(i) First roman-like item';
 
     const result = await allureStep('When extractListLabel is called', async () => {
@@ -36,7 +44,7 @@ describe('Traceability: docx-primitives — List Label Extraction', () => {
     });
   });
 
-  it.openspec('extract multi-char roman numeral labels')('Scenario: extract multi-char roman numeral labels', async () => {
+  humanReadableIt.openspec('extract multi-char roman numeral labels')('Scenario: extract multi-char roman numeral labels', async () => {
     const text = '(ii) Second item';
 
     const result = await allureStep('When extractListLabel is called', async () => {
@@ -50,7 +58,7 @@ describe('Traceability: docx-primitives — List Label Extraction', () => {
     });
   });
 
-  it.openspec('extract section labels with sub-paragraph support')('Scenario: extract section labels with sub-paragraph support', async () => {
+  humanReadableIt.openspec('extract section labels with sub-paragraph support')('Scenario: extract section labels with sub-paragraph support', async () => {
     const text = 'Section 3.1(a) of the agreement';
 
     const result = await allureStep('When extractListLabel is called', async () => {
@@ -64,7 +72,7 @@ describe('Traceability: docx-primitives — List Label Extraction', () => {
     });
   });
 
-  it.openspec('extract article labels with roman numeral support')('Scenario: extract article labels with roman numeral support', async () => {
+  humanReadableIt.openspec('extract article labels with roman numeral support')('Scenario: extract article labels with roman numeral support', async () => {
     const text = 'Article IV';
 
     const result = await allureStep('When extractListLabel is called', async () => {
@@ -78,7 +86,7 @@ describe('Traceability: docx-primitives — List Label Extraction', () => {
     });
   });
 
-  it.openspec('extract numbered heading labels')('Scenario: extract numbered heading labels', async () => {
+  humanReadableIt.openspec('extract numbered heading labels')('Scenario: extract numbered heading labels', async () => {
     const text = '2.3.1 Subsection heading';
 
     const result = await allureStep('When extractListLabel is called', async () => {
@@ -92,7 +100,7 @@ describe('Traceability: docx-primitives — List Label Extraction', () => {
     });
   });
 
-  it.openspec('null label for plain text without list patterns')('Scenario: null label for plain text without list patterns', async () => {
+  humanReadableIt.openspec('null label for plain text without list patterns')('Scenario: null label for plain text without list patterns', async () => {
     const text = 'This is just a normal paragraph with no list label.';
 
     const result = await allureStep('When extractListLabel is called', async () => {
@@ -107,7 +115,7 @@ describe('Traceability: docx-primitives — List Label Extraction', () => {
     });
   });
 
-  it.openspec('stripListLabel removes label and leading whitespace')('Scenario: stripListLabel removes label and leading whitespace', async () => {
+  humanReadableIt.openspec('stripListLabel removes label and leading whitespace')('Scenario: stripListLabel removes label and leading whitespace', async () => {
     const text = '(a) First item of the agreement';
 
     const result = await allureStep('When stripListLabel is called', async () => {

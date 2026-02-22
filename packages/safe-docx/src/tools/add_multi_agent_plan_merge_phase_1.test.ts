@@ -52,8 +52,12 @@ async function writeDocx(paragraphs: string[], filename = 'input.docx'): Promise
 describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
   registerCleanup();
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
 
-  test.openspec('init_plan returns revision-bound context')(
+  humanReadableTest.openspec('init_plan returns revision-bound context')(
     'Scenario: init_plan returns revision-bound context',
     async () => {
       const manager = createTestSessionManager();
@@ -78,7 +82,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('init_plan uses file-first session resolution')(
+  humanReadableTest.openspec('init_plan uses file-first session resolution')(
     'Scenario: init_plan uses file-first session resolution',
     async () => {
       const manager = createTestSessionManager();
@@ -94,7 +98,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('merge_plans returns merged artifact when no conflicts')(
+  humanReadableTest.openspec('merge_plans returns merged artifact when no conflicts')(
     'Scenario: merge_plans returns merged artifact when no conflicts',
     async () => {
       const result = await mergePlans({
@@ -121,7 +125,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('merge_plans reports base-revision conflict')(
+  humanReadableTest.openspec('merge_plans reports base-revision conflict')(
     'Scenario: merge_plans reports base-revision conflict',
     async () => {
       const result = await mergePlans({
@@ -138,7 +142,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('merge_plans reports overlapping replace ranges')(
+  humanReadableTest.openspec('merge_plans reports overlapping replace ranges')(
     'Scenario: merge_plans reports overlapping replace ranges',
     async () => {
       const result = await mergePlans({
@@ -155,7 +159,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('merge_plans reports unknown-range conflict for same paragraph')(
+  humanReadableTest.openspec('merge_plans reports unknown-range conflict for same paragraph')(
     'Scenario: merge_plans reports unknown-range conflict for same paragraph',
     async () => {
       const result = await mergePlans({
@@ -189,7 +193,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('merge_plans reports insert-slot collision')(
+  humanReadableTest.openspec('merge_plans reports insert-slot collision')(
     'Scenario: merge_plans reports insert-slot collision',
     async () => {
       const result = await mergePlans({
@@ -206,7 +210,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('merge_plans reports duplicate step IDs')(
+  humanReadableTest.openspec('merge_plans reports duplicate step IDs')(
     'Scenario: merge_plans reports duplicate step IDs',
     async () => {
       const result = await mergePlans({
@@ -223,7 +227,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('merge_plans fails by default when conflicts exist')(
+  humanReadableTest.openspec('merge_plans fails by default when conflicts exist')(
     'Scenario: merge_plans fails by default when conflicts exist',
     async () => {
       const result = await mergePlans({
@@ -240,7 +244,7 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
     },
   );
 
-  test.openspec('merge_plans can return diagnostics without hard failure')(
+  humanReadableTest.openspec('merge_plans can return diagnostics without hard failure')(
     'Scenario: merge_plans can return diagnostics without hard failure',
     async () => {
       const result = await mergePlans({

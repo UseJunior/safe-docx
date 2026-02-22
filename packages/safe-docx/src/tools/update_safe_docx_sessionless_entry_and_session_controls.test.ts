@@ -30,7 +30,15 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
 
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
-  test.openspec('document tools accept file-first entry without pre-open')('Scenario: document tools accept file-first entry without pre-open', async () => {
+  const humanReadableTest = test.allure({
+    
+    tags: ['human-readable'],
+    
+    parameters: { audience: 'non-technical' },
+    
+  });
+
+  humanReadableTest.openspec('document tools accept file-first entry without pre-open')('Scenario: document tools accept file-first entry without pre-open', async () => {
     const mgr = createTestSessionManager();
     const inputPath = await createDoc(['Alpha clause']);
     const outputPath = path.join(path.dirname(inputPath), 'out.docx');
@@ -73,7 +81,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     expect(status.session_id).toMatch(/^ses_[A-Za-z0-9]{12}$/);
   });
 
-  test.openspec('reuse policy selects most-recently-used session')('Scenario: reuse policy selects most-recently-used session', async () => {
+  humanReadableTest.openspec('reuse policy selects most-recently-used session')('Scenario: reuse policy selects most-recently-used session', async () => {
     const mgr = createTestSessionManager();
     const inputPath = await createDoc(['Reuse policy text']);
 
@@ -89,7 +97,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     expect(reused.resolved_session_id).toBe(first.session_id);
   });
 
-  test.openspec('existing session reuse is non-blocking and warns via metadata')('Scenario: existing session reuse is non-blocking and warns via metadata', async () => {
+  humanReadableTest.openspec('existing session reuse is non-blocking and warns via metadata')('Scenario: existing session reuse is non-blocking and warns via metadata', async () => {
     const mgr = createTestSessionManager();
     const inputPath = await createDoc(['Warning metadata text']);
 
@@ -121,7 +129,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     expect(typeof context.last_used_at).toBe('string');
   });
 
-  test.openspec('conflicting `session_id` and `file_path` is rejected')('Scenario: conflicting `session_id` and `file_path` is rejected', async () => {
+  humanReadableTest.openspec('conflicting `session_id` and `file_path` is rejected')('Scenario: conflicting `session_id` and `file_path` is rejected', async () => {
     const mgr = createTestSessionManager();
     const pathA = await createDoc(['A']);
     const pathB = await createDoc(['B']);
@@ -135,32 +143,32 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     assertFailure(read, 'SESSION_FILE_CONFLICT', 'conflict');
   });
 
-  test.openspec('quote-normalized fallback matches smart quotes and ASCII quotes')('Scenario: quote-normalized fallback matches smart quotes and ASCII quotes', async () => {
+  humanReadableTest.openspec('quote-normalized fallback matches smart quotes and ASCII quotes')('Scenario: quote-normalized fallback matches smart quotes and ASCII quotes', async () => {
     const match = findUniqueSubstringMatch('\u201CCompany\u201D means ABC Corp.', '"Company" means ABC Corp.');
     expect(match.status).toBe('unique');
     if (match.status !== 'unique') return;
     expect(match.mode).toBe('quote_normalized');
   });
 
-  test.openspec('flexible-whitespace fallback ignores spacing variance')('Scenario: flexible-whitespace fallback ignores spacing variance', async () => {
+  humanReadableTest.openspec('flexible-whitespace fallback ignores spacing variance')('Scenario: flexible-whitespace fallback ignores spacing variance', async () => {
     const match = findUniqueSubstringMatch('The   Purchase   Price', 'The Purchase Price');
     expect(match.status).toBe('unique');
     if (match.status !== 'unique') return;
     expect(match.mode).toBe('flexible_whitespace');
   });
 
-  test.openspec('quote-optional fallback matches quoted and unquoted term references')('Scenario: quote-optional fallback matches quoted and unquoted term references', async () => {
+  humanReadableTest.openspec('quote-optional fallback matches quoted and unquoted term references')('Scenario: quote-optional fallback matches quoted and unquoted term references', async () => {
     const match = findUniqueSubstringMatch('The defined term is "Company".', 'defined term is Company.');
     expect(match.status).toBe('unique');
     if (match.status !== 'unique') return;
     expect(match.mode).toBe('quote_optional');
   });
 
-  test.openspec('quote-normalization scenarios are test-mapped in Allure coverage')('Scenario: quote-normalization scenarios are test-mapped in Allure coverage', async () => {
+  humanReadableTest.openspec('quote-normalization scenarios are test-mapped in Allure coverage')('Scenario: quote-normalization scenarios are test-mapped in Allure coverage', async () => {
     expect(true).toBe(true);
   });
 
-  test.openspec('clear one session by id')('Scenario: clear one session by id', async () => {
+  humanReadableTest.openspec('clear one session by id')('Scenario: clear one session by id', async () => {
     const mgr = createTestSessionManager();
     const inputPath = await createDoc(['Clear me']);
     const opened = await openDocument(mgr, { file_path: inputPath });
@@ -174,7 +182,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     assertFailure(status, 'SESSION_NOT_FOUND', 'missing session');
   });
 
-  test.openspec('clear sessions by file path clears all sessions for that file')('Scenario: clear sessions by file path clears all sessions for that file', async () => {
+  humanReadableTest.openspec('clear sessions by file path clears all sessions for that file')('Scenario: clear sessions by file path clears all sessions for that file', async () => {
     const mgr = createTestSessionManager();
     const inputPath = await createDoc(['Clear by path']);
     const a = await openDocument(mgr, { file_path: inputPath });
@@ -188,13 +196,13 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     expect(clearedIds).toEqual([String(a.session_id), String(b.session_id)].sort());
   });
 
-  test.openspec('clear all sessions requires explicit confirmation')('Scenario: clear all sessions requires explicit confirmation', async () => {
+  humanReadableTest.openspec('clear all sessions requires explicit confirmation')('Scenario: clear all sessions requires explicit confirmation', async () => {
     const mgr = createTestSessionManager();
     const clearAttempt = await clearSession(mgr, { clear_all: true });
     assertFailure(clearAttempt, 'CONFIRMATION_REQUIRED', 'confirmation');
   });
 
-  test.openspec('duplicate document creates independent session')('Scenario: duplicate document creates independent session', async () => {
+  humanReadableTest.openspec('duplicate document creates independent session')('Scenario: duplicate document creates independent session', async () => {
     const mgr = createTestSessionManager();
     const sourcePath = await createDoc(['Source text']);
     const destinationPath = path.join(path.dirname(sourcePath), 'copy.docx');
@@ -232,7 +240,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     expect(String(sourceRead.content)).not.toContain('Duplicate text');
   });
 
-  test.openspec('duplicate uses timestamped destination when path is omitted')('Scenario: duplicate uses timestamped destination when path is omitted', async () => {
+  humanReadableTest.openspec('duplicate uses timestamped destination when path is omitted')('Scenario: duplicate uses timestamped destination when path is omitted', async () => {
     const mgr = createTestSessionManager();
     const sourcePath = await createDoc(['Timestamped copy']);
     const dup = await duplicateDocument(mgr, { source_file_path: sourcePath });
@@ -241,7 +249,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     expect(destinationPath).toMatch(/\.copy\.\d{8}T\d{6}Z\.docx$/);
   });
 
-  test.openspec('duplicate respects overwrite safety')('Scenario: duplicate respects overwrite safety', async () => {
+  humanReadableTest.openspec('duplicate respects overwrite safety')('Scenario: duplicate respects overwrite safety', async () => {
     const mgr = createTestSessionManager();
     const sourcePath = await createDoc(['Overwrite source']);
     const destinationPath = await createDoc(['Existing destination'], 'existing.docx');
@@ -254,7 +262,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     assertFailure(dup, 'OVERWRITE_BLOCKED', 'overwrite block');
   });
 
-  test.openspec('open_document remains callable with deprecation warning')('Scenario: open_document remains callable with deprecation warning', async () => {
+  humanReadableTest.openspec('open_document remains callable with deprecation warning')('Scenario: open_document remains callable with deprecation warning', async () => {
     const mgr = createTestSessionManager();
     const inputPath = await createDoc(['Deprecation warning']);
     const opened = await openDocument(mgr, { file_path: inputPath });

@@ -6,8 +6,16 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
+const humanReadableIt = it.allure({
+  
+  tags: ['human-readable'],
+  
+  parameters: { audience: 'non-technical' },
+  
+});
+
 describe('Traceability: docx-primitives — XML Round-Trip', () => {
-  it.openspec('parse and serialize preserves element structure')('Scenario: parse and serialize preserves element structure', async () => {
+  humanReadableIt.openspec('parse and serialize preserves element structure')('Scenario: parse and serialize preserves element structure', async () => {
     const input = '<root><child attr="val">hello</child><sibling/></root>';
 
     const result = await allureStep('When valid XML is parsed and immediately serialized', async () => {
@@ -25,7 +33,7 @@ describe('Traceability: docx-primitives — XML Round-Trip', () => {
     });
   });
 
-  it.openspec('namespaced XML preserved through round-trip')('Scenario: namespaced XML preserved through round-trip', async () => {
+  humanReadableIt.openspec('namespaced XML preserved through round-trip')('Scenario: namespaced XML preserved through round-trip', async () => {
     const input = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/></w:body></w:document>';
 
     const result = await allureStep('When the XML is parsed and serialized', async () => {
@@ -42,7 +50,7 @@ describe('Traceability: docx-primitives — XML Round-Trip', () => {
     });
   });
 
-  it.openspec('textContent returns concatenated text of nested elements')('Scenario: textContent returns concatenated text of nested elements', async () => {
+  humanReadableIt.openspec('textContent returns concatenated text of nested elements')('Scenario: textContent returns concatenated text of nested elements', async () => {
     const xml = '<root><a>Hello </a><b>World</b></root>';
     const doc = parseXml(xml);
 
@@ -57,7 +65,7 @@ describe('Traceability: docx-primitives — XML Round-Trip', () => {
     });
   });
 
-  it.openspec('textContent returns empty string for null or undefined input')('Scenario: textContent returns empty string for null or undefined input', async () => {
+  humanReadableIt.openspec('textContent returns empty string for null or undefined input')('Scenario: textContent returns empty string for null or undefined input', async () => {
     const resultNull = await allureStep('When textContent is called with null', async () => {
       return textContent(null as any);
     });

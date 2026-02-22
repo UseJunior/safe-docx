@@ -59,11 +59,15 @@ function getBodyText(doc: Document): string {
 
 describe('Traceability: Accept Tracked Changes', () => {
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
   registerCleanup();
 
   // ── Spec: docx-primitives — Tracked Change Acceptance Engine ────
   // These tests map to the docx-primitives spec (not mcp-server), so they
-  // use plain `test()` rather than `test.openspec()` to avoid traceability
+  // use plain `test()` rather than `humanReadableTest.openspec()` to avoid traceability
   // checker mismatches (the checker only validates mcp-server scenarios).
 
   test(
@@ -317,7 +321,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   // ── Spec: mcp-server — Accept Tracked Changes Tool ─────────────
 
-  test.openspec('accept_changes produces clean document body with no revision markup')(
+  humanReadableTest.openspec('accept_changes produces clean document body with no revision markup')(
     'Scenario: accept_changes produces clean document body with no revision markup',
     async () => {
       const mgr = createTestSessionManager();
@@ -359,7 +363,7 @@ describe('Traceability: Accept Tracked Changes', () => {
     },
   );
 
-  test.openspec('accepted document opens cleanly in Microsoft Word')(
+  humanReadableTest.openspec('accepted document opens cleanly in Microsoft Word')(
     'Scenario: accepted document opens cleanly in Microsoft Word (well-formed XML proxy)',
     async () => {
       const mgr = createTestSessionManager();
@@ -403,7 +407,7 @@ describe('Traceability: Accept Tracked Changes', () => {
     },
   );
 
-  test.openspec('original document is not mutated')(
+  humanReadableTest.openspec('original document is not mutated')(
     'Scenario: original document is not mutated',
     async () => {
       const mgr = createTestSessionManager();

@@ -8,6 +8,14 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
+const humanReadableIt = it.allure({
+  
+  tags: ['human-readable'],
+  
+  parameters: { audience: 'non-technical' },
+  
+});
+
 function makeDoc(bodyXml: string): Document {
   const xml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -18,7 +26,7 @@ function makeDoc(bodyXml: string): Document {
 }
 
 describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
-  it.openspec('insertParagraphBookmarks mints IDs matching expected pattern')('Scenario: insertParagraphBookmarks mints IDs matching expected pattern', async () => {
+  humanReadableIt.openspec('insertParagraphBookmarks mints IDs matching expected pattern')('Scenario: insertParagraphBookmarks mints IDs matching expected pattern', async () => {
     const doc = makeDoc('<w:p><w:r><w:t>First</w:t></w:r></w:p><w:p><w:r><w:t>Second</w:t></w:r></w:p>');
 
     await allureStep('When insertParagraphBookmarks is called on paragraphs lacking bookmarks', async () => {
@@ -36,7 +44,7 @@ describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
     });
   });
 
-  it.openspec('getParagraphBookmarkId retrieves minted ID')('Scenario: getParagraphBookmarkId retrieves minted ID', async () => {
+  humanReadableIt.openspec('getParagraphBookmarkId retrieves minted ID')('Scenario: getParagraphBookmarkId retrieves minted ID', async () => {
     const doc = makeDoc('<w:p><w:r><w:t>Test</w:t></w:r></w:p>');
 
     await allureStep('Given a paragraph with a previously minted jr_para_* bookmark', async () => {

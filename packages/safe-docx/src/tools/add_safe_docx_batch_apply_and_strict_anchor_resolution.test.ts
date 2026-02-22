@@ -25,8 +25,12 @@ async function writeDocx(paragraphs: string[], filename = 'input.docx'): Promise
 describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
   registerCleanup();
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
 
-  test.openspec('canonical names are advertised')(
+  humanReadableTest.openspec('canonical names are advertised')(
     'Scenario: canonical names are advertised',
     async () => {
       const toolNames = new Set<string>(MCP_TOOLS.map((tool) => tool.name));
@@ -35,7 +39,7 @@ describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
     },
   );
 
-  test.openspec('legacy aliases are unavailable')(
+  humanReadableTest.openspec('legacy aliases are unavailable')(
     'Scenario: legacy aliases are unavailable',
     async () => {
       const toolNames = new Set<string>(MCP_TOOLS.map((tool) => tool.name));
@@ -44,7 +48,7 @@ describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
     },
   );
 
-  test.openspec('legacy aliases are rejected inside plan operations')(
+  humanReadableTest.openspec('legacy aliases are rejected inside plan operations')(
     'Scenario: legacy aliases are rejected inside plan operations',
     async () => {
       const result = await mergePlans({
@@ -86,7 +90,7 @@ describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
     },
   );
 
-  test.openspec('MCP catalog omits open_document')(
+  humanReadableTest.openspec('MCP catalog omits open_document')(
     'Scenario: MCP catalog omits open_document',
     async () => {
       const toolNames = new Set<string>(MCP_TOOLS.map((tool) => tool.name));
@@ -96,7 +100,7 @@ describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
     },
   );
 
-  test.openspec('open_document call is rejected as unsupported')(
+  humanReadableTest.openspec('open_document call is rejected as unsupported')(
     'Scenario: open_document call is rejected as unsupported',
     async () => {
       const manager = createTestSessionManager();
@@ -109,7 +113,7 @@ describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
     },
   );
 
-  test.openspec('document tools accept file-first entry without pre-open')(
+  humanReadableTest.openspec('document tools accept file-first entry without pre-open')(
     'Scenario: document tools accept file-first entry without pre-open',
     async () => {
       const manager = createTestSessionManager();

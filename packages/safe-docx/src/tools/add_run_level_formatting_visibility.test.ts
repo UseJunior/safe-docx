@@ -73,10 +73,14 @@ function buildEditFixtureXml(): string {
 
 describe('Traceability: Run-Level Formatting Visibility', () => {
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
 
   registerCleanup();
 
-  test.openspec('TOON output shows inline formatting tags at run boundaries by default')(
+  humanReadableTest.openspec('TOON output shows inline formatting tags at run boundaries by default')(
     'Scenario: TOON output shows inline formatting tags at run boundaries by default',
     async () => {
       const { mgr, sessionId } = await openSession([], {
@@ -100,7 +104,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
     },
   );
 
-  test.openspec('show_formatting=false suppresses inline tags')(
+  humanReadableTest.openspec('show_formatting=false suppresses inline tags')(
     'Scenario: show_formatting=false suppresses inline tags',
     async () => {
       const { mgr, sessionId } = await openSession([], {
@@ -125,7 +129,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
     },
   );
 
-  test.openspec('writable tag vocabulary matches replace_text new_string vocabulary')(
+  humanReadableTest.openspec('writable tag vocabulary matches replace_text new_string vocabulary')(
     'Scenario: writable tag vocabulary matches replace_text new_string vocabulary',
     async () => {
       const { mgr, sessionId, firstParaId, tmpDir } = await openSession([], {

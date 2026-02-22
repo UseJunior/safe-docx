@@ -38,10 +38,14 @@ const SIMPLE_WORD_CHANGE_FIXTURE = fileURLToPath(
 
 describe('Traceability: Download Defaults and Stable Node IDs', () => {
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
 
   registerCleanup();
 
-  test.openspec('Re-opening unchanged document yields same IDs')('Scenario: Re-opening unchanged document yields same IDs', async () => {
+  humanReadableTest.openspec('Re-opening unchanged document yields same IDs')('Scenario: Re-opening unchanged document yields same IDs', async () => {
     const tmpDir = await createTrackedTempDir('safe-docx-id-reopen-');
     const inputPath = path.join(tmpDir, 'input.docx');
     await fs.writeFile(inputPath, new Uint8Array(await makeMinimalDocx(['A', 'B', 'C'])));
@@ -64,7 +68,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(idsA).toEqual(idsB);
   });
 
-  test.openspec('Inserting new paragraph does not renumber unrelated IDs')('Scenario: Inserting new paragraph does not renumber unrelated IDs', async () => {
+  humanReadableTest.openspec('Inserting new paragraph does not renumber unrelated IDs')('Scenario: Inserting new paragraph does not renumber unrelated IDs', async () => {
     const mgr = createTestSessionManager();
     const opened = await openSession(['One', 'Two', 'Three'], { mgr });
     const [id1, id2, id3] = opened.paraIds;
@@ -91,7 +95,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(afterIds.indexOf(id3!)).toBe(3);
   });
 
-  test.openspec('Two identical signature-block paragraphs remain uniquely addressable')('Scenario: Two identical signature-block paragraphs remain uniquely addressable', async () => {
+  humanReadableTest.openspec('Two identical signature-block paragraphs remain uniquely addressable')('Scenario: Two identical signature-block paragraphs remain uniquely addressable', async () => {
     const mgr = createTestSessionManager();
     const sig = 'Supplier / By: / Name: / Title:';
     const opened = await openSession([sig, sig], { mgr });
@@ -115,7 +119,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(String(readSecond.content)).toContain('Supplier');
   });
 
-  test.openspec('Missing intrinsic IDs are backfilled once')('Scenario: Missing intrinsic IDs are backfilled once', async () => {
+  humanReadableTest.openspec('Missing intrinsic IDs are backfilled once')('Scenario: Missing intrinsic IDs are backfilled once', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -148,7 +152,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(ids2).toEqual(ids1);
   });
 
-  test.openspec('Default download returns both variants')('Scenario: Default download returns both variants', async () => {
+  humanReadableTest.openspec('Default download returns both variants')('Scenario: Default download returns both variants', async () => {
     const mgr = createTestSessionManager();
     const fixturePath = SIMPLE_WORD_CHANGE_FIXTURE;
     const tmpDir = await createTrackedTempDir('safe-docx-download-both-');
@@ -180,7 +184,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(saved.cache_hit).toBe(false);
   });
 
-  test.openspec('Explicit variant override returns subset')('Scenario: Explicit variant override returns subset', async () => {
+  humanReadableTest.openspec('Explicit variant override returns subset')('Scenario: Explicit variant override returns subset', async () => {
     const mgr = createTestSessionManager();
     const opened = await openSession(['Hello world'], { mgr, prefix: 'safe-docx-download-clean-only-' });
     const outputPath = path.join(opened.tmpDir, 'out.docx');
@@ -196,7 +200,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(saved.tracked_saved_to).toBeNull();
   });
 
-  test.openspec('Repeat download reuses cached artifacts')('Scenario: Repeat download reuses cached artifacts', async () => {
+  humanReadableTest.openspec('Repeat download reuses cached artifacts')('Scenario: Repeat download reuses cached artifacts', async () => {
     const mgr = createTestSessionManager();
     const fixturePath = SIMPLE_WORD_CHANGE_FIXTURE;
     const tmpDir = await createTrackedTempDir('safe-docx-cache-hit-');
@@ -233,7 +237,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(second.cache_hit).toBe(true);
   });
 
-  test.openspec('New edit invalidates previous revision cache')('Scenario: New edit invalidates previous revision cache', async () => {
+  humanReadableTest.openspec('New edit invalidates previous revision cache')('Scenario: New edit invalidates previous revision cache', async () => {
     const mgr = createTestSessionManager();
     const fixturePath = SIMPLE_WORD_CHANGE_FIXTURE;
     const tmpDir = await createTrackedTempDir('safe-docx-cache-invalidate-');
@@ -280,7 +284,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(second.cache_hit).toBe(false);
   });
 
-  test.openspec('Anchors unchanged after dual download')('Scenario: Anchors unchanged after dual download', async () => {
+  humanReadableTest.openspec('Anchors unchanged after dual download')('Scenario: Anchors unchanged after dual download', async () => {
     const mgr = createTestSessionManager();
     const fixturePath = SIMPLE_WORD_CHANGE_FIXTURE;
     const tmpDir = await createTrackedTempDir('safe-docx-anchor-stable-');
@@ -307,7 +311,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(afterIds).toEqual(beforeIds);
   });
 
-  test.openspec('Generating clean artifact does not invalidate redline anchors')('Scenario: Generating clean artifact does not invalidate redline anchors', async () => {
+  humanReadableTest.openspec('Generating clean artifact does not invalidate redline anchors')('Scenario: Generating clean artifact does not invalidate redline anchors', async () => {
     const mgr = createTestSessionManager();
     const fixturePath = SIMPLE_WORD_CHANGE_FIXTURE;
     const tmpDir = await createTrackedTempDir('safe-docx-clean-then-redline-');
@@ -342,7 +346,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(extractParaIdsFromToon(String(afterRead.content))).toEqual(baselineIds);
   });
 
-  test.openspec('Open response advertises download defaults')('Scenario: Open response advertises download defaults', async () => {
+  humanReadableTest.openspec('Open response advertises download defaults')('Scenario: Open response advertises download defaults', async () => {
     const mgr = createTestSessionManager();
     const opened = await openSession(['A'], { mgr, prefix: 'safe-docx-open-metadata-' });
 
@@ -354,7 +358,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     expect(defaultsMeta.download_defaults?.supports_variant_override).toBe(true);
   });
 
-  test.openspec('Download response reports variant and cache details')('Scenario: Download response reports variant and cache details', async () => {
+  humanReadableTest.openspec('Download response reports variant and cache details')('Scenario: Download response reports variant and cache details', async () => {
     const mgr = createTestSessionManager();
     const opened = await openSession(['A'], { mgr, prefix: 'safe-docx-download-metadata-' });
     const outputPath = path.join(opened.tmpDir, 'out.docx');

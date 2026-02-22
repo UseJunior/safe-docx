@@ -3,12 +3,14 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { compareDocuments } from '@usejunior/docx-comparison';
+import { parseXml } from '@usejunior/docx-primitives';
 
 import { extractRevisions_tool } from './extract_revisions.js';
 import { openDocument } from './open_document.js';
 import { replaceText } from './replace_text.js';
 import { MCP_TOOLS } from '../server.js';
 import {
+  type AllureBddContext,
   testAllure,
   allureStep,
   allureJsonAttachment,
@@ -64,46 +66,6 @@ function asExtractRevisionsSuccess(
   return result as ExtractRevisionsSuccess;
 }
 
-async function addAllureTags(...tags: string[]): Promise<void> {
-  const allureRuntime = getAllureRuntime();
-  if (!allureRuntime) {
-    return;
-  }
-
-  for (const tag of tags) {
-    if ('tags' in allureRuntime && typeof (allureRuntime as { tags?: (v: string) => Promise<void> | void }).tags === 'function') {
-      await (allureRuntime as { tags: (v: string) => Promise<void> | void }).tags(tag);
-      continue;
-    }
-    if ('tag' in allureRuntime && typeof (allureRuntime as { tag?: (v: string) => Promise<void> | void }).tag === 'function') {
-      await (allureRuntime as { tag: (v: string) => Promise<void> | void }).tag(tag);
-      continue;
-    }
-    if (typeof allureRuntime.label === 'function') {
-      await allureRuntime.label('tag', tag);
-    }
-  }
-}
-
-async function applyReadableScenarioMetadata(params: {
-  scenarioId: string;
-  audience?: string;
-  descriptionLines: string[];
-}): Promise<void> {
-  const allureRuntime = getAllureRuntime();
-  if (allureRuntime && 'description' in allureRuntime) {
-    const describe = (allureRuntime as { description?: (v: string) => Promise<void> | void }).description;
-    if (typeof describe === 'function') {
-      await describe(params.descriptionLines.join('\n'));
-    }
-  }
-  await addAllureTags('lawyer-readable');
-  if (allureRuntime && typeof allureRuntime.parameter === 'function') {
-    await allureRuntime.parameter('scenario_id', params.scenarioId);
-    await allureRuntime.parameter('audience', params.audience ?? 'non-technical');
-  }
-}
-
 async function allureStepWithParameters(
   name: string,
   parameters: Record<string, StepValue>,
@@ -135,30 +97,6 @@ async function assertStepEqual(
   });
 }
 
-async function assertRevisionMatches(params: {
-  type: 'INSERTION' | 'DELETION';
-  expectedText: string;
-  expectedAuthor: string;
-  actual: RevisionSummary | undefined;
-}): Promise<void> {
-  await allureStepWithParameters(
-    `And a ${params.type} revision exists for "${params.expectedText}" by ${params.expectedAuthor}`,
-    {
-      expected_type: params.type,
-      expected_text: params.expectedText,
-      expected_author: params.expectedAuthor,
-      actual_type: String(params.actual?.type ?? ''),
-      actual_text: String(params.actual?.text ?? '').trim(),
-      actual_author: String(params.actual?.author ?? ''),
-    },
-    async () => {
-      expect(params.actual).toBeDefined();
-      expect(String(params.actual?.text ?? '').trim()).toBe(params.expectedText);
-      expect(params.actual?.author).toBe(params.expectedAuthor);
-    },
-  );
-}
-
 async function createRealTrackedChangesFixture(): Promise<string> {
   const [original, revised] = await Promise.all([
     fs.readFile(path.join(SIMPLE_FIXTURE_DIR, 'original.docx')),
@@ -176,27 +114,35 @@ async function createRealTrackedChangesFixture(): Promise<string> {
 
 describe('extract_revisions tool', () => {
   const test = testAllure.epic('Document Reading').withLabels({ feature: TEST_FEATURE });
-  const lawyerReadableTest = test.allure({
-    tags: ['lawyer-readable'],
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
     parameters: { audience: 'non-technical' },
   });
   registerCleanup();
 
   // ── Insertion + deletion extraction ──────────────────────────────
 
-  lawyerReadableTest
+  humanReadableTest
     .allure({
+      id: 'SDX-ER-001',
+      title: 'Extract revisions from a paragraph with insertion and deletion',
       description: [
         'This test checks revision extraction using one inserted phrase and one deleted phrase.',
         'It is written for non-technical review and should read like a plain-English story.',
         'Expected outcome: exactly one changed paragraph is returned with correct before/after text,',
         'correct revision types, correct revision text, and correct authors.',
       ].join('\n'),
-      parameters: { scenario_id: 'SDX-ER-001' },
     })
     .openspec('[SDX-ER-001] extracting revisions from a document with insertions and deletions')(
-    'Scenario: [SDX-ER-001] extracting revisions from a document with insertions and deletions',
-    async () => {
+    'Scenario: extracting revisions from a document with insertions and deletions',
+    async ({
+      given,
+      when,
+      then,
+      and,
+      attachXmlPreviews,
+      attachJsonLastStep,
+    }: AllureBddContext) => {
       const scenarioId = 'SDX-ER-001';
       const fixture = {
         baseText: 'Original',
@@ -206,100 +152,187 @@ describe('extract_revisions tool', () => {
         deletedAuthor: 'Bob',
       } as const;
 
-      const docXml =
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-        `<w:document xmlns:w="${W_NS}">` +
-        `<w:body>` +
-          `<w:p>` +
-            `<w:r><w:t>${fixture.baseText}</w:t></w:r>` +
-            `<w:ins w:author="${fixture.insertedAuthor}" w:date="2024-01-01T00:00:00Z">` +
-              `<w:r><w:t> ${fixture.insertedText}</w:t></w:r>` +
-            `</w:ins>` +
-            `<w:del w:author="${fixture.deletedAuthor}" w:date="2024-01-01T00:00:00Z">` +
-              `<w:r><w:delText> ${fixture.deletedText}</w:delText></w:r>` +
-            `</w:del>` +
-          `</w:p>` +
-        `</w:body></w:document>`;
+      const docXml = [
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+        `<w:document xmlns:w="${W_NS}">`,
+        '  <w:body>',
+        '    <w:p>',
+        `      <w:r><w:t>${fixture.baseText}</w:t></w:r>`,
+        `      <w:ins w:author="${fixture.insertedAuthor}" w:date="2024-01-01T00:00:00Z">`,
+        `        <w:r><w:t> ${fixture.insertedText}</w:t></w:r>`,
+        '      </w:ins>',
+        `      <w:del w:author="${fixture.deletedAuthor}" w:date="2024-01-01T00:00:00Z">`,
+        `        <w:r><w:delText> ${fixture.deletedText}</w:delText></w:r>`,
+        '      </w:del>',
+        '    </w:p>',
+        '  </w:body>',
+        '</w:document>',
+      ].join('\n');
+      const xmlDoc = parseXml(docXml);
+      const paragraphCount = xmlDoc.getElementsByTagName('w:p').length;
+      const insertionCount = xmlDoc.getElementsByTagName('w:ins').length;
+      const deletionCount = xmlDoc.getElementsByTagName('w:del').length;
+      const xmlRootElement = xmlDoc.documentElement?.nodeName ?? '';
 
       const expectedBefore = `${fixture.baseText} ${fixture.deletedText}`;
       const expectedAfter = `${fixture.baseText} ${fixture.insertedText}`;
-      const readableInputSummary = {
+      const debugContext = {
         scenario_id: scenarioId,
         base_text: fixture.baseText,
         insertion: { text: fixture.insertedText, author: fixture.insertedAuthor },
         deletion: { text: fixture.deletedText, author: fixture.deletedAuthor },
+        expected_before: expectedBefore,
+        expected_after: expectedAfter,
+        fixture_xml: docXml,
       } as const;
-      await allureStepWithParameters(
-        'Given a paragraph with one insertion and one deletion',
-        {
-          inserted_text: fixture.insertedText,
-          inserted_author: fixture.insertedAuthor,
-          deleted_text: fixture.deletedText,
-          deleted_author: fixture.deletedAuthor,
-        },
-        async () => {},
-      );
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
-      let extracted: ExtractRevisionsSuccess | undefined;
-      await allureStepWithParameters('When I run extract_revisions on the session', { session_id: sessionId }, async () => {
-        const result = await extractRevisions_tool(mgr, { session_id: sessionId });
-        extracted = asExtractRevisionsSuccess(result);
-      });
-      const result = extracted!;
+      let debugResult: ExtractRevisionsSuccess | null = null;
+      try {
+        await given(
+          'a paragraph with one insertion and one deletion',
+          async () => {
+            await attachXmlPreviews(docXml, {
+              wordLikeName: '01 Word-like visual preview',
+              xmlName: '02 Input XML fixture (pretty XML)',
+              wordLike: {
+                baseText: fixture.baseText,
+                insertedText: fixture.insertedText,
+                deletedText: fixture.deletedText,
+                insertedAuthor: fixture.insertedAuthor,
+                deletedAuthor: fixture.deletedAuthor,
+              },
+            });
+          },
+          {
+            base_text: fixture.baseText,
+            inserted_text: fixture.insertedText,
+            inserted_author: fixture.insertedAuthor,
+            deleted_text: fixture.deletedText,
+            deleted_author: fixture.deletedAuthor,
+          },
+        );
 
-      const changes = result.changes;
-      const change = changes[0];
-      const revisions = Array.isArray(change?.revisions) ? change.revisions : [];
-      const insertionRevision = revisions.find((revision) => revision.type === 'INSERTION');
-      const deletionRevision = revisions.find((revision) => revision.type === 'DELETION');
+        const { mgr, sessionId } = await given(
+          'the tracked-change paragraph is opened as an editable session',
+          () => openSession([], { xml: docXml, trackOpenStep: false }),
+        );
+        await and(
+          'the XML fixture is well-formed WordprocessingML',
+          async () => {
+            expect(xmlRootElement).toBe('w:document');
+            expect(paragraphCount).toBeGreaterThan(0);
+            expect(insertionCount).toBe(1);
+            expect(deletionCount).toBe(1);
+          },
+        );
 
-      await assertStepEqual('Then exactly 1 changed paragraph is returned', 1, Number(result.total_changes ?? -1));
-      await assertStepEqual('And exactly one changed paragraph entry exists', 1, changes.length);
-      await assertStepEqual(
-        `And the before text is "${expectedBefore}"`,
-        expectedBefore,
-        String(change.before_text ?? ''),
-      );
+        const result = await when(
+          'I run extract_revisions on the session',
+          async () => asExtractRevisionsSuccess(await extractRevisions_tool(mgr, { session_id: sessionId })),
+          { session_id: sessionId },
+        );
+        debugResult = result;
 
-      await assertStepEqual(
-        `And the after text is "${expectedAfter}"`,
-        expectedAfter,
-        String(change.after_text ?? ''),
-      );
+        const changes = result.changes;
+        const change = changes[0];
+        const revisions = Array.isArray(change?.revisions) ? change.revisions : [];
+        const insertionRevision = revisions.find((revision) => revision.type === 'INSERTION');
+        const deletionRevision = revisions.find((revision) => revision.type === 'DELETION');
 
-      await assertRevisionMatches({
-        type: 'INSERTION',
-        expectedText: fixture.insertedText,
-        expectedAuthor: fixture.insertedAuthor,
-        actual: insertionRevision,
-      });
-      await assertRevisionMatches({
-        type: 'DELETION',
-        expectedText: fixture.deletedText,
-        expectedAuthor: fixture.deletedAuthor,
-        actual: deletionRevision,
-      });
+        await then(
+          'exactly 1 changed paragraph is returned',
+          async () => {
+            expect(Number(result.total_changes ?? -1)).toBe(1);
+          },
+          {
+            expected: 1,
+            actual: Number(result.total_changes ?? -1),
+          },
+        );
+        await then(
+          'exactly one changed paragraph entry exists',
+          async () => {
+            expect(changes).toHaveLength(1);
+          },
+          { expected: 1, actual: changes.length },
+        );
+        await then(
+          `the before text is "${expectedBefore}"`,
+          async () => {
+            expect(String(change.before_text ?? '')).toBe(expectedBefore);
+          },
+          {
+            expected_before: expectedBefore,
+            actual_before: String(change.before_text ?? ''),
+          },
+        );
+        await then(
+          `the after text is "${expectedAfter}"`,
+          async () => {
+            expect(String(change.after_text ?? '')).toBe(expectedAfter);
+          },
+          {
+            expected_after: expectedAfter,
+            actual_after: String(change.after_text ?? ''),
+          },
+        );
 
-      // Keep technical JSON artifacts at the bottom so the narrative steps stay contiguous.
-      await allureJsonAttachment('Readable input summary', readableInputSummary);
-      await allureJsonAttachment('Raw result (engineer view)', result);
+        await and(
+          `an INSERTION revision exists for "${fixture.insertedText}" by ${fixture.insertedAuthor}`,
+          async () => {
+            expect(insertionRevision).toBeDefined();
+            expect(String(insertionRevision?.text ?? '').trim()).toBe(fixture.insertedText);
+            expect(insertionRevision?.author).toBe(fixture.insertedAuthor);
+          },
+          {
+            expected_type: 'INSERTION',
+            expected_text: fixture.insertedText,
+            expected_author: fixture.insertedAuthor,
+            actual_type: String(insertionRevision?.type ?? ''),
+            actual_text: String(insertionRevision?.text ?? '').trim(),
+            actual_author: String(insertionRevision?.author ?? ''),
+          },
+        );
+
+        await and(
+          `a DELETION revision exists for "${fixture.deletedText}" by ${fixture.deletedAuthor}`,
+          async () => {
+            expect(deletionRevision).toBeDefined();
+            expect(String(deletionRevision?.text ?? '').trim()).toBe(fixture.deletedText);
+            expect(deletionRevision?.author).toBe(fixture.deletedAuthor);
+          },
+          {
+            expected_type: 'DELETION',
+            expected_text: fixture.deletedText,
+            expected_author: fixture.deletedAuthor,
+            actual_type: String(deletionRevision?.type ?? ''),
+            actual_text: String(deletionRevision?.text ?? '').trim(),
+            actual_author: String(deletionRevision?.author ?? ''),
+          },
+        );
+      } finally {
+        await attachJsonLastStep({
+          context: debugContext,
+          result: debugResult,
+          stepName: 'Attach debug JSON (context + result)',
+        });
+      }
     },
   );
 
   // ── No tracked changes ──────────────────────────────────────────
 
-  test.openspec('[SDX-ER-002] extracting revisions from a document with no tracked changes')(
+  humanReadableTest
+    .allure({
+      description: [
+        'This test checks extraction behavior when a document contains no tracked changes.',
+        'Expected outcome: no changed paragraphs are returned and pagination signals no more results.',
+      ].join('\n'),
+    })
+    .openspec('[SDX-ER-002] extracting revisions from a document with no tracked changes')(
     'Scenario: [SDX-ER-002] extracting revisions from a document with no tracked changes',
     async () => {
       const scenarioId = 'SDX-ER-002';
-      await applyReadableScenarioMetadata({
-        scenarioId,
-        descriptionLines: [
-          'This test checks extraction behavior when a document contains no tracked changes.',
-          'Expected outcome: no changed paragraphs are returned and pagination signals no more results.',
-        ],
-      });
 
       const { mgr, sessionId } = await openSession(['Hello world', 'Second paragraph']);
       const readableInputSummary = {
@@ -331,7 +364,7 @@ describe('extract_revisions tool', () => {
 
   // ── Format changes ──────────────────────────────────────────────
 
-  test.openspec('property-only changes are included in extraction')(
+  humanReadableTest.openspec('property-only changes are included in extraction')(
     'Scenario: property-only changes are included in extraction',
     async () => {
       const docXml =
@@ -369,7 +402,7 @@ describe('extract_revisions tool', () => {
 
   // ── Pagination ──────────────────────────────────────────────────
 
-  test.openspec('paginating through revisions with offset and limit')(
+  humanReadableTest.openspec('paginating through revisions with offset and limit')(
     'Scenario: paginating through revisions with offset and limit',
     async () => {
       const docXml =
@@ -409,7 +442,7 @@ describe('extract_revisions tool', () => {
 
   // ── Session unchanged after extraction ──────────────────────────
 
-  test.openspec('session document is unchanged after extraction')(
+  humanReadableTest.openspec('session document is unchanged after extraction')(
     'Scenario: session document is unchanged after extraction',
     async () => {
       const docXml =
@@ -441,7 +474,7 @@ describe('extract_revisions tool', () => {
 
   // ── Missing session context ─────────────────────────────────────
 
-  test.openspec('missing session context returns error')(
+  humanReadableTest.openspec('missing session context returns error')(
     'Scenario: missing session context returns error',
     async () => {
       const mgr = createTestSessionManager();
@@ -456,7 +489,7 @@ describe('extract_revisions tool', () => {
 
   // ── Validation errors ───────────────────────────────────────────
 
-  test.openspec('invalid limit is rejected')(
+  humanReadableTest.openspec('invalid limit is rejected')(
     'Scenario: invalid limit is rejected',
     async () => {
       const { mgr, sessionId } = await openSession(['Hello']);
@@ -474,7 +507,7 @@ describe('extract_revisions tool', () => {
     },
   );
 
-  test.openspec('invalid offset is rejected')(
+  humanReadableTest.openspec('invalid offset is rejected')(
     'Scenario: invalid offset is rejected',
     async () => {
       const { mgr, sessionId } = await openSession(['Hello']);
@@ -489,7 +522,7 @@ describe('extract_revisions tool', () => {
 
   // ── Cache behavior ─────────────────────────────────────────────
 
-  test.openspec('repeated extraction at same revision uses cache')(
+  humanReadableTest.openspec('repeated extraction at same revision uses cache')(
     'Scenario: repeated extraction at same revision uses cache',
     async () => {
       const docXml =
@@ -525,7 +558,7 @@ describe('extract_revisions tool', () => {
 
   // ── Empty structural paragraphs ─────────────────────────────────
 
-  test.openspec('structurally-empty inserted paragraphs are filtered out')(
+  humanReadableTest.openspec('structurally-empty inserted paragraphs are filtered out')(
     'Scenario: structurally-empty inserted paragraphs are filtered out',
     async () => {
       // A paragraph with only pPr/rPr/ins (paragraph-level insertion marker)
@@ -559,7 +592,7 @@ describe('extract_revisions tool', () => {
 
   // ── Real DOCX regression guard ────────────────────────────────
 
-  test.openspec('real DOCX redline with tracked changes extracts correctly')(
+  humanReadableTest.openspec('real DOCX redline with tracked changes extracts correctly')(
     'Scenario: real DOCX redline with tracked changes extracts correctly',
     async () => {
       const fixturePath = await createRealTrackedChangesFixture();
@@ -607,7 +640,7 @@ describe('extract_revisions tool', () => {
 
   // ── Inserted-only paragraph ────────────────────────────────────
 
-  test.openspec('inserted-only paragraph has empty before text')(
+  humanReadableTest.openspec('inserted-only paragraph has empty before text')(
     'Scenario: inserted-only paragraph has empty before text',
     async () => {
       const docXml =
@@ -638,7 +671,7 @@ describe('extract_revisions tool', () => {
 
   // ── Deleted-only paragraph ────────────────────────────────────
 
-  test.openspec('deleted-only paragraph has empty after text')(
+  humanReadableTest.openspec('deleted-only paragraph has empty after text')(
     'Scenario: deleted-only paragraph has empty after text',
     async () => {
       const docXml =
@@ -670,7 +703,7 @@ describe('extract_revisions tool', () => {
 
   // ── Table cells ───────────────────────────────────────────────
 
-  test.openspec('changed paragraphs inside table cells are extracted')(
+  humanReadableTest.openspec('changed paragraphs inside table cells are extracted')(
     'Scenario: changed paragraphs inside table cells are extracted',
     async () => {
       const docXml =
@@ -699,7 +732,7 @@ describe('extract_revisions tool', () => {
 
   // ── Comments ──────────────────────────────────────────────────
 
-  test.openspec('extracting revisions includes associated comments')(
+  humanReadableTest.openspec('extracting revisions includes associated comments')(
     'Scenario: extracting revisions includes associated comments',
     async () => {
       const commentsXml =
@@ -746,7 +779,7 @@ describe('extract_revisions tool', () => {
 
   // ── Offset beyond total ───────────────────────────────────────
 
-  test.openspec('offset beyond total returns empty page')(
+  humanReadableTest.openspec('offset beyond total returns empty page')(
     'Scenario: offset beyond total returns empty page',
     async () => {
       const docXml =
@@ -772,7 +805,7 @@ describe('extract_revisions tool', () => {
 
   // ── Subsequent pages ──────────────────────────────────────────
 
-  test.openspec('retrieving subsequent pages with offset')(
+  humanReadableTest.openspec('retrieving subsequent pages with offset')(
     'Scenario: retrieving subsequent pages with offset',
     async () => {
       const docXml =
@@ -808,56 +841,118 @@ describe('extract_revisions tool', () => {
 
   // ── Cache invalidation on edit ────────────────────────────────
 
-  test.openspec('new edit invalidates extraction cache')(
+  humanReadableTest.openspec('new edit invalidates extraction cache')(
     'Scenario: new edit invalidates extraction cache',
-    async () => {
-      // Use a clean document — extraction still caches the empty result
-      const { mgr, sessionId, firstParaId } = await openSession(['Hello world', 'Second paragraph']);
+    async ({
+      given,
+      when,
+      then,
+      and,
+      attachJsonLastStep,
+    }: AllureBddContext) => {
+      const inputParagraphs = ['Hello world', 'Second paragraph'] as const;
+      const replaceInstruction = {
+        old_string: 'Hello world',
+        new_string: 'Hi world',
+        instruction: 'cache invalidation test',
+      } as const;
+      const debugContext = {
+        scenario: 'new edit invalidates extraction cache',
+        input_paragraphs: inputParagraphs,
+        replace_text: replaceInstruction,
+        expected: {
+          cache_after_first_extraction: 'present',
+          cache_after_edit: 'null',
+          second_edit_revision_differs: true,
+        },
+      } as const;
 
-      // First extraction — populates cache (0 changes, but cache is still created)
-      const result1 = await allureStep('First extraction', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
-      );
-      assertSuccess(result1, 'first extraction');
-      const rev1 = result1.edit_revision;
+      let debugResult: Record<string, unknown> | null = null;
+      try {
+        const { mgr, sessionId, firstParaId } = await given(
+          'a clean two-paragraph document is open in a session',
+          () => openSession(inputParagraphs, { trackOpenStep: false }),
+          { paragraph_count: inputParagraphs.length },
+        );
 
-      await allureStep('Verify cache is populated', () => {
-        const session = mgr.getSession(sessionId);
-        expect(mgr.getExtractionCache(session)).not.toBeNull();
-      });
+        const result1 = await when(
+          'I run extract_revisions for the first time',
+          () => extractRevisions_tool(mgr, { session_id: sessionId }),
+          { session_id: sessionId },
+        );
+        assertSuccess(result1, 'first extraction');
+        const rev1 = result1.edit_revision;
 
-      // Make an edit to increment edit_revision
-      await allureStep('Make an edit via replace_text', async () => {
-        const editResult = await replaceText(mgr, {
-          session_id: sessionId,
-          target_paragraph_id: firstParaId,
-          old_string: 'Hello world',
-          new_string: 'Hi world',
-          instruction: 'cache invalidation test',
-        });
+        await then(
+          'the extraction cache is populated after the first run',
+          async () => {
+            const session = mgr.getSession(sessionId);
+            expect(mgr.getExtractionCache(session)).not.toBeNull();
+          },
+          { expected_cache: 'present' },
+        );
+
+        const editResult = await when(
+          'I edit the first paragraph using replace_text',
+          () => replaceText(mgr, {
+            session_id: sessionId,
+            target_paragraph_id: firstParaId,
+            old_string: replaceInstruction.old_string,
+            new_string: replaceInstruction.new_string,
+            instruction: replaceInstruction.instruction,
+          }),
+          {
+            target_paragraph_id: firstParaId,
+            old_string: replaceInstruction.old_string,
+            new_string: replaceInstruction.new_string,
+          },
+        );
         assertSuccess(editResult, 'replace_text');
-      });
 
-      await allureStep('Verify cache was invalidated', () => {
-        const session = mgr.getSession(sessionId);
-        expect(mgr.getExtractionCache(session)).toBeNull();
-      });
+        await and(
+          'the extraction cache is invalidated by that edit',
+          async () => {
+            const session = mgr.getSession(sessionId);
+            expect(mgr.getExtractionCache(session)).toBeNull();
+          },
+          { expected_cache: 'null' },
+        );
 
-      // Second extraction — must recompute
-      const result2 = await allureStep('Second extraction after edit', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
-      );
-      assertSuccess(result2, 'second extraction');
+        const result2 = await when(
+          'I run extract_revisions again after the edit',
+          () => extractRevisions_tool(mgr, { session_id: sessionId }),
+          { session_id: sessionId },
+        );
+        assertSuccess(result2, 'second extraction');
 
-      await allureStep('Verify new edit_revision', () => {
-        expect(result2.edit_revision).not.toBe(rev1);
-      });
+        await and(
+          'the second extraction has a newer edit revision',
+          async () => {
+            expect(result2.edit_revision).not.toBe(rev1);
+          },
+          { previous_edit_revision: String(rev1), current_edit_revision: String(result2.edit_revision) },
+        );
+
+        debugResult = {
+          first_extraction: result1,
+          edit_result: editResult,
+          second_extraction: result2,
+          first_edit_revision: rev1,
+          second_edit_revision: result2.edit_revision,
+        };
+      } finally {
+        await attachJsonLastStep({
+          context: debugContext,
+          result: debugResult,
+          stepName: 'Attach debug JSON (context + result)',
+        });
+      }
     },
   );
 
   // ── Two-file comparison then extraction ────────────────────────
 
-  test.openspec('two-file comparison then extraction workflow')(
+  humanReadableTest.openspec('two-file comparison then extraction workflow')(
     'Scenario: two-file comparison then extraction workflow',
     async () => {
       const fixturePath = await createRealTrackedChangesFixture();

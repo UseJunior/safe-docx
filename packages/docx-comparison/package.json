@@ -12,6 +12,7 @@
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
     "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
+    "check:spec-coverage": "node scripts/validate_openspec_coverage.mjs",
     "lint": "tsc --noEmit",
     "benchmark": "tsx src/benchmark/runner.ts"
   },

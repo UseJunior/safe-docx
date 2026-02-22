@@ -25,7 +25,7 @@ function parseArgs(argv) {
     }
   }
   if (out.reportDirs.length === 0) {
-    out.reportDirs = ['allure-report-repo'];
+    out.reportDirs = ['allure-report-pilot'];
   }
   out.reportDirs = [...new Set(out.reportDirs)];
   return out;
@@ -162,10 +162,293 @@ ${BRANDING_START}
           });
         };
 
+        const setQueryParam = (queryValue) => {
+          const next = new URL(window.location.href);
+          next.searchParams.delete("query");
+          if (typeof queryValue === "string") {
+            const normalized = queryValue.trim();
+            if (normalized.length > 0) {
+              next.searchParams.set("query", normalized);
+            }
+          }
+          if (next.href === window.location.href) return;
+          window.history.replaceState(null, "", next.href);
+          window.dispatchEvent(new Event("replaceState"));
+        };
+
+        const clearQueryParam = () => {
+          setQueryParam(undefined);
+        };
+
+        const navigateHome = () => {
+          clearQueryParam();
+          const homeButton = document.querySelector(".KayT_VKx .DJELNKs1 button");
+          if (homeButton instanceof HTMLElement) {
+            homeButton.click();
+            return;
+          }
+          window.location.hash = "#/";
+        };
+
+        const findSearchInput = () => {
+          const direct = document.querySelector('input[data-testid="search-input"]');
+          if (direct instanceof HTMLInputElement) return direct;
+
+          const container = document.querySelector('[data-testid="search-input"]');
+          if (container instanceof HTMLInputElement) return container;
+          if (!(container instanceof HTMLElement)) return null;
+
+          const nested = container.querySelector("input");
+          return nested instanceof HTMLInputElement ? nested : null;
+        };
+
+        const setSearchInputValue = (query) => {
+          const input = findSearchInput();
+          if (!input) return false;
+
+          const nativeSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype,
+            "value",
+          )?.set;
+          if (nativeSetter) {
+            nativeSetter.call(input, query);
+          } else {
+            input.value = query;
+          }
+
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        };
+
+        const setSearchInputValueWithRetry = (query, retries = 8) => {
+          if (setSearchInputValue(query)) return;
+          if (retries <= 0) return;
+          setTimeout(() => setSearchInputValueWithRetry(query, retries - 1), 60);
+        };
+
+        const compactLabel = (value) =>
+          String(value || "")
+            .replaceAll(String.fromCharCode(10), " ")
+            .replaceAll(String.fromCharCode(13), " ")
+            .replaceAll(String.fromCharCode(9), " ")
+            .split(" ")
+            .filter(Boolean)
+            .join(" ");
+
+        const normalizeLabel = (value) => compactLabel(value).toLowerCase();
+
+        const classNameToString = (value) =>
+          typeof value === "string" ? value : value?.baseVal || "";
+
+        const tryRevealTreeLabel = (label) => {
+          const target = normalizeLabel(label);
+          if (!target) return false;
+
+          const sectionTitle = Array.from(
+            document.querySelectorAll('[data-testid="tree-section-title"]'),
+          ).find((el) => normalizeLabel(el.textContent) === target);
+
+          if (sectionTitle instanceof HTMLElement) {
+            const section = sectionTitle.closest('[data-testid="tree-section"]');
+            if (section instanceof HTMLElement) {
+              const arrowEl =
+                section.querySelector('[data-testid="tree-arrow"] svg') ||
+                section.querySelector('[data-testid="tree-arrow"]');
+              const isOpened = /opened/i.test(classNameToString(arrowEl?.className));
+              if (!isOpened) {
+                section.click();
+              }
+              section.scrollIntoView({ block: "center", inline: "nearest" });
+              return true;
+            }
+          }
+
+          const leafTitle = Array.from(
+            document.querySelectorAll('[data-testid="tree-leaf-title"]'),
+          ).find((el) => normalizeLabel(el.textContent) === target);
+          if (leafTitle instanceof HTMLElement) {
+            const leaf = leafTitle.closest('[data-testid="tree-item"]') || leafTitle;
+            if (leaf instanceof HTMLElement) {
+              leaf.scrollIntoView({ block: "center", inline: "nearest" });
+            }
+            return true;
+          }
+
+          return false;
+        };
+
+        const revealTreeLabelWithRetry = (label, retries = 12) => {
+          if (tryRevealTreeLabel(label)) return;
+          if (retries <= 0) return;
+          setTimeout(() => revealTreeLabelWithRetry(label, retries - 1), 80);
+        };
+
+        const patchHomeButtonBehavior = () => {
+          const homeButton = document.querySelector(".KayT_VKx .DJELNKs1 button");
+          if (!(homeButton instanceof HTMLElement)) return;
+          if (homeButton.dataset.clearQueryPatched === "1") return;
+          homeButton.dataset.clearQueryPatched = "1";
+          homeButton.addEventListener(
+            "click",
+            () => {
+              clearQueryParam();
+              setSearchInputValueWithRetry("", 2);
+            },
+            { capture: true },
+          );
+        };
+
+        const getActiveTestResultId = () => {
+          let raw = window.location.hash || "";
+          if (raw.startsWith("#/")) {
+            raw = raw.slice(2);
+          } else if (raw.startsWith("#")) {
+            raw = raw.slice(1);
+          }
+          const [first] = raw.split("/").filter(Boolean);
+          if (!first || first === "charts" || first === "timeline") return null;
+          return first;
+        };
+
+        const navigateFromBreadcrumb = (label, isLeaf) => {
+          if (isLeaf) {
+            const activeId = getActiveTestResultId();
+            if (activeId) {
+              window.location.hash = "#" + activeId;
+            }
+            return;
+          }
+
+          navigateHome();
+          if (label) {
+            revealTreeLabelWithRetry(label);
+          }
+        };
+
+        const patchBreadcrumbLinks = () => {
+          document.querySelectorAll(".KayT_VKx").forEach((container) => {
+            const crumbs = Array.from(container.querySelectorAll(".ChConoqG")).filter(
+              (node) => !node.classList.contains("DJELNKs1"),
+            );
+
+            crumbs.forEach((crumb, index) => {
+              if (!(crumb instanceof HTMLElement)) return;
+              if (crumb.dataset.breadcrumbLinkPatched === "1") return;
+
+              const labelNode = crumb.querySelector(".vCHAp_yZ");
+              const label = compactLabel(labelNode?.textContent || crumb.textContent || "");
+              if (!label) return;
+
+              const isLeaf = index === crumbs.length - 1;
+              crumb.dataset.breadcrumbLinkPatched = "1";
+              crumb.setAttribute("role", "link");
+              crumb.setAttribute("tabindex", "0");
+              crumb.setAttribute(
+                "aria-label",
+                isLeaf ? "Open " + label : "Filter tests by " + label,
+              );
+              crumb.style.cursor = "pointer";
+
+              const activate = (event) => {
+                if (
+                  event.type === "keydown" &&
+                  event.key !== "Enter" &&
+                  event.key !== " "
+                ) {
+                  return;
+                }
+                if (event.type === "keydown") {
+                  event.preventDefault();
+                }
+                event.stopPropagation();
+                navigateFromBreadcrumb(label, isLeaf);
+              };
+
+              crumb.addEventListener("click", activate);
+              crumb.addEventListener("keydown", activate);
+            });
+          });
+        };
+
+        const autoExpandAttachments = () => {
+          const classNameToString = (value) =>
+            typeof value === "string" ? value : value?.baseVal || "";
+
+          document.querySelectorAll('[data-testid="test-result-attachment"]').forEach((attachment) => {
+            if (attachment.dataset.autoExpanded === "1") return;
+            const header = attachment.querySelector('[data-testid="test-result-attachment-header"]');
+            if (!header) return;
+            const toggle = header.querySelector('button[class*="arrow-button"]');
+            if (!toggle) return;
+            const icon = toggle.querySelector("svg");
+            const iconClass = classNameToString(icon?.className);
+            const isExpanded = /opened/.test(iconClass);
+            if (!isExpanded) {
+              toggle.click();
+            }
+            attachment.dataset.autoExpanded = "1";
+          });
+        };
+
+        const autoSizeHtmlAttachmentFrames = () => {
+          const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+          const resizeFrame = (frame) => {
+            try {
+              const doc = frame.contentDocument;
+              if (!doc) return;
+              const inDialog = !!frame.closest('[role="dialog"]');
+              const min = 0;
+              const max = inDialog
+                ? Math.max(420, Math.floor(window.innerHeight * 0.9))
+                : Math.max(220, Math.floor(window.innerHeight * 0.72));
+              const root = doc.getElementById('allure-auto-size-root');
+              const rootHeight = root ? Math.ceil(root.getBoundingClientRect().height) : 0;
+              const bodyHeight = doc.body ? doc.body.scrollHeight : 0;
+              // Include body padding in the measured height so top/bottom spacing is preserved.
+              const contentHeight = Math.max(rootHeight, bodyHeight, 0);
+              if (contentHeight <= 0) return;
+              const contentTarget = Math.max(min, contentHeight + 8);
+              const previewTarget = clamp(contentTarget, min, max);
+              const overflowNeeded = contentTarget > max;
+
+              const preview = frame.closest('[class*="html-attachment-preview"]');
+              if (preview) {
+                preview.style.height = String(previewTarget) + 'px';
+                preview.style.minHeight = '0px';
+                preview.style.maxHeight = String(max) + 'px';
+                preview.style.overflowY = overflowNeeded ? 'auto' : 'hidden';
+                preview.style.overflowX = 'hidden';
+              }
+              frame.setAttribute('scrolling', 'no');
+              frame.style.height = String(contentTarget) + 'px';
+              frame.style.minHeight = '0px';
+              frame.style.overflow = 'hidden';
+            } catch {
+              // Cross-origin or transient iframe states should not break report interactivity.
+            }
+          };
+
+          document
+            .querySelectorAll('[data-testid="test-result-attachment"] [class*="html-attachment-preview"] iframe')
+            .forEach((frame) => {
+              if (frame.dataset.autoSizedAttached !== "1") {
+                frame.addEventListener('load', () => resizeFrame(frame));
+                frame.dataset.autoSizedAttached = "1";
+              }
+              resizeFrame(frame);
+            });
+        };
+
         const runPatches = () => {
           patchReportIcons();
           patchLastUpdatedLabel();
           hideThemeToggle();
+          patchHomeButtonBehavior();
+          patchBreadcrumbLinks();
+          autoExpandAttachments();
+          autoSizeHtmlAttachmentFrames();
         };
 
         const observer = new MutationObserver(() => runPatches());
@@ -242,6 +525,23 @@ ${BRANDING_START}
         display: none !important;
       }
 
+      .KayT_VKx .ChConoqG[role="link"] .vCHAp_yZ {
+        text-decoration: underline;
+        text-decoration-color: transparent;
+        text-underline-offset: 2px;
+      }
+
+      .KayT_VKx .ChConoqG[role="link"]:hover .vCHAp_yZ,
+      .KayT_VKx .ChConoqG[role="link"]:focus-visible .vCHAp_yZ {
+        text-decoration-color: currentColor;
+      }
+
+      .KayT_VKx .ChConoqG[role="link"]:focus-visible {
+        outline: 2px solid rgba(5, 28, 73, 0.35);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+
       /* Unify code block palette for markdown blocks and JSON attachment blocks */
       pre,
       pre code,
@@ -251,6 +551,36 @@ ${BRANDING_START}
       pre[class*="language-"] code {
         background: #f6efe3 !important;
         color: #2f2a24 !important;
+      }
+
+      /* Make HTML attachments feel inlined/readable without cramped iframe viewports */
+      [data-testid="test-result-attachment"] [class*="html-attachment-preview"] {
+        min-height: 0 !important;
+        max-height: 72vh !important;
+        overflow: hidden;
+      }
+
+      [data-testid="test-result-attachment"] [class*="html-attachment-preview"] iframe {
+        width: 100% !important;
+        min-height: 0 !important;
+        border: 0 !important;
+      }
+
+      /* Expanded attachment modal should be larger than inline preview */
+      [role="dialog"] [data-testid="test-result-attachment"] [class*="html-attachment-preview"],
+      [role="dialog"] [class*="html-attachment-preview"] {
+        min-height: 0 !important;
+        max-height: 90vh !important;
+      }
+
+      [role="dialog"] [data-testid="test-result-attachment"] [class*="html-attachment-preview"] iframe,
+      [role="dialog"] [class*="html-attachment-preview"] iframe {
+        min-height: 0 !important;
+      }
+
+      [data-testid="test-result-attachment"] .Yino1buJ,
+      [data-testid="test-result-attachment"] .Px8Q9Npk {
+        overflow: visible !important;
       }
 
       /* Fallback in case runtime patch hasn't executed yet */
@@ -274,10 +604,47 @@ ${BRANDING_END}
 function patchReportJs(reportDir) {
   const names = fs.readdirSync(reportDir);
   for (const fileName of names) {
-    if (!/\.app-.*\.js$/.test(fileName)) continue;
+    if (!/(^|\.)app-.*\.js$/.test(fileName)) continue;
     const filePath = path.join(reportDir, fileName);
     const raw = readUtf8(filePath);
-    const patched = raw.replace(/"sections":\{"report":"Report"/g, '"sections":{"report":"SafeDocX"');
+    let patched = raw.replace(/"sections":\{"report":"Report"/g, '"sections":{"report":"SafeDocX"');
+
+    // Allure Awesome renders HTML attachments as plain text inline by default.
+    // Force inline preview mode for html/svg/image attachment kinds so rich rendering appears in step flow.
+    const inlinePreviewNeedle =
+      'children:V2(Rw,{item:e,i18n:{imageDiff:e=>i(`imageDiff.${e}`)}})';
+    const inlinePreviewPatch =
+      'children:V2(Rw,{item:e,previewable:"html"===s||"svg"===s||"image"===s,i18n:{imageDiff:e=>i(`imageDiff.${e}`)}})';
+    if (patched.includes(inlinePreviewNeedle) && !patched.includes('previewable:"html"===s||"svg"===s||"image"===s')) {
+      patched = patched.replace(inlinePreviewNeedle, inlinePreviewPatch);
+    }
+
+    // Ensure text/html attachments render as sanitized HTML (iframe preview),
+    // even in call sites that do not set previewable=true.
+    const htmlFallbackNeedle = 'const p=Nw[u];return p?Tc(p,{attachment:s.value,item:t,i18n:h}):null';
+    const htmlFallbackPatch =
+      'const p="html"===u&&Ow.html?Ow.html:Nw[u];return p?Tc(p,{attachment:s.value,item:t,i18n:h}):null';
+    if (patched.includes(htmlFallbackNeedle) && !patched.includes('"html"===u&&Ow.html?Ow.html:Nw[u]')) {
+      patched = patched.replace(htmlFallbackNeedle, htmlFallbackPatch);
+    }
+
+    // Allure Awesome sanitizes HTML attachment text before iframe preview.
+    // For local branded reports we intentionally bypass this sanitizer so
+    // iframe/data-uri/style based XML demos can render as-authored.
+    const htmlSanitizeNeedle = 'i=r.length>0?(e=>Wy.sanitize(e,void 0))(r):""';
+    const htmlSanitizePatch = 'i=r.length>0?r:""';
+    if (patched.includes(htmlSanitizeNeedle) && !patched.includes(htmlSanitizePatch)) {
+      patched = patched.replace(htmlSanitizeNeedle, htmlSanitizePatch);
+    }
+
+    // Allow links from HTML attachment previews to open new tabs/windows.
+    const iframeSandboxNeedle = 'sandbox:"allow-same-origin"';
+    const iframeSandboxPatch =
+      'sandbox:"allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-downloads"';
+    if (patched.includes(iframeSandboxNeedle) && !patched.includes('allow-popups-to-escape-sandbox')) {
+      patched = patched.replaceAll(iframeSandboxNeedle, iframeSandboxPatch);
+    }
+
     if (patched !== raw) {
       writeUtf8(filePath, patched);
     }

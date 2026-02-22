@@ -19,6 +19,7 @@ const featureAssignmentRe =
   /\.withLabels\(\s*\{[\s\S]*?\bfeature\s*:/m;
 const directFeatureUsageRe = /\ballure\.feature\(/;
 const openSpecFeatureConstRe = /const\s+TEST_FEATURE\s*=\s*['"`][^'"`]+['"`]/;
+const legacyReadableTagRe = /['"`]lawyer-readable['"`]/;
 
 function walk(dir, out) {
   if (!existsSync(dir)) return;
@@ -107,6 +108,10 @@ function validateFile(relativePath) {
 
   if (isOpenSpecTraceabilityFile && !openSpecFeatureConstRe.test(body)) {
     errors.push('OpenSpec traceability tests must declare `const TEST_FEATURE = ...` for deterministic mapping.');
+  }
+
+  if (legacyReadableTagRe.test(body)) {
+    errors.push('must use `human-readable` tag; `lawyer-readable` is deprecated.');
   }
 
   return errors;

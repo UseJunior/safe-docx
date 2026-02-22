@@ -8,8 +8,12 @@ const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 
 describe('Multi-platform MCP discovery docs', () => {
   const test = testAllure.epic('Document Editing').withLabels({ feature: 'mcp-discovery-docs' });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
 
-  test.openspec('Gemini CLI discovers SafeDocX via extension manifest')(
+  humanReadableTest.openspec('Gemini CLI discovers SafeDocX via extension manifest')(
     'Scenario: Gemini CLI discovers SafeDocX via extension manifest',
     async () => {
       const manifestPath = path.join(REPO_ROOT, 'gemini-extension.json');
@@ -23,7 +27,7 @@ describe('Multi-platform MCP discovery docs', () => {
     },
   );
 
-  test.openspec('Extension manifest is valid JSON with required fields')(
+  humanReadableTest.openspec('Extension manifest is valid JSON with required fields')(
     'Scenario: Extension manifest is valid JSON with required fields',
     async () => {
       const manifestPath = path.join(REPO_ROOT, 'gemini-extension.json');
@@ -40,7 +44,7 @@ describe('Multi-platform MCP discovery docs', () => {
     },
   );
 
-  test.openspec('AI agent configures SafeDocX from install guide')(
+  humanReadableTest.openspec('AI agent configures SafeDocX from install guide')(
     'Scenario: AI agent configures SafeDocX from install guide',
     async () => {
       const installGuidePath = path.join(REPO_ROOT, 'packages', 'safe-docx', 'llms-install.md');
@@ -57,7 +61,7 @@ describe('Multi-platform MCP discovery docs', () => {
     },
   );
 
-  test.openspec('Gemini model reads context file for tool guidance')(
+  humanReadableTest.openspec('Gemini model reads context file for tool guidance')(
     'Scenario: Gemini model reads context file for tool guidance',
     async () => {
       const geminiMdPath = path.join(REPO_ROOT, 'GEMINI.md');

@@ -13,6 +13,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const TRACEABILITY_SOURCES = {
   safeDocx: path.join(REPO_ROOT, 'packages', 'safe-docx', 'src', 'testing', 'SAFE_DOCX_OPENSPEC_TRACEABILITY.md'),
   docxPrimitives: path.join(REPO_ROOT, 'packages', 'docx-primitives', 'test', 'DOCX_PRIMITIVES_OPENSPEC_TRACEABILITY.md'),
+  docxComparison: path.join(REPO_ROOT, 'packages', 'docx-comparison', 'src', 'testing', 'DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md'),
 };
 
 const ALLURE_SOURCES = {
@@ -244,11 +245,12 @@ function reliabilityVerdict({ unmappedScenarioCount, totalNonPassingChecks }) {
   return 'Needs attention before relying on this run';
 }
 
-function makeSystemCardMarkdown({ generatedAtIso, traceability, allure }) {
+function makeSystemCardMarkdown({ traceability, allure }) {
   const safeDocx = traceability.safeDocx;
   const docxPrimitives = traceability.docxPrimitives;
+  const docxComparison = traceability.docxComparison;
 
-  const mappingScope = [safeDocx, docxPrimitives];
+  const mappingScope = [safeDocx, docxPrimitives, docxComparison];
   const totalScenarios = mappingScope.reduce((sum, item) => sum + item.total, 0);
   const totalMapped = mappingScope.reduce((sum, item) => sum + item.covered, 0);
   const totalUnmapped = mappingScope.reduce((sum, item) => sum + item.missing + item.pending, 0);
@@ -261,6 +263,7 @@ function makeSystemCardMarkdown({ generatedAtIso, traceability, allure }) {
   const unresolved = [
     ...safeDocx.missingScenarios.map((item) => ({ packageLabel: safeDocx.label, ...item })),
     ...docxPrimitives.missingScenarios.map((item) => ({ packageLabel: docxPrimitives.label, ...item })),
+    ...docxComparison.missingScenarios.map((item) => ({ packageLabel: docxComparison.label, ...item })),
   ];
 
   const conclusion = reliabilityVerdict({
@@ -282,6 +285,11 @@ function makeSystemCardMarkdown({ generatedAtIso, traceability, allure }) {
       label: 'DOCX Primitives: spec scenario mapping',
       detail: `${docxPrimitives.covered}/${docxPrimitives.total} scenarios`,
       percent: percentValue(docxPrimitives.covered, docxPrimitives.total),
+    }),
+    chartRowHtml({
+      label: 'DOCX Comparison: spec scenario mapping',
+      detail: `${docxComparison.covered}/${docxComparison.total} scenarios`,
+      percent: percentValue(docxComparison.covered, docxComparison.total),
     }),
     chartRowHtml({
       label: 'Safe DOCX: test run pass rate',
@@ -310,7 +318,7 @@ function makeSystemCardMarkdown({ generatedAtIso, traceability, allure }) {
   lines.push('');
   lines.push('# Safe DOCX System Card');
   lines.push('');
-  lines.push(`Last updated (UTC): \`${generatedAtIso}\``);
+  lines.push(`Evidence snapshot (UTC): \`${utcTimestamp(latestAllureTimestamp)}\``);
   lines.push('');
   lines.push('## Executive Summary');
   lines.push('');
@@ -320,7 +328,7 @@ function makeSystemCardMarkdown({ generatedAtIso, traceability, allure }) {
   lines.push('</div>');
   lines.push('');
   lines.push('- This card focuses on reliability signals developers can scan quickly.');
-  lines.push('- Scope note: scenario mapping currently covers **Safe DOCX** and **DOCX Primitives**. **DOCX Comparison** is shown in run-status only.');
+  lines.push('- Scope note: all three packages shown here now include scenario-mapping and run-status summaries.');
   lines.push('');
   lines.push('## Visual Snapshot');
   lines.push('');
@@ -340,16 +348,22 @@ function makeSystemCardMarkdown({ generatedAtIso, traceability, allure }) {
   lines.push('|---|---:|---:|---:|---:|');
   lines.push(`| ${safeDocx.label} | ${safeDocx.total} | ${safeDocx.covered} | ${safeDocx.missing + safeDocx.pending} | ${pct(safeDocx.covered, safeDocx.total)} |`);
   lines.push(`| ${docxPrimitives.label} | ${docxPrimitives.total} | ${docxPrimitives.covered} | ${docxPrimitives.missing + docxPrimitives.pending} | ${pct(docxPrimitives.covered, docxPrimitives.total)} |`);
+  lines.push(`| ${docxComparison.label} | ${docxComparison.total} | ${docxComparison.covered} | ${docxComparison.missing + docxComparison.pending} | ${pct(docxComparison.covered, docxComparison.total)} |`);
   lines.push(`| Combined measured scope | ${totalScenarios} | ${totalMapped} | ${totalUnmapped} | ${fixedPercent(mappingCoverage)} |`);
   lines.push('');
   if (unresolved.length === 0) {
     lines.push('No unmapped scenarios were found in the currently measured scope for this run.');
     lines.push('');
   } else {
-    lines.push('Unmapped scenarios found in this run:');
-    for (const item of unresolved) {
+    const previewCount = 10;
+    lines.push(`Unmapped scenarios found in this run: ${unresolved.length}`);
+    lines.push('Top items:');
+    for (const item of unresolved.slice(0, previewCount)) {
       const location = item.change ? ` (${item.change})` : '';
       lines.push(`- [${item.packageLabel}] ${item.scenario}${location} - ${item.status}`);
+    }
+    if (unresolved.length > previewCount) {
+      lines.push(`- ...and ${unresolved.length - previewCount} more (see detailed tables in appendix).`);
     }
     lines.push('');
   }
@@ -377,12 +391,11 @@ function makeSystemCardMarkdown({ generatedAtIso, traceability, allure }) {
   lines.push('');
   lines.push('- This card does not report line or branch code coverage.');
   lines.push('- Mapping coverage can be 100% and defects can still exist.');
-  lines.push('- DOCX Comparison is included in run-status totals, but not yet in the scenario-mapping metric.');
   lines.push('- Run-status counts depend on the current contents of package test-result directories; stale results should be cleaned before release reporting.');
   lines.push('');
   lines.push('## Appendix: Methods (Technical)');
   lines.push('');
-  lines.push('- Mapping numbers are read from generated spec-scenario mapping files for Safe DOCX and DOCX Primitives.');
+  lines.push('- Mapping numbers are read from generated spec-scenario mapping files for Safe DOCX, DOCX Primitives, and DOCX Comparison.');
   lines.push('- Run-status numbers are read from structured test result files in each package result directory.');
   lines.push('- This page is regenerated by running `npm run generate:system-card`.');
   lines.push('');
@@ -390,6 +403,7 @@ function makeSystemCardMarkdown({ generatedAtIso, traceability, allure }) {
   lines.push('');
   lines.push('- [Safe DOCX scenario mapping table](../traceability/safe-docx/index.html)');
   lines.push('- [DOCX Primitives scenario mapping table](../traceability/docx-primitives/index.html)');
+  lines.push('- [DOCX Comparison scenario mapping table](../traceability/docx-comparison/index.html)');
   lines.push('');
   lines.push(`Data snapshot timestamp for run-status metrics: \`${utcTimestamp(latestAllureTimestamp)}\``);
   lines.push('');
@@ -411,17 +425,20 @@ async function main() {
   // Recompute matrices before reading them to avoid drift.
   // Use default mode so the system card still renders during active feature work
   // while surfacing any unmapped scenarios in the generated output.
+  runNodeScript('packages/docx-comparison/scripts/validate_openspec_coverage.mjs');
   runNodeScript('packages/docx-primitives/scripts/validate_openspec_coverage.mjs');
   runNodeScript('packages/safe-docx/scripts/validate_openspec_coverage.mjs');
 
-  const [safeDocxMatrixRaw, docxPrimitivesMatrixRaw] = await Promise.all([
+  const [safeDocxMatrixRaw, docxPrimitivesMatrixRaw, docxComparisonMatrixRaw] = await Promise.all([
     fs.readFile(TRACEABILITY_SOURCES.safeDocx, 'utf-8'),
     fs.readFile(TRACEABILITY_SOURCES.docxPrimitives, 'utf-8'),
+    fs.readFile(TRACEABILITY_SOURCES.docxComparison, 'utf-8'),
   ]);
 
   const traceability = {
     safeDocx: parseMatrixMarkdown(safeDocxMatrixRaw, 'Safe DOCX'),
     docxPrimitives: parseMatrixMarkdown(docxPrimitivesMatrixRaw, 'DOCX Primitives'),
+    docxComparison: parseMatrixMarkdown(docxComparisonMatrixRaw, 'DOCX Comparison'),
   };
 
   const allure = await Promise.all([
@@ -430,9 +447,7 @@ async function main() {
     parseAllureResults('DOCX Comparison', ALLURE_SOURCES.docxComparison),
   ]);
 
-  const generatedAtIso = new Date().toISOString().replace('.000', '');
   const systemCard = makeSystemCardMarkdown({
-    generatedAtIso,
     traceability,
     allure,
   });
@@ -443,6 +458,7 @@ async function main() {
   const traceabilityDir = path.join(path.dirname(outputPath), 'traceability');
   const safeDocxTraceabilityPagePath = path.join(traceabilityDir, 'safe-docx.md');
   const docxPrimitivesTraceabilityPagePath = path.join(traceabilityDir, 'docx-primitives.md');
+  const docxComparisonTraceabilityPagePath = path.join(traceabilityDir, 'docx-comparison.md');
 
   await ensureDir(safeDocxTraceabilityPagePath);
 
@@ -464,6 +480,17 @@ async function main() {
       'Generated OpenSpec-to-test scenario mapping for the DOCX Primitives package.',
       '/trust/traceability/docx-primitives/',
       docxPrimitivesMatrixRaw,
+    ),
+    'utf-8',
+  );
+
+  await fs.writeFile(
+    docxComparisonTraceabilityPagePath,
+    wrapMatrixAsPage(
+      'DOCX Comparison Traceability Matrix | Safe DOCX',
+      'Generated spec-to-test scenario mapping for the DOCX Comparison package.',
+      '/trust/traceability/docx-comparison/',
+      docxComparisonMatrixRaw,
     ),
     'utf-8',
   );

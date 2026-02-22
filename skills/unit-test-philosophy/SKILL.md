@@ -39,6 +39,7 @@ metadata:
   - `packages/safe-docx/src/testing/allure-test.ts` (`testAllure`, `itAllure`, `allureStep`, `allureJsonAttachment`)
   - `packages/docx-primitives/test/helpers/allure-test.ts` (`itAllure`, helpers)
   - `packages/docx-comparison/src/testing/allure-test.ts` (`itAllure`, helpers)
+- Prefer fluent metadata composition with `.allure({ description, tags, parameters })` on `testAllure` / `itAllure` chains.
 - Do not import from `allure-vitest` in tests.
 - If direct Allure calls are needed, use `allure-js-commons` and `await` every call.
 - Avoid `any` in Allure paths; prefer typed runtime/context wrappers.
@@ -57,7 +58,8 @@ metadata:
 - Avoid mechanical phrasing (e.g., “coverage is defined”, “expected outcome is scenario title”).
 - Keep technical JSON attachments at the end of the step list.
 - Use concise step parameters (`expected`, `actual`, key inputs) for readability.
-- Tag migrated scenarios with `lawyer-readable` for progress tracking.
+- Tag migrated scenarios with `human-readable` for progress tracking.
+- `.openspec(...)` and `Scenario:`-style tests inherit human-readable defaults from wrappers (`human-readable` tag, `audience=non-technical`, and `scenario_id` when a serial is present).
 
 ### Traceability IDs
 - Prefer explicit serial scenario IDs in spec headers, e.g. `[SDX-ER-001] ...`.

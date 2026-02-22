@@ -9,6 +9,14 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
+const humanReadableIt = it.allure({
+  
+  tags: ['human-readable'],
+  
+  parameters: { audience: 'non-technical' },
+  
+});
+
 function makeDoc(bodyXml: string): Document {
   const xml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -23,7 +31,7 @@ function getWAttr(el: Element, localName: string): string | null {
 }
 
 describe('Traceability: docx-primitives — OOXML Layout', () => {
-  it.openspec('setParagraphSpacing creates missing pPr and spacing containers')('Scenario: setParagraphSpacing creates missing pPr and spacing containers', async () => {
+  humanReadableIt.openspec('setParagraphSpacing creates missing pPr and spacing containers')('Scenario: setParagraphSpacing creates missing pPr and spacing containers', async () => {
     const doc = makeDoc('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>');
     insertParagraphBookmarks(doc, 'test-attachment');
     const p = doc.getElementsByTagNameNS(OOXML.W_NS, W.p).item(0)!;
@@ -54,7 +62,7 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
     });
   });
 
-  it.openspec('setParagraphSpacing preserves unrelated formatting nodes')('Scenario: setParagraphSpacing preserves unrelated formatting nodes', async () => {
+  humanReadableIt.openspec('setParagraphSpacing preserves unrelated formatting nodes')('Scenario: setParagraphSpacing preserves unrelated formatting nodes', async () => {
     const doc = makeDoc(
       '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Beta</w:t></w:r></w:p>',
     );
@@ -82,7 +90,7 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
     });
   });
 
-  it.openspec('setTableRowHeight reports missing indexes')('Scenario: setTableRowHeight reports missing indexes', async () => {
+  humanReadableIt.openspec('setTableRowHeight reports missing indexes')('Scenario: setTableRowHeight reports missing indexes', async () => {
     const doc = makeDoc(
       '<w:tbl>' +
       '<w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc></w:tr>' +
@@ -109,7 +117,7 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
     });
   });
 
-  it.openspec('setTableCellPadding creates tcPr and tcMar containers')('Scenario: setTableCellPadding creates tcPr and tcMar containers', async () => {
+  humanReadableIt.openspec('setTableCellPadding creates tcPr and tcMar containers')('Scenario: setTableCellPadding creates tcPr and tcMar containers', async () => {
     const doc = makeDoc(
       '<w:tbl>' +
       '<w:tr>' +

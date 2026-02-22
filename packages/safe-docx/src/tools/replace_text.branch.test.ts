@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
-import { getParagraphRuns } from '@usejunior/docx-primitives';
-import { itAllure as it } from '../testing/allure-test.js';
+import { getParagraphRuns, readZipText } from '@usejunior/docx-primitives';
+import { itAllure as it, type AllureBddContext, allureStep } from '../testing/allure-test.js';
 import { replaceText } from './replace_text.js';
 import { readFile } from './read_file.js';
 import {
@@ -12,6 +12,10 @@ import {
 import { firstParaIdFromToon } from '../testing/docx_test_utils.js';
 
 const test = it.epic('Document Editing').withLabels({ feature: 'Replace Text' });
+const humanReadableReplaceTest = test.allure({
+  tags: ['human-readable'],
+  parameters: { audience: 'non-technical' },
+});
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -306,4 +310,104 @@ describe('replace_text branch coverage', () => {
       }
     }
   });
+
+  humanReadableReplaceTest
+    .allure({
+      title: 'replace_text exposes edited document XML previews',
+      description: [
+        'This test confirms replace_text edits are visible both in plain-text reads and raw DOCX XML output.',
+        'It attaches a Word-like preview and pretty XML preview as evidence for manual review.',
+      ].join('\n'),
+    })(
+    'Scenario: edited document XML previews are attached for replace_text',
+    async ({
+      given,
+      when,
+      then,
+      attachXmlPreviews,
+      attachJsonLastStep,
+    }: AllureBddContext) => {
+      const inputParagraphs = ['Hello world', 'Second paragraph'] as const;
+      const replacement = {
+        old_string: 'Hello world',
+        new_string: 'Hi world',
+        instruction: 'replace_text xml preview evidence',
+      } as const;
+      const debugContext = {
+        scenario: 'replace_text xml preview evidence',
+        input_paragraphs: inputParagraphs,
+        replacement,
+        expected_output_contains: replacement.new_string,
+      } as const;
+
+      let debugResult: Record<string, unknown> | null = null;
+
+      try {
+        const { mgr, sessionId, firstParaId } = await given(
+          'a clean two-paragraph document is open in a session',
+          () => openSession(inputParagraphs, { trackOpenStep: false }),
+          { paragraph_count: inputParagraphs.length },
+        );
+
+        const editResult = await when(
+          'I run replace_text on the first paragraph',
+          () => replaceText(mgr, {
+            session_id: sessionId,
+            target_paragraph_id: firstParaId,
+            old_string: replacement.old_string,
+            new_string: replacement.new_string,
+            instruction: replacement.instruction,
+          }),
+          {
+            target_paragraph_id: firstParaId,
+            old_string: replacement.old_string,
+            new_string: replacement.new_string,
+          },
+        );
+        assertSuccess(editResult, 'replace_text');
+
+        const readResult = await then(
+          'the replacement appears in read_file output',
+          async () => {
+            const read = await readFile(mgr, {
+              session_id: sessionId,
+              node_ids: [firstParaId],
+              format: 'simple',
+            });
+            assertSuccess(read, 'read after replace_text');
+            expect(String(read.content)).toContain(replacement.new_string);
+            return read;
+          },
+          { expected_text: replacement.new_string },
+        );
+
+        await allureStep('Evidence: edited document XML previews are attached for review', async () => {
+          const session = mgr.getSession(sessionId);
+          const { buffer } = await session.doc.toBuffer({ cleanBookmarks: true });
+          const outputXml = await readZipText(buffer, 'word/document.xml');
+          expect(outputXml).not.toBeNull();
+          const xml = String(outputXml ?? '');
+          expect(xml).toContain(replacement.new_string);
+          await attachXmlPreviews(xml, {
+            wordLikeName: '01 Output Word-like preview',
+            xmlName: '02 Output XML fixture (pretty XML)',
+            wordLike: {
+              baseText: [replacement.new_string, inputParagraphs[1]].join('\n'),
+            },
+          });
+          debugResult = {
+            edit_result: editResult,
+            read_result: readResult,
+            output_xml_contains: replacement.new_string,
+          };
+        });
+      } finally {
+        await attachJsonLastStep({
+          context: debugContext,
+          result: debugResult,
+          stepName: 'Attach debug JSON (context + result)',
+        });
+      }
+    },
+  );
 });

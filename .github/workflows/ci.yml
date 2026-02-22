@@ -31,6 +31,18 @@ jobs:
       - name: Validate OpenSpec traceability coverage
         run: npm run check:spec-coverage
 
+  system-card-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Regenerate and verify trust system card outputs are committed
+        run: npm run check:system-card
+
   allure-labels:
     runs-on: ubuntu-latest
     steps:

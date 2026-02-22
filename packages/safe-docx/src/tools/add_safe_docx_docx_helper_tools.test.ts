@@ -48,11 +48,15 @@ async function readZipPart(docxPath: string, partPath: string): Promise<string> 
 
 describe('Traceability: DOCX Helper Tools', () => {
   const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const humanReadableTest = test.allure({
+    tags: ['human-readable'],
+    parameters: { audience: 'non-technical' },
+  });
   registerCleanup();
 
   // ── add_comment scenarios ─────────────────────────────────────────
 
-  test.openspec('add root comment to target range')(
+  humanReadableTest.openspec('add root comment to target range')(
     'Scenario: add root comment to target range',
     async () => {
       const opened = await openSession(['The quick brown fox jumps over the lazy dog.']);
@@ -78,7 +82,7 @@ describe('Traceability: DOCX Helper Tools', () => {
     },
   );
 
-  test.openspec('add threaded reply linked to parent comment')(
+  humanReadableTest.openspec('add threaded reply linked to parent comment')(
     'Scenario: add threaded reply linked to parent comment',
     async () => {
       const opened = await openSession(['Review this clause carefully.']);
@@ -114,7 +118,7 @@ describe('Traceability: DOCX Helper Tools', () => {
     },
   );
 
-  test.openspec('comment parts are bootstrapped when missing')(
+  humanReadableTest.openspec('comment parts are bootstrapped when missing')(
     'Scenario: comment parts are bootstrapped when missing',
     async () => {
       // Create a docx with no comment parts at all
@@ -140,7 +144,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   // ── replace_text normalize_first scenarios ───────────────────────────
 
-  test.openspec('replace_text performs formatting-preserving replacement')(
+  humanReadableTest.openspec('replace_text performs formatting-preserving replacement')(
     'Scenario: replace_text performs formatting-preserving replacement',
     async () => {
       const opened = await openSession(['The Agreement shall be binding.']);
@@ -165,7 +169,7 @@ describe('Traceability: DOCX Helper Tools', () => {
     },
   );
 
-  test.openspec('replace_text can normalize fragmented runs before search')(
+  humanReadableTest.openspec('replace_text can normalize fragmented runs before search')(
     'Scenario: replace_text can normalize fragmented runs before search',
     async () => {
       // Create a document with text fragmented across format-identical runs
@@ -203,7 +207,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   // ── merge_runs / simplify_redlines (internal primitive behavior) ───
 
-  test.openspec('merge_runs consolidates adjacent format-identical runs')(
+  humanReadableTest.openspec('merge_runs consolidates adjacent format-identical runs')(
     'Scenario: merge_runs consolidates adjacent format-identical runs',
     async () => {
       // Verify merge_runs behavior through normalize-on-open
@@ -221,7 +225,7 @@ describe('Traceability: DOCX Helper Tools', () => {
     },
   );
 
-  test.openspec('simplify_redlines merges adjacent same-author tracked wrappers')(
+  humanReadableTest.openspec('simplify_redlines merges adjacent same-author tracked wrappers')(
     'Scenario: simplify_redlines merges adjacent same-author tracked wrappers',
     async () => {
       const bodyXml =
@@ -241,7 +245,7 @@ describe('Traceability: DOCX Helper Tools', () => {
     },
   );
 
-  test.openspec('simplify_redlines reports tracked-change author summary')(
+  humanReadableTest.openspec('simplify_redlines reports tracked-change author summary')(
     'Scenario: simplify_redlines reports tracked-change author summary',
     async () => {
       // The normalize-on-open reports stats — verified through open_document
@@ -269,7 +273,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   // ── validate_document (internal primitive behavior) ───────────────
 
-  test.openspec('validate packed or unpacked DOCX inputs')(
+  humanReadableTest.openspec('validate packed or unpacked DOCX inputs')(
     'Scenario: validate packed or unpacked DOCX inputs',
     async () => {
       // Validate behavior: download pre-check validates before output
@@ -288,7 +292,7 @@ describe('Traceability: DOCX Helper Tools', () => {
     },
   );
 
-  test.openspec('redline validation runs when original baseline is provided')(
+  humanReadableTest.openspec('redline validation runs when original baseline is provided')(
     'Scenario: redline validation runs when original baseline is provided',
     async () => {
       // Redline validation: edits to a document are validated against the original baseline
@@ -323,7 +327,7 @@ describe('Traceability: DOCX Helper Tools', () => {
     },
   );
 
-  test.openspec('auto-repair fixes known safe issues')(
+  humanReadableTest.openspec('auto-repair fixes known safe issues')(
     'Scenario: auto-repair fixes known safe issues',
     async () => {
       // Validation auto-repair is exercised through normalize-on-open

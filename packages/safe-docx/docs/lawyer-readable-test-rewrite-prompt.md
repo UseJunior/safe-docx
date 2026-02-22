@@ -31,10 +31,10 @@ Rewrite one scenario so the Allure output reads like a clear story for a lawyer 
 - Avoid generic/mechanical phrasing like “coverage is defined” or repeating the title as the outcome.
 
 4. Add user-facing metadata.
-- Add `allure.description(...)` with plain-English purpose/outcome.
-- Add tag `lawyer-readable`.
-- Add `scenario_id` test parameter.
-- Add tag compatibly: try `allure.tags(...)`, then `allure.tag(...)`, then `allure.label('tag', ...)`.
+- Prefer fluent metadata on the test builder via `.allure({ ... })`.
+- Add plain-English `description`.
+- Ensure tag `human-readable` is present (auto-applied for `.openspec(...)` and `Scenario:`-style tests; explicit is fine).
+- Add `scenario_id` test parameter (auto-applied from `[SCENARIO_ID]` when present; explicit is fine).
 
 5. Keep it DRY and declarative.
 - Introduce small local helpers for repeated patterns (e.g., step+parameters+expect).
@@ -63,6 +63,7 @@ Use this shape (adapt to existing code):
 
 ## Allure and Vitest Constraints
 - Keep existing repo helper imports (`testAllure`, `allureStep`, `allureJsonAttachment`) where appropriate.
+- Prefer `testAllure...allure({...}).openspec(...)` over direct raw runtime metadata calls for readability and DRY.
 - Use runtime API with `await` for all `allure.*` calls.
 - Do not introduce direct `allure-vitest` imports in tests.
 - Keep narrative steps contiguous; append technical attachments at the end.
@@ -80,13 +81,13 @@ After editing, provide:
 - The scenario appears in Allure with:
   - `story = [SCENARIO_ID] ...`
   - `openspecScenarioId = SCENARIO_ID` label
-  - `tag = lawyer-readable`
+  - `tag = human-readable`
 - Technical JSON attachments appear as final items, after narrative steps.
 
 ## Acceptance Checklist (must all be true)
 - [ ] Spec scenario header includes `[SCENARIO_ID]`
 - [ ] Test uses `.openspec('[SCENARIO_ID] SCENARIO_TITLE')`
-- [ ] `lawyer-readable` tag present
+- [ ] `human-readable` tag present
 - [ ] Description + scenario_id parameter present
 - [ ] Given/When/Then/And steps are plain-English and specific
 - [ ] No duplicated evidence table attachment

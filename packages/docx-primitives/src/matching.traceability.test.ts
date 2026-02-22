@@ -6,8 +6,16 @@ const TEST_FEATURE = 'docx-primitives';
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
+const humanReadableIt = it.allure({
+  
+  tags: ['human-readable'],
+  
+  parameters: { audience: 'non-technical' },
+  
+});
+
 describe('Traceability: docx-primitives — Unique Substring Matching', () => {
-  it.openspec('exact match found for literal substring')('Scenario: exact match found for literal substring', async () => {
+  humanReadableIt.openspec('exact match found for literal substring')('Scenario: exact match found for literal substring', async () => {
     const haystack = 'The Purchase Price shall be paid at Closing.';
     const needle = 'Purchase Price';
 
@@ -29,7 +37,7 @@ describe('Traceability: docx-primitives — Unique Substring Matching', () => {
     });
   });
 
-  it.openspec('not_found when needle is absent')('Scenario: not_found when needle is absent', async () => {
+  humanReadableIt.openspec('not_found when needle is absent')('Scenario: not_found when needle is absent', async () => {
     const haystack = 'Hello world';
     const needle = 'missing';
 
@@ -44,7 +52,7 @@ describe('Traceability: docx-primitives — Unique Substring Matching', () => {
     });
   });
 
-  it.openspec('multiple when needle appears more than once')('Scenario: multiple when needle appears more than once', async () => {
+  humanReadableIt.openspec('multiple when needle appears more than once')('Scenario: multiple when needle appears more than once', async () => {
     const haystack = 'The Company and the Company agree.';
     const needle = 'Company';
 
@@ -61,7 +69,7 @@ describe('Traceability: docx-primitives — Unique Substring Matching', () => {
     });
   });
 
-  it.openspec('not_found for empty needle')('Scenario: not_found for empty needle', async () => {
+  humanReadableIt.openspec('not_found for empty needle')('Scenario: not_found for empty needle', async () => {
     const result = await allureStep('When findUniqueSubstringMatch is called with an empty string needle', async () => {
       const r = findUniqueSubstringMatch('Some text', '');
       await allureJsonAttachment('Result', r);
@@ -73,7 +81,7 @@ describe('Traceability: docx-primitives — Unique Substring Matching', () => {
     });
   });
 
-  it.openspec('quote_normalized matches curly quotes against straight quotes')('Scenario: quote_normalized matches curly quotes against straight quotes', async () => {
+  humanReadableIt.openspec('quote_normalized matches curly quotes against straight quotes')('Scenario: quote_normalized matches curly quotes against straight quotes', async () => {
     const haystack = '\u201CCompany\u201D means ABC Corp.';
     const needle = '"Company" means ABC Corp.';
 
@@ -90,7 +98,7 @@ describe('Traceability: docx-primitives — Unique Substring Matching', () => {
     });
   });
 
-  it.openspec('exact mode preferred over quote_normalized when both match')('Scenario: exact mode preferred over quote_normalized when both match', async () => {
+  humanReadableIt.openspec('exact mode preferred over quote_normalized when both match')('Scenario: exact mode preferred over quote_normalized when both match', async () => {
     const haystack = '"Company" means ABC Corp.';
     const needle = '"Company" means ABC Corp.';
 
@@ -107,7 +115,7 @@ describe('Traceability: docx-primitives — Unique Substring Matching', () => {
     });
   });
 
-  it.openspec('flexible_whitespace matches across spacing variance')('Scenario: flexible_whitespace matches across spacing variance', async () => {
+  humanReadableIt.openspec('flexible_whitespace matches across spacing variance')('Scenario: flexible_whitespace matches across spacing variance', async () => {
     const haystack = 'The   Purchase   Price';
     const needle = 'The Purchase Price';
 
@@ -124,7 +132,7 @@ describe('Traceability: docx-primitives — Unique Substring Matching', () => {
     });
   });
 
-  it.openspec('quote_optional matches quoted and unquoted term references')('Scenario: quote_optional matches quoted and unquoted term references', async () => {
+  humanReadableIt.openspec('quote_optional matches quoted and unquoted term references')('Scenario: quote_optional matches quoted and unquoted term references', async () => {
     const haystack = 'The defined term is \u201CCompany\u201D.';
     const needle = 'defined term is Company.';
 

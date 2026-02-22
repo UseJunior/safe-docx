@@ -53,6 +53,7 @@ interface OpenSessionOptions {
   format?: 'toon' | 'simple' | 'json';
   mgr?: SessionManager;
   prefix?: string;
+  trackOpenStep?: boolean;
 }
 
 interface OpenSessionResult {
@@ -69,7 +70,7 @@ export async function openSession(
   paragraphs: string[],
   opts?: OpenSessionOptions,
 ): Promise<OpenSessionResult> {
-  return allureStep('Open test session', async () => {
+  const open = async () => {
     const mgr = opts?.mgr ?? createTestSessionManager();
     const tmpDir = await createTrackedTempDir(opts?.prefix);
     const inputPath = path.join(tmpDir, 'input.docx');
@@ -90,7 +91,12 @@ export async function openSession(
     const firstParaId = paraIds.length > 0 ? paraIds[0]! : firstParaIdFromToon(content);
 
     return { mgr, sessionId, content, paraIds, firstParaId, tmpDir, inputPath };
-  });
+  };
+
+  if (opts?.trackOpenStep === false) {
+    return open();
+  }
+  return allureStep('Open test session', open);
 }
 
 // ---------------------------------------------------------------------------

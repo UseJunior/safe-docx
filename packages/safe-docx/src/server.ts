@@ -18,6 +18,7 @@ import { duplicateDocument } from './tools/duplicate_document.js';
 import { formatLayout } from './tools/format_layout.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { addComment } from './tools/add_comment.js';
+import { getComments } from './tools/get_comments.js';
 import { getFootnotes } from './tools/get_footnotes.js';
 import { addFootnote } from './tools/add_footnote.js';
 import { updateFootnote } from './tools/update_footnote.js';
@@ -62,7 +63,9 @@ export async function dispatchToolCall(
                           ? await duplicateDocument(sessions, args as any)
                           : name === 'add_comment'
                             ? await addComment(sessions, args as any)
-                            : name === 'compare_documents'
+                            : name === 'get_comments'
+                              ? await getComments(sessions, args as any)
+                              : name === 'compare_documents'
                               ? await compareDocuments_tool(sessions, args as any)
                               : name === 'get_footnotes'
                                 ? await getFootnotes(sessions, args as any)

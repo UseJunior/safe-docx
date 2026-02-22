@@ -10,6 +10,14 @@ const W_NS = OOXML.W_NS;
 
 const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
 
+const humanReadableIt = it.allure({
+  
+  tags: ['human-readable'],
+  
+  parameters: { audience: 'non-technical' },
+  
+});
+
 function makeDoc(bodyXml: string): Document {
   const xml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -37,7 +45,7 @@ function countWrappers(doc: Document, localName: string): number {
 }
 
 describe('Traceability: Auto-Normalization on Open — Run Merging', () => {
-  it.openspec('merge adjacent runs with equivalent formatting')('Scenario: merge adjacent runs with equivalent formatting', async () => {
+  humanReadableIt.openspec('merge adjacent runs with equivalent formatting')('Scenario: merge adjacent runs with equivalent formatting', async () => {
     const doc = makeDoc(
       '<w:p>' +
       '<w:r><w:rPr><w:b/></w:rPr><w:t>Hello </w:t></w:r>' +
@@ -64,7 +72,7 @@ describe('Traceability: Auto-Normalization on Open — Run Merging', () => {
     });
   });
 
-  it.openspec('never merge across field boundaries')('Scenario: never merge across field boundaries', async () => {
+  humanReadableIt.openspec('never merge across field boundaries')('Scenario: never merge across field boundaries', async () => {
     const doc = makeDoc(
       '<w:p>' +
       '<w:r><w:t>Before</w:t></w:r>' +
@@ -94,7 +102,7 @@ describe('Traceability: Auto-Normalization on Open — Run Merging', () => {
     });
   });
 
-  it.openspec('never merge across comment range boundaries')('Scenario: never merge across comment range boundaries', async () => {
+  humanReadableIt.openspec('never merge across comment range boundaries')('Scenario: never merge across comment range boundaries', async () => {
     const doc = makeDoc(
       '<w:p>' +
       '<w:r><w:t>Before</w:t></w:r>' +
@@ -116,7 +124,7 @@ describe('Traceability: Auto-Normalization on Open — Run Merging', () => {
     });
   });
 
-  it.openspec('never merge across bookmark boundaries')('Scenario: never merge across bookmark boundaries', async () => {
+  humanReadableIt.openspec('never merge across bookmark boundaries')('Scenario: never merge across bookmark boundaries', async () => {
     const doc = makeDoc(
       '<w:p>' +
       '<w:r><w:t>Before</w:t></w:r>' +
@@ -138,7 +146,7 @@ describe('Traceability: Auto-Normalization on Open — Run Merging', () => {
     });
   });
 
-  it.openspec('never merge across tracked-change wrapper boundaries')('Scenario: never merge across tracked-change wrapper boundaries', async () => {
+  humanReadableIt.openspec('never merge across tracked-change wrapper boundaries')('Scenario: never merge across tracked-change wrapper boundaries', async () => {
     const doc = makeDoc(
       '<w:p>' +
       '<w:ins w:id="1" w:author="A" w:date="2025-01-01T00:00:00Z">' +
@@ -163,7 +171,7 @@ describe('Traceability: Auto-Normalization on Open — Run Merging', () => {
 });
 
 describe('Traceability: Auto-Normalization on Open — Redline Simplification', () => {
-  it.openspec('merge adjacent same-author same-type tracked-change wrappers')('Scenario: merge adjacent same-author same-type tracked-change wrappers', async () => {
+  humanReadableIt.openspec('merge adjacent same-author same-type tracked-change wrappers')('Scenario: merge adjacent same-author same-type tracked-change wrappers', async () => {
     const doc = makeDoc(
       '<w:p>' +
       '<w:ins w:id="1" w:author="Alice" w:date="2025-01-01T00:00:00Z">' +
@@ -191,7 +199,7 @@ describe('Traceability: Auto-Normalization on Open — Redline Simplification', 
     });
   });
 
-  it.openspec('never merge wrappers from different authors')('Scenario: never merge wrappers from different authors', async () => {
+  humanReadableIt.openspec('never merge wrappers from different authors')('Scenario: never merge wrappers from different authors', async () => {
     const doc = makeDoc(
       '<w:p>' +
       '<w:ins w:id="1" w:author="Alice" w:date="2025-01-01T00:00:00Z">' +
@@ -224,7 +232,7 @@ describe('Traceability: Auto-Normalization on Open — Redline Simplification', 
     });
   });
 
-  it.openspec('never merge across different change types')('Scenario: never merge across different change types', async () => {
+  humanReadableIt.openspec('never merge across different change types')('Scenario: never merge across different change types', async () => {
     const doc = makeDoc(
       '<w:p>' +
       '<w:ins w:id="1" w:author="Alice" w:date="2025-01-01T00:00:00Z">' +

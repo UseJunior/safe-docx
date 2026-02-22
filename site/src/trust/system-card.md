@@ -7,26 +7,27 @@ contentClass: content
 
 # Safe DOCX System Card
 
-Last updated (UTC): `2026-02-20T22:16:05.862Z`
+Evidence snapshot (UTC): `2026-02-21T18:54:01.703Z`
 
 ## Executive Summary
 
 <div class="summary-banner">
 <h2>Needs attention before relying on this run</h2>
-<p>202 of 202 spec scenarios are mapped to tests in the currently measured packages. 8311 automated checks were recorded, with 12 non-passing outcomes.</p>
+<p>202 of 258 spec scenarios are mapped to tests in the currently measured packages. 1235 automated checks were recorded, with 0 non-passing outcomes.</p>
 </div>
 
 - This card focuses on reliability signals developers can scan quickly.
-- Scope note: scenario mapping currently covers **Safe DOCX** and **DOCX Primitives**. **DOCX Comparison** is shown in run-status only.
+- Scope note: all three packages shown here now include scenario-mapping and run-status summaries.
 
 ## Visual Snapshot
 
 <div class="chart">
 <div class="chart-row"><div class="chart-label">Safe DOCX: spec scenario mapping<span class="chart-detail">119/119 scenarios</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
 <div class="chart-row"><div class="chart-label">DOCX Primitives: spec scenario mapping<span class="chart-detail">83/83 scenarios</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
-<div class="chart-row"><div class="chart-label">Safe DOCX: test run pass rate<span class="chart-detail">2677 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:99.8%"></span></div><div class="chart-value">99.8%</div></div>
-<div class="chart-row"><div class="chart-label">DOCX Primitives: test run pass rate<span class="chart-detail">3252 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:99.8%"></span></div><div class="chart-value">99.8%</div></div>
-<div class="chart-row"><div class="chart-label">DOCX Comparison: test run pass rate<span class="chart-detail">2370 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
+<div class="chart-row"><div class="chart-label">DOCX Comparison: spec scenario mapping<span class="chart-detail">0/56 scenarios</span></div><div class="chart-track"><span class="chart-fill is-low" style="width:0.0%"></span></div><div class="chart-value">0.0%</div></div>
+<div class="chart-row"><div class="chart-label">Safe DOCX: test run pass rate<span class="chart-detail">548 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
+<div class="chart-row"><div class="chart-label">DOCX Primitives: test run pass rate<span class="chart-detail">295 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
+<div class="chart-row"><div class="chart-label">DOCX Comparison: test run pass rate<span class="chart-detail">392 passing checks</span></div><div class="chart-track"><span class="chart-fill is-good" style="width:100.0%"></span></div><div class="chart-value">100.0%</div></div>
 </div>
 
 ## Key Results
@@ -39,17 +40,30 @@ This is **spec scenario mapping coverage**, not line/branch code coverage.
 |---|---:|---:|---:|---:|
 | Safe DOCX | 119 | 119 | 0 | 100.0% |
 | DOCX Primitives | 83 | 83 | 0 | 100.0% |
-| Combined measured scope | 202 | 202 | 0 | 100.0% |
+| DOCX Comparison | 56 | 0 | 56 | 0.0% |
+| Combined measured scope | 258 | 202 | 56 | 78.3% |
 
-No unmapped scenarios were found in the currently measured scope for this run.
+Unmapped scenarios found in this run: 56
+Top items:
+- [DOCX Comparison] Atom from deleted revision - missing
+- [DOCX Comparison] Atom from inserted revision - missing
+- [DOCX Comparison] Atom marked as format-changed - missing
+- [DOCX Comparison] Atom marked as moved destination - missing
+- [DOCX Comparison] Atom marked as moved source - missing
+- [DOCX Comparison] Atom with ancestor tracking - missing
+- [DOCX Comparison] Below threshold treated as separate changes - missing
+- [DOCX Comparison] Bold added - missing
+- [DOCX Comparison] Bold added markup - missing
+- [DOCX Comparison] Bold removed markup - missing
+- ...and 46 more (see detailed tables in appendix).
 
 ### 2) Automated Test Run Status
 
 | Package | Recorded checks | Passing | Non-passing | Skipped | Last observed update (UTC) |
 |---|---:|---:|---:|---:|---|
-| Safe DOCX | 2683 | 2677 | 6 | 0 | 2026-02-20T22:15:50.617Z |
-| DOCX Primitives | 3258 | 3252 | 6 | 0 | 2026-02-20T22:15:57.353Z |
-| DOCX Comparison | 2370 | 2370 | 0 | 0 | 2026-02-20T21:53:56.889Z |
+| Safe DOCX | 548 | 548 | 0 | 0 | 2026-02-21T18:54:01.703Z |
+| DOCX Primitives | 295 | 295 | 0 | 0 | 2026-02-21T18:24:34.610Z |
+| DOCX Comparison | 392 | 392 | 0 | 0 | 2026-02-21T18:24:31.251Z |
 
 ## Discussion
 
@@ -61,12 +75,11 @@ No unmapped scenarios were found in the currently measured scope for this run.
 
 - This card does not report line or branch code coverage.
 - Mapping coverage can be 100% and defects can still exist.
-- DOCX Comparison is included in run-status totals, but not yet in the scenario-mapping metric.
 - Run-status counts depend on the current contents of package test-result directories; stale results should be cleaned before release reporting.
 
 ## Appendix: Methods (Technical)
 
-- Mapping numbers are read from generated spec-scenario mapping files for Safe DOCX and DOCX Primitives.
+- Mapping numbers are read from generated spec-scenario mapping files for Safe DOCX, DOCX Primitives, and DOCX Comparison.
 - Run-status numbers are read from structured test result files in each package result directory.
 - This page is regenerated by running `npm run generate:system-card`.
 
@@ -74,6 +87,7 @@ No unmapped scenarios were found in the currently measured scope for this run.
 
 - [Safe DOCX scenario mapping table](../traceability/safe-docx/index.html)
 - [DOCX Primitives scenario mapping table](../traceability/docx-primitives/index.html)
+- [DOCX Comparison scenario mapping table](../traceability/docx-comparison/index.html)
 
-Data snapshot timestamp for run-status metrics: `2026-02-20T22:15:57.353Z`
+Data snapshot timestamp for run-status metrics: `2026-02-21T18:54:01.703Z`
 
