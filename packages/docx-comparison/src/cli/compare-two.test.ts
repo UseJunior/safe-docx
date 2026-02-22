@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { allureStep } from '../testing/allure-test.js';
+import { itAllure as it, allureStep } from '../testing/allure-test.js';
 import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
 
 describe('docx-comparison CLI argument parsing', () => {
