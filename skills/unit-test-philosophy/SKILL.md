@@ -60,6 +60,28 @@ metadata:
 - Use concise step parameters (`expected`, `actual`, key inputs) for readability.
 - Tag migrated scenarios with `human-readable` for progress tracking.
 - `.openspec(...)` and `Scenario:`-style tests inherit human-readable defaults from wrappers (`human-readable` tag, `audience=non-technical`, and `scenario_id` when a serial is present).
+- Always prefer an explicit `.allure({ description })` sentence in plain English over generic template text.
+  Good pattern: “Running X on Y returns Z with correct A/B/C fields.”
+- Do not expose ephemeral IDs (e.g., session IDs) as reader-facing step parameters unless they are asserted behavior.
+- Prefer input parameters that drive assertions (`inserted_text`, `deleted_text`, authors) and avoid computed/debug-only values in `Given`.
+- Keep debug JSON as root-level attachments via `attachJsonLastStep()` default behavior; only use `attachAsStep: true` when a step-scoped attachment is intentional.
+
+### BDD wording style (parameterized)
+- Prefer reusable wording that remains true when fixture values change.
+  - `WHEN extract_revisions is run in the session`
+  - `THEN the tool reports the correct number of changed paragraphs`
+  - `AND the insertion record shows correct type/text/author`
+- Avoid first-person phrasing (`I run ...`) in generated Allure step titles.
+
+### Branded report defaults
+- Default report expansion mode is `moderate`:
+  - Steps auto-expand.
+  - JSON/XML attachments remain collapsed by default.
+  - Word-like HTML previews auto-expand.
+- Query/config overrides:
+  - `sdxExpandMode=compact|moderate|verbose`
+  - `sdxAutoExpandSteps=true|false`
+  - `sdxAutoExpandAttachments=true|false`
 
 ### Traceability IDs
 - Prefer explicit serial scenario IDs in spec headers, e.g. `[SDX-ER-001] ...`.
