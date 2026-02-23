@@ -38,7 +38,7 @@ Generated tool reference (from Zod schemas):
 - `@usejunior/docx-primitives`
 - `@usejunior/docx-comparison`
 - `@usejunior/safe-docx`
-- `safedocx` (unscoped alias package)
+- `safe-docx` (unscoped alias package)
 - `@usejunior/safedocx-mcpb` (private MCP bundle wrapper)
 
 ## Development
@@ -66,3 +66,19 @@ npm run coverage:matrix
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security Policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
+
+### npm Trusted Publisher
+
+1. In npm package settings, add a trusted publisher.
+2. Provider: GitHub Actions.
+3. Owner: `UseJunior`
+4. Repository: `safe-docx`
+5. Workflow file: `.github/workflows/release.yml`
+6. Environment: leave empty (unless you later add an Actions environment constraint).
+
+Packages to configure:
+
+- `@usejunior/docx-primitives`
+- `@usejunior/docx-comparison`
+- `@usejunior/safe-docx`
+- `safe-docx`
