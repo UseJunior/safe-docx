@@ -46,6 +46,8 @@ export const W = {
   highlight: 'highlight',
   sz: 'sz',
   color: 'color',
+  vertAlign: 'vertAlign',
+  position: 'position',
 
   // Styles part
   style: 'style',

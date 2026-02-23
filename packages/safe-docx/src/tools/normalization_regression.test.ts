@@ -17,6 +17,26 @@ import { replaceText } from './replace_text.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
+type NormalizationSummary = {
+  runs_merged: number;
+  redlines_simplified: number;
+  double_elevations_fixed?: number;
+  proof_errors_removed?: number;
+  normalization_skipped?: boolean;
+};
+
+function getNormalizationSummary(value: unknown): NormalizationSummary {
+  const normalization = (value as { normalization?: unknown }).normalization;
+  if (typeof normalization === 'object' && normalization !== null) {
+    return normalization as NormalizationSummary;
+  }
+  return {
+    runs_merged: 0,
+    redlines_simplified: 0,
+    normalization_skipped: true,
+  };
+}
+
 registerCleanup();
 
 describe('normalization regression tests', () => {
@@ -79,7 +99,7 @@ describe('normalization regression tests', () => {
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
 
-      const normalization = (opened as any).normalization;
+      const normalization = getNormalizationSummary(opened);
       expect(normalization).toBeTruthy();
       expect(normalization.runs_merged).toBeGreaterThanOrEqual(1);
       expect(normalization.proof_errors_removed).toBe(2);
@@ -100,8 +120,8 @@ describe('normalization regression tests', () => {
       const opened = await openDocument(mgr, { file_path: inputPath, skip_normalization: true });
       assertSuccess(opened, 'open');
 
-      const normalization = (opened as any).normalization;
-      expect(normalization).toEqual({ runs_merged: 0, redlines_simplified: 0, normalization_skipped: true });
+      const normalization = getNormalizationSummary(opened);
+      expect(normalization).toEqual({ runs_merged: 0, redlines_simplified: 0, double_elevations_fixed: 0, normalization_skipped: true });
     });
   });
 
@@ -134,7 +154,7 @@ describe('normalization regression tests', () => {
         instruction: 'field barrier test',
       });
       // This should fail because the text spans a field complex.
-      expect((edited as any).success).toBe(false);
+      expect(edited.success).toBe(false);
     });
 
     it('bookmark-separated runs are not merged through the full pipeline', async () => {
@@ -203,7 +223,7 @@ describe('normalization regression tests', () => {
         const elapsed = performance.now() - start;
         assertSuccess(opened, `open ${fixture.label}`);
 
-        const normalization = (opened as any).normalization;
+        const normalization = getNormalizationSummary(opened);
         // Log benchmark results to test output.
         console.log(
           `[Benchmark] ${fixture.label}: ` +

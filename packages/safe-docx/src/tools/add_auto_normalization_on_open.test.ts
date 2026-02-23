@@ -19,6 +19,37 @@ import {
 const TEST_FEATURE = 'add-auto-normalization-on-open';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
+type NormalizationSummary = {
+  runs_merged?: number;
+  redlines_simplified?: number;
+  normalization_skipped?: boolean;
+};
+
+type ReusedSessionContext = {
+  edit_revision?: number;
+  edit_count?: number;
+  created_at?: string;
+  last_used_at?: string;
+};
+
+type SessionResolutionMetadata = {
+  session_resolution?: string;
+  resolved_session_id?: string;
+  resolved_file_path?: string;
+  reused_existing_session?: boolean;
+  warning?: string;
+  reused_session_context?: ReusedSessionContext;
+  normalization?: NormalizationSummary;
+};
+
+function sessionMetadata(value: unknown): SessionResolutionMetadata {
+  return value as SessionResolutionMetadata;
+}
+
+function normalizationSummary(value: unknown): NormalizationSummary {
+  return sessionMetadata(value).normalization ?? {};
+}
+
 /** XML with two mergeable same-format runs in a paragraph. */
 const MERGEABLE_XML =
   `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -58,7 +89,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
 
     await allureStep('Then normalization SHALL have merged runs', () => {
-      const norm = (opened as any).normalization;
+      const norm = normalizationSummary(opened);
       expect(norm.runs_merged).toBeGreaterThanOrEqual(1);
       expect(norm.normalization_skipped).toBe(false);
     });
@@ -77,7 +108,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
 
     await allureStep('Then session metadata SHALL report normalization_skipped=true', () => {
-      const norm = (opened as any).normalization;
+      const norm = normalizationSummary(opened);
       expect(norm.normalization_skipped).toBe(true);
     });
   });
@@ -101,7 +132,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
 
     await allureStep('Then the response SHALL include runs_merged, redlines_simplified, and normalization_skipped fields', () => {
-      const norm = (status as any).normalization;
+      const norm = normalizationSummary(status);
       expect(norm).toBeTruthy();
       expect(typeof norm.runs_merged).toBe('number');
       expect(typeof norm.redlines_simplified).toBe('number');
@@ -166,9 +197,10 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
 
     await allureStep('Then the server SHALL resolve a session and return session_resolution metadata', () => {
-      expect((result as any).session_resolution).toBe('opened_new_session');
-      expect((result as any).resolved_session_id).toBeTruthy();
-      expect((result as any).resolved_file_path).toBeTruthy();
+      const meta = sessionMetadata(result);
+      expect(meta.session_resolution).toBe('opened_new_session');
+      expect(meta.resolved_session_id).toBeTruthy();
+      expect(meta.resolved_file_path).toBeTruthy();
     });
   });
 
@@ -191,8 +223,10 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
 
     await allureStep('Then the second call SHALL reuse the existing session', () => {
-      expect((second as any).resolved_session_id).toBe((first as any).resolved_session_id);
-      expect((second as any).session_resolution).toBe('reused_existing_session');
+      const firstMeta = sessionMetadata(first);
+      const secondMeta = sessionMetadata(second);
+      expect(secondMeta.resolved_session_id).toBe(firstMeta.resolved_session_id);
+      expect(secondMeta.session_resolution).toBe('reused_existing_session');
     });
   });
 
@@ -214,13 +248,15 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
 
     await allureStep('Then the server SHALL return warning metadata indicating existing session reuse', () => {
-      expect((reused as any).reused_existing_session).toBe(true);
-      expect((reused as any).warning).toBeTruthy();
+      const meta = sessionMetadata(reused);
+      expect(meta.reused_existing_session).toBe(true);
+      expect(meta.warning).toBeTruthy();
     });
 
     await allureStep('And SHALL include reuse context in the response', () => {
-      const ctx = (reused as any).reused_session_context;
+      const ctx = sessionMetadata(reused).reused_session_context;
       expect(ctx).toBeTruthy();
+      if (!ctx) throw new Error('expected reused_session_context');
       expect(typeof ctx.edit_revision).toBe('number');
       expect(typeof ctx.edit_count).toBe('number');
       expect(ctx.created_at).toBeTruthy();
@@ -266,14 +302,16 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
 
     const status = await allureStep('And get_session_status is called for the resolved session', async () => {
-      const r = await getSessionStatus(mgr, { session_id: (read as any).resolved_session_id });
+      const resolvedSessionId = sessionMetadata(read).resolved_session_id;
+      expect(resolvedSessionId).toBeTruthy();
+      const r = await getSessionStatus(mgr, { session_id: resolvedSessionId as string });
       assertSuccess(r, 'get_session_status');
       await allureJsonAttachment('session status', r);
       return r;
     });
 
     await allureStep('Then normalization stats SHALL be present and not skipped', () => {
-      const norm = (status as any).normalization;
+      const norm = normalizationSummary(status);
       expect(norm).toBeTruthy();
       expect(norm.normalization_skipped).toBe(false);
       expect(norm.runs_merged).toBeGreaterThanOrEqual(1);

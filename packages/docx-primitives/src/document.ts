@@ -25,6 +25,7 @@ import {
 } from './layout.js';
 import { mergeRuns, type MergeRunsResult } from './merge_runs.js';
 import { simplifyRedlines, type SimplifyRedlinesResult } from './simplify_redlines.js';
+import { preventDoubleElevation } from './prevent_double_elevation.js';
 import { validateDocument, type ValidateDocumentResult } from './validate_document.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import {
@@ -54,6 +55,7 @@ export type NormalizationResult = {
   runsMerged: number;
   proofErrRemoved: number;
   wrappersConsolidated: number;
+  doubleElevationsFixed: number;
 };
 
 export type ParagraphInfo = {
@@ -156,7 +158,17 @@ export class DocxDocument {
   normalize(): NormalizationResult {
     const mr = mergeRuns(this.documentXml);
     const sr = simplifyRedlines(this.documentXml);
-    if (mr.runsMerged > 0 || sr.wrappersConsolidated > 0) {
+
+    // Prevent double elevation in footnote/endnote reference styles
+    let de = { doubleElevationsFixed: 0 };
+    if (this.stylesXml) {
+      de = preventDoubleElevation(this.stylesXml);
+      if (de.doubleElevationsFixed > 0) {
+        this.zip.writeText('word/styles.xml', serializeXml(this.stylesXml));
+      }
+    }
+
+    if (mr.runsMerged > 0 || sr.wrappersConsolidated > 0 || de.doubleElevationsFixed > 0) {
       this.dirty = true;
       this.documentViewCache = null;
     }
@@ -164,6 +176,7 @@ export class DocxDocument {
       runsMerged: mr.runsMerged,
       proofErrRemoved: mr.proofErrRemoved,
       wrappersConsolidated: sr.wrappersConsolidated,
+      doubleElevationsFixed: de.doubleElevationsFixed,
     };
   }
 
