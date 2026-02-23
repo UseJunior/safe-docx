@@ -97,35 +97,12 @@ The MCP server SHALL expose download defaults and re-download behavior in tool m
 - **AND** includes an edit revision marker
 
 ### Requirement: Tool Session Entry for Safe-Docx MCP
-The Safe-Docx MCP server SHALL support file-first entry for document tools while preserving explicit session semantics. Session creation SHALL include automatic normalization by default.
+The Safe-Docx MCP server SHALL support file-first entry for document tools while preserving explicit session semantics.
 
 #### Scenario: document tools accept file-first entry without pre-open
-- **WHEN** any document tool (`read_file`, `grep`, `smart_edit`, `smart_insert`, `download`, `get_session_status`) is called with `file_path` and without `session_id`
+- **WHEN** any document tool (`read_file`, `grep`, `replace_text`, `insert_paragraph`, `download`, `get_session_status`) is called with `file_path` and without `session_id`
 - **THEN** the server SHALL resolve a session for that file (reusing an active one or creating a new one)
 - **AND** return `resolved_session_id` and `resolved_file_path` in response metadata
-
-#### Scenario: reuse policy selects most-recently-used session
-- **GIVEN** multiple active sessions exist for the same normalized `file_path`
-- **WHEN** a document tool is called with that `file_path` and no `session_id`
-- **THEN** the server SHALL reuse the most-recently-used active session for that file
-
-#### Scenario: existing session reuse is non-blocking and warns via metadata
-- **GIVEN** an active editing session already exists for a file
-- **WHEN** a document tool is called with that `file_path` and no `session_id`
-- **THEN** the server SHALL execute the request without requiring opt-in flags
-- **AND** SHALL return warning metadata indicating existing session reuse
-- **AND** SHALL include reuse context (`edit_revision`, `edit_count`, `created_at`, `last_used_at`) in the response
-
-#### Scenario: conflicting `session_id` and `file_path` is rejected
-- **WHEN** a tool call provides both `session_id` and `file_path` that resolve to different sessions/files
-- **THEN** the server SHALL reject the call with a conflict error
-- **AND** provide remediation guidance
-
-#### Scenario: new session creation includes normalization
-- **WHEN** a new session is created (via `open_document` or file-first entry)
-- **AND** `skip_normalization` is not set to `true`
-- **THEN** the session creation pipeline SHALL run: `load → normalize → allocate jr_para bookmarks → cache view`
-- **AND** normalization stats SHALL be included in session metadata
 
 ### Requirement: Matching Fallback Parity
 The Safe-Docx MCP matching behavior SHALL retain Python-compatible fallback semantics for robust in-paragraph targeting.
@@ -594,3 +571,94 @@ Safe-Docx runtime distribution SHALL remain Node/TypeScript-only and SHALL NOT r
 - **WHEN** `format_layout` is called
 - **THEN** the operation SHALL complete without invoking external process execution APIs
 - **AND** no Python/Aspose runtime process SHALL be required
+
+### Requirement: Plan Initialization for Coordinated Multi-Agent Editing
+The Safe-Docx MCP server SHALL provide an `init_plan` tool that emits plan-context metadata for orchestrating multiple sub-agent plan submissions against a shared document revision.
+
+#### Scenario: init_plan returns revision-bound context
+- **WHEN** `init_plan` is called with `session_id` or `file_path`
+- **THEN** the server returns a plan context containing resolved session/file metadata
+- **AND** includes `base_revision` derived from the active editing session
+- **AND** includes a generated `plan_context_id` for caller-side audit correlation
+
+#### Scenario: init_plan uses file-first session resolution
+- **WHEN** `init_plan` is called with `file_path` and no `session_id`
+- **THEN** the server resolves a session using standard file-first behavior
+- **AND** returns `resolved_session_id` and `resolved_file_path`
+
+### Requirement: Deterministic Plan Merge and Conflict Analysis
+The Safe-Docx MCP server SHALL provide `merge_plans` to deterministically combine multiple sub-agent plans and detect structural conflicts before apply.
+
+#### Scenario: merge_plans returns merged artifact when no conflicts
+- **GIVEN** multiple valid plans sharing one `base_revision`
+- **AND** no hard conflicts are detected
+- **WHEN** `merge_plans` is called
+- **THEN** the server returns `has_conflicts=false`
+- **AND** returns a deterministic `merged_plan` artifact preserving stable step order
+
+#### Scenario: merge_plans reports base-revision conflict
+- **GIVEN** plans with mismatched `base_revision` values
+- **WHEN** `merge_plans` is called
+- **THEN** the server reports a `BASE_REVISION_CONFLICT`
+
+#### Scenario: merge_plans reports overlapping replace ranges
+- **GIVEN** two replace steps targeting the same paragraph with overlapping `[start,end)` ranges
+- **WHEN** `merge_plans` is called
+- **THEN** the server reports `OVERLAPPING_REPLACE_RANGE`
+
+#### Scenario: merge_plans reports unknown-range conflict for same paragraph
+- **GIVEN** two replace steps targeting the same paragraph
+- **AND** one or both steps omit explicit range metadata
+- **WHEN** `merge_plans` is called
+- **THEN** the server reports `UNKNOWN_REPLACE_RANGE`
+
+#### Scenario: merge_plans reports insert-slot collision
+- **GIVEN** two insert steps targeting the same anchor paragraph and same insertion position
+- **WHEN** `merge_plans` is called
+- **THEN** the server reports `INSERT_SLOT_COLLISION`
+
+#### Scenario: merge_plans reports duplicate step IDs
+- **GIVEN** two submitted steps share the same `step_id`
+- **WHEN** `merge_plans` is called
+- **THEN** the server reports `DUPLICATE_STEP_ID`
+
+#### Scenario: merge_plans fails by default when conflicts exist
+- **GIVEN** one or more hard conflicts are detected
+- **WHEN** `merge_plans` is called without overriding conflict behavior
+- **THEN** the server returns an error result with conflict diagnostics
+
+#### Scenario: merge_plans can return diagnostics without hard failure
+- **GIVEN** one or more hard conflicts are detected
+- **WHEN** `merge_plans` is called with `fail_on_conflict=false`
+- **THEN** the server returns success with `has_conflicts=true`
+- **AND** includes conflict diagnostics and a partial merged artifact for caller review
+
+### Requirement: Canonical Edit and Insert Naming Only
+The Safe-Docx MCP surface SHALL expose canonical mutation tool names and SHALL NOT expose legacy smart aliases.
+
+#### Scenario: canonical names are advertised
+- **WHEN** clients request the MCP tool catalog
+- **THEN** canonical names `replace_text` and `insert_paragraph` are listed
+
+#### Scenario: legacy aliases are unavailable
+- **WHEN** clients inspect the MCP tool catalog
+- **THEN** `smart_edit` and `smart_insert` are not listed
+
+#### Scenario: legacy aliases are rejected inside plan operations
+- **GIVEN** a merge plan step declares `operation: smart_edit` or `operation: smart_insert`
+- **WHEN** `merge_plans` validates that step
+- **THEN** the step is rejected with an unsupported operation conflict
+
+### Requirement: MCP Tool Catalog Uses File-First Entry Without open_document
+The MCP-exposed tool surface SHALL rely on file-first session entry and SHALL NOT expose `open_document` as a callable MCP tool.
+
+#### Scenario: MCP catalog omits open_document
+- **WHEN** clients request the MCP tool catalog
+- **THEN** `open_document` is not listed
+- **AND** file-first document tools remain available for session auto-resolution
+
+#### Scenario: open_document call is rejected as unsupported
+- **WHEN** a client attempts to call `open_document` via MCP
+- **THEN** the server returns an unknown/unsupported tool error
+- **AND** error guidance directs callers to file-first tool calls (`read_file`, `grep`, `replace_text`, `insert_paragraph`, `download`, `get_session_status`)
+
