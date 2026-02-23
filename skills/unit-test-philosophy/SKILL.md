@@ -83,9 +83,30 @@ metadata:
   - `sdxAutoExpandSteps=true|false`
   - `sdxAutoExpandAttachments=true|false`
 
+### Reference test pattern (gold standard)
+
+For high-risk OpenSpec-traced scenarios, follow this pattern (demonstrated by SDX-ER-001 in `extract_revisions.test.ts` and SDX-DE-001 in `prevent_double_elevation.test.ts`):
+
+1. **Fluent metadata chain**: `.allure({ title, description }).openspec('SDX-XX-NNN')` with explicit English description.
+2. **BDD context destructuring**: Accept `AllureBddContext` and destructure `{ given, when, then, and, attachPrettyXml, attachJsonLastStep }`.
+3. **Named fixture const**: Typed `fixture` object (`as const`) at the top of the test body.
+4. **Visual XML preview**: `attachPrettyXml('01 Input ...', xml)` for before state, `attachPrettyXml('02 Output ...', xml)` for after state.
+5. **Step parameters**: `{ expected_X: val, actual_X: val }` as third arg to `then`/`and`. Renders as key-value pairs in report.
+6. **Debug JSON in finally**: `try/finally` + `attachJsonLastStep({ context, result })` — root-level pretty-printed HTML, attached even on failure.
+7. **Readable assertion grouping**: Group related assertions in one step when they validate a single cohesive invariant (e.g., fix count + property removed + property preserved). Don't over-split.
+
+Reference files:
+- `packages/safe-docx/src/tools/extract_revisions.test.ts` (SDX-ER-001)
+- `packages/docx-primitives/src/prevent_double_elevation.test.ts` (SDX-DE-001)
+
+For high-risk OpenSpec-traced scenarios, use the **Reference test pattern** above instead of the minimal template below.
+
 ### Traceability IDs
-- Prefer explicit serial scenario IDs in spec headers, e.g. `[SDX-ER-001] ...`.
-- Ensure `.openspec(...)` matches the full header text exactly, including `[ID]`.
+- Use compact serial IDs in `.openspec('SDX-XX-NNN')` — the coverage validators resolve serial IDs to full scenario names.
+- Keep serial IDs as `const scenarioId = 'SDX-DE-001'` for debug payloads and step parameters.
+- Scenario headers in specs use the `[SDX-XX-NNN] scenario name` format.
+- IDs sourced from active change-package specs are valid before canonical spec promotion.
+- Keep IDs stable when promoting change-package scenarios into canonical specs.
 - Emit Allure traceability labels where available (`openspecScenarioId`).
 
 ### Report performance hygiene
@@ -111,6 +132,8 @@ metadata:
 ### OpenSpec traceability
 - Require `.openspec('exact scenario text')` whenever a matching scenario exists.
 - Scenario text must match spec headers exactly (including case/backticks).
+- Matching scenarios may live in canonical specs or active change-package specs.
+- For ID-based scenarios, prefer stable serial IDs in active change specs and keep them unchanged when canonicalized.
 - For new important behavior, add/extend spec first, then map tests to that scenario text.
 
 ## Coverage expansion workflow
@@ -164,6 +187,8 @@ describe('replace_text behavior', () => {
   });
 });
 ```
+
+> For high-risk OpenSpec-traced scenarios, use the **Reference test pattern** above instead of this minimal template.
 
 ## Extended reference
 - See `references/allure-test-spec-writing-guide.md` for complete guidance adapted from the shared cross-repo Allure spec guide.

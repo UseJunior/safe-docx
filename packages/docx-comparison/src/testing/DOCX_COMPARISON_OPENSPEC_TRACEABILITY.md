@@ -13,7 +13,7 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Atom marked as moved destination | covered | `src/openspec.traceability.test.ts` |  |
 | Atom marked as moved source | covered | `src/openspec.traceability.test.ts` |  |
 | Atom with ancestor tracking | covered | `src/openspec.traceability.test.ts` |  |
-| Below threshold treated as separate changes | covered | `src/openspec.traceability.test.ts` |  |
+| Below threshold treated as separate changes | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Bold added | covered | `src/openspec.traceability.test.ts` |  |
 | Bold added markup | covered | `src/openspec.traceability.test.ts` |  |
 | Bold removed markup | covered | `src/openspec.traceability.test.ts` |  |
@@ -29,15 +29,15 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Empty properties equal | covered | `src/openspec.traceability.test.ts` |  |
 | First footnote displays as 1 | covered | `src/openspec.traceability.test.ts` |  |
 | Format change markup structure | covered | `src/openspec.traceability.test.ts` |  |
-| Format detection disabled | covered | `src/openspec.traceability.test.ts` |  |
+| Format detection disabled | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Format detection enabled by default | covered | `src/openspec.traceability.test.ts` |  |
 | Format detection with text change | covered | `src/openspec.traceability.test.ts` |  |
 | Get format change revisions | covered | `src/openspec.traceability.test.ts` |  |
 | Hash calculation for content identity | covered | `src/openspec.traceability.test.ts` |  |
 | Identical text returns 1.0 | covered | `src/openspec.traceability.test.ts` |  |
 | Move destination markup structure | covered | `src/openspec.traceability.test.ts` |  |
-| Move detected between similar blocks | covered | `src/openspec.traceability.test.ts` |  |
-| Move detection disabled | covered | `src/openspec.traceability.test.ts` |  |
+| Move detected between similar blocks | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
+| Move detection disabled | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Move source markup structure | covered | `src/openspec.traceability.test.ts` |  |
 | Multiple properties changed | covered | `src/openspec.traceability.test.ts` |  |
 | No common words returns 0.0 | covered | `src/openspec.traceability.test.ts` |  |
@@ -54,13 +54,13 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Run without properties | covered | `src/openspec.traceability.test.ts` |  |
 | Same properties different order | covered | `src/openspec.traceability.test.ts` |  |
 | Sequential numbering ignores XML IDs | covered | `src/openspec.traceability.test.ts` |  |
-| Short blocks ignored | covered | `src/openspec.traceability.test.ts` |  |
+| Short blocks ignored | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Status assigned during comparison | covered | `src/openspec.traceability.test.ts` |  |
 | Status for deleted content | covered | `src/openspec.traceability.test.ts` |  |
 | Status for format-changed content | covered | `src/openspec.traceability.test.ts` |  |
 | Status for moved destination content | covered | `src/openspec.traceability.test.ts` |  |
 | Status for moved source content | covered | `src/openspec.traceability.test.ts` |  |
 | Status for unmatched atoms | covered | `src/openspec.traceability.test.ts` |  |
-| Text becomes bold | covered | `src/openspec.traceability.test.ts` |  |
+| Text becomes bold | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Unknown property name | covered | `src/openspec.traceability.test.ts` |  |
 

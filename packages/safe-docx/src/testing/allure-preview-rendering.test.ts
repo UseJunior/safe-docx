@@ -17,13 +17,17 @@ const test = it.epic('Document Editing').withLabels({ feature: 'Allure Preview R
 
 describe('allure preview rendering', () => {
   let attachments: CapturedAttachment[] = [];
+  let savedRuntime: AllureRuntime | undefined;
 
+  const getAllure = () =>
+    (globalThis as typeof globalThis & { allure?: AllureRuntime }).allure;
   const setAllureRuntime = (runtime?: AllureRuntime) => {
     (globalThis as typeof globalThis & { allure?: AllureRuntime }).allure = runtime;
   };
 
   beforeEach(() => {
     attachments = [];
+    savedRuntime = getAllure();
     setAllureRuntime({
       epic: async () => {},
       feature: async () => {},
@@ -34,12 +38,17 @@ describe('allure preview rendering', () => {
       step: async (_name, body) => body({ parameter: async () => {} } as AllureStepContext),
       attachment: async (name, content, contentType) => {
         attachments.push({ name, content, contentType });
+        // Forward to real Allure runtime so attachments appear in the report
+        if (savedRuntime && typeof savedRuntime.attachment === 'function') {
+          await savedRuntime.attachment(name, content, contentType);
+        }
       },
     });
   });
 
   afterEach(() => {
-    setAllureRuntime(undefined);
+    setAllureRuntime(savedRuntime);
+    savedRuntime = undefined;
   });
 
   test(

@@ -30,6 +30,30 @@ function extractScenarioId(value) {
   return match ? match[1].trim() : null;
 }
 
+const SERIAL_ID_RE = /^(?:SDX|OA)-[\w-]+-?\d+$/;
+
+function parseSerialIdMap(specContent) {
+  const map = new Map();
+  const re = /^\s*####\s+Scenario:\s*\[([^\]]+)\]\s*(.+?)\s*$/gm;
+  let m;
+  while ((m = re.exec(specContent))) {
+    map.set(m[1], m[2].replace(/\s+/g, ' ').trim());
+  }
+  return map;
+}
+
+function resolveSerialIds(stories, serialIdMap) {
+  const resolved = new Set();
+  for (const story of stories) {
+    if (SERIAL_ID_RE.test(story) && serialIdMap.has(story)) {
+      resolved.add(serialIdMap.get(story));
+    } else {
+      resolved.add(story);
+    }
+  }
+  return resolved;
+}
+
 async function listFilesRecursively(rootDir, predicate) {
   const out = [];
   async function walk(dir) {
@@ -274,8 +298,10 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
 
   const scenarioEntries = [];
   const seenScenarios = new Set();
+  const serialIdMap = new Map();
   for (const sf of specFiles) {
     const content = await fs.readFile(sf, 'utf-8');
+    for (const [id, name] of parseSerialIdMap(content)) serialIdMap.set(id, name);
     for (const scenario of parseScenariosFromSpec(content)) {
       if (seenScenarios.has(scenario.name)) {
         continue;
@@ -303,19 +329,46 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
     };
   }
 
+  // Resolve serial-ID-only stories to full scenario names
+  const resolvedStorySet = resolveSerialIds(storySet, serialIdMap);
+  const resolvedStoryToFiles = new Map();
+  for (const [story, files] of storyToFiles) {
+    if (SERIAL_ID_RE.test(story) && serialIdMap.has(story)) {
+      const resolved = serialIdMap.get(story);
+      const existing = resolvedStoryToFiles.get(resolved) ?? new Set();
+      for (const f of files) existing.add(f);
+      resolvedStoryToFiles.set(resolved, existing);
+    } else {
+      const existing = resolvedStoryToFiles.get(story) ?? new Set();
+      for (const f of files) existing.add(f);
+      resolvedStoryToFiles.set(story, existing);
+    }
+  }
+
   const scenarios = scenarioEntries.map((entry) => entry.name).sort();
-  const stories = [...storySet].sort();
+  const stories = [...resolvedStorySet].sort();
   const storyLookup = new Set(stories);
   const scenarioLookup = new Set(scenarios);
 
   const missing = scenarios.filter((s) => !storyLookup.has(s));
   const extra = stories.filter((s) => !scenarioLookup.has(s));
   const scenarioIdIssues = [];
+  // Track which scenarios were resolved from serial-ID-only .openspec() calls
+  const resolvedFromSerialId = new Set();
+  for (const story of storySet) {
+    if (SERIAL_ID_RE.test(story) && serialIdMap.has(story)) {
+      resolvedFromSerialId.add(serialIdMap.get(story));
+    }
+  }
   for (const scenario of scenarioEntries) {
     if (!scenario.id) {
       continue;
     }
     if (!storyLookup.has(scenario.name)) {
+      continue;
+    }
+    // Serial-ID-only .openspec() calls implicitly carry the correct ID
+    if (resolvedFromSerialId.has(scenario.name)) {
       continue;
     }
     const mappedIds = storyIdsByName.get(scenario.name) ?? new Set();
@@ -351,7 +404,7 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
     stories,
     scenarios,
     storyToFiles: Object.fromEntries(
-      [...storyToFiles.entries()].map(([k, v]) => [k, [...v].sort()]),
+      [...resolvedStoryToFiles.entries()].map(([k, v]) => [k, [...v].sort()]),
     ),
   };
 }

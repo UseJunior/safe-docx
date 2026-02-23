@@ -21,6 +21,30 @@ function normalizeScenarioName(value) {
     .replace(/\s+/g, ' ');
 }
 
+const SERIAL_ID_RE = /^(?:SDX|OA)-[\w-]+-?\d+$/;
+
+function parseSerialIdMap(specContent) {
+  const map = new Map();
+  const re = /^\s*####\s+Scenario:\s*\[([^\]]+)\]\s*(.+?)\s*$/gm;
+  let m;
+  while ((m = re.exec(specContent))) {
+    map.set(m[1], m[2].replace(/\s+/g, ' ').trim());
+  }
+  return map;
+}
+
+function resolveSerialIds(stories, serialIdMap) {
+  const resolved = new Set();
+  for (const story of stories) {
+    if (SERIAL_ID_RE.test(story) && serialIdMap.has(story)) {
+      resolved.add(serialIdMap.get(story));
+    } else {
+      resolved.add(story);
+    }
+  }
+  return resolved;
+}
+
 function parseScenariosFromSpec(content) {
   const scenarios = new Set();
   const scenarioHeader = /^\s*####\s+Scenario:\s*(.+?)\s*$/gm;
@@ -166,6 +190,7 @@ async function main() {
   }
 
   const scenarioSet = parseScenariosFromSpec(canonicalSpec);
+  const serialIdMap = parseSerialIdMap(canonicalSpec);
   const scenarios = [...scenarioSet].sort();
   if (scenarios.length === 0) {
     console.error(`No '#### Scenario:' entries found in ${CANONICAL_SPEC}`);
@@ -183,14 +208,14 @@ async function main() {
     const content = await fs.readFile(tf, 'utf-8');
     const rel = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
 
-    for (const story of parseStoriesFromTest(content)) {
+    for (const story of resolveSerialIds(parseStoriesFromTest(content), serialIdMap)) {
       storySet.add(story);
       const files = storyToFiles.get(story) ?? [];
       if (!files.includes(rel)) files.push(rel);
       storyToFiles.set(story, files);
     }
 
-    for (const skipped of parseSkippedStoriesFromTest(content)) {
+    for (const skipped of resolveSerialIds(parseSkippedStoriesFromTest(content), serialIdMap)) {
       skippedStorySet.add(skipped);
     }
   }

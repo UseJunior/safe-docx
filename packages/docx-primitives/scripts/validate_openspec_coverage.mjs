@@ -36,6 +36,30 @@ function normalizeScenarioName(value) {
     .replace(/\s+/g, ' ');
 }
 
+const SERIAL_ID_RE = /^(?:SDX|OA)-[\w-]+-?\d+$/;
+
+function parseSerialIdMap(specContent) {
+  const map = new Map();
+  const re = /^\s*####\s+Scenario:\s*\[([^\]]+)\]\s*(.+?)\s*$/gm;
+  let m;
+  while ((m = re.exec(specContent))) {
+    map.set(m[1], m[2].replace(/\s+/g, ' ').trim());
+  }
+  return map;
+}
+
+function resolveSerialIds(stories, serialIdMap) {
+  const resolved = new Set();
+  for (const story of stories) {
+    if (SERIAL_ID_RE.test(story) && serialIdMap.has(story)) {
+      resolved.add(serialIdMap.get(story));
+    } else {
+      resolved.add(story);
+    }
+  }
+  return resolved;
+}
+
 function parseScenariosFromSpec(content) {
   const scenarios = new Set();
   const scenarioHeader = /^\s*####\s+Scenario:\s*(.+?)\s*$/gm;
@@ -344,6 +368,7 @@ async function main() {
 
   const allCanonicalScenarios = parseScenariosFromSpec(specContent);
   const requirementMap = parseRequirementForScenario(specContent);
+  const serialIdMap = parseSerialIdMap(specContent);
 
   const excludedScenarios = new Set();
   const canonicalScenarios = new Set();
@@ -359,13 +384,14 @@ async function main() {
   // 2. Discover change deltas
   const deltaFeatureSpecFiles = await discoverDocxPrimitivesDeltas();
 
-  // Parse scenarios per feature delta
+  // Parse scenarios per feature delta (and extend serialIdMap)
   const deltaFeatureScenarios = new Map();
   for (const [feature, specFiles] of deltaFeatureSpecFiles) {
     const scenarios = new Set();
     for (const sf of specFiles) {
       const content = await fs.readFile(sf, 'utf-8');
       for (const scenario of parseScenariosFromSpec(content)) scenarios.add(scenario);
+      for (const [id, name] of parseSerialIdMap(content)) serialIdMap.set(id, name);
     }
     deltaFeatureScenarios.set(feature, scenarios);
   }
@@ -393,13 +419,13 @@ async function main() {
       testsByFeature.set(featureId, list);
     }
 
-    for (const story of parseStoriesFromTest(content)) {
+    for (const story of resolveSerialIds(parseStoriesFromTest(content), serialIdMap)) {
       allStorySet.add(story);
       const files = allStoryToFiles.get(story) ?? [];
       files.push(relTestFile);
       allStoryToFiles.set(story, files);
     }
-    for (const story of parseSkippedStoriesFromTest(content)) {
+    for (const story of resolveSerialIds(parseSkippedStoriesFromTest(content), serialIdMap)) {
       allSkippedStorySet.add(story);
     }
   }
@@ -421,7 +447,7 @@ async function main() {
       for (const tf of featureTestFiles) {
         const content = await fs.readFile(tf, 'utf-8');
         const relTestFile = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
-        for (const story of parseStoriesFromTest(content)) {
+        for (const story of resolveSerialIds(parseStoriesFromTest(content), serialIdMap)) {
           featureStorySet.add(story);
           const files = featureStoryToFiles.get(story) ?? [];
           files.push(relTestFile);
@@ -494,7 +520,7 @@ async function main() {
       for (const tf of featureTestFiles) {
         const content = await fs.readFile(tf, 'utf-8');
         const relTestFile = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
-        for (const story of parseStoriesFromTest(content)) {
+        for (const story of resolveSerialIds(parseStoriesFromTest(content), serialIdMap)) {
           featureStorySet.add(story);
           const files = featureStoryToFiles.get(story) ?? [];
           files.push(relTestFile);

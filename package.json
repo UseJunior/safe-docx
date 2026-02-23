@@ -35,6 +35,7 @@
     "check:site": "npm run site:build && npm run check:site-links",
     "check:spec-coverage": "npm run check:spec-coverage -w @usejunior/docx-comparison -- --strict && npm run check:spec-coverage -w @usejunior/docx-primitives -- --strict && npm run check:spec-coverage -w @usejunior/safe-docx -- --strict",
     "check:allure-labels": "node scripts/validate_allure_test_labels.mjs",
+    "check:allure-quality": "node scripts/validate_allure_test_quality.mjs",
     "check:allure-filenames": "node scripts/check_allure_test_filename_policy.mjs --baseline coverage/allure-test-filename-baseline.json",
     "check:mcpb-manifest": "npm run check:manifest-contract -w @usejunior/safedocx-mcpb",
     "test:coverage:packages": "npm run test:coverage -w @usejunior/docx-comparison && npm run test:coverage -w @usejunior/docx-primitives && npm run test:coverage -w @usejunior/safe-docx",
