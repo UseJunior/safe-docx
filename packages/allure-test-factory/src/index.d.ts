@@ -215,6 +215,8 @@ export function buildPrettyXmlHtml(xml: string): string;
 export function buildWordLikePreviewHtml(preview: AllureWordLikePreview): string;
 export function buildDocPreviewHtml(options: DocPreviewOptions): string;
 export function buildWordLikeTextHtml(content: string, title?: string): string;
+export function buildWordLikeMarkdownHtml(content: string, title?: string): string;
+export function buildWordLikeMarkdownDiffHtml(before: string, after: string, title?: string): string;
 
 // ── Standalone convenience functions ────────────────────────────────────────
 
@@ -226,6 +228,17 @@ export function allurePrettyJsonAttachment(name: string, payload: unknown): Prom
 export function allureWordLikeTextAttachment(
   name: string,
   content: string,
+  options?: { title?: string },
+): Promise<void>;
+export function allureWordLikeMarkdownAttachment(
+  name: string,
+  content: string,
+  options?: { title?: string },
+): Promise<void>;
+export function allureWordLikeMarkdownDiffAttachment(
+  name: string,
+  before: string,
+  after: string,
   options?: { title?: string },
 ): Promise<void>;
 export function allureFileAttachment(

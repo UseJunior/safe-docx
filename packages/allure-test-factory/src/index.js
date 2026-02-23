@@ -1,10 +1,15 @@
 import { expect, it as vitestIt, test as vitestTest } from 'vitest';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 import Prism from 'prismjs';
+import MarkdownIt from 'markdown-it';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import 'prismjs/components/prism-json.js';
+
+// ── Markdown-it instance ────────────────────────────────────────────────────
+
+const md = new MarkdownIt({ html: false, breaks: true, linkify: false });
 
 // ── Content-type constants ──────────────────────────────────────────────────
 
@@ -99,16 +104,17 @@ export function buildHtmlAttachment(body, extraStyles = '') {
     '<!doctype html>',
     '<html><head><meta charset="utf-8">',
     '<style>',
+    ':root{--atf-text:#374151;--atf-text-muted:#6b7280;--atf-text-heading:#111827;--atf-bg-code:#f3f4f6;--atf-border:#d1d5db;--atf-bg-panel:#ffffff;--atf-ins:#1f4f8f;--atf-del:#b42318;--atf-move:#16a34a;}',
     'html,body{margin:0;padding:0;overflow:hidden;}',
-    'body{font-family:ui-sans-serif,system-ui,sans-serif;padding:12px;color:#2f2a24;line-height:1.45;box-sizing:border-box;}',
+    'body{font-family:ui-sans-serif,system-ui,sans-serif;padding:12px;color:var(--atf-text);line-height:1.45;box-sizing:border-box;}',
     'p{margin:8px 0;}',
     'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}',
-    'pre{background:#f7f3eb;padding:12px;border-radius:8px;white-space:pre-wrap;overflow-x:auto;overflow-y:hidden;}',
+    'pre{background:var(--atf-bg-code);padding:12px;border-radius:8px;white-space:pre-wrap;overflow-x:auto;overflow-y:hidden;}',
     'pre code{white-space:pre-wrap !important;overflow-wrap:break-word;word-break:normal;}',
-    '.panel{border:1px solid #d7c7b5;border-radius:8px;padding:8px;background:#fffdf8;}',
-    '.doc-line{font-family:Georgia,"Times New Roman",serif;font-size:17px;line-height:1.6;padding:8px 10px;border:1px solid #d7c7b5;border-radius:6px;background:#fff;white-space:pre-line;}',
-    '.doc-ins{color:#1f4f8f;text-decoration:underline;text-underline-offset:2px;}',
-    '.doc-del{color:#b42318;text-decoration:line-through;text-decoration-thickness:1.5px;}',
+    '.panel{border:1px solid var(--atf-border);border-radius:8px;padding:8px;background:var(--atf-bg-panel);}',
+    '.doc-line{font-family:Georgia,"Times New Roman",serif;font-size:17px;line-height:1.6;padding:8px 10px;border:1px solid var(--atf-border);border-radius:6px;background:#fff;white-space:pre-line;}',
+    '.doc-ins{color:var(--atf-ins);text-decoration:underline;text-underline-offset:2px;}',
+    '.doc-del{color:var(--atf-del);text-decoration:line-through;text-decoration-thickness:1.5px;}',
     '.xml-source .token.tag,.xml-source .token.punctuation{color:#0c5a41;}',
     '.xml-source .token.attr-name{color:#4b5565;}',
     '.xml-source .token.attr-value,.xml-source .token.attr-value .token.punctuation{color:#7a2ce8;}',
@@ -116,9 +122,9 @@ export function buildHtmlAttachment(body, extraStyles = '') {
     '.json-source .token.string{color:#7a2ce8;}',
     '.json-source .token.number{color:#b35309;}',
     '.json-source .token.boolean,.json-source .token.null{color:#4b5565;font-weight:600;}',
-    '.json-source .token.operator,.json-source .token.punctuation{color:#6b6560;}',
-    '.doc-panel{border:1px solid #d7c7b5;border-radius:8px;padding:12px;background:#fffdf8;}',
-    '.doc-title{margin:0 0 10px 0;font-size:14px;font-weight:600;color:#1f2937;}',
+    '.json-source .token.operator,.json-source .token.punctuation{color:var(--atf-text-muted);}',
+    '.doc-panel{border:1px solid var(--atf-border);border-radius:8px;padding:12px;background:var(--atf-bg-panel);}',
+    '.doc-title{margin:0 0 10px 0;font-size:14px;font-weight:600;color:var(--atf-text-heading);}',
     '.doc-text{margin:0;font-family:Georgia,"Times New Roman",serif;font-size:16px;line-height:1.6;white-space:pre-wrap;}',
     extraStyles,
     '</style></head><body>',
@@ -152,11 +158,11 @@ export function buildWordLikePreviewHtml(preview) {
 }
 
 const DOC_PREVIEW_EXTRA_STYLES = [
-  '.doc-move-from{color:#16a34a;text-decoration:line-through;text-decoration-style:double;text-decoration-thickness:1.5px;}',
-  '.doc-move-to{color:#16a34a;text-decoration:underline;text-decoration-style:double;text-underline-offset:2px;}',
-  '.doc-footnote-sep{border:none;border-top:1px solid #d7c7b5;margin:12px 0 6px;}',
+  '.doc-move-from{color:var(--atf-move);text-decoration:line-through;text-decoration-style:double;text-decoration-thickness:1.5px;}',
+  '.doc-move-to{color:var(--atf-move);text-decoration:underline;text-decoration-style:double;text-underline-offset:2px;}',
+  '.doc-footnote-sep{border:none;border-top:1px solid var(--atf-border);margin:12px 0 6px;}',
   '.doc-footnote{font-family:Georgia,"Times New Roman",serif;font-size:13px;line-height:1.5;color:#4b5565;margin:4px 0 4px 6px;}',
-  '.doc-preview-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#6b6560;margin:0 0 6px;}',
+  '.doc-preview-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--atf-text-muted);margin:0 0 6px;}',
 ].join('');
 
 const DOC_REVISION_CLASS_MAP = {
@@ -271,6 +277,95 @@ export function buildWordLikeTextHtml(content, title) {
   ].join(''));
 }
 
+// ── Markdown rendering ──────────────────────────────────────────────────────
+
+function addBadges(html) {
+  return html.replace(/\[([A-Z][A-Z0-9_]*)\]/g, '<span class="md-badge">$1</span>');
+}
+
+const MD_EXTRA_STYLES = [
+  '.md-content{font-family:Georgia,"Times New Roman",serif;font-size:16px;line-height:1.5;}',
+  '.md-content p{margin:2px 0;}',
+  '.md-content h1{font-size:20px;font-weight:700;color:var(--atf-text-heading);margin:0 0 2px;}',
+  '.md-content h2{font-size:16px;font-weight:600;color:var(--atf-text-heading);margin:10px 0 4px;border-bottom:1px solid var(--atf-border);padding-bottom:3px;}',
+  '.md-content ol,.md-content ul{margin:2px 0;padding-left:24px;}',
+  '.md-content li{margin:1px 0;line-height:1.4;}',
+  '.md-content li>ul,.md-content li>ol{margin:1px 0;}',
+  '.md-badge{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;background:var(--atf-badge-bg,#e5e7eb);color:var(--atf-badge-text,#374151);}',
+].join('');
+
+export function buildWordLikeMarkdownHtml(content, title) {
+  const rendered = addBadges(md.render(content));
+  return buildHtmlAttachment([
+    '<section class="doc-panel">',
+    title ? `<h2 class="doc-title">${escapeForHtml(title)}</h2>` : '',
+    `<div class="doc-text md-content">${rendered}</div>`,
+    '</section>',
+  ].join(''), MD_EXTRA_STYLES);
+}
+
+// ── Line diff ───────────────────────────────────────────────────────────────
+
+function computeLineDiff(beforeLines, afterLines) {
+  const m = beforeLines.length;
+  const n = afterLines.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = beforeLines[i - 1] === afterLines[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  const result = [];
+  let i = m;
+  let j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && beforeLines[i - 1] === afterLines[j - 1]) {
+      result.unshift({ type: 'equal', text: beforeLines[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      result.unshift({ type: 'add', text: afterLines[j - 1] });
+      j--;
+    } else {
+      result.unshift({ type: 'remove', text: beforeLines[i - 1] });
+      i--;
+    }
+  }
+  return result;
+}
+
+const MD_DIFF_EXTRA_STYLES = [
+  '.md-diff{font-family:Georgia,"Times New Roman",serif;font-size:15px;line-height:1.4;}',
+  '.md-diff-line{padding:1px 6px;white-space:pre-wrap;min-height:1.2em;}',
+  '.md-diff-add{background:#dbeafe;border-left:3px solid var(--atf-ins);color:var(--atf-ins);}',
+  '.md-diff-del{background:#fee2e2;border-left:3px solid var(--atf-del);color:var(--atf-del);text-decoration:line-through;}',
+].join('');
+
+export function buildWordLikeMarkdownDiffHtml(before, after, title) {
+  const hunks = computeLineDiff(
+    String(before).split('\n'),
+    String(after).split('\n'),
+  );
+  const lines = [];
+  for (const hunk of hunks) {
+    const escaped = addBadges(escapeForHtml(hunk.text));
+    const cls = hunk.type === 'add'
+      ? ' md-diff-add'
+      : hunk.type === 'remove'
+        ? ' md-diff-del'
+        : '';
+    lines.push(`<div class="md-diff-line${cls}">${escaped || '&nbsp;'}</div>`);
+  }
+  return buildHtmlAttachment([
+    '<section class="doc-panel">',
+    title ? `<h2 class="doc-title">${escapeForHtml(title)}</h2>` : '',
+    `<div class="doc-text md-diff">${lines.join('')}</div>`,
+    '</section>',
+  ].join(''), MD_DIFF_EXTRA_STYLES);
+}
+
 // ── Standalone convenience functions ────────────────────────────────────────
 
 export async function allureSeverity(level) {
@@ -314,6 +409,20 @@ export async function allureWordLikeTextAttachment(name, content, options) {
   const runtime = getAllureRuntime();
   if (runtime && typeof runtime.attachment === 'function') {
     await runtime.attachment(name, buildWordLikeTextHtml(content, options?.title), HTML_CONTENT_TYPE);
+  }
+}
+
+export async function allureWordLikeMarkdownAttachment(name, content, options) {
+  const runtime = getAllureRuntime();
+  if (runtime && typeof runtime.attachment === 'function') {
+    await runtime.attachment(name, buildWordLikeMarkdownHtml(content, options?.title), HTML_CONTENT_TYPE);
+  }
+}
+
+export async function allureWordLikeMarkdownDiffAttachment(name, before, after, options) {
+  const runtime = getAllureRuntime();
+  if (runtime && typeof runtime.attachment === 'function') {
+    await runtime.attachment(name, buildWordLikeMarkdownDiffHtml(before, after, options?.title), HTML_CONTENT_TYPE);
   }
 }
 

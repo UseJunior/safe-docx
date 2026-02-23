@@ -8,6 +8,8 @@ allure-report/
 allure-report-repo/
 allure-report-brand-preview/
 allure-report-pilot/
+allure-report-baseline/
+allure-results-baseline/
 sdx-allure-fresh-local/
 .allure-results-merged/
 **/allure-results.bak.*/
@@ -27,6 +29,14 @@ openspec/private/*
 
 # Build artifacts
 _site/
+
+# Stray TypeScript emit in source dirs (outDir should be dist/)
+# Ignore .js and source-map files — but NOT .d.ts (can be hand-authored, e.g. allure-globals.d.ts)
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts.map
+# ...but allow allure-test-factory (pre-compiled shared package)
+!packages/allure-test-factory/src/**
 site/docs/*.md
 site/downloads/
 site/schemas/
