@@ -32,6 +32,7 @@ const allureSetup = resolveAllureEntry('setup');
 const allureReporter = resolveAllureEntry('reporter');
 const hasAllure = Boolean(allureSetup && allureReporter);
 const allureResultsDir = resolve(__dirname, 'allure-results');
+const allureCompatReporter = resolve(__dirname, 'src/testing/reporters/allureVitestCompatReporter.ts');
 
 if (!hasAllure) {
   // eslint-disable-next-line no-console
@@ -43,6 +44,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    exclude: ['src/baselines/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       all: true,
@@ -65,10 +67,12 @@ export default defineConfig({
       ? [
           'default',
           [
-            allureReporter!,
+            allureCompatReporter,
             {
+              innerReporterPath: allureReporter!,
               resultsDir: allureResultsDir,
               cleanResultsDir: true,
+              packageName: 'DOCX Comparison',
             },
           ],
         ]

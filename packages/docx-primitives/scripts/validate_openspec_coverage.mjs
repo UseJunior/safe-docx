@@ -38,6 +38,11 @@ function normalizeScenarioName(value) {
 
 const SERIAL_ID_RE = /^(?:SDX|OA)-[\w-]+-?\d+$/;
 
+function extractScenarioId(rawScenario) {
+  const match = rawScenario.trim().match(/^\[([^\]]+)\]/);
+  return match ? match[1].trim() : null;
+}
+
 function parseSerialIdMap(specContent) {
   const map = new Map();
   const re = /^\s*####\s+Scenario:\s*\[([^\]]+)\]\s*(.+?)\s*$/gm;
@@ -69,6 +74,23 @@ function parseScenariosFromSpec(content) {
     m = scenarioHeader.exec(content);
   }
   return scenarios;
+}
+
+function parseScenarioEntriesFromSpec(content) {
+  const entries = [];
+  const seen = new Set();
+  const scenarioHeader = /^\s*####\s+Scenario:\s*(.+?)\s*$/gm;
+  let m = scenarioHeader.exec(content);
+  while (m) {
+    const raw = m[1].trim();
+    const name = normalizeScenarioName(raw);
+    if (!seen.has(name)) {
+      seen.add(name);
+      entries.push({ name, id: extractScenarioId(raw) });
+    }
+    m = scenarioHeader.exec(content);
+  }
+  return entries;
 }
 
 function parseRequirementForScenario(content) {
@@ -104,22 +126,35 @@ function parseFeatureIdFromTest(content, testFile) {
 
 function parseStoriesFromTest(content) {
   const stories = new Set();
+  const storyIdsByName = new Map();
+
+  function addStory(rawValue) {
+    const normalized = normalizeScenarioName(rawValue);
+    stories.add(normalized);
+    const id = extractScenarioId(rawValue);
+    if (!id) {
+      return;
+    }
+    const ids = storyIdsByName.get(normalized) ?? new Set();
+    ids.add(id);
+    storyIdsByName.set(normalized, ids);
+  }
 
   const viaOpenspec = /\.openspec\(\s*(['"`])([\s\S]*?)\1\s*\)/g;
   let m = viaOpenspec.exec(content);
   while (m) {
-    stories.add(normalizeScenarioName(m[2]));
+    addStory(m[2]);
     m = viaOpenspec.exec(content);
   }
 
   const direct = /allure\.story\(\s*(['"`])([\s\S]*?)\1\s*\)/g;
   m = direct.exec(content);
   while (m) {
-    stories.add(normalizeScenarioName(m[2]));
+    addStory(m[2]);
     m = direct.exec(content);
   }
 
-  return stories;
+  return { stories, storyIdsByName };
 }
 
 function parseSkippedStoriesFromTest(content) {
@@ -304,6 +339,11 @@ function buildMatrixMarkdown({ canonicalScenarios, deltaFeatureScenarios, storyS
         lines.push('Extra stories beyond spec (informational):');
         for (const s of report.extra) lines.push(`- ${s}`);
       }
+      if (report.scenarioIdIssues && report.scenarioIdIssues.length > 0) {
+        lines.push('');
+        lines.push('Scenario ID mismatches:');
+        for (const issue of report.scenarioIdIssues) lines.push(`- ${issue}`);
+      }
       lines.push('');
     }
   }
@@ -366,7 +406,8 @@ async function main() {
     return;
   }
 
-  const allCanonicalScenarios = parseScenariosFromSpec(specContent);
+  const canonicalScenarioEntries = parseScenarioEntriesFromSpec(specContent);
+  const allCanonicalScenarios = new Set(canonicalScenarioEntries.map((entry) => entry.name));
   const requirementMap = parseRequirementForScenario(specContent);
   const serialIdMap = parseSerialIdMap(specContent);
 
@@ -386,14 +427,23 @@ async function main() {
 
   // Parse scenarios per feature delta (and extend serialIdMap)
   const deltaFeatureScenarios = new Map();
+  const deltaFeatureScenarioEntries = new Map();
   for (const [feature, specFiles] of deltaFeatureSpecFiles) {
     const scenarios = new Set();
+    const scenarioEntriesByName = new Map();
     for (const sf of specFiles) {
       const content = await fs.readFile(sf, 'utf-8');
       for (const scenario of parseScenariosFromSpec(content)) scenarios.add(scenario);
+      for (const entry of parseScenarioEntriesFromSpec(content)) {
+        const existing = scenarioEntriesByName.get(entry.name);
+        if (!existing || (!existing.id && entry.id)) {
+          scenarioEntriesByName.set(entry.name, entry);
+        }
+      }
       for (const [id, name] of parseSerialIdMap(content)) serialIdMap.set(id, name);
     }
     deltaFeatureScenarios.set(feature, scenarios);
+    deltaFeatureScenarioEntries.set(feature, [...scenarioEntriesByName.values()]);
   }
 
   // 3. Read all traceability test files (feature-aware) — search both test/ and src/
@@ -403,6 +453,7 @@ async function main() {
   ];
 
   const allStorySet = new Set();
+  const allStoryIdsByName = new Map();
   const allSkippedStorySet = new Set();
   const allStoryToFiles = new Map();
   const testsByFeature = new Map();
@@ -419,11 +470,22 @@ async function main() {
       testsByFeature.set(featureId, list);
     }
 
-    for (const story of resolveSerialIds(parseStoriesFromTest(content), serialIdMap)) {
+    const parsedStories = parseStoriesFromTest(content);
+    for (const story of resolveSerialIds(parsedStories.stories, serialIdMap)) {
       allStorySet.add(story);
       const files = allStoryToFiles.get(story) ?? [];
       files.push(relTestFile);
       allStoryToFiles.set(story, files);
+    }
+    for (const [story, ids] of parsedStories.storyIdsByName.entries()) {
+      const resolvedName = SERIAL_ID_RE.test(story) && serialIdMap.has(story)
+        ? serialIdMap.get(story)
+        : story;
+      const existing = allStoryIdsByName.get(resolvedName) ?? new Set();
+      for (const id of ids) {
+        existing.add(id);
+      }
+      allStoryIdsByName.set(resolvedName, existing);
     }
     for (const story of resolveSerialIds(parseSkippedStoriesFromTest(content), serialIdMap)) {
       allSkippedStorySet.add(story);
@@ -435,6 +497,7 @@ async function main() {
     let hasFailures = false;
     for (const feature of requestedFeatures) {
       const featureScenarios = deltaFeatureScenarios.get(feature);
+      const featureScenarioEntries = deltaFeatureScenarioEntries.get(feature) ?? [];
       if (!featureScenarios || featureScenarios.size === 0) {
         console.error(`No docx-primitives spec delta found for feature '${feature}'.`);
         hasFailures = true;
@@ -444,22 +507,55 @@ async function main() {
       const featureTestFiles = testsByFeature.get(feature) ?? [];
       const featureStorySet = new Set();
       const featureStoryToFiles = new Map();
+      const featureStoryIdsByName = new Map();
       for (const tf of featureTestFiles) {
         const content = await fs.readFile(tf, 'utf-8');
         const relTestFile = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
-        for (const story of resolveSerialIds(parseStoriesFromTest(content), serialIdMap)) {
+        const parsedStories = parseStoriesFromTest(content);
+        for (const story of resolveSerialIds(parsedStories.stories, serialIdMap)) {
           featureStorySet.add(story);
           const files = featureStoryToFiles.get(story) ?? [];
           files.push(relTestFile);
           featureStoryToFiles.set(story, files);
+        }
+        for (const [story, ids] of parsedStories.storyIdsByName.entries()) {
+          const resolvedName = SERIAL_ID_RE.test(story) && serialIdMap.has(story)
+            ? serialIdMap.get(story)
+            : story;
+          const existing = featureStoryIdsByName.get(resolvedName) ?? new Set();
+          for (const id of ids) {
+            existing.add(id);
+          }
+          featureStoryIdsByName.set(resolvedName, existing);
         }
       }
 
       const sortedScenarios = [...featureScenarios].sort();
       const missing = sortedScenarios.filter((s) => !featureStorySet.has(s));
       const extra = [...featureStorySet].filter((s) => !featureScenarios.has(s)).sort();
+      const scenarioIdIssues = [];
+      for (const scenario of featureScenarioEntries) {
+        if (!scenario.id) {
+          continue;
+        }
+        if (!featureStorySet.has(scenario.name)) {
+          continue;
+        }
+        const mappedIds = featureStoryIdsByName.get(scenario.name) ?? new Set();
+        if (mappedIds.size === 0) {
+          scenarioIdIssues.push(
+            `${scenario.name}: expected ID [${scenario.id}] in test .openspec(...) mapping, but no ID was found`,
+          );
+          continue;
+        }
+        if (!mappedIds.has(scenario.id)) {
+          scenarioIdIssues.push(
+            `${scenario.name}: expected ID [${scenario.id}], but found [${[...mappedIds].sort().join(', ')}]`,
+          );
+        }
+      }
 
-      if (missing.length === 0) {
+      if (missing.length === 0 && scenarioIdIssues.length === 0) {
         const extraSuffix = extra.length > 0
           ? ` (+${extra.length} bonus tests beyond spec)`
           : '';
@@ -472,6 +568,10 @@ async function main() {
         if (extra.length > 0) {
           console.error(`  Extra stories beyond spec (informational, not a failure):`);
           for (const s of extra) console.error(`    - ${s}`);
+        }
+        if (scenarioIdIssues.length > 0) {
+          console.error(`  Scenario ID mismatches:`);
+          for (const issue of scenarioIdIssues) console.error(`    - ${issue}`);
         }
       }
     }
@@ -491,6 +591,27 @@ async function main() {
   const canonicalMissing = sortedCanonical.filter((s) => !allStorySet.has(s));
   const canonicalCovered = sortedCanonical.filter((s) => allStorySet.has(s));
   const trulyExtra = [...allStorySet].filter((s) => !allKnownScenarios.has(s)).sort();
+  const canonicalScenarioIdIssues = [];
+  for (const scenario of canonicalScenarioEntries) {
+    if (!scenario.id || excludedScenarios.has(scenario.name)) {
+      continue;
+    }
+    if (!allStorySet.has(scenario.name)) {
+      continue;
+    }
+    const mappedIds = allStoryIdsByName.get(scenario.name) ?? new Set();
+    if (mappedIds.size === 0) {
+      canonicalScenarioIdIssues.push(
+        `${scenario.name}: expected ID [${scenario.id}] in test .openspec(...) mapping, but no ID was found`,
+      );
+      continue;
+    }
+    if (!mappedIds.has(scenario.id)) {
+      canonicalScenarioIdIssues.push(
+        `${scenario.name}: expected ID [${scenario.id}], but found [${[...mappedIds].sort().join(', ')}]`,
+      );
+    }
+  }
 
   // Print canonical summary
   console.log(`Canonical spec: ${sortedCanonical.length} scenarios (${excludedScenarios.size} excluded)`);
@@ -499,6 +620,10 @@ async function main() {
   if (canonicalMissing.length > 0) {
     console.error(`\nMISSING from canonical spec (${canonicalMissing.length}):`);
     for (const s of canonicalMissing) console.error(`  - ${s}`);
+  }
+  if (canonicalScenarioIdIssues.length > 0) {
+    console.error(`\nScenario ID mismatches in canonical spec coverage (${canonicalScenarioIdIssues.length}):`);
+    for (const issue of canonicalScenarioIdIssues) console.error(`  - ${issue}`);
   }
 
   if (trulyExtra.length > 0) {
@@ -514,33 +639,68 @@ async function main() {
     console.log('');
     for (const feature of activeFeatures) {
       const featureScenarios = deltaFeatureScenarios.get(feature);
+      const featureScenarioEntries = deltaFeatureScenarioEntries.get(feature) ?? [];
       const featureTestFiles = testsByFeature.get(feature) ?? [];
       const featureStorySet = new Set();
       const featureStoryToFiles = new Map();
+      const featureStoryIdsByName = new Map();
       for (const tf of featureTestFiles) {
         const content = await fs.readFile(tf, 'utf-8');
         const relTestFile = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
-        for (const story of resolveSerialIds(parseStoriesFromTest(content), serialIdMap)) {
+        const parsedStories = parseStoriesFromTest(content);
+        for (const story of resolveSerialIds(parsedStories.stories, serialIdMap)) {
           featureStorySet.add(story);
           const files = featureStoryToFiles.get(story) ?? [];
           files.push(relTestFile);
           featureStoryToFiles.set(story, files);
+        }
+        for (const [story, ids] of parsedStories.storyIdsByName.entries()) {
+          const resolvedName = SERIAL_ID_RE.test(story) && serialIdMap.has(story)
+            ? serialIdMap.get(story)
+            : story;
+          const existing = featureStoryIdsByName.get(resolvedName) ?? new Set();
+          for (const id of ids) {
+            existing.add(id);
+          }
+          featureStoryIdsByName.set(resolvedName, existing);
         }
       }
 
       const sortedScenarios = [...featureScenarios].sort();
       const missing = sortedScenarios.filter((s) => !featureStorySet.has(s));
       const extra = [...featureStorySet].filter((s) => !featureScenarios.has(s)).sort();
+      const scenarioIdIssues = [];
+      for (const scenario of featureScenarioEntries) {
+        if (!scenario.id) {
+          continue;
+        }
+        if (!featureStorySet.has(scenario.name)) {
+          continue;
+        }
+        const mappedIds = featureStoryIdsByName.get(scenario.name) ?? new Set();
+        if (mappedIds.size === 0) {
+          scenarioIdIssues.push(
+            `${scenario.name}: expected ID [${scenario.id}] in test .openspec(...) mapping, but no ID was found`,
+          );
+          continue;
+        }
+        if (!mappedIds.has(scenario.id)) {
+          scenarioIdIssues.push(
+            `${scenario.name}: expected ID [${scenario.id}], but found [${[...mappedIds].sort().join(', ')}]`,
+          );
+        }
+      }
 
       featureReports.push({
         feature,
         scenarios: sortedScenarios,
         missing,
         extra,
+        scenarioIdIssues,
         storyToFiles: featureStoryToFiles,
       });
 
-      if (missing.length === 0) {
+      if (missing.length === 0 && scenarioIdIssues.length === 0) {
         const extraSuffix = extra.length > 0
           ? ` (+${extra.length} bonus tests beyond spec)`
           : '';
@@ -548,11 +708,12 @@ async function main() {
       } else {
         if (strict) {
           deltaFailures += 1;
-          console.error(`FAIL ${feature}: ${missing.length}/${sortedScenarios.length} delta scenarios missing`);
+          console.error(`FAIL ${feature}: ${missing.length}/${sortedScenarios.length} delta scenarios missing, ${scenarioIdIssues.length} scenario ID mismatch(es)`);
         } else {
-          console.error(`WARN ${feature}: ${missing.length}/${sortedScenarios.length} delta scenarios missing`);
+          console.error(`WARN ${feature}: ${missing.length}/${sortedScenarios.length} delta scenarios missing, ${scenarioIdIssues.length} scenario ID mismatch(es)`);
         }
         for (const s of missing) console.error(`  - ${s}`);
+        for (const issue of scenarioIdIssues) console.error(`  - ${issue}`);
       }
     }
   }
@@ -573,10 +734,13 @@ async function main() {
   }
 
   // Exit code: fail only for canonical spec gaps
-  if (canonicalMissing.length > 0 || (strict && deltaFailures > 0)) {
+  if (canonicalMissing.length > 0 || canonicalScenarioIdIssues.length > 0 || (strict && deltaFailures > 0)) {
     process.exitCode = 1;
     if (canonicalMissing.length > 0) {
       console.error('\nFAIL: Canonical spec coverage gaps detected.');
+    }
+    if (canonicalScenarioIdIssues.length > 0) {
+      console.error('\nFAIL: Canonical scenario ID mismatches detected.');
     }
     if (strict && deltaFailures > 0) {
       console.error(`FAIL: ${deltaFailures} change delta(s) contain unmapped scenarios.`);

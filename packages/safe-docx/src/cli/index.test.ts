@@ -1,7 +1,9 @@
 import { describe, expect, vi } from 'vitest';
-import { allureStep } from '../testing/allure-test.js';
+import { itAllure, allureStep } from '../testing/allure-test.js';
 import { createProgram } from './index.js';
 import type { CompareCommandArgs } from './commands/compare.js';
+
+const it = itAllure.epic('Document Editing').withLabels({ feature: 'CLI Routing' });
 
 describe('safe-docx CLI routing', () => {
   it('defaults to serve command when no subcommand is provided', async () => {

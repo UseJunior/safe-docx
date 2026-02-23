@@ -6,7 +6,7 @@ import type { RelsMap } from './relationships.js';
 import { computeModalBaseline, type AnnotatedRun } from './formatting_tags.js';
 
 const TEST_FEATURE = 'add-run-level-formatting-visibility';
-const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 const humanReadableTest = test.allure({
   tags: ['human-readable'],
   parameters: { audience: 'non-technical' },

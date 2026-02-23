@@ -353,22 +353,11 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
   const missing = scenarios.filter((s) => !storyLookup.has(s));
   const extra = stories.filter((s) => !scenarioLookup.has(s));
   const scenarioIdIssues = [];
-  // Track which scenarios were resolved from serial-ID-only .openspec() calls
-  const resolvedFromSerialId = new Set();
-  for (const story of storySet) {
-    if (SERIAL_ID_RE.test(story) && serialIdMap.has(story)) {
-      resolvedFromSerialId.add(serialIdMap.get(story));
-    }
-  }
   for (const scenario of scenarioEntries) {
     if (!scenario.id) {
       continue;
     }
     if (!storyLookup.has(scenario.name)) {
-      continue;
-    }
-    // Serial-ID-only .openspec() calls implicitly carry the correct ID
-    if (resolvedFromSerialId.has(scenario.name)) {
       continue;
     }
     const mappedIds = storyIdsByName.get(scenario.name) ?? new Set();

@@ -6,8 +6,7 @@ import {
 } from '../../../../testing/allure-test-factory.js';
 
 type EpicName =
-  | 'DOCX Primitives'
-  | 'OpenSpec Traceability';
+  | 'DOCX Primitives';
 
 export type AllureRuntime = SharedAllureRuntime;
 export type AllureStepContext = SharedAllureStepContext;

@@ -1,5 +1,5 @@
 import { pathToFileURL } from 'url';
-import { readdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import type { File, Reporter, TaskResultPack, Vitest } from 'vitest';
 
@@ -13,6 +13,7 @@ type AllureReporterLike = {
 type CompatReporterOptions = {
   innerReporterPath: string;
   resultsDir?: string;
+  cleanResultsDir?: boolean;
   packageName?: string;
   [key: string]: unknown;
 };
@@ -22,6 +23,7 @@ const DEDUPE_LABEL_NAMES = new Set(['parentSuite', 'suite', 'subSuite']);
 export default class AllureVitestCompatReporter implements Reporter {
   private ctx: Vitest | undefined;
   private innerPromise: Promise<AllureReporterLike | null> | null = null;
+  private cleanedResultsDir = false;
   private options: CompatReporterOptions;
 
   constructor(options?: CompatReporterOptions) {
@@ -133,6 +135,8 @@ export default class AllureVitestCompatReporter implements Reporter {
     if (this.innerPromise) return this.innerPromise;
 
     this.innerPromise = (async () => {
+      await this.ensureResultsDirClean();
+
       const { innerReporterPath, ...innerOptions } = this.options;
       if (!innerReporterPath) {
         // eslint-disable-next-line no-console
@@ -166,5 +170,31 @@ export default class AllureVitestCompatReporter implements Reporter {
     })();
 
     return this.innerPromise;
+  }
+
+  private async ensureResultsDirClean(): Promise<void> {
+    if (this.cleanedResultsDir) {
+      return;
+    }
+    this.cleanedResultsDir = true;
+
+    if (!this.options.cleanResultsDir) {
+      return;
+    }
+
+    const resultsDir = this.options.resultsDir;
+    if (!resultsDir) {
+      return;
+    }
+
+    try {
+      await rm(resultsDir, { recursive: true, force: true });
+      await mkdir(resultsDir, { recursive: true });
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[safe-docx-mcpb] Failed to clean results dir '${resultsDir}': ${String(error)}`,
+      );
+    }
   }
 }

@@ -10,11 +10,9 @@ import {
 
 type EpicName =
   | 'Document Editing'
-  | 'Session Management'
+  | 'Document Comparison'
   | 'Document Reading'
-  | 'Download & Export'
-  | 'Matching Engine'
-  | 'OpenSpec Traceability';
+  | 'Test Infrastructure';
 
 export type AllureRuntime = SharedAllureRuntime;
 export type AllureStepContext = SharedAllureStepContext;

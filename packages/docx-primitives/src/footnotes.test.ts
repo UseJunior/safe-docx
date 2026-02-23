@@ -17,7 +17,7 @@ import { getParagraphText } from './text.js';
 import { allureJsonAttachment, allureStep, testAllure } from '../test/helpers/allure-test.js';
 
 const TEST_FEATURE = 'add-footnote-support';
-const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 const humanReadableTest = test.allure({
   tags: ['human-readable'],
   parameters: { audience: 'non-technical' },

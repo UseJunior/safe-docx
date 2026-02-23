@@ -4,7 +4,7 @@ import { parseXml, serializeXml } from './xml.js';
 import { itAllure, allureStep, allureJsonAttachment } from '../test/helpers/allure-test.js';
 
 const TEST_FEATURE = 'add-accept-tracked-changes';
-const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const it = itAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 const humanReadableIt = it.allure({
   tags: ['human-readable'],
   parameters: { audience: 'non-technical' },

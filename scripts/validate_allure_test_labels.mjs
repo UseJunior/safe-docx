@@ -118,7 +118,7 @@ function validateFile(relativePath) {
   const body = readFileSync(absolutePath, 'utf-8');
   const errors = [];
   const isAllureFile = relativePath.endsWith('.allure.test.ts');
-  const isOpenSpecTraceabilityFile = /OpenSpec Traceability/.test(body);
+  const isOpenSpecTraceabilityFile = /\.openspec\(/.test(body);
 
   if (!helperImportRe.test(body)) {
     errors.push('must import the shared Allure helper (`allure-test`).');

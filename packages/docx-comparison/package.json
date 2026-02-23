@@ -11,6 +11,7 @@
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "node ../../node_modules/vitest/vitest.mjs",
     "test:run": "node ../../node_modules/vitest/vitest.mjs run",
+    "test:baseline": "node ../../node_modules/vitest/vitest.mjs run -c vitest.baseline.config.ts",
     "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "check:spec-coverage": "node scripts/validate_openspec_coverage.mjs",
     "lint": "tsc --noEmit",

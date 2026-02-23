@@ -37,7 +37,7 @@ const SIMPLE_WORD_CHANGE_FIXTURE = fileURLToPath(
 );
 
 describe('Traceability: Download Defaults and Stable Node IDs', () => {
-  const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
   const humanReadableTest = test.allure({
     tags: ['human-readable'],
     parameters: { audience: 'non-technical' },

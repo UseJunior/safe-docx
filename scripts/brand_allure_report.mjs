@@ -293,8 +293,10 @@ function patchReportIndex(reportDir, iconFileWithVersion, options) {
   }
 
   let html = readUtf8(indexPath);
+  // Always replace the favicon (even in ux-only mode) so the browser tab
+  // shows the SafeDocX mark instead of the default Allure logo.
+  html = upsertFaviconLinks(html, iconFileWithVersion);
   if (options.applyIdentityBranding) {
-    html = upsertFaviconLinks(html, iconFileWithVersion);
     html = updateAllureOptions(html, iconFileWithVersion);
   }
   html = stripBlock(html, BRANDING_START, BRANDING_END);

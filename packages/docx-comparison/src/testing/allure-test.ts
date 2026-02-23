@@ -6,15 +6,14 @@ import {
 } from '../../../../testing/allure-test-factory.js';
 
 type EpicName =
-  | 'DOCX Comparison'
-  | 'OpenSpec Traceability';
+  | 'Document Comparison';
 
 export type AllureRuntime = SharedAllureRuntime;
 export type AllureStepContext = SharedAllureStepContext;
 export type AllureBddContext = SharedAllureBddContext;
 
 const helpers = createAllureTestHelpers<EpicName>({
-  defaultEpic: 'DOCX Comparison',
+  defaultEpic: 'Document Comparison',
 });
 
 export const {

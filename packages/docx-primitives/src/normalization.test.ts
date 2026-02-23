@@ -8,7 +8,7 @@ import { itAllure, allureStep, allureJsonAttachment } from '../test/helpers/allu
 const TEST_FEATURE = 'add-auto-normalization-on-open';
 const W_NS = OOXML.W_NS;
 
-const it = itAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const it = itAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 
 const humanReadableIt = it.allure({
   

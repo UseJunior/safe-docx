@@ -16,7 +16,7 @@ async function writeDocx(paragraphs: string[], filename = 'input.docx'): Promise
 
 describe('init_plan tool', () => {
   registerCleanup();
-  const test = testAllure.epic('Session Management').withLabels({ feature: 'init_plan tool' });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: 'init_plan tool' });
 
   test('creates revision-bound plan context from explicit session_id', async () => {
     const manager = createTestSessionManager();

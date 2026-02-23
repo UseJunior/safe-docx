@@ -6,8 +6,7 @@ import {
 } from '../../../../testing/allure-test-factory.js';
 
 type EpicName =
-  | 'Safe DOCX MCP Bundle'
-  | 'OpenSpec Traceability';
+  | 'Safe DOCX MCP Bundle';
 
 export type AllureRuntime = SharedAllureRuntime;
 export type AllureStepContext = SharedAllureStepContext;

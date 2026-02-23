@@ -11,7 +11,7 @@ import {
 
 const W_NS = OOXML.W_NS;
 const TEST_FEATURE = 'prevent-footnote-double-elevation';
-const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 const humanReadableTest = test.allure({
   tags: ['human-readable'],
   parameters: { audience: 'non-technical' },
@@ -82,7 +82,7 @@ describe('prevent_double_elevation', () => {
           'w:position, the position is redundant and causes double-elevation on non-Windows ' +
           'renderers. preventDoubleElevation removes the position while preserving vertAlign.',
       })
-      .openspec('SDX-DE-001')(
+      .openspec('[SDX-DE-001] remove position when vertAlign superscript is present on same style')(
       '[SDX-DE-001] remove position when vertAlign superscript is present on same style',
       async ({ given, when, then, and, attachPrettyXml, attachJsonLastStep }: AllureBddContext) => {
         const scenarioId = 'SDX-DE-001';
@@ -169,7 +169,7 @@ describe('prevent_double_elevation', () => {
           'When a FootnoteReference style has w:vertAlign="superscript" but no w:position, ' +
           'there is no double-elevation defect. preventDoubleElevation leaves the style unchanged.',
       })
-      .openspec('SDX-DE-002')(
+      .openspec('[SDX-DE-002] no-op when only vertAlign is present')(
       '[SDX-DE-002] no-op when only vertAlign is present',
       async ({ given, when, then, and, attachPrettyXml, attachJsonLastStep }: AllureBddContext) => {
         const scenarioId = 'SDX-DE-002';
@@ -244,7 +244,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-003')(
+    test.openspec('[SDX-DE-003] no-op when only position is present')(
       '[SDX-DE-003] no-op when only position is present',
       async () => {
         let doc: Document;
@@ -276,7 +276,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-004')(
+    test.openspec('[SDX-DE-004] detect vertAlign through basedOn inheritance chain')(
       '[SDX-DE-004] detect vertAlign through basedOn inheritance chain',
       async () => {
         let doc: Document;
@@ -311,7 +311,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-005')(
+    test.openspec('[SDX-DE-005] child baseline overrides ancestor superscript (no fix)')(
       '[SDX-DE-005] child baseline overrides ancestor superscript (no fix)',
       async () => {
         let doc: Document;
@@ -348,7 +348,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-006')(
+    test.openspec('[SDX-DE-006] inherited position neutralized locally')(
       '[SDX-DE-006] inherited position neutralized locally',
       async () => {
         let doc: Document;
@@ -387,7 +387,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-007')(
+    test.openspec('[SDX-DE-007] shared parent not mutated (sibling safety)')(
       '[SDX-DE-007] shared parent not mutated (sibling safety)',
       async () => {
         let doc: Document;
@@ -434,7 +434,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-008')(
+    test.openspec('[SDX-DE-008] idempotent on already-fixed styles')(
       '[SDX-DE-008] idempotent on already-fixed styles',
       async () => {
         let doc: Document;
@@ -464,7 +464,7 @@ describe('prevent_double_elevation', () => {
   });
 
   describe('edge cases', () => {
-    test.openspec('SDX-DE-009')(
+    test.openspec('[SDX-DE-009] preserve subscript with position')(
       '[SDX-DE-009] preserve subscript with position',
       async () => {
         let doc: Document;
@@ -496,7 +496,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-010')(
+    test.openspec('[SDX-DE-010] negative position preserved')(
       '[SDX-DE-010] negative position preserved',
       async () => {
         let doc: Document;
@@ -528,7 +528,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-011')(
+    test.openspec('[SDX-DE-011] non-target style is not modified')(
       '[SDX-DE-011] non-target style is not modified',
       async () => {
         let doc: Document;
@@ -560,7 +560,7 @@ describe('prevent_double_elevation', () => {
       },
     );
 
-    test.openspec('SDX-DE-012')(
+    test.openspec('[SDX-DE-012] handles both FootnoteReference and EndnoteReference')(
       '[SDX-DE-012] handles both FootnoteReference and EndnoteReference',
       async () => {
         let doc: Document;

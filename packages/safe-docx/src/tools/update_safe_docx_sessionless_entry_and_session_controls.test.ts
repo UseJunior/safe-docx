@@ -28,7 +28,7 @@ async function createDoc(paragraphs: string[], name = 'input.docx'): Promise<str
 describe('Traceability: Sessionless Entry and Session Controls', () => {
   registerCleanup();
 
-  const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
 
   const humanReadableTest = test.allure({
     

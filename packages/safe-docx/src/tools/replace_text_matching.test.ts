@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import { findUniqueSubstringMatch } from '@usejunior/docx-primitives';
 import { itAllure, allureStep, allureJsonAttachment } from '../testing/allure-test.js';
 
-const it = itAllure.epic('Matching Engine').withLabels({ feature: 'Replace Text' });
+const it = itAllure.epic('Document Editing').withLabels({ feature: 'Replace Text' });
 
 describe('replace_text matching fallbacks (Allure)', () => {
   it('uses exact mode when strings match exactly', async () => {

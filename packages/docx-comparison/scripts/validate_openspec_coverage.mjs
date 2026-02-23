@@ -23,6 +23,11 @@ function normalizeScenarioName(value) {
 
 const SERIAL_ID_RE = /^(?:SDX|OA)-[\w-]+-?\d+$/;
 
+function extractScenarioId(rawScenario) {
+  const match = rawScenario.trim().match(/^\[([^\]]+)\]/);
+  return match ? match[1].trim() : null;
+}
+
 function parseSerialIdMap(specContent) {
   const map = new Map();
   const re = /^\s*####\s+Scenario:\s*\[([^\]]+)\]\s*(.+?)\s*$/gm;
@@ -46,11 +51,19 @@ function resolveSerialIds(stories, serialIdMap) {
 }
 
 function parseScenariosFromSpec(content) {
-  const scenarios = new Set();
+  const scenarios = [];
+  const seen = new Set();
   const scenarioHeader = /^\s*####\s+Scenario:\s*(.+?)\s*$/gm;
   let m = scenarioHeader.exec(content);
   while (m) {
-    scenarios.add(normalizeScenarioName(m[1]));
+    const raw = m[1].trim();
+    const name = normalizeScenarioName(raw);
+    if (seen.has(name)) {
+      m = scenarioHeader.exec(content);
+      continue;
+    }
+    seen.add(name);
+    scenarios.push({ name, id: extractScenarioId(raw) });
     m = scenarioHeader.exec(content);
   }
   return scenarios;
@@ -58,22 +71,35 @@ function parseScenariosFromSpec(content) {
 
 function parseStoriesFromTest(content) {
   const stories = new Set();
+  const storyIdsByName = new Map();
+
+  function addStory(rawValue) {
+    const normalized = normalizeScenarioName(rawValue);
+    stories.add(normalized);
+    const id = extractScenarioId(rawValue);
+    if (!id) {
+      return;
+    }
+    const ids = storyIdsByName.get(normalized) ?? new Set();
+    ids.add(id);
+    storyIdsByName.set(normalized, ids);
+  }
 
   const viaOpenspec = /\.openspec\(\s*(["'`])([\s\S]*?)\1\s*\)/g;
   let m = viaOpenspec.exec(content);
   while (m) {
-    stories.add(normalizeScenarioName(m[2]));
+    addStory(m[2]);
     m = viaOpenspec.exec(content);
   }
 
   const viaAllureStory = /allure\.story\(\s*(["'`])([\s\S]*?)\1\s*\)/g;
   m = viaAllureStory.exec(content);
   while (m) {
-    stories.add(normalizeScenarioName(m[2]));
+    addStory(m[2]);
     m = viaAllureStory.exec(content);
   }
 
-  return stories;
+  return { stories, storyIdsByName };
 }
 
 function parseSkippedStoriesFromTest(content) {
@@ -189,9 +215,10 @@ async function main() {
     return;
   }
 
-  const scenarioSet = parseScenariosFromSpec(canonicalSpec);
+  const scenarioEntries = parseScenariosFromSpec(canonicalSpec);
   const serialIdMap = parseSerialIdMap(canonicalSpec);
-  const scenarios = [...scenarioSet].sort();
+  const scenarios = scenarioEntries.map((entry) => entry.name).sort();
+  const scenarioLookup = new Set(scenarios);
   if (scenarios.length === 0) {
     console.error(`No '#### Scenario:' entries found in ${CANONICAL_SPEC}`);
     process.exitCode = 1;
@@ -202,17 +229,32 @@ async function main() {
 
   const storyToFiles = new Map();
   const storySet = new Set();
+  const storyIdsByName = new Map();
   const skippedStorySet = new Set();
 
   for (const tf of testFiles) {
     const content = await fs.readFile(tf, 'utf-8');
     const rel = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
 
-    for (const story of resolveSerialIds(parseStoriesFromTest(content), serialIdMap)) {
+    const parsedStories = parseStoriesFromTest(content);
+    for (const story of resolveSerialIds(parsedStories.stories, serialIdMap)) {
       storySet.add(story);
       const files = storyToFiles.get(story) ?? [];
       if (!files.includes(rel)) files.push(rel);
       storyToFiles.set(story, files);
+    }
+    for (const [story, ids] of parsedStories.storyIdsByName.entries()) {
+      const resolvedName = SERIAL_ID_RE.test(story) && serialIdMap.has(story)
+        ? serialIdMap.get(story)
+        : story;
+      if (!scenarioLookup.has(resolvedName)) {
+        continue;
+      }
+      const existing = storyIdsByName.get(resolvedName) ?? new Set();
+      for (const id of ids) {
+        existing.add(id);
+      }
+      storyIdsByName.set(resolvedName, existing);
     }
 
     for (const skipped of resolveSerialIds(parseSkippedStoriesFromTest(content), serialIdMap)) {
@@ -223,7 +265,28 @@ async function main() {
   const missing = scenarios.filter((scenario) => !storySet.has(scenario));
   const pending = scenarios.filter((scenario) => skippedStorySet.has(scenario));
   const covered = scenarios.length - missing.length;
-  const extra = [...storySet].filter((story) => !scenarioSet.has(story)).sort();
+  const extra = [...storySet].filter((story) => !scenarioLookup.has(story)).sort();
+  const scenarioIdIssues = [];
+  for (const scenario of scenarioEntries) {
+    if (!scenario.id) {
+      continue;
+    }
+    if (!storySet.has(scenario.name)) {
+      continue;
+    }
+    const mappedIds = storyIdsByName.get(scenario.name) ?? new Set();
+    if (mappedIds.size === 0) {
+      scenarioIdIssues.push(
+        `${scenario.name}: expected ID [${scenario.id}] in test .openspec(...) mapping, but no ID was found`,
+      );
+      continue;
+    }
+    if (!mappedIds.has(scenario.id)) {
+      scenarioIdIssues.push(
+        `${scenario.name}: expected ID [${scenario.id}], but found [${[...mappedIds].sort().join(', ')}]`,
+      );
+    }
+  }
 
   const matrix = buildMatrixMarkdown({
     scenarios,
@@ -235,7 +298,7 @@ async function main() {
   await fs.writeFile(writeMatrixPath, matrix, 'utf-8');
 
   const pct = ((covered / scenarios.length) * 100).toFixed(1);
-  if (missing.length === 0 && pending.length === 0) {
+  if (missing.length === 0 && pending.length === 0 && scenarioIdIssues.length === 0) {
     const extraSuffix = extra.length > 0 ? ` (+${extra.length} additional stories not in spec)` : '';
     console.log(`PASS docx-comparison: ${covered}/${scenarios.length} scenarios mapped (${pct}%)${extraSuffix}`);
   } else {
@@ -251,6 +314,12 @@ async function main() {
       console.error(`  Pending scenarios (${pending.length}):`);
       for (const scenario of pending) {
         console.error(`    - ${scenario}`);
+      }
+    }
+    if (scenarioIdIssues.length > 0) {
+      console.error(`  Scenario ID mismatches (${scenarioIdIssues.length}):`);
+      for (const issue of scenarioIdIssues) {
+        console.error(`    - ${issue}`);
       }
     }
     if (strict) process.exitCode = 1;

@@ -1,7 +1,1 @@
-{
-  "version": 3,
-  "sources": ["allure-test.ts"],
-  "sourcesContent": ["import {\n  createAllureTestHelpers,\n  type AllureRuntime as SharedAllureRuntime,\n  type AllureStepContext as SharedAllureStepContext,\n} from '../../../../testing/allure-test-factory.js';\n\ntype EpicName =\n  | 'DOCX Primitives'\n  | 'OpenSpec Traceability';\n\nexport type AllureRuntime = SharedAllureRuntime;\nexport type AllureStepContext = SharedAllureStepContext;\n\nconst helpers = createAllureTestHelpers<EpicName>({\n  defaultEpic: 'DOCX Primitives',\n});\n\nexport const {\n  itAllure,\n  testAllure,\n  allureStep,\n  allureParameter,\n  allureAttachment,\n  allureJsonAttachment,\n  getAllureRuntime,\n} = helpers;\n"],
-  "mappings": "AAAA;AAAA,EACE;AAAA,OAGK;AASP,MAAM,UAAU,wBAAkC;AAAA,EAChD,aAAa;AACf,CAAC;AAEM,MAAM;AAAA,EACX;AAAA,EACA;AAAA,EACA;AAAA,EACA;AAAA,EACA;AAAA,EACA;AAAA,EACA;AACF,IAAI;",
-  "names": []
-}
+{"version":3,"file":"allure-test.js","sourceRoot":"","sources":["allure-test.ts"],"names":[],"mappings":"AAAA,OAAO,EACL,uBAAuB,GAIxB,MAAM,4CAA4C,CAAC;AASpD,MAAM,OAAO,GAAG,uBAAuB,CAAW;IAChD,WAAW,EAAE,iBAAiB;CAC/B,CAAC,CAAC;AAEH,MAAM,CAAC,MAAM,EACX,QAAQ,EACR,UAAU,EACV,UAAU,EACV,eAAe,EACf,gBAAgB,EAChB,oBAAoB,EACpB,gBAAgB,GACjB,GAAG,OAAO,CAAC"}

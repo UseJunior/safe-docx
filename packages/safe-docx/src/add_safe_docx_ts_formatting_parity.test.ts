@@ -26,7 +26,7 @@ import fs from 'node:fs/promises';
 const TEST_FEATURE = 'add-safe-docx-ts-formatting-parity';
 
 describe('Traceability: TypeScript Formatting Parity', () => {
-  const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
   const humanReadableTest = test.allure({
     tags: ['human-readable'],
     parameters: { audience: 'non-technical' },

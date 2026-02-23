@@ -11,7 +11,7 @@ function countParagraphs(xml: string): number {
 }
 
 describe('Paragraph-Level Track Changes Markers (Aspose-Style)', () => {
-  const it = itAllure.epic('DOCX Comparison').withLabels({ feature: 'Paragraph-level markers' });
+  const it = itAllure.epic('Document Comparison').withLabels({ feature: 'Paragraph-level markers' });
   const projectRoot = join(dirname(import.meta.url.replace('file://', '')), '../../../..');
 
   it('encodes inserted/deleted paragraphs with pPr-level marker and rejects without stubs', async () => {

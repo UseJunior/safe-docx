@@ -24,6 +24,7 @@ function parseArgs(argv) {
     outputDir: DEFAULT_OUTPUT_DIR,
     groupBy: DEFAULT_GROUP_BY,
     securityProfile: DEFAULT_SECURITY_PROFILE,
+    resultsDirs: [],
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -62,6 +63,28 @@ function parseArgs(argv) {
       continue;
     }
 
+    if (arg === '--results-dir' && argv[i + 1]) {
+      parsed.resultsDirs.push(argv[i + 1]);
+      i += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--results-dir=')) {
+      parsed.resultsDirs.push(arg.slice('--results-dir='.length));
+      continue;
+    }
+
+    if (arg === '--results-dirs' && argv[i + 1]) {
+      parsed.resultsDirs.push(...argv[i + 1].split(','));
+      i += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--results-dirs=')) {
+      parsed.resultsDirs.push(...arg.slice('--results-dirs='.length).split(','));
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -72,6 +95,14 @@ function parseArgs(argv) {
   }
 
   return parsed;
+}
+
+function hasResultFiles(dir) {
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    return false;
+  }
+  const files = fs.readdirSync(dir).filter((name) => name.endsWith('.json') || name.endsWith('.txt'));
+  return files.length > 0;
 }
 
 function normalizeGroupBy(rawValue) {
@@ -97,12 +128,7 @@ function discoverResultsDirectories() {
     }
 
     const candidate = path.join(packagesDir, entry.name, 'allure-results');
-    if (!fs.existsSync(candidate) || !fs.statSync(candidate).isDirectory()) {
-      continue;
-    }
-
-    const files = fs.readdirSync(candidate).filter((name) => name.endsWith('.json') || name.endsWith('.txt'));
-    if (files.length === 0) {
+    if (!hasResultFiles(candidate)) {
       continue;
     }
 
@@ -110,6 +136,23 @@ function discoverResultsDirectories() {
   }
 
   return directories.sort();
+}
+
+function resolveResultsDirectories(rawDirs) {
+  const normalized = [...new Set(
+    (rawDirs ?? [])
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+      .map((value) => path.isAbsolute(value) ? value : path.resolve(ROOT, value)),
+  )];
+
+  for (const dir of normalized) {
+    if (!hasResultFiles(dir)) {
+      throw new Error(`Allure results directory is missing or empty: ${dir}`);
+    }
+  }
+
+  return normalized.sort();
 }
 
 function shouldCopyResultFile(name) {
@@ -120,6 +163,192 @@ function shouldCopyResultFile(name) {
     name === 'environment.properties' ||
     name === 'executor.json'
   );
+}
+
+function resolveResultIdentity(result, fallback) {
+  const candidates = [
+    result?.historyId,
+    result?.testCaseId,
+    result?.fullName,
+    result?.name,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  return fallback;
+}
+
+function isNewerResultCandidate(next, current) {
+  if (next.start !== current.start) {
+    return next.start > current.start;
+  }
+  if (next.stop !== current.stop) {
+    return next.stop > current.stop;
+  }
+  return next.mtimeMs > current.mtimeMs;
+}
+
+function collectAttachmentSources(node, accumulator) {
+  if (!node || typeof node !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectAttachmentSources(item, accumulator);
+    }
+    return;
+  }
+
+  if (Array.isArray(node.attachments)) {
+    for (const attachment of node.attachments) {
+      if (
+        attachment
+        && typeof attachment === 'object'
+        && typeof attachment.source === 'string'
+        && attachment.source.includes('-attachment.')
+      ) {
+        accumulator.add(attachment.source);
+      }
+    }
+  }
+
+  for (const value of Object.values(node)) {
+    if (value && typeof value === 'object') {
+      collectAttachmentSources(value, accumulator);
+    }
+  }
+}
+
+function pruneResultsDirectory(resultsDir) {
+  const entries = fs.readdirSync(resultsDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name);
+
+  const resultFiles = entries.filter((name) => name.endsWith('-result.json'));
+  if (resultFiles.length === 0) {
+    return {
+      dir: resultsDir,
+      removedResults: 0,
+      removedContainers: 0,
+      removedAttachments: 0,
+      keptResults: 0,
+      parseFailures: 0,
+    };
+  }
+
+  const bestByIdentity = new Map();
+  const keepResultFiles = new Set();
+  let parseFailures = 0;
+
+  for (const fileName of resultFiles) {
+    const filepath = path.join(resultsDir, fileName);
+    let result;
+    try {
+      result = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+    } catch {
+      // Keep malformed files to avoid destructive pruning when parsing fails.
+      keepResultFiles.add(fileName);
+      parseFailures += 1;
+      continue;
+    }
+
+    const identity = resolveResultIdentity(result, fileName);
+    const stat = fs.statSync(filepath);
+    const candidate = {
+      fileName,
+      result,
+      start: Number(result?.start) || 0,
+      stop: Number(result?.stop) || 0,
+      mtimeMs: stat.mtimeMs,
+    };
+
+    const current = bestByIdentity.get(identity);
+    if (!current || isNewerResultCandidate(candidate, current)) {
+      bestByIdentity.set(identity, candidate);
+    }
+  }
+
+  for (const candidate of bestByIdentity.values()) {
+    keepResultFiles.add(candidate.fileName);
+  }
+
+  let removedResults = 0;
+  for (const fileName of resultFiles) {
+    if (keepResultFiles.has(fileName)) {
+      continue;
+    }
+    fs.rmSync(path.join(resultsDir, fileName), { force: true });
+    removedResults += 1;
+  }
+
+  const keepContainerFiles = new Set();
+  const attachmentSources = new Set();
+
+  for (const fileName of keepResultFiles) {
+    const filepath = path.join(resultsDir, fileName);
+    try {
+      const result = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+      collectAttachmentSources(result, attachmentSources);
+
+      const uuid = typeof result?.uuid === 'string' && result.uuid.trim().length > 0
+        ? result.uuid.trim()
+        : typeof result?.id === 'string' && result.id.trim().length > 0
+          ? result.id.trim()
+          : null;
+      if (uuid) {
+        keepContainerFiles.add(`${uuid}-container.json`);
+      }
+    } catch {
+      // Ignore parse errors here: the result file remains and will still be copied.
+    }
+  }
+
+  for (const containerName of keepContainerFiles) {
+    const filepath = path.join(resultsDir, containerName);
+    if (!fs.existsSync(filepath)) {
+      continue;
+    }
+    try {
+      const container = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+      collectAttachmentSources(container, attachmentSources);
+    } catch {
+      // Keep malformed container files untouched.
+    }
+  }
+
+  const containerFiles = entries.filter((name) => name.endsWith('-container.json'));
+  let removedContainers = 0;
+  if (parseFailures === 0) {
+    for (const fileName of containerFiles) {
+      if (keepContainerFiles.has(fileName)) {
+        continue;
+      }
+      fs.rmSync(path.join(resultsDir, fileName), { force: true });
+      removedContainers += 1;
+    }
+  }
+
+  const attachmentFiles = entries.filter((name) => name.includes('-attachment.'));
+  let removedAttachments = 0;
+  for (const fileName of attachmentFiles) {
+    if (attachmentSources.has(fileName)) {
+      continue;
+    }
+    fs.rmSync(path.join(resultsDir, fileName), { force: true });
+    removedAttachments += 1;
+  }
+
+  return {
+    dir: resultsDir,
+    removedResults,
+    removedContainers,
+    removedAttachments,
+    keptResults: keepResultFiles.size,
+    parseFailures,
+  };
 }
 
 function mergeResultsDirectories(resultsDirs) {
@@ -164,15 +393,33 @@ function runCommand(command, args) {
 }
 
 function main() {
-  const { outputDir, groupBy, securityProfile } = parseArgs(process.argv.slice(2));
+  const { outputDir, groupBy, securityProfile, resultsDirs: requestedResultsDirs } = parseArgs(process.argv.slice(2));
   const grouping = normalizeGroupBy(groupBy);
-  const resultsDirs = discoverResultsDirectories();
+  const resultsDirs = requestedResultsDirs.length > 0
+    ? resolveResultsDirectories(requestedResultsDirs)
+    : discoverResultsDirectories();
 
   if (resultsDirs.length === 0) {
     throw new Error('No non-empty allure-results directories found under packages/.');
   }
   if (!fs.existsSync(BRAND_LOGO_SOURCE)) {
     throw new Error(`Missing logo asset: ${BRAND_LOGO_SOURCE}`);
+  }
+
+  const pruneSummary = resultsDirs.map((resultsDir) => pruneResultsDirectory(resultsDir));
+  const removedTotal = pruneSummary.reduce(
+    (sum, item) => sum + item.removedResults + item.removedContainers + item.removedAttachments,
+    0,
+  );
+  if (removedTotal > 0) {
+    const details = pruneSummary
+      .filter((item) => item.removedResults > 0 || item.removedContainers > 0 || item.removedAttachments > 0)
+      .map((item) => {
+        const relativeDir = path.relative(ROOT, item.dir);
+        return `${relativeDir}: -${item.removedResults} result, -${item.removedContainers} container, -${item.removedAttachments} attachment`;
+      })
+      .join('; ');
+    console.log(`Pruned stale Allure artifacts before merge (${removedTotal} files). ${details}`);
   }
 
   const mergedResultsDir = mergeResultsDirectories(resultsDirs);

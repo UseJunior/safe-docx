@@ -34,7 +34,7 @@ import { testAllure } from './testing/allure-test.js';
 import { assertDefined } from './testing/test-utils.js';
 
 const TEST_FEATURE = 'docx-comparison';
-const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 const humanReadableTest = test.allure({
   tags: ['human-readable'],
   parameters: { audience: 'developers' },

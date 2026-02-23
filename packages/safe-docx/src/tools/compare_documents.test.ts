@@ -57,7 +57,7 @@ async function writeTestDocx(dir: string, name: string, paragraphs: string[]): P
 }
 
 describe('compare_documents tool', () => {
-  const test = testAllure.epic('Download & Export').withLabels({ feature: FEATURE_NAME });
+  const test = testAllure.epic('Document Comparison').withLabels({ feature: FEATURE_NAME });
   registerCleanup();
 
   // ── Two-file mode ────────────────────────────────────────────────

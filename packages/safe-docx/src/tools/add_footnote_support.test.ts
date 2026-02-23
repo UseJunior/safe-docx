@@ -14,7 +14,7 @@ import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
 
 const TEST_FEATURE = 'add-footnote-support';
-const test = testAllure.epic('OpenSpec Traceability').withLabels({ feature: TEST_FEATURE });
+const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
 const humanReadableTest = test.allure({
   tags: ['human-readable'],
   parameters: { audience: 'non-technical' },
