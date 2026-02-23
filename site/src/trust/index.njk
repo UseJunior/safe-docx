@@ -21,7 +21,19 @@ title: Trust | Safe DOCX
     <p>Per-package matrices show every `Scenario:` mapped to concrete test files.</p>
   </article>
   <article class="card">
+    <h3>Evidence Story</h3>
+    <p>Step-by-step walkthrough of the DOCX fill pipeline: prompt, JSON payload, and verified output.</p>
+    <a class="cta" href="evidence-story/index.html">View Evidence Story</a>
+  </article>
+  <article class="card">
     <h3>Allure Run Signal</h3>
-    <p>Result status distribution and latest stop time from current Allure artifacts.</p>
+    <p>
+      <strong>{{ trustMetrics.allure.results_total_display }}</strong> recorded,
+      <strong>{{ trustMetrics.allure.pass_rate }}</strong> pass rate.
+    </p>
+    {% if trustMetrics.allure.latest_run_utc %}
+    <p class="meta">Latest run: {{ trustMetrics.allure.latest_run_utc }}</p>
+    {% endif %}
+    <a class="cta" href="{{ trustMetrics.reportUrl }}">Inspect the full test report</a>
   </article>
 </section>

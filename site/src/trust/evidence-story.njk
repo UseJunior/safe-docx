@@ -1,0 +1,236 @@
+---
+layout: layouts/base.njk
+title: Evidence Story - DOCX Fill Pipeline | Safe DOCX
+description: A step-by-step walkthrough of the Safe DOCX fill pipeline, from prompt to JSON payload to final document.
+---
+
+<style>
+  .evidence-flow {
+    display: grid;
+    gap: 1.4rem;
+    margin: 1.6rem 0;
+  }
+
+  .evidence-step {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    padding: 1.2rem 1.4rem;
+    position: relative;
+  }
+
+  .evidence-step::before {
+    content: attr(data-step);
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    margin-bottom: 0.6rem;
+  }
+
+  .evidence-step h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.16rem;
+    margin: 0.4rem 0 0.5rem;
+  }
+
+  .evidence-step p {
+    color: var(--ink-soft);
+    margin: 0 0 0.6rem;
+  }
+
+  .evidence-arrow {
+    display: flex;
+    justify-content: center;
+    color: var(--ink-soft);
+    font-size: 1.6rem;
+    line-height: 1;
+    margin: -0.4rem 0;
+  }
+
+  .evidence-code {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    margin: 0.6rem 0 0;
+  }
+
+  .evidence-code .json-key { color: #89b4fa; }
+  .evidence-code .json-string { color: #a6e3a1; }
+  .evidence-code .json-brace { color: #cdd6f4; }
+  .evidence-code .json-comma { color: #6c7086; }
+
+  .evidence-doc-preview {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    padding: 1.2rem 1.4rem;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 0.95rem;
+    line-height: 1.7;
+    margin: 0.6rem 0 0;
+  }
+
+  .evidence-doc-preview .doc-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .evidence-doc-preview .doc-field {
+    margin: 0.2rem 0;
+  }
+
+  .evidence-doc-preview .doc-field strong {
+    color: var(--ink);
+  }
+
+  .evidence-back {
+    display: inline-block;
+    margin-top: 1.6rem;
+    font-size: 0.92rem;
+  }
+
+  .evidence-meta {
+    margin-top: 1rem;
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--line);
+    padding-top: 0.8rem;
+  }
+
+  .evidence-meta code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    background: rgba(0,0,0,0.04);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+  }
+
+  .evidence-badge {
+    display: inline-block;
+    background: #2d7e5e;
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+  }
+</style>
+
+<section class="hero">
+  <p class="eyebrow">Evidence Story</p>
+  <h1>DOCX Fill Pipeline</h1>
+  <p>
+    This walkthrough shows how Safe DOCX fills a template document with structured data.
+    Each step is tested and recorded as an Allure artifact.
+  </p>
+</section>
+
+<section class="evidence-flow">
+
+  {# ── Step 1: Prompt ── #}
+  <div class="evidence-step" data-step="Step 1">
+    <h3>Prompt</h3>
+    <p>
+      An AI agent receives a request to fill a service agreement template.
+      The template contains placeholder fields like <code>{% raw %}{{client_name}}{% endraw %}</code> that
+      will be replaced with real values.
+    </p>
+    <div class="evidence-doc-preview">
+      <div class="doc-title">Service Agreement</div>
+      <div class="doc-field">Client: <code>{% raw %}{{client_name}}{% endraw %}</code></div>
+      <div class="doc-field">Effective Date: <code>{% raw %}{{effective_date}}{% endraw %}</code></div>
+      <div class="doc-field">Service Description: <code>{% raw %}{{service_description}}{% endraw %}</code></div>
+      <div class="doc-field">Monthly Fee: <code>{% raw %}{{monthly_fee}}{% endraw %}</code></div>
+      <div class="doc-field">Payment Terms: <code>{% raw %}{{payment_terms}}{% endraw %}</code></div>
+      <div class="doc-field">Governing Law: <code>{% raw %}{{governing_law}}{% endraw %}</code></div>
+      <div class="doc-field">Provider: <code>{% raw %}{{provider_name}}{% endraw %}</code></div>
+      <div class="doc-field">Signatory: <code>{% raw %}{{provider_signatory}}{% endraw %}</code>, <code>{% raw %}{{provider_title}}{% endraw %}</code></div>
+    </div>
+  </div>
+
+  <div class="evidence-arrow" aria-hidden="true">&#8595;</div>
+
+  {# ── Step 2: JSON Payload ── #}
+  <div class="evidence-step" data-step="Step 2">
+    <h3>JSON Payload</h3>
+    <p>
+      The fill payload is a structured JSON object mapping each placeholder to its replacement value.
+      This is the same payload used in the automated test.
+    </p>
+    <pre class="evidence-code">{
+  <span class="json-key">"template"</span>: <span class="json-string">"service-agreement-v1"</span><span class="json-comma">,</span>
+  <span class="json-key">"fields"</span>: {
+    <span class="json-key">"client_name"</span>: <span class="json-string">"Acme Corporation"</span><span class="json-comma">,</span>
+    <span class="json-key">"effective_date"</span>: <span class="json-string">"2026-01-15"</span><span class="json-comma">,</span>
+    <span class="json-key">"service_description"</span>: <span class="json-string">"AI-powered document automation platform"</span><span class="json-comma">,</span>
+    <span class="json-key">"monthly_fee"</span>: <span class="json-string">"$4,500"</span><span class="json-comma">,</span>
+    <span class="json-key">"payment_terms"</span>: <span class="json-string">"Net 30"</span><span class="json-comma">,</span>
+    <span class="json-key">"governing_law"</span>: <span class="json-string">"State of Delaware"</span><span class="json-comma">,</span>
+    <span class="json-key">"provider_name"</span>: <span class="json-string">"Junior AI Corp"</span><span class="json-comma">,</span>
+    <span class="json-key">"provider_signatory"</span>: <span class="json-string">"Steven Obiajulu"</span><span class="json-comma">,</span>
+    <span class="json-key">"provider_title"</span>: <span class="json-string">"CEO"</span>
+  }
+}</pre>
+    <p style="margin-top: 0.6rem;">
+      <a href="{{ page.url | rootHref('assets/evidence/docx-fill/input.json') }}">Download raw JSON</a>
+    </p>
+  </div>
+
+  <div class="evidence-arrow" aria-hidden="true">&#8595;</div>
+
+  {# ── Step 3: Final Document ── #}
+  <div class="evidence-step" data-step="Step 3">
+    <h3>Final Document <span class="evidence-badge">Verified</span></h3>
+    <p>
+      Safe DOCX replaces each placeholder using <code>replace_text</code>, preserving all
+      document formatting. The output is downloaded as a clean DOCX file.
+    </p>
+    <div class="evidence-doc-preview">
+      <div class="doc-title">Service Agreement</div>
+      <div class="doc-field"><strong>Client:</strong> Acme Corporation</div>
+      <div class="doc-field"><strong>Effective Date:</strong> 2026-01-15</div>
+      <div class="doc-field"><strong>Service Description:</strong> AI-powered document automation platform</div>
+      <div class="doc-field"><strong>Monthly Fee:</strong> $4,500</div>
+      <div class="doc-field"><strong>Payment Terms:</strong> Net 30</div>
+      <div class="doc-field"><strong>Governing Law:</strong> State of Delaware</div>
+      <div class="doc-field"><strong>Provider:</strong> Junior AI Corp</div>
+      <div class="doc-field"><strong>Signatory:</strong> Steven Obiajulu, CEO</div>
+    </div>
+  </div>
+
+</section>
+
+<section class="evidence-meta">
+  <p>
+    <strong>Automated verification:</strong>
+    The test at <code>src/testing/evidence-story-fill-pipeline.test.ts</code>
+    executes this exact pipeline and verifies that all 9 placeholder fields are
+    correctly replaced, no <code>{% raw %}{{...}}{% endraw %}</code> markers remain, and the
+    output is a valid DOCX (ZIP) file. Allure artifacts include the JSON payload,
+    before/after document text, and the binary output file.
+  </p>
+  <p>
+    <strong>Pipeline steps tested:</strong>
+    <code>open_document</code> &rarr; <code>replace_text</code> &times; 8 &rarr;
+    <code>download</code> (clean) &rarr; validation assertions.
+  </p>
+</section>
+
+<a class="evidence-back" href="{{ page.url | rootHref('trust/index.html') }}">&larr; Back to Trust</a>

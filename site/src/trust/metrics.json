@@ -1,0 +1,18 @@
+{
+  "generated_at_utc": "2026-02-23T20:10:14.237Z",
+  "allure": {
+    "results_total": 655,
+    "unique_stories_total": 633,
+    "unique_epics_total": 3,
+    "unique_features_total": 110,
+    "status_counts": {
+      "passed": 655
+    },
+    "latest_run_utc": "2026-02-23T20:06:50.940Z"
+  },
+  "traceability": {
+    "total_scenarios": 258,
+    "covered_scenarios": 258,
+    "coverage_percent": 100
+  }
+}

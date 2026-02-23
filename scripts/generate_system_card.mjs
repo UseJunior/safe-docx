@@ -6,6 +6,8 @@ import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { parseMatrixMarkdown, parseAllureResults } from './lib/trust-metrics.mjs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -46,108 +48,6 @@ function runNodeScript(scriptRelativePath, scriptArgs = []) {
     cwd: REPO_ROOT,
     stdio: 'inherit',
   });
-}
-
-function parseMatrixMarkdown(markdown, label) {
-  const rows = [];
-  let currentChange = null;
-
-  for (const line of markdown.split('\n')) {
-    const headingMatch = line.match(/^#{2,3}\s+Change:\s+`([^`]+)`/);
-    if (headingMatch) {
-      currentChange = headingMatch[1];
-      continue;
-    }
-
-    if (!line.startsWith('|')) {
-      continue;
-    }
-
-    const cells = line
-      .split('|')
-      .slice(1, -1)
-      .map((value) => value.trim());
-
-    if (cells.length < 2) {
-      continue;
-    }
-
-    if (cells[0] === 'Scenario' || cells[0] === '---') {
-      continue;
-    }
-
-    const status = cells[1];
-    if (!['covered', 'missing', 'pending_impl'].includes(status)) {
-      continue;
-    }
-
-    rows.push({
-      scenario: cells[0],
-      status,
-      fileCell: cells[2] ?? 'n/a',
-      notes: cells[3] ?? '',
-      change: currentChange,
-    });
-  }
-
-  const summary = {
-    label,
-    total: rows.length,
-    covered: rows.filter((row) => row.status === 'covered').length,
-    missing: rows.filter((row) => row.status === 'missing').length,
-    pending: rows.filter((row) => row.status === 'pending_impl').length,
-    changes: [...new Set(rows.map((row) => row.change).filter(Boolean))],
-    missingScenarios: rows
-      .filter((row) => row.status === 'missing' || row.status === 'pending_impl')
-      .map((row) => ({ scenario: row.scenario, status: row.status, change: row.change })),
-  };
-
-  return summary;
-}
-
-async function parseAllureResults(packageLabel, dirPath) {
-  let entries;
-  try {
-    entries = await fs.readdir(dirPath, { withFileTypes: true });
-  } catch {
-    return {
-      packageLabel,
-      available: false,
-      total: 0,
-      latestStop: null,
-      statusCounts: {},
-    };
-  }
-
-  const resultFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('-result.json'))
-    .map((entry) => path.join(dirPath, entry.name));
-
-  const statusCounts = new Map();
-  let latestStop = null;
-
-  for (const filePath of resultFiles) {
-    try {
-      const raw = await fs.readFile(filePath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      const status = String(parsed.status ?? 'unknown');
-      statusCounts.set(status, (statusCounts.get(status) ?? 0) + 1);
-
-      if (typeof parsed.stop === 'number') {
-        latestStop = latestStop == null ? parsed.stop : Math.max(latestStop, parsed.stop);
-      }
-    } catch {
-      statusCounts.set('unknown', (statusCounts.get('unknown') ?? 0) + 1);
-    }
-  }
-
-  return {
-    packageLabel,
-    available: true,
-    total: resultFiles.length,
-    latestStop,
-    statusCounts: Object.fromEntries([...statusCounts.entries()].sort(([a], [b]) => a.localeCompare(b))),
-  };
 }
 
 function utcTimestamp(value) {
