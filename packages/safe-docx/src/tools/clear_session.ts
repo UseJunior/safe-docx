@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 
 export async function clearSession(
@@ -59,8 +60,8 @@ export async function clearSession(
     if (hasSessionId) {
       try {
         await manager.clearSessionById(sessionId);
-      } catch (e: any) {
-        const msg = String(e?.message ?? e);
+      } catch (e: unknown) {
+        const msg = errorMessage(e);
         if (msg.startsWith('INVALID_SESSION_ID:')) {
           return err(
             'INVALID_SESSION_ID',
@@ -92,10 +93,10 @@ export async function clearSession(
       cleared_session_ids: clearedIds,
       cleared_count: clearedIds.length,
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return err(
       'CLEAR_SESSION_ERROR',
-      `Failed to clear session(s): ${String(e?.message ?? e)}`,
+      `Failed to clear session(s): ${errorMessage(e)}`,
     );
   }
 }

@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
@@ -93,9 +94,10 @@ export async function openDocument(
             runs_merged: session.normalizationStats.runsMerged,
             proof_errors_removed: session.normalizationStats.proofErrRemoved,
             redlines_simplified: session.normalizationStats.wrappersConsolidated,
+            double_elevations_fixed: session.normalizationStats.doubleElevationsFixed,
             normalization_skipped: false,
           }
-        : { runs_merged: 0, redlines_simplified: 0, normalization_skipped: true },
+        : { runs_merged: 0, redlines_simplified: 0, double_elevations_fixed: 0, normalization_skipped: true },
       download_defaults: {
         default_variants: ['clean', 'redline'],
         default_download_format: 'both',
@@ -104,7 +106,7 @@ export async function openDocument(
       },
       tools: getAvailableToolsSchema(),
     });
-  } catch (e: any) {
-    return err('FILE_READ_ERROR', `Failed to read file: ${String(e?.message ?? e)}`, 'Ensure the file exists and is readable.');
+  } catch (e: unknown) {
+    return err('FILE_READ_ERROR', `Failed to read file: ${errorMessage(e)}`, 'Ensure the file exists and is readable.');
   }
 }

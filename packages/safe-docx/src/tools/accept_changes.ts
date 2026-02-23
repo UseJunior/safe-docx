@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
 
@@ -17,7 +18,7 @@ export async function acceptChanges(
       ...stats,
       session_id: session.sessionId,
     }, metadata));
-  } catch (e: any) {
-    return err('ACCEPT_CHANGES_ERROR', e?.message ?? String(e));
+  } catch (e: unknown) {
+    return err('ACCEPT_CHANGES_ERROR', errorMessage(e));
   }
 }

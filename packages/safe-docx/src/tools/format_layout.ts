@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import type {
@@ -438,8 +439,8 @@ export async function formatLayout(
         ? 'Layout formatting applied with deterministic OOXML geometry mutations.'
         : 'No document nodes matched the provided selectors.',
     }, metadata));
-  } catch (e: any) {
-    const message = String(e?.message ?? e);
+  } catch (e: unknown) {
+    const message = errorMessage(e);
     return err('FORMAT_LAYOUT_ERROR', `Failed to apply layout formatting: ${message}`, 'Check selector inputs and retry.');
   }
 }

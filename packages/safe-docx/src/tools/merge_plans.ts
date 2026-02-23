@@ -1,4 +1,5 @@
 import { err, ok, type ToolResponse } from './types.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 
 type StepRef = {
   plan_id: string;
@@ -487,8 +488,8 @@ export async function mergePlans(
         require_shared_base_revision: requireSharedBaseRevision,
       },
     });
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
     return err('MERGE_PLAN_ERROR', `Failed to merge plans: ${msg}`);
   }
 }

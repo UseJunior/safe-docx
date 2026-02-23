@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { OOXML, W, renderToon } from '@usejunior/docx-primitives';
 import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
@@ -109,8 +110,8 @@ export async function readFile(
       paragraphs_returned: enriched.length,
       paragraph_ids: paraIds,
     }, metadata));
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
     return err('READ_ERROR', msg, 'Check session status and try again.');
   }
 }

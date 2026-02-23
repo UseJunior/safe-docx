@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 
@@ -31,7 +32,7 @@ export async function grep(
     let re: RegExp;
     try {
       re = new RegExp(patternStr, caseSensitive ? 'g' : 'gi');
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Mirror Python behavior: return success but include an error in payload.
       return ok(mergeSessionResolutionMetadata({
         session_id: session.sessionId,
@@ -40,7 +41,7 @@ export async function grep(
         total_matches: 0,
         paragraphs_with_matches: 0,
         matches: [],
-        error: `Invalid regex pattern: ${String(e?.message ?? e)}`,
+        error: `Invalid regex pattern: ${errorMessage(e)}`,
       }, metadata));
     }
 
@@ -144,8 +145,8 @@ export async function grep(
         : 'max_results limits returned rows to individual matches while total_matches counts all regex hits. Increase max_results to see more matches.';
     }
     return ok(response);
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
     return err('SEARCH_ERROR', `Failed to search document: ${msg}`, 'Check patterns are valid regex and try again.');
   }
 }

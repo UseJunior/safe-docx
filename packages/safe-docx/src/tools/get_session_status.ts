@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 
@@ -30,12 +31,13 @@ export async function getSessionStatus(
             runs_merged: session.normalizationStats.runsMerged,
             proof_errors_removed: session.normalizationStats.proofErrRemoved,
             redlines_simplified: session.normalizationStats.wrappersConsolidated,
+            double_elevations_fixed: session.normalizationStats.doubleElevationsFixed,
             normalization_skipped: false,
           }
-        : { runs_merged: 0, redlines_simplified: 0, normalization_skipped: true },
+        : { runs_merged: 0, redlines_simplified: 0, double_elevations_fixed: 0, normalization_skipped: true },
     }, metadata));
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
     return err('STATUS_ERROR', msg);
   }
 }

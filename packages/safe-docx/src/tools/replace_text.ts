@@ -1,4 +1,5 @@
 import { SessionManager, type Session } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { ERROR_PREVIEW_CHARS, RESULT_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -708,8 +709,8 @@ export async function replaceText(
       before_text: previewText(beforeText, RESULT_PREVIEW_CHARS),
       after_text: previewText(afterText, RESULT_PREVIEW_CHARS),
     }, metadata));
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
     return err('EDIT_ERROR', `Failed to edit document: ${msg}`, 'Use grep to find valid paragraph IDs and verify old_string exists.');
   }
 }

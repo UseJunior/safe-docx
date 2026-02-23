@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { err, ok, type ToolResponse } from './types.js';
 
@@ -95,7 +96,7 @@ export async function hasTrackedChanges_tool(
       scope: 'document_body',
       marker_stats,
     }, metadata));
-  } catch (e: any) {
-    return err('TRACKED_CHANGES_CHECK_ERROR', e?.message ?? String(e));
+  } catch (e: unknown) {
+    return err('TRACKED_CHANGES_CHECK_ERROR', errorMessage(e));
   }
 }

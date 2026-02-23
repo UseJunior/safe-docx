@@ -1,4 +1,5 @@
 import { extractRevisions } from '@usejunior/docx-primitives';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { SessionManager } from '../session/manager.js';
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -57,7 +58,7 @@ export async function extractRevisions_tool(
       edit_revision: session.editRevision,
       session_id: session.sessionId,
     }, metadata));
-  } catch (e: any) {
-    return err('EXTRACTION_ERROR', e?.message ?? String(e));
+  } catch (e: unknown) {
+    return err('EXTRACTION_ERROR', errorMessage(e));
   }
 }

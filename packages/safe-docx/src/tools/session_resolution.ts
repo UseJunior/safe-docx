@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
 import { type Session, SessionManager } from '../session/manager.js';
 import { err, type ToolResponse } from './types.js';
@@ -146,10 +147,10 @@ export async function resolveSessionForTool(
     let session: Session;
     try {
       session = manager.getSession(sessionId);
-    } catch (e: any) {
+    } catch (e: unknown) {
       return {
         ok: false,
-        response: mapSessionLookupError(String(e?.message ?? e), sessionId),
+        response: mapSessionLookupError(errorMessage(e), sessionId),
       };
     }
 

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -45,8 +46,8 @@ export async function initPlan(
         document_filename: session.filename,
       },
     }, metadata));
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
     return err('PLAN_INIT_ERROR', `Failed to initialize plan context: ${msg}`);
   }
 }

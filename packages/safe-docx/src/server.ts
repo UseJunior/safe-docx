@@ -36,58 +36,61 @@ export async function dispatchToolCall(
   name: string,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  return name === 'read_file'
-    ? await readFile(sessions, args as any)
-    : name === 'grep'
-      ? await grep(sessions, args as any)
-      : name === 'init_plan'
-        ? await initPlan(sessions, args as any)
-        : name === 'merge_plans'
-          ? await mergePlans(args as any)
-          : name === 'replace_text'
-            ? await replaceText(sessions, args as any)
-            : name === 'insert_paragraph'
-              ? await insertParagraph(sessions, args as any)
-              : name === 'download'
-                ? await download(sessions, args as any)
-                : name === 'format_layout'
-                  ? await formatLayout(sessions, args as any)
-                  : name === 'accept_changes'
-                    ? await acceptChanges(sessions, args as any)
-                    : name === 'has_tracked_changes'
-                      ? await hasTrackedChanges_tool(sessions, args as any)
-                    : name === 'get_session_status'
-                      ? await getSessionStatus(sessions, args as any)
-                      : name === 'clear_session'
-                        ? await clearSession(sessions, args as any)
-                        : name === 'duplicate_document'
-                          ? await duplicateDocument(sessions, args as any)
-                          : name === 'add_comment'
-                            ? await addComment(sessions, args as any)
-                            : name === 'get_comments'
-                              ? await getComments(sessions, args as any)
-                              : name === 'delete_comment'
-                                ? await deleteComment(sessions, args as any)
-                                : name === 'compare_documents'
-                              ? await compareDocuments_tool(sessions, args as any)
-                              : name === 'get_footnotes'
-                                ? await getFootnotes(sessions, args as any)
-                                : name === 'add_footnote'
-                                  ? await addFootnote(sessions, args as any)
-                                  : name === 'update_footnote'
-                                    ? await updateFootnote(sessions, args as any)
-                                    : name === 'delete_footnote'
-                                      ? await deleteFootnote(sessions, args as any)
-                                      : name === 'extract_revisions'
-                                        ? await extractRevisions_tool(sessions, args as any)
-                                        : {
-                                            success: false,
-                                            error: {
-                                              code: 'UNKNOWN_TOOL',
-                                              message: `Unknown tool: ${name}`,
-                                              hint: 'Use file-first tools: read_file, grep, replace_text, insert_paragraph, download, get_session_status.',
-                                            },
-                                          };
+  switch (name) {
+    case 'read_file':
+      return await readFile(sessions, args as Parameters<typeof readFile>[1]);
+    case 'grep':
+      return await grep(sessions, args as Parameters<typeof grep>[1]);
+    case 'init_plan':
+      return await initPlan(sessions, args as Parameters<typeof initPlan>[1]);
+    case 'merge_plans':
+      return await mergePlans(args as Parameters<typeof mergePlans>[0]);
+    case 'replace_text':
+      return await replaceText(sessions, args as Parameters<typeof replaceText>[1]);
+    case 'insert_paragraph':
+      return await insertParagraph(sessions, args as Parameters<typeof insertParagraph>[1]);
+    case 'download':
+      return await download(sessions, args as Parameters<typeof download>[1]);
+    case 'format_layout':
+      return await formatLayout(sessions, args as Parameters<typeof formatLayout>[1]);
+    case 'accept_changes':
+      return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
+    case 'has_tracked_changes':
+      return await hasTrackedChanges_tool(sessions, args as Parameters<typeof hasTrackedChanges_tool>[1]);
+    case 'get_session_status':
+      return await getSessionStatus(sessions, args as Parameters<typeof getSessionStatus>[1]);
+    case 'clear_session':
+      return await clearSession(sessions, args as Parameters<typeof clearSession>[1]);
+    case 'duplicate_document':
+      return await duplicateDocument(sessions, args as Parameters<typeof duplicateDocument>[1]);
+    case 'add_comment':
+      return await addComment(sessions, args as Parameters<typeof addComment>[1]);
+    case 'get_comments':
+      return await getComments(sessions, args as Parameters<typeof getComments>[1]);
+    case 'delete_comment':
+      return await deleteComment(sessions, args as Parameters<typeof deleteComment>[1]);
+    case 'compare_documents':
+      return await compareDocuments_tool(sessions, args as Parameters<typeof compareDocuments_tool>[1]);
+    case 'get_footnotes':
+      return await getFootnotes(sessions, args as Parameters<typeof getFootnotes>[1]);
+    case 'add_footnote':
+      return await addFootnote(sessions, args as Parameters<typeof addFootnote>[1]);
+    case 'update_footnote':
+      return await updateFootnote(sessions, args as Parameters<typeof updateFootnote>[1]);
+    case 'delete_footnote':
+      return await deleteFootnote(sessions, args as Parameters<typeof deleteFootnote>[1]);
+    case 'extract_revisions':
+      return await extractRevisions_tool(sessions, args as Parameters<typeof extractRevisions_tool>[1]);
+    default:
+      return {
+        success: false,
+        error: {
+          code: 'UNKNOWN_TOOL',
+          message: `Unknown tool: ${name}`,
+          hint: 'Use file-first tools: read_file, grep, replace_text, insert_paragraph, download, get_session_status.',
+        },
+      };
+  }
 }
 
 export async function runServer(): Promise<void> {
@@ -103,7 +106,7 @@ export async function runServer(): Promise<void> {
   const sessions = new SessionManager();
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return { tools: MCP_TOOLS as any };
+    return { tools: MCP_TOOLS };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {

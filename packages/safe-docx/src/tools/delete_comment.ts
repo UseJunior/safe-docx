@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
 
@@ -26,8 +27,8 @@ export async function deleteComment(
       comment_id: params.comment_id,
       session_id: session.sessionId,
     }, metadata));
-  } catch (e: any) {
-    const msg = e?.message ?? String(e);
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
     if (msg.includes('not found')) {
       return err('COMMENT_NOT_FOUND', msg, 'Use get_comments to list available comments.');
     }

@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
 
@@ -24,7 +25,7 @@ export async function getFootnotes(
       })),
       session_id: session.sessionId,
     }, metadata));
-  } catch (e: any) {
-    return err('FOOTNOTE_ERROR', e?.message ?? String(e));
+  } catch (e: unknown) {
+    return err('FOOTNOTE_ERROR', errorMessage(e));
   }
 }

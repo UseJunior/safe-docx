@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { errorCode, errorMessage } from "../error_utils.js";
 import os from 'node:os';
 import path from 'node:path';
 import { err, type ToolResponse } from './types.js';
@@ -96,10 +97,10 @@ export async function enforceReadPathPolicy(inputPath: string): Promise<PathPoli
   let resolvedPath: string;
   try {
     resolvedPath = await fs.realpath(normalizedPath);
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       ok: false,
-      response: err('PATH_RESOLUTION_ERROR', `Failed to resolve path: ${String(e?.message ?? e)}`),
+      response: err('PATH_RESOLUTION_ERROR', `Failed to resolve path: ${errorMessage(e)}`),
     };
   }
 
@@ -118,10 +119,10 @@ export async function enforceWritePathPolicy(inputPath: string): Promise<PathPol
   let resolvedPath: string;
   try {
     resolvedPath = await resolveWritePathWithExistingAncestor(normalizedPath);
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       ok: false,
-      response: err('PATH_RESOLUTION_ERROR', `Failed to resolve output path: ${String(e?.message ?? e)}`),
+      response: err('PATH_RESOLUTION_ERROR', `Failed to resolve output path: ${errorMessage(e)}`),
     };
   }
 

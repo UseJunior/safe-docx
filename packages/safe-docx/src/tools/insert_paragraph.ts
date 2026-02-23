@@ -10,6 +10,7 @@ import {
   type ReplacementPart,
 } from '@usejunior/docx-primitives';
 import { SessionManager, type Session } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { RESULT_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -576,8 +577,8 @@ export async function insertParagraph(
       position: positionUpper,
       inserted_text: previewText(plainParagraphs.join('\n\n'), RESULT_PREVIEW_CHARS),
     }, metadata));
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
     return err('INSERT_ERROR', `Failed to insert paragraph: ${msg}`, 'Use grep or read_file to find valid anchor paragraph IDs.');
   }
 }

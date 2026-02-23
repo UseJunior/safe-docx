@@ -1,4 +1,5 @@
 import { SessionManager } from '../session/manager.js';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
 import { findUniqueSubstringMatch, getParagraphRuns } from '@usejunior/docx-primitives';
@@ -105,7 +106,7 @@ export async function addComment(
       mode: 'root',
       session_id: session.sessionId,
     }, metadata));
-  } catch (e: any) {
-    return err('COMMENT_ERROR', e?.message ?? String(e));
+  } catch (e: unknown) {
+    return err('COMMENT_ERROR', errorMessage(e));
   }
 }

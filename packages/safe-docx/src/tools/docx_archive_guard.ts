@@ -1,4 +1,5 @@
 import { inspectZipEntries } from '@usejunior/docx-primitives';
+import { errorCode, errorMessage } from "../error_utils.js";
 import { err, type ToolResponse } from './types.js';
 
 export type ArchiveGuardOutcome =
@@ -22,12 +23,12 @@ export async function validateDocxArchiveSafety(buffer: Buffer): Promise<Archive
   let entries: Awaited<ReturnType<typeof inspectZipEntries>>;
   try {
     entries = await inspectZipEntries(buffer);
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       ok: false,
       response: err(
         'INVALID_DOCX_ARCHIVE',
-        `Unable to parse .docx archive: ${String(e?.message ?? e)}`,
+        `Unable to parse .docx archive: ${errorMessage(e)}`,
         'Ensure the input file is a valid .docx package.',
       ),
     };

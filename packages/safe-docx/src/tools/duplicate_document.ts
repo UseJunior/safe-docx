@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
@@ -125,10 +126,10 @@ export async function duplicateDocument(
         size_bytes: destinationBuffer.length,
       },
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return err(
       'DUPLICATE_ERROR',
-      `Failed to duplicate document: ${String(e?.message ?? e)}`,
+      `Failed to duplicate document: ${errorMessage(e)}`,
       'Check source/destination paths and filesystem permissions.',
     );
   }

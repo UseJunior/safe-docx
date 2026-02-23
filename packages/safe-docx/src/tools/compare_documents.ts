@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
@@ -138,9 +139,9 @@ export async function compareDocuments_tool(
       return ok(mergeSessionResolutionMetadata(response, sessionMetadata));
     }
     return ok(response);
-  } catch (e: any) {
-    const msg = String(e?.message ?? e);
-    if (String(e?.code ?? '').toUpperCase() === 'EACCES') {
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
+    if (String(errorCode(e) ?? '').toUpperCase() === 'EACCES') {
       return err('PERMISSION_DENIED', `Cannot write to: ${params.save_to_local_path}`, 'Try saving to ~/Downloads/ or ~/Documents/ instead.');
     }
     return err('COMPARE_ERROR', `Comparison failed: ${msg}`);

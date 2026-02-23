@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
@@ -192,12 +193,12 @@ async function runPreflightChecks(absPath: string): Promise<ConformanceCheckResu
       status: 'PASS',
       message: `ZIP opened (${buf.length} bytes).`,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     checks.push({
       check_id: 'zip_open',
       status: 'FAIL',
       failure_code: 'ZIP_OPEN_FAILED',
-      message: `Failed to open ZIP: ${String(err?.message ?? err)}`,
+      message: `Failed to open ZIP: ${errorMessage(err)}`,
     });
     checks.push({
       check_id: 'opc_part_document_xml',
@@ -244,12 +245,12 @@ async function runPreflightChecks(absPath: string): Promise<ConformanceCheckResu
       status: 'PASS',
       message: 'XML parse succeeded for word/document.xml.',
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     checks.push({
       check_id: 'xml_parse',
       status: 'FAIL',
       failure_code: 'XML_PARSE_FAILED',
-      message: `XML parse failed: ${String(err?.message ?? err)}`,
+      message: `XML parse failed: ${errorMessage(err)}`,
     });
   }
 
@@ -569,12 +570,12 @@ async function runTrackedChangesCheck(
         status: 'PASS',
         message: 'Tracked output contains revision markers.',
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       return {
         check_id: 'tracked_changes_output',
         status: 'FAIL',
         failure_code: 'TRACKED_CHANGES_OUTPUT_FAILED',
-        message: `Failed to inspect tracked output: ${String(err?.message ?? err)}`,
+        message: `Failed to inspect tracked output: ${errorMessage(err)}`,
       };
     }
   });
