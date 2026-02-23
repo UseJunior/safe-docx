@@ -119,7 +119,7 @@ export function assertFailure<T extends { success: boolean; error?: { code?: str
   expect(result.success).toBe(false);
   if (result.success) throw new Error(`expected ${label} to fail`);
   if (expectedCode) {
-    expect((result as any).error.code).toBe(expectedCode);
+    expect(result.error?.code).toBe(expectedCode);
   }
 }
 

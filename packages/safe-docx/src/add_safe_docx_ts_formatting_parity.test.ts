@@ -355,7 +355,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(hasBold(termRun!)).toBe(true);
     const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
     const paragraphText = Array.from(dom.getElementsByTagNameNS(W_NS, 'p'))
-      .map((p) => Array.from((p as any).getElementsByTagNameNS(W_NS, 't')).map((t: any) => t.textContent ?? '').join(''))
+      .map((p) => Array.from((p as Element).getElementsByTagNameNS(W_NS, 't')).map((t) => t.textContent ?? '').join(''))
       .find((text) => text.includes('Insert:'));
     expect(paragraphText).toContain('Insert: "Closing Cash" means all unrestricted cash.');
   });
@@ -525,8 +525,8 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     for (const run of runs) {
       const nonRPrChildren = Array.from(run.childNodes).filter((child) => {
         if (child.nodeType !== 1) return false;
-        const el = child as any;
-        return !(el.namespaceURI === W_NS && el.localName === 'rPr');
+        const elementChild = child as Element;
+        return !(elementChild.namespaceURI === W_NS && elementChild.localName === 'rPr');
       });
       expect(nonRPrChildren.length).toBeGreaterThan(0);
     }

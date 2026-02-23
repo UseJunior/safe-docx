@@ -500,6 +500,6 @@ describe('Traceability: Accept Tracked Changes', () => {
 
 function serializeDoc(session: Session): string {
   // DocxDocument stores documentXml as a private field; access it for test assertions.
-  const documentXml = (session.doc as any).documentXml as Document;
+  const documentXml = (session.doc as unknown as { documentXml: Document }).documentXml;
   return serializeXml(documentXml);
 }

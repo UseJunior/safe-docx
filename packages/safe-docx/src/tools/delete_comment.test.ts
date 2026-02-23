@@ -19,6 +19,15 @@ const humanReadableTest = test.allure({
   parameters: { audience: 'non-technical' },
 });
 
+type CommentNode = {
+  author?: string;
+  replies?: CommentNode[];
+};
+
+function commentsList(value: unknown): CommentNode[] {
+  return Array.isArray(value) ? (value as CommentNode[]) : [];
+}
+
 describe('OpenSpec traceability: add-comment-delete-tool', () => {
   registerCleanup();
 
@@ -37,7 +46,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
 
       const beforeDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
       assertSuccess(beforeDelete, 'get_comments (before)');
-      expect(beforeDelete.comments as any[]).toHaveLength(1);
+      expect(commentsList(beforeDelete.comments)).toHaveLength(1);
 
       const result = await deleteComment(opened.mgr, {
         session_id: opened.sessionId,
@@ -50,7 +59,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
 
       const afterDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
       assertSuccess(afterDelete, 'get_comments (after)');
-      expect(afterDelete.comments as any[]).toHaveLength(0);
+      expect(commentsList(afterDelete.comments)).toHaveLength(0);
     },
   );
 
@@ -77,7 +86,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
 
       const beforeDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
       assertSuccess(beforeDelete, 'get_comments (before)');
-      const rootBefore = (beforeDelete.comments as any[])[0];
+      const rootBefore = commentsList(beforeDelete.comments)[0];
       expect(rootBefore.replies).toHaveLength(1);
 
       const result = await deleteComment(opened.mgr, {
@@ -88,7 +97,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
 
       const afterDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
       assertSuccess(afterDelete, 'get_comments (after)');
-      expect(afterDelete.comments as any[]).toHaveLength(0);
+      expect(commentsList(afterDelete.comments)).toHaveLength(0);
     },
   );
 
@@ -121,7 +130,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
 
       const afterDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
       assertSuccess(afterDelete, 'get_comments (after)');
-      const comments = afterDelete.comments as any[];
+      const comments = commentsList(afterDelete.comments);
       expect(comments).toHaveLength(1);
       expect(comments[0].author).toBe('Alice');
       expect(comments[0].replies).toHaveLength(0);
@@ -166,7 +175,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
 
       const afterDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
       assertSuccess(afterDelete, 'get_comments (after)');
-      const comments = afterDelete.comments as any[];
+      const comments = commentsList(afterDelete.comments);
       expect(comments).toHaveLength(1);
       expect(comments[0].author).toBe('Alice');
       expect(comments[0].replies).toHaveLength(0);

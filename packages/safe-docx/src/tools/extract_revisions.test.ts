@@ -52,6 +52,11 @@ type ExtractedChange = {
   comments?: unknown[];
 };
 
+type ExtractedComment = {
+  author?: string;
+  text?: string;
+};
+
 type ExtractRevisionsSuccess = Awaited<ReturnType<typeof extractRevisions_tool>> & {
   success: true;
   changes: ExtractedChange[];
@@ -65,6 +70,14 @@ function asExtractRevisionsSuccess(
 ): ExtractRevisionsSuccess {
   assertSuccess(result, label);
   return result as ExtractRevisionsSuccess;
+}
+
+function asChanges(value: unknown): ExtractedChange[] {
+  return Array.isArray(value) ? (value as ExtractedChange[]) : [];
+}
+
+function asComments(value: unknown): ExtractedComment[] {
+  return Array.isArray(value) ? (value as ExtractedComment[]) : [];
 }
 
 async function allureStepWithParameters(
@@ -457,8 +470,9 @@ describe('extract_revisions tool', () => {
 
       await allureStep('Verify FORMAT_CHANGE', () => {
         expect(result.total_changes).toBe(1);
-        const changes = result.changes as any[];
-        const formatRevisions = changes[0].revisions.filter((r: any) => r.type === 'FORMAT_CHANGE');
+        const changes = asChanges(result.changes);
+        expect(changes).toHaveLength(1);
+        const formatRevisions = (changes[0]?.revisions ?? []).filter((r) => r.type === 'FORMAT_CHANGE');
         expect(formatRevisions.length).toBeGreaterThanOrEqual(1);
         expect(formatRevisions[0].author).toBe('Carol');
       });
@@ -495,11 +509,11 @@ describe('extract_revisions tool', () => {
 
       await allureStep('Verify pagination', () => {
         expect(page1.total_changes).toBe(3);
-        expect((page1.changes as any[]).length).toBe(2);
+        expect((asChanges(page1.changes)).length).toBe(2);
         expect(page1.has_more).toBe(true);
 
         expect(page2.total_changes).toBe(3);
-        expect((page2.changes as any[]).length).toBe(1);
+        expect((asChanges(page2.changes)).length).toBe(1);
         expect(page2.has_more).toBe(false);
       });
     },
@@ -648,7 +662,7 @@ describe('extract_revisions tool', () => {
       await allureStep('Verify empty structural paragraph is filtered', () => {
         // Only the third paragraph (with real content changes) should appear
         expect(result.total_changes).toBe(1);
-        const changes = result.changes as any[];
+        const changes = asChanges(result.changes);
         expect(changes).toHaveLength(1);
         expect(changes[0].after_text).toContain('edited');
       });
@@ -676,7 +690,7 @@ describe('extract_revisions tool', () => {
       assertSuccess(result, 'extract_revisions');
       await allureJsonAttachment('result', result);
 
-      const changes = result.changes as any[];
+      const changes = asChanges(result.changes);
       const totalChanges = result.total_changes as number;
 
       await allureStep('Verify changes were extracted', () => {
@@ -687,8 +701,11 @@ describe('extract_revisions tool', () => {
         const validTypes = new Set(['INSERTION', 'DELETION', 'MOVE_FROM', 'MOVE_TO', 'FORMAT_CHANGE']);
         for (const c of changes) {
           expect(c.para_id).toBeTruthy();
-          expect(c.revisions.length).toBeGreaterThan(0);
-          for (const r of c.revisions) {
+          const revisions = c.revisions ?? [];
+          expect(revisions.length).toBeGreaterThan(0);
+          for (const r of revisions) {
+            expect(typeof r.type).toBe('string');
+            if (!r.type) continue;
             expect(validTypes.has(r.type)).toBe(true);
           }
         }
@@ -726,7 +743,7 @@ describe('extract_revisions tool', () => {
       assertSuccess(result, 'extract_revisions');
 
       await allureStep('Verify inserted paragraph has empty before_text', () => {
-        const changes = result.changes as any[];
+        const changes = asChanges(result.changes);
         expect(changes).toHaveLength(1);
         expect(changes[0].before_text).toBe('');
         expect(changes[0].after_text).toBe('New paragraph');
@@ -758,7 +775,7 @@ describe('extract_revisions tool', () => {
       assertSuccess(result, 'extract_revisions');
 
       await allureStep('Verify deleted paragraph has empty after_text', () => {
-        const changes = result.changes as any[];
+        const changes = asChanges(result.changes);
         expect(changes).toHaveLength(1);
         expect(changes[0].before_text).toBe('Deleted paragraph');
         expect(changes[0].after_text).toBe('');
@@ -789,7 +806,7 @@ describe('extract_revisions tool', () => {
 
       await allureStep('Verify table cell changes extracted', () => {
         expect(result.total_changes).toBe(1);
-        const changes = result.changes as any[];
+        const changes = asChanges(result.changes);
         expect(changes[0].after_text).toContain('edited');
       });
     },
@@ -833,11 +850,12 @@ describe('extract_revisions tool', () => {
       await allureJsonAttachment('result', result);
 
       await allureStep('Verify comments are associated', () => {
-        const changes = result.changes as any[];
+        const changes = asChanges(result.changes);
         expect(changes).toHaveLength(1);
-        expect(changes[0].comments.length).toBeGreaterThanOrEqual(1);
-        expect(changes[0].comments[0].author).toBe('Reviewer');
-        expect(changes[0].comments[0].text).toContain('Please review');
+        const comments = asComments(changes[0]?.comments);
+        expect(comments.length).toBeGreaterThanOrEqual(1);
+        expect(comments[0]?.author).toBe('Reviewer');
+        expect(comments[0]?.text).toContain('Please review');
       });
     },
   );
@@ -862,7 +880,7 @@ describe('extract_revisions tool', () => {
 
       await allureStep('Verify empty page', () => {
         expect(result.total_changes).toBe(1);
-        expect((result.changes as any[]).length).toBe(0);
+        expect((asChanges(result.changes)).length).toBe(0);
         expect(result.has_more).toBe(false);
       });
     },
@@ -896,8 +914,8 @@ describe('extract_revisions tool', () => {
       assertSuccess(page2, 'page2');
 
       await allureStep('Verify no overlap between pages', () => {
-        const p1Ids = new Set((page1.changes as any[]).map((c: any) => c.para_id));
-        for (const c of page2.changes as any[]) {
+        const p1Ids = new Set((asChanges(page1.changes)).map((c) => c.para_id));
+        for (const c of asChanges(page2.changes)) {
           expect(p1Ids.has(c.para_id)).toBe(false);
         }
       });

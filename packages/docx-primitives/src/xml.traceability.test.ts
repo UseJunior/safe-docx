@@ -67,11 +67,11 @@ describe('Traceability: docx-primitives — XML Round-Trip', () => {
 
   humanReadableIt.openspec('textContent returns empty string for null or undefined input')('Scenario: textContent returns empty string for null or undefined input', async () => {
     const resultNull = await allureStep('When textContent is called with null', async () => {
-      return textContent(null as any);
+      return textContent(null);
     });
 
     const resultUndefined = await allureStep('When textContent is called with undefined', async () => {
-      return textContent(undefined as any);
+      return textContent(undefined);
     });
 
     await allureStep('Then the result SHALL be an empty string', () => {

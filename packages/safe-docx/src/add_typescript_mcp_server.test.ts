@@ -32,6 +32,16 @@ interface ToolDocMetadata {
   download_defaults?: { default_download_format?: string };
 }
 
+interface PackageJsonMetadata {
+  name?: string;
+  bin?: Record<string, string>;
+  main?: string;
+  types?: string;
+  publishConfig?: { access?: string };
+  repository?: { url?: string };
+  license?: string;
+}
+
 describe('TypeScript MCP server behavior', () => {
   const test = testAllure.epic('Document Editing').withLabels({ feature: 'MCP Server Behavior' });
   const humanReadableTest = test.allure({
@@ -43,7 +53,7 @@ describe('TypeScript MCP server behavior', () => {
 
   humanReadableTest.openspec('Zero-friction installation on Claude Desktop')('Scenario: Zero-friction installation on Claude Desktop + core tools registered', async () => {
     const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
-    const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as Record<string, any>;
+    const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as PackageJsonMetadata;
 
     expect(pkg.name).toBe('@usejunior/safe-docx');
     expect(pkg.bin?.['safe-docx']).toBe('dist/cli.js');
@@ -71,7 +81,7 @@ describe('TypeScript MCP server behavior', () => {
 
   humanReadableTest.openspec('NPM package availability')('Scenario: NPM package availability metadata includes type definitions', async () => {
     const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
-    const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as Record<string, any>;
+    const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as PackageJsonMetadata;
     expect(pkg.types).toBe('dist/index.d.ts');
     expect(pkg.repository?.url).toContain('github.com/usejunior/safe-docx');
     expect(pkg.license).toBe('MIT');

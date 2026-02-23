@@ -9,7 +9,7 @@ import { bootstrapCommentParts, addComment, addCommentReply, getComments, getCom
 
 const W_NS = OOXML.W_NS;
 const W15_NS = OOXML.W15_NS;
-declare const allure: any;
+declare const allure: { epic: (name: string) => void | Promise<void>; feature: (name: string) => void | Promise<void>; parentSuite: (name: string) => void | Promise<void>; suite: (name: string) => void | Promise<void>; subSuite: (name: string) => void | Promise<void>; severity: (level: string) => void | Promise<void>; story: (name: string) => void | Promise<void>; id: (id: string) => void | Promise<void>; allureId: (id: string) => void | Promise<void>; displayName: (value: string) => void | Promise<void>; label: (name: string, value: string) => void | Promise<void>; description: (value: string) => void | Promise<void>; tags: (...values: string[]) => void | Promise<void>; tag: (value: string) => void | Promise<void>; test: (value: unknown) => void | Promise<void>; step: <T>(name: string, body: (...args: unknown[]) => T | Promise<T>) => Promise<T>; parameter: (name: string, value: string) => void | Promise<void>; attachment: (name: string, content: string | Uint8Array, contentType?: string) => void | Promise<void>; };
 
 function makeDocXml(bodyXml: string): string {
   return (

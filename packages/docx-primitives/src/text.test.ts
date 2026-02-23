@@ -76,7 +76,8 @@ describe('text primitives', () => {
     expect(() => replaceParagraphTextRange(p, 0, 13, 'Updated')).toThrowError(SafeDocxError);
     try {
       replaceParagraphTextRange(p, 0, 13, 'Updated');
-    } catch (e: any) {
+    } catch (e: unknown) {
+      if (!(e instanceof SafeDocxError)) throw e;
       expect(e.code).toBe('UNSUPPORTED_EDIT');
     }
   });
@@ -93,7 +94,8 @@ describe('text primitives', () => {
     expect(() => replaceParagraphTextRange(p, 2, 6, 'Changed')).toThrowError(SafeDocxError);
     try {
       replaceParagraphTextRange(p, 2, 6, 'Changed');
-    } catch (e: any) {
+    } catch (e: unknown) {
+      if (!(e instanceof SafeDocxError)) throw e;
       expect(e.code).toBe('UNSAFE_CONTAINER_BOUNDARY');
     }
   });

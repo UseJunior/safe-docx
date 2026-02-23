@@ -68,11 +68,11 @@ describe('Parity regression', () => {
     assertSuccess(grepRes, 'grep');
     expect(grepRes.total_matches).toBe(1);
     expect(Array.isArray(grepRes.matches)).toBe(true);
-    expect((grepRes.matches as any[])[0].para_id).toBe(paraId);
-    expect((grepRes.matches as any[])[0].para_index_1based).toBe(1);
-    expect((grepRes.matches as any[])[0].match_count_in_paragraph).toBe(1);
-    expect(typeof (grepRes.matches as any[])[0].list_label).toBe('string');
-    expect(typeof (grepRes.matches as any[])[0].header).toBe('string');
+    expect((grepRes.matches as Array<Record<string, unknown>>)[0].para_id).toBe(paraId);
+    expect((grepRes.matches as Array<Record<string, unknown>>)[0].para_index_1based).toBe(1);
+    expect((grepRes.matches as Array<Record<string, unknown>>)[0].match_count_in_paragraph).toBe(1);
+    expect(typeof (grepRes.matches as Array<Record<string, unknown>>)[0].list_label).toBe('string');
+    expect(typeof (grepRes.matches as Array<Record<string, unknown>>)[0].header).toBe('string');
 
     const edited = await replaceText(mgr, {
       session_id: sessionId,
@@ -145,11 +145,11 @@ describe('Parity regression', () => {
     assertSuccess(grepRes, 'grep');
     expect(grepRes.total_matches).toBe(1);
     expect(Array.isArray(grepRes.matches)).toBe(true);
-    expect((grepRes.matches as any[])[0].para_id).toBe(ids[1]);
-    expect((grepRes.matches as any[])[0].para_index_1based).toBe(2);
-    expect((grepRes.matches as any[])[0].match_count_in_paragraph).toBe(1);
-    expect(typeof (grepRes.matches as any[])[0].list_label).toBe('string');
-    expect(typeof (grepRes.matches as any[])[0].header).toBe('string');
+    expect((grepRes.matches as Array<Record<string, unknown>>)[0].para_id).toBe(ids[1]);
+    expect((grepRes.matches as Array<Record<string, unknown>>)[0].para_index_1based).toBe(2);
+    expect((grepRes.matches as Array<Record<string, unknown>>)[0].match_count_in_paragraph).toBe(1);
+    expect(typeof (grepRes.matches as Array<Record<string, unknown>>)[0].list_label).toBe('string');
+    expect(typeof (grepRes.matches as Array<Record<string, unknown>>)[0].header).toBe('string');
   });
 
   test('grep dedupes by paragraph by default and reports per-paragraph counts', async () => {
@@ -169,8 +169,8 @@ describe('Parity regression', () => {
     expect(grepRes.dedupe_by_paragraph).toBe(true);
     expect(grepRes.total_matches).toBe(2);
     expect(grepRes.paragraphs_with_matches).toBe(1);
-    expect((grepRes.matches as any[]).length).toBe(1);
-    expect((grepRes.matches as any[])[0].match_count_in_paragraph).toBe(2);
+    expect((grepRes.matches as Array<Record<string, unknown>>).length).toBe(1);
+    expect((grepRes.matches as Array<Record<string, unknown>>)[0].match_count_in_paragraph).toBe(2);
     expect(grepRes.matches_truncated).toBe(false);
   });
 
@@ -190,7 +190,7 @@ describe('Parity regression', () => {
     assertSuccess(grepRes, 'grep');
     expect(grepRes.total_matches).toBe(3);
     expect(grepRes.paragraphs_with_matches).toBe(3);
-    expect((grepRes.matches as any[]).length).toBe(2);
+    expect((grepRes.matches as Array<Record<string, unknown>>).length).toBe(2);
     expect(grepRes.matches_truncated).toBe(true);
     expect(typeof grepRes.truncation_note).toBe('string');
   });
@@ -215,8 +215,8 @@ describe('Parity regression', () => {
     assertSuccess(grepRes, 'grep');
     expect(grepRes.dedupe_by_paragraph).toBe(false);
     expect(grepRes.total_matches).toBe(2);
-    expect((grepRes.matches as any[]).length).toBe(2);
-    expect((grepRes.matches as any[])[0].match_count_in_paragraph).toBe(1);
+    expect((grepRes.matches as Array<Record<string, unknown>>).length).toBe(2);
+    expect((grepRes.matches as Array<Record<string, unknown>>)[0].match_count_in_paragraph).toBe(1);
   });
 
   test('open/read preserves existing jr_para_* when stacked with edit-* bookmark on same paragraph', async () => {
@@ -661,7 +661,7 @@ describe('Parity regression', () => {
     expect(hasHighlight(termRun!)).toBe(false);
 
     const editedParaText = Array.from(dom.getElementsByTagNameNS(W_NS, 'p'))
-      .map((p) => Array.from((p as any).getElementsByTagNameNS(W_NS, 't')).map((t: any) => t.textContent ?? '').join(''))
+      .map((p) => Array.from((p as Element).getElementsByTagNameNS(W_NS, 't')).map((t) => t.textContent ?? '').join(''))
       .find((t) => t.includes('Purpose:'));
     expect(editedParaText).toContain('the "R&D Business"');
   });

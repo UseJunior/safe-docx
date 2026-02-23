@@ -13,6 +13,15 @@ import {
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
+type MarkerStats = {
+  insertions?: number;
+  deletions?: number;
+  content_markers?: number;
+  property_markers?: number;
+  rpr_changes?: number;
+  total_markers?: number;
+};
+
 describe('has_tracked_changes tool', () => {
   const test = testAllure.epic('Document Reading').withLabels({ feature: 'has_tracked_changes tool' });
   registerCleanup();
@@ -37,12 +46,13 @@ describe('has_tracked_changes tool', () => {
     await allureJsonAttachment('result', result);
 
     await allureStep('Then tracked changes are reported with content marker counts', () => {
+      const markerStats = result.marker_stats as MarkerStats;
       expect(result.has_tracked_changes).toBe(true);
       expect(result.scope).toBe('document_body');
-      expect((result.marker_stats as any).insertions).toBe(1);
-      expect((result.marker_stats as any).deletions).toBe(1);
-      expect((result.marker_stats as any).content_markers).toBe(2);
-      expect((result.marker_stats as any).total_markers).toBe(2);
+      expect(markerStats.insertions).toBe(1);
+      expect(markerStats.deletions).toBe(1);
+      expect(markerStats.content_markers).toBe(2);
+      expect(markerStats.total_markers).toBe(2);
     });
   });
 
@@ -62,10 +72,11 @@ describe('has_tracked_changes tool', () => {
     assertSuccess(result, 'has_tracked_changes');
 
     await allureStep('Then tracked changes are reported from property markers', () => {
+      const markerStats = result.marker_stats as MarkerStats;
       expect(result.has_tracked_changes).toBe(true);
-      expect((result.marker_stats as any).property_markers).toBe(1);
-      expect((result.marker_stats as any).rpr_changes).toBe(1);
-      expect((result.marker_stats as any).total_markers).toBe(1);
+      expect(markerStats.property_markers).toBe(1);
+      expect(markerStats.rpr_changes).toBe(1);
+      expect(markerStats.total_markers).toBe(1);
     });
   });
 
@@ -78,10 +89,11 @@ describe('has_tracked_changes tool', () => {
     assertSuccess(result, 'has_tracked_changes');
 
     await allureStep('Then no tracked changes are reported', () => {
+      const markerStats = result.marker_stats as MarkerStats;
       expect(result.has_tracked_changes).toBe(false);
-      expect((result.marker_stats as any).total_markers).toBe(0);
-      expect((result.marker_stats as any).content_markers).toBe(0);
-      expect((result.marker_stats as any).property_markers).toBe(0);
+      expect(markerStats.total_markers).toBe(0);
+      expect(markerStats.content_markers).toBe(0);
+      expect(markerStats.property_markers).toBe(0);
     });
   });
 

@@ -92,7 +92,7 @@ export async function readZipText(buffer: Buffer, path: string): Promise<string 
 export async function inspectZipEntries(buffer: Buffer): Promise<ZipEntryInfo[]> {
   const zip = await JSZip.loadAsync(buffer);
   return Object.values(zip.files).map((file) => {
-    const stats = (file as any)?._data as ZipEntryStats | undefined;
+    const stats = (file as { _data?: ZipEntryStats })._data;
     return {
       name: file.name,
       isDirectory: file.dir,
