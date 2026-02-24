@@ -25,7 +25,7 @@ describe('layout mutations', () => {
 
     const p = doc.getElementsByTagNameNS(OOXML.W_NS, W.p).item(0)!;
     const paraId = getParagraphBookmarkId(p);
-    expect(paraId).toMatch(/^jr_para_[0-9a-f]{12}$/);
+    expect(paraId).toMatch(/^_bk_[0-9a-f]{12}$/);
 
     const beforeCount = doc.getElementsByTagNameNS(OOXML.W_NS, W.p).length;
     const result = setParagraphSpacing(doc, {

@@ -291,8 +291,8 @@ describe('footnotes', () => {
         insertParagraphBookmarks(doc, 'footnotes-test');
         const paragraphs = getParagraphs(doc);
         const expected = paragraphs.map((p) => getParagraphBookmarkId(p));
-        expect(expected[0]).toMatch(/^jr_para_/);
-        expect(expected[1]).toMatch(/^jr_para_/);
+        expect(expected[0]).toMatch(/^_bk_/);
+        expect(expected[1]).toMatch(/^_bk_/);
 
         const zip = await makeZipFromDocument(doc, {
           'word/footnotes.xml': makeFootnotesXml([

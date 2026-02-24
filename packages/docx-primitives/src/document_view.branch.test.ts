@@ -25,12 +25,12 @@ function wrapDoc(bodyXml: string): string {
 function makeParagraphs(bodyXml: string): Array<{ id: string; p: Element }> {
   const doc = parseXml(wrapDoc(bodyXml));
   const ps = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'));
-  return ps.map((p, idx) => ({ id: `jr_para_${idx + 1}`, p }));
+  return ps.map((p, idx) => ({ id: `_bk_${idx + 1}`, p }));
 }
 
 function makeNode(overrides: Partial<DocumentViewNode>): DocumentViewNode {
   return {
-    id: 'jr_para_1',
+    id: '_bk_1',
     list_label: '',
     header: '',
     style: 'body',
@@ -142,7 +142,7 @@ describe('document_view branch coverage', () => {
 
     const documentXml = parseXml(wrapDoc(bodyXml));
     const paragraphs = Array.from(documentXml.getElementsByTagNameNS(W_NS, 'p'))
-      .map((p, idx) => ({ id: `jr_para_${idx + 1}`, p }));
+      .map((p, idx) => ({ id: `_bk_${idx + 1}`, p }));
     const footnotesXml = parseXml(
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:footnotes xmlns:w="${W_NS}">` +
@@ -188,7 +188,7 @@ describe('document_view branch coverage', () => {
   test('discoverStyles assigns deterministic suffixes for multiple groups sharing same semantic base', () => {
     const nodes: DocumentViewNode[] = [
       makeNode({
-        id: 'jr_para_1',
+        id: '_bk_1',
         clean_text: 'Body A',
         tagged_text: 'Body A',
         style_fingerprint: {
@@ -200,7 +200,7 @@ describe('document_view branch coverage', () => {
         },
       }),
       makeNode({
-        id: 'jr_para_2',
+        id: '_bk_2',
         clean_text: 'Body B',
         tagged_text: 'Body B',
         style_fingerprint: {
@@ -221,40 +221,40 @@ describe('document_view branch coverage', () => {
   test('discoverStyles covers list-level and non-list semantic classification branches', () => {
     const styles = discoverStyles([
       makeNode({
-        id: 'jr_para_article',
+        id: '_bk_article',
         style_fingerprint: { list_level: 0, left_indent_pt: 0, first_line_indent_pt: 0, style_name: 'List Paragraph', alignment: 'LEFT' },
         list_metadata: { ...makeNode({}).list_metadata, label_type: LabelType.ARTICLE, list_level: 0 },
       }),
       makeNode({
-        id: 'jr_para_section',
+        id: '_bk_section',
         style_fingerprint: { list_level: 0, left_indent_pt: 4, first_line_indent_pt: 0, style_name: 'List Paragraph', alignment: 'LEFT' },
         list_metadata: { ...makeNode({}).list_metadata, label_type: LabelType.SECTION, list_level: 0 },
       }),
       makeNode({
-        id: 'jr_para_subsection_letter',
+        id: '_bk_subsection_letter',
         style_fingerprint: { list_level: 1, left_indent_pt: 8, first_line_indent_pt: 0, style_name: 'List Paragraph', alignment: 'LEFT' },
         list_metadata: { ...makeNode({}).list_metadata, label_type: LabelType.LETTER, list_level: 1 },
       }),
       makeNode({
-        id: 'jr_para_subsection_number',
+        id: '_bk_subsection_number',
         style_fingerprint: { list_level: 1, left_indent_pt: 12, first_line_indent_pt: 0, style_name: 'List Paragraph', alignment: 'LEFT' },
         list_metadata: { ...makeNode({}).list_metadata, label_type: LabelType.NUMBER, list_level: 1 },
       }),
       makeNode({
-        id: 'jr_para_level2_roman',
+        id: '_bk_level2_roman',
         style_fingerprint: { list_level: 2, left_indent_pt: 16, first_line_indent_pt: 0, style_name: 'List Paragraph', alignment: 'LEFT' },
         list_metadata: { ...makeNode({}).list_metadata, label_type: LabelType.ROMAN, list_level: 2 },
       }),
       makeNode({
-        id: 'jr_para_indent',
+        id: '_bk_indent',
         style_fingerprint: { list_level: -1, left_indent_pt: 10, first_line_indent_pt: 0, style_name: 'Body Text', alignment: 'LEFT' },
       }),
       makeNode({
-        id: 'jr_para_heading',
+        id: '_bk_heading',
         style_fingerprint: { list_level: -1, left_indent_pt: 0, first_line_indent_pt: 0, style_name: 'Heading 2', alignment: 'LEFT' },
       }),
       makeNode({
-        id: 'jr_para_quote',
+        id: '_bk_quote',
         style_fingerprint: { list_level: -1, left_indent_pt: 0, first_line_indent_pt: 0, style_name: 'Quote Block', alignment: 'RIGHT' },
       }),
     ]);

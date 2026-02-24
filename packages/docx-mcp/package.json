@@ -1,0 +1,78 @@
+{
+  "name": "@usejunior/docx-mcp",
+  "version": "0.1.0",
+  "description": "Safe Docx MCP server (TypeScript)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "safedocx": "dist/cli.js",
+    "safe-docx": "dist/cli.js"
+  },
+  "scripts": {
+    "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run build -w @usejunior/docx-core &&npm run clean:dist && tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/cli.ts",
+    "check:spec-coverage": "node scripts/validate_openspec_coverage.mjs",
+    "conformance:discover": "tsx scripts/discover_docx_fixtures.ts --out conformance/discovery.report.json",
+    "conformance:run": "tsx scripts/run_conformance_harness.ts --manifest conformance/fixtures.manifest.json --report conformance/last-report.json",
+    "conformance:smoke": "tsx scripts/run_conformance_harness.ts --manifest conformance/fixtures.manifest.json --mode smoke --report conformance/smoke-report.json",
+    "docs:generate:tools": "node --import tsx scripts/generate_tool_reference.ts",
+    "test:conformance": "vitest run src/conformance/harness.test.ts",
+    "test": "npm run build -w @usejunior/docx-core &&npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs",
+    "test:run": "npm run build -w @usejunior/docx-core &&npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run",
+    "test:coverage": "npm run build -w @usejunior/docx-core &&npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
+    "prepack": "npm run build",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@usejunior/docx-core": "^0.1.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.4",
+    "@vitest/runner": "^3.2.4",
+    "allure-vitest": "^3.4.5",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/usejunior/safe-docx.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "docx",
+    "word",
+    "document-editing",
+    "tracked-changes",
+    "document-comparison",
+    "ai",
+    "llm",
+    "formatting-preservation",
+    "ooxml",
+    "serverless",
+    "cloudflare-workers",
+    "edge",
+    "vercel"
+  ],
+  "homepage": "https://github.com/usejunior/safe-docx/tree/main/packages/docx-mcp",
+  "bugs": {
+    "url": "https://github.com/usejunior/safe-docx/issues"
+  }
+}

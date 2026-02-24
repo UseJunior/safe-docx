@@ -95,8 +95,8 @@ describe('DocxDocument', () => {
       newText: 'After One\n\nAfter Two',
     });
     expect(after.newParagraphIds).toHaveLength(2);
-    expect(after.newParagraphIds[0]).toMatch(/^jr_para_[0-9a-f]{12}$/);
-    expect(after.newParagraphIds[1]).toMatch(/^jr_para_[0-9a-f]{12}$/);
+    expect(after.newParagraphIds[0]).toMatch(/^_bk_[0-9a-f]{12}$/);
+    expect(after.newParagraphIds[1]).toMatch(/^_bk_[0-9a-f]{12}$/);
 
     const before = doc.insertParagraph({
       positionalAnchorNodeId: anchorId!,
@@ -163,11 +163,11 @@ describe('DocxDocument', () => {
     expect(doc.getParagraphTextById(existingId)).toBe('One');
 
     const cleanXml = await getDocumentXmlFromBuffer(cleanOut.buffer);
-    expect(cleanXml.includes('jr_para_')).toBe(false);
+    expect(cleanXml.includes('_bk_')).toBe(false);
 
     const rawOut = await doc.toBuffer({ cleanBookmarks: false });
     const rawXml = await getDocumentXmlFromBuffer(rawOut.buffer);
-    expect(rawXml.includes('jr_para_')).toBe(true);
+    expect(rawXml.includes('_bk_')).toBe(true);
   });
 
   it('mergeRunsOnly and acceptChanges wrappers update document content', async () => {

@@ -4,7 +4,7 @@ import { renderToon, type DocumentViewNode } from './document_view.js';
 
 function makeNode(overrides: Partial<DocumentViewNode>): DocumentViewNode {
   return {
-    id: 'jr_para_000000000001',
+    id: '_bk_000000000001',
     list_label: '',
     header: '',
     style: 'body',
@@ -42,26 +42,26 @@ describe('document_view renderToon', () => {
   it('strips header prefix punctuation from tagged text when header column is present', () => {
     const nodes: DocumentViewNode[] = [
       makeNode({
-        id: 'jr_para_000000000111',
+        id: '_bk_000000000111',
         header: 'Definitions',
         tagged_text: 'Definitions: the following terms apply.',
       }),
       makeNode({
-        id: 'jr_para_000000000112',
+        id: '_bk_000000000112',
         header: 'Scope',
         tagged_text: 'Scope. applies to all sections',
       }),
     ];
 
     const toon = renderToon(nodes);
-    expect(toon).toContain('jr_para_000000000111 |  | Definitions | body | the following terms apply.');
-    expect(toon).toContain('jr_para_000000000112 |  | Scope | body | applies to all sections');
+    expect(toon).toContain('_bk_000000000111 |  | Definitions | body | the following terms apply.');
+    expect(toon).toContain('_bk_000000000112 |  | Scope | body | applies to all sections');
   });
 
   it('promotes header to text when stripping leaves an empty body', () => {
     const nodes: DocumentViewNode[] = [
       makeNode({
-        id: 'jr_para_000000000113',
+        id: '_bk_000000000113',
         header: 'Title',
         tagged_text: 'Title',
       }),
@@ -69,19 +69,19 @@ describe('document_view renderToon', () => {
 
     const toon = renderToon(nodes);
     // Header column is cleared and the text column keeps the title.
-    expect(toon).toContain('jr_para_000000000113 |  |  | body | Title');
+    expect(toon).toContain('_bk_000000000113 |  |  | body | Title');
   });
 
   it('preserves tagged text when no header is present', () => {
     const nodes: DocumentViewNode[] = [
       makeNode({
-        id: 'jr_para_000000000114',
+        id: '_bk_000000000114',
         header: '',
         tagged_text: 'plain body paragraph',
       }),
     ];
 
     const toon = renderToon(nodes);
-    expect(toon).toContain('jr_para_000000000114 |  |  | body | plain body paragraph');
+    expect(toon).toContain('_bk_000000000114 |  |  | body | plain body paragraph');
   });
 });

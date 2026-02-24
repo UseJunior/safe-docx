@@ -3,7 +3,7 @@
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
 
-Safe DOCX helps coding agents work with Microsoft Word files in headless local mode.
+Safe DOCX helps coding agents work with Microsoft Word files. Pure TypeScript, zero native dependencies — runs locally, in containers, or in cloud workers (Cloudflare, Vercel, Lambda).
 
 If you are a developer who needs to edit contracts or other paperwork, this repo gives you an MCP server with deterministic `.docx` operations instead of manual Word UI steps.
 

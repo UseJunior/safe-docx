@@ -41,7 +41,7 @@ describe('document branch coverage', () => {
 
     expect(() => {
       doc.replaceText({
-        targetParagraphId: 'jr_para_missing',
+        targetParagraphId: '_bk_missing',
         findText: 'foo',
         replaceText: 'bar',
       });

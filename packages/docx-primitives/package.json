@@ -1,7 +1,8 @@
 {
   "name": "@usejunior/docx-primitives",
   "version": "0.1.0",
-  "description": "OOXML (.docx) primitives for Safe Docx (DOM-based, round-trip safe)",
+  "private": true,
+  "description": "DEPRECATED: Use @usejunior/docx-core. Retained for test coverage only.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -41,5 +42,15 @@
   "publishConfig": {
     "access": "public"
   },
+  "keywords": [
+    "docx",
+    "ooxml",
+    "word",
+    "document-editing",
+    "serverless",
+    "cloudflare-workers",
+    "edge",
+    "vercel"
+  ],
   "license": "MIT"
 }

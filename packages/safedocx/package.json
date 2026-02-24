@@ -22,7 +22,7 @@
     "lint": "echo 'no lint for alias package'"
   },
   "dependencies": {
-    "@usejunior/safe-docx": "0.1.0"
+    "@usejunior/docx-mcp": "0.1.0"
   },
   "publishConfig": {
     "access": "public"
@@ -40,6 +40,10 @@
     "docx",
     "mcp",
     "safe-docx",
-    "alias"
+    "alias",
+    "serverless",
+    "cloudflare-workers",
+    "edge",
+    "vercel"
   ]
 }

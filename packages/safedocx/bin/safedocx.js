@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-import '@usejunior/safe-docx/dist/cli.js';
+import '@usejunior/docx-mcp/dist/cli.js';

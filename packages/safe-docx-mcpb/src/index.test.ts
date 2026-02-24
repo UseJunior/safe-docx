@@ -14,7 +14,7 @@ describe('safe-docx-mcpb entrypoint wiring', () => {
     const entryPath = path.join(__dirname, 'index.ts');
     const source = await fs.readFile(entryPath, 'utf8');
 
-    expect(source).toContain("import { runServer } from '@usejunior/safe-docx'");
+    expect(source).toContain("import { runServer } from '@usejunior/docx-mcp'");
     expect(source).toContain('runServer().catch');
   });
 });

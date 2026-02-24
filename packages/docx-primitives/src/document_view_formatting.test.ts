@@ -26,7 +26,7 @@ function wrapInDoc(bodyXml: string): string {
 function makeParagraphs(bodyXml: string): Array<{ id: string; p: Element }> {
   const doc = parseXml(wrapInDoc(bodyXml));
   const ps = Array.from(doc.getElementsByTagNameNS(W_NS, 'p'));
-  return ps.map((p, i) => ({ id: `jr_para_${i + 1}`, p }));
+  return ps.map((p, i) => ({ id: `_bk_${i + 1}`, p }));
 }
 
 function makeStylesXml(styles: string): Document {

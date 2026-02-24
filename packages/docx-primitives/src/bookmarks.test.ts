@@ -34,12 +34,12 @@ describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
       await allureJsonAttachment('Result', result);
     });
 
-    await allureStep('Then each paragraph SHALL receive a jr_para_* identifier matching the pattern', () => {
+    await allureStep('Then each paragraph SHALL receive a _bk_* identifier matching the pattern', () => {
       const paras = doc.getElementsByTagNameNS(OOXML.W_NS, 'p');
       for (let i = 0; i < paras.length; i++) {
         const id = getParagraphBookmarkId(paras[i]);
         expect(id).not.toBeNull();
-        expect(id).toMatch(/^jr_para_[0-9a-f]{12}$/);
+        expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
       }
     });
   });
@@ -47,7 +47,7 @@ describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
   humanReadableIt.openspec('getParagraphBookmarkId retrieves minted ID')('Scenario: getParagraphBookmarkId retrieves minted ID', async () => {
     const doc = makeDoc('<w:p><w:r><w:t>Test</w:t></w:r></w:p>');
 
-    await allureStep('Given a paragraph with a previously minted jr_para_* bookmark', async () => {
+    await allureStep('Given a paragraph with a previously minted _bk_* bookmark', async () => {
       insertParagraphBookmarks(doc, 'test-attachment');
     });
 
@@ -60,7 +60,7 @@ describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
 
     await allureStep('Then the result SHALL return the stable identifier', () => {
       expect(id).not.toBeNull();
-      expect(id).toMatch(/^jr_para_[0-9a-f]{12}$/);
+      expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
     });
   });
 });

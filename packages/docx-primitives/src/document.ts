@@ -4,7 +4,7 @@ import { OOXML, W } from './namespaces.js';
 import {
   findParagraphByBookmarkId,
   insertParagraphBookmarks,
-  cleanupJuniorBookmarks,
+  cleanupInternalBookmarks,
   getParagraphBookmarkId,
   insertSingleParagraphBookmark,
 } from './bookmarks.js';
@@ -58,8 +58,8 @@ export type NormalizationResult = {
   doubleElevationsFixed: number;
 };
 
-export type ParagraphInfo = {
-  id: string; // jr_para_###
+export type ParagraphRef = {
+  id: string; // _bk_###
   text: string;
 };
 
@@ -207,13 +207,13 @@ export class DocxDocument {
   }
 
   removeJuniorBookmarks(): number {
-    const removed = cleanupJuniorBookmarks(this.documentXml);
+    const removed = cleanupInternalBookmarks(this.documentXml);
     if (removed > 0) this.dirty = true;
     return removed;
   }
 
   readParagraphs(opts?: { nodeIds?: string[]; offset?: number; limit?: number }): {
-    paragraphs: ParagraphInfo[];
+    paragraphs: ParagraphRef[];
     totalParagraphs: number;
   } {
     const all = this.getParagraphs()
@@ -222,9 +222,9 @@ export class DocxDocument {
         if (!id) return null;
         const text = getParagraphText(p).trim();
         if (!text) return null;
-        return { id, text } satisfies ParagraphInfo;
+        return { id, text } satisfies ParagraphRef;
       })
-      .filter((x): x is ParagraphInfo => x !== null);
+      .filter((x): x is ParagraphRef => x !== null);
 
     const total = all.length;
     const { nodeIds, offset, limit } = opts ?? {};
@@ -626,7 +626,7 @@ export class DocxDocument {
 
     if (opts?.cleanBookmarks) {
       const cloned = parseXml(xmlWithBookmarks);
-      const bookmarksRemoved = cleanupJuniorBookmarks(cloned);
+      const bookmarksRemoved = cleanupInternalBookmarks(cloned);
       const cleanedXml = serializeXml(cloned);
 
       // Temporarily swap document.xml in the zip for output, then restore.

@@ -93,7 +93,7 @@ export type DocumentStyles = {
 };
 
 export type DocumentViewNode = {
-  id: string; // jr_para_*
+  id: string; // _bk_*
   list_label: string;
   header: string;
   style: string;

@@ -158,7 +158,7 @@ describe('extractRevisions', () => {
     let paraId = '';
     for (let i = 0; i < bookmarkStarts.length; i++) {
       const name = bookmarkStarts[i]!.getAttributeNS(W_NS, 'name') ?? bookmarkStarts[i]!.getAttribute('w:name') ?? '';
-      if (name.startsWith('jr_para_')) {
+      if (name.startsWith('_bk_')) {
         paraId = name;
         break;
       }
@@ -169,7 +169,7 @@ describe('extractRevisions', () => {
       while (prev) {
         if (prev.nodeType === 1 && (prev as Element).localName === 'bookmarkStart') {
           const name = (prev as Element).getAttributeNS(W_NS, 'name') ?? (prev as Element).getAttribute('w:name') ?? '';
-          if (name.startsWith('jr_para_')) { paraId = name; break; }
+          if (name.startsWith('_bk_')) { paraId = name; break; }
         }
         prev = prev.previousSibling;
       }
