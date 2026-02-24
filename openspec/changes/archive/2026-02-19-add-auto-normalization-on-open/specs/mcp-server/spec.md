@@ -18,11 +18,11 @@ The Safe-Docx MCP server SHALL automatically normalize documents on open by runn
 - **WHEN** `get_session_status` is called
 - **THEN** the response SHALL include `runs_merged`, `redlines_simplified`, and `normalization_skipped` fields
 
-#### Scenario: jr_para_* IDs stable across normalization
+#### Scenario: _bk_* IDs stable across normalization
 - **GIVEN** a document opened with normalization enabled
 - **AND** the same document opened with normalization disabled
 - **WHEN** `read_file` is called in both sessions
-- **THEN** unchanged paragraphs SHALL receive the same `jr_para_*` identifiers regardless of normalization
+- **THEN** unchanged paragraphs SHALL receive the same `_bk_*` identifiers regardless of normalization
 
 ## MODIFIED Requirements
 
@@ -54,5 +54,5 @@ The Safe-Docx MCP server SHALL support file-first entry for document tools while
 #### Scenario: new session creation includes normalization
 - **WHEN** a new session is created (via `open_document` or file-first entry)
 - **AND** `skip_normalization` is not set to `true`
-- **THEN** the session creation pipeline SHALL run: `load → normalize → allocate jr_para bookmarks → cache view`
+- **THEN** the session creation pipeline SHALL run: `load → normalize → allocate _bk_ bookmarks → cache view`
 - **AND** normalization stats SHALL be included in session metadata
