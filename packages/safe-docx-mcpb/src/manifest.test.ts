@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { itAllure } from './testing/allure-test.js';
-import { SAFE_DOCX_MCP_TOOLS } from '../../safe-docx/src/tool_catalog.js';
+import { SAFE_DOCX_MCP_TOOLS } from '../../docx-mcp/src/tool_catalog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

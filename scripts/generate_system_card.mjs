@@ -325,9 +325,9 @@ async function main() {
   // Recompute matrices before reading them to avoid drift.
   // Use default mode so the system card still renders during active feature work
   // while surfacing any unmapped scenarios in the generated output.
-  runNodeScript('packages/docx-comparison/scripts/validate_openspec_coverage.mjs');
+  runNodeScript('packages/docx-core/scripts/validate_openspec_coverage.mjs');
   runNodeScript('packages/docx-primitives/scripts/validate_openspec_coverage.mjs');
-  runNodeScript('packages/safe-docx/scripts/validate_openspec_coverage.mjs');
+  runNodeScript('packages/docx-mcp/scripts/validate_openspec_coverage.mjs');
 
   const [safeDocxMatrixRaw, docxPrimitivesMatrixRaw, docxComparisonMatrixRaw] = await Promise.all([
     fs.readFile(TRACEABILITY_SOURCES.safeDocx, 'utf-8'),

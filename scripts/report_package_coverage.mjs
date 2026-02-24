@@ -7,9 +7,9 @@ const ROOT = process.cwd();
 
 const PACKAGES = [
   {
-    name: '@usejunior/docx-comparison',
-    id: 'docx-comparison',
-    summaryPath: path.join(ROOT, 'packages/docx-comparison/coverage/coverage-summary.json'),
+    name: '@usejunior/docx-core',
+    id: 'docx-core',
+    summaryPath: path.join(ROOT, 'packages/docx-core/coverage/coverage-summary.json'),
   },
   {
     name: '@usejunior/docx-primitives',
@@ -17,9 +17,9 @@ const PACKAGES = [
     summaryPath: path.join(ROOT, 'packages/docx-primitives/coverage/coverage-summary.json'),
   },
   {
-    name: '@usejunior/safe-docx',
-    id: 'safe-docx',
-    summaryPath: path.join(ROOT, 'packages/safe-docx/coverage/coverage-summary.json'),
+    name: '@usejunior/docx-mcp',
+    id: 'docx-mcp',
+    summaryPath: path.join(ROOT, 'packages/docx-mcp/coverage/coverage-summary.json'),
   },
 ];
 // v8 coverage can fluctuate slightly run-to-run on branch counters.

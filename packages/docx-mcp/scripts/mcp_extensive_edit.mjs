@@ -80,7 +80,7 @@ if (!args.in || !args.out) {
 }
 
 const cwd = process.cwd();
-const serverPath = path.resolve(cwd, 'packages/safe-docx/dist/cli.js');
+const serverPath = path.resolve(cwd, 'packages/docx-mcp/dist/cli.js');
 
 const transport = new StdioClientTransport({
   command: 'node',

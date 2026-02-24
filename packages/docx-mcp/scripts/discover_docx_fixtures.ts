@@ -87,7 +87,7 @@ async function fileSha256(absPath: string): Promise<string> {
 }
 
 function inferCategory(relPath: string): string {
-  if (relPath.startsWith('packages/docx-comparison/src/testing/fixtures/')) return 'docx_comparison_fixture';
+  if (relPath.startsWith('packages/docx-core/src/testing/fixtures/')) return 'docx_comparison_fixture';
   if (relPath.startsWith('tests/golden/document_editing/scenarios/')) return 'golden_document_editing';
   if (relPath.startsWith('test_contracts/')) return 'contract_sample';
   if (relPath.startsWith('templates/')) return 'openagreements_template';
@@ -97,7 +97,7 @@ function inferCategory(relPath: string): string {
 
 async function gatherRepoCandidates(repoRoot: string): Promise<DiscoveryCandidate[]> {
   const roots = [
-    'packages/docx-comparison/src/testing/fixtures',
+    'packages/docx-core/src/testing/fixtures',
     'tests/golden/document_editing/scenarios',
     'test_contracts',
   ];

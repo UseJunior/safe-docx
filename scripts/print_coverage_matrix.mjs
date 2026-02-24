@@ -5,9 +5,9 @@ import path from 'node:path';
 
 const ROOT = process.cwd();
 const SUMMARY_FILES = [
-  path.join(ROOT, 'packages/docx-comparison/coverage/coverage-summary.json'),
+  path.join(ROOT, 'packages/docx-core/coverage/coverage-summary.json'),
   path.join(ROOT, 'packages/docx-primitives/coverage/coverage-summary.json'),
-  path.join(ROOT, 'packages/safe-docx/coverage/coverage-summary.json'),
+  path.join(ROOT, 'packages/docx-mcp/coverage/coverage-summary.json'),
 ];
 
 const DEFAULT_TOP = 15;

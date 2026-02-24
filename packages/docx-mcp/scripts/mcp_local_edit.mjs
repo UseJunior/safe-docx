@@ -10,7 +10,7 @@ function usage() {
   console.error(
     [
       'Usage:',
-      '  node packages/safe-docx/scripts/mcp_local_edit.mjs \\',
+      '  node packages/docx-mcp/scripts/mcp_local_edit.mjs \\',
       '    --in <input.docx> \\',
       '    --out <output.docx> \\',
       '    --para <_bk_...> \\',
@@ -50,7 +50,7 @@ if (!args.in || !args.out || !args.old || args.new === undefined) {
 }
 
 const cwd = process.cwd();
-const serverPath = path.resolve(cwd, 'packages/safe-docx/dist/cli.js');
+const serverPath = path.resolve(cwd, 'packages/docx-mcp/dist/cli.js');
 
 const transport = new StdioClientTransport({
   command: 'node',
