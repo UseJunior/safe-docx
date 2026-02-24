@@ -31,7 +31,7 @@
     "allure:open:baseline": "./node_modules/.bin/allure open allure-report-baseline --port 9099",
     "allure:serve:baseline": "npm run allure:generate:baseline && npm run allure:open:baseline",
     "generate:system-card": "node scripts/generate_system_card.mjs --output site/src/trust/system-card.md",
-    "check:system-card": "npm run generate:system-card && git diff --exit-code -- packages/docx-core/src/testing/DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md packages/docx-core/test-primitives/DOCX_PRIMITIVES_OPENSPEC_TRACEABILITY.md packages/docx-mcp/src/testing/SAFE_DOCX_OPENSPEC_TRACEABILITY.md site/src/trust/system-card.md site/src/trust/traceability/docx-core.md site/src/trust/traceability/safe-docx.md",
+    "check:system-card": "npm run generate:system-card && git diff --exit-code -- packages/docx-core/src/testing/DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md packages/docx-mcp/src/testing/SAFE_DOCX_OPENSPEC_TRACEABILITY.md site/src/trust/system-card.md site/src/trust/traceability/docx-core.md site/src/trust/traceability/safe-docx.md",
     "check:tool-docs": "npm run docs:generate:tools -w @usejunior/docx-mcp && git diff --exit-code -- packages/docx-mcp/docs/tool-reference.generated.md",
     "site:build": "npm --prefix site run build",
     "site:dev": "npm --prefix site run dev",

@@ -43,7 +43,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'test-primitives/**/*.test.ts'],
     exclude: ['src/baselines/**/*.test.ts'],
     coverage: {
       provider: 'v8',

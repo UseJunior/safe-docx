@@ -1,7 +1,7 @@
 ---
 layout: layouts/base.njk
-title: Safe DOCX Traceability Matrix | Safe DOCX
-description: Generated OpenSpec-to-test scenario mapping for the Safe DOCX package.
+title: DOCX MCP Traceability Matrix | Safe DOCX
+description: Generated OpenSpec-to-test scenario mapping for the DOCX MCP package.
 contentClass: content
 permalink: /trust/traceability/safe-docx/
 ---
@@ -29,7 +29,7 @@ This matrix maps OpenSpec `#### Scenario:` entries to Allure story mappings extr
 | document is normalized on open by default | covered | `src/tools/add_auto_normalization_on_open.test.ts` |  |
 | document tools accept file-first entry without pre-open | covered | `src/tools/add_auto_normalization_on_open.test.ts` |  |
 | existing session reuse is non-blocking and warns via metadata | covered | `src/tools/add_auto_normalization_on_open.test.ts` |  |
-| jr_para_* IDs stable across normalization | covered | `src/tools/add_auto_normalization_on_open.test.ts` |  |
+| _bk_* IDs stable across normalization | covered | `src/tools/add_auto_normalization_on_open.test.ts` |  |
 | new session creation includes normalization | covered | `src/tools/add_auto_normalization_on_open.test.ts` |  |
 | normalization stats in session metadata | covered | `src/tools/add_auto_normalization_on_open.test.ts` |  |
 | reuse policy selects most-recently-used session | covered | `src/tools/add_auto_normalization_on_open.test.ts` |  |

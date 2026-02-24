@@ -6,8 +6,10 @@ import { testAllure } from './testing/allure-test.js';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 
+const TEST_FEATURE = 'add-multi-platform-mcp-discovery';
+
 describe('Multi-platform MCP discovery docs', () => {
-  const test = testAllure.epic('Document Editing').withLabels({ feature: 'MCP Discovery Docs' });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
   const humanReadableTest = test.allure({
     tags: ['human-readable'],
     parameters: { audience: 'non-technical' },

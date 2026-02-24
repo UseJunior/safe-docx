@@ -16,10 +16,8 @@ npm run check:spec-coverage
 
 ## Repository Layout
 
-- `packages/docx-primitives`: OOXML primitives and invariants.
-- `packages/docx-comparison`: comparison/diff engine.
-- `packages/safe-docx`: MCP server and editing tools.
-- `packages/safedocx`: unscoped alias package.
+- `packages/docx-core`: OOXML comparison + primitives.
+- `packages/docx-mcp`: MCP server and editing tools.
 - `packages/safe-docx-mcpb`: private MCP bundle wrapper.
 - `openspec/`: specs and change deltas.
 
@@ -50,10 +48,9 @@ Fixes: #42
 
 **Valid types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`, `style`
 
-**Scopes** should match the package or area you're changing — this is a monorepo with 5 packages:
-- `fix(docx-primitives):` — bug fix in the primitives package
-- `feat(safe-docx):` — new feature in the MCP server
-- `refactor(docx-comparison):` — refactoring the comparison engine
+**Scopes** should match the package or area you're changing:
+- `fix(docx-core):` — bug fix in the core OOXML library
+- `feat(docx-mcp):` — new feature in the MCP server
 - `docs(contributing):` — documentation updates
 - `chore(ci):` — CI/CD changes
 

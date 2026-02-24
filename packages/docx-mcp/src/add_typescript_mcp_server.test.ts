@@ -42,8 +42,10 @@ interface PackageJsonMetadata {
   license?: string;
 }
 
+const TEST_FEATURE = 'add-typescript-mcp-server';
+
 describe('TypeScript MCP server behavior', () => {
-  const test = testAllure.epic('Document Editing').withLabels({ feature: 'MCP Server Behavior' });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
   const humanReadableTest = test.allure({
     tags: ['human-readable'],
     parameters: { audience: 'non-technical' },

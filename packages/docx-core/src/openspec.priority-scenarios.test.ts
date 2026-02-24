@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it, allureStep } from './testing/allure-test.js';
+import { testAllure, allureStep } from './testing/allure-test.js';
 import { detectMovesInAtomList } from './move-detection.js';
 import { detectFormatChangesInAtomList } from './format-detection.js';
 import {
@@ -9,6 +9,9 @@ import {
 } from './core-types.js';
 import { assertDefined } from './testing/test-utils.js';
 import { el } from './testing/dom-test-helpers.js';
+
+const TEST_FEATURE = 'add-priority-scenario-mappings';
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 
 function createTextAtom(
   text: string,
@@ -48,7 +51,7 @@ function createAtomWithRunProperties(
 }
 
 describe('OpenSpec priority scenario mappings', () => {
-  it.openspec('Move detection disabled')(
+  test.openspec('Move detection disabled')(
     'leaves deleted and inserted atoms unchanged when move detection is turned off',
     async () => {
       const atoms = [
@@ -80,7 +83,7 @@ describe('OpenSpec priority scenario mappings', () => {
     },
   );
 
-  it.openspec('Move detected between similar blocks')(
+  test.openspec('Move detected between similar blocks')(
     'marks matching deleted and inserted blocks as move source and destination',
     async () => {
       const atoms = [
@@ -115,7 +118,7 @@ describe('OpenSpec priority scenario mappings', () => {
     },
   );
 
-  it.openspec('Short blocks ignored')(
+  test.openspec('Short blocks ignored')(
     'does not convert tiny deleted and inserted blocks into move markup',
     async () => {
       const atoms = [
@@ -147,7 +150,7 @@ describe('OpenSpec priority scenario mappings', () => {
     },
   );
 
-  it.openspec('Below threshold treated as separate changes')(
+  test.openspec('Below threshold treated as separate changes')(
     'does not mark moves when similarity is below the configured threshold',
     async () => {
       const atoms = [
@@ -179,7 +182,7 @@ describe('OpenSpec priority scenario mappings', () => {
     },
   );
 
-  it.openspec('Format detection disabled')(
+  test.openspec('Format detection disabled')(
     'keeps equal status when format detection is disabled',
     async () => {
       const atom = createAtomWithRunProperties('Test', [el('w:b')]);
@@ -200,7 +203,7 @@ describe('OpenSpec priority scenario mappings', () => {
     },
   );
 
-  it.openspec('Text becomes bold')(
+  test.openspec('Text becomes bold')(
     'marks equal text with run-property delta as format changed',
     async () => {
       const atom = createAtomWithRunProperties('Test', [el('w:b')]);

@@ -1,29 +1,3 @@
 {
-  "allowed_allure_test_files": [
-    "packages/docx-comparison/src/baselines/atomizer/atomLcs.allure.test.ts",
-    "packages/docx-comparison/src/baselines/atomizer/inPlaceModifier.allure.test.ts",
-    "packages/docx-comparison/src/integration/inplace-bookmark-semantic-regression.allure.test.ts",
-    "packages/docx-comparison/src/integration/paragraph-level-markers.allure.test.ts",
-    "packages/docx-primitives/src/bookmarks.allure.test.ts",
-    "packages/docx-primitives/src/layout.allure.test.ts",
-    "packages/docx-primitives/src/list_labels.allure.test.ts",
-    "packages/docx-primitives/src/matching.allure.test.ts",
-    "packages/docx-primitives/src/normalization.allure.test.ts",
-    "packages/docx-primitives/src/semantic_tags.allure.test.ts",
-    "packages/docx-primitives/src/xml.allure.test.ts",
-    "packages/safe-docx/src/add_multi_platform_mcp_discovery.allure.test.ts",
-    "packages/safe-docx/src/add_safe_docx_ts_formatting_parity.allure.test.ts",
-    "packages/safe-docx/src/tools/add_accept_tracked_changes.allure.test.ts",
-    "packages/safe-docx/src/tools/add_auto_normalization_on_open.allure.test.ts",
-    "packages/safe-docx/src/tools/add_multi_agent_plan_merge_phase_1.allure.test.ts",
-    "packages/safe-docx/src/tools/add_run_level_formatting_visibility.allure.test.ts",
-    "packages/safe-docx/src/tools/add_safe_docx_batch_apply_and_strict_anchor_resolution.allure.test.ts",
-    "packages/safe-docx/src/tools/add_safe_docx_docx_helper_tools.allure.test.ts",
-    "packages/safe-docx/src/tools/add_safe_docx_layout_format_controls.allure.test.ts",
-    "packages/safe-docx/src/tools/compare_documents.allure.test.ts",
-    "packages/safe-docx/src/tools/extract_revisions.allure.test.ts",
-    "packages/safe-docx/src/tools/replace_text_matching.allure.test.ts",
-    "packages/safe-docx/src/tools/update_safe_docx_download_defaults_and_stable_node_ids.allure.test.ts",
-    "packages/safe-docx/src/tools/update_safe_docx_sessionless_entry_and_session_controls.allure.test.ts"
-  ]
+  "allowed_allure_test_files": []
 }

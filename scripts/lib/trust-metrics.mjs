@@ -14,15 +14,13 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
 const TRACEABILITY_SOURCES = {
-  safeDocx: path.join(REPO_ROOT, 'packages', 'safe-docx', 'src', 'testing', 'SAFE_DOCX_OPENSPEC_TRACEABILITY.md'),
-  docxPrimitives: path.join(REPO_ROOT, 'packages', 'docx-primitives', 'test', 'DOCX_PRIMITIVES_OPENSPEC_TRACEABILITY.md'),
-  docxComparison: path.join(REPO_ROOT, 'packages', 'docx-comparison', 'src', 'testing', 'DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md'),
+  docxMcp: path.join(REPO_ROOT, 'packages', 'docx-mcp', 'src', 'testing', 'SAFE_DOCX_OPENSPEC_TRACEABILITY.md'),
+  docxCore: path.join(REPO_ROOT, 'packages', 'docx-core', 'src', 'testing', 'DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md'),
 };
 
 const ALLURE_SOURCES = {
-  safeDocx: path.join(REPO_ROOT, 'packages', 'safe-docx', 'allure-results'),
-  docxPrimitives: path.join(REPO_ROOT, 'packages', 'docx-primitives', 'allure-results'),
-  docxComparison: path.join(REPO_ROOT, 'packages', 'docx-comparison', 'allure-results'),
+  docxMcp: path.join(REPO_ROOT, 'packages', 'docx-mcp', 'allure-results'),
+  docxCore: path.join(REPO_ROOT, 'packages', 'docx-core', 'allure-results'),
 };
 
 /**
@@ -187,30 +185,26 @@ export async function collectAllureLabels(dirPath) {
  */
 export async function buildMetricsObject() {
   // Read traceability matrices
-  const [safeDocxMatrixRaw, docxPrimitivesMatrixRaw, docxComparisonMatrixRaw] = await Promise.all([
-    fs.readFile(TRACEABILITY_SOURCES.safeDocx, 'utf-8'),
-    fs.readFile(TRACEABILITY_SOURCES.docxPrimitives, 'utf-8'),
-    fs.readFile(TRACEABILITY_SOURCES.docxComparison, 'utf-8'),
+  const [docxMcpMatrixRaw, docxCoreMatrixRaw] = await Promise.all([
+    fs.readFile(TRACEABILITY_SOURCES.docxMcp, 'utf-8'),
+    fs.readFile(TRACEABILITY_SOURCES.docxCore, 'utf-8'),
   ]);
 
   const traceabilityData = {
-    safeDocx: parseMatrixMarkdown(safeDocxMatrixRaw, 'Safe DOCX'),
-    docxPrimitives: parseMatrixMarkdown(docxPrimitivesMatrixRaw, 'DOCX Primitives'),
-    docxComparison: parseMatrixMarkdown(docxComparisonMatrixRaw, 'DOCX Comparison'),
+    docxMcp: parseMatrixMarkdown(docxMcpMatrixRaw, 'DOCX MCP'),
+    docxCore: parseMatrixMarkdown(docxCoreMatrixRaw, 'DOCX Core'),
   };
 
   // Parse allure results
   const allureResults = await Promise.all([
-    parseAllureResults('Safe DOCX', ALLURE_SOURCES.safeDocx),
-    parseAllureResults('DOCX Primitives', ALLURE_SOURCES.docxPrimitives),
-    parseAllureResults('DOCX Comparison', ALLURE_SOURCES.docxComparison),
+    parseAllureResults('DOCX MCP', ALLURE_SOURCES.docxMcp),
+    parseAllureResults('DOCX Core', ALLURE_SOURCES.docxCore),
   ]);
 
   // Collect allure labels across all packages
   const allLabels = await Promise.all([
-    collectAllureLabels(ALLURE_SOURCES.safeDocx),
-    collectAllureLabels(ALLURE_SOURCES.docxPrimitives),
-    collectAllureLabels(ALLURE_SOURCES.docxComparison),
+    collectAllureLabels(ALLURE_SOURCES.docxMcp),
+    collectAllureLabels(ALLURE_SOURCES.docxCore),
   ]);
 
   // Aggregate allure stats
@@ -239,7 +233,7 @@ export async function buildMetricsObject() {
   }
 
   // Aggregate traceability stats
-  const packages = [traceabilityData.safeDocx, traceabilityData.docxPrimitives, traceabilityData.docxComparison];
+  const packages = [traceabilityData.docxMcp, traceabilityData.docxCore];
   const totalScenarios = packages.reduce((sum, p) => sum + p.total, 0);
   const coveredScenarios = packages.reduce((sum, p) => sum + p.covered, 0);
   const coveragePercent = totalScenarios > 0 ? Math.round((coveredScenarios / totalScenarios) * 1000) / 10 : 0;

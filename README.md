@@ -11,7 +11,7 @@ If you are a developer who needs to edit contracts or other paperwork, this repo
 
 For actual usage and setup, go to:
 
-- `packages/safe-docx/README.md`
+- `packages/docx-mcp/README.md`
 
 Quick run:
 
@@ -27,18 +27,16 @@ npx -y @usejunior/safe-docx
 
 Golden prompts:
 
-- `packages/safe-docx/docs/golden-prompts.md`
+- `packages/docx-mcp/docs/golden-prompts.md`
 
 Generated tool reference (from Zod schemas):
 
-- `packages/safe-docx/docs/tool-reference.generated.md`
+- `packages/docx-mcp/docs/tool-reference.generated.md`
 
 ## Packages
 
-- `@usejunior/docx-primitives`
-- `@usejunior/docx-comparison`
-- `@usejunior/safe-docx`
-- `safe-docx` (unscoped alias package)
+- `@usejunior/docx-core` — OOXML comparison + primitives
+- `@usejunior/docx-mcp` — MCP server + CLI
 - `@usejunior/safedocx-mcpb` (private MCP bundle wrapper)
 
 ## Development
@@ -78,7 +76,5 @@ npm run coverage:matrix
 
 Packages to configure:
 
-- `@usejunior/docx-primitives`
-- `@usejunior/docx-comparison`
-- `@usejunior/safe-docx`
-- `safe-docx`
+- `@usejunior/docx-core`
+- `@usejunior/docx-mcp`

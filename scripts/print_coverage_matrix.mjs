@@ -6,7 +6,6 @@ import path from 'node:path';
 const ROOT = process.cwd();
 const SUMMARY_FILES = [
   path.join(ROOT, 'packages/docx-core/coverage/coverage-summary.json'),
-  path.join(ROOT, 'packages/docx-primitives/coverage/coverage-summary.json'),
   path.join(ROOT, 'packages/docx-mcp/coverage/coverage-summary.json'),
 ];
 
@@ -139,11 +138,9 @@ async function main() {
     } catch {
       throw new Error(`Missing coverage summary: ${relativePath(summaryPath)}\nRun npm run test:coverage:packages first.`);
     }
-    const packageName = summaryPath.includes('docx-primitives')
-      ? 'docx-primitives'
-      : summaryPath.includes('docx-comparison')
-        ? 'docx-comparison'
-        : 'safe-docx';
+    const packageName = summaryPath.includes('docx-core')
+      ? 'docx-core'
+      : 'docx-mcp';
 
     packageSummaries.push({
       name: packageName,
