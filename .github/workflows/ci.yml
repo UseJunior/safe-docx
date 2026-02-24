@@ -123,9 +123,9 @@ jobs:
       - run: npm ci
       - name: Package-level smoke tests
         run: |
-          npm run test:run -w @usejunior/docx-comparison
+          npm run test:run -w @usejunior/docx-core
           npm run test:run -w @usejunior/docx-primitives
-          npm run test:run -w @usejunior/safe-docx
+          npm run test:run -w @usejunior/docx-mcp
           npm run test:run -w @usejunior/safedocx-mcpb
 
   mcpb-bundle:
@@ -210,16 +210,16 @@ jobs:
             coverage/package-coverage-baseline.json
             coverage/package-coverage-summary.json
             coverage/package-coverage-table.txt
-            packages/docx-comparison/coverage/coverage-summary.json
+            packages/docx-core/coverage/coverage-summary.json
             packages/docx-primitives/coverage/coverage-summary.json
-            packages/safe-docx/coverage/coverage-summary.json
-            packages/docx-comparison/coverage/lcov.info
+            packages/docx-mcp/coverage/coverage-summary.json
+            packages/docx-core/coverage/lcov.info
             packages/docx-primitives/coverage/lcov.info
-            packages/safe-docx/coverage/lcov.info
+            packages/docx-mcp/coverage/lcov.info
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
-          files: ./packages/docx-comparison/coverage/lcov.info,./packages/docx-primitives/coverage/lcov.info,./packages/safe-docx/coverage/lcov.info
+          files: ./packages/docx-core/coverage/lcov.info,./packages/docx-primitives/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
           use_oidc: true
           fail_ci_if_error: true
