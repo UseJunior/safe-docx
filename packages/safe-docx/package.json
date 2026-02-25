@@ -16,7 +16,7 @@
     "build": "node -e \"console.log('safe-docx wrapper package: no build step required')\"",
     "lint": "node -e \"process.exit(0)\"",
     "test": "npm run test:run",
-    "test:run": "node ./bin/safe-docx.js --help > /dev/null",
+    "test:run": "npm run build -w @usejunior/docx-mcp && node ./bin/safe-docx.js --help > /dev/null",
     "prepack": "npm run test:run"
   },
   "bin": {
