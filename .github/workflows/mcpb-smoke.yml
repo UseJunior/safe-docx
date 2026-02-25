@@ -1,0 +1,28 @@
+name: MCPB Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mcpb-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Sanitize npm auth for public npx fetches
+        run: |
+          unset NODE_AUTH_TOKEN
+          npm config delete //registry.npmjs.org/:_authToken || true
+      - name: Build and pack safe-docx MCP bundle
+        run: npm run pack:mcpb
+      - name: Upload MCPB smoke artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safe-docx-mcpb-smoke
+          if-no-files-found: error
+          path: packages/safe-docx-mcpb/safe-docx.mcpb

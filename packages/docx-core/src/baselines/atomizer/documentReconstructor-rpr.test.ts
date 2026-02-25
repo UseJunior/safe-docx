@@ -30,49 +30,6 @@ const MINIMAL_DOCXML = [
 const OPTS = { author: 'Test', date: new Date('2025-01-01T00:00:00Z') };
 
 /**
- * Create a test atom with explicit rPr, status, and text.
- */
-function makeAtom(
-  text: string,
-  opts: {
-    status?: CorrelationStatus;
-    rPr?: Element | null;
-    paragraphIndex?: number;
-    moveName?: string;
-    formatChange?: ComparisonUnitAtom['formatChange'];
-  } = {}
-): ComparisonUnitAtom {
-  const {
-    status = CorrelationStatus.Equal,
-    rPr = null,
-    paragraphIndex = 0,
-    moveName,
-    formatChange,
-  } = opts;
-
-  const rPrEl = rPr ? el('w:rPr', {}, [rPr.cloneNode(true) as Element]) : el('w:rPr');
-  const textEl = el('w:t', {}, undefined, text);
-  const run = el('w:r', {}, rPr ? [rPrEl, textEl] : [textEl]);
-  const paragraph = el('w:p', {}, [run]);
-
-  return {
-    sha1Hash: `hash-${text}`,
-    correlationStatus: status,
-    contentElement: textEl,
-    ancestorElements: [paragraph, run],
-    ancestorUnids: [],
-    part: PART,
-    paragraphIndex,
-    rPr: rPr ? (rPr.cloneNode(true) as Element).parentNode
-      ? rPr.cloneNode(true) as Element
-      : rPr.cloneNode(true) as Element
-      : null,
-    moveName,
-    formatChange,
-  };
-}
-
-/**
  * Shorthand: create an atom with a cloned rPr element.
  */
 function makeAtomWithRPr(

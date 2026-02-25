@@ -35,6 +35,10 @@
       "description": "Merge multiple sub-agent plans and detect conflicts."
     },
     {
+      "name": "apply_plan",
+      "description": "Validate and apply a batch of edit steps in one transaction."
+    },
+    {
       "name": "replace_text",
       "description": "Replace text in a paragraph while preserving formatting."
     },

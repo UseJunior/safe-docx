@@ -67,6 +67,20 @@ Deterministically merge multiple sub-agent plans and detect hard conflicts befor
 | `fail_on_conflict` | `boolean` | no |  |
 | `require_shared_base_revision` | `boolean` | no |  |
 
+## `apply_plan`
+
+Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a session document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `session_id` | `string` | no |  |
+| `file_path` | `string` | no |  |
+| `steps` | `array<object>` | no | JSON array of edit steps. Each step needs step_id, operation, and operation-specific fields. |
+| `plan_file_path` | `string` | no | Path to a .json file containing an array of edit steps. Mutually exclusive with steps. |
+
 ## `replace_text`
 
 Replace text in a paragraph by _bk_* id, preserving formatting. Accepts session_id or file_path.
@@ -99,6 +113,7 @@ Insert a paragraph before/after an anchor paragraph by _bk_* id. Accepts session
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
 | `position` | `enum("BEFORE", "AFTER")` | no |  |
+| `style_source_id` | `string` | no | Paragraph _bk_* ID to clone formatting (pPr and template run) from instead of the positional anchor. Falls back to anchor with a warning if not found. |
 
 ## `download`
 
@@ -118,6 +133,7 @@ Save clean and/or tracked changes output back to the user filesystem. Defaults t
 | `tracked_save_to_local_path` | `string` | no |  |
 | `tracked_changes_author` | `string` | no |  |
 | `tracked_changes_engine` | `enum("auto", "atomizer", "diffmatch")` | no |  |
+| `fail_on_rebuild_fallback` | `boolean` | no | When true, return an error instead of a destructive output if the comparison engine falls back to rebuild mode (which destroys table structure). Default: false. |
 
 ## `format_layout`
 

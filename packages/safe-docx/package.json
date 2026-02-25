@@ -1,0 +1,68 @@
+{
+  "name": "@usejunior/safe-docx",
+  "version": "0.1.0",
+  "description": "Canonical npm package for the Safe Docx MCP server and CLI",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "scripts": {
+    "build": "node -e \"console.log('safe-docx wrapper package: no build step required')\"",
+    "lint": "node -e \"process.exit(0)\"",
+    "test": "npm run test:run",
+    "test:run": "npm run build -w @usejunior/docx-mcp && node ./bin/safe-docx.js --help > /dev/null",
+    "prepack": "npm run test:run"
+  },
+  "bin": {
+    "safe-docx": "./bin/safe-docx.js",
+    "safedocx": "./bin/safe-docx.js"
+  },
+  "dependencies": {
+    "@usejunior/docx-mcp": "^0.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/usejunior/safe-docx.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin",
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "docx",
+    "word",
+    "document-editing",
+    "tracked-changes",
+    "document-comparison",
+    "ai",
+    "llm",
+    "formatting-preservation",
+    "ooxml",
+    "serverless",
+    "cloudflare-workers",
+    "edge",
+    "vercel"
+  ],
+  "homepage": "https://github.com/usejunior/safe-docx/tree/main/packages/safe-docx",
+  "bugs": {
+    "url": "https://github.com/usejunior/safe-docx/issues"
+  }
+}

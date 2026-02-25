@@ -7,14 +7,14 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/docx-mcp && node esbuild.config.mjs",
-    "pack:mcpb": "npm run build && npx -y @anthropic-ai/mcpb validate . && npx -y @anthropic-ai/mcpb pack . safe-docx.mcpb",
+    "pack:mcpb": "npm run build && npx -y @anthropic-ai/mcpb@2.1.2 validate . && npx -y @anthropic-ai/mcpb@2.1.2 pack . safe-docx.mcpb",
     "check:manifest-contract": "vitest run src/manifest.test.ts",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@usejunior/docx-mcp": "^0.1.0"
+    "@usejunior/safe-docx": "^0.1.0"
   },
   "devDependencies": {
     "@vitest/runner": "^3.2.4",

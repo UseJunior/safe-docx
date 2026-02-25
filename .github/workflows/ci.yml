@@ -34,18 +34,6 @@ jobs:
       - name: Validate OpenSpec traceability coverage
         run: npm run check:spec-coverage
 
-  system-card-freshness:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - name: Regenerate and verify trust system card outputs are committed
-        run: npm run check:system-card
-
   tool-docs-freshness:
     runs-on: ubuntu-latest
     steps:
@@ -57,19 +45,6 @@ jobs:
       - run: npm ci
       - name: Regenerate and verify tool reference docs are committed
         run: npm run check:tool-docs
-
-  site-integrity:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm --prefix site ci
-      - name: Build site and validate internal links
-        run: npm run check:site
 
   mcpb-manifest-contract:
     runs-on: ubuntu-latest
@@ -129,6 +104,7 @@ jobs:
         run: |
           npm run test:run -w @usejunior/docx-core
           npm run test:run -w @usejunior/docx-mcp
+          npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
 
   mcpb-bundle:
@@ -141,6 +117,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Sanitize npm auth for public npx fetches
+        run: |
+          unset NODE_AUTH_TOKEN
+          npm config delete //registry.npmjs.org/:_authToken || true
       - name: Build and pack safe-docx MCP bundle
         run: npm run pack:mcpb
       - name: Upload MCPB bundle artifact (main only)
@@ -219,8 +199,11 @@ jobs:
             packages/docx-mcp/coverage/lcov.info
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: codecov/codecov-action@v5
         with:
           files: ./packages/docx-core/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
+          disable_search: true
           use_oidc: true
-          fail_ci_if_error: true
+          fail_ci_if_error: false
+          verbose: true

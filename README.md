@@ -19,6 +19,14 @@ Quick run:
 npx -y @usejunior/safe-docx
 ```
 
+## Gemini Extension Manifest
+
+Gemini CLI reads the extension manifest from the repo-root file:
+
+- `gemini-extension.json`
+
+The manifests under `packages/safe-docx-mcpb/` are for the MCPB distribution workflow and are not used as the Gemini extension manifest.
+
 ## Key Workflows
 
 - Apply edits to one document with formatting preservation
@@ -36,7 +44,8 @@ Generated tool reference (from Zod schemas):
 ## Packages
 
 - `@usejunior/docx-core` — OOXML comparison + primitives
-- `@usejunior/docx-mcp` — MCP server + CLI
+- `@usejunior/docx-mcp` — MCP server implementation package
+- `@usejunior/safe-docx` — canonical end-user package name (`npx -y @usejunior/safe-docx`)
 - `@usejunior/safedocx-mcpb` (private MCP bundle wrapper)
 
 ## Development
@@ -78,3 +87,4 @@ Packages to configure:
 
 - `@usejunior/docx-core`
 - `@usejunior/docx-mcp`
+- `@usejunior/safe-docx`

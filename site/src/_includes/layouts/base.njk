@@ -49,7 +49,6 @@
         <nav class="nav">
           <a href="{{ page.url | rootHref('index.html') }}">Home</a>
           <a href="{{ page.url | rootHref('trust/index.html') }}">Trust</a>
-          <a href="{{ page.url | rootHref('trust/system-card/index.html') }}">System Card</a>
         </nav>
       </header>
       <main{% if contentClass %} class="{{ contentClass }}"{% endif %}>{{ content | safe }}</main>
