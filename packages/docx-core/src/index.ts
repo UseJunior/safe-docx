@@ -143,7 +143,11 @@ export interface ReconstructionSafetyFailureSummary {
 }
 
 export interface ReconstructionAttemptDiagnostics {
-  pass: 'inplace_word_split' | 'inplace_run_level';
+  pass:
+    | 'inplace_word_split'
+    | 'inplace_run_level'
+    | 'inplace_word_split_cross_run'
+    | 'inplace_run_level_cross_run';
   checks: ReconstructionSafetyChecks;
   failedChecks: ReconstructionSafetyCheckName[];
   failureDetails?: ReconstructionSafetyFailureDetails;

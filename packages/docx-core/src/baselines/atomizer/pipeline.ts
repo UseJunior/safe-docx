@@ -591,8 +591,8 @@ export async function compareDocumentsAtomizer(
   let fallbackDiagnostics: ReconstructionFallbackDiagnostics | undefined;
   if (reconstructionMode === 'inplace') {
     // Adaptive strategy:
-    // 1) Try finer word-level atomization for better redline precision.
-    // 2) If safety fails, try conservative run-level atomization.
+    // 1) Try no-cross-run passes first (higher run anchoring fidelity).
+    // 2) If safety fails, retry with cross-run merging to handle run-fragmented docs.
     // 3) If still unsafe, reuse rebuild reconstruction as a hard safety fallback.
     const inplacePasses: Array<{
       pass: ReconstructionAttemptDiagnostics['pass'];
@@ -613,6 +613,24 @@ export async function compareDocumentsAtomizer(
           cloneLeafNodes: true,
           mergeAcrossRuns: false,
           mergePunctuationAcrossRuns: false,
+          splitTextIntoWords: false,
+        },
+      },
+      {
+        pass: 'inplace_word_split_cross_run',
+        atomizeOptions: {
+          cloneLeafNodes: true,
+          mergeAcrossRuns: true,
+          mergePunctuationAcrossRuns: true,
+          splitTextIntoWords: true,
+        },
+      },
+      {
+        pass: 'inplace_run_level_cross_run',
+        atomizeOptions: {
+          cloneLeafNodes: true,
+          mergeAcrossRuns: true,
+          mergePunctuationAcrossRuns: true,
           splitTextIntoWords: false,
         },
       },

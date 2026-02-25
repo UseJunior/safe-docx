@@ -81,6 +81,60 @@ async function countUnchangedEntries(
   return { unchanged, total: origFiles.length };
 }
 
+async function applyFirstUniqueReplacement(
+  mgr: SessionManager,
+  sessionId: string,
+): Promise<{ pattern: string; paraId: string; oldText: string; newText: string } | null> {
+  const patterns = [
+    'agreement',
+    'partnership',
+    'expires',
+    'confidential',
+    'service',
+    'term',
+    'date',
+  ];
+
+  for (const pattern of patterns) {
+    const grepRes = await grep(mgr, {
+      session_id: sessionId,
+      patterns: [pattern],
+      max_results: 10,
+      dedupe_by_paragraph: true,
+    });
+    if (!grepRes.success) continue;
+    const matches = (grepRes as Record<string, unknown>).matches as Array<{
+      para_id: string;
+      match_text: string;
+    }>;
+    for (const match of matches) {
+      const oldText = String(match.match_text ?? '').trim();
+      if (!oldText || oldText.length < 3) continue;
+      const newText = `${oldText}_E2E`;
+      const editRes = await replaceText(mgr, {
+        session_id: sessionId,
+        target_paragraph_id: match.para_id,
+        old_string: oldText,
+        new_string: newText,
+        instruction: `Replace ${oldText} with ${newText}`,
+      });
+
+      if (editRes.success) {
+        return { pattern, paraId: match.para_id, oldText, newText };
+      }
+
+      const errorCode = (editRes as Record<string, unknown>)?.error
+        ? String(((editRes as Record<string, unknown>).error as Record<string, unknown>).code ?? '')
+        : '';
+      if (errorCode === 'MULTIPLE_MATCHES' || errorCode === 'NOT_FOUND') {
+        continue;
+      }
+    }
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Mutual NDA E2E
 // ---------------------------------------------------------------------------
@@ -354,4 +408,64 @@ describe('Open Agreements E2E: Letter of Intent', () => {
     expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
     expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
   });
+});
+
+describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
+  registerTempCleanup();
+
+  const fixtures = [
+    'bonterms-mutual-nda.docx',
+    'common-paper-mutual-nda.docx',
+  ] as const;
+
+  for (const fixture of fixtures) {
+    test(`${fixture} stays inplace with table structure preserved`, async () => {
+      const mgr = createMgr();
+      const docPath = fixtureDocx(fixture);
+      const tmpDir = await makeTempDir();
+
+      const openRes = await openDocument(mgr, { file_path: docPath });
+      expect(openRes.success).toBe(true);
+      const sid = openRes.session_id as string;
+
+      const replacement = await applyFirstUniqueReplacement(mgr, sid);
+      expect(replacement).not.toBeNull();
+      const { newText } = replacement!;
+
+      const cleanPath = path.join(tmpDir, `${fixture}.edited.clean.docx`);
+      const trackedPath = path.join(tmpDir, `${fixture}.edited.tracked.docx`);
+      const dlRes = await download(mgr, {
+        session_id: sid,
+        save_to_local_path: cleanPath,
+        download_format: 'both',
+        tracked_save_to_local_path: trackedPath,
+        tracked_changes_author: 'E2E Test',
+        fail_on_rebuild_fallback: true,
+      });
+      expect(dlRes.success).toBe(true);
+      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).toBe('inplace');
+
+      const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
+      const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
+      const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
+
+      const origDocXml = await origZip.readText('word/document.xml');
+      const cleanDocXml = await cleanZip.readText('word/document.xml');
+      const trackedDocXml = await trackedZip.readText('word/document.xml');
+
+      const origTables = countTables(origDocXml);
+      expect(origTables).toBeGreaterThan(0);
+      expect(countTables(cleanDocXml)).toBe(origTables);
+      expect(countTables(trackedDocXml)).toBeGreaterThanOrEqual(origTables);
+
+      expect(cleanDocXml).toContain(newText);
+      expect(trackedDocXml).toContain(newText);
+
+      const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
+        { insertions: number; deletions: number; modifications: number };
+      const totalChanges = stats.insertions + stats.deletions + stats.modifications;
+      expect(totalChanges).toBeGreaterThan(0);
+      expect(totalChanges).toBeLessThan(20);
+    });
+  }
 });
