@@ -159,6 +159,10 @@ export interface ComparisonUnitAtom extends ComparisonUnit {
   // Source document tracking
   /** Which document this atom originated from (for correct formatting application) */
   sourceDocument?: 'original' | 'revised';
+
+  // Run formatting snapshot
+  /** Cloned run properties (w:rPr) captured at atomization time, or null if no formatting */
+  rPr?: Element | null;
 }
 
 // =============================================================================

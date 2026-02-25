@@ -306,6 +306,10 @@ export function createComparisonUnitAtom(
   // Calculate SHA1 hash for the atom
   const sha1Hash = hashElement(contentElement);
 
+  // Extract and clone run properties for first-class rPr access
+  const rPrElement = getRunProperties({ ancestorElements: ancestors } as ComparisonUnitAtom);
+  const rPr = rPrElement ? (rPrElement.cloneNode(true) as Element) : null;
+
   return {
     contentElement,
     ancestorElements: [...ancestors], // Copy to avoid mutation
@@ -314,6 +318,7 @@ export function createComparisonUnitAtom(
     revTrackElement,
     sha1Hash,
     correlationStatus,
+    rPr,
   };
 }
 
@@ -388,6 +393,7 @@ function createEmptyParagraphAtomWithContext(
     sha1Hash: sha1(hashContent),
     correlationStatus,
     isEmptyParagraph: true, // Mark this as an empty paragraph atom
+    rPr: null, // Empty paragraphs have no run formatting
   };
 }
 
@@ -696,6 +702,8 @@ export function collapseFieldSequences(
         correlationStatus: firstAtom.correlationStatus,
         // Store original atoms for document reconstruction
         collapsedFieldAtoms: fieldAtoms,
+        // Inherit rPr from first atom in the field sequence
+        rPr: firstAtom.rPr,
       };
 
       result.push(collapsedAtom);
@@ -775,6 +783,8 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
       paragraphIndex: atom.paragraphIndex,
       // Track that this came from a split atom for potential later merge
       splitFromAtom: atom,
+      // Share rPr reference (read-only after atomization)
+      rPr: atom.rPr,
     };
 
     result.push(wordAtom);
