@@ -278,7 +278,7 @@ describe('apply_plan tool', () => {
   // Apply: partial failure with completed_step_ids
   // ---------------------------------------------------------------------------
 
-  test('stops on first error and reports completed_step_ids', async () => {
+  test('old_string mismatch is caught at validation, not execution', async () => {
     const opened = await openSession(['Hello world', 'Second paragraph']);
     const result = await applyPlan(opened.mgr, {
       session_id: opened.sessionId,
@@ -297,7 +297,7 @@ describe('apply_plan tool', () => {
           target_paragraph_id: opened.paraIds[1],
           old_string: 'NONEXISTENT STRING',
           new_string: 'Updated',
-          instruction: 'this should fail',
+          instruction: 'this should fail validation',
         },
         {
           step_id: 's3',
@@ -310,16 +310,20 @@ describe('apply_plan tool', () => {
       ],
     });
 
-    assertFailure(result, 'APPLY_PARTIAL_FAILURE');
-    expect((result as Record<string, unknown>).completed_count).toBe(1);
-    expect((result as Record<string, unknown>).completed_step_ids).toEqual(['s1']);
-    expect((result as Record<string, unknown>).failed_step_id).toBe('s2');
-    expect((result as Record<string, unknown>).failed_step_index).toBe(1);
+    // Now caught at validation — no steps are applied
+    assertFailure(result, 'VALIDATION_FAILED');
+    const steps = (result as Record<string, unknown>).steps as Array<{ step_id: string; valid: boolean; errors: string[] }>;
+    expect(steps).toHaveLength(3);
+    expect(steps[0]!.valid).toBe(true);   // s1 is valid
+    expect(steps[1]!.valid).toBe(false);  // s2 has bad old_string
+    expect(steps[1]!.errors[0]).toContain('old_string not found');
+    expect(steps[2]!.valid).toBe(true);   // s3 is valid
 
-    // Verify first edit was applied
+    // Verify NO edits were applied (document unchanged)
     const read = await readFile(opened.mgr, { session_id: opened.sessionId });
     assertSuccess(read);
-    expect(String(read.content)).toContain('Hello earth');
+    expect(String(read.content)).toContain('Hello world');
+    expect(String(read.content)).not.toContain('Hello earth');
   });
 
   // ---------------------------------------------------------------------------

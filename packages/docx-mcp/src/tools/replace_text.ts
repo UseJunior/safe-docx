@@ -304,6 +304,15 @@ function runHasHighlight(run: Element): boolean {
   return !!v && v !== 'none';
 }
 
+export function stripSearchTags(text: string): string {
+  let s = text;
+  if (hasDefinitionTags(s)) s = stripDefinitionTags(s);
+  if (hasHighlightTags(s)) s = stripHighlightTags(s);
+  if (hasFormattingTags(s)) s = stripFormattingTags(s);
+  if (hasHyperlinkTags(s)) s = stripHyperlinkTags(s);
+  return s;
+}
+
 function isLikelyFieldPlaceholder(text: string): boolean {
   return /(\[[^\]]+\])|(\{\{[^}]+\}\})|(_{3,})/.test(text);
 }
@@ -539,11 +548,7 @@ export async function replaceText(
 
     const { target_paragraph_id: pid } = params;
     const legacyDefinitionTags = useLegacyDefinitionTags();
-    let oldStr = params.old_string;
-    if (hasDefinitionTags(oldStr)) oldStr = stripDefinitionTags(oldStr);
-    if (hasHighlightTags(oldStr)) oldStr = stripHighlightTags(oldStr);
-    if (hasFormattingTags(oldStr)) oldStr = stripFormattingTags(oldStr);
-    if (hasHyperlinkTags(oldStr)) oldStr = stripHyperlinkTags(oldStr);
+    const oldStr = stripSearchTags(params.old_string);
     let newStr = params.new_string;
     if (!legacyDefinitionTags && hasDefinitionTags(newStr)) {
       // Default mode: definition tags are normalized into plain quoted text.

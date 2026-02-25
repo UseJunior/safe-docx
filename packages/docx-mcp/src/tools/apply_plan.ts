@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
+import { findUniqueSubstringMatch } from '@usejunior/docx-core';
 import { SessionManager } from '../session/manager.js';
 import { errorMessage } from '../error_utils.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
-import { replaceText } from './replace_text.js';
+import { replaceText, stripSearchTags } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { resolveSessionForTool } from './session_resolution.js';
 
@@ -153,10 +154,25 @@ function validateSteps(
         if (text === null) {
           validation.errors.push(`target_paragraph_id '${targetId}' not found in document.`);
         } else {
-          // Check old_string exists
+          // Check old_string exists and matches in the paragraph.
+          // Apply the same tag-stripping that replaceText does before matching.
           const oldStr = step.fields.old_string;
           if (typeof oldStr !== 'string') {
             validation.errors.push('Missing old_string.');
+          } else {
+            const stripped = stripSearchTags(oldStr);
+            const matchResult = findUniqueSubstringMatch(text, stripped);
+            if (matchResult.status === 'not_found') {
+              validation.errors.push(
+                `old_string not found in paragraph '${targetId}'. `
+                + `Paragraph text (first 120 chars): "${text.slice(0, 120)}"`,
+              );
+            } else if (matchResult.status === 'multiple') {
+              validation.errors.push(
+                `old_string matched ${matchResult.matchCount} times in paragraph '${targetId}' `
+                + `(${matchResult.mode} matching). Must be unique.`,
+              );
+            }
           }
         }
       }
