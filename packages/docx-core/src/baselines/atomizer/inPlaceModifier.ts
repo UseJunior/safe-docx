@@ -1199,27 +1199,20 @@ export function preSplitMixedStatusRuns(mergedAtoms: ComparisonUnitAtom[]): void
   // Group atoms by their sourceRunElement (revised-tree runs only).
   const runGroups = new Map<Element, ComparisonUnitAtom[]>();
 
-  let totalAtoms = 0;
-  let skippedNoRun = 0;
-  let skippedDeleted = 0;
-  let skippedField = 0;
-  let skippedFieldChar = 0;
-
   for (const atom of mergedAtoms) {
-    totalAtoms++;
-    if (!atom.sourceRunElement) { skippedNoRun++; continue; }
+    if (!atom.sourceRunElement) continue;
 
     // Skip original-tree atoms — Deleted/MovedSource runs are cloned, not wrapped.
     if (
       atom.correlationStatus === CorrelationStatus.Deleted ||
       atom.correlationStatus === CorrelationStatus.MovedSource
-    ) { skippedDeleted++; continue; }
+    ) continue;
 
     // Skip collapsed field atoms (multi-run field sequences).
-    if (atom.collapsedFieldAtoms && atom.collapsedFieldAtoms.length > 0) { skippedField++; continue; }
+    if (atom.collapsedFieldAtoms && atom.collapsedFieldAtoms.length > 0) continue;
 
     // Skip field character elements — semantically fragile.
-    if (FIELD_CHAR_TAG_NAMES.has(atom.contentElement.tagName)) { skippedFieldChar++; continue; }
+    if (FIELD_CHAR_TAG_NAMES.has(atom.contentElement.tagName)) continue;
 
     const group = runGroups.get(atom.sourceRunElement);
     if (group) {
@@ -1229,20 +1222,13 @@ export function preSplitMixedStatusRuns(mergedAtoms: ComparisonUnitAtom[]): void
     }
   }
 
-  warn('preSplitMixedStatusRuns', `Total atoms: ${totalAtoms}, skipped: noRun=${skippedNoRun} deleted=${skippedDeleted} field=${skippedField} fieldChar=${skippedFieldChar}, groups: ${runGroups.size}`);
-
-  let splitCount = 0;
-  let skippedSingleStatus = 0;
-  let skippedCrossRun = 0;
-  let skippedNoParent = 0;
-
   for (const [run, atoms] of runGroups) {
     // Early check: skip single-status runs before any DOM work.
     const statuses = new Set(atoms.map((a) => a.correlationStatus));
-    if (statuses.size <= 1) { skippedSingleStatus++; continue; }
+    if (statuses.size <= 1) continue;
 
     // Guard: skip runs already detached from the tree.
-    if (!run.parentNode) { skippedNoParent++; continue; }
+    if (!run.parentNode) continue;
 
     try {
       // Compute the run's actual visible length via DOM traversal.
@@ -1258,11 +1244,7 @@ export function preSplitMixedStatusRuns(mergedAtoms: ComparisonUnitAtom[]): void
       for (const atom of atoms) {
         sumAtomLengths += atomContentVisibleLength(atom.contentElement);
       }
-      if (sumAtomLengths > runVisibleLength) {
-        warn('preSplitMixedStatusRuns', `Cross-run skip: sum=${sumAtomLengths} > runLen=${runVisibleLength}, atoms=${atoms.length}, statuses=${[...statuses].join(',')}, text="${getLeafText(run)?.substring(0, 60)}"`);
-        skippedCrossRun++;
-        continue;
-      }
+      if (sumAtomLengths > runVisibleLength) continue;
 
       // Compute contiguous status spans with character offsets.
       interface StatusSpan {
@@ -1326,15 +1308,12 @@ export function preSplitMixedStatusRuns(mergedAtoms: ComparisonUnitAtom[]): void
           atom.sourceRunElement = fragment;
         }
       }
-      splitCount++;
-      warn('preSplitMixedStatusRuns', `Split run into ${fragments.length} fragments: statuses=${spans.map(s => s.status).join(',')}, offsets=[${splitPoints.join(',')}], runLen=${runVisibleLength}, text="${getLeafText(run)?.substring(0, 60)}"`);
     } catch (_err) {
       // DOM operation failed — skip this run. The existing fallback-to-rebuild
       // architecture will handle it if the overall safety check fails.
       warn('preSplitMixedStatusRuns', `Skipping run split due to error: ${_err}`);
     }
   }
-  warn('preSplitMixedStatusRuns', `Done: split=${splitCount}, skippedSingleStatus=${skippedSingleStatus}, skippedCrossRun=${skippedCrossRun}, skippedNoParent=${skippedNoParent}`);
 }
 
 /**
