@@ -2,7 +2,14 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
-import { DocxDocument, type NormalizationResult, type ParagraphRevision } from '@usejunior/docx-core';
+import {
+  DocxDocument,
+  type NormalizationResult,
+  type ParagraphRevision,
+  type ReconstructionMode,
+  type ReconstructionFallbackReason,
+  type ReconstructionFallbackDiagnostics,
+} from '@usejunior/docx-core';
 
 export type DownloadFormat = 'clean' | 'tracked' | 'both';
 
@@ -22,6 +29,9 @@ export type DownloadCacheEntry = {
   revisedBuffer: Buffer;
   trackedBuffer: Buffer | null;
   trackedStats: TrackedChangesStats | null;
+  trackedReconstructionMode?: ReconstructionMode;
+  trackedFallbackReason?: ReconstructionFallbackReason;
+  trackedFallbackDiagnostics?: ReconstructionFallbackDiagnostics;
   bookmarksRemoved: number;
   exportedAtUtc: string;
   cachedAtIso: string;
@@ -38,6 +48,17 @@ export type Session = {
   tmpPath: string;
   originalPath: string;
   originalBuffer: Buffer;
+  /**
+   * Post-normalization + bookmark-cleaned buffer used as comparison baseline for tracked output.
+   * Comparing against this instead of originalBuffer prevents normalization artifacts from
+   * appearing as false tracked changes. Set during open_document after normalization.
+   */
+  comparisonBaseline: Buffer | null;
+  /**
+   * Post-normalization buffer WITH bookmarks, used as comparison baseline for
+   * compare_documents tool (which uses cleanBookmarks: false).
+   */
+  comparisonBaselineWithBookmarks: Buffer | null;
   doc: DocxDocument;
   editCount: number;
   editRevision: number;
@@ -95,6 +116,8 @@ export class SessionManager {
       tmpPath,
       originalPath,
       originalBuffer: Buffer.from(documentContent),
+      comparisonBaseline: null,
+      comparisonBaselineWithBookmarks: null,
       doc,
       editCount: 0,
       editRevision: 0,

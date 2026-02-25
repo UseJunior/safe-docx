@@ -3,7 +3,7 @@ import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
-import { compareDocuments, type CompareOptions } from '@usejunior/docx-core';
+import { compareDocuments, type CompareOptions, type CompareResult } from '@usejunior/docx-core';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { enforceWritePathPolicy } from './path_policy.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
@@ -61,6 +61,7 @@ export async function download(
     tracked_save_to_local_path?: string;
     tracked_changes_author?: string;
     tracked_changes_engine?: CompareOptions['engine'];
+    fail_on_rebuild_fallback?: boolean;
   },
 ): Promise<ToolResponse> {
   try {
@@ -126,6 +127,9 @@ export async function download(
     let revisedBuffer: Buffer;
     let trackedBuffer: Buffer | null;
     let trackedStats: { insertions: number; deletions: number; modifications: number } | null;
+    let trackedReconstructionMode: CompareResult['reconstructionModeUsed'];
+    let trackedFallbackReason: CompareResult['fallbackReason'];
+    let trackedFallbackDiagnostics: CompareResult['fallbackDiagnostics'];
     let bookmarksRemoved: number;
     let exportTimestamp: string;
 
@@ -136,6 +140,9 @@ export async function download(
       revisedBuffer = cached.revisedBuffer;
       trackedBuffer = cached.trackedBuffer;
       trackedStats = cached.trackedStats;
+      trackedReconstructionMode = cached.trackedReconstructionMode;
+      trackedFallbackReason = cached.trackedFallbackReason;
+      trackedFallbackDiagnostics = cached.trackedFallbackDiagnostics;
       bookmarksRemoved = cached.bookmarksRemoved;
       exportTimestamp = cached.exportedAtUtc;
     } else {
@@ -144,11 +151,17 @@ export async function download(
       bookmarksRemoved = revised.bookmarksRemoved;
       trackedBuffer = null;
       trackedStats = null;
+      trackedReconstructionMode = undefined;
+      trackedFallbackReason = undefined;
+      trackedFallbackDiagnostics = undefined;
       exportTimestamp = formatUtcTimestamp(new Date());
 
       if (format === 'tracked' || format === 'both') {
+        // Use comparison baseline (post-normalization) when available to avoid
+        // false tracked changes caused by normalization transforms.
+        const baselineBuffer = session.comparisonBaseline ?? session.originalBuffer;
         const trackedRes = await runWithoutConsoleLog(() =>
-          compareDocuments(session.originalBuffer, revisedBuffer, {
+          compareDocuments(baselineBuffer, revisedBuffer, {
             author,
             engine: trackedEngine,
             reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
@@ -156,6 +169,18 @@ export async function download(
         );
         trackedBuffer = trackedRes.document;
         trackedStats = trackedRes.stats;
+        trackedReconstructionMode = trackedRes.reconstructionModeUsed;
+        trackedFallbackReason = trackedRes.fallbackReason;
+        trackedFallbackDiagnostics = trackedRes.fallbackDiagnostics;
+      }
+
+      if (params.fail_on_rebuild_fallback && trackedReconstructionMode === 'rebuild') {
+        return err(
+          'REBUILD_FALLBACK',
+          'Tracked output would use rebuild mode which destroys table structure. ' +
+            (trackedFallbackReason ? `Reason: ${trackedFallbackReason}.` : ''),
+          "Use download_format: 'clean' or fix the document to pass inplace safety checks.",
+        );
       }
 
       manager.setDownloadCache(session, {
@@ -168,6 +193,9 @@ export async function download(
         revisedBuffer,
         trackedBuffer,
         trackedStats,
+        trackedReconstructionMode,
+        trackedFallbackReason,
+        trackedFallbackDiagnostics,
         bookmarksRemoved: clean ? bookmarksRemoved : 0,
         exportedAtUtc: exportTimestamp,
         cachedAtIso: new Date().toISOString(),
@@ -237,6 +265,12 @@ export async function download(
       tracked_changes_engine: format === 'tracked' || format === 'both' ? trackedEngine : undefined,
       tracked_changes_author: format === 'tracked' || format === 'both' ? author : undefined,
       tracked_changes_stats: trackedStats ?? undefined,
+      tracked_reconstruction_mode: trackedReconstructionMode,
+      tracked_fallback_reason: trackedFallbackReason,
+      tracked_fallback_diagnostics: trackedFallbackDiagnostics,
+      tracked_rebuild_warning: trackedReconstructionMode === 'rebuild'
+        ? 'Rebuild mode was used which may alter document structure (tables, fonts, etc.)'
+        : undefined,
       exported_at_utc: exportTimestamp,
       bookmarks_removed: clean ? bookmarksRemoved : 0,
       returned_variants: returnedVariants,

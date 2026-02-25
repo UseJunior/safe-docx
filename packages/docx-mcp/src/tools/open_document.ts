@@ -80,6 +80,16 @@ export async function openDocument(
     // Insert paragraph bookmarks for stable paragraph ids.
     const info = session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
 
+    // Compute comparison baselines AFTER normalization + bookmark insertion.
+    // These baselines are used for tracked-changes comparison instead of originalBuffer,
+    // preventing normalization artifacts from appearing as false tracked changes.
+    const [cleanBaseline, bookmarkedBaseline] = await Promise.all([
+      session.doc.toBuffer({ cleanBookmarks: true }),
+      session.doc.toBuffer({ cleanBookmarks: false }),
+    ]);
+    session.comparisonBaseline = cleanBaseline.buffer;
+    session.comparisonBaselineWithBookmarks = bookmarkedBaseline.buffer;
+
     manager.touch(session);
     return ok({
       session_id: session.sessionId,

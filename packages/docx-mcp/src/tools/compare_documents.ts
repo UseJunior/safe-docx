@@ -94,7 +94,9 @@ export async function compareDocuments_tool(
       const { session, metadata } = resolved;
       sessionMetadata = metadata;
 
-      originalBuffer = session.originalBuffer;
+      // Use comparison baseline (post-normalization with bookmarks) when available
+      // to prevent normalization artifacts from appearing as false tracked changes.
+      originalBuffer = session.comparisonBaselineWithBookmarks ?? session.originalBuffer;
       const revised = await session.doc.toBuffer({ cleanBookmarks: false });
       revisedBuffer = revised.buffer;
       originalFilePath = manager.normalizePath(session.originalPath);

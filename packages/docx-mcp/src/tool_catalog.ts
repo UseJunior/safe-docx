@@ -113,6 +113,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       tracked_save_to_local_path: z.string().optional(),
       tracked_changes_author: z.string().optional(),
       tracked_changes_engine: z.enum(['auto', 'atomizer', 'diffmatch']).optional(),
+      fail_on_rebuild_fallback: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true, return an error instead of a destructive output if the comparison engine falls back to rebuild mode (which destroys table structure). Default: false.',
+        ),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
