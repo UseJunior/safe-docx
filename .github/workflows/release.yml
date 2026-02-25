@@ -31,7 +31,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Use npm 11.5.1+ for OIDC trusted publishing compatibility
@@ -162,7 +162,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Use npm 11.5.1+ for OIDC trusted publishing compatibility
@@ -226,7 +226,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Use npm 11.5.1+ for OIDC trusted publishing compatibility
