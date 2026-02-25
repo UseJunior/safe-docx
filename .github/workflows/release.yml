@@ -32,7 +32,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
           cache: npm
 
       - name: Use npm 11.5.1+ for OIDC trusted publishing compatibility
@@ -164,7 +163,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
           cache: npm
 
       - name: Use npm 11.5.1+ for OIDC trusted publishing compatibility
@@ -194,6 +192,8 @@ jobs:
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           VERSION="${TAG_REF#v}"
+          unset NODE_AUTH_TOKEN
+          npm config delete //registry.npmjs.org/:_authToken || true
 
           # Publish in dependency order.
           for entry in "@usejunior/docx-core:packages/docx-core" "@usejunior/docx-mcp:packages/docx-mcp" "@usejunior/safe-docx:packages/safe-docx"; do
