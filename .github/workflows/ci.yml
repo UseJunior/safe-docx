@@ -16,7 +16,19 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Build workspaces
         run: npm run build
       - name: Lint/typecheck workspaces
@@ -30,7 +42,19 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Validate OpenSpec traceability coverage
         run: npm run check:spec-coverage
 
@@ -42,7 +66,19 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Regenerate and verify tool reference docs are committed
         run: npm run check:tool-docs
 
@@ -54,7 +90,19 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Validate MCPB manifest/tool contract
         run: npm run check:mcpb-manifest
 
@@ -66,7 +114,19 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Validate Allure hierarchy labels
         run: npm run check:allure-labels
       - name: Enforce Allure filename migration policy
@@ -75,22 +135,89 @@ jobs:
   workspace-test:
     runs-on: ubuntu-latest
     needs: workspace-lint
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       matrix:
         node-version: [20, 22]
+        include:
+          - node-version: 20
+            coverage: true
+          - node-version: 22
+            coverage: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Build workspaces
         run: npm run build
+      - name: Test workspaces (with coverage)
+        if: matrix.coverage
+        run: |
+          npm run test:coverage -w @usejunior/docx-core
+          npm run test:coverage -w @usejunior/docx-mcp
+          npm run test:run -w @usejunior/safe-docx
+          npm run test:run -w @usejunior/safedocx-mcpb
       - name: Test workspaces
+        if: ${{ !matrix.coverage }}
         run: npm run test
+      - name: Generate package coverage dashboard + enforce ratchet
+        if: matrix.coverage
+        run: |
+          mkdir -p coverage
+          npm run coverage:packages:check > coverage/package-coverage-table.txt
+          cat coverage/package-coverage-table.txt
+      - name: Upload package coverage artifacts
+        if: ${{ matrix.coverage && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-coverage
+          if-no-files-found: error
+          path: |
+            coverage/package-coverage-baseline.json
+            coverage/package-coverage-summary.json
+            coverage/package-coverage-table.txt
+            packages/docx-core/coverage/coverage-summary.json
+            packages/docx-mcp/coverage/coverage-summary.json
+            packages/docx-core/coverage/lcov.info
+            packages/docx-mcp/coverage/lcov.info
+      - name: Upload coverage to Codecov
+        if: ${{ matrix.coverage && !cancelled() }}
+        continue-on-error: true
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./packages/docx-core/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
+          disable_search: true
+          use_oidc: true
+          fail_ci_if_error: false
+          verbose: true
+      - name: Upload allure results
+        if: matrix.coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          if-no-files-found: error
+          path: |
+            packages/docx-core/allure-results/
+            packages/docx-mcp/allure-results/
 
-  package-smoke:
+  mcpb-bundle:
     runs-on: ubuntu-latest
     needs: workspace-test
     steps:
@@ -99,24 +226,19 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
-      - name: Package-level smoke tests
+      - name: Install dependencies (npm ci with retry)
         run: |
-          npm run test:run -w @usejunior/docx-core
-          npm run test:run -w @usejunior/docx-mcp
-          npm run test:run -w @usejunior/safe-docx
-          npm run test:run -w @usejunior/safedocx-mcpb
-
-  mcpb-bundle:
-    runs-on: ubuntu-latest
-    needs: package-smoke
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
       - name: Sanitize npm auth for public npx fetches
         run: |
           unset NODE_AUTH_TOKEN
@@ -150,7 +272,23 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
+      - name: Download allure results
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-results
       - name: Generate Allure report
         run: npm run allure:generate
       - name: Brand Allure report
@@ -162,48 +300,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-  package-coverage:
-    runs-on: ubuntu-latest
-    needs: workspace-test
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - name: Run package coverage suites
-        run: npm run test:coverage:packages
-      - name: Generate package coverage dashboard + enforce ratchet
-        run: |
-          mkdir -p coverage
-          npm run coverage:packages:check > coverage/package-coverage-table.txt
-          cat coverage/package-coverage-table.txt
-      - name: Upload package coverage artifacts
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-coverage
-          if-no-files-found: error
-          path: |
-            coverage/package-coverage-baseline.json
-            coverage/package-coverage-summary.json
-            coverage/package-coverage-table.txt
-            packages/docx-core/coverage/coverage-summary.json
-            packages/docx-mcp/coverage/coverage-summary.json
-            packages/docx-core/coverage/lcov.info
-            packages/docx-mcp/coverage/lcov.info
-      - name: Upload coverage to Codecov
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./packages/docx-core/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
-          disable_search: true
-          use_oidc: true
-          fail_ci_if_error: false
-          verbose: true
