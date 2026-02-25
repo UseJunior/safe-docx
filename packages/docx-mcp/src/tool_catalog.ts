@@ -73,6 +73,23 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
+    name: 'apply_plan',
+    description:
+      'Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a session document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.',
+    input: z.object({
+      ...SESSION_OR_FILE_FIELDS,
+      steps: z
+        .array(z.object({}).catchall(z.unknown()))
+        .optional()
+        .describe('JSON array of edit steps. Each step needs step_id, operation, and operation-specific fields.'),
+      plan_file_path: z
+        .string()
+        .optional()
+        .describe('Path to a .json file containing an array of edit steps. Mutually exclusive with steps.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
     name: 'replace_text',
     description: 'Replace text in a paragraph by _bk_* id, preserving formatting. Accepts session_id or file_path.',
     input: z.object({
@@ -97,6 +114,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       new_string: z.string(),
       instruction: z.string(),
       position: z.enum(['BEFORE', 'AFTER']).optional(),
+      style_source_id: z
+        .string()
+        .optional()
+        .describe(
+          'Paragraph _bk_* ID to clone formatting (pPr and template run) from instead of the positional anchor. Falls back to anchor with a warning if not found.',
+        ),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },

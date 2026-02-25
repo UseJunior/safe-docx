@@ -299,11 +299,24 @@ export class DocxDocument {
     relativePosition: 'BEFORE' | 'AFTER';
     newText: string;
     newParagraphId?: string;
-  }): { newParagraphId: string; newParagraphIds: string[] } {
-    const { positionalAnchorNodeId, relativePosition, newText, newParagraphId: _newParagraphId } = params;
+    styleSourceId?: string;
+  }): { newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean } {
+    const { positionalAnchorNodeId, relativePosition, newText, newParagraphId: _newParagraphId, styleSourceId } = params;
     const anchor = findParagraphByBookmarkId(this.documentXml, positionalAnchorNodeId);
     if (!anchor) throw new Error(`Anchor paragraph not found: ${positionalAnchorNodeId}`);
     const anchorP = anchor;
+
+    // Resolve style source paragraph (if provided).
+    let styleSourceP: Element | null = null;
+    let styleSourceFallback = false;
+    if (styleSourceId) {
+      styleSourceP = findParagraphByBookmarkId(this.documentXml, styleSourceId);
+      if (!styleSourceP) {
+        styleSourceFallback = true;
+        // Fall back to anchor
+      }
+    }
+    const formattingSource = styleSourceP ?? anchorP;
 
     const doc = this.documentXml;
     const parent = anchorP.parentNode;
@@ -383,18 +396,18 @@ export class DocxDocument {
       return anchorP.nextSibling;
     }
 
-    // Choose a run in the anchor to use as formatting template: pick the run with the most visible text.
-    const anchorVisibleRuns = getParagraphRuns(anchorP);
+    // Choose a run in the formatting source to use as formatting template: pick the run with the most visible text.
+    const sourceVisibleRuns = getParagraphRuns(formattingSource);
     let templateRun: Element | null = null;
     let bestLen = -1;
-    for (const tr of anchorVisibleRuns) {
+    for (const tr of sourceVisibleRuns) {
       if (tr.text.length > bestLen) {
         bestLen = tr.text.length;
         templateRun = tr.r;
       }
     }
     if (!templateRun) {
-      const allRuns = Array.from(anchorP.getElementsByTagNameNS(OOXML.W_NS, W.r));
+      const allRuns = Array.from(formattingSource.getElementsByTagNameNS(OOXML.W_NS, W.r));
       templateRun = allRuns[0] ?? doc.createElementNS(OOXML.W_NS, 'w:r');
     }
 
@@ -404,7 +417,7 @@ export class DocxDocument {
     let cursor: Node | null = getInsertionRefNode();
 
     for (const paraText of paragraphsToInsert) {
-      const newP = cloneParagraphShell(anchorP);
+      const newP = cloneParagraphShell(formattingSource);
       const newRun = cloneRunFormattingOnly(templateRun);
       appendTextToRun(newRun, paraText);
       newP.appendChild(newRun);
@@ -422,7 +435,12 @@ export class DocxDocument {
 
     this.dirty = true;
     this.documentViewCache = null;
-    return { newParagraphId: insertedIds[0]!, newParagraphIds: insertedIds };
+    const result: { newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean } = {
+      newParagraphId: insertedIds[0]!,
+      newParagraphIds: insertedIds,
+    };
+    if (styleSourceFallback) result.styleSourceFallback = true;
+    return result;
   }
 
   setParagraphSpacing(mutation: ParagraphSpacingMutation): ParagraphSpacingMutationResult {

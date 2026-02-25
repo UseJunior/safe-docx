@@ -10,6 +10,7 @@ import { initPlan } from './tools/init_plan.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
 import { mergePlans } from './tools/merge_plans.js';
+import { applyPlan } from './tools/apply_plan.js';
 import { download } from './tools/download.js';
 import { getSessionStatus } from './tools/get_session_status.js';
 import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
@@ -45,6 +46,8 @@ export async function dispatchToolCall(
       return await initPlan(sessions, args as Parameters<typeof initPlan>[1]);
     case 'merge_plans':
       return await mergePlans(args as Parameters<typeof mergePlans>[0]);
+    case 'apply_plan':
+      return await applyPlan(sessions, args as Parameters<typeof applyPlan>[1]);
     case 'replace_text':
       return await replaceText(sessions, args as Parameters<typeof replaceText>[1]);
     case 'insert_paragraph':

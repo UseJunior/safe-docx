@@ -485,6 +485,7 @@ export async function insertParagraph(
     new_string: string;
     instruction: string;
     position?: string; // BEFORE|AFTER
+    style_source_id?: string;
   },
 ): Promise<ToolResponse> {
   try {
@@ -530,6 +531,7 @@ export async function insertParagraph(
       positionalAnchorNodeId: params.positional_anchor_node_id,
       relativePosition: positionUpper as 'BEFORE' | 'AFTER',
       newText: plainParagraphs.join('\n\n'),
+      styleSourceId: params.style_source_id,
     });
 
     const defAddProps = findDefinitionRoleModelAddRunProps(session, params.positional_anchor_node_id);
@@ -567,7 +569,7 @@ export async function insertParagraph(
 
     manager.markEdited(session);
 
-    return ok(mergeSessionResolutionMetadata({
+    const responseData: Record<string, unknown> = {
       success: true,
       session_id: session.sessionId,
       edit_count: session.editCount,
@@ -576,7 +578,11 @@ export async function insertParagraph(
       new_paragraph_ids: res.newParagraphIds,
       position: positionUpper,
       inserted_text: previewText(plainParagraphs.join('\n\n'), RESULT_PREVIEW_CHARS),
-    }, metadata));
+    };
+    if (res.styleSourceFallback) {
+      responseData.style_source_warning = `style_source_id '${params.style_source_id}' not found; fell back to anchor paragraph formatting.`;
+    }
+    return ok(mergeSessionResolutionMetadata(responseData, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);
     return err('INSERT_ERROR', `Failed to insert paragraph: ${msg}`, 'Use grep or read_file to find valid anchor paragraph IDs.');
