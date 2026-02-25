@@ -1,14 +1,15 @@
 {
-  "generated_at_utc": "2026-02-24T20:59:40.688Z",
+  "generated_at_utc": "2026-02-25T23:47:17.688Z",
   "allure": {
-    "results_total": 992,
-    "unique_stories_total": 957,
-    "unique_epics_total": 6,
-    "unique_features_total": 165,
+    "results_total": 359,
+    "unique_stories_total": 339,
+    "unique_epics_total": 4,
+    "unique_features_total": 48,
     "status_counts": {
-      "passed": 992
+      "failed": 1,
+      "passed": 358
     },
-    "latest_run_utc": "2026-02-24T20:53:06.616Z"
+    "latest_run_utc": "2026-02-25T23:46:17.432Z"
   },
   "traceability": {
     "total_scenarios": 175,

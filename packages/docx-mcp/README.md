@@ -1,10 +1,16 @@
-# @usejunior/safe-docx
+# @usejunior/docx-mcp
 
-Local MCP server for editing Microsoft Word `.docx` files with coding agents.
+[![npm version](https://img.shields.io/npm/v/%40usejunior%2Fdocx-mcp)](https://www.npmjs.com/package/@usejunior/docx-mcp)
+[![CI](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
 
-Built for developers who occasionally need to handle contracts, forms, and other paperwork without switching to a separate document-automation stack.
+Local MCP server for surgical editing of existing Microsoft Word `.docx` files with coding agents.
 
-## Quickstart (2 minutes)
+Safe Docx is built for brownfield paperwork workflows: apply accepted AI edits to real Word documents while preserving formatting and review semantics.
+
+For end-user installation, use the canonical wrapper package: `npx -y @usejunior/safe-docx`.
+
+## Quickstart
 
 ```bash
 npx -y @usejunior/safe-docx
@@ -12,24 +18,43 @@ npx -y @usejunior/safe-docx
 
 Add to your MCP client:
 
-- **Command:** `npx`
-- **Args:** `["-y", "@usejunior/safe-docx"]`
-- **Transport:** `stdio`
+- Command: `npx`
+- Args: `["-y", "@usejunior/safe-docx"]`
+- Transport: `stdio`
 
-## What You Can Do
+## Primary Workflows
 
-- Apply edits to one document while preserving formatting (`replace_text`, `insert_paragraph`, `format_layout`)
-- Save outputs as clean and/or tracked-changes variants (`download`)
-- Compare an original and revised document to generate a tracked-changes comparison output (`compare_documents`; tracked changes are computed at comparison time, not tracked incrementally during edits)
-- Extract revision data as JSON for downstream review flows (`extract_revisions`)
-- Check whether tracked-change markers are present (`has_tracked_changes`)
-- Add comments and manage footnotes (`add_comment`, `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote`)
+- Apply targeted edits while preserving formatting (`replace_text`, `insert_paragraph`, `format_layout`)
+- Produce clean and tracked variants for human review (`download`)
+- Compare original vs revised documents into tracked output (`compare_documents`)
+- Extract revisions as structured JSON (`extract_revisions`)
+- Manage comments and footnotes as first-class operations
 
-## Golden Prompts
+## Tool Categories
 
-Use these known-good prompt patterns:
+- Read/Search: `read_file`, `grep`, `has_tracked_changes`, `get_session_status`
+- Edit/Layout: `replace_text`, `insert_paragraph`, `format_layout`, `accept_changes`
+- Planning/Batch: `init_plan`, `merge_plans`, `apply_plan`
+- Compare/Revision: `compare_documents`, `extract_revisions`, `download`
+- Comments/Footnotes: `add_comment`, `get_comments`, `delete_comment`, `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote`
+- Session/Safety: `clear_session`, `duplicate_document`, path-policy + archive guardrails
 
-- `packages/safe-docx/docs/golden-prompts.md`
+## Document Families
+
+### Automated fixture coverage in this repo
+
+- Common Paper style mutual NDA fixtures
+- Bonterms mutual NDA fixture
+- Letter of Intent fixture
+- ILPA limited partnership agreement redline fixtures
+
+### Designed for complex legal and business `.docx` classes
+
+- NVCA financing forms
+- YC SAFEs
+- Offering memoranda
+- Order forms and services agreements
+- Limited partnership agreements
 
 ## Install By Client
 
@@ -88,7 +113,7 @@ Add to `cline_mcp_settings.json`:
 
 Safe Docx in this package is local runtime only:
 
-- Runs in a local process on your machine
+- Runs as a local process on your machine
 - Reads/writes local filesystem paths allowed by path policy
 - Does not expose a hosted Safe Docx editor endpoint
 
@@ -107,54 +132,94 @@ Runtime safety guardrails:
   - `SAFE_DOCX_MAX_ENTRY_UNCOMPRESSED_BYTES` (default `52428800`)
   - `SAFE_DOCX_MAX_COMPRESSION_RATIO` (default `200`)
 
-build-time tooling for advanced rendering is optional and not required by the default `npx` runtime.
+Build-time tooling for advanced rendering is optional and not required by default `npx` runtime usage.
 
 ## Where It Runs
 
-No native binaries, no .NET, no LibreOffice. Safe Docx operates on `Uint8Array` / `Buffer` inputs via jszip + xmldom, so it works in any JavaScript runtime:
+No native binaries and no .NET prerequisite for supported runtime usage. Safe Docx operates on `Uint8Array` / `Buffer` inputs via `jszip` + `@xmldom/xmldom`:
 
-- Local MCP server (default — `npx @usejunior/safe-docx`)
+- Local MCP server (default)
 - Cloudflare Workers / Durable Objects
-- Vercel Functions / Vercel Workflow steps
+- Vercel Functions / workflow steps
 - AWS Lambda / Lambda@Edge
 - Docker / any container runtime
 - Any V8 isolate or Node.js process
 
-If your application needs to edit `.docx` files in a serverless or edge environment, import `@usejunior/docx-core` directly as a library — no MCP server required.
+If you need direct library imports in app code, use `@usejunior/docx-core`.
 
-## Tool Reference (Generated)
+## Reliability and Evidence
 
-Tool input schemas are defined in Zod 4 and exported to JSON Schema for MCP/tool docs.
-
-- Source of truth: `packages/safe-docx/src/tool_catalog.ts`
-- Generated reference: `packages/safe-docx/docs/tool-reference.generated.md`
-- Regenerate: `npm run docs:generate:tools -w @usejunior/safe-docx`
-
-## Conformance and Reliability Evidence
-
-- Assumptions and verification matrix:
-  - `packages/safe-docx/assumptions.md`
-- Conformance guide:
-  - `docs/safe-docx/sprint-3-conformance.md`
-- Conformance assets:
-  - `packages/safe-docx/conformance/README.md`
+- Tool catalog source: `packages/docx-mcp/src/tool_catalog.ts`
+- Generated tool reference: `packages/docx-mcp/docs/tool-reference.generated.md`
+- OpenSpec traceability matrix: `packages/docx-mcp/src/testing/SAFE_DOCX_OPENSPEC_TRACEABILITY.md`
+- Assumption matrix: `packages/docx-mcp/assumptions.md`
+- Conformance assets: `packages/docx-mcp/conformance/README.md`
+- Conformance guide: `docs/safe-docx/sprint-3-conformance.md`
 
 Commands:
 
 ```bash
-npm run conformance:smoke -w @usejunior/safe-docx
-npm run conformance:run -w @usejunior/safe-docx
+npm run conformance:smoke -w @usejunior/docx-mcp
+npm run conformance:run -w @usejunior/docx-mcp
 ```
 
 Optional OpenAgreements fixture root:
 
 ```bash
-SAFE_DOCX_CONFORMANCE_OPEN_AGREEMENTS_ROOT=/path/to/open-agreements npm run conformance:run -w @usejunior/safe-docx
+SAFE_DOCX_CONFORMANCE_OPEN_AGREEMENTS_ROOT=/path/to/open-agreements npm run conformance:run -w @usejunior/docx-mcp
 ```
 
-## Development (Repo)
+## FAQ
+
+### Is this for editing existing Word files or generating new ones?
+
+This package is for editing existing `.docx` files. For from-scratch generation, use packages such as [`docx`](https://www.npmjs.com/package/docx).
+
+### Does it preserve formatting?
+
+That is a core objective. The edit tools are built for surgical mutation while preserving run/paragraph formatting semantics.
+
+### Is TOON output token-efficient for agent workflows?
+
+Yes. `read_file` supports `toon` output specifically for compact, agent-friendly reads of existing documents.
+
+### Does this require Python, .NET, or LibreOffice?
+
+No for supported runtime paths. The default MCP runtime is TypeScript/Node-based.
+
+### Can it add and delete comment bubbles?
+
+Yes. Use `add_comment`, `get_comments`, and `delete_comment`.
+
+### Can it add and delete footnotes?
+
+Yes. Use `get_footnotes`, `add_footnote`, `update_footnote`, and `delete_footnote`.
+
+### Can it produce tracked changes for review?
+
+Yes. Use `download` with tracked variants or `compare_documents` for standalone original/revised comparisons.
+
+### Is processing local-only?
+
+Yes for this package. It runs as a local process and does not require a hosted Safe Docx editor endpoint.
+
+### What document families are explicitly fixture-tested here?
+
+Mutual NDA variants, Letter of Intent, and ILPA redline fixtures.
+
+### Is this only for legal teams?
+
+No. It is useful anywhere teams edit DOCX paperwork with agents: legal, procurement, sales ops, finance, and HR.
+
+## Golden Prompts
+
+Use these known-good prompt patterns:
+
+- `packages/docx-mcp/docs/golden-prompts.md`
+
+## Development
 
 ```bash
-npm run build -w @usejunior/safe-docx
-npm run test:run -w @usejunior/safe-docx
+npm run build -w @usejunior/docx-mcp
+npm run test:run -w @usejunior/docx-mcp
 ```

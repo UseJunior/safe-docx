@@ -85,7 +85,7 @@ describe('TypeScript MCP server behavior', () => {
     const packageJsonPath = fileURLToPath(new URL('../package.json', import.meta.url));
     const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as PackageJsonMetadata;
     expect(pkg.types).toBe('dist/index.d.ts');
-    expect(pkg.repository?.url).toContain('github.com/usejunior/safe-docx');
+    expect(pkg.repository?.url?.toLowerCase()).toContain('github.com/usejunior/safe-docx');
     expect(pkg.license).toBe('MIT');
   });
 
