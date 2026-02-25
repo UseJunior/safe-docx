@@ -117,6 +117,10 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Sanitize npm auth for public npx fetches
+        run: |
+          unset NODE_AUTH_TOKEN
+          npm config delete //registry.npmjs.org/:_authToken || true
       - name: Build and pack safe-docx MCP bundle
         run: npm run pack:mcpb
       - name: Upload MCPB bundle artifact (main only)
@@ -195,9 +199,11 @@ jobs:
             packages/docx-mcp/coverage/lcov.info
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: codecov/codecov-action@v5
         with:
           files: ./packages/docx-core/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
+          disable_search: true
           use_oidc: true
           fail_ci_if_error: false
           verbose: true

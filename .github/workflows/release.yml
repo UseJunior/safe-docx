@@ -120,6 +120,11 @@ jobs:
             (cd "$pkg" && npm pack --dry-run)
           done
 
+      - name: Sanitize npm auth for public npx fetches
+        run: |
+          unset NODE_AUTH_TOKEN
+          npm config delete //registry.npmjs.org/:_authToken || true
+
       - name: Build and pack safe-docx MCP bundle
         run: npm run pack:mcpb
 
@@ -197,6 +202,11 @@ jobs:
         run: npm install --global npm@11.5.1
 
       - run: npm ci
+
+      - name: Sanitize npm auth for public npx fetches
+        run: |
+          unset NODE_AUTH_TOKEN
+          npm config delete //registry.npmjs.org/:_authToken || true
 
       - name: Build and pack safe-docx MCP bundle
         run: npm run pack:mcpb
