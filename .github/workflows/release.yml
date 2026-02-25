@@ -77,6 +77,9 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
 
+      - name: Build workspaces
+        run: npm run build
+
       - name: Lint/typecheck workspaces
         run: npm run lint:workspaces
 
@@ -100,9 +103,6 @@ jobs:
             fi
             echo "$pkg@$VERSION not yet published."
           done
-
-      - name: Build workspaces
-        run: npm run build
 
       - name: Test workspaces
         run: npm run test
