@@ -63,7 +63,19 @@ jobs:
             exit 1
           fi
 
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
 
       - name: Lint/typecheck workspaces
         run: npm run lint:workspaces
@@ -155,7 +167,19 @@ jobs:
       - name: Use npm 11.5.1+ for OIDC trusted publishing compatibility
         run: npm install --global npm@11.5.1
 
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
 
       - name: Publish to npm (trusted publishing)
         run: |
@@ -201,7 +225,19 @@ jobs:
       - name: Use npm 11.5.1+ for OIDC trusted publishing compatibility
         run: npm install --global npm@11.5.1
 
-      - run: npm ci
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
 
       - name: Sanitize npm auth for public npx fetches
         run: |
