@@ -86,6 +86,9 @@ jobs:
       - name: Regenerate and verify tool reference docs are committed
         run: npm run check:tool-docs
 
+      - name: Install site dependencies
+        run: npm --prefix site ci
+
       - name: Build site and validate internal links
         run: npm run check:site
 
