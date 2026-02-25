@@ -184,12 +184,16 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
 
+      - name: Build publishable packages
+        run: |
+          npm run build -w @usejunior/docx-core
+          npm run build -w @usejunior/docx-mcp
+          npm run build -w @usejunior/safe-docx
+
       - name: Publish to npm (trusted publishing)
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           VERSION="${TAG_REF#v}"
-          unset NODE_AUTH_TOKEN
-          npm config delete //registry.npmjs.org/:_authToken || true
 
           # Publish in dependency order.
           for entry in "@usejunior/docx-core:packages/docx-core" "@usejunior/docx-mcp:packages/docx-mcp" "@usejunior/safe-docx:packages/safe-docx"; do
@@ -200,7 +204,7 @@ jobs:
               exit 1
             fi
             echo "Publishing $PKG_NAME from $PKG_DIR"
-            (cd "$PKG_DIR" && npm publish --access public)
+            (cd "$PKG_DIR" && npm publish --access public --provenance)
           done
 
   publish-mcpb-asset:
