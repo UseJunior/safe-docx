@@ -5,9 +5,8 @@
   "type": "module",
   "description": "Safe DOCX marketing and trust site (Eleventy)",
   "scripts": {
-    "build:system-card": "node ../scripts/generate_system_card.mjs --output src/trust/system-card.md",
     "build": "eleventy",
-    "dev": "npm run build:system-card && eleventy --serve"
+    "dev": "eleventy --serve"
   },
   "devDependencies": {
     "@11ty/eleventy": "^3.1.2"
