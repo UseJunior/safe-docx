@@ -42,7 +42,7 @@ jobs:
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           TAG_VERSION="${TAG_REF#v}"
-          for pkg in packages/docx-core packages/docx-mcp packages/safe-docx-mcpb; do
+          for pkg in packages/docx-core packages/docx-mcp packages/safe-docx packages/safe-docx-mcpb; do
             PKG_VERSION="$(node -p "require('./${pkg}/package.json').version")"
             if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
               echo "Tag version ($TAG_VERSION) must match ${pkg}/package.json version ($PKG_VERSION)."
@@ -81,7 +81,7 @@ jobs:
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           VERSION="${TAG_REF#v}"
-          for pkg in @usejunior/docx-core @usejunior/docx-mcp; do
+          for pkg in @usejunior/docx-core @usejunior/docx-mcp @usejunior/safe-docx; do
             if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
               echo "$pkg@$VERSION already exists on npm."
               exit 1
@@ -99,6 +99,7 @@ jobs:
         run: |
           npm run test:run -w @usejunior/docx-core
           npm run test:run -w @usejunior/docx-mcp
+          npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
 
       - name: Package coverage ratchet
@@ -114,7 +115,7 @@ jobs:
 
       - name: Verify package contents (dry-run)
         run: |
-          for pkg in packages/docx-core packages/docx-mcp; do
+          for pkg in packages/docx-core packages/docx-mcp packages/safe-docx; do
             echo "Dry-run pack: $pkg"
             (cd "$pkg" && npm pack --dry-run)
           done
@@ -159,7 +160,7 @@ jobs:
           npm config delete //registry.npmjs.org/:_authToken || true
 
           # Publish in dependency order.
-          for entry in "@usejunior/docx-core:packages/docx-core" "@usejunior/docx-mcp:packages/docx-mcp"; do
+          for entry in "@usejunior/docx-core:packages/docx-core" "@usejunior/docx-mcp:packages/docx-mcp" "@usejunior/safe-docx:packages/safe-docx"; do
             PKG_NAME="${entry%%:*}"
             PKG_DIR="${entry##*:}"
             if npm view "$PKG_NAME@$VERSION" version >/dev/null 2>&1; then

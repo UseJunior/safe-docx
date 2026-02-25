@@ -1,4 +1,4 @@
-import { runServer } from '@usejunior/docx-mcp';
+import { runServer } from '@usejunior/safe-docx';
 
 runServer().catch((err) => {
   console.error('[safe-docx-mcpb] Fatal error:', err);

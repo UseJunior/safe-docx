@@ -36,7 +36,8 @@ Generated tool reference (from Zod schemas):
 ## Packages
 
 - `@usejunior/docx-core` — OOXML comparison + primitives
-- `@usejunior/docx-mcp` — MCP server + CLI
+- `@usejunior/docx-mcp` — MCP server implementation package
+- `@usejunior/safe-docx` — canonical end-user package name (`npx -y @usejunior/safe-docx`)
 - `@usejunior/safedocx-mcpb` (private MCP bundle wrapper)
 
 ## Development
@@ -78,3 +79,4 @@ Packages to configure:
 
 - `@usejunior/docx-core`
 - `@usejunior/docx-mcp`
+- `@usejunior/safe-docx`
