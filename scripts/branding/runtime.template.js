@@ -469,6 +469,72 @@
             });
         };
 
+        const convertInlineHtmlToIframe = () => {
+          document
+            .querySelectorAll('[data-testid="test-result-attachment"]')
+            .forEach((attachment) => {
+              if (attachment.dataset.inlineHtmlConverted === "1") return;
+
+              // Only process text/html attachments
+              const header = attachment.querySelector('[data-testid="test-result-attachment-header"]');
+              if (!header) return;
+              const metaTokens = Array.from(
+                header.querySelectorAll('.sXJUrXQT .paragraphs-text-s')
+              ).map((node) => (node.textContent || '').trim()).filter(Boolean);
+              const contentType = metaTokens.find((t) => t.includes('/')) || '';
+              if (!/text\/html/i.test(contentType)) return;
+
+              // Find the code block that contains raw HTML source
+              const codePre = attachment.querySelector('pre[data-testid="code-attachment-content"]');
+              if (!codePre) return;
+
+              const rawHtml = codePre.textContent || '';
+              if (!rawHtml.trim()) return;
+
+              // Sanitize with DOMPurify if available; fail closed (keep code view) otherwise
+              if (typeof DOMPurify === 'undefined' || typeof DOMPurify.sanitize !== 'function') return;
+              const sanitizedHtml = DOMPurify.sanitize(rawHtml, {
+                WHOLE_DOCUMENT: true,
+                ADD_TAGS: ['style', 'link'],
+                ADD_ATTR: ['id', 'class', 'style'],
+              });
+
+              // Create sandboxed iframe — allow-same-origin without allow-scripts prevents execution
+              const iframe = document.createElement('iframe');
+              iframe.sandbox = 'allow-same-origin';
+              iframe.style.width = '100%';
+              iframe.style.border = '0';
+              iframe.style.minHeight = '0';
+
+              // Build the preview container
+              const previewDiv = document.createElement('div');
+              const parentClass = codePre.parentElement?.className || '';
+              previewDiv.className = parentClass;
+              if (!previewDiv.className.includes('html-attachment-preview')) {
+                previewDiv.className = (previewDiv.className + ' html-attachment-preview').trim();
+              }
+              previewDiv.appendChild(iframe);
+
+              // Replace the code block with the iframe preview
+              const codeContainer = codePre.parentElement || codePre;
+              codeContainer.parentElement?.replaceChild(previewDiv, codeContainer);
+
+              // Write content into the iframe
+              try {
+                const doc = iframe.contentDocument;
+                if (doc) {
+                  doc.open();
+                  doc.write(sanitizedHtml);
+                  doc.close();
+                }
+              } catch {
+                // Ignore write failures
+              }
+
+              attachment.dataset.inlineHtmlConverted = "1";
+            });
+        };
+
         const autoSizeHtmlAttachmentFrames = () => {
           const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -526,6 +592,7 @@
           { id: "home-button-query-clear", run: patchHomeButtonBehavior },
           { id: "breadcrumb-links", run: patchBreadcrumbLinks },
           { id: "stale-hash-recovery", run: recoverFromStaleTestResultHash },
+          { id: "inline-html-to-iframe", run: convertInlineHtmlToIframe },
         ];
 
         const runPatches = () => {

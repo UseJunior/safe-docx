@@ -5,8 +5,16 @@
   "type": "module",
   "exports": {
     ".": {
-      "import": "./src/index.js",
-      "types": "./src/index.d.ts"
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./compat-reporter": {
+      "types": "./src/compat-reporter.d.ts",
+      "default": "./src/compat-reporter.js"
+    },
+    "./report-patches": {
+      "types": "./src/report-patches.d.ts",
+      "default": "./src/report-patches.js"
     }
   },
   "main": "./src/index.js",

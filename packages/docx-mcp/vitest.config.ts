@@ -31,7 +31,6 @@ const allureSetup = resolveAllureEntry('setup');
 const allureReporter = resolveAllureEntry('reporter');
 const hasAllure = Boolean(allureSetup && allureReporter);
 const allureResultsDir = resolve(__dirname, 'allure-results');
-const allureCompatReporter = resolve(__dirname, 'src/testing/reporters/allureVitestCompatReporter.ts');
 const pathRootsSetup = resolve(__dirname, 'src/testing/setup-path-roots.ts');
 
 if (!hasAllure) {
@@ -66,7 +65,7 @@ export default defineConfig({
       ? [
           'default',
           [
-            allureCompatReporter,
+            '@usejunior/allure-test-factory/compat-reporter',
             {
               innerReporterPath: allureReporter!,
               resultsDir: allureResultsDir,

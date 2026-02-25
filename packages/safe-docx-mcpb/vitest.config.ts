@@ -33,7 +33,6 @@ const allureSetup = resolveAllureEntry('setup');
 const allureReporter = resolveAllureEntry('reporter');
 const hasAllure = Boolean(allureSetup && allureReporter);
 const allureResultsDir = resolve(__dirname, 'allure-results');
-const allureCompatReporter = resolve(__dirname, 'src/testing/reporters/allureVitestCompatReporter.ts');
 
 if (!hasAllure) {
   // eslint-disable-next-line no-console
@@ -50,7 +49,7 @@ export default defineConfig({
       ? [
           'default',
           [
-            allureCompatReporter,
+            '@usejunior/allure-test-factory/compat-reporter',
             {
               innerReporterPath: allureReporter!,
               resultsDir: allureResultsDir,

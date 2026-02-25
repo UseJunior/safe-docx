@@ -1,50 +1,54 @@
 import { pathToFileURL } from 'url';
 import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
-import type { File, Reporter, TaskResultPack, Vitest } from 'vitest';
-
-type AllureReporterLike = {
-  onInit?: (ctx?: Vitest) => void | Promise<void>;
-  onFinished?: (files?: File[], errors?: unknown[]) => void | Promise<void>;
-  onTaskUpdate?: (packs: TaskResultPack[]) => void | Promise<void>;
-  onTestRunEnd?: (tests: Array<{ task: unknown }>) => void | Promise<void>;
-};
-
-type CompatReporterOptions = {
-  innerReporterPath: string;
-  resultsDir?: string;
-  cleanResultsDir?: boolean;
-  /** Used to replace the leading directory in the `package` label for proper Allure tree grouping. */
-  packageName?: string;
-  [key: string]: unknown;
-};
 
 /** Label names where allure-vitest auto-derives a value AND our setup adds one. Keep only the last. */
 const DEDUPE_LABEL_NAMES = new Set(['parentSuite', 'suite', 'subSuite']);
 
-export default class AllureVitestCompatReporter implements Reporter {
-  private ctx: Vitest | undefined;
-  private innerPromise: Promise<AllureReporterLike | null> | null = null;
-  private cleanedResultsDir = false;
-  private options: CompatReporterOptions;
+/**
+ * Resolve a prefix directory name to a display name.
+ * @param {string} prefix - The leading directory segment (e.g. 'src', 'test', 'test-primitives')
+ * @param {Record<string, string> | undefined} overrides - Optional map from prefix → display name
+ * @param {string | undefined} packageName - Default display name for standard prefixes
+ * @returns {string | null} - The resolved display name, or null if prefix should not be rewritten
+ */
+function resolvePrefix(prefix, overrides, packageName) {
+  if (overrides && Object.prototype.hasOwnProperty.call(overrides, prefix)) {
+    return overrides[prefix];
+  }
+  if (prefix === 'test' || prefix === 'src') {
+    return packageName || null;
+  }
+  return null;
+}
 
-  constructor(options?: CompatReporterOptions) {
+export default class AllureVitestCompatReporter {
+  /** @type {unknown} */
+  ctx;
+  /** @type {Promise<object | null> | null} */
+  innerPromise = null;
+  /** @type {boolean} */
+  cleanedResultsDir = false;
+  /** @type {object} */
+  options;
+
+  constructor(options) {
     this.options = options ?? { innerReporterPath: '' };
   }
 
-  onInit(ctx: Vitest): void {
+  onInit(ctx) {
     this.ctx = ctx;
     void this.ensureInnerReporter();
   }
 
-  async onTaskUpdate(packs: TaskResultPack[]): Promise<void> {
+  async onTaskUpdate(packs) {
     const inner = await this.ensureInnerReporter();
     if (inner?.onTaskUpdate) {
       await inner.onTaskUpdate(packs);
     }
   }
 
-  async onFinished(files: File[] = [], errors: unknown[] = []): Promise<void> {
+  async onFinished(files = [], errors = []) {
     const inner = await this.ensureInnerReporter();
     if (!inner) return;
 
@@ -60,13 +64,14 @@ export default class AllureVitestCompatReporter implements Reporter {
     await this.normalizeResultLabels();
   }
 
-  private async normalizeResultLabels(): Promise<void> {
-    const resultsDir = this.options.resultsDir as string | undefined;
+  async normalizeResultLabels() {
+    const resultsDir = this.options.resultsDir;
     if (!resultsDir) return;
 
-    const packageName = this.options.packageName as string | undefined;
+    const packageName = this.options.packageName;
+    const overrides = this.options.packageNameOverrides;
 
-    let entries: string[];
+    let entries;
     try {
       entries = await readdir(resultsDir);
     } catch {
@@ -85,45 +90,56 @@ export default class AllureVitestCompatReporter implements Reporter {
 
         // 1. De-duplicate suite labels: keep only the LAST value (from our setup beforeEach).
         for (const name of DEDUPE_LABEL_NAMES) {
-          const indices: number[] = [];
+          const indices = [];
           for (let i = 0; i < data.labels.length; i++) {
             if (data.labels[i].name === name) indices.push(i);
           }
           if (indices.length > 1) {
             const toRemove = new Set(indices.slice(0, -1));
-            data.labels = data.labels.filter((_: unknown, i: number) => !toRemove.has(i));
+            data.labels = data.labels.filter((_, i) => !toRemove.has(i));
             changed = true;
           }
         }
 
-        // 2. Rewrite `package` label: replace leading directory (`src`) with packageName.
+        // 2. Rewrite `package` label: replace leading directory with resolved name.
         if (packageName) {
           for (const label of data.labels) {
             if (label.name === 'package' && typeof label.value === 'string') {
               const parts = label.value.split('.');
-              if (parts.length > 0 && (parts[0] === 'test' || parts[0] === 'src')) {
-                parts[0] = packageName;
-                label.value = parts.join('.');
+              if (parts.length > 0) {
+                const resolved = resolvePrefix(parts[0], overrides, packageName);
+                if (resolved !== null) {
+                  parts[0] = resolved;
+                  label.value = parts.join('.');
+                  changed = true;
+                }
+              }
+            }
+          }
+
+          // 3. Rewrite `fullName`: controls the Results page tree hierarchy.
+          if (typeof data.fullName === 'string') {
+            const slashIdx = data.fullName.indexOf('/');
+            if (slashIdx !== -1) {
+              const prefix = data.fullName.slice(0, slashIdx);
+              const resolved = resolvePrefix(prefix, overrides, packageName);
+              if (resolved !== null) {
+                data.fullName = resolved + data.fullName.slice(slashIdx);
                 changed = true;
               }
             }
           }
 
-          // 3. Rewrite `fullName` and `titlePath`: controls the Results page tree hierarchy.
-          if (typeof data.fullName === 'string') {
-            const rewritten = data.fullName.replace(/^(test|src)\//, `${packageName}/`);
-            if (rewritten !== data.fullName) {
-              data.fullName = rewritten;
+          // 4. Rewrite `titlePath[0]`.
+          if (Array.isArray(data.titlePath) && data.titlePath.length > 0) {
+            const resolved = resolvePrefix(data.titlePath[0], overrides, packageName);
+            if (resolved !== null) {
+              data.titlePath[0] = resolved;
               changed = true;
             }
           }
-          if (Array.isArray(data.titlePath) && data.titlePath.length > 0
-              && (data.titlePath[0] === 'test' || data.titlePath[0] === 'src')) {
-            data.titlePath[0] = packageName;
-            changed = true;
-          }
 
-          // 4. Strip filename from titlePath so the tree matches the breadcrumb hierarchy.
+          // 5. Strip filename from titlePath so the tree matches the breadcrumb hierarchy.
           //    Before: ['DOCX Comparison', 'atomLcs.test.ts', 'describe block', ...]
           //    After:  ['DOCX Comparison', 'describe block', ...]
           if (Array.isArray(data.titlePath) && data.titlePath.length > 2
@@ -142,7 +158,7 @@ export default class AllureVitestCompatReporter implements Reporter {
     }
   }
 
-  private ensureInnerReporter(): Promise<AllureReporterLike | null> {
+  ensureInnerReporter() {
     if (this.innerPromise) return this.innerPromise;
 
     this.innerPromise = (async () => {
@@ -151,7 +167,7 @@ export default class AllureVitestCompatReporter implements Reporter {
       const { innerReporterPath, ...innerOptions } = this.options;
       if (!innerReporterPath) {
         // eslint-disable-next-line no-console
-        console.warn('[docx-comparison] Missing innerReporterPath for Allure compatibility reporter.');
+        console.warn('[allure-compat-reporter] Missing innerReporterPath for Allure compatibility reporter.');
         return null;
       }
 
@@ -161,12 +177,12 @@ export default class AllureVitestCompatReporter implements Reporter {
         if (typeof ReporterCtor !== 'function') {
           // eslint-disable-next-line no-console
           console.warn(
-            `[docx-comparison] Allure reporter at '${innerReporterPath}' has no default class export.`,
+            `[allure-compat-reporter] Allure reporter at '${innerReporterPath}' has no default class export.`,
           );
           return null;
         }
 
-        const inner = new ReporterCtor(innerOptions) as AllureReporterLike;
+        const inner = new ReporterCtor(innerOptions);
         if (inner.onInit) {
           await inner.onInit(this.ctx);
         }
@@ -174,7 +190,7 @@ export default class AllureVitestCompatReporter implements Reporter {
       } catch (error) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[docx-comparison] Failed to load Allure reporter '${innerReporterPath}': ${String(error)}`,
+          `[allure-compat-reporter] Failed to load Allure reporter '${innerReporterPath}': ${String(error)}`,
         );
         return null;
       }
@@ -183,7 +199,7 @@ export default class AllureVitestCompatReporter implements Reporter {
     return this.innerPromise;
   }
 
-  private async ensureResultsDirClean(): Promise<void> {
+  async ensureResultsDirClean() {
     if (this.cleanedResultsDir) {
       return;
     }
@@ -204,7 +220,7 @@ export default class AllureVitestCompatReporter implements Reporter {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn(
-        `[docx-comparison] Failed to clean results dir '${resultsDir}': ${String(error)}`,
+        `[allure-compat-reporter] Failed to clean results dir '${resultsDir}': ${String(error)}`,
       );
     }
   }
