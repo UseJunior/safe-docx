@@ -19,6 +19,14 @@ Quick run:
 npx -y @usejunior/safe-docx
 ```
 
+## Gemini Extension Manifest
+
+Gemini CLI reads the extension manifest from the repo-root file:
+
+- `gemini-extension.json`
+
+The manifests under `packages/safe-docx-mcpb/` are for the MCPB distribution workflow and are not used as the Gemini extension manifest.
+
 ## Key Workflows
 
 - Apply edits to one document with formatting preservation
