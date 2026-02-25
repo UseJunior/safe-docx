@@ -22,6 +22,8 @@ export interface CompareCommandResult {
   output: string;
   engine: string;
   mode: 'inplace' | 'rebuild';
+  mode_requested: 'inplace' | 'rebuild';
+  fallback_reason?: string;
   bytes: number;
   stats: unknown;
 }
@@ -72,7 +74,9 @@ export async function runCompareCommand(args: CompareCommandArgs): Promise<Compa
   return {
     output: outputAbs,
     engine: result.engine,
-    mode,
+    mode: result.reconstructionModeUsed ?? mode,
+    mode_requested: mode,
+    fallback_reason: result.fallbackReason,
     bytes: result.document.length,
     stats: result.stats,
   };

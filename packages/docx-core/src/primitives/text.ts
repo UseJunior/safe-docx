@@ -158,7 +158,7 @@ function appendTextToRun(doc: Document, run: Element, text: string): void {
 }
 
 
-function visibleLengthForEl(el: Element): number {
+export function visibleLengthForEl(el: Element): number {
   if (el.namespaceURI !== OOXML.W_NS) return 0;
   if (el.localName === W.t) return (el.textContent ?? '').length;
   if (el.localName === W.tab) return 1;
@@ -166,7 +166,7 @@ function visibleLengthForEl(el: Element): number {
   return 0;
 }
 
-function getDirectContentElements(run: Element): Element[] {
+export function getDirectContentElements(run: Element): Element[] {
   // Direct children excluding rPr; preserves unknown nodes without duplicating them on splits.
   const out: Element[] = [];
   for (const child of Array.from(run.childNodes)) {
@@ -179,7 +179,7 @@ function getDirectContentElements(run: Element): Element[] {
   return out;
 }
 
-function splitRunAtVisibleOffset(run: Element, offset: number): { left: Element; right: Element } {
+export function splitRunAtVisibleOffset(run: Element, offset: number): { left: Element; right: Element } {
   const doc = run.ownerDocument;
   if (!doc) throw new Error('Run has no ownerDocument');
 

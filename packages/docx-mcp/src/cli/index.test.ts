@@ -12,6 +12,7 @@ describe('safe-docx CLI routing', () => {
       output: '/tmp/out.docx',
       engine: 'atomizer',
       mode: 'rebuild' as const,
+      mode_requested: 'rebuild' as const,
       bytes: 12,
       stats: {},
     }));
@@ -43,6 +44,7 @@ describe('safe-docx CLI routing', () => {
       output: args.outputPath ?? '/tmp/default.docx',
       engine: args.engine ?? 'atomizer',
       mode: (args.mode as 'inplace' | 'rebuild') ?? 'rebuild',
+      mode_requested: (args.mode as 'inplace' | 'rebuild') ?? 'rebuild',
       bytes: 99,
       stats: { ok: true },
     }));
@@ -96,6 +98,7 @@ describe('safe-docx CLI routing', () => {
       output: '/tmp/out.docx',
       engine: 'atomizer',
       mode: 'rebuild' as const,
+      mode_requested: 'rebuild' as const,
       bytes: 1,
       stats: {},
     }));
@@ -120,6 +123,47 @@ describe('safe-docx CLI routing', () => {
     });
   });
 
+  it('reports actual mode when inplace falls back to rebuild', async () => {
+    const serve = vi.fn(async () => undefined);
+    const compare = vi.fn(async () => ({
+      output: '/tmp/out.docx',
+      engine: 'atomizer',
+      mode: 'rebuild' as const,
+      mode_requested: 'inplace' as const,
+      fallback_reason: 'round_trip_safety_check_failed',
+      bytes: 50,
+      stats: {},
+    }));
+
+    const output: string[] = [];
+    const program = createProgram({
+      serve,
+      compare,
+      write: (line) => output.push(line),
+    });
+
+    await allureStep('Given a compare that falls back from inplace to rebuild', async () => {
+      await program.parseAsync([
+        'node',
+        'safe-docx',
+        'compare',
+        'original.docx',
+        'revised.docx',
+        '/tmp/out.docx',
+        '--mode',
+        'inplace',
+      ]);
+    });
+
+    await allureStep('Then CLI output reports actual mode=rebuild and mode_requested=inplace', async () => {
+      expect(output).toHaveLength(1);
+      const json = JSON.parse(output[0]!);
+      expect(json.mode).toBe('rebuild');
+      expect(json.mode_requested).toBe('inplace');
+      expect(json.fallback_reason).toBe('round_trip_safety_check_failed');
+    });
+  });
+
   it('rejects unknown commands with actionable message', async () => {
     const program = createProgram({
       serve: vi.fn(async () => undefined),
@@ -127,6 +171,7 @@ describe('safe-docx CLI routing', () => {
         output: '/tmp/out.docx',
         engine: 'atomizer',
         mode: 'rebuild' as const,
+        mode_requested: 'rebuild' as const,
         bytes: 1,
         stats: {},
       })),

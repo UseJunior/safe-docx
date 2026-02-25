@@ -16,7 +16,7 @@ import { CorrelationStatus } from '../../core-types.js';
 import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
 import {
   getLeafText, childElements, findChildByTagName, insertAfterElement,
-  wrapElement,
+  wrapElement, splitRunAtVisibleOffset, visibleLengthForEl, getDirectContentElements,
 } from '../../primitives/index.js';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { warn } from './debug.js';
@@ -1165,6 +1165,178 @@ export function wrapParagraphAsDeleted(
   return true;
 }
 
+// Field-character tag names that should not be split.
+const FIELD_CHAR_TAG_NAMES: ReadonlySet<string> = new Set([
+  'w:fldChar', 'w:instrText', 'w:delInstrText',
+]);
+
+/**
+ * Visible text length for an atom's contentElement.
+ *
+ * Atom contentElements created by the word-split atomizer use prefixed tagNames
+ * (e.g. `"w:t"`) without namespace URIs, so we match on `tagName` rather than
+ * `localName`/`namespaceURI` (which is what the DOM-level `visibleLengthForEl` does).
+ */
+function atomContentVisibleLength(el: Element): number {
+  const tag = el.tagName;
+  if (tag === 'w:t') return (el.textContent ?? '').length;
+  if (tag === 'w:tab' || tag === 'w:br') return 1;
+  // w:cr is treated as zero-length (consistent with visibleLengthForEl which also returns 0).
+  return 0;
+}
+
+/**
+ * Pre-split revised-tree runs that contain atoms with mixed correlation statuses.
+ *
+ * Without this, `handleInserted` wraps the entire run with `<w:ins>`, destroying
+ * Equal content in the same run. After splitting, each fragment is a separate
+ * `<w:r>` and existing per-status handlers work without modification.
+ *
+ * Safety: wrapped in try/catch per run group. If any DOM operation fails, the
+ * run is skipped and the existing fallback-to-rebuild architecture handles it.
+ */
+export function preSplitMixedStatusRuns(mergedAtoms: ComparisonUnitAtom[]): void {
+  // Group atoms by their sourceRunElement (revised-tree runs only).
+  const runGroups = new Map<Element, ComparisonUnitAtom[]>();
+
+  let totalAtoms = 0;
+  let skippedNoRun = 0;
+  let skippedDeleted = 0;
+  let skippedField = 0;
+  let skippedFieldChar = 0;
+
+  for (const atom of mergedAtoms) {
+    totalAtoms++;
+    if (!atom.sourceRunElement) { skippedNoRun++; continue; }
+
+    // Skip original-tree atoms — Deleted/MovedSource runs are cloned, not wrapped.
+    if (
+      atom.correlationStatus === CorrelationStatus.Deleted ||
+      atom.correlationStatus === CorrelationStatus.MovedSource
+    ) { skippedDeleted++; continue; }
+
+    // Skip collapsed field atoms (multi-run field sequences).
+    if (atom.collapsedFieldAtoms && atom.collapsedFieldAtoms.length > 0) { skippedField++; continue; }
+
+    // Skip field character elements — semantically fragile.
+    if (FIELD_CHAR_TAG_NAMES.has(atom.contentElement.tagName)) { skippedFieldChar++; continue; }
+
+    const group = runGroups.get(atom.sourceRunElement);
+    if (group) {
+      group.push(atom);
+    } else {
+      runGroups.set(atom.sourceRunElement, [atom]);
+    }
+  }
+
+  warn('preSplitMixedStatusRuns', `Total atoms: ${totalAtoms}, skipped: noRun=${skippedNoRun} deleted=${skippedDeleted} field=${skippedField} fieldChar=${skippedFieldChar}, groups: ${runGroups.size}`);
+
+  let splitCount = 0;
+  let skippedSingleStatus = 0;
+  let skippedCrossRun = 0;
+  let skippedNoParent = 0;
+
+  for (const [run, atoms] of runGroups) {
+    // Early check: skip single-status runs before any DOM work.
+    const statuses = new Set(atoms.map((a) => a.correlationStatus));
+    if (statuses.size <= 1) { skippedSingleStatus++; continue; }
+
+    // Guard: skip runs already detached from the tree.
+    if (!run.parentNode) { skippedNoParent++; continue; }
+
+    try {
+      // Compute the run's actual visible length via DOM traversal.
+      const contentEls = getDirectContentElements(run);
+      let runVisibleLength = 0;
+      for (const cel of contentEls) {
+        runVisibleLength += visibleLengthForEl(cel);
+      }
+
+      // Cross-run safety: if sum of atom lengths exceeds run visible length,
+      // this group contains a cross-run merged atom (passes 3/4). Skip it.
+      let sumAtomLengths = 0;
+      for (const atom of atoms) {
+        sumAtomLengths += atomContentVisibleLength(atom.contentElement);
+      }
+      if (sumAtomLengths > runVisibleLength) {
+        warn('preSplitMixedStatusRuns', `Cross-run skip: sum=${sumAtomLengths} > runLen=${runVisibleLength}, atoms=${atoms.length}, statuses=${[...statuses].join(',')}, text="${getLeafText(run)?.substring(0, 60)}"`);
+        skippedCrossRun++;
+        continue;
+      }
+
+      // Compute contiguous status spans with character offsets.
+      interface StatusSpan {
+        status: CorrelationStatus;
+        startOffset: number;
+        length: number;
+        atoms: ComparisonUnitAtom[];
+      }
+
+      const spans: StatusSpan[] = [];
+      let offset = 0;
+      for (const atom of atoms) {
+        const len = atomContentVisibleLength(atom.contentElement);
+        const lastSpan = spans[spans.length - 1];
+        if (lastSpan && lastSpan.status === atom.correlationStatus) {
+          lastSpan.length += len;
+          lastSpan.atoms.push(atom);
+        } else {
+          spans.push({
+            status: atom.correlationStatus,
+            startOffset: offset,
+            length: len,
+            atoms: [atom],
+          });
+        }
+        offset += len;
+      }
+
+      // If only one span after grouping, no split needed.
+      if (spans.length <= 1) continue;
+
+      // Collect split points: startOffset of each span after the first.
+      const splitPoints: number[] = [];
+      for (let i = 1; i < spans.length; i++) {
+        const pt = spans[i]!.startOffset;
+        // Filter out degenerate split points at boundaries.
+        if (pt > 0 && pt < runVisibleLength) {
+          splitPoints.push(pt);
+        }
+      }
+
+      if (splitPoints.length === 0) continue;
+
+      // Split DOM run right-to-left to keep earlier offsets valid.
+      const rightFragments: Element[] = [];
+      for (let i = splitPoints.length - 1; i >= 0; i--) {
+        const { right } = splitRunAtVisibleOffset(run, splitPoints[i]!);
+        rightFragments.push(right);
+      }
+
+      // Map fragments: [originalRun (leftmost), ...reverse(rightFragments)]
+      // After R-to-L splits, rightFragments are in reverse document order.
+      const fragments = [run, ...rightFragments.reverse()];
+
+      // Update atom sourceRunElement pointers to the correct fragment.
+      // Each span maps to one fragment in order.
+      for (let i = 0; i < spans.length; i++) {
+        const fragment = fragments[i];
+        if (!fragment) continue;
+        for (const atom of spans[i]!.atoms) {
+          atom.sourceRunElement = fragment;
+        }
+      }
+      splitCount++;
+      warn('preSplitMixedStatusRuns', `Split run into ${fragments.length} fragments: statuses=${spans.map(s => s.status).join(',')}, offsets=[${splitPoints.join(',')}], runLen=${runVisibleLength}, text="${getLeafText(run)?.substring(0, 60)}"`);
+    } catch (_err) {
+      // DOM operation failed — skip this run. The existing fallback-to-rebuild
+      // architecture will handle it if the overall safety check fails.
+      warn('preSplitMixedStatusRuns', `Skipping run split due to error: ${_err}`);
+    }
+  }
+  warn('preSplitMixedStatusRuns', `Done: split=${splitCount}, skippedSingleStatus=${skippedSingleStatus}, skippedCrossRun=${skippedCrossRun}, skippedNoParent=${skippedNoParent}`);
+}
+
 /**
  * Modify the revised document's AST in-place based on comparison results.
  *
@@ -1188,6 +1360,7 @@ export function modifyRevisedDocument(
   // Populate these once up-front so handlers don't have to rescan ancestor chains.
   attachSourceElementPointers(originalAtoms);
   attachSourceElementPointers(revisedAtoms);
+  preSplitMixedStatusRuns(mergedAtoms);
 
   // Process atoms and apply track changes to the revised tree
   // Group atoms by paragraph for efficient processing
