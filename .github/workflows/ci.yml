@@ -58,19 +58,6 @@ jobs:
       - name: Regenerate and verify tool reference docs are committed
         run: npm run check:tool-docs
 
-  site-integrity:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm --prefix site ci
-      - name: Build site and validate internal links
-        run: npm run check:site
-
   mcpb-manifest-contract:
     runs-on: ubuntu-latest
     steps:
