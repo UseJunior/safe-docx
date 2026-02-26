@@ -23,7 +23,7 @@
     "test:run": "npm run build -w @usejunior/docx-core &&npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run",
     "test:coverage": "npm run build -w @usejunior/docx-core &&npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "prepack": "npm run build",
-    "lint": "tsc --noEmit"
+    "lint": "tsc -b --pretty false"
   },
   "dependencies": {
     "@usejunior/docx-core": "^0.1.0",
