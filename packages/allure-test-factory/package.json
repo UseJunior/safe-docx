@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/allure-test-factory",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared Allure test helpers for vitest — BDD context, OpenSpec auto-inference, Prism.js highlighting",
   "type": "module",
   "exports": {

@@ -1,6 +1,6 @@
 {
   "name": "safe-docx-suite",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Monorepo for Safe DOCX packages",
   "repository": {
