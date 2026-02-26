@@ -31,7 +31,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/usejunior/safe-docx.git"
+    "url": "https://github.com/UseJunior/safe-docx"
   },
   "publishConfig": {
     "access": "public"
@@ -61,8 +61,8 @@
     "edge",
     "vercel"
   ],
-  "homepage": "https://github.com/usejunior/safe-docx/tree/main/packages/safe-docx",
+  "homepage": "https://github.com/UseJunior/safe-docx/tree/main/packages/safe-docx",
   "bugs": {
-    "url": "https://github.com/usejunior/safe-docx/issues"
+    "url": "https://github.com/UseJunior/safe-docx/issues"
   }
 }

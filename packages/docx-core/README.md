@@ -1,308 +1,102 @@
-# @usejunior/docx-comparison
+# @usejunior/docx-core
 
-Document comparison engine with track changes output. Compares two DOCX files and produces a redlined version with insertions and deletions marked using OOXML track changes.
-OpenAgreements project, built by the UseJunior team.
+[![npm version](https://img.shields.io/npm/v/%40usejunior%2Fdocx-core)](https://www.npmjs.com/package/@usejunior/docx-core)
+[![CI](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
 
-## Features
+Core Safe Docx library for brownfield editing and comparison of existing `.docx` files.
 
-- **Baseline A (WmlComparer)**: Wraps the battle-tested WmlComparer engine via .NET CLI
-- **Baseline B (Pure TypeScript)**: Native implementation using diff-match-patch
-- **Benchmark harness**: Compare both baselines for quality and performance
+## What This Package Is
 
-## Installation
+`@usejunior/docx-core` is the production engine behind Safe Docx. It is designed for surgical operations on existing Word documents where formatting fidelity and deterministic behavior matter.
 
-```bash
-npm install @usejunior/docx-comparison
-```
+Primary capabilities:
 
-## Usage
+- tracked-change comparison output for review workflows
+- revision extraction and OOXML-safe document primitives
+- formatting-preserving text and paragraph operations
+- comment and footnote primitive support
 
-### Basic Comparison (Baseline B - Pure TypeScript)
+Default comparison is pure TypeScript atomizer (`engine: "auto"` -> `atomizer`).
 
-```typescript
-import { DocxArchive } from '@usejunior/docx-comparison';
-import { alignParagraphs } from '@usejunior/docx-comparison/baselines/diffmatch/paragraphAlignment';
-import { diffRuns } from '@usejunior/docx-comparison/baselines/diffmatch/runDiff';
-import { renderTrackChanges } from '@usejunior/docx-comparison/baselines/diffmatch/trackChangesRenderer';
+## What This Package Is Not
 
-// Load documents
-const original = await DocxArchive.load(originalBuffer);
-const revised = await DocxArchive.load(revisedBuffer);
+- Not a hosted service
+- Not a document-generation framework for creating new files from scratch
+- Not dependent on .NET for supported runtime APIs
 
-// Extract and compare paragraphs
-const originalParagraphs = extractParagraphs(await original.getDocumentXml());
-const revisedParagraphs = extractParagraphs(await revised.getDocumentXml());
+Internal benchmark code exists for maintainer analysis, but benchmarking is not a user-facing feature.
 
-const alignment = alignParagraphs(originalParagraphs, revisedParagraphs);
-
-// For each matched paragraph, compute run-level diff
-for (const match of alignment.matched) {
-  const runDiff = diffRuns(match.original.runs, match.revised.runs);
-  const trackChangesXml = renderTrackChanges(runDiff.mergedRuns, {
-    author: 'Comparison',
-    date: new Date(),
-  });
-  // Use trackChangesXml to update the document
-}
-```
-
-### Using WmlComparer (Baseline A - requires .NET)
-
-```typescript
-import { compareWithDotnet, isRedlineAvailable } from '@usejunior/docx-comparison/baselines/wmlcomparer/DotnetCli';
-
-// Check if .NET and Docxodus are available
-if (await isRedlineAvailable('/path/to/Docxodus')) {
-  const result = await compareWithDotnet(originalBuffer, revisedBuffer, {
-    author: 'Comparison',
-    docxodusPath: '/path/to/Docxodus',
-  });
-
-  // result.document contains the redlined DOCX
-  // result.stats contains change counts
-}
-```
-
-## Running Benchmarks
-
-### Prerequisites for Baseline A
-
-1. **Install .NET 8+**:
-   - macOS: `brew install dotnet`
-   - Ubuntu: `sudo apt-get install dotnet-sdk-8.0`
-   - Windows: Download from https://dotnet.microsoft.com/download
-
-2. **Clone Docxodus**:
-   ```bash
-   git clone https://github.com/JSv4/Docxodus.git /path/to/Docxodus
-   ```
-
-3. **Build the redline tool**:
-   ```bash
-   cd /path/to/Docxodus
-   dotnet build tools/redline/redline.csproj
-   ```
-
-### Running the Benchmark
+## Install
 
 ```bash
-# Run benchmark against test fixtures
-npm run benchmark src/testing/fixtures --docxodus=/path/to/Docxodus
-
-# Options:
-#   --docxodus=<path>   Path to Docxodus repository
-#   --author=<name>     Author name for revisions
-#   --no-baseline-a     Skip Baseline A (WmlComparer)
-#   --no-baseline-b     Skip Baseline B (pure TS)
+npm install @usejunior/docx-core
 ```
 
-### Expected Output
+## Quickstart: Compare Two DOCX Files
 
+```ts
+import { readFile, writeFile } from 'node:fs/promises';
+import { compareDocuments } from '@usejunior/docx-core';
+
+const original = await readFile('./original.docx');
+const revised = await readFile('./revised.docx');
+
+const result = await compareDocuments(original, revised, {
+  author: 'Comparison',
+  // engine defaults to "auto" (atomizer)
+});
+
+await writeFile('./output.redline.docx', result.document);
+console.log(result.engine, result.stats);
 ```
-Found 8 fixture(s)
-Running: simple-word-change
-Running: paragraph-insert
-Running: paragraph-delete
-...
 
-=== Benchmark Summary ===
+## Engine Model
 
-Fixture: simple-word-change
-  Baseline A: 1 ins, 1 del, 245ms
-  Baseline B: 1 ins, 1 del, 12ms
-```
+- `atomizer` (default via `auto`): primary production path
+- `diffmatch`: optional baseline/debug path
+- `wmlcomparer`: not available through supported programmatic API usage
 
-## Test Fixtures
+## Dependency Footprint
 
-Test fixtures are in `src/testing/fixtures/`:
+Runtime dependencies are intentionally small:
 
-| Fixture | Description |
-|---------|-------------|
-| `simple-word-change` | Single word substitution |
-| `paragraph-insert` | Adding a paragraph |
-| `paragraph-delete` | Removing a paragraph |
-| `run-level-change` | Changes within text runs |
-| `multiple-changes` | Multiple edits in one paragraph |
-| `no-change` | Identical documents |
-| `empty-to-content` | Empty to content transition |
-| `complete-rewrite` | All content changed |
+- `@xmldom/xmldom` for XML DOM handling
+- `jszip` for DOCX zip container handling
+- `diff-match-patch` for optional `diffmatch` baseline behavior
 
-### Generating Fixtures
+No native binaries, and no .NET prerequisite for supported runtime API usage.
 
-```bash
-npx tsx src/testing/fixtures/generateFixtures.ts
-```
+## Automated Fixture Coverage
+
+In-repo automated fixtures currently include:
+
+- Common Paper style mutual NDA variants
+- Bonterms mutual NDA fixture
+- Letter of Intent fixture
+- ILPA limited partnership agreement redline fixtures
+
+## Designed for Complex DOCX Classes
+
+`@usejunior/docx-core` is designed to support complex legal/business document classes such as:
+
+- NVCA financing forms
+- YC SAFEs
+- Offering memoranda
+- Order forms and services agreements
+- Limited partnership agreements
+
+## From-Scratch Generation
+
+If your primary use case is generating new documents from scratch, use a generation-oriented package such as [`docx`](https://www.npmjs.com/package/docx).
 
 ## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Run tests
-npm test
-
-# Build
-npm run build
-
-# Type check
-npm run lint
+npm run build -w @usejunior/docx-core
+npm run test:run -w @usejunior/docx-core
+npm run lint -w @usejunior/docx-core
 ```
-
-## Architecture
-
-```
-src/
-├── core-types.ts         # WmlComparer core data structures
-├── atomizer.ts           # Document atomization for LCS
-├── move-detection.ts     # Move detection algorithm
-├── format-detection.ts   # Format change detection
-├── numbering.ts          # Legal numbering corner cases
-├── footnotes.ts          # Footnote/endnote numbering
-├── baselines/
-│   ├── wmlcomparer/      # Baseline A: WmlComparer wrapper
-│   │   ├── DotnetCli.ts  # Shell out to .NET CLI
-│   │   └── DocxodusWasm.ts  # WASM integration (future)
-│   └── diffmatch/        # Baseline B: Pure TypeScript
-│       ├── paragraphAlignment.ts  # LCS-based paragraph matching
-│       ├── runDiff.ts    # diff-match-patch integration
-│       └── trackChangesRenderer.ts  # OOXML generation
-├── benchmark/            # A/B comparison harness
-│   ├── runner.ts
-│   ├── metrics.ts
-│   └── reporter.ts
-└── shared/
-    ├── docx/
-    │   └── DocxArchive.ts  # DOCX ZIP handling
-    └── ooxml/
-        ├── namespaces.ts   # OOXML namespace constants
-        └── types.ts        # TypeScript interfaces
-```
-
-## Core Types (WmlComparer)
-
-The package includes TypeScript equivalents of WmlComparer's core C# data structures, enabling a pure TypeScript implementation of document comparison.
-
-### CorrelationStatus
-
-Tracks the comparison state of atoms:
-
-```typescript
-import { CorrelationStatus } from '@usejunior/docx-comparison';
-
-// Available statuses:
-// - Unknown: Not yet processed
-// - Equal: Content matches in both documents
-// - Deleted: Only in original (removed)
-// - Inserted: Only in revised (added)
-// - MovedSource: Content was moved from this location
-// - MovedDestination: Content was moved to this location
-// - FormatChanged: Text matches but formatting differs
-```
-
-### ComparisonUnitAtom
-
-The atomic unit of comparison:
-
-```typescript
-import { createComparisonUnitAtom, atomizeTree } from '@usejunior/docx-comparison';
-
-// Atomize a document tree
-const atoms = atomizeTree(documentElement, [], {
-  uri: 'word/document.xml',
-  contentType: '...',
-});
-
-// Each atom contains:
-// - contentElement: The leaf element (w:t, w:br, etc.)
-// - ancestorElements: Path from root to parent
-// - ancestorUnids: Unique identifiers for correlation
-// - sha1Hash: For quick equality checks
-// - correlationStatus: Current comparison state
-```
-
-### Move Detection
-
-Detect relocated content after LCS comparison:
-
-```typescript
-import { detectMovesInAtomList, jaccardWordSimilarity } from '@usejunior/docx-comparison';
-
-// Run after LCS comparison
-detectMovesInAtomList(atoms, {
-  detectMoves: true,
-  moveSimilarityThreshold: 0.8,  // Min similarity for move match
-  moveMinimumWordCount: 5,       // Min words to consider for move
-  caseInsensitiveMove: true,
-});
-
-// Atoms matching deleted/inserted blocks will be marked as:
-// - MovedSource: Original location of moved content
-// - MovedDestination: New location of moved content
-```
-
-### Format Change Detection
-
-Detect formatting changes (bold, italic, font size, etc.):
-
-```typescript
-import { detectFormatChangesInAtomList } from '@usejunior/docx-comparison';
-
-// Run after LCS and move detection
-detectFormatChangesInAtomList(atoms, { detectFormatChanges: true });
-
-// Equal atoms with different formatting will be marked as FormatChanged
-// with details in atom.formatChange
-```
-
-### Legal Numbering
-
-Handle OOXML numbering corner cases for legal documents:
-
-```typescript
-import {
-  detectContinuationPattern,
-  formatNumber,
-  expandLevelText,
-} from '@usejunior/docx-comparison';
-
-// Detect "orphan" list items (e.g., "4." instead of "3.4")
-const info = detectContinuationPattern(ilvl, startValue, levelNumbers);
-
-// Format numbers in various styles
-formatNumber(1, 'lowerRoman');  // "i"
-formatNumber(1, 'upperLetter'); // "A"
-
-// Expand level text with placeholders
-expandLevelText('%1.%2', [3, 2], levels);  // "3.2"
-```
-
-### Footnote Numbering
-
-Track sequential footnote/endnote numbering by document order:
-
-```typescript
-import { FootnoteNumberingTracker } from '@usejunior/docx-comparison';
-
-const tracker = new FootnoteNumberingTracker(documentRoot);
-
-// Get display number by XML ID
-const displayNum = tracker.getFootnoteDisplayNumber('42');  // Returns 1 if first footnote
-
-// Handle 91 footnotes correctly (IDs 2-92 → display 1-91)
-tracker.getFootnoteCount();  // 91
-```
-
-## Decision Criteria
-
-After running benchmarks, choose your approach:
-
-| Scenario | Recommendation |
-|----------|----------------|
-| WmlComparer works well | Use Baseline A, port features gradually |
-| Pure TS close to WmlComparer | Port remaining pieces to Baseline B |
-| Legal numbering issues | Fix with pre/post processing |
-| Large performance gap | Profile and optimize |
 
 ## License
 

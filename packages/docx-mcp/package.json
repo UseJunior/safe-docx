@@ -23,7 +23,7 @@
     "test:run": "npm run build -w @usejunior/docx-core &&npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run",
     "test:coverage": "npm run build -w @usejunior/docx-core &&npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "prepack": "npm run build",
-    "lint": "tsc --noEmit"
+    "lint": "tsc -b --pretty false"
   },
   "dependencies": {
     "@usejunior/docx-core": "^0.1.0",
@@ -44,7 +44,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/usejunior/safe-docx.git"
+    "url": "https://github.com/UseJunior/safe-docx"
   },
   "publishConfig": {
     "access": "public"
@@ -71,8 +71,8 @@
     "edge",
     "vercel"
   ],
-  "homepage": "https://github.com/usejunior/safe-docx/tree/main/packages/docx-mcp",
+  "homepage": "https://github.com/UseJunior/safe-docx/tree/main/packages/docx-mcp",
   "bugs": {
-    "url": "https://github.com/usejunior/safe-docx/issues"
+    "url": "https://github.com/UseJunior/safe-docx/issues"
   }
 }

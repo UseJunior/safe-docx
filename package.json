@@ -40,6 +40,7 @@
     "check:allure-quality": "node scripts/validate_allure_test_quality.mjs",
     "check:allure-filenames": "node scripts/check_allure_test_filename_policy.mjs --baseline coverage/allure-test-filename-baseline.json",
     "check:mcpb-manifest": "npm run check:manifest-contract -w @usejunior/safedocx-mcpb",
+    "preflight:ci": "npm run lint:workspaces && npm run check:spec-coverage && npm run check:tool-docs && npm run check:mcpb-manifest && npm run check:allure-labels && npm run check:allure-filenames && npm run check:allure-quality && npm run check:site",
     "test:coverage:packages": "npm run test:coverage -w @usejunior/docx-core && npm run test:coverage -w @usejunior/docx-mcp",
     "coverage:matrix": "node scripts/print_coverage_matrix.mjs",
     "coverage:packages:report": "node scripts/report_package_coverage.mjs --baseline coverage/package-coverage-baseline.json --output coverage/package-coverage-summary.json",

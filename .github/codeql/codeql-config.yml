@@ -1,0 +1,15 @@
+name: safe-docx-codeql
+
+paths:
+  - packages
+  - scripts
+  - site/src
+
+paths-ignore:
+  - "**/coverage/**"
+  - "**/allure-results/**"
+  - "**/allure-report/**"
+  - ".allure-results-merged/**"
+  - "allure-report*/**"
+  - "sdx-allure-fresh-local/**"
+  - "site/_site/**"
