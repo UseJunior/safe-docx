@@ -1,0 +1,109 @@
+---
+layout: layouts/base.njk
+title: Changelog | Safe DOCX
+description: Release history for Safe DOCX, auto-generated from GitHub Releases.
+---
+
+<style>
+  .changelog-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.8rem;
+    flex-wrap: wrap;
+  }
+
+  .changelog-header h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.3rem;
+    margin: 0;
+  }
+
+  .changelog-header time {
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+
+  .changelog-body {
+    margin-top: 0.6rem;
+    line-height: 1.7;
+    color: var(--ink-soft);
+  }
+
+  .changelog-body h2,
+  .changelog-body h3 {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0.8rem 0 0.3rem;
+  }
+
+  .changelog-body ul {
+    margin: 0.2rem 0 0.6rem;
+    padding-left: 1.4rem;
+  }
+
+  .changelog-body li {
+    margin: 0.15rem 0;
+  }
+
+  .changelog-assets {
+    margin-top: 0.6rem;
+    font-size: 0.85rem;
+  }
+
+  .changelog-assets a {
+    margin-right: 0.8rem;
+  }
+
+  .changelog-entry {
+    margin-top: 1.2rem;
+    margin-bottom: 1.4rem;
+  }
+
+  .changelog-empty {
+    color: var(--ink-soft);
+    font-style: italic;
+    margin: 1.6rem 0;
+  }
+
+  .evidence-back {
+    display: inline-block;
+    margin-top: 1.6rem;
+    font-size: 0.92rem;
+  }
+</style>
+
+<section class="hero">
+  <p class="eyebrow">Trust</p>
+  <h1>Changelog</h1>
+  <p>
+    Release history auto-generated from
+    <a href="https://github.com/UseJunior/safe-docx/releases">GitHub Releases</a>.
+  </p>
+</section>
+
+{% if changelog.hasReleases %}
+  {% for release in changelog.releases %}
+  <article class="card changelog-entry">
+    <div class="changelog-header">
+      <h2><a href="{{ release.url }}">{{ release.tag }}</a></h2>
+      <time datetime="{{ release.published_at }}">{{ release.published_display }}</time>
+    </div>
+    <div class="changelog-body">
+      {{ release.body_md | renderMarkdown | safe }}
+    </div>
+    {% if release.assets.length %}
+    <div class="changelog-assets">
+      {% for asset in release.assets %}
+        <a href="{{ asset.url }}">{{ asset.name }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </article>
+  {% endfor %}
+{% else %}
+  <p class="changelog-empty">No releases published yet. Check back after the next release.</p>
+{% endif %}
+
+<a class="evidence-back" href="{{ page.url | rootHref('trust/index.html') }}">&larr; Back to Trust</a>
