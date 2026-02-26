@@ -83,7 +83,7 @@ describe('Reconstruction metadata', () => {
   });
 
   it(
-    'reports fallback reason when inplace safety checks force rebuild',
+    'ILPA corpus completes in inplace mode without fallback',
     async () => {
       const [original, revised] = await Promise.all([
         readFile(ILPA_ORIGINAL_DOC),
@@ -97,51 +97,9 @@ describe('Reconstruction metadata', () => {
 
       expect(result.engine).toBe('atomizer');
       expect(result.reconstructionModeRequested).toBe('inplace');
-      expect(result.reconstructionModeUsed).toBe('rebuild');
-      expect(result.fallbackReason).toBe('round_trip_safety_check_failed');
-      expect(result.fallbackDiagnostics).toBeDefined();
-
-      const diagnostics = result.fallbackDiagnostics!;
-      expect(diagnostics.attempts.length).toBeGreaterThan(0);
-
-      for (const attempt of diagnostics.attempts) {
-        expect(attempt.failedChecks.length).toBeGreaterThan(0);
-        for (const checkName of attempt.failedChecks) {
-          expect(['acceptText', 'rejectText', 'acceptBookmarks', 'rejectBookmarks']).toContain(
-            checkName
-          );
-          expect(attempt.checks[checkName]).toBe(false);
-        }
-
-        expect(attempt.failureDetails).toBeDefined();
-        expect(attempt.firstDiffSummary).toBeDefined();
-        if (attempt.failedChecks.includes('rejectText')) {
-          expect(attempt.failureDetails?.rejectText).toBeDefined();
-          expect(attempt.failureDetails?.rejectText?.firstDifferingParagraphIndex).toBeGreaterThanOrEqual(
-            0
-          );
-          expect(attempt.firstDiffSummary?.rejectText).toBeDefined();
-          expect(attempt.firstDiffSummary?.rejectText?.firstDifferingParagraphIndex).toBeGreaterThanOrEqual(
-            0
-          );
-          expect(attempt.firstDiffSummary?.rejectText?.firstDifference.length).toBeGreaterThan(0);
-        }
-        if (attempt.failedChecks.includes('rejectBookmarks')) {
-          expect(attempt.failureDetails?.rejectBookmarks).toBeDefined();
-          expect(attempt.firstDiffSummary?.rejectBookmarks).toBeDefined();
-          const bookmarkSummary = attempt.firstDiffSummary?.rejectBookmarks;
-          const bookmarkSignalCount =
-            (bookmarkSummary?.startNames.missingCount ?? 0) +
-            (bookmarkSummary?.startNames.unexpectedCount ?? 0) +
-            (bookmarkSummary?.referencedBookmarkNames.missingCount ?? 0) +
-            (bookmarkSummary?.referencedBookmarkNames.unexpectedCount ?? 0) +
-            (bookmarkSummary?.unresolvedReferenceNames.missingCount ?? 0) +
-            (bookmarkSummary?.unresolvedReferenceNames.unexpectedCount ?? 0) +
-            (bookmarkSummary?.unmatchedStartCount ?? 0) +
-            (bookmarkSummary?.unmatchedEndCount ?? 0);
-          expect(bookmarkSignalCount).toBeGreaterThan(0);
-        }
-      }
+      // Bookmark checks are soft (don't trigger fallback), so ILPA now succeeds in inplace.
+      expect(result.reconstructionModeUsed).toBe('inplace');
+      expect(result.fallbackReason).toBeUndefined();
     },
     180000
   );

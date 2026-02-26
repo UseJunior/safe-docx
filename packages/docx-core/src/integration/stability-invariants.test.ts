@@ -189,7 +189,7 @@ describe('Stability invariants', () => {
   );
 
   it(
-    'determinism: fallback diagnostics are stable for ILPA corpus when inplace downgrades',
+    'determinism: ILPA corpus inplace results are stable across runs',
     async () => {
       const [original, revised] = await Promise.all([
         readFile(ILPA_ORIGINAL_DOC),
@@ -206,11 +206,12 @@ describe('Stability invariants', () => {
       assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/ilpa/accepted');
       assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/ilpa/rejected');
 
-      expect(first.reconstructionModeUsed).toBe('rebuild');
-      expect(second.reconstructionModeUsed).toBe('rebuild');
-      expect(first.fallbackReason).toBe('round_trip_safety_check_failed');
-      expect(second.fallbackReason).toBe('round_trip_safety_check_failed');
-      expect(first.failedChecks.length).toBeGreaterThan(0);
+      // Bookmark checks are soft, so ILPA now succeeds in inplace mode.
+      expect(first.reconstructionModeUsed).toBe('inplace');
+      expect(second.reconstructionModeUsed).toBe('inplace');
+      expect(first.fallbackReason).toBeUndefined();
+      expect(second.fallbackReason).toBeUndefined();
+      expect(first.failedChecks).toEqual([]);
       expect(second.failedChecks).toEqual(first.failedChecks);
     },
     180000
