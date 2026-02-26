@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rhysd/actionlint@v1
+      - uses: rhysd/actionlint@v1.7.11
 
   workspace-lint:
     runs-on: ubuntu-latest
@@ -85,6 +85,8 @@ jobs:
           done
           echo "npm ci failed after 3 attempts"
           exit 1
+      - name: Install site dependencies
+        run: npm --prefix site ci
       - name: Build site and validate internal links
         run: npm run check:site
 
