@@ -1,0 +1,25 @@
+{
+  "generated_at_utc": "2026-02-26T02:23:52.194Z",
+  "releases": [
+    {
+      "version": "0.1.1",
+      "tag": "v0.1.1",
+      "title": "v0.1.1",
+      "published_at": "2026-02-26T01:20:59Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.1.1",
+      "body_md": "## What's Changed\n* fix(ci): build before lint in release preflight by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/6\n* fix(ci): install site deps in release preflight by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/7\n* fix(ci): preserve auth and build before npm publish by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/8\n* fix(ci): force OIDC-only npm publish path by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/9\n* fix(ci): run release workflow on Node 22 for trusted publishing by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/10\n* fix(ci): restore registry-url in release trusted-publish workflow by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/11\n* docs(readme): refocus package positioning for brownfield docx editing by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/12\n* chore(release): bump package suite to 0.1.1 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/13\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.1.0...v0.1.1",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "size": 398868,
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.1/safe-docx.mcpb"
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "size": 105,
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.1/safe-docx.mcpb.sha256"
+        }
+      ]
+    }
+  ]
+}

@@ -6,29 +6,20 @@ title: Trust | Safe DOCX
   <p class="eyebrow">Trust</p>
   <h1>Read the reliability summary first, then inspect the evidence.</h1>
   <p>
-    This trust surface is written for working developers: quick conclusion first, details after.
+    Built for working developers: quick conclusion first, details after.
   </p>
   <a class="cta" href="traceability/safe-docx/index.html">View Traceability Matrix</a>
 </section>
 
 <section class="grid">
   <article class="card">
-    <h3>Traceability Matrices</h3>
-    <p>Per-package matrices show every `Scenario:` mapped to concrete test files.</p>
-    <a class="cta" href="traceability/safe-docx/index.html">Open Safe DOCX Matrix</a>
+    <h3>Traceability</h3>
+    <p>Every scenario is mapped to concrete test files across both packages.</p>
+    <a class="cta" href="traceability/safe-docx/index.html">Safe DOCX</a>
+    <a class="cta" href="traceability/docx-core/index.html">DOCX Core</a>
   </article>
   <article class="card">
-    <h3>DOCX Core Matrix</h3>
-    <p>Cross-check DOCX Core scenario mappings separately from the MCP layer.</p>
-    <a class="cta" href="traceability/docx-core/index.html">Open DOCX Core Matrix</a>
-  </article>
-  <article class="card">
-    <h3>Evidence Story</h3>
-    <p>Step-by-step walkthrough of the DOCX fill pipeline: prompt, JSON payload, and verified output.</p>
-    <a class="cta" href="evidence-story/index.html">View Evidence Story</a>
-  </article>
-  <article class="card">
-    <h3>Allure Run Signal</h3>
+    <h3>Test Results</h3>
     <p>
       <strong>{{ trustMetrics.allure.results_total_display }}</strong> recorded,
       <strong>{{ trustMetrics.allure.pass_rate }}</strong> pass rate.
@@ -36,6 +27,18 @@ title: Trust | Safe DOCX
     {% if trustMetrics.allure.latest_run_utc %}
     <p class="meta">Latest run: {{ trustMetrics.allure.latest_run_utc }}</p>
     {% endif %}
-    <a class="cta" href="{{ trustMetrics.reportUrl }}">Inspect the full test report</a>
+    <a class="cta" href="{{ trustMetrics.reportUrl }}">View full test report</a>
+  </article>
+  <article class="card">
+    <h3>Changelog</h3>
+    <p>
+      {% if changelog.hasReleases %}
+        Latest: <strong>{{ changelog.releases[0].tag }}</strong>
+        ({{ changelog.releases[0].published_display }})
+      {% else %}
+        Release history auto-generated from GitHub Releases.
+      {% endif %}
+    </p>
+    <a class="cta" href="changelog/index.html">View Changelog</a>
   </article>
 </section>

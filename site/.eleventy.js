@@ -1,3 +1,7 @@
+import MarkdownIt from 'markdown-it';
+
+const md = new MarkdownIt({ html: true, linkify: true });
+
 function normalizePageUrl(value) {
   if (!value || value === '/') {
     return '/';
@@ -33,6 +37,10 @@ export default function (eleventyConfig) {
     const prefix = rootPrefixForUrl(pageUrl);
     const normalizedHref = String(href).replace(/^\/+/, '');
     return `${prefix}${normalizedHref}`;
+  });
+  eleventyConfig.addFilter('renderMarkdown', (content) => {
+    if (!content) return '';
+    return md.render(String(content));
   });
 
   return {
