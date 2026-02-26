@@ -1,0 +1,39 @@
+name: Semgrep
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  semgrep:
+    name: semgrep/scan
+    runs-on: ubuntu-latest
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run scoped Semgrep scan
+        run: |
+          semgrep scan \
+            --config p/ci \
+            --metrics=off \
+            --sarif \
+            --output semgrep.sarif \
+            packages \
+            scripts \
+            site/src
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif

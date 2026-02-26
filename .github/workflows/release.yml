@@ -127,6 +127,10 @@ jobs:
 
       - name: Validate Allure hierarchy labels
         run: npm run check:allure-labels
+      - name: Enforce Allure filename migration policy
+        run: npm run check:allure-filenames
+      - name: Validate Allure quality conventions
+        run: npm run check:allure-quality
 
       - name: Verify package contents (dry-run)
         run: |
