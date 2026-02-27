@@ -47,4 +47,4 @@ A skill is a set of local instructions stored in a `SKILL.md` file.
 
 ### Available skills
 
-- `docx-editing`: Edit .docx files with formatting preservation and tracked changes using the safe-docx MCP server. Use when reading, searching, editing, commenting on, or comparing Word documents. (file: `skills/docx-editing/SKILL.md`)
+- `docx-editing`: Surgically edit existing (brownfield) .docx files with formatting preservation and tracked changes via the Safe-DOCX MCP server. Use when reading, searching, editing, commenting on, or comparing Word documents — not for from-scratch generation. (file: `skills/docx-editing/SKILL.md`)
