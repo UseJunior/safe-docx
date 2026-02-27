@@ -15,7 +15,6 @@ import { download } from './tools/download.js';
 import { getSessionStatus } from './tools/get_session_status.js';
 import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
 import { clearSession } from './tools/clear_session.js';
-import { duplicateDocument } from './tools/duplicate_document.js';
 import { formatLayout } from './tools/format_layout.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { addComment } from './tools/add_comment.js';
@@ -64,8 +63,6 @@ export async function dispatchToolCall(
       return await getSessionStatus(sessions, args as Parameters<typeof getSessionStatus>[1]);
     case 'clear_session':
       return await clearSession(sessions, args as Parameters<typeof clearSession>[1]);
-    case 'duplicate_document':
-      return await duplicateDocument(sessions, args as Parameters<typeof duplicateDocument>[1]);
     case 'add_comment':
       return await addComment(sessions, args as Parameters<typeof addComment>[1]);
     case 'get_comments':

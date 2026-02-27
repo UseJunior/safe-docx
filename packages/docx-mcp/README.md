@@ -37,7 +37,7 @@ Add to your MCP client:
 - Planning/Batch: `init_plan`, `merge_plans`, `apply_plan`
 - Compare/Revision: `compare_documents`, `extract_revisions`, `download`
 - Comments/Footnotes: `add_comment`, `get_comments`, `delete_comment`, `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote`
-- Session/Safety: `clear_session`, `duplicate_document`, path-policy + archive guardrails
+- Session/Safety: `clear_session`, path-policy + archive guardrails
 
 ## Document Families
 

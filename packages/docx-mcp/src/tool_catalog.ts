@@ -218,16 +218,6 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
-    name: 'duplicate_document',
-    description: 'Duplicate a source .docx and auto-open a fresh editing session for the duplicate.',
-    input: z.object({
-      source_file_path: z.string(),
-      destination_file_path: z.string().optional(),
-      overwrite: z.boolean().optional(),
-    }),
-    annotations: { readOnlyHint: false, destructiveHint: true },
-  },
-  {
     name: 'add_comment',
     description:
       'Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies.',

@@ -73,10 +73,6 @@
       "description": "Clear one session or all sessions."
     },
     {
-      "name": "duplicate_document",
-      "description": "Duplicate a document and open a fresh session."
-    },
-    {
       "name": "add_comment",
       "description": "Add a comment or threaded reply."
     },

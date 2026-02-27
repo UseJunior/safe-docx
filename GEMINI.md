@@ -50,7 +50,6 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 ### Session Management
 
 - **clear_session** — Clear one session, all sessions for a file, or all sessions.
-- **duplicate_document** — Copy a source `.docx` and open a fresh session for the copy.
 
 ## Key Usage Patterns
 
