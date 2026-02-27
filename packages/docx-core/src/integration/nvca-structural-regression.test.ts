@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure as it } from '../testing/allure-test.js';
 import { compareDocuments } from '../index.js';
 import fs from 'fs';
 import path from 'path';
@@ -26,8 +27,8 @@ describe('NVCA Structural Regression', () => {
     expect(res.reconstructionModeUsed).toBe('inplace');
     expect(res.fallbackReason).toBeUndefined();
 
-    // Verify stats are within expected ranges
-    expect(res.stats.insertions).toBeGreaterThan(400);
-    expect(res.stats.deletions).toBeGreaterThan(2000);
+    // Verify stats are within expected ranges (v0.3: improved matching yields lower counts)
+    expect(res.stats.insertions).toBeGreaterThan(100);
+    expect(res.stats.deletions).toBeGreaterThan(200);
   }, 60000); // 60 second timeout for large document comparison
 });
