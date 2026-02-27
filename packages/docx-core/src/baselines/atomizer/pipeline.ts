@@ -6,6 +6,7 @@
  * and document reconstruction.
  */
 
+import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { DocxArchive } from '../../shared/docx/DocxArchive.js';
 import type {
   CompareResult,
@@ -685,12 +686,26 @@ export async function compareDocumentsAtomizer(
   const resultArchive = await baseArchive.clone();
   resultArchive.setDocumentXml(newDocumentXml);
 
-  // Step 12b: For inplace mode, merge footnote/endnote definitions from the
-  // original document. Inplace reconstruction inserts deleted content that may
-  // reference footnotes/endnotes not present in the revised archive.
+  // Step 12b: For inplace mode, merge auxiliary part definitions (footnotes,
+  // endnotes, comments) from the original document. Inplace reconstruction
+  // inserts deleted content that may reference definitions not present in the
+  // revised archive.
   if (comparisonResult.outputMode === 'inplace') {
-    await mergeFootnoteDefinitions(originalArchive, resultArchive, newDocumentXml);
-    await mergeEndnoteDefinitions(originalArchive, resultArchive, newDocumentXml);
+    const mergeResults = new Map<string, AuxiliaryMergeResult>();
+    for (const descriptor of AUXILIARY_PARTS) {
+      const result = await mergeAuxiliaryPartDefinitions(
+        originalArchive, resultArchive, newDocumentXml, descriptor
+      );
+      if (result.mergedIds.size > 0) {
+        mergeResults.set(descriptor.label, result);
+      }
+    }
+    // Post-merge hook for comment ancillary parts
+    if (mergeResults.has('comment')) {
+      await mergeCommentAncillaryParts(
+        originalArchive, resultArchive, mergeResults.get('comment')!
+      );
+    }
   }
 
   // Step 13: Save result and compute stats
@@ -709,145 +724,379 @@ export async function compareDocumentsAtomizer(
 }
 
 // =============================================================================
-// Footnote / Endnote Merging for Inplace Mode
+// Auxiliary Part Merging for Inplace Mode (footnotes, endnotes, comments)
 // =============================================================================
 
+interface AuxiliaryPartDescriptor {
+  label: string;
+  partPath: string;
+  referenceTag: string;
+  entryTag: string;
+  rootTag: string;
+  contentType: string;
+  relationshipType: string;
+}
+
+export interface AuxiliaryMergeResult {
+  mergedIds: Set<string>;
+  createdPart: boolean;
+}
+
+const AUXILIARY_PARTS: AuxiliaryPartDescriptor[] = [
+  {
+    label: 'footnote',
+    partPath: 'word/footnotes.xml',
+    referenceTag: 'w:footnoteReference',
+    entryTag: 'w:footnote',
+    rootTag: 'w:footnotes',
+    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml',
+    relationshipType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes',
+  },
+  {
+    label: 'endnote',
+    partPath: 'word/endnotes.xml',
+    referenceTag: 'w:endnoteReference',
+    entryTag: 'w:endnote',
+    rootTag: 'w:endnotes',
+    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml',
+    relationshipType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes',
+  },
+  {
+    label: 'comment',
+    partPath: 'word/comments.xml',
+    referenceTag: 'w:commentReference',
+    entryTag: 'w:comment',
+    rootTag: 'w:comments',
+    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
+    relationshipType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+  },
+];
+
 /**
- * Collect footnote/endnote reference IDs from document.xml.
- *
- * @param documentXml - The reconstructed document XML
- * @param refTag - 'w:footnoteReference' or 'w:endnoteReference'
- * @returns Set of referenced IDs (w:id attribute values)
+ * Collect reference IDs from document.xml using DOM parsing.
  */
-function collectReferenceIds(documentXml: string, refTag: string): Set<string> {
+function collectReferenceIds(documentXml: string, referenceTag: string): Set<string> {
   const ids = new Set<string>();
-  // Match <w:footnoteReference w:id="NNN" .../> or <w:endnoteReference w:id="NNN" .../>
-  const regex = new RegExp(`<${refTag}[^>]*\\bw:id="([^"]+)"`, 'g');
-  let match;
-  while ((match = regex.exec(documentXml)) !== null) {
-    ids.add(match[1]!);
+  const doc = new DOMParser().parseFromString(documentXml, 'application/xml');
+  const refs = doc.getElementsByTagName(referenceTag);
+  for (let i = 0; i < refs.length; i++) {
+    const id = (refs[i] as Element).getAttribute('w:id');
+    if (id) ids.add(id);
   }
   return ids;
 }
 
 /**
- * Parse a footnotes.xml or endnotes.xml and extract entries by ID.
- *
- * @param xml - The footnotes/endnotes XML content
- * @param entryTag - 'w:footnote' or 'w:endnote'
- * @returns Map of ID -> full XML fragment for each entry
+ * Parse an auxiliary part and extract entry elements by ID.
  */
-function parseNoteEntries(xml: string, entryTag: string): Map<string, string> {
-  const entries = new Map<string, string>();
-  // Match <w:footnote w:id="NNN" ...>...</w:footnote> (or endnote)
-  // Use a simple regex approach since the structure is predictable
-  const regex = new RegExp(`(<${entryTag}\\s[^>]*\\bw:id="([^"]+)"[\\s\\S]*?<\\/${entryTag}>)`, 'g');
-  let match;
-  while ((match = regex.exec(xml)) !== null) {
-    entries.set(match[2]!, match[1]!);
+function parseEntries(xml: string, entryTag: string): { doc: Document; entries: Map<string, Element> } {
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const entries = new Map<string, Element>();
+  const elements = doc.getElementsByTagName(entryTag);
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i] as Element;
+    const id = el.getAttribute('w:id');
+    if (id) entries.set(id, el);
   }
-  return entries;
+  return { doc, entries };
 }
 
+const serializer = new XMLSerializer();
+
 /**
- * Merge footnote definitions from the original archive into the result archive.
- *
- * When inplace mode inserts deleted content containing w:footnoteReference,
- * the corresponding footnote definitions must exist in footnotes.xml.
- * The revised archive may lack these definitions.
+ * Merge auxiliary part definitions (footnotes, endnotes, comments) from the
+ * original archive into the result archive. When inplace mode inserts deleted
+ * content, the corresponding definitions must exist in the auxiliary part.
  */
-async function mergeFootnoteDefinitions(
+async function mergeAuxiliaryPartDefinitions(
   originalArchive: DocxArchive,
   resultArchive: DocxArchive,
-  documentXml: string
-): Promise<void> {
-  const referencedIds = collectReferenceIds(documentXml, 'w:footnoteReference');
-  if (referencedIds.size === 0) return;
+  documentXml: string,
+  descriptor: AuxiliaryPartDescriptor,
+): Promise<AuxiliaryMergeResult> {
+  const result: AuxiliaryMergeResult = { mergedIds: new Set(), createdPart: false };
 
-  const originalFootnotesXml = await originalArchive.getFile('word/footnotes.xml');
-  if (!originalFootnotesXml) return;
+  const referencedIds = collectReferenceIds(documentXml, descriptor.referenceTag);
+  if (referencedIds.size === 0) return result;
 
-  const resultFootnotesXml = await resultArchive.getFile('word/footnotes.xml');
+  const originalPartXml = await originalArchive.getFile(descriptor.partPath);
+  if (!originalPartXml) return result;
 
-  const originalEntries = parseNoteEntries(originalFootnotesXml, 'w:footnote');
-  const resultEntries = resultFootnotesXml ? parseNoteEntries(resultFootnotesXml, 'w:footnote') : new Map();
+  const resultPartXml = await resultArchive.getFile(descriptor.partPath);
 
-  // Find missing footnotes: referenced in document.xml but not in result
-  const missingEntries: string[] = [];
+  const originalParsed = parseEntries(originalPartXml, descriptor.entryTag);
+  const resultParsed = resultPartXml ? parseEntries(resultPartXml, descriptor.entryTag) : null;
+
+  // Find missing entries: referenced in document.xml but not in result
+  const missingElements: Element[] = [];
   for (const id of referencedIds) {
-    if (!resultEntries.has(id) && originalEntries.has(id)) {
-      missingEntries.push(originalEntries.get(id)!);
+    if (!(resultParsed?.entries.has(id)) && originalParsed.entries.has(id)) {
+      missingElements.push(originalParsed.entries.get(id)!);
+      result.mergedIds.add(id);
     }
   }
 
-  if (missingEntries.length === 0) return;
+  if (missingElements.length === 0) return result;
 
-  if (resultFootnotesXml) {
-    // Insert missing entries before the closing </w:footnotes> tag
-    const closingTag = '</w:footnotes>';
-    const insertionPoint = resultFootnotesXml.lastIndexOf(closingTag);
-    if (insertionPoint >= 0) {
-      const merged = resultFootnotesXml.slice(0, insertionPoint) +
-        missingEntries.join('') +
-        resultFootnotesXml.slice(insertionPoint);
-      resultArchive.setFile('word/footnotes.xml', merged);
+  if (resultPartXml && resultParsed) {
+    // Insert missing entries into existing result part
+    const rootEl = resultParsed.doc.getElementsByTagName(descriptor.rootTag)[0] as Element;
+    if (rootEl) {
+      for (const el of missingElements) {
+        const imported = resultParsed.doc.importNode(el, true);
+        rootEl.appendChild(imported);
+      }
+      resultArchive.setFile(descriptor.partPath, serializer.serializeToString(resultParsed.doc));
     }
   } else {
-    // Create a new footnotes.xml with the standard wrapper and missing entries.
-    // Copy the root element and namespace declarations from the original.
-    const rootMatch = originalFootnotesXml.match(/^([\s\S]*?<w:footnotes[^>]*>)/);
-    if (rootMatch) {
-      const newFootnotesXml = rootMatch[1] + missingEntries.join('') + '</w:footnotes>';
-      resultArchive.setFile('word/footnotes.xml', newFootnotesXml);
+    // Create part from scratch: clone root from original, insert missing entries
+    const newDoc = new DOMParser().parseFromString(originalPartXml, 'application/xml');
+    const rootEl = newDoc.getElementsByTagName(descriptor.rootTag)[0] as Element;
+    if (rootEl) {
+      // Remove all existing entries — we only want the missing ones
+      const existingEntries = rootEl.getElementsByTagName(descriptor.entryTag);
+      const toRemove: Element[] = [];
+      for (let i = 0; i < existingEntries.length; i++) {
+        toRemove.push(existingEntries[i] as Element);
+      }
+      for (const el of toRemove) {
+        rootEl.removeChild(el);
+      }
+      // Add back only the missing entries
+      for (const el of missingElements) {
+        const imported = newDoc.importNode(el, true);
+        rootEl.appendChild(imported);
+      }
+      resultArchive.setFile(descriptor.partPath, serializer.serializeToString(newDoc));
+      result.createdPart = true;
+
+      // Bootstrap OPC metadata for the newly created part
+      await ensureOpcMetadata(resultArchive, descriptor);
+    }
+  }
+
+  return result;
+}
+
+// =============================================================================
+// OPC Metadata Bootstrapping
+// =============================================================================
+
+const CT_NS = 'http://schemas.openxmlformats.org/package/2006/content-types';
+const REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+
+/**
+ * Ensure [Content_Types].xml and document.xml.rels have entries for a
+ * newly-created auxiliary part.
+ */
+async function ensureOpcMetadata(
+  archive: DocxArchive,
+  descriptor: AuxiliaryPartDescriptor,
+): Promise<void> {
+  // 1. Update [Content_Types].xml
+  const ctXml = await archive.getFile('[Content_Types].xml');
+  if (ctXml) {
+    const ctDoc = new DOMParser().parseFromString(ctXml, 'application/xml');
+    const typesEl = ctDoc.documentElement;
+    const overrides = typesEl.getElementsByTagNameNS(CT_NS, 'Override');
+    const partName = `/${descriptor.partPath}`;
+
+    let found = false;
+    for (let i = 0; i < overrides.length; i++) {
+      if ((overrides[i] as Element).getAttribute('PartName') === partName) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      const override = ctDoc.createElementNS(CT_NS, 'Override');
+      override.setAttribute('PartName', partName);
+      override.setAttribute('ContentType', descriptor.contentType);
+      typesEl.appendChild(override);
+      archive.setFile('[Content_Types].xml', serializer.serializeToString(ctDoc));
+    }
+  }
+
+  // 2. Update word/_rels/document.xml.rels
+  const relsPath = 'word/_rels/document.xml.rels';
+  const relsXml = await archive.getFile(relsPath);
+  if (relsXml) {
+    const relsDoc = new DOMParser().parseFromString(relsXml, 'application/xml');
+    const relsEl = relsDoc.documentElement;
+    const existingRels = relsEl.getElementsByTagNameNS(REL_NS, 'Relationship');
+
+    let found = false;
+    let maxId = 0;
+    for (let i = 0; i < existingRels.length; i++) {
+      const rel = existingRels[i] as Element;
+      if (rel.getAttribute('Type') === descriptor.relationshipType) {
+        found = true;
+      }
+      const id = rel.getAttribute('Id') ?? '';
+      const idMatch = /^rId(\d+)$/.exec(id);
+      if (idMatch) maxId = Math.max(maxId, parseInt(idMatch[1]!, 10));
+    }
+
+    if (!found) {
+      maxId++;
+      const rel = relsDoc.createElementNS(REL_NS, 'Relationship');
+      rel.setAttribute('Id', `rId${maxId}`);
+      rel.setAttribute('Type', descriptor.relationshipType);
+      rel.setAttribute('Target', descriptor.partPath.replace('word/', ''));
+      relsEl.appendChild(rel);
+      archive.setFile(relsPath, serializer.serializeToString(relsDoc));
     }
   }
 }
 
+// =============================================================================
+// Comment Ancillary Parts Merging
+// =============================================================================
+
 /**
- * Merge endnote definitions from the original archive into the result archive.
- * Same logic as mergeFootnoteDefinitions but for endnotes.
+ * After merging comment definitions, copy related entries from
+ * commentsExtended.xml and people.xml for author fidelity and reply threading.
  */
-async function mergeEndnoteDefinitions(
+async function mergeCommentAncillaryParts(
   originalArchive: DocxArchive,
   resultArchive: DocxArchive,
-  documentXml: string
+  commentMergeResult: AuxiliaryMergeResult,
 ): Promise<void> {
-  const referencedIds = collectReferenceIds(documentXml, 'w:endnoteReference');
-  if (referencedIds.size === 0) return;
+  // Collect authors and paraIds from the merged comment entries
+  const originalCommentsXml = await originalArchive.getFile('word/comments.xml');
+  if (!originalCommentsXml) return;
 
-  const originalEndnotesXml = await originalArchive.getFile('word/endnotes.xml');
-  if (!originalEndnotesXml) return;
+  const origDoc = new DOMParser().parseFromString(originalCommentsXml, 'application/xml');
+  const mergedAuthors = new Set<string>();
+  const mergedParaIds = new Set<string>();
 
-  const resultEndnotesXml = await resultArchive.getFile('word/endnotes.xml');
+  const commentEls = origDoc.getElementsByTagName('w:comment');
+  for (let i = 0; i < commentEls.length; i++) {
+    const el = commentEls[i] as Element;
+    const id = el.getAttribute('w:id');
+    if (!id || !commentMergeResult.mergedIds.has(id)) continue;
 
-  const originalEntries = parseNoteEntries(originalEndnotesXml, 'w:endnote');
-  const resultEntries = resultEndnotesXml ? parseNoteEntries(resultEndnotesXml, 'w:endnote') : new Map();
+    const author = el.getAttribute('w:author');
+    if (author) mergedAuthors.add(author);
 
-  const missingEntries: string[] = [];
-  for (const id of referencedIds) {
-    if (!resultEntries.has(id) && originalEntries.has(id)) {
-      missingEntries.push(originalEntries.get(id)!);
+    // Collect paraIds from <w:p> children inside the comment
+    const paras = el.getElementsByTagName('w:p');
+    for (let j = 0; j < paras.length; j++) {
+      const p = paras[j] as Element;
+      const paraId = p.getAttribute('w14:paraId');
+      if (paraId) mergedParaIds.add(paraId);
     }
   }
 
-  if (missingEntries.length === 0) return;
+  // Merge commentsExtended.xml entries matching merged paraIds
+  await mergeCommentsExtended(originalArchive, resultArchive, mergedParaIds);
 
-  if (resultEndnotesXml) {
-    const closingTag = '</w:endnotes>';
-    const insertionPoint = resultEndnotesXml.lastIndexOf(closingTag);
-    if (insertionPoint >= 0) {
-      const merged = resultEndnotesXml.slice(0, insertionPoint) +
-        missingEntries.join('') +
-        resultEndnotesXml.slice(insertionPoint);
-      resultArchive.setFile('word/endnotes.xml', merged);
-    }
-  } else {
-    const rootMatch = originalEndnotesXml.match(/^([\s\S]*?<w:endnotes[^>]*>)/);
-    if (rootMatch) {
-      const newEndnotesXml = rootMatch[1] + missingEntries.join('') + '</w:endnotes>';
-      resultArchive.setFile('word/endnotes.xml', newEndnotesXml);
+  // Merge people.xml entries matching merged authors
+  await mergePeople(originalArchive, resultArchive, mergedAuthors);
+}
+
+async function mergeCommentsExtended(
+  originalArchive: DocxArchive,
+  resultArchive: DocxArchive,
+  mergedParaIds: Set<string>,
+): Promise<void> {
+  if (mergedParaIds.size === 0) return;
+
+  const originalXml = await originalArchive.getFile('word/commentsExtended.xml');
+  if (!originalXml) return;
+
+  const origDoc = new DOMParser().parseFromString(originalXml, 'application/xml');
+  const origEntries = origDoc.getElementsByTagName('w15:commentEx');
+
+  // Collect entries whose paraId matches a merged comment's paragraph
+  const entriesToMerge: Element[] = [];
+  for (let i = 0; i < origEntries.length; i++) {
+    const el = origEntries[i] as Element;
+    const paraId = el.getAttribute('w15:paraId');
+    if (paraId && mergedParaIds.has(paraId)) {
+      entriesToMerge.push(el);
     }
   }
+
+  if (entriesToMerge.length === 0) return;
+
+  let resultXml = await resultArchive.getFile('word/commentsExtended.xml');
+
+  if (resultXml) {
+    const resultDoc = new DOMParser().parseFromString(resultXml, 'application/xml');
+    const rootEl = resultDoc.documentElement;
+
+    // Check existing paraIds to avoid duplicates
+    const existingParaIds = new Set<string>();
+    const existing = rootEl.getElementsByTagName('w15:commentEx');
+    for (let i = 0; i < existing.length; i++) {
+      const pid = (existing[i] as Element).getAttribute('w15:paraId');
+      if (pid) existingParaIds.add(pid);
+    }
+
+    for (const el of entriesToMerge) {
+      const pid = el.getAttribute('w15:paraId');
+      if (pid && !existingParaIds.has(pid)) {
+        rootEl.appendChild(resultDoc.importNode(el, true));
+      }
+    }
+
+    resultArchive.setFile('word/commentsExtended.xml', serializer.serializeToString(resultDoc));
+  }
+  // If commentsExtended.xml doesn't exist in result, we don't create it —
+  // the file is optional and its absence won't cause crashes.
+}
+
+async function mergePeople(
+  originalArchive: DocxArchive,
+  resultArchive: DocxArchive,
+  mergedAuthors: Set<string>,
+): Promise<void> {
+  if (mergedAuthors.size === 0) return;
+
+  const originalXml = await originalArchive.getFile('word/people.xml');
+  if (!originalXml) return;
+
+  const origDoc = new DOMParser().parseFromString(originalXml, 'application/xml');
+  const origPersons = origDoc.getElementsByTagName('w15:person');
+
+  const personsToMerge: Element[] = [];
+  for (let i = 0; i < origPersons.length; i++) {
+    const el = origPersons[i] as Element;
+    const author = el.getAttribute('w15:author');
+    if (author && mergedAuthors.has(author)) {
+      personsToMerge.push(el);
+    }
+  }
+
+  if (personsToMerge.length === 0) return;
+
+  let resultXml = await resultArchive.getFile('word/people.xml');
+
+  if (resultXml) {
+    const resultDoc = new DOMParser().parseFromString(resultXml, 'application/xml');
+    const rootEl = resultDoc.documentElement;
+
+    // Check existing authors to avoid duplicates
+    const existingAuthors = new Set<string>();
+    const existing = rootEl.getElementsByTagName('w15:person');
+    for (let i = 0; i < existing.length; i++) {
+      const a = (existing[i] as Element).getAttribute('w15:author');
+      if (a) existingAuthors.add(a);
+    }
+
+    for (const el of personsToMerge) {
+      const a = el.getAttribute('w15:author');
+      if (a && !existingAuthors.has(a)) {
+        rootEl.appendChild(resultDoc.importNode(el, true));
+      }
+    }
+
+    resultArchive.setFile('word/people.xml', serializer.serializeToString(resultDoc));
+  }
+  // If people.xml doesn't exist in result, we don't create it —
+  // the file is optional and its absence won't cause crashes.
 }
 
 /**
