@@ -18,10 +18,10 @@ export async function getSessionStatus(
       last_activity: session.lastAccessedAt.toISOString(),
       edit_count: session.editCount,
       edit_revision: session.editRevision,
-      cached_download_artifacts: session.downloadCache.size,
-      download_defaults: {
+      cached_save_artifacts: session.saveCache.size,
+      save_defaults: {
         default_variants: ['clean', 'redline'],
-        default_download_format: 'both',
+        default_save_format: 'both',
         supports_variant_override: true,
         redownload_by_session_id: true,
       },

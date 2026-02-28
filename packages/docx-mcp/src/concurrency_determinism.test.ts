@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import { DocxZip, OOXML, W, parseXml, serializeXml } from '@usejunior/docx-core';
 
 import { formatLayout } from './tools/format_layout.js';
-import { download } from './tools/download.js';
+import { save } from './tools/save.js';
 import { getSessionStatus } from './tools/get_session_status.js';
 import { extractParaIdsFromToon } from './testing/docx_test_utils.js';
 import { assertSuccess, openSession, registerCleanup } from './testing/session-test-utils.js';
@@ -67,13 +67,13 @@ async function runConcurrentFormattingOnce(): Promise<string> {
   expect(paragraphAfterSpacingTwips(thirdParagraph!)).toBe('360');
 
   const outputPath = `${opened.tmpDir}/concurrent-out.docx`;
-  const saved = await download(opened.mgr, {
+  const saved = await save(opened.mgr, {
     session_id: opened.sessionId,
     save_to_local_path: outputPath,
-    download_format: 'clean',
+    save_format: 'clean',
     clean_bookmarks: false,
   });
-  assertSuccess(saved, 'download');
+  assertSuccess(saved, 'save');
 
   const zip = await DocxZip.load(await fs.readFile(outputPath) as Buffer);
   const xml = await zip.readText('word/document.xml');

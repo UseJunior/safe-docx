@@ -11,7 +11,7 @@ import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
 import { mergePlans } from './tools/merge_plans.js';
 import { applyPlan } from './tools/apply_plan.js';
-import { download } from './tools/download.js';
+import { save } from './tools/save.js';
 import { getSessionStatus } from './tools/get_session_status.js';
 import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
 import { clearSession } from './tools/clear_session.js';
@@ -51,8 +51,8 @@ export async function dispatchToolCall(
       return await replaceText(sessions, args as Parameters<typeof replaceText>[1]);
     case 'insert_paragraph':
       return await insertParagraph(sessions, args as Parameters<typeof insertParagraph>[1]);
-    case 'download':
-      return await download(sessions, args as Parameters<typeof download>[1]);
+    case 'save':
+      return await save(sessions, args as Parameters<typeof save>[1]);
     case 'format_layout':
       return await formatLayout(sessions, args as Parameters<typeof formatLayout>[1]);
     case 'accept_changes':
@@ -87,7 +87,7 @@ export async function dispatchToolCall(
         error: {
           code: 'UNKNOWN_TOOL',
           message: `Unknown tool: ${name}`,
-          hint: 'Use file-first tools: read_file, grep, replace_text, insert_paragraph, download, get_session_status.',
+          hint: 'Use file-first tools: read_file, grep, replace_text, insert_paragraph, save, get_session_status.',
         },
       };
   }

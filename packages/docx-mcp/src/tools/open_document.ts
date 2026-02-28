@@ -15,8 +15,8 @@ function getAvailableToolsSchema(): Array<{
 }> {
   const toolDefaultsByName: Record<string, Record<string, unknown>> = {
     grep: { dedupe_by_paragraph: true },
-    download: {
-      download_format: 'both',
+    save: {
+      save_format: 'both',
       clean_bookmarks: true,
       returned_variants: ['clean', 'tracked'],
     },
@@ -108,11 +108,11 @@ export async function openDocument(
             normalization_skipped: false,
           }
         : { runs_merged: 0, redlines_simplified: 0, double_elevations_fixed: 0, normalization_skipped: true },
-      download_defaults: {
+      save_defaults: {
         default_variants: ['clean', 'redline'],
-        default_download_format: 'both',
+        default_save_format: 'both',
         supports_variant_override: true,
-        redownload_by_session_id: true,
+        resave_by_session_id: true,
       },
       tools: getAvailableToolsSchema(),
     });

@@ -43,7 +43,7 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 
 ### Output
 
-- **download** — Save edited document as clean output, tracked-changes redline, or both. Default is both.
+- **save** — Save edited document as clean output, tracked-changes redline, or both. Default is both.
 - **compare_documents** — Compare two DOCX files and produce a redline with track changes.
 - **extract_revisions** — Extract tracked changes as structured JSON with before/after text per paragraph. Supports pagination.
 
@@ -58,7 +58,7 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 1. Call `read_file` with `file_path` to see content and get `_bk_*` IDs.
 2. Use `grep` to find specific text and get target paragraph IDs.
 3. Call `replace_text` with `target_paragraph_id`, `old_string`, `new_string`, and `instruction`.
-4. Call `download` with `save_to_local_path` to save (defaults to both clean + tracked outputs).
+4. Call `save` with `save_to_local_path` to save (defaults to both clean + tracked outputs).
 
 ### Batch Edits (Multi-Agent)
 

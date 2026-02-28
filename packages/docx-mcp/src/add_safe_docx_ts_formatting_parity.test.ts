@@ -4,7 +4,7 @@ import path from 'node:path';
 import { readFile } from './tools/read_file.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
-import { download } from './tools/download.js';
+import { save } from './tools/save.js';
 import { openDocument } from './tools/open_document.js';
 import {
   firstParaIdFromToon,
@@ -155,13 +155,13 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
       clean_bookmarks: true,
-      download_format: 'clean',
+      save_format: 'clean',
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { runs, runText, hasBold, hasItalic } = await parseOutputXml(outPath);
 
@@ -217,13 +217,13 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(insertedNode).toBeTruthy();
     expect(insertedNode!.header).toBe('Security Incidents');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
       clean_bookmarks: true,
-      download_format: 'clean',
+      save_format: 'clean',
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { runs, runText, hasBold } = await parseOutputXml(outPath);
 
@@ -303,13 +303,13 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(colsA[4]).not.toContain('Security Incidents:');
     expect(colsB[4]).not.toContain('Security Incidents:');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
       clean_bookmarks: true,
-      download_format: 'clean',
+      save_format: 'clean',
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { runs, runText, hasBold } = await parseOutputXml(outPath);
 
@@ -384,13 +384,13 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     });
     assertSuccess(inserted, 'insert');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
       clean_bookmarks: true,
-      download_format: 'clean',
+      save_format: 'clean',
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { runs } = await parseOutputXml(outPath);
     const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';

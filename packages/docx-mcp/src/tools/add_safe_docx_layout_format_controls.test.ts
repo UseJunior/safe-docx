@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { readFile } from './read_file.js';
-import { download } from './download.js';
+import { save } from './save.js';
 import { formatLayout } from './format_layout.js';
 import { firstParaIdFromToon, extractParaIdsFromToon } from '../testing/docx_test_utils.js';
 import { testAllure } from '../testing/allure-test.js';
@@ -53,13 +53,13 @@ describe('Traceability: Layout Format Controls', () => {
     });
 
     const outPath = path.join(opened.tmpDir, 'layout-spacing.docx');
-    const saved = await download(opened.mgr, {
+    const saved = await save(opened.mgr, {
       session_id: opened.sessionId,
       save_to_local_path: outPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { dom } = await parseOutputXml(outPath);
     const spacing = dom.getElementsByTagNameNS(W_NS, 'spacing').item(0) as Element | null;
@@ -116,13 +116,13 @@ describe('Traceability: Layout Format Controls', () => {
     });
 
     const outPath = path.join(opened.tmpDir, 'layout-table.docx');
-    const saved = await download(opened.mgr, {
+    const saved = await save(opened.mgr, {
       session_id: opened.sessionId,
       save_to_local_path: outPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { dom } = await parseOutputXml(outPath);
     const trHeight = dom.getElementsByTagNameNS(W_NS, 'trHeight').item(0) as Element | null;

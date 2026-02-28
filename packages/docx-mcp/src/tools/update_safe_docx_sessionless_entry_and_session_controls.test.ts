@@ -8,7 +8,7 @@ import { readFile } from './read_file.js';
 import { grep } from './grep.js';
 import { replaceText } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
-import { download } from './download.js';
+import { save } from './save.js';
 import { getSessionStatus } from './get_session_status.js';
 import { clearSession } from './clear_session.js';
 import { firstParaIdFromToon, makeMinimalDocx } from '../testing/docx_test_utils.js';
@@ -68,10 +68,10 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     });
     expect(inserted.success).toBe(true);
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       file_path: inputPath,
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
     });
     expect(saved.success).toBe(true);
 

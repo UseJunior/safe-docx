@@ -8,13 +8,13 @@ import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session
 import { enforceWritePathPolicy } from './path_policy.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
-type DownloadFormat = 'clean' | 'tracked' | 'both';
+type SaveFormat = 'clean' | 'tracked' | 'both';
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
 }
 
-function isDownloadFormat(value: string): value is DownloadFormat {
+function isSaveFormat(value: string): value is SaveFormat {
   return value === 'clean' || value === 'tracked' || value === 'both';
 }
 
@@ -46,14 +46,14 @@ async function runWithoutConsoleLog<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-export async function download(
+export async function save(
   manager: SessionManager,
   params: {
     session_id?: string;
     file_path?: string;
     save_to_local_path: string;
     clean_bookmarks?: boolean;
-    download_format?: DownloadFormat;
+    save_format?: SaveFormat;
     // Backward-compatible aliases used by older safe-docx prompts.
     track_changes?: boolean;
     author?: string;
@@ -65,29 +65,29 @@ export async function download(
   },
 ): Promise<ToolResponse> {
   try {
-    const resolved = await resolveSessionForTool(manager, params, { toolName: 'download' });
+    const resolved = await resolveSessionForTool(manager, params, { toolName: 'save' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
 
     const savePath = expandPath(params.save_to_local_path);
-    const explicitFormat = params.download_format;
+    const explicitFormat = params.save_format;
     const hasTrackedSavePath =
       typeof params.tracked_save_to_local_path === 'string'
       && params.tracked_save_to_local_path.trim().length > 0;
-    let formatSource: 'download_format' | 'tracked_save_to_local_path' | 'track_changes_alias' | 'default_both';
+    let formatSource: 'save_format' | 'tracked_save_to_local_path' | 'track_changes_alias' | 'default_both';
     let formatRaw: string;
     let parameterWarning: string | undefined;
     if (explicitFormat) {
       formatRaw = explicitFormat;
-      formatSource = 'download_format';
+      formatSource = 'save_format';
     } else if (hasTrackedSavePath) {
       // If caller asks for explicit tracked path, always emit both variants unless
-      // they explicitly override download_format.
+      // they explicitly override save_format.
       formatRaw = 'both';
       formatSource = 'tracked_save_to_local_path';
       if (params.track_changes === false) {
         parameterWarning =
-          "track_changes=false was ignored because tracked_save_to_local_path was provided. Using download_format='both'.";
+          "track_changes=false was ignored because tracked_save_to_local_path was provided. Using save_format='both'.";
       }
     } else if (typeof params.track_changes === 'boolean') {
       formatRaw = params.track_changes ? 'tracked' : 'clean';
@@ -96,10 +96,10 @@ export async function download(
       formatRaw = 'both';
       formatSource = 'default_both';
     }
-    if (!isDownloadFormat(formatRaw)) {
-      return err('INVALID_DOWNLOAD_FORMAT', `Invalid download_format: ${String(formatRaw)}`, "Use one of: 'clean', 'tracked', or 'both'.");
+    if (!isSaveFormat(formatRaw)) {
+      return err('INVALID_SAVE_FORMAT', `Invalid save_format: ${String(formatRaw)}`, "Use one of: 'clean', 'tracked', or 'both'.");
     }
-    const format: DownloadFormat = formatRaw;
+    const format: SaveFormat = formatRaw;
 
     const engine = params.tracked_changes_engine ?? 'atomizer';
     if (engine !== 'auto' && engine !== 'atomizer' && engine !== 'diffmatch' && engine !== 'wmlcomparer') {
@@ -121,7 +121,7 @@ export async function download(
       tracked_author: author,
     });
 
-    const cached = manager.getDownloadCache(session, cacheKey);
+    const cached = manager.getSaveCache(session, cacheKey);
     const cacheHit = cached !== null;
 
     let revisedBuffer: Buffer;
@@ -133,7 +133,7 @@ export async function download(
     let bookmarksRemoved: number;
     let exportTimestamp: string;
 
-    // Run implicit validation before producing download artifacts.
+    // Run implicit validation before producing save artifacts.
     const validation = session.doc.validate();
 
     if (cached) {
@@ -179,11 +179,11 @@ export async function download(
           'REBUILD_FALLBACK',
           'Tracked output would use rebuild mode which destroys table structure. ' +
             (trackedFallbackReason ? `Reason: ${trackedFallbackReason}.` : ''),
-          "Use download_format: 'clean' or fix the document to pass inplace safety checks.",
+          "Use save_format: 'clean' or fix the document to pass inplace safety checks.",
         );
       }
 
-      manager.setDownloadCache(session, {
+      manager.setSaveCache(session, {
         cacheKey,
         revision: session.editRevision,
         format,
@@ -256,7 +256,7 @@ export async function download(
       original_filename: session.filename,
       edit_count: session.editCount,
       edit_revision: session.editRevision,
-      download_format: format,
+      save_format: format,
       saved_to: format === 'tracked' ? trackedPath : savePath,
       clean_saved_to: format === 'both' ? savePath : undefined,
       tracked_saved_to: trackedPath,

@@ -23,7 +23,7 @@ import {
 } from './allure-test.js';
 import { replaceText } from '../tools/replace_text.js';
 import { readFile } from '../tools/read_file.js';
-import { download } from '../tools/download.js';
+import { save } from '../tools/save.js';
 import {
   assertSuccess,
   openSession,
@@ -146,13 +146,13 @@ describe('Evidence Story: DOCX fill pipeline', () => {
 
       await and('the filled document is downloaded', async () => {
         outputPath = `${sessionResult.tmpDir}/filled-output.docx`;
-        const saved = await download(sessionResult.mgr, {
+        const saved = await save(sessionResult.mgr, {
           session_id: sessionResult.sessionId,
           save_to_local_path: outputPath,
-          download_format: 'clean',
+          save_format: 'clean',
           clean_bookmarks: true,
         });
-        assertSuccess(saved, 'download');
+        assertSuccess(saved, 'save');
 
         // Attach the output DOCX as a binary artifact
         await allureFileAttachment(

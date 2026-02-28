@@ -3,7 +3,7 @@ import { testAllure as test } from '../testing/allure-test.js';
 import fs from 'node:fs/promises';
 import { DocxZip, parseXml, serializeXml } from '@usejunior/docx-core';
 
-import { download } from './download.js';
+import { save } from './save.js';
 import {
   assertSuccess,
   openSession,
@@ -72,13 +72,13 @@ describe('open_document/download: round-trip fidelity', () => {
     });
 
     const outputPath = `${opened.tmpDir}/roundtrip-clean.docx`;
-    const saved = await download(opened.mgr, {
+    const saved = await save(opened.mgr, {
       session_id: opened.sessionId,
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const xmlParts = [
       'word/document.xml',

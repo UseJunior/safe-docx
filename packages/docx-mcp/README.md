@@ -25,7 +25,7 @@ Add to your MCP client:
 ## Primary Workflows
 
 - Apply targeted edits while preserving formatting (`replace_text`, `insert_paragraph`, `format_layout`)
-- Produce clean and tracked variants for human review (`download`)
+- Produce clean and tracked variants for human review (`save`)
 - Compare original vs revised documents into tracked output (`compare_documents`)
 - Extract revisions as structured JSON (`extract_revisions`)
 - Manage comments and footnotes as first-class operations
@@ -35,7 +35,7 @@ Add to your MCP client:
 - Read/Search: `read_file`, `grep`, `has_tracked_changes`, `get_session_status`
 - Edit/Layout: `replace_text`, `insert_paragraph`, `format_layout`, `accept_changes`
 - Planning/Batch: `init_plan`, `merge_plans`, `apply_plan`
-- Compare/Revision: `compare_documents`, `extract_revisions`, `download`
+- Compare/Revision: `compare_documents`, `extract_revisions`, `save`
 - Comments/Footnotes: `add_comment`, `get_comments`, `delete_comment`, `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote`
 - Session/Safety: `clear_session`, path-policy + archive guardrails
 
@@ -197,7 +197,7 @@ Yes. Use `get_footnotes`, `add_footnote`, `update_footnote`, and `delete_footnot
 
 ### Can it produce tracked changes for review?
 
-Yes. Use `download` with tracked variants or `compare_documents` for standalone original/revised comparisons.
+Yes. Use `save` with tracked variants or `compare_documents` for standalone original/revised comparisons.
 
 ### Is processing local-only?
 

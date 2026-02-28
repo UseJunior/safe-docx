@@ -278,14 +278,14 @@ describe('Traceability: DOCX Helper Tools', () => {
     async () => {
       // Validate behavior: download pre-check validates before output
       const opened = await openSession(['Valid paragraph.']);
-      const { download } = await import('./download.js');
+      const { save } = await import('./save.js');
 
       const outPath = path.join(opened.tmpDir, 'validated.docx');
       const result = await allureStep('Download triggers validation', () =>
-        download(opened.mgr, {
+        save(opened.mgr, {
           session_id: opened.sessionId,
           save_to_local_path: outPath,
-          download_format: 'clean',
+          save_format: 'clean',
         }),
       );
       assertSuccess(result, 'download with implicit validation');
@@ -309,13 +309,13 @@ describe('Traceability: DOCX Helper Tools', () => {
       });
       assertSuccess(edited, 'edit');
 
-      const { download } = await import('./download.js');
+      const { save } = await import('./save.js');
       const cleanPath = path.join(opened.tmpDir, 'validated-clean.docx');
       const result = await allureStep('Download clean (validates on export)', () =>
-        download(opened.mgr, {
+        save(opened.mgr, {
           session_id: opened.sessionId,
           save_to_local_path: cleanPath,
-          download_format: 'clean',
+          save_format: 'clean',
         }),
       );
       assertSuccess(result, 'validated download');

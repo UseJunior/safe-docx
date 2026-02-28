@@ -49,7 +49,7 @@
       "description": "Insert a new paragraph before or after an anchor paragraph."
     },
     {
-      "name": "download",
+      "name": "save",
       "description": "Save clean/tracked output document variants to disk."
     },
     {

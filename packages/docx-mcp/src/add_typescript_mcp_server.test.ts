@@ -12,7 +12,7 @@ import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
-import { download } from './tools/download.js';
+import { save } from './tools/save.js';
 import { getSessionStatus } from './tools/get_session_status.js';
 import { MCP_TOOLS, MCP_TRANSPORT } from './server.js';
 import {
@@ -72,7 +72,7 @@ describe('TypeScript MCP server behavior', () => {
       'replace_text',
       'insert_paragraph',
       'format_layout',
-      'download',
+      'save',
       'has_tracked_changes',
       'get_session_status',
     ] as const satisfies ReadonlyArray<ToolName>;
@@ -99,7 +99,7 @@ describe('TypeScript MCP server behavior', () => {
   });
 
   humanReadableTest.openspec('Destructive tools annotated correctly')('Scenario: Destructive tools annotated correctly', async () => {
-    const destructiveTools = new Set(['replace_text', 'insert_paragraph', 'format_layout', 'download']);
+    const destructiveTools = new Set(['replace_text', 'insert_paragraph', 'format_layout', 'save']);
     for (const tool of MCP_TOOLS) {
       if (!destructiveTools.has(tool.name)) continue;
       expect(tool.annotations.readOnlyHint).toBe(false);
@@ -299,13 +299,13 @@ describe('TypeScript MCP server behavior', () => {
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: String(opened.session_id),
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
     await expect(fs.stat(outputPath)).resolves.toBeTruthy();
   });
 
@@ -359,10 +359,10 @@ describe('TypeScript MCP server behavior', () => {
     expect(String(afterFirst.content)).toContain('Repeated text.');
     expect(String(afterSecond.content)).toContain('Updated text.');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
     expect(saved.success).toBe(true);
@@ -451,10 +451,10 @@ describe('TypeScript MCP server behavior', () => {
     assertSuccess(searched, 'grep');
     expect(Number((searched as { total_matches?: number }).total_matches)).toBe(1);
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
     expect(saved.success).toBe(true);
