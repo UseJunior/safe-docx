@@ -672,8 +672,16 @@ function addParagraphMarkRevisionMarker(
   let rPr = findChildByTagName(pPr, 'w:rPr');
   if (!rPr) {
     rPr = createEl('w:rPr');
-    // Keep existing pPr children order stable; rPr commonly appears after spacing/jc.
-    pPr.appendChild(rPr);
+    // CT_PPr ordering: ... base props ..., w:rPr, w:sectPr?, w:pPrChange?
+    // Insert rPr in schema-correct position (before sectPr/pPrChange).
+    const sectPr = findChildByTagName(pPr, 'w:sectPr');
+    const pPrChange = findChildByTagName(pPr, 'w:pPrChange');
+    const insertBefore = sectPr ?? pPrChange ?? null;
+    if (insertBefore) {
+      pPr.insertBefore(rPr, insertBefore);
+    } else {
+      pPr.appendChild(rPr);
+    }
   }
 
   // Avoid duplicating markers.
@@ -1112,16 +1120,64 @@ export function addFormatChange(
     'w:date': dateStr,
   });
 
-  // Clone old properties as children of rPrChange
+  // Clone old properties into a w:rPr wrapper inside rPrChange (OOXML spec requires
+  // rPrChange to contain a single w:rPr child holding the previous formatting).
   if (oldRunProperties) {
+    const oldRPr = createEl('w:rPr');
     for (const child of childElements(oldRunProperties)) {
       const cloned = child.cloneNode(true) as Element;
-      rPrChange.appendChild(cloned);
+      oldRPr.appendChild(cloned);
     }
+    rPrChange.appendChild(oldRPr);
   }
 
   // Add rPrChange to rPr
   rPr.appendChild(rPrChange);
+}
+
+/**
+ * Add a paragraph property change element (w:pPrChange) to record the "before"
+ * state of paragraph properties.  This is needed for Google Docs to display
+ * inserted paragraphs as tracked changes.
+ *
+ * The child `<w:pPr>` inside `w:pPrChange` must conform to CT_PPrBase — it
+ * MUST NOT contain w:rPr, w:sectPr, or w:pPrChange.
+ *
+ * @param paragraph - The w:p element
+ * @param author - Author name
+ * @param dateStr - Formatted date
+ * @param state - Revision ID state
+ */
+export function addParagraphPropertyChange(
+  paragraph: Element,
+  author: string,
+  dateStr: string,
+  state: RevisionIdState
+): void {
+  let pPr = findChildByTagName(paragraph, 'w:pPr');
+  if (!pPr) {
+    pPr = createEl('w:pPr');
+    paragraph.insertBefore(pPr, paragraph.firstChild);
+  }
+  // Idempotent — don't add a second pPrChange.
+  if (findChildByTagName(pPr, 'w:pPrChange')) return;
+
+  const id = allocateRevisionId(state);
+  const pPrChange = createEl('w:pPrChange', {
+    'w:id': String(id),
+    'w:author': author,
+    'w:date': dateStr,
+  });
+
+  // Clone current pPr content as "before" snapshot.
+  // pPrChange child pPr must be CT_PPrBase — exclude rPr, rPrChange, sectPr, pPrChange.
+  const EXCLUDED = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
+  const oldPPr = createEl('w:pPr');
+  for (const child of childElements(pPr)) {
+    if (!EXCLUDED.has(child.tagName)) oldPPr.appendChild(child.cloneNode(true) as Element);
+  }
+  pPrChange.appendChild(oldPPr);
+  pPr.appendChild(pPrChange); // pPrChange goes last in pPr per schema
 }
 
 /**
@@ -1135,15 +1191,17 @@ export function addFormatChange(
  * @param state - Revision ID state
  */
 export function wrapParagraphAsInserted(
-  paragraph: Element,
-  author: string,
-  dateStr: string,
-  state: RevisionIdState
+  _paragraph: Element,
+  _author: string,
+  _dateStr: string,
+  _state: RevisionIdState
 ): boolean {
-  // IMPORTANT: <w:ins> is not a container for <w:p> in WordprocessingML.
-  // For paragraph insertions (including empty paragraphs), we encode a paragraph-mark
-  // revision marker in w:pPr/w:rPr instead of wrapping the paragraph element.
-  addParagraphMarkRevisionMarker(paragraph, 'w:ins', author, dateStr, state);
+  // No-op: paragraph-mark w:ins markers and pPrChange inside pPr/rPr are valid
+  // OOXML but Google Docs ignores (or actively hides) w:ins-wrapped runs when
+  // they coexist with those markers.  Since the individual runs in an inserted
+  // paragraph are already wrapped with <w:ins> by the comparison engine, the
+  // paragraph-level markers are redundant and omitting them maximises
+  // cross-application compatibility.
   return true;
 }
 

@@ -10,6 +10,7 @@ import {
   wrapAsMoveFrom,
   wrapAsMoveTo,
   addFormatChange,
+  addParagraphPropertyChange,
   wrapParagraphAsInserted,
   wrapParagraphAsDeleted,
   createRevisionIdState,
@@ -469,12 +470,15 @@ describe('inPlaceModifier', () => {
       const rPrChange = rPrChildren.find(c => c.tagName === 'w:rPrChange');
       assertDefined(rPrChange, 'rPrChange');
       expect(rPrChange.getAttribute('w:author')).toBe(author);
-      // Old properties should be cloned into rPrChange
+      // Old properties should be wrapped in a w:rPr inside rPrChange (OOXML spec)
       const rPrChangeChildren = childElements(rPrChange);
       expect(rPrChangeChildren).toHaveLength(1);
-      const oldProp = rPrChangeChildren[0];
-      assertDefined(oldProp, 'rPrChange children[0]');
-      expect(oldProp.tagName).toBe('w:b');
+      const innerRPr = rPrChangeChildren[0];
+      assertDefined(innerRPr, 'rPrChange w:rPr wrapper');
+      expect(innerRPr.tagName).toBe('w:rPr');
+      const innerChildren = childElements(innerRPr);
+      expect(innerChildren).toHaveLength(1);
+      expect(innerChildren[0]!.tagName).toBe('w:b');
     });
 
     it('should create rPr if it does not exist', () => {
@@ -498,28 +502,113 @@ describe('inPlaceModifier', () => {
   });
 
   describe('wrapParagraphAsInserted', () => {
-    it('should add a paragraph-mark w:ins marker in w:pPr/w:rPr (not wrap <w:p>)', () => {
+    it('should be a no-op that returns true (paragraph-mark markers omitted for Google Docs compat)', () => {
       const pPr = el('w:pPr');
       const p = el('w:p', {}, [pPr]);
-      const body = el('w:body', {}, [p]);
+      el('w:body', {}, [p]);
 
       const state = createRevisionIdState();
       const result = wrapParagraphAsInserted(p, author, dateStr, state);
 
       expect(result).toBe(true);
-      const bodyChildren = childElements(body);
-      const bodyFirst = bodyChildren[0];
-      assertDefined(bodyFirst, 'body children[0]');
-      expect(bodyFirst.tagName).toBe('w:p');
 
+      // No paragraph-mark w:ins marker should be added
       const pPrChildren = childElements(pPr);
       const rPr = pPrChildren.find((c) => c.tagName === 'w:rPr');
-      assertDefined(rPr, 'rPr');
-      const rPrChildren = childElements(rPr);
-      const marker = rPrChildren.find((c) => c.tagName === 'w:ins');
-      assertDefined(marker, 'marker');
-      expect(marker.getAttribute('w:author')).toBe(author);
-      expect(marker.getAttribute('w:date')).toBe(dateStr);
+      expect(rPr).toBeUndefined();
+
+      // No pPrChange should be added
+      const pPrChange = pPrChildren.find((c) => c.tagName === 'w:pPrChange');
+      expect(pPrChange).toBeUndefined();
+    });
+  });
+
+  describe('addParagraphPropertyChange', () => {
+    it('should create pPrChange with correct attributes', () => {
+      const pPr = el('w:pPr', {}, [el('w:spacing', { 'w:after': '200' })]);
+      const p = el('w:p', {}, [pPr]);
+
+      const state = createRevisionIdState();
+      addParagraphPropertyChange(p, author, dateStr, state);
+
+      const pPrChildren = childElements(pPr);
+      const pPrChange = pPrChildren.find((c) => c.tagName === 'w:pPrChange');
+      assertDefined(pPrChange, 'pPrChange');
+      expect(pPrChange.getAttribute('w:id')).toBe('1');
+      expect(pPrChange.getAttribute('w:author')).toBe(author);
+      expect(pPrChange.getAttribute('w:date')).toBe(dateStr);
+    });
+
+    it('should clone pPr content as snapshot', () => {
+      const spacing = el('w:spacing', { 'w:after': '200' });
+      const ind = el('w:ind', { 'w:left': '720' });
+      const pPr = el('w:pPr', {}, [spacing, ind]);
+      const p = el('w:p', {}, [pPr]);
+
+      const state = createRevisionIdState();
+      addParagraphPropertyChange(p, author, dateStr, state);
+
+      const pPrChange = childElements(pPr).find((c) => c.tagName === 'w:pPrChange');
+      assertDefined(pPrChange, 'pPrChange');
+      const innerPPr = childElements(pPrChange).find((c) => c.tagName === 'w:pPr');
+      assertDefined(innerPPr, 'inner pPr');
+      const innerChildren = childElements(innerPPr);
+      expect(innerChildren).toHaveLength(2);
+      expect(innerChildren[0]!.tagName).toBe('w:spacing');
+      expect(innerChildren[0]!.getAttribute('w:after')).toBe('200');
+      expect(innerChildren[1]!.tagName).toBe('w:ind');
+      expect(innerChildren[1]!.getAttribute('w:left')).toBe('720');
+    });
+
+    it('should exclude rPr, sectPr, pPrChange from snapshot (CT_PPrBase)', () => {
+      const spacing = el('w:spacing', { 'w:after': '200' });
+      const rPr = el('w:rPr', {}, [el('w:b')]);
+      const sectPr = el('w:sectPr');
+      const pPr = el('w:pPr', {}, [spacing, rPr, sectPr]);
+      const p = el('w:p', {}, [pPr]);
+
+      const state = createRevisionIdState();
+      addParagraphPropertyChange(p, author, dateStr, state);
+
+      const pPrChange = childElements(pPr).find((c) => c.tagName === 'w:pPrChange');
+      assertDefined(pPrChange, 'pPrChange');
+      const innerPPr = childElements(pPrChange).find((c) => c.tagName === 'w:pPr');
+      assertDefined(innerPPr, 'inner pPr');
+      const innerChildren = childElements(innerPPr);
+      // Only spacing should be cloned; rPr and sectPr excluded
+      expect(innerChildren).toHaveLength(1);
+      expect(innerChildren[0]!.tagName).toBe('w:spacing');
+    });
+
+    it('should be idempotent (second call is a no-op)', () => {
+      const pPr = el('w:pPr', {}, [el('w:spacing', { 'w:after': '200' })]);
+      const p = el('w:p', {}, [pPr]);
+
+      const state = createRevisionIdState();
+      addParagraphPropertyChange(p, author, dateStr, state);
+      addParagraphPropertyChange(p, author, dateStr, state);
+
+      const pPrChanges = childElements(pPr).filter((c) => c.tagName === 'w:pPrChange');
+      expect(pPrChanges).toHaveLength(1);
+      // Second call should not have allocated another ID
+      expect(state.nextId).toBe(2);
+    });
+
+    it('should create pPr if paragraph has none', () => {
+      const p = el('w:p');
+
+      const state = createRevisionIdState();
+      addParagraphPropertyChange(p, author, dateStr, state);
+
+      const pChildren = childElements(p);
+      const pPr = pChildren.find((c) => c.tagName === 'w:pPr');
+      assertDefined(pPr, 'pPr');
+      const pPrChange = childElements(pPr).find((c) => c.tagName === 'w:pPrChange');
+      assertDefined(pPrChange, 'pPrChange');
+      // Inner pPr should be empty since there were no original properties
+      const innerPPr = childElements(pPrChange).find((c) => c.tagName === 'w:pPr');
+      assertDefined(innerPPr, 'inner pPr');
+      expect(childElements(innerPPr)).toHaveLength(0);
     });
   });
 
