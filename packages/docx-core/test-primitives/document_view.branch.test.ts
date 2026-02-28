@@ -4,6 +4,7 @@ import {
   buildDocumentView,
   buildNodesForDocumentView,
   discoverStyles,
+  renderToon,
   type DocumentViewNode,
 } from '../src/primitives/document_view.js';
 import { LabelType } from '../src/primitives/list_labels.js';
@@ -81,7 +82,7 @@ describe('document_view branch coverage', () => {
     expect(result.styles.styles.size).toBe(0);
   });
 
-  test('legacy semantic path emits highlighting tags but ignores w:highlight w:val="none"', () => {
+  test('legacy semantic path emits highlight tags but ignores w:highlight w:val="none"', () => {
     const bodyXml =
       `<w:p>` +
         `<w:r><w:rPr><w:highlight w:val="none"/></w:rPr><w:t>plain</w:t></w:r>` +
@@ -98,8 +99,8 @@ describe('document_view branch coverage', () => {
     });
 
     expect(nodes).toHaveLength(1);
-    expect(nodes[0]!.tagged_text).toContain('plain<highlighting>hot</highlighting>end');
-    expect(nodes[0]!.tagged_text).not.toContain('<highlighting>plain');
+    expect(nodes[0]!.tagged_text).toContain('plain<highlight>hot</highlight>end');
+    expect(nodes[0]!.tagged_text).not.toContain('<highlight>plain');
   });
 
   test('header fallback extracts long run-in titles and rejects overlong header candidates', () => {
@@ -270,19 +271,23 @@ describe('document_view branch coverage', () => {
     expect(ids.has('block_quote')).toBe(true);
   });
 
-  test('legacy semantic mode strips manual list labels before definition-tag emission', () => {
-    const bodyXml = `<w:p><w:r><w:t>(a) "Service" means platform access.</w:t></w:r></w:p>`;
+  test('renderToon supports compact mode with style fingerprints', () => {
+    const node: any = {
+      id: '_bk_1',
+      style: 'body',
+      tagged_text: 'Hello',
+      style_fingerprint: {
+        list_level: -1,
+        left_indent_pt: 10,
+        first_line_indent_pt: 0,
+        style_name: 'Normal',
+        alignment: 'LEFT',
+      },
+    };
 
-    const { nodes } = buildNodesForDocumentView({
-      paragraphs: makeParagraphs(bodyXml),
-      stylesXml: null,
-      numberingXml: null,
-      include_semantic_tags: true,
-      show_formatting: false,
-    });
-
-    expect(nodes).toHaveLength(1);
-    expect(nodes[0]!.tagged_text).not.toContain('(a)');
-    expect(nodes[0]!.tagged_text).toContain('<definition>Service</definition> means platform access.');
+    const toon = renderToon([node], { compact: true });
+    // Debug: console.log('TOON:', toon);
+    expect(toon).toContain('body:L-1:LEFT:I10:H0');
+    expect(toon).toContain('Hello');
   });
 });

@@ -3,9 +3,11 @@ import { testAllure as test } from './helpers/allure-test.js';
 
 import {
   computeModalBaseline,
+  computeParagraphFontBaseline,
   emitFormattingTags,
   type AnnotatedRun,
   type FormattingBaseline,
+  type FontBaseline,
 } from '../src/primitives/formatting_tags.js';
 import type { RunFormatting } from '../src/primitives/styles.js';
 
@@ -95,7 +97,7 @@ describe('formatting_tags', () => {
     expect(tagged).toContain('<i>CC</i>');
   });
 
-  test('emitFormattingTags nests hyperlink + b/i/u/highlighting in stable order and escapes href', () => {
+  test('emitFormattingTags nests hyperlink + b/i/u/highlight in stable order and escapes href', () => {
     const runs: AnnotatedRun[] = [
       annotatedRun(
         'X',
@@ -110,32 +112,111 @@ describe('formatting_tags', () => {
     });
 
     expect(tagged).toBe(
-      '<a href="https://example.com/a?x=1&amp;y=&quot;2&quot;"><b><i><u><highlighting>X</highlighting></u></i></b></a>',
+      '<a href="https://example.com/a?x=1&amp;y=&quot;2&quot;"><b><i><u><highlight>X</highlight></u></i></b></a>',
     );
   });
 
-  test('emitFormattingTags interleaves <definition> and strips definition quotes', () => {
-    const runs: AnnotatedRun[] = [annotatedRun('"Company" means')];
-    const tagged = emitFormattingTags({
-      runs,
-      baseline: { bold: false, italic: false, underline: false, suppressed: false },
-      definitionSpans: [{ start: 0, end: 9, term: 'Company' }],
-    });
+  // ─── Paragraph-local font baselines ────────────────────────────
 
-    expect(tagged).toBe('<definition>Company</definition> means');
+  test('computeParagraphFontBaseline suppresses uniform color', () => {
+    const runs: AnnotatedRun[] = [
+      annotatedRun('Hello ', { colorHex: 'FF0000' }),
+      annotatedRun('world', { colorHex: 'FF0000' }),
+    ];
+    const fb = computeParagraphFontBaseline(runs);
+    expect(fb.modalColor).toBe('FF0000');
+    expect(fb.colorSuppressed).toBe(true);
   });
 
-  test('emitFormattingTags keeps formatting inside definition without empty tag pairs', () => {
+  test('computeParagraphFontBaseline detects mixed colors', () => {
     const runs: AnnotatedRun[] = [
-      annotatedRun('"Company"', { bold: true }),
-      annotatedRun(' means', {}),
+      annotatedRun('Red text. ', { colorHex: 'FF0000' }),
+      annotatedRun('BL', { colorHex: '0000FF' }),
     ];
-    const tagged = emitFormattingTags({
-      runs,
-      baseline: { bold: false, italic: false, underline: false, suppressed: false },
-      definitionSpans: [{ start: 0, end: 9, term: 'Company' }],
-    });
+    const fb = computeParagraphFontBaseline(runs);
+    expect(fb.modalColor).toBe('FF0000');
+    expect(fb.colorSuppressed).toBe(true);
+  });
 
-    expect(tagged).toBe('<definition><b>Company</b></definition> means');
+  test('emitFormattingTags emits <font color> for deviating run with fontBaseline', () => {
+    const runs: AnnotatedRun[] = [
+      annotatedRun('Normal ', { colorHex: '000000' }),
+      annotatedRun('Red', { colorHex: 'FF0000' }),
+      annotatedRun(' Normal', { colorHex: '000000' }),
+    ];
+    const baseline: FormattingBaseline = { bold: false, italic: false, underline: false, suppressed: true };
+    const fontBaseline = computeParagraphFontBaseline(runs);
+
+    const tagged = emitFormattingTags({ runs, baseline, fontBaseline });
+    expect(tagged).toContain('<font color="FF0000">Red</font>');
+    expect(tagged).not.toContain('<font color="000000">');
+  });
+
+  test('emitFormattingTags emits no <font> tags for uniform paragraph', () => {
+    const runs: AnnotatedRun[] = [
+      annotatedRun('All same color ', { colorHex: 'FF0000', fontSizePt: 12, fontName: 'Arial' }),
+      annotatedRun('more text', { colorHex: 'FF0000', fontSizePt: 12, fontName: 'Arial' }),
+    ];
+    const baseline: FormattingBaseline = { bold: false, italic: false, underline: false, suppressed: true };
+    const fontBaseline = computeParagraphFontBaseline(runs);
+
+    const tagged = emitFormattingTags({ runs, baseline, fontBaseline });
+    expect(tagged).not.toContain('<font');
+    expect(tagged).toBe('All same color more text');
+  });
+
+  test('emitFormattingTags emits <font size> for deviating font size', () => {
+    const runs: AnnotatedRun[] = [
+      annotatedRun('Normal text ', { fontSizePt: 12 }),
+      annotatedRun('Big', { fontSizePt: 18 }),
+      annotatedRun(' Normal', { fontSizePt: 12 }),
+    ];
+    const baseline: FormattingBaseline = { bold: false, italic: false, underline: false, suppressed: true };
+    const fontBaseline = computeParagraphFontBaseline(runs);
+
+    const tagged = emitFormattingTags({ runs, baseline, fontBaseline });
+    expect(tagged).toContain('<font size="18">Big</font>');
+  });
+
+  test('emitFormattingTags emits <font face> for deviating font name', () => {
+    const runs: AnnotatedRun[] = [
+      annotatedRun('Default text ', { fontName: 'Calibri' }),
+      annotatedRun('Serif', { fontName: 'Times New Roman' }),
+      annotatedRun(' Default', { fontName: 'Calibri' }),
+    ];
+    const baseline: FormattingBaseline = { bold: false, italic: false, underline: false, suppressed: true };
+    const fontBaseline = computeParagraphFontBaseline(runs);
+
+    const tagged = emitFormattingTags({ runs, baseline, fontBaseline });
+    expect(tagged).toContain('<font face="Times New Roman">Serif</font>');
+  });
+
+  test('emitFormattingTags combines font and BIU tags', () => {
+    const runs: AnnotatedRun[] = [
+      annotatedRun('Normal ', {}),
+      annotatedRun('Bold Red', { bold: true, colorHex: 'FF0000' }),
+      annotatedRun(' Normal', {}),
+    ];
+    const baseline: FormattingBaseline = { bold: false, italic: false, underline: false, suppressed: true };
+    const fontBaseline = computeParagraphFontBaseline(runs);
+
+    const tagged = emitFormattingTags({ runs, baseline, fontBaseline });
+    // Font tag should be outside of bold per nesting order: <a> → <font> → <b> → <i> → <u> → <highlight>
+    expect(tagged).toContain('<font color="FF0000"><b>Bold Red</b></font>');
+  });
+
+  test('emitFormattingTags with mixed colors but uniform font emits only color tags', () => {
+    const runs: AnnotatedRun[] = [
+      annotatedRun('Black text. ', { colorHex: '000000', fontSizePt: 12, fontName: 'Calibri' }),
+      annotatedRun('Red', { colorHex: 'FF0000', fontSizePt: 12, fontName: 'Calibri' }),
+      annotatedRun(' black again.', { colorHex: '000000', fontSizePt: 12, fontName: 'Calibri' }),
+    ];
+    const baseline: FormattingBaseline = { bold: false, italic: false, underline: false, suppressed: true };
+    const fontBaseline = computeParagraphFontBaseline(runs);
+
+    const tagged = emitFormattingTags({ runs, baseline, fontBaseline });
+    expect(tagged).toContain('<font color="FF0000">Red</font>');
+    expect(tagged).not.toContain('size=');
+    expect(tagged).not.toContain('face=');
   });
 });

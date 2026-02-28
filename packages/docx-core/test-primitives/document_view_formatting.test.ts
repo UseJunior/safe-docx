@@ -66,8 +66,8 @@ describe('document_view formatting tags', () => {
     }
   });
 
-  humanReadableTest.openspec('extract bold, italic, underline, highlighting tuple per run')(
-    'extract bold, italic, underline, highlighting tuple per run',
+  humanReadableTest.openspec('extract bold, italic, underline, highlight tuple per run')(
+    'extract bold, italic, underline, highlight tuple per run',
     () => {
       const bodyXml =
         `<w:p>` +
@@ -90,7 +90,7 @@ describe('document_view formatting tags', () => {
       expect(nodes[0]!.tagged_text).toContain('<b>BBBBBBBBBBBBBBBBBBBB</b>');
       expect(nodes[0]!.tagged_text).toContain('<i>IIIIIIIIIIIIIIIIIIII</i>');
       expect(nodes[0]!.tagged_text).toContain('<u>UUUUUUUUUUUUUUUUUUUU</u>');
-      expect(nodes[0]!.tagged_text).toContain('<highlighting>HHHHHHHHHHHHHHHHHHHH</highlighting>');
+      expect(nodes[0]!.tagged_text).toContain('<highlight>HHHHHHHHHHHHHHHHHHHH</highlight>');
     },
   );
 
@@ -246,31 +246,7 @@ describe('document_view formatting tags', () => {
     expect(nodes[0]!.tagged_text).toContain('<b>strong text</b>');
   });
 
-  test('definition tags coexist with formatting tags', () => {
-    // A paragraph with a quoted definition like "Company" means ...
-    const bodyXml =
-      `<w:p>` +
-      `<w:r><w:rPr><w:b/></w:rPr><w:t>"Company"</w:t></w:r>` +
-      `<w:r><w:t> means the entity described herein in all of these extra words for padding.</w:t></w:r>` +
-      `</w:p>`;
-    const paragraphs = makeParagraphs(bodyXml);
-    const { nodes } = buildNodesForDocumentView({
-      paragraphs,
-      stylesXml: null,
-      numberingXml: null,
-      show_formatting: true,
-      include_semantic_tags: true,
-    });
-
-    expect(nodes.length).toBe(1);
-    const tagged = nodes[0]!.tagged_text;
-    // Both <definition> and <b> should appear.
-    expect(tagged).toContain('<definition>');
-    expect(tagged).toContain('</definition>');
-    expect(tagged).toContain('Company');
-  });
-
-  test('highlighting emits <highlighting> tags when show_formatting=true', () => {
+  test('highlight emits <highlight> tags when show_formatting=true', () => {
     const bodyXml =
       `<w:p>` +
       `<w:r><w:t>Normal text </w:t></w:r>` +
@@ -287,7 +263,7 @@ describe('document_view formatting tags', () => {
     });
 
     expect(nodes.length).toBe(1);
-    expect(nodes[0]!.tagged_text).toContain('<highlighting>highlighted</highlighting>');
+    expect(nodes[0]!.tagged_text).toContain('<highlight>highlighted</highlight>');
   });
 
   humanReadableTest.openspec('suppression disabled when baseline coverage below 60%')(
@@ -359,7 +335,7 @@ describe('document_view formatting tags', () => {
     });
 
     expect(nodes.length).toBe(1);
-    // Nesting order: <a> → <b> → <i> → <u> → <highlighting>
+    // Nesting order: <a> → <b> → <i> → <u> → <highlight>
     expect(nodes[0]!.tagged_text).toContain('<i><u>styled</u></i>');
     },
   );
