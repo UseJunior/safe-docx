@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure as it } from '../testing/allure-test.js';
 import { replaceText } from './replace_text.js';
 import { readFile } from './read_file.js';
 import { clearFormatting } from './clear_formatting.js';

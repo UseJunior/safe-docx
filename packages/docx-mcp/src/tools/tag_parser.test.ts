@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { itAllure as it } from '../testing/allure-test.js';
 import {
   splitTaggedText,
   segmentAddRunProps,

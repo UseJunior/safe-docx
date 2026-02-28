@@ -760,20 +760,6 @@ function buildPPrChangeElement(
 }
 
 /**
- * Build a `<w:pPrChange>` XML string from a pPr DOM element.
- *
- * Delegates to buildPPrChangeElement and serializes.
- */
-function buildPPrChangeXml(
-  pPr: Element | null,
-  author: string,
-  dateStr: string,
-  revState: RevisionIdState
-): string {
-  return serializeToXml(buildPPrChangeElement(pPr, author, dateStr, revState));
-}
-
-/**
  * Returns true if every atom in the paragraph is of the specified status
  * (ignoring EMPTY_PARAGRAPH_TAG markers).
  */

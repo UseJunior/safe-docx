@@ -22,8 +22,8 @@ The TypeScript Safe-Docx MCP server SHALL match the Python editing pipeline’s 
 - **THEN** the output paragraph SHALL preserve the original mixed formatting structure as closely as possible
 - **AND** SHALL NOT flatten the entire replacement span to a single run’s formatting template
 
-#### Scenario: insert_paragraph preserves header/definition semantics
-- **WHEN** `insert_paragraph` inserts content that includes explicit definitions and/or a run-in header
+#### Scenario: insert_paragraph preserves header semantics
+- **WHEN** `insert_paragraph` inserts content that includes a run-in header
 - **THEN** the inserted paragraph(s) SHALL preserve formatting conventions via role models
 - **AND** run-in headers SHALL populate the `header` column rather than being duplicated inline
 
@@ -63,22 +63,6 @@ The server SHALL detect run-in headers programmatically and represent them in th
 
 ### Requirement: Semantic Tags and Role Model Rendering
 The server SHALL support semantic tags in inserted/replacement text and render them into concrete OOXML formatting using role models discovered in the document.
-
-#### Scenario: defined term bolding via <definition> role model
-- **GIVEN** a document with existing explicit definitions where defined terms are styled (e.g., bold + quoted)
-- **WHEN** an insertion or replacement includes `<definition>Term</definition> means …`
-- **THEN** the server SHALL render `Term` using the discovered role model’s styling
-- **AND** the saved `.docx` SHALL NOT contain the literal `<definition>` tag text
-
-### Requirement: Explicit Definition Auto-Tagging
-The server SHALL automatically detect explicit definition patterns in inserted/replacement text and apply definition styling via role models without requiring the caller to include `<definition>` tags.
-
-#### Scenario: auto-tagged explicit definition gets role model styling
-- **GIVEN** a document with existing explicit definitions where the defined term has a consistent style (e.g., bold)
-- **WHEN** an insertion or replacement includes an explicit definition like `"Closing Cash" means …` (without semantic tags)
-- **THEN** the server SHALL detect `"Closing Cash"` as the definition term
-- **AND** apply the role model definition styling to the term
-- **AND** preserve quotes/brackets exactly as provided in the input text
 
 #### Scenario: header semantics accepted via tags for backward compatibility
 - **WHEN** an edit includes `<RunInHeader>Header</RunInHeader>` or `<header>Header</header>`
