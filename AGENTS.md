@@ -47,4 +47,4 @@ A skill is a set of local instructions stored in a `SKILL.md` file.
 
 ### Available skills
 
-- `unit-test-philosophy`: Risk-based unit testing and Allure-readable behavior-spec conventions for this monorepo. Use when adding/updating tests, expanding coverage, or reviewing test quality. (file: `/Users/stevenobiajulu/Projects/safe-docx/skills/unit-test-philosophy/SKILL.md`)
+- `docx-editing`: Edit .docx files with formatting preservation and tracked changes using the safe-docx MCP server. Use when reading, searching, editing, commenting on, or comparing Word documents. (file: `skills/docx-editing/SKILL.md`)
