@@ -1,4 +1,4 @@
-export type MatchMode = 'exact' | 'quote_normalized' | 'flexible_whitespace' | 'quote_optional';
+export type MatchMode = 'exact' | 'quote_normalized' | 'flexible_whitespace' | 'quote_optional' | 'clean';
 
 export type UniqueSubstringMatchResult =
   | { status: 'not_found' }
@@ -107,6 +107,36 @@ function removeQuotes(input: MappedText): MappedText {
   return { text: outChars.join(''), spans: outSpans };
 }
 
+function stripAllTags(input: MappedText): MappedText {
+  if (!input.text) return input;
+  const tags = [
+    /<\/?[biu]>/g,
+    /<a\s+href="[^"]*">/g,
+    /<\/a>/g,
+    /<highlight>/g,
+    /<\/highlight>/g,
+    /<highlighting>/g,
+    /<\/highlighting>/g,
+  ];
+
+  let text = input.text;
+  const spans = input.spans.slice();
+
+  for (const tag of tags) {
+    let match;
+    tag.lastIndex = 0;
+    while ((match = tag.exec(text)) !== null) {
+      const len = match[0].length;
+      const idx = match.index;
+      text = text.slice(0, idx) + text.slice(idx + len);
+      spans.splice(idx, len);
+      tag.lastIndex = idx;
+    }
+  }
+
+  return { text, spans };
+}
+
 function findAllMatchIndices(haystack: string, needle: string): number[] {
   if (!needle) return [];
   const hits: number[] = [];
@@ -120,7 +150,11 @@ function findAllMatchIndices(haystack: string, needle: string): number[] {
   return hits;
 }
 
-export function findUniqueSubstringMatch(haystack: string, needle: string): UniqueSubstringMatchResult {
+export function findUniqueSubstringMatch(
+  haystack: string,
+  needle: string,
+  options: { mode?: MatchMode | 'default' } = {},
+): UniqueSubstringMatchResult {
   if (!needle) return { status: 'not_found' };
 
   const hayBase = toMappedText(haystack);
@@ -128,12 +162,17 @@ export function findUniqueSubstringMatch(haystack: string, needle: string): Uniq
 
   const stages: Array<{ mode: MatchMode; transforms: Transform[] }> = [
     { mode: 'exact', transforms: [] },
-    { mode: 'quote_normalized', transforms: [normalizeQuotes] },
-    { mode: 'flexible_whitespace', transforms: [normalizeQuotes, collapseWhitespace] },
-    { mode: 'quote_optional', transforms: [normalizeQuotes, collapseWhitespace, removeQuotes] },
+    { mode: 'clean', transforms: [stripAllTags] },
+    { mode: 'quote_normalized', transforms: [stripAllTags, normalizeQuotes] },
+    { mode: 'flexible_whitespace', transforms: [stripAllTags, normalizeQuotes, collapseWhitespace] },
+    { mode: 'quote_optional', transforms: [stripAllTags, normalizeQuotes, collapseWhitespace, removeQuotes] },
   ];
 
+  const targetMode = options.mode === 'default' ? undefined : options.mode;
+
   for (const stage of stages) {
+    if (targetMode !== undefined && stage.mode !== targetMode) continue;
+
     const h = applyTransforms(hayBase, stage.transforms);
     const n = applyTransforms(needleBase, stage.transforms);
     if (!n.text) continue;
@@ -141,25 +180,19 @@ export function findUniqueSubstringMatch(haystack: string, needle: string): Uniq
     const hits = findAllMatchIndices(h.text, n.text);
     if (hits.length === 0) continue;
     if (hits.length > 1) {
-      return {
-        status: 'multiple',
-        mode: stage.mode,
-        matchCount: hits.length,
-      };
+      return { status: 'multiple', mode: stage.mode, matchCount: hits.length };
     }
 
     const hit = hits[0]!;
     const startSpan = h.spans[hit]!;
     const endSpan = h.spans[hit + n.text.length - 1]!;
-    const start = startSpan.start;
-    const end = endSpan.end;
     return {
       status: 'unique',
       mode: stage.mode,
       matchCount: 1,
-      start,
-      end,
-      matchedText: haystack.slice(start, end),
+      start: startSpan.start,
+      end: endSpan.end,
+      matchedText: haystack.slice(startSpan.start, endSpan.end),
     };
   }
 
