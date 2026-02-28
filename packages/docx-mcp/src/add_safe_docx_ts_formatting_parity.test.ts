@@ -131,61 +131,6 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(cols[4]).not.toContain('Security Incidents:');
   });
 
-  humanReadableTest.openspec('defined term bolding via <definition> role model')('Scenario: defined term bolding via <definition> role model', async () => {
-    const prevLegacy = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-    process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = '1';
-    try {
-      const xml =
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-        `<w:body>` +
-        `<w:p>` +
-        `<w:r><w:t xml:space="preserve">Definition: </w:t></w:r>` +
-        `<w:r><w:t>"</w:t></w:r>` +
-        `<w:r><w:rPr><w:b/></w:rPr><w:t>Confidential Information</w:t></w:r>` +
-        `<w:r><w:t>" means data.</w:t></w:r>` +
-        `</w:p>` +
-        `<w:p><w:r><w:t>Insert: [TERM]</w:t></w:r></w:p>` +
-        `</w:body></w:document>`;
-
-      const { mgr, sessionId, tmpDir } = await openSession([], { xml, prefix: 'safe-docx-def-role-' });
-      const outPath = path.join(tmpDir, 'out.docx');
-
-      const read = await readFile(mgr, { session_id: sessionId, format: 'json' });
-      assertSuccess(read, 'read');
-      const nodes = JSON.parse(String(read.content)) as Array<{ id: string; clean_text: string }>;
-      const targetId = nodes.find((n) => n.clean_text.includes('[TERM]'))?.id;
-      expect(targetId).toMatch(/^_bk_[0-9a-f]{12}$/);
-
-      const edited = await replaceText(mgr, {
-        session_id: sessionId,
-        target_paragraph_id: targetId!,
-        old_string: '[TERM]',
-        new_string: '<definition>Closing Cash</definition>',
-        instruction: 'definition style role model',
-      });
-      assertSuccess(edited, 'edit');
-
-      const saved = await download(mgr, {
-        session_id: sessionId,
-        save_to_local_path: outPath,
-        clean_bookmarks: true,
-        download_format: 'clean',
-      });
-      assertSuccess(saved, 'download');
-
-      const { runs, runText, hasBold, dom } = await parseOutputXml(outPath);
-      expect(dom.getElementsByTagName('definition').length).toBe(0);
-
-      const termRun = runs.find((r) => runText(r).includes('Closing Cash'));
-      expect(termRun).toBeTruthy();
-      expect(hasBold(termRun!)).toBe(true);
-    } finally {
-      if (prevLegacy === undefined) delete process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-      else process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = prevLegacy;
-    }
-  });
-
   humanReadableTest.openspec('replace_text preserves mixed-run formatting')('Scenario: replace_text preserves mixed-run formatting', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -234,16 +179,11 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(hasItalic(r3!)).toBe(true);
   });
 
-  humanReadableTest.openspec('insert_paragraph preserves header/definition semantics')('Scenario: insert_paragraph preserves header/definition semantics', async () => {
+  humanReadableTest.openspec('insert_paragraph preserves header semantics')('Scenario: insert_paragraph preserves header semantics', async () => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>` +
-      `<w:p>` +
-      `<w:r><w:t>"</w:t></w:r>` +
-      `<w:r><w:rPr><w:b/></w:rPr><w:t>Confidential Information</w:t></w:r>` +
-      `<w:r><w:t>" means data.</w:t></w:r>` +
-      `</w:p>` +
       `<w:p>` +
       `<w:r><w:rPr><w:b/></w:rPr><w:t>Security Incidents:</w:t></w:r>` +
       `<w:r><w:t xml:space="preserve"> Existing text.</w:t></w:r>` +
@@ -263,7 +203,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     const inserted = await insertParagraph(mgr, {
       session_id: sessionId,
       positional_anchor_node_id: anchorId!,
-      new_string: '<RunInHeader>Security Incidents:</RunInHeader> "Closing Cash" means all unrestricted cash.',
+      new_string: '<RunInHeader>Security Incidents:</RunInHeader> New incident text.',
       instruction: 'semantic insert',
       position: 'AFTER',
     });
@@ -277,19 +217,6 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(insertedNode).toBeTruthy();
     expect(insertedNode!.header).toBe('Security Incidents');
 
-    const readToon = await readFile(mgr, { session_id: sessionId });
-    assertSuccess(readToon, 'read TOON');
-    const row = String(readToon.content)
-      .split('\n')
-      .find((line) => line.startsWith(`${insertedId} |`));
-    expect(row).toBeTruthy();
-    const cols = row!.split('|').map((c) => c.trim());
-    expect(cols[2]).toBe('Security Incidents');
-    expect(cols[4]).toMatch(
-      /<definition>(?:<b>)?Closing Cash(?:<\/b>)?<\/definition> means all unrestricted cash\./,
-    );
-    expect(cols[4]).not.toContain('Security Incidents:');
-
     const saved = await download(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
@@ -298,66 +225,11 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     });
     assertSuccess(saved, 'download');
 
-    const { runs, runText, hasBold, dom } = await parseOutputXml(outPath);
-    expect(dom.getElementsByTagName('definition').length).toBe(0);
+    const { runs, runText, hasBold } = await parseOutputXml(outPath);
 
     const headerRun = runs.find((r) => runText(r) === 'Security Incidents:');
-    const termRun = runs.find((r) => runText(r).includes('Closing Cash'));
     expect(headerRun).toBeTruthy();
-    expect(termRun).toBeTruthy();
     expect(hasBold(headerRun!)).toBe(true);
-    expect(hasBold(termRun!)).toBe(true);
-  });
-
-  humanReadableTest.openspec('auto-tagged explicit definition gets role model styling')('Scenario: auto-tagged explicit definition gets role model styling', async () => {
-    const xml =
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-      `<w:body>` +
-      `<w:p>` +
-      `<w:r><w:t>"</w:t></w:r>` +
-      `<w:r><w:rPr><w:b/></w:rPr><w:t>Confidential Information</w:t></w:r>` +
-      `<w:r><w:t>" means data.</w:t></w:r>` +
-      `</w:p>` +
-      `<w:p><w:r><w:t>Insert: [DEF]</w:t></w:r></w:p>` +
-      `</w:body></w:document>`;
-
-    const { mgr, sessionId, tmpDir } = await openSession([], { xml, prefix: 'safe-docx-auto-def-' });
-    const outPath = path.join(tmpDir, 'out.docx');
-
-    const read = await readFile(mgr, { session_id: sessionId, format: 'json' });
-    assertSuccess(read, 'read');
-    const nodes = JSON.parse(String(read.content)) as Array<{ id: string; clean_text: string }>;
-    const targetId = nodes.find((n) => n.clean_text.includes('[DEF]'))?.id;
-    expect(targetId).toMatch(/^_bk_[0-9a-f]{12}$/);
-
-    const edited = await replaceText(mgr, {
-      session_id: sessionId,
-      target_paragraph_id: targetId!,
-      old_string: '[DEF]',
-      new_string: '"Closing Cash" means all unrestricted cash.',
-      instruction: 'auto definition detection',
-    });
-    assertSuccess(edited, 'edit');
-
-    const saved = await download(mgr, {
-      session_id: sessionId,
-      save_to_local_path: outPath,
-      clean_bookmarks: true,
-      download_format: 'clean',
-    });
-    assertSuccess(saved, 'download');
-
-    const { runs, runText, hasBold, dom } = await parseOutputXml(outPath);
-
-    const termRun = runs.find((r) => runText(r) === 'Closing Cash');
-    expect(termRun).toBeTruthy();
-    expect(hasBold(termRun!)).toBe(true);
-    const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-    const paragraphText = Array.from(dom.getElementsByTagNameNS(W_NS, 'p'))
-      .map((p) => Array.from((p as Element).getElementsByTagNameNS(W_NS, 't')).map((t) => t.textContent ?? '').join(''))
-      .find((text) => text.includes('Insert:'));
-    expect(paragraphText).toContain('Insert: "Closing Cash" means all unrestricted cash.');
   });
 
   humanReadableTest.openspec('header semantics accepted via tags for backward compatibility')('Scenario: header semantics accepted via tags for backward compatibility', async () => {

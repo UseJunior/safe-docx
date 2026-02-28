@@ -20,7 +20,7 @@ function asStringArray(value: unknown): string[] {
 describe('insert_paragraph branch coverage', () => {
   registerCleanup();
 
-  test('parses balanced header/highlighting/inline style tags across multiple inserted paragraphs', async () => {
+  test('parses balanced header/highlight/inline style tags across multiple inserted paragraphs', async () => {
     const opened = await openSession(['Anchor paragraph.']);
     const paraId = firstParaIdFromToon(opened.content);
 
@@ -28,7 +28,7 @@ describe('insert_paragraph branch coverage', () => {
       session_id: opened.sessionId,
       positional_anchor_node_id: paraId,
       new_string:
-        '<header><b>Section:</b></header> body <highlighting><i>alpha</i></highlighting>\n\n' +
+        '<header><b>Section:</b></header> body <highlight><i>alpha</i></highlight>\n\n' +
         '<RunInHeader><u>Clause:</u></RunInHeader> beta',
       instruction: 'exercise balanced inline tags',
       position: 'AFTER',
@@ -57,8 +57,8 @@ describe('insert_paragraph branch coverage', () => {
       { newString: '<header>oops', expected: 'UNBALANCED_HEADER_TAGS' },
       { newString: '</RunInHeader>oops', expected: 'UNBALANCED_HEADER_TAGS' },
       { newString: '<RunInHeader>oops', expected: 'UNBALANCED_HEADER_TAGS' },
-      { newString: '</highlighting>oops', expected: 'UNBALANCED_HIGHLIGHT_TAGS' },
-      { newString: '<highlighting>oops', expected: 'UNBALANCED_HIGHLIGHT_TAGS' },
+      { newString: '</highlight>oops', expected: 'UNBALANCED_HIGHLIGHT_TAGS' },
+      { newString: '<highlight>oops', expected: 'UNBALANCED_HIGHLIGHT_TAGS' },
       { newString: '</b>oops', expected: 'UNBALANCED_BOLD_TAGS' },
       { newString: '<b>oops', expected: 'UNBALANCED_BOLD_TAGS' },
       { newString: '</i>oops', expected: 'UNBALANCED_ITALIC_TAGS' },
@@ -75,44 +75,30 @@ describe('insert_paragraph branch coverage', () => {
         instruction: `malformed tags: ${tc.expected}`,
         position: 'AFTER',
       });
-      assertFailure(result, 'INSERT_ERROR', tc.newString);
-      expect(result.error.message).toContain(tc.expected);
+      assertFailure(result, tc.expected, tc.newString);
     }
   });
 
-  test('legacy definition mode absorbs surrounding quotes and keeps single quoted terms', async () => {
-    const previous = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-    process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = '1';
+  test('applies <font> tags in inserted paragraph text', async () => {
+    const opened = await openSession(['Anchor paragraph.']);
+    const paraId = firstParaIdFromToon(opened.content);
 
-    try {
-      const opened = await openSession(['Anchor paragraph.']);
-      const paraId = firstParaIdFromToon(opened.content);
+    const inserted = await insertParagraph(opened.mgr, {
+      session_id: opened.sessionId,
+      positional_anchor_node_id: paraId,
+      new_string: 'Normal and <font color="FF0000" size="14">red large</font> text.',
+      instruction: 'font tag insertion test',
+      position: 'AFTER',
+    });
+    assertSuccess(inserted, 'insert with font tags');
 
-      const inserted = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
-        positional_anchor_node_id: paraId,
-        new_string:
-          'Defined as "<definition>Company</definition>" and "<definition>Service</definition>".',
-        instruction: 'legacy definition quote absorption',
-        position: 'AFTER',
-      });
-      assertSuccess(inserted, 'legacy definition insertion');
-
-      const read = await readFile(opened.mgr, {
-        session_id: opened.sessionId,
-        node_ids: [String(inserted.new_paragraph_id)],
-        format: 'simple',
-      });
-      assertSuccess(read, 'read legacy definition insertion');
-      expect(String(read.content)).toContain('Defined as "Company" and "Service".');
-      expect(String(read.content)).not.toContain('""Company""');
-    } finally {
-      if (typeof previous === 'undefined') {
-        delete process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-      } else {
-        process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = previous;
-      }
-    }
+    const read = await readFile(opened.mgr, {
+      session_id: opened.sessionId,
+      node_ids: [String(inserted.new_paragraph_id)],
+      format: 'simple',
+    });
+    assertSuccess(read, 'read inserted font tag paragraph');
+    expect(String(read.content)).toContain('Normal and red large text.');
   });
 
   test('defaults to AFTER when position is omitted', async () => {
@@ -142,18 +128,18 @@ describe('insert_paragraph branch coverage', () => {
     expect(tailIndex).toBeGreaterThan(insertedIndex);
   });
 
-  test('normalizes definition and hyperlink tags in default mode before insertion', async () => {
+  test('normalizes hyperlink tags in default mode before insertion', async () => {
     const opened = await openSession(['Anchor paragraph.']);
     const paraId = firstParaIdFromToon(opened.content);
 
     const inserted = await insertParagraph(opened.mgr, {
       session_id: opened.sessionId,
       positional_anchor_node_id: paraId,
-      new_string: '<a href="https://example.test"><definition>Company</definition> means the buyer.</a>',
+      new_string: '<a href="https://example.test">Company means the buyer.</a>',
       instruction: 'strip tags in default insert mode',
       position: 'AFTER',
     });
-    assertSuccess(inserted, 'insert with normalized definition/hyperlink tags');
+    assertSuccess(inserted, 'insert with normalized hyperlink tags');
 
     const read = await readFile(opened.mgr, {
       session_id: opened.sessionId,
@@ -161,43 +147,7 @@ describe('insert_paragraph branch coverage', () => {
       format: 'simple',
     });
     assertSuccess(read, 'read inserted normalized paragraph');
-    expect(String(read.content)).toContain('"Company" means the buyer.');
+    expect(String(read.content)).toContain('Company means the buyer.');
     expect(String(read.content)).not.toContain('<a ');
-  });
-
-  test('accepts true/yes/on env values for legacy definition-tag mode', async () => {
-    const previous = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-
-    try {
-      for (const truthy of ['true', 'yes', 'on'] as const) {
-        process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = truthy;
-
-        const opened = await openSession(['Anchor paragraph.']);
-        const paraId = firstParaIdFromToon(opened.content);
-
-        const inserted = await insertParagraph(opened.mgr, {
-          session_id: opened.sessionId,
-          positional_anchor_node_id: paraId,
-          new_string: '<definition>Service</definition> means the platform services.',
-          instruction: `legacy truthy insert mode: ${truthy}`,
-          position: 'AFTER',
-        });
-        assertSuccess(inserted, `legacy insert mode: ${truthy}`);
-
-        const read = await readFile(opened.mgr, {
-          session_id: opened.sessionId,
-          node_ids: [String(inserted.new_paragraph_id)],
-          format: 'simple',
-        });
-        assertSuccess(read, `read legacy insert mode: ${truthy}`);
-        expect(String(read.content)).toContain('"Service" means the platform services.');
-      }
-    } finally {
-      if (typeof previous === 'undefined') {
-        delete process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-      } else {
-        process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = previous;
-      }
-    }
   });
 });

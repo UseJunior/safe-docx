@@ -283,11 +283,12 @@ export async function download(
         ? { warnings: validation.warnings.map(w => ({ code: w.code, message: w.message })) }
         : { valid: true },
       message:
-        format === 'clean'
+        (trackedReconstructionMode === 'rebuild' ? 'WARNING: Tracked output used REBUILD mode which may alter table structure and fonts. Verify tables in Word. ' : '') +
+        (format === 'clean'
           ? `${cacheHit ? 'Cached ' : ''}document saved to ${savePath}`
           : format === 'tracked'
             ? `${cacheHit ? 'Cached ' : ''}tracked changes document saved to ${trackedPath}`
-            : `${cacheHit ? 'Cached ' : ''}clean document saved to ${savePath} and tracked changes document saved to ${trackedPath}`,
+            : `${cacheHit ? 'Cached ' : ''}clean document saved to ${savePath} and tracked changes document saved to ${trackedPath}`),
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);
