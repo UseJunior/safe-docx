@@ -6,6 +6,11 @@
     {% set pageCanonical = site.url ~ (page.url or '/') %}
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="{{ page.url | rootHref('assets/images/favicon.svg') }}" type="image/svg+xml" />
+    <link rel="icon" href="{{ page.url | rootHref('assets/images/favicon.ico') }}" sizes="any" />
+    <link rel="icon" href="{{ page.url | rootHref('assets/images/favicon-48x48.png') }}" type="image/png" sizes="48x48" />
+    <link rel="icon" href="{{ page.url | rootHref('assets/images/favicon-96x96.png') }}" type="image/png" sizes="96x96" />
+    <link rel="apple-touch-icon" href="{{ page.url | rootHref('assets/images/favicon-192x192.png') }}" />
     <title>{{ pageTitle }}</title>
     <meta name="description" content="{{ pageDescription }}" />
     <meta name="robots" content="{% if noindex %}noindex,nofollow{% else %}index,follow{% endif %}" />
@@ -51,6 +56,9 @@
       </button>
       <nav id="site-nav" class="topnav">
         <a href="{{ page.url | rootHref('index.html') }}">Home</a>
+        <a href="{{ page.url | rootHref('index.html') }}#functions">Functions</a>
+        <a href="{{ page.url | rootHref('index.html') }}#install">Install</a>
+        <a href="{{ page.url | rootHref('index.html') }}#faq">FAQ</a>
         <a href="{{ page.url | rootHref('trust/index.html') }}">Trust</a>
       </nav>
       <div class="topbar-actions">
@@ -59,7 +67,16 @@
     </header>
     <div class="shell">
       <main{% if contentClass %} class="{{ contentClass }}"{% endif %}>{{ content | safe }}</main>
-      <footer class="footer">Local-first DOCX editing for AI systems.</footer>
+      <footer class="footer">
+        <p><strong>Safe DOCX</strong> · Local-first DOCX editing for AI systems</p>
+        <p>
+          <a href="https://github.com/usejunior/safe-docx">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/@usejunior/docx-mcp">npm</a> ·
+          <a href="https://safedocx.com">safedocx.com</a>
+        </p>
+        <p class="dev-credit">Developed by <a href="https://usejunior.com">UseJunior</a></p>
+        <p class="dev-credit">Maintainer: <a href="https://www.linkedin.com/in/steven-obiajulu/">Steven Obiajulu</a></p>
+      </footer>
     </div>
     <script src="{{ page.url | rootHref('assets/main.js') }}" defer></script>
   </body>

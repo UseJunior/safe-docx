@@ -63,23 +63,49 @@
         if (e.matches) closeNav();
       });
     }
+
+    // Close mobile nav when any nav link is clicked
+    var navLinks = document.querySelectorAll('.topnav a');
+    navLinks.forEach(function (link) {
+      link.addEventListener('click', function () {
+        closeNav();
+      });
+    });
   }
 
   /* ── Copy-to-clipboard ───────────────────────────── */
 
   document.addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-copy]');
+    var btn = e.target.closest('[data-copy], [data-copy-target]');
     if (!btn) return;
 
-    var text = btn.getAttribute('data-copy');
+    var text;
+    var targetId = btn.getAttribute('data-copy-target');
+    if (targetId) {
+      var targetEl = document.getElementById(targetId);
+      if (targetEl) text = targetEl.textContent;
+    } else {
+      text = btn.getAttribute('data-copy');
+    }
+
     if (!text) return;
 
+    var label = btn.querySelector('.copy-label');
+
     navigator.clipboard.writeText(text).then(function () {
-      var prev = btn.textContent;
-      btn.textContent = 'Copied!';
-      setTimeout(function () {
-        btn.textContent = prev;
-      }, 1500);
+      if (label) {
+        var prev = label.textContent;
+        label.textContent = 'Copied!';
+        setTimeout(function () {
+          label.textContent = prev;
+        }, 1500);
+      } else {
+        var prev = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function () {
+          btn.textContent = prev;
+        }, 1500);
+      }
     });
   });
 })();

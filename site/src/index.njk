@@ -3,15 +3,108 @@ layout: layouts/base.njk
 title: Safe Docx - AI-Native Word Document Editing
 description: Deterministic DOCX operations for AI systems. Fast, safe, composable edits that preserve document integrity.
 ---
+{# ── Hero ────────────────────────────────────────── #}
 <section class="hero">
   <p class="eyebrow">Safe DOCX</p>
   <h1>Deterministic DOCX editing with auditable behavior.</h1>
   <p>
-    Safe DOCX keeps edits local-first and spec-driven. The trust page shows a clear reliability summary, supporting evidence, and known limitations.
+    Safe DOCX keeps edits local-first and spec-driven — 23 tools for reading, writing, commenting, formatting, and tracking changes in Word documents. No remote servers, no black boxes.
   </p>
-  <a class="cta" href="trust/index.html">View Test Evidence</a>
+
+  <div class="hero-copy">
+    <code class="install-copy">npx -y @usejunior/docx-mcp</code>
+    <button class="copy-btn" data-copy="npx -y @usejunior/docx-mcp" aria-label="Copy npx command">
+      <span class="copy-label">Copy</span>
+    </button>
+  </div>
+  <p class="install-hint">Run in your terminal to start the MCP server</p>
+
+  <div class="hero-actions">
+    <a class="cta" href="#install">Install Guide</a>
+    <a class="cta cta-ghost" href="trust/index.html">Trust Evidence</a>
+  </div>
+
+  <div class="badge-stack">
+    <div class="badge-row">
+      <a class="trust-badge" href="https://www.npmjs.com/package/@usejunior/docx-mcp" target="_blank" rel="noopener">
+        <img src="https://img.shields.io/npm/dm/@usejunior/docx-mcp?label=npm%20downloads&color=a43820" alt="npm downloads" loading="lazy" />
+      </a>
+      <a class="trust-badge" href="https://github.com/usejunior/safe-docx/actions" target="_blank" rel="noopener">
+        <img src="https://img.shields.io/github/actions/workflow/status/usejunior/safe-docx/ci.yml?label=CI&color=2d7e5e" alt="CI status" loading="lazy" />
+      </a>
+    </div>
+  </div>
+
+  <script type="application/json" id="mcp-config">{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "npx",
+      "args": ["-y", "@usejunior/docx-mcp"]
+    }
+  }
+}</script>
 </section>
 
+{# ── Function Gallery ────────────────────────────── #}
+<section id="functions" class="reveal">
+  <h2 class="section-heading">23 tools across 7 categories</h2>
+  <div class="grid">
+    {% for cat in toolCatalog %}
+    <article class="card">
+      <h3>{{ cat.label }} <span class="tool-count">{{ cat.tools.length }}</span></h3>
+      <p>{{ cat.description }}</p>
+      <ul class="tool-list">
+        {% for tool in cat.tools %}
+        <li><code>{{ tool }}</code></li>
+        {% endfor %}
+      </ul>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+{# ── Install ─────────────────────────────────────── #}
+<section id="install" class="content reveal">
+  <h2>Install</h2>
+  <div class="install-cards">
+    <div class="card">
+      <h3>Claude Desktop / MCP Client</h3>
+      <p>Add this to your MCP client config:</p>
+      <div class="install-pre-wrap">
+        <pre><code>{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "npx",
+      "args": ["-y", "@usejunior/docx-mcp"]
+    }
+  }
+}</code></pre>
+        <button class="copy-btn" data-copy-target="mcp-config" aria-label="Copy MCP config">
+          <span class="copy-label">Copy</span>
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>npm</h3>
+      <p>Install as a dependency:</p>
+      <div class="install-pre-wrap">
+        <pre><code>npm install @usejunior/docx-mcp</code></pre>
+        <button class="copy-btn" data-copy="npm install @usejunior/docx-mcp" aria-label="Copy npm command">
+          <span class="copy-label">Copy</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ── Demo placeholder ────────────────────────────── #}
+<section id="demo" class="reveal">
+  <div class="demo-placeholder">
+    <p class="demo-caption">Demo video</p>
+  </div>
+</section>
+
+{# ── Value Props ─────────────────────────────────── #}
 <section class="grid reveal">
   <article class="card">
     <h2>Open Source</h2>
@@ -30,3 +123,45 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
     <p>Every operation is tested, traced, and published. Inspect the evidence before you ship.</p>
   </article>
 </section>
+
+{# ── FAQ ─────────────────────────────────────────── #}
+<section id="faq" class="content reveal">
+  <h2>Frequently Asked Questions</h2>
+  {% for item in faq %}
+  <details>
+    <summary>{{ item.q }}</summary>
+    <p>{{ item.a | safe }}</p>
+  </details>
+  {% endfor %}
+</section>
+
+{# ── Trust Callout ───────────────────────────────── #}
+<section class="callout reveal">
+  <h2>Built with trust evidence</h2>
+  <p>992 automated tests · Per-package coverage · Published changelog · CI-regenerated on every commit</p>
+  <div class="hero-actions">
+    <a class="cta" href="trust/index.html">View Trust Evidence</a>
+    <a class="cta cta-ghost" href="https://github.com/usejunior/safe-docx" target="_blank" rel="noopener">GitHub</a>
+    <a class="cta cta-ghost" href="https://www.npmjs.com/package/@usejunior/docx-mcp" target="_blank" rel="noopener">npm</a>
+  </div>
+</section>
+
+{# ── FAQPage JSON-LD ─────────────────────────────── #}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {% for item in faq %}
+    {
+      "@type": "Question",
+      "name": "{{ item.q }}",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "{{ item.a | striptags }}"
+      }
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}
+</script>
