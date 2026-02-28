@@ -327,3 +327,65 @@ describe('Step 4: Per-atom rPr in reorderChangeBlocks', () => {
     expect(rejected).not.toContain('w:delText');
   });
 });
+
+// =============================================================================
+// Step 7: pPrChange for inserted paragraphs (rebuild path)
+// =============================================================================
+
+describe('Step 7: Rebuild path emits pPrChange for inserted paragraphs', () => {
+  it('whole-paragraph insertion includes pPrChange with cloned pPr snapshot', () => {
+    // Create atoms for a whole-paragraph insertion with paragraph properties
+    const spacingEl = el('w:spacing', { 'w:after': '200' });
+    const pPrEl = el('w:pPr', {}, [spacingEl]);
+    const textEl = el('w:t', {}, undefined, 'new paragraph');
+    const run = el('w:r', {}, [textEl]);
+    const paragraph = el('w:p', {}, [pPrEl, run]);
+
+    const atom: ComparisonUnitAtom = {
+      sha1Hash: 'hash-new',
+      correlationStatus: CorrelationStatus.Inserted,
+      contentElement: textEl,
+      ancestorElements: [paragraph, run],
+      ancestorUnids: [],
+      part: PART,
+      paragraphIndex: 0,
+      rPr: null,
+    };
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+
+    // Should contain pPrChange
+    expect(result).toContain('w:pPrChange');
+    // pPrChange should contain the original spacing properties
+    expect(result).toMatch(/w:pPrChange[^>]*>.*<w:pPr>.*w:spacing/s);
+    // Accept should still work — pPrChange is removed
+    const accepted = acceptAllChanges(result);
+    expect(accepted).toContain('new paragraph');
+    expect(accepted).not.toContain('w:pPrChange');
+    expect(accepted).not.toContain('w:ins');
+  });
+
+  it('whole-paragraph insertion without pPr still emits pPrChange (empty snapshot)', () => {
+    const textEl = el('w:t', {}, undefined, 'bare paragraph');
+    const run = el('w:r', {}, [textEl]);
+    const paragraph = el('w:p', {}, [run]);
+
+    const atom: ComparisonUnitAtom = {
+      sha1Hash: 'hash-bare',
+      correlationStatus: CorrelationStatus.Inserted,
+      contentElement: textEl,
+      ancestorElements: [paragraph, run],
+      ancestorUnids: [],
+      part: PART,
+      paragraphIndex: 0,
+      rPr: null,
+    };
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+
+    // Should contain pPrChange even with no source pPr
+    expect(result).toContain('w:pPrChange');
+    // Inner pPr should be empty
+    expect(result).toMatch(/w:pPrChange[^>]*><w:pPr><\/w:pPr><\/w:pPrChange>/);
+  });
+});

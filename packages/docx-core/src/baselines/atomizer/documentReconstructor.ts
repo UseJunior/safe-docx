@@ -592,12 +592,16 @@ function buildParagraphXml(
     const runId = allocateRevisionId(revState);
     const parts: string[] = [];
     parts.push('<w:p>');
-    parts.push(
-      serializePPrWithParaRevisionMarker(
-        group.pPr,
-        `<w:ins w:id="${paraId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}" />`
-      )
+    // Build pPr with paragraph-mark w:ins marker
+    let pPrXml = serializePPrWithParaRevisionMarker(
+      group.pPr,
+      `<w:ins w:id="${paraId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}" />`
     );
+    // Add pPrChange (before </w:pPr>) for Google Docs compatibility.
+    // Built separately from the DOM source to avoid nested-element matching issues.
+    const pPrChangeXml = buildPPrChangeXml(group.pPr, author, dateStr, revState);
+    pPrXml = pPrXml.replace(/<\/w:pPr>/, `${pPrChangeXml}</w:pPr>`);
+    parts.push(pPrXml);
     parts.push(
       `<w:ins w:id="${runId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`
     );
@@ -710,6 +714,33 @@ function serializePPrWithParaRevisionMarker(
 
   // Otherwise, add a new rPr with the marker before closing pPr.
   return xml.replace(/<\/w:pPr>/, `<w:rPr>${markerXml}</w:rPr></w:pPr>`);
+}
+
+/**
+ * Build a `<w:pPrChange>` XML string from a pPr DOM element.
+ *
+ * The child `<w:pPr>` conforms to CT_PPrBase — it excludes w:rPr, w:sectPr,
+ * w:rPrChange, and w:pPrChange.
+ */
+function buildPPrChangeXml(
+  pPr: Element | null,
+  author: string,
+  dateStr: string,
+  revState: RevisionIdState
+): string {
+  const id = allocateRevisionId(revState);
+  const EXCLUDED = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
+  const parts: string[] = [];
+  parts.push(`<w:pPrChange w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`);
+  parts.push('<w:pPr>');
+  if (pPr) {
+    for (const child of childElements(pPr)) {
+      if (!EXCLUDED.has(child.tagName)) parts.push(serializeToXml(child));
+    }
+  }
+  parts.push('</w:pPr>');
+  parts.push('</w:pPrChange>');
+  return parts.join('');
 }
 
 /**
@@ -1101,16 +1132,18 @@ function buildFormatChangeRun(
       }
     }
 
-    // Add rPrChange with old properties
+    // Add rPrChange with old properties (wrapped in w:rPr per OOXML spec)
     const formatChange = group.atoms[0]?.formatChange;
     if (formatChange?.oldRunProperties) {
       const id = allocateRevisionId(revState);
       parts.push(
         `<w:rPrChange w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`
       );
+      parts.push('<w:rPr>');
       for (const child of childElements(formatChange.oldRunProperties!)) {
         parts.push(serializeToXml(child));
       }
+      parts.push('</w:rPr>');
       parts.push('</w:rPrChange>');
     }
 

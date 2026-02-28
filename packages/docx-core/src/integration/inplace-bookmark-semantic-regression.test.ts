@@ -299,32 +299,35 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
   );
 
   it(
-    'ILPA/inplace downgrades to rebuild with explicit safety diagnostics',
+    'ILPA/inplace keeps read_text parity (v0.3: improved matching allows inplace)',
     async () => {
       await allure.epic('Document Comparison');
       await allure.feature('Inplace Reconstruction');
-      await allure.story('Fallback diagnostics');
+      await allure.story('Large document round-trip');
       await allure.severity('normal');
 
       await allure.step('Given ILPA output from requested inplace reconstruction', async () => {
         await allure.attachment(
-          'ilpa-fallback-diagnostics.json',
-          JSON.stringify(ilpa.fallbackDiagnostics, null, 2),
+          'ilpa-reconstruction-metadata.json',
+          JSON.stringify(
+            {
+              reconstructionModeUsed: ilpa.reconstructionModeUsed,
+              fallbackReason: ilpa.fallbackReason,
+            },
+            null,
+            2
+          ),
           'application/json'
         );
       });
 
-      await allure.step('Then reconstruction downgrades to rebuild with the expected reason', async () => {
-        expect(ilpa.reconstructionModeUsed).toBe('rebuild');
-        expect(ilpa.fallbackReason).toBe('round_trip_safety_check_failed');
+      await allure.step('Then reconstruction retains inplace mode', async () => {
+        expect(ilpa.reconstructionModeUsed).toBe('inplace');
+        expect(ilpa.fallbackReason).toBeUndefined();
       });
 
-      await allure.step('And fallback diagnostics include at least one failed safety check', async () => {
-        const diagnostics = ilpa.fallbackDiagnostics as
-          | { attempts?: Array<{ failedChecks?: string[] }> }
-          | undefined;
-        const failedChecks = diagnostics?.attempts?.flatMap((attempt) => attempt.failedChecks ?? []) ?? [];
-        expect(failedChecks.length).toBeGreaterThan(0);
+      await allure.step('And read_text parity holds after accept all', async () => {
+        assertReadTextParity(ilpa.revisedXml, ilpa.acceptedXml, 'ILPA/inplace/accept-all');
       });
     },
     180000
