@@ -92,28 +92,7 @@ The list label engine SHALL detect and extract structured list labels from parag
 - **AND** `result.label` SHALL contain the extracted label
 
 ### Requirement: Semantic Tag Emission and Stripping
-The semantic tag engine SHALL detect explicit definition patterns in text and emit/strip `<definition>` and `<highlighting>` tags for role-model-based formatting.
-
-#### Scenario: emit definition tags for quoted term before definition verb
-- **GIVEN** text containing a quoted term followed by a definition verb (`means`, `shall mean`, `is defined as`, `refers to`, `has the meaning`, `shall have the meaning`)
-- **WHEN** `emitDefinitionTagsFromString` is called
-- **THEN** the term SHALL be wrapped in `<definition>` tags with quotes removed
-- **AND** the definition verb and surrounding text SHALL be unchanged
-
-#### Scenario: emit definition tags for smart/curly quotes
-- **GIVEN** text containing curly double or single quotes around a term before a definition verb
-- **WHEN** `emitDefinitionTagsFromString` is called
-- **THEN** the term SHALL be wrapped in `<definition>` tags with curly quotes removed
-
-#### Scenario: no tags emitted for text without definitions
-- **GIVEN** text without any recognized definition pattern
-- **WHEN** `emitDefinitionTagsFromString` is called
-- **THEN** the text SHALL be returned unchanged
-
-#### Scenario: strip definition tags replaces with quotes
-- **GIVEN** text containing `<definition>Term</definition>`
-- **WHEN** `stripDefinitionTags` is called
-- **THEN** the tag SHALL be replaced with `"Term"` (straight double quotes)
+The semantic tag engine SHALL emit/strip `<highlighting>` and `<font>` tags for formatting visibility and support `stripAllInlineTags` for removing all known inline tags.
 
 #### Scenario: strip highlight tags leaves content intact
 - **GIVEN** text containing `<highlighting>` tags
