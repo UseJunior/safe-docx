@@ -5,13 +5,26 @@
  * Generates w:ins, w:del, w:moveFrom, w:moveTo elements as appropriate.
  */
 
+import { DOMParser } from '@xmldom/xmldom';
 import type { ComparisonUnitAtom } from '../../core-types.js';
 import { CorrelationStatus } from '../../core-types.js';
-import { getLeafText, childElements } from '../../primitives/index.js';
+import { getLeafText, childElements, findChildByTagName } from '../../primitives/index.js';
 import { serializeToXml, cloneElement } from './xmlToWmlElement.js';
 import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
+
+const SYNTHETIC_DOC = new DOMParser().parseFromString(
+  '<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+  'application/xml'
+);
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function createEl(tag: string, attrs?: Record<string, string>): Element {
+  const el = SYNTHETIC_DOC.createElementNS(W_NS, tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
 
 /**
  * Options for document reconstruction.
@@ -590,18 +603,12 @@ function buildParagraphXml(
   if (isEntireParagraphWithStatus(group, CorrelationStatus.Inserted)) {
     const paraId = allocateRevisionId(revState);
     const runId = allocateRevisionId(revState);
+    const pPrChangeEl = buildPPrChangeElement(group.pPr, author, dateStr, revState);
     const parts: string[] = [];
     parts.push('<w:p>');
-    // Build pPr with paragraph-mark w:ins marker
-    let pPrXml = serializePPrWithParaRevisionMarker(
-      group.pPr,
-      `<w:ins w:id="${paraId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}" />`
-    );
-    // Add pPrChange (before </w:pPr>) for Google Docs compatibility.
-    // Built separately from the DOM source to avoid nested-element matching issues.
-    const pPrChangeXml = buildPPrChangeXml(group.pPr, author, dateStr, revState);
-    pPrXml = pPrXml.replace(/<\/w:pPr>/, `${pPrChangeXml}</w:pPr>`);
-    parts.push(pPrXml);
+    parts.push(serializePPrWithParaRevisionMarker(
+      group.pPr, 'w:ins', paraId, author, dateStr, pPrChangeEl
+    ));
     parts.push(
       `<w:ins w:id="${runId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`
     );
@@ -618,12 +625,9 @@ function buildParagraphXml(
     const runId = allocateRevisionId(revState);
     const parts: string[] = [];
     parts.push('<w:p>');
-    parts.push(
-      serializePPrWithParaRevisionMarker(
-        group.pPr,
-        `<w:del w:id="${paraId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}" />`
-      )
-    );
+    parts.push(serializePPrWithParaRevisionMarker(
+      group.pPr, 'w:del', paraId, author, dateStr
+    ));
     parts.push(
       `<w:del w:id="${runId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`
     );
@@ -638,32 +642,25 @@ function buildParagraphXml(
     return parts.join('');
   }
 
-  // Check for inserted empty paragraphs - wrap entire paragraph in w:ins
+  // Empty inserted paragraphs — use paragraph-mark revision marker (same as whole-paragraph).
+  // In OOXML, <w:ins> is NOT a valid container for <w:p>. The correct encoding places the
+  // marker inside w:pPr > w:rPr.
   if (isEmptyParagraphWithStatus(group, CorrelationStatus.Inserted)) {
-    const id = allocateRevisionId(revState);
-    const parts: string[] = [];
-    parts.push(`<w:ins w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`);
-    parts.push('<w:p>');
-    if (group.pPr) {
-      parts.push(serializeToXml(group.pPr));
-    }
-    parts.push('</w:p>');
-    parts.push('</w:ins>');
-    return parts.join('');
+    const paraId = allocateRevisionId(revState);
+    const pPrChangeEl = buildPPrChangeElement(group.pPr, author, dateStr, revState);
+    const pPrXml = serializePPrWithParaRevisionMarker(
+      group.pPr, 'w:ins', paraId, author, dateStr, pPrChangeEl
+    );
+    return `<w:p>${pPrXml}</w:p>`;
   }
 
-  // Check for deleted empty paragraphs - wrap entire paragraph in w:del
+  // Empty deleted paragraphs — use paragraph-mark revision marker.
   if (isEmptyParagraphWithStatus(group, CorrelationStatus.Deleted)) {
-    const id = allocateRevisionId(revState);
-    const parts: string[] = [];
-    parts.push(`<w:del w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`);
-    parts.push('<w:p>');
-    if (group.pPr) {
-      parts.push(serializeToXml(group.pPr));
-    }
-    parts.push('</w:p>');
-    parts.push('</w:del>');
-    return parts.join('');
+    const paraId = allocateRevisionId(revState);
+    const pPrXml = serializePPrWithParaRevisionMarker(
+      group.pPr, 'w:del', paraId, author, dateStr
+    );
+    return `<w:p>${pPrXml}</w:p>`;
   }
 
   const parts: string[] = [];
@@ -687,40 +684,85 @@ function buildParagraphXml(
 }
 
 /**
- * Serialize paragraph properties and ensure a paragraph-level revision marker exists.
+ * Serialize paragraph properties with a paragraph-level revision marker (w:ins or w:del)
+ * placed inside w:pPr > w:rPr, per OOXML spec.
  *
- * If pPr is missing, synthesize one with rPr containing the marker.
+ * DOM-based implementation — replaces the former regex-based approach.
  */
 function serializePPrWithParaRevisionMarker(
   pPr: Element | null,
-  markerXml: string
+  markerTag: 'w:ins' | 'w:del',
+  id: number,
+  author: string,
+  dateStr: string,
+  pPrChangeEl?: Element | null
 ): string {
-  // Common case: no paragraph properties. Create minimal pPr/rPr.
-  if (!pPr) {
-    return `<w:pPr><w:rPr>${markerXml}</w:rPr></w:pPr>`;
+  // Clone pPr or synthesize empty one.
+  const effectivePPr = pPr ? cloneElement(pPr) : createEl('w:pPr');
+
+  // Find or create w:rPr at schema-correct position.
+  let rPr = findChildByTagName(effectivePPr, 'w:rPr');
+  if (!rPr) {
+    rPr = createEl('w:rPr');
+    const sectPr = findChildByTagName(effectivePPr, 'w:sectPr');
+    const existingPPrChange = findChildByTagName(effectivePPr, 'w:pPrChange');
+    const insertBefore = sectPr ?? existingPPrChange ?? null;
+    if (insertBefore) {
+      effectivePPr.insertBefore(rPr, insertBefore);
+    } else {
+      effectivePPr.appendChild(rPr);
+    }
   }
 
-  let xml = serializeToXml(pPr);
+  // Insert revision marker at start of rPr.
+  const marker = createEl(markerTag, {
+    'w:id': String(id),
+    'w:author': author,
+    'w:date': dateStr,
+  });
+  rPr.insertBefore(marker, rPr.firstChild);
 
-  // Handle self-closing <w:pPr/> form.
-  if (/<w:pPr\b[^>]*\/>/.test(xml)) {
-    return xml.replace(/<w:pPr\b([^>]*)\/>/, `<w:pPr$1><w:rPr>${markerXml}</w:rPr></w:pPr>`);
+  // Append pPrChange at end if provided.
+  if (pPrChangeEl) {
+    effectivePPr.appendChild(pPrChangeEl);
   }
 
-  // If there's an rPr, inject the marker at the start of it.
-  if (xml.includes('<w:rPr')) {
-    return xml.replace(/<w:rPr(\b[^>]*)>/, `<w:rPr$1>${markerXml}`);
-  }
+  return serializeToXml(effectivePPr);
+}
 
-  // Otherwise, add a new rPr with the marker before closing pPr.
-  return xml.replace(/<\/w:pPr>/, `<w:rPr>${markerXml}</w:rPr></w:pPr>`);
+/**
+ * Build a `<w:pPrChange>` Element from a pPr DOM element.
+ *
+ * The child `<w:pPr>` conforms to CT_PPrBase — it excludes w:rPr, w:sectPr,
+ * w:rPrChange, and w:pPrChange.
+ */
+function buildPPrChangeElement(
+  pPr: Element | null,
+  author: string,
+  dateStr: string,
+  revState: RevisionIdState
+): Element {
+  const id = allocateRevisionId(revState);
+  const EXCLUDED = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
+  const pPrChange = createEl('w:pPrChange', {
+    'w:id': String(id),
+    'w:author': author,
+    'w:date': dateStr,
+  });
+  const oldPPr = createEl('w:pPr');
+  if (pPr) {
+    for (const child of childElements(pPr)) {
+      if (!EXCLUDED.has(child.tagName)) oldPPr.appendChild(child.cloneNode(true) as Element);
+    }
+  }
+  pPrChange.appendChild(oldPPr);
+  return pPrChange;
 }
 
 /**
  * Build a `<w:pPrChange>` XML string from a pPr DOM element.
  *
- * The child `<w:pPr>` conforms to CT_PPrBase — it excludes w:rPr, w:sectPr,
- * w:rPrChange, and w:pPrChange.
+ * Delegates to buildPPrChangeElement and serializes.
  */
 function buildPPrChangeXml(
   pPr: Element | null,
@@ -728,19 +770,7 @@ function buildPPrChangeXml(
   dateStr: string,
   revState: RevisionIdState
 ): string {
-  const id = allocateRevisionId(revState);
-  const EXCLUDED = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
-  const parts: string[] = [];
-  parts.push(`<w:pPrChange w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`);
-  parts.push('<w:pPr>');
-  if (pPr) {
-    for (const child of childElements(pPr)) {
-      if (!EXCLUDED.has(child.tagName)) parts.push(serializeToXml(child));
-    }
-  }
-  parts.push('</w:pPr>');
-  parts.push('</w:pPrChange>');
-  return parts.join('');
+  return serializeToXml(buildPPrChangeElement(pPr, author, dateStr, revState));
 }
 
 /**

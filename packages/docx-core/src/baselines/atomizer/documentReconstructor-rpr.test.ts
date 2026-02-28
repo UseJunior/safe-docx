@@ -7,12 +7,15 @@
 
 import { describe, expect } from 'vitest';
 import { itAllure as it } from '../../testing/allure-test.js';
-import { el } from '../../testing/dom-test-helpers.js';
+import { el, testDoc } from '../../testing/dom-test-helpers.js';
 import { reconstructDocument } from './documentReconstructor.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
 } from './trackChangesAcceptorAst.js';
+import { parseDocumentXml } from './xmlToWmlElement.js';
+import { findAllByTagName, findChildByTagName } from '../../primitives/index.js';
+import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
 import type { ComparisonUnitAtom, OpcPart } from '../../core-types.js';
 import { CorrelationStatus } from '../../core-types.js';
 
@@ -385,7 +388,205 @@ describe('Step 7: Rebuild path emits pPrChange for inserted paragraphs', () => {
 
     // Should contain pPrChange even with no source pPr
     expect(result).toContain('w:pPrChange');
-    // Inner pPr should be empty
-    expect(result).toMatch(/w:pPrChange[^>]*><w:pPr><\/w:pPr><\/w:pPrChange>/);
+    // Inner pPr should be empty — parse and check structurally
+    const root = parseDocumentXml(result);
+    const pPrChanges = findAllByTagName(root, 'w:pPrChange');
+    expect(pPrChanges.length).toBeGreaterThanOrEqual(1);
+    const innerPPr = findChildByTagName(pPrChanges[0]!, 'w:pPr');
+    expect(innerPPr).not.toBeNull();
+    // Inner pPr should have no child elements (empty snapshot)
+    const innerChildren = Array.from(innerPPr!.childNodes).filter(n => n.nodeType === 1);
+    expect(innerChildren.length).toBe(0);
+  });
+});
+
+// =============================================================================
+// Step 8: Empty paragraph track change encoding
+// =============================================================================
+
+/**
+ * Create an empty paragraph atom (uses the synthetic __emptyParagraph__ marker).
+ */
+function makeEmptyParagraphAtom(
+  status: CorrelationStatus,
+  paragraphIndex = 0,
+  pPrEl?: Element
+): ComparisonUnitAtom {
+  // Use testDoc.createElement (not createElementNS) since this is a synthetic marker, not OOXML
+  const emptyEl = testDoc.createElement(EMPTY_PARAGRAPH_TAG);
+  const paragraph = pPrEl
+    ? el('w:p', {}, [pPrEl.cloneNode(true) as Element])
+    : el('w:p');
+  return {
+    sha1Hash: `hash-empty-${paragraphIndex}`,
+    correlationStatus: status,
+    contentElement: emptyEl,
+    ancestorElements: [paragraph],
+    ancestorUnids: [],
+    part: PART,
+    paragraphIndex,
+    rPr: null,
+  };
+}
+
+describe('Step 8: Empty paragraph track change encoding', () => {
+  it('empty inserted paragraph uses pPr/rPr/w:ins marker (not w:ins wrapping w:p)', () => {
+    const pPrEl = el('w:pPr', {}, [el('w:spacing', { 'w:after': '200' })]);
+    const atom = makeEmptyParagraphAtom(CorrelationStatus.Inserted, 0, pPrEl);
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+    const root = parseDocumentXml(result);
+    const body = root.getElementsByTagName('w:body')[0]!;
+    const paragraphs = findAllByTagName(body, 'w:p');
+
+    // There should be at least one paragraph
+    expect(paragraphs.length).toBeGreaterThanOrEqual(1);
+
+    // Find the paragraph with the ins marker
+    const targetP = paragraphs.find(p => {
+      const pPr = findChildByTagName(p, 'w:pPr');
+      if (!pPr) return false;
+      const rPr = findChildByTagName(pPr, 'w:rPr');
+      if (!rPr) return false;
+      return findChildByTagName(rPr, 'w:ins') !== null;
+    });
+    expect(targetP).toBeDefined();
+
+    // Verify w:pPr > w:rPr > w:ins exists
+    const pPr = findChildByTagName(targetP!, 'w:pPr')!;
+    const rPr = findChildByTagName(pPr, 'w:rPr')!;
+    const insMarker = findChildByTagName(rPr, 'w:ins')!;
+    expect(insMarker).not.toBeNull();
+    expect(insMarker.getAttribute('w:author')).toBe('Test');
+
+    // Verify NO <w:ins> wrapping <w:p> (the illegal pattern)
+    const topLevelIns = findAllByTagName(body, 'w:ins').filter(
+      ins => ins.parentNode === body || ins.parentNode?.nodeName === 'w:body'
+    );
+    expect(topLevelIns.length).toBe(0);
+
+    // Verify pPrChange is present
+    const pPrChange = findChildByTagName(pPr, 'w:pPrChange');
+    expect(pPrChange).not.toBeNull();
+  });
+
+  it('empty deleted paragraph uses pPr/rPr/w:del marker (not w:del wrapping w:p)', () => {
+    const pPrEl = el('w:pPr', {}, [el('w:jc', { 'w:val': 'center' })]);
+    const atom = makeEmptyParagraphAtom(CorrelationStatus.Deleted, 0, pPrEl);
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+    const root = parseDocumentXml(result);
+    const body = root.getElementsByTagName('w:body')[0]!;
+    const paragraphs = findAllByTagName(body, 'w:p');
+
+    // Find the paragraph with the del marker
+    const targetP = paragraphs.find(p => {
+      const pPr = findChildByTagName(p, 'w:pPr');
+      if (!pPr) return false;
+      const rPr = findChildByTagName(pPr, 'w:rPr');
+      if (!rPr) return false;
+      return findChildByTagName(rPr, 'w:del') !== null;
+    });
+    expect(targetP).toBeDefined();
+
+    // Verify w:pPr > w:rPr > w:del exists
+    const pPr = findChildByTagName(targetP!, 'w:pPr')!;
+    const rPr = findChildByTagName(pPr, 'w:rPr')!;
+    const delMarker = findChildByTagName(rPr, 'w:del')!;
+    expect(delMarker).not.toBeNull();
+    expect(delMarker.getAttribute('w:author')).toBe('Test');
+
+    // Verify NO <w:del> wrapping <w:p> (the illegal pattern)
+    const topLevelDel = findAllByTagName(body, 'w:del').filter(
+      del => del.parentNode === body || del.parentNode?.nodeName === 'w:body'
+    );
+    expect(topLevelDel.length).toBe(0);
+  });
+
+  it('empty inserted paragraph without pPr synthesizes correct pPr/rPr', () => {
+    const atom = makeEmptyParagraphAtom(CorrelationStatus.Inserted, 0);
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+    const root = parseDocumentXml(result);
+    const body = root.getElementsByTagName('w:body')[0]!;
+    const paragraphs = findAllByTagName(body, 'w:p');
+
+    // Find paragraph with ins marker
+    const targetP = paragraphs.find(p => {
+      const pPr = findChildByTagName(p, 'w:pPr');
+      if (!pPr) return false;
+      const rPr = findChildByTagName(pPr, 'w:rPr');
+      if (!rPr) return false;
+      return findChildByTagName(rPr, 'w:ins') !== null;
+    });
+    expect(targetP).toBeDefined();
+
+    // Verify synthesized pPr/rPr/w:ins
+    const pPr = findChildByTagName(targetP!, 'w:pPr')!;
+    expect(pPr).not.toBeNull();
+    const rPr = findChildByTagName(pPr, 'w:rPr')!;
+    expect(rPr).not.toBeNull();
+    const insMarker = findChildByTagName(rPr, 'w:ins')!;
+    expect(insMarker).not.toBeNull();
+  });
+
+  it('accept round-trip: deleted empty paragraph removed on accept', () => {
+    const atom = makeEmptyParagraphAtom(CorrelationStatus.Deleted, 0);
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+    const accepted = acceptAllChanges(result);
+    const root = parseDocumentXml(accepted);
+    const body = root.getElementsByTagName('w:body')[0]!;
+    const paragraphs = findAllByTagName(body, 'w:p');
+
+    // The deleted empty paragraph should be removed on accept
+    // (accept = "apply the change" = paragraph stays deleted = removed)
+    for (const p of paragraphs) {
+      const pPr = findChildByTagName(p, 'w:pPr');
+      if (!pPr) continue;
+      const rPr = findChildByTagName(pPr, 'w:rPr');
+      if (!rPr) continue;
+      // No w:del markers should remain after accept
+      expect(findChildByTagName(rPr, 'w:del')).toBeNull();
+    }
+  });
+
+  it('accept round-trip: inserted empty paragraph kept on accept', () => {
+    const atom = makeEmptyParagraphAtom(CorrelationStatus.Inserted, 0);
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+    const accepted = acceptAllChanges(result);
+
+    // After accepting, the inserted paragraph should remain (marker stripped)
+    expect(accepted).not.toContain('w:ins');
+    // The paragraph should still exist in the output
+    const root = parseDocumentXml(accepted);
+    const body = root.getElementsByTagName('w:body')[0]!;
+    const paragraphs = findAllByTagName(body, 'w:p');
+    expect(paragraphs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reject round-trip: inserted empty paragraph removed on reject', () => {
+    const atom = makeEmptyParagraphAtom(CorrelationStatus.Inserted, 0);
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+    const rejected = rejectAllChanges(result);
+
+    // After rejecting, the inserted paragraph should be removed
+    expect(rejected).not.toContain('w:ins');
+  });
+
+  it('reject round-trip: deleted empty paragraph kept on reject', () => {
+    const atom = makeEmptyParagraphAtom(CorrelationStatus.Deleted, 0);
+
+    const result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+    const rejected = rejectAllChanges(result);
+
+    // After rejecting, the deleted paragraph should be kept (marker stripped)
+    expect(rejected).not.toContain('w:del');
+    const root = parseDocumentXml(rejected);
+    const body = root.getElementsByTagName('w:body')[0]!;
+    const paragraphs = findAllByTagName(body, 'w:p');
+    expect(paragraphs.length).toBeGreaterThanOrEqual(1);
   });
 });
