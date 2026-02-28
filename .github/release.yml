@@ -1,0 +1,38 @@
+# GitHub Release note categories.
+# Controls how --generate-notes groups merged PRs into sections.
+# See: https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes
+
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+    authors:
+      - dependabot
+      - dependabot[bot]
+
+  categories:
+    - title: Breaking Changes
+      labels:
+        - breaking
+    - title: Features
+      labels:
+        - feat
+    - title: Bug Fixes
+      labels:
+        - fix
+    - title: Performance
+      labels:
+        - perf
+    - title: Documentation
+      labels:
+        - docs
+    - title: CI / Infrastructure
+      labels:
+        - ci
+        - build
+    - title: Refactoring
+      labels:
+        - refactor
+    - title: Other Changes
+      labels:
+        - "*"
