@@ -43,16 +43,24 @@
     <link rel="stylesheet" href="{{ page.url | rootHref('assets/site.css') }}" />
   </head>
   <body>
+    <div class="bg-noise" aria-hidden="true"></div>
+    <header class="topbar">
+      <a class="brand" href="{{ page.url | rootHref('index.html') }}">Safe DOCX</a>
+      <button class="topnav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="site-nav">
+        <span class="topnav-toggle-bars" aria-hidden="true"></span>
+      </button>
+      <nav id="site-nav" class="topnav">
+        <a href="{{ page.url | rootHref('index.html') }}">Home</a>
+        <a href="{{ page.url | rootHref('trust/index.html') }}">Trust</a>
+      </nav>
+      <div class="topbar-actions">
+        <a class="gh-link" href="https://github.com/usejunior/safe-docx" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </header>
     <div class="shell">
-      <header class="header">
-        <a class="brand" href="{{ page.url | rootHref('index.html') }}">Safe DOCX</a>
-        <nav class="nav">
-          <a href="{{ page.url | rootHref('index.html') }}">Home</a>
-          <a href="{{ page.url | rootHref('trust/index.html') }}">Trust</a>
-        </nav>
-      </header>
       <main{% if contentClass %} class="{{ contentClass }}"{% endif %}>{{ content | safe }}</main>
       <footer class="footer">Local-first DOCX editing for AI systems.</footer>
     </div>
+    <script src="{{ page.url | rootHref('assets/main.js') }}" defer></script>
   </body>
 </html>
