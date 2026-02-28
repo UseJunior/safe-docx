@@ -35,26 +35,21 @@ Safe-DOCX edits already-existing `.docx` files — it does not create documents 
 ## Quick Start
 
 ```
-0. Gather: confirm the file path and what edits are needed
 1. read_file(file_path="~/doc.docx")        → see paragraphs + _bk_* IDs
 2. grep(file_path="~/doc.docx", patterns=["target phrase"])  → find paragraph IDs
 3. replace_text(session_id, target_paragraph_id, old_string, new_string, instruction)
-4. download(session_id, save_to_local_path="~/doc-edited.docx")
+4. save(session_id, save_to_local_path="~/doc-edited.docx")
 ```
 
-## Core Workflow: Gather, Read, Locate, Edit, Download
-
-**Step 0 — Gather inputs.** Confirm the file path, understand what changes are needed, and identify any reference documents.
+## Core Workflow: Read, Locate, Edit, Save
 
 **Step 1 — Read.** Call `read_file` with `format: "toon"` (token-efficient table) to see paragraphs and their stable `_bk_*` IDs.
-
-**Step 1b — Preserve original.** If you need to keep a pristine copy, call `duplicate_document` before making edits.
 
 **Step 2 — Locate.** Use `grep` with regex patterns to find target paragraphs. It returns paragraph IDs with surrounding context.
 
 **Step 3 — Edit.** Use `replace_text` to swap text within a paragraph, or `insert_paragraph` to add new paragraphs before/after an anchor.
 
-**Step 4 — Download.** Call `download` to save. Default is `download_format: "both"` which produces a clean copy and a tracked-changes redline.
+**Step 4 — Save.** Call `save` to write output. Default is `save_format: "both"` which produces a clean copy and a tracked-changes redline.
 
 ## Gotchas That Will Bite You
 
@@ -111,7 +106,7 @@ For 3+ edits on one document, prefer `apply_plan` over sequential `replace_text`
      { step_id: "2", operation: "insert_paragraph", positional_anchor_node_id, new_string, instruction },
      ...
    ])
-3. download(session_id, save_to_local_path)
+3. save(session_id, save_to_local_path)
 ```
 
 ## Insert Paragraphs
