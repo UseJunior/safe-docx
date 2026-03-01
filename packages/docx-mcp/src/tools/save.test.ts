@@ -140,7 +140,7 @@ describe('save', () => {
       save_to_local_path: outPath,
       save_format: 'invalid' as 'clean',
     });
-    assertFailure(result, 'INVALID_DOWNLOAD_FORMAT', 'bad format');
+    assertFailure(result, 'INVALID_SAVE_FORMAT', 'bad format');
   });
 
   it('fails gracefully with non-existent session', async () => {
