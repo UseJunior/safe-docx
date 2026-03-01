@@ -66,25 +66,6 @@ The Safe-Docx MCP server SHALL provide explicit tools to clear session state wit
 - **THEN** the server SHALL require explicit confirmation input
 - **AND** reject the call if confirmation is missing
 
-### Requirement: Document Duplication and Forked Session
-The Safe-Docx MCP server SHALL support cloning a source `.docx` and opening a fresh editing session for the clone.
-
-#### Scenario: duplicate document creates independent session
-- **WHEN** `duplicate_document` is called with a valid source path and destination path
-- **THEN** the server SHALL copy the source document to destination
-- **AND** SHALL create and return a new editing `session_id` bound to the destination file
-- **AND** edits in the new session SHALL NOT mutate the source document
-
-#### Scenario: duplicate uses timestamped destination when path is omitted
-- **WHEN** `duplicate_document` is called without `destination_file_path`
-- **THEN** the server SHALL create a destination path with a timestamped suffix in the same directory
-- **AND** SHALL return that resolved destination path in the response
-
-#### Scenario: duplicate respects overwrite safety
-- **WHEN** `duplicate_document` is called with an existing destination path and overwrite disabled
-- **THEN** the server SHALL reject the request with an overwrite-protection error
-- **AND** provide remediation guidance
-
 ### Requirement: Deprecated Explicit Open Step
 The Safe-Docx MCP server SHALL deprecate `open_document` as the primary entrypoint in favor of file-first tool calls.
 

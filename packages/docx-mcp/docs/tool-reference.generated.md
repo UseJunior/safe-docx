@@ -115,9 +115,9 @@ Insert a paragraph before/after an anchor paragraph by _bk_* id. Accepts session
 | `position` | `enum("BEFORE", "AFTER")` | no |  |
 | `style_source_id` | `string` | no | Paragraph _bk_* ID to clone formatting (pPr and template run) from instead of the positional anchor. Falls back to anchor with a warning if not found. |
 
-## `download`
+## `save`
 
-Save clean and/or tracked changes output back to the user filesystem. Defaults to both clean and tracked outputs when no format override is provided. Accepts session_id or file_path.
+Save clean and/or tracked changes output back to the local filesystem. Defaults to both clean and tracked outputs when no format override is provided. Accepts session_id or file_path.
 
 - readOnly: `false`
 - destructive: `true`
@@ -128,7 +128,7 @@ Save clean and/or tracked changes output back to the user filesystem. Defaults t
 | `file_path` | `string` | no |  |
 | `save_to_local_path` | `string` | yes |  |
 | `clean_bookmarks` | `boolean` | no |  |
-| `download_format` | `enum("clean", "tracked", "both")` | no |  |
+| `save_format` | `enum("clean", "tracked", "both")` | no |  |
 | `allow_overwrite` | `boolean` | no |  |
 | `tracked_save_to_local_path` | `string` | no |  |
 | `tracked_changes_author` | `string` | no |  |
@@ -200,19 +200,6 @@ Clear one session, all sessions for a file path, or all sessions with explicit c
 | `file_path` | `string` | no |  |
 | `clear_all` | `boolean` | no |  |
 | `confirm` | `boolean` | no |  |
-
-## `duplicate_document`
-
-Duplicate a source .docx and auto-open a fresh editing session for the duplicate.
-
-- readOnly: `false`
-- destructive: `true`
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `source_file_path` | `string` | yes |  |
-| `destination_file_path` | `string` | no |  |
-| `overwrite` | `boolean` | no |  |
 
 ## `add_comment`
 

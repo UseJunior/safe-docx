@@ -36,7 +36,7 @@ describe.sequential('path policy: symlink and root bounds', () => {
       const disallowedWrite = await save(mgr, {
         session_id: String(allowedOpen.session_id),
         save_to_local_path: path.join(outsideRoot, 'should-block.docx'),
-        download_format: 'clean',
+        save_format: 'clean',
         clean_bookmarks: true,
       });
       expect(disallowedWrite.success).toBe(false);

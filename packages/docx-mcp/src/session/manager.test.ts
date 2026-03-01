@@ -226,13 +226,13 @@ describe('SessionManager.markEdited', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('clears download cache', async () => {
+  it('clears save cache', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
 
-    // Simulate a cached download entry
-    session.downloadCache.set('test-key', {
+    // Simulate a cached save entry
+    session.saveCache.set('test-key', {
       cacheKey: 'test-key',
       revision: 0,
       format: 'clean',
@@ -247,9 +247,9 @@ describe('SessionManager.markEdited', () => {
       cachedAtIso: new Date().toISOString(),
     });
 
-    expect(session.downloadCache.size).toBe(1);
+    expect(session.saveCache.size).toBe(1);
     mgr.markEdited(session);
-    expect(session.downloadCache.size).toBe(0);
+    expect(session.saveCache.size).toBe(0);
 
     tmpDirs.push(path.dirname(session.tmpPath));
   });
@@ -320,13 +320,13 @@ describe('SessionManager.touch', () => {
 
 // ── Cache methods ───────────────────────────────────────────────────
 
-describe('SessionManager download cache', () => {
+describe('SessionManager save cache', () => {
   it('returns null for missing cache key', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
 
-    expect(mgr.getDownloadCache(session, 'missing')).toBeNull();
+    expect(mgr.getSaveCache(session, 'missing')).toBeNull();
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
@@ -350,8 +350,8 @@ describe('SessionManager download cache', () => {
       cachedAtIso: new Date().toISOString(),
     };
 
-    mgr.setDownloadCache(session, entry);
-    const retrieved = mgr.getDownloadCache(session, 'key1');
+    mgr.setSaveCache(session, entry);
+    const retrieved = mgr.getSaveCache(session, 'key1');
     expect(retrieved).not.toBeNull();
     expect(retrieved!.cacheKey).toBe('key1');
 

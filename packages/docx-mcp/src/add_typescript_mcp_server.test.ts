@@ -29,7 +29,7 @@ type ToolName = (typeof MCP_TOOLS)[number]['name'];
 
 interface ToolDocMetadata {
   document?: { filename?: string; paragraphs?: number };
-  download_defaults?: { default_download_format?: string };
+  save_defaults?: { default_save_format?: string };
 }
 
 interface PackageJsonMetadata {
@@ -116,7 +116,7 @@ describe('TypeScript MCP server behavior', () => {
     assertSuccess(status, 'status');
     const statusMeta = status as typeof status & ToolDocMetadata;
     expect(statusMeta.document?.filename).toContain('.docx');
-    expect(statusMeta.download_defaults?.default_download_format).toBe('both');
+    expect(statusMeta.save_defaults?.default_save_format).toBe('both');
   });
 
   humanReadableTest.openspec('Session expiration')('Scenario: Session expiration', async () => {
