@@ -26,6 +26,7 @@ import { updateFootnote } from './tools/update_footnote.js';
 import { deleteFootnote } from './tools/delete_footnote.js';
 import { compareDocuments_tool } from './tools/compare_documents.js';
 import { extractRevisions_tool } from './tools/extract_revisions.js';
+import { clearFormatting } from './tools/clear_formatting.js';
 
 export const MCP_TRANSPORT = 'stdio' as const;
 
@@ -79,6 +80,8 @@ export async function dispatchToolCall(
       return await updateFootnote(sessions, args as Parameters<typeof updateFootnote>[1]);
     case 'delete_footnote':
       return await deleteFootnote(sessions, args as Parameters<typeof deleteFootnote>[1]);
+    case 'clear_formatting':
+      return await clearFormatting(sessions, args as Parameters<typeof clearFormatting>[1]);
     case 'extract_revisions':
       return await extractRevisions_tool(sessions, args as Parameters<typeof extractRevisions_tool>[1]);
     default:
@@ -95,7 +98,7 @@ export async function dispatchToolCall(
 
 export async function runServer(): Promise<void> {
   const server = new Server(
-    { name: 'safe-docx', version: '0.1.0' },
+    { name: 'safe-docx', version: '0.2.0' },
     {
       capabilities: {
         tools: {},

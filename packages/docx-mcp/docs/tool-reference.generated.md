@@ -315,6 +315,25 @@ Delete a footnote and its reference from the document.
 | `file_path` | `string` | no |  |
 | `note_id` | `number` | yes | Footnote ID to delete. |
 
+## `clear_formatting`
+
+Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs. Accepts session_id or file_path.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `session_id` | `string` | no |  |
+| `file_path` | `string` | no |  |
+| `paragraph_ids` | `array<string>` | no | Paragraph IDs to clear formatting from. If omitted, clears from all paragraphs. |
+| `clear_highlight` | `boolean` | no | Remove highlight formatting. |
+| `clear_bold` | `boolean` | no | Remove bold formatting. |
+| `clear_italic` | `boolean` | no | Remove italic formatting. |
+| `clear_underline` | `boolean` | no | Remove underline formatting. |
+| `clear_color` | `boolean` | no | Remove font color. |
+| `clear_font` | `boolean` | no | Remove font family and size. |
+
 ## `extract_revisions`
 
 Extract tracked changes as structured JSON with before/after text per paragraph, revision details, and comments. Supports pagination via offset and limit. Read-only - does not modify the document.
