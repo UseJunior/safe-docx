@@ -3,7 +3,7 @@ import { testAllure as test } from '../testing/allure-test.js';
 import fs from 'node:fs/promises';
 import { DocxZip } from '@usejunior/docx-core';
 
-import { download } from './download.js';
+import { save } from './save.js';
 import { formatLayout } from './format_layout.js';
 import {
   assertSuccess,
@@ -104,13 +104,13 @@ describe('format_layout: non-body part preservation', () => {
     });
 
     const outputPath = `${opened.tmpDir}/non-body-preserved.docx`;
-    const saved = await download(opened.mgr, {
+    const saved = await save(opened.mgr, {
       session_id: opened.sessionId,
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const nonBodyParts = [
       'word/header1.xml',

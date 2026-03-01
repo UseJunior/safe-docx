@@ -72,7 +72,7 @@ describe('Multi-platform MCP discovery docs', () => {
       const content = fs.readFileSync(geminiMdPath, 'utf-8');
       expect(content).toContain('read_file');
       expect(content).toContain('replace_text');
-      expect(content).toContain('download');
+      expect(content).toContain('save');
       expect(content).toContain('local');
       expect(content).toContain('Trust Boundary');
     },

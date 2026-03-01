@@ -49,7 +49,7 @@
       "description": "Insert a new paragraph before or after an anchor paragraph."
     },
     {
-      "name": "download",
+      "name": "save",
       "description": "Save clean/tracked output document variants to disk."
     },
     {
@@ -71,10 +71,6 @@
     {
       "name": "clear_session",
       "description": "Clear one session or all sessions."
-    },
-    {
-      "name": "duplicate_document",
-      "description": "Duplicate a document and open a fresh session."
     },
     {
       "name": "add_comment",

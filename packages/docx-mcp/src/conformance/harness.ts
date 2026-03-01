@@ -8,7 +8,7 @@ import { SessionManager } from '../session/manager.js';
 import { openDocument } from '../tools/open_document.js';
 import { readFile } from '../tools/read_file.js';
 import { replaceText } from '../tools/replace_text.js';
-import { download } from '../tools/download.js';
+import { save } from '../tools/save.js';
 
 export const CONFORMANCE_REPORT_SCHEMA_VERSION = 'safe-docx-conformance-report/v1';
 export const FIXTURE_MANIFEST_SCHEMA_VERSION = 'safe-docx-fixture-manifest/v1';
@@ -310,10 +310,10 @@ async function runToonRoundtripCheck(absPath: string): Promise<ConformanceCheckR
 
   const after = await withTempDir('safe-docx-conformance-roundtrip-', async (outDir) => {
     const cleanPath = path.join(outDir, 'clean.docx');
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: String(opened.session_id),
       save_to_local_path: cleanPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
     if (!isToolSuccess(saved)) {
@@ -406,10 +406,10 @@ async function runDeterministicReplaceTextOnce(
 
   return withTempDir('safe-docx-conformance-edit-', async (outDir) => {
     const cleanPath = path.join(outDir, 'edited.docx');
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
     if (!isToolSuccess(saved)) {
@@ -529,10 +529,10 @@ async function runTrackedChangesCheck(
 
   return withTempDir('safe-docx-conformance-tracked-', async (outDir) => {
     const trackedPath = path.join(outDir, 'tracked.docx');
-    const tracked = await download(mgr, {
+    const tracked = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: trackedPath,
-      download_format: 'tracked',
+      save_format: 'tracked',
       clean_bookmarks: true,
       tracked_changes_engine: 'atomizer',
     });

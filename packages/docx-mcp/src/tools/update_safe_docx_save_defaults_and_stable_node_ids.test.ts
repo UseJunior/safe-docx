@@ -7,7 +7,7 @@ import { openDocument } from './open_document.js';
 import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
-import { download } from './download.js';
+import { save } from './save.js';
 import {
   extractParaIdsFromToon,
   firstParaIdFromToon,
@@ -23,11 +23,11 @@ import {
   createTestSessionManager,
 } from '../testing/session-test-utils.js';
 
-const TEST_FEATURE = 'update-safe-docx-download-defaults-and-stable-node-ids';
-interface OpenDownloadDefaults {
-  download_defaults?: {
+const TEST_FEATURE = 'update-safe-docx-save-defaults-and-stable-node-ids';
+interface OpenSaveDefaults {
+  save_defaults?: {
     default_variants?: string[];
-    default_download_format?: string;
+    default_save_format?: string;
     supports_variant_override?: boolean;
   };
 }
@@ -36,7 +36,7 @@ const SIMPLE_WORD_CHANGE_FIXTURE = fileURLToPath(
   new URL('../../../docx-core/src/testing/fixtures/simple-word-change/original.docx', import.meta.url),
 );
 
-describe('Traceability: Download Defaults and Stable Node IDs', () => {
+describe('Traceability: Save Defaults and Stable Node IDs', () => {
   const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
   const humanReadableTest = test.allure({
     tags: ['human-readable'],
@@ -173,13 +173,13 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
       instruction: 'edit before dual download',
     });
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
-    assertSuccess(saved, 'download');
-    expect(saved.download_format).toBe('both');
+    assertSuccess(saved, 'save');
+    expect(saved.save_format).toBe('both');
     expect(saved.returned_variants).toEqual(['clean', 'redline']);
     expect(saved.cache_hit).toBe(false);
   });
@@ -189,13 +189,13 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     const opened = await openSession(['Hello world'], { mgr, prefix: 'safe-docx-download-clean-only-' });
     const outputPath = path.join(opened.tmpDir, 'out.docx');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: opened.sessionId,
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
     expect(saved.returned_variants).toEqual(['clean']);
     expect(saved.tracked_saved_to).toBeNull();
   });
@@ -221,12 +221,12 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
       instruction: 'cache test edit',
     });
 
-    const first = await download(mgr, {
+    const first = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
-    const second = await download(mgr, {
+    const second = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
@@ -258,7 +258,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
       new_string: 'TheX',
       instruction: 'first revision',
     });
-    const first = await download(mgr, {
+    const first = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
@@ -274,7 +274,7 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
       new_string: 'TheXY',
       instruction: 'second revision',
     });
-    const second = await download(mgr, {
+    const second = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
@@ -298,12 +298,12 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     const beforeIds = extractParaIdsFromToon(String(readResult.content)).slice();
     expect(beforeIds.length).toBeGreaterThan(0);
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const afterRead = await readFile(mgr, { session_id: sessionId, format: 'simple' });
     assertSuccess(afterRead, 'read after');
@@ -325,18 +325,18 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     assertSuccess(readResult, 'read');
     const baselineIds = extractParaIdsFromToon(String(readResult.content)).slice();
 
-    const cleanOnly = await download(mgr, {
+    const cleanOnly = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
     assertSuccess(cleanOnly, 'clean download');
 
-    const trackedOnly = await download(mgr, {
+    const trackedOnly = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: trackedPath,
-      download_format: 'tracked',
+      save_format: 'tracked',
       clean_bookmarks: true,
     });
     assertSuccess(trackedOnly, 'tracked download');
@@ -352,10 +352,10 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
 
     const openResult = await openDocument(mgr, { file_path: opened.inputPath });
     assertSuccess(openResult, 'open');
-    const defaultsMeta = openResult as typeof openResult & OpenDownloadDefaults;
-    expect(defaultsMeta.download_defaults?.default_variants).toEqual(['clean', 'redline']);
-    expect(defaultsMeta.download_defaults?.default_download_format).toBe('both');
-    expect(defaultsMeta.download_defaults?.supports_variant_override).toBe(true);
+    const defaultsMeta = openResult as typeof openResult & OpenSaveDefaults;
+    expect(defaultsMeta.save_defaults?.default_variants).toEqual(['clean', 'redline']);
+    expect(defaultsMeta.save_defaults?.default_save_format).toBe('both');
+    expect(defaultsMeta.save_defaults?.supports_variant_override).toBe(true);
   });
 
   humanReadableTest.openspec('Download response reports variant and cache details')('Scenario: Download response reports variant and cache details', async () => {
@@ -363,16 +363,16 @@ describe('Traceability: Download Defaults and Stable Node IDs', () => {
     const opened = await openSession(['A'], { mgr, prefix: 'safe-docx-download-metadata-' });
     const outputPath = path.join(opened.tmpDir, 'out.docx');
 
-    const first = await download(mgr, {
+    const first = await save(mgr, {
       session_id: opened.sessionId,
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
-    const second = await download(mgr, {
+    const second = await save(mgr, {
       session_id: opened.sessionId,
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
     assertSuccess(first, 'first download');

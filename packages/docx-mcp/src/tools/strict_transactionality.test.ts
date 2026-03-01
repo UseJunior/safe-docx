@@ -3,7 +3,7 @@ import { testAllure as test } from '../testing/allure-test.js';
 import fs from 'node:fs/promises';
 import { DocxZip, parseXml, serializeXml } from '@usejunior/docx-core';
 
-import { download } from './download.js';
+import { save } from './save.js';
 import { formatLayout } from './format_layout.js';
 import { getSessionStatus } from './get_session_status.js';
 import {
@@ -45,10 +45,10 @@ describe('format_layout: strict failure transactionality', () => {
     });
 
     const baselinePath = `${opened.tmpDir}/baseline-clean.docx`;
-    const baselineDownload = await download(opened.mgr, {
+    const baselineDownload = await save(opened.mgr, {
       session_id: opened.sessionId,
       save_to_local_path: baselinePath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
     assertSuccess(baselineDownload, 'baseline download');
@@ -76,10 +76,10 @@ describe('format_layout: strict failure transactionality', () => {
     expect(statusAfter.edit_revision).toBe(0);
 
     const afterPath = `${opened.tmpDir}/after-failure-clean.docx`;
-    const afterDownload = await download(opened.mgr, {
+    const afterDownload = await save(opened.mgr, {
       session_id: opened.sessionId,
       save_to_local_path: afterPath,
-      download_format: 'clean',
+      save_format: 'clean',
       clean_bookmarks: true,
     });
     assertSuccess(afterDownload, 'after download');

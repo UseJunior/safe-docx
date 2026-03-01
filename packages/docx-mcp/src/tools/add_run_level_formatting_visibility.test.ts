@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
-import { download } from './download.js';
+import { save } from './save.js';
 import { testAllure } from '../testing/allure-test.js';
 import {
   assertSuccess,
@@ -150,13 +150,13 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
       assertSuccess(edited, 'replace_text');
 
       const outputPath = path.join(tmpDir, 'formatted-output.docx');
-      const saved = await download(mgr, {
+      const saved = await save(mgr, {
         session_id: sessionId,
         save_to_local_path: outputPath,
         clean_bookmarks: true,
-        download_format: 'clean',
+        save_format: 'clean',
       });
-      assertSuccess(saved, 'download');
+      assertSuccess(saved, 'save');
 
       const { runs, runText, hasBold, hasItalic, hasUnderline, hasHighlight } = await parseOutputXml(outputPath);
       const boldRun = runs.find((r) => runText(r).includes('Bold'));

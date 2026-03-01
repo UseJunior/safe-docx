@@ -23,7 +23,7 @@ import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
-import { download } from './tools/download.js';
+import { save } from './tools/save.js';
 import { getSessionStatus } from './tools/get_session_status.js';
 
 const SIMPLE_WORD_CHANGE_FIXTURE = fileURLToPath(
@@ -34,7 +34,7 @@ describe('Parity regression', () => {
   const test = testAllure.epic('Document Editing').withLabels({ feature: 'Parity' });
   registerCleanup();
 
-  test('tool parity: open -> read -> grep -> edit -> insert -> download -> status', async () => {
+  test('tool parity: open -> read -> grep -> edit -> insert -> save -> status', async () => {
     const mgr = createTestSessionManager();
 
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
@@ -101,11 +101,11 @@ describe('Parity regression', () => {
     assertSuccess(read3, 'read3');
     expect(String(read3.content)).toContain('Second paragraph');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
       clean_bookmarks: true,
-      download_format: 'clean',
+      save_format: 'clean',
     });
     assertSuccess(saved, 'save');
     expect(String(saved.saved_to)).toBe(outPath);
@@ -115,10 +115,10 @@ describe('Parity regression', () => {
     expect(outXml.includes('_bk_')).toBe(false);
     expect(outXml.includes('edit-')).toBe(false);
 
-    // Download must not destroy the session's paragraph IDs (Python behavior).
-    const readAfterDownload = await readFile(mgr, { session_id: sessionId });
-    assertSuccess(readAfterDownload, 'readAfterDownload');
-    expect(String(readAfterDownload.content)).toContain('Hi world');
+    // Save must not destroy the session's paragraph IDs (Python behavior).
+    const readAfterSave = await readFile(mgr, { session_id: sessionId });
+    assertSuccess(readAfterSave, 'readAfterSave');
+    expect(String(readAfterSave.content)).toContain('Hi world');
   });
 
   test('grep reports para_index_1based for matches in later paragraphs', async () => {
@@ -263,7 +263,7 @@ describe('Parity regression', () => {
     expect(String(read2.content)).toContain('Updated paragraph text.');
   });
 
-  test('download blocks overwrite of original by default', async () => {
+  test('save blocks overwrite of original by default', async () => {
     const mgr = createTestSessionManager();
 
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
@@ -273,15 +273,15 @@ describe('Parity regression', () => {
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: opened.session_id as string,
       save_to_local_path: inputPath,
-      download_format: 'clean',
+      save_format: 'clean',
     });
     assertFailure(saved, 'OVERWRITE_BLOCKED', 'overwrite block');
   });
 
-  test('download supports tracked changes output', async () => {
+  test('save supports tracked changes output', async () => {
     const mgr = createTestSessionManager();
 
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
@@ -309,7 +309,7 @@ describe('Parity regression', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: trackedPath,
       track_changes: true,
@@ -317,9 +317,9 @@ describe('Parity regression', () => {
       clean_bookmarks: true,
       tracked_changes_engine: 'atomizer',
     });
-    assertSuccess(saved, 'tracked download');
+    assertSuccess(saved, 'tracked save');
     expect(String(saved.saved_to)).toBe(trackedPath);
-    expect(saved.download_format).toBe('tracked');
+    expect(saved.save_format).toBe('tracked');
 
     const outXml = await readDocumentXmlFromPath(trackedPath);
 
@@ -327,7 +327,7 @@ describe('Parity regression', () => {
     expect(outXml.includes('<w:ins') || outXml.includes('<w:del')).toBe(true);
   });
 
-  test('download defaults to both clean and tracked outputs with timestamped redline name', async () => {
+  test('save defaults to both clean and tracked outputs with timestamped redline name', async () => {
     const mgr = createTestSessionManager();
 
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
@@ -355,14 +355,14 @@ describe('Parity regression', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
       tracked_changes_engine: 'atomizer',
     });
-    assertSuccess(saved, 'download');
-    expect(saved.download_format).toBe('both');
+    assertSuccess(saved, 'save');
+    expect(saved.save_format).toBe('both');
     expect(saved.cache_hit).toBe(false);
     expect(saved.returned_variants).toEqual(['clean', 'redline']);
     expect(String(saved.clean_saved_to)).toBe(cleanPath);
@@ -372,7 +372,7 @@ describe('Parity regression', () => {
     await expect(fs.stat(String(saved.tracked_saved_to))).resolves.toBeTruthy();
   });
 
-  test('download infers both variants when tracked_save_to_local_path is provided', async () => {
+  test('save infers both variants when tracked_save_to_local_path is provided', async () => {
     const mgr = createTestSessionManager();
 
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
@@ -401,7 +401,7 @@ describe('Parity regression', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath,
       tracked_save_to_local_path: trackedPath,
@@ -410,8 +410,8 @@ describe('Parity regression', () => {
       clean_bookmarks: true,
       tracked_changes_engine: 'atomizer',
     });
-    assertSuccess(saved, 'download');
-    expect(saved.download_format).toBe('both');
+    assertSuccess(saved, 'save');
+    expect(saved.save_format).toBe('both');
     expect(saved.tracked_saved_to).toBe(trackedPath);
     expect(saved.format_source).toBe('tracked_save_to_local_path');
     expect(typeof saved.parameter_warning).toBe('string');
@@ -479,7 +479,7 @@ describe('Parity regression', () => {
     expect(byLines[0]!.id).not.toBe(byLines[1]!.id);
   });
 
-  test('download reuses cached artifacts for same session revision and invalidates on edit', async () => {
+  test('save reuses cached artifacts for same session revision and invalidates on edit', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
     const inputPath = SIMPLE_WORD_CHANGE_FIXTURE;
@@ -508,21 +508,21 @@ describe('Parity regression', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const dl1 = await download(mgr, {
+    const dl1 = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath1,
       tracked_changes_engine: 'atomizer',
     });
-    assertSuccess(dl1, 'download1');
+    assertSuccess(dl1, 'save1');
     expect(dl1.cache_hit).toBe(false);
     expect(dl1.edit_revision).toBe(1);
 
-    const dl2 = await download(mgr, {
+    const dl2 = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath2,
       tracked_changes_engine: 'atomizer',
     });
-    assertSuccess(dl2, 'download2');
+    assertSuccess(dl2, 'save2');
     expect(dl2.cache_hit).toBe(true);
     expect(dl2.edit_revision).toBe(1);
     expect(dl2.exported_at_utc).toBe(dl1.exported_at_utc);
@@ -536,12 +536,12 @@ describe('Parity regression', () => {
     });
     assertSuccess(edited2, 'edit2');
 
-    const dl3 = await download(mgr, {
+    const dl3 = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: cleanPath3,
       tracked_changes_engine: 'atomizer',
     });
-    assertSuccess(dl3, 'download3');
+    assertSuccess(dl3, 'save3');
     expect(dl3.cache_hit).toBe(false);
     expect(dl3.edit_revision).toBe(2);
   });
@@ -611,13 +611,13 @@ describe('Parity regression', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
       clean_bookmarks: true,
-      download_format: 'clean',
+      save_format: 'clean',
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { runs, runText, hasHighlight } = await parseOutputXml(outPath);
 
@@ -660,13 +660,13 @@ describe('Parity regression', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
       clean_bookmarks: true,
-      download_format: 'clean',
+      save_format: 'clean',
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { runs, runText, hasBold, hasItalic, hasUnderline } = await parseOutputXml(outPath);
 
@@ -725,13 +725,13 @@ describe('Parity regression', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       session_id: sessionId,
       save_to_local_path: outPath,
       clean_bookmarks: true,
-      download_format: 'clean',
+      save_format: 'clean',
     });
-    assertSuccess(saved, 'download');
+    assertSuccess(saved, 'save');
 
     const { runs, runText, hasHighlight } = await parseOutputXml(outPath);
 

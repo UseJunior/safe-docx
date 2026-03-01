@@ -8,10 +8,9 @@ import { readFile } from './read_file.js';
 import { grep } from './grep.js';
 import { replaceText } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
-import { download } from './download.js';
+import { save } from './save.js';
 import { getSessionStatus } from './get_session_status.js';
 import { clearSession } from './clear_session.js';
-import { duplicateDocument } from './duplicate_document.js';
 import { firstParaIdFromToon, makeMinimalDocx } from '../testing/docx_test_utils.js';
 import { testAllure } from '../testing/allure-test.js';
 import { assertSuccess, assertFailure, registerCleanup, createTrackedTempDir, createTestSessionManager } from '../testing/session-test-utils.js';
@@ -69,10 +68,10 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     });
     expect(inserted.success).toBe(true);
 
-    const saved = await download(mgr, {
+    const saved = await save(mgr, {
       file_path: inputPath,
       save_to_local_path: outputPath,
-      download_format: 'clean',
+      save_format: 'clean',
     });
     expect(saved.success).toBe(true);
 
@@ -202,65 +201,6 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     assertFailure(clearAttempt, 'CONFIRMATION_REQUIRED', 'confirmation');
   });
 
-  humanReadableTest.openspec('duplicate document creates independent session')('Scenario: duplicate document creates independent session', async () => {
-    const mgr = createTestSessionManager();
-    const sourcePath = await createDoc(['Source text']);
-    const destinationPath = path.join(path.dirname(sourcePath), 'copy.docx');
-
-    const dup = await duplicateDocument(mgr, {
-      source_file_path: sourcePath,
-      destination_file_path: destinationPath,
-    });
-    assertSuccess(dup, 'duplicate');
-
-    const readDup = await readFile(mgr, {
-      session_id: String(dup.session_id),
-      format: 'simple',
-    });
-    assertSuccess(readDup, 'read duplicate');
-    const paraId = firstParaIdFromToon(String(readDup.content));
-
-    const edited = await replaceText(mgr, {
-      session_id: String(dup.session_id),
-      target_paragraph_id: paraId,
-      old_string: 'Source',
-      new_string: 'Duplicate',
-      instruction: 'independent duplicate session edit',
-    });
-    expect(edited.success).toBe(true);
-
-    const sourceOpen = await openDocument(mgr, { file_path: sourcePath });
-    assertSuccess(sourceOpen, 'source open');
-    const sourceRead = await readFile(mgr, {
-      session_id: String(sourceOpen.session_id),
-      format: 'simple',
-    });
-    assertSuccess(sourceRead, 'source read');
-    expect(String(sourceRead.content)).toContain('Source text');
-    expect(String(sourceRead.content)).not.toContain('Duplicate text');
-  });
-
-  humanReadableTest.openspec('duplicate uses timestamped destination when path is omitted')('Scenario: duplicate uses timestamped destination when path is omitted', async () => {
-    const mgr = createTestSessionManager();
-    const sourcePath = await createDoc(['Timestamped copy']);
-    const dup = await duplicateDocument(mgr, { source_file_path: sourcePath });
-    assertSuccess(dup, 'duplicate');
-    const destinationPath = String(dup.destination_file_path);
-    expect(destinationPath).toMatch(/\.copy\.\d{8}T\d{6}Z\.docx$/);
-  });
-
-  humanReadableTest.openspec('duplicate respects overwrite safety')('Scenario: duplicate respects overwrite safety', async () => {
-    const mgr = createTestSessionManager();
-    const sourcePath = await createDoc(['Overwrite source']);
-    const destinationPath = await createDoc(['Existing destination'], 'existing.docx');
-
-    const dup = await duplicateDocument(mgr, {
-      source_file_path: sourcePath,
-      destination_file_path: destinationPath,
-      overwrite: false,
-    });
-    assertFailure(dup, 'OVERWRITE_BLOCKED', 'overwrite block');
-  });
 
   humanReadableTest.openspec('open_document remains callable with deprecation warning')('Scenario: open_document remains callable with deprecation warning', async () => {
     const mgr = createTestSessionManager();

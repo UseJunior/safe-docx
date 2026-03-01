@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { openDocument } from './open_document.js';
-import { download } from './download.js';
+import { save } from './save.js';
 import { createTestSessionManager, createTrackedTempDir, registerCleanup } from '../testing/session-test-utils.js';
 import { makeMinimalDocx } from '../testing/docx_test_utils.js';
 
@@ -33,10 +33,10 @@ describe.sequential('path policy: symlink and root bounds', () => {
       expect(allowedOpen.success).toBe(true);
       if (!allowedOpen.success) return;
 
-      const disallowedWrite = await download(mgr, {
+      const disallowedWrite = await save(mgr, {
         session_id: String(allowedOpen.session_id),
         save_to_local_path: path.join(outsideRoot, 'should-block.docx'),
-        download_format: 'clean',
+        save_format: 'clean',
         clean_bookmarks: true,
       });
       expect(disallowedWrite.success).toBe(false);

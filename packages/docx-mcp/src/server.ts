@@ -11,11 +11,10 @@ import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
 import { mergePlans } from './tools/merge_plans.js';
 import { applyPlan } from './tools/apply_plan.js';
-import { download } from './tools/download.js';
+import { save } from './tools/save.js';
 import { getSessionStatus } from './tools/get_session_status.js';
 import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
 import { clearSession } from './tools/clear_session.js';
-import { duplicateDocument } from './tools/duplicate_document.js';
 import { formatLayout } from './tools/format_layout.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { addComment } from './tools/add_comment.js';
@@ -52,8 +51,8 @@ export async function dispatchToolCall(
       return await replaceText(sessions, args as Parameters<typeof replaceText>[1]);
     case 'insert_paragraph':
       return await insertParagraph(sessions, args as Parameters<typeof insertParagraph>[1]);
-    case 'download':
-      return await download(sessions, args as Parameters<typeof download>[1]);
+    case 'save':
+      return await save(sessions, args as Parameters<typeof save>[1]);
     case 'format_layout':
       return await formatLayout(sessions, args as Parameters<typeof formatLayout>[1]);
     case 'accept_changes':
@@ -64,8 +63,6 @@ export async function dispatchToolCall(
       return await getSessionStatus(sessions, args as Parameters<typeof getSessionStatus>[1]);
     case 'clear_session':
       return await clearSession(sessions, args as Parameters<typeof clearSession>[1]);
-    case 'duplicate_document':
-      return await duplicateDocument(sessions, args as Parameters<typeof duplicateDocument>[1]);
     case 'add_comment':
       return await addComment(sessions, args as Parameters<typeof addComment>[1]);
     case 'get_comments':
@@ -90,7 +87,7 @@ export async function dispatchToolCall(
         error: {
           code: 'UNKNOWN_TOOL',
           message: `Unknown tool: ${name}`,
-          hint: 'Use file-first tools: read_file, grep, replace_text, insert_paragraph, download, get_session_status.',
+          hint: 'Use file-first tools: read_file, grep, replace_text, insert_paragraph, save, get_session_status.',
         },
       };
   }

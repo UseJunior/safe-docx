@@ -124,14 +124,14 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
-    name: 'download',
+    name: 'save',
     description:
-      'Save clean and/or tracked changes output back to the user filesystem. Defaults to both clean and tracked outputs when no format override is provided. Accepts session_id or file_path.',
+      'Save clean and/or tracked changes output back to the local filesystem. Defaults to both clean and tracked outputs when no format override is provided. Accepts session_id or file_path.',
     input: z.object({
       ...SESSION_OR_FILE_FIELDS,
       save_to_local_path: z.string(),
       clean_bookmarks: z.boolean().optional(),
-      download_format: z.enum(['clean', 'tracked', 'both']).optional(),
+      save_format: z.enum(['clean', 'tracked', 'both']).optional(),
       allow_overwrite: z.boolean().optional(),
       tracked_save_to_local_path: z.string().optional(),
       tracked_changes_author: z.string().optional(),
@@ -214,16 +214,6 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       file_path: z.string().optional(),
       clear_all: z.boolean().optional(),
       confirm: z.boolean().optional(),
-    }),
-    annotations: { readOnlyHint: false, destructiveHint: true },
-  },
-  {
-    name: 'duplicate_document',
-    description: 'Duplicate a source .docx and auto-open a fresh editing session for the duplicate.',
-    input: z.object({
-      source_file_path: z.string(),
-      destination_file_path: z.string().optional(),
-      overwrite: z.boolean().optional(),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },

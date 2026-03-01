@@ -19,7 +19,7 @@ import { openDocument } from './open_document.js';
 import { readFile } from './read_file.js';
 import { grep } from './grep.js';
 import { replaceText } from './replace_text.js';
-import { download } from './download.js';
+import { save } from './save.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -155,10 +155,10 @@ describe('Open Agreements E2E: Mutual NDA', () => {
     // Download both without any edits
     const cleanPath = path.join(tmpDir, 'nda-nochange-clean.docx');
     const trackedPath = path.join(tmpDir, 'nda-nochange-tracked.docx');
-    const dlRes = await download(mgr, {
+    const dlRes = await save(mgr, {
       session_id: sid,
       save_to_local_path: cleanPath,
-      download_format: 'both',
+      save_format: 'both',
       tracked_save_to_local_path: trackedPath,
       tracked_changes_author: 'E2E Test',
       fail_on_rebuild_fallback: true,
@@ -235,10 +235,10 @@ describe('Open Agreements E2E: Mutual NDA', () => {
     // Download both
     const cleanPath = path.join(tmpDir, 'nda-edited-clean.docx');
     const trackedPath = path.join(tmpDir, 'nda-edited-tracked.docx');
-    const dlRes = await download(mgr, {
+    const dlRes = await save(mgr, {
       session_id: sid,
       save_to_local_path: cleanPath,
-      download_format: 'both',
+      save_format: 'both',
       tracked_save_to_local_path: trackedPath,
       tracked_changes_author: 'E2E Test',
       fail_on_rebuild_fallback: true,
@@ -302,10 +302,10 @@ describe('Open Agreements E2E: Letter of Intent', () => {
     // Download both without any edits
     const cleanPath = path.join(tmpDir, 'loi-nochange-clean.docx');
     const trackedPath = path.join(tmpDir, 'loi-nochange-tracked.docx');
-    const dlRes = await download(mgr, {
+    const dlRes = await save(mgr, {
       session_id: sid,
       save_to_local_path: cleanPath,
-      download_format: 'both',
+      save_format: 'both',
       tracked_save_to_local_path: trackedPath,
       tracked_changes_author: 'E2E Test',
       fail_on_rebuild_fallback: true,
@@ -374,10 +374,10 @@ describe('Open Agreements E2E: Letter of Intent', () => {
     // Download both
     const cleanPath = path.join(tmpDir, 'loi-edited-clean.docx');
     const trackedPath = path.join(tmpDir, 'loi-edited-tracked.docx');
-    const dlRes = await download(mgr, {
+    const dlRes = await save(mgr, {
       session_id: sid,
       save_to_local_path: cleanPath,
-      download_format: 'both',
+      save_format: 'both',
       tracked_save_to_local_path: trackedPath,
       tracked_changes_author: 'E2E Test',
       fail_on_rebuild_fallback: true,
@@ -434,10 +434,10 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
 
       const cleanPath = path.join(tmpDir, `${fixture}.edited.clean.docx`);
       const trackedPath = path.join(tmpDir, `${fixture}.edited.tracked.docx`);
-      const dlRes = await download(mgr, {
+      const dlRes = await save(mgr, {
         session_id: sid,
         save_to_local_path: cleanPath,
-        download_format: 'both',
+        save_format: 'both',
         tracked_save_to_local_path: trackedPath,
         tracked_changes_author: 'E2E Test',
         fail_on_rebuild_fallback: true,

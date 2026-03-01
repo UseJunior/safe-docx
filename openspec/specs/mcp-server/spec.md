@@ -35,16 +35,16 @@ The identifier strategy SHALL NOT use absolute sequential indexes as anchor iden
 
 ### Requirement: Dual-Variant Download by Default
 
-The `download` tool SHALL return both `clean` and `redline` outputs by default when no variant override is provided.
+The `save` tool SHALL return both `clean` and `redline` outputs by default when no variant override is provided.
 
 #### Scenario: Default download returns both variants
 - **GIVEN** a session with applied edits
-- **WHEN** `download` is called without variant override
+- **WHEN** `save` is called without variant override
 - **THEN** the response includes both `clean` and `redline` artifacts
 
 #### Scenario: Explicit variant override returns subset
 - **GIVEN** a session with applied edits
-- **WHEN** `download` is called with an explicit variant override for only `clean`
+- **WHEN** `save` is called with an explicit variant override for only `clean`
 - **THEN** only the clean artifact is returned
 - **AND** no redline artifact is generated for that request
 
@@ -54,7 +54,7 @@ The MCP server SHALL allow users to re-download previously generated artifacts b
 
 #### Scenario: Repeat download reuses cached artifacts
 - **GIVEN** a session and edit revision with previously generated `clean` and `redline` outputs
-- **WHEN** `download` is called again for the same session and revision
+- **WHEN** `save` is called again for the same session and revision
 - **THEN** the server returns cached artifacts
 - **AND** the response indicates a cache hit
 - **AND** no edit replay is performed
@@ -67,11 +67,11 @@ The MCP server SHALL allow users to re-download previously generated artifacts b
 
 ### Requirement: Download Operations Preserve Anchor Stability
 
-Artifact generation for `download` SHALL NOT mutate the active session's paragraph anchor mapping.
+Artifact generation for `save` SHALL NOT mutate the active session's paragraph anchor mapping.
 
 #### Scenario: Anchors unchanged after dual download
 - **GIVEN** a session with known paragraph IDs
-- **WHEN** `download` is called with default dual-variant behavior
+- **WHEN** `save` is called with default dual-variant behavior
 - **THEN** a subsequent `read_file` call returns the same paragraph IDs for unchanged paragraphs
 
 #### Scenario: Generating clean artifact does not invalidate redline anchors
@@ -86,11 +86,11 @@ The MCP server SHALL expose download defaults and re-download behavior in tool m
 #### Scenario: Open response advertises download defaults
 - **GIVEN** a successful `open_document` call
 - **WHEN** tool metadata is returned
-- **THEN** metadata states that default `download` behavior returns both `clean` and `redline`
+- **THEN** metadata states that default `save` behavior returns both `clean` and `redline`
 - **AND** metadata describes override support
 
 #### Scenario: Download response reports variant and cache details
-- **GIVEN** any `download` invocation
+- **GIVEN** any `save` invocation
 - **WHEN** the response is returned
 - **THEN** it includes returned variant list
 - **AND** includes cache hit/miss status
@@ -100,7 +100,7 @@ The MCP server SHALL expose download defaults and re-download behavior in tool m
 The Safe-Docx MCP server SHALL support file-first entry for document tools while preserving explicit session semantics.
 
 #### Scenario: document tools accept file-first entry without pre-open
-- **WHEN** any document tool (`read_file`, `grep`, `replace_text`, `insert_paragraph`, `download`, `get_session_status`) is called with `file_path` and without `session_id`
+- **WHEN** any document tool (`read_file`, `grep`, `replace_text`, `insert_paragraph`, `save`, `get_session_status`) is called with `file_path` and without `session_id`
 - **THEN** the server SHALL resolve a session for that file (reusing an active one or creating a new one)
 - **AND** return `resolved_session_id` and `resolved_file_path` in response metadata
 
@@ -144,25 +144,6 @@ The Safe-Docx MCP server SHALL provide explicit tools to clear session state wit
 - **WHEN** `clear_session` is called with `clear_all=true`
 - **THEN** the server SHALL require explicit confirmation input
 - **AND** reject the call if confirmation is missing
-
-### Requirement: Document Duplication and Forked Session
-The Safe-Docx MCP server SHALL support cloning a source `.docx` and opening a fresh editing session for the clone.
-
-#### Scenario: duplicate document creates independent session
-- **WHEN** `duplicate_document` is called with a valid source path and destination path
-- **THEN** the server SHALL copy the source document to destination
-- **AND** SHALL create and return a new editing `session_id` bound to the destination file
-- **AND** edits in the new session SHALL NOT mutate the source document
-
-#### Scenario: duplicate uses timestamped destination when path is omitted
-- **WHEN** `duplicate_document` is called without `destination_file_path`
-- **THEN** the server SHALL create a destination path with a timestamped suffix in the same directory
-- **AND** SHALL return that resolved destination path in the response
-
-#### Scenario: duplicate respects overwrite safety
-- **WHEN** `duplicate_document` is called with an existing destination path and overwrite disabled
-- **THEN** the server SHALL reject the request with an overwrite-protection error
-- **AND** provide remediation guidance
 
 ### Requirement: Deprecated Explicit Open Step
 The Safe-Docx MCP server SHALL deprecate `open_document` as the primary entrypoint in favor of file-first tool calls.
@@ -514,7 +495,7 @@ The Safe-Docx MCP server SHALL apply run consolidation and redline simplificatio
 The Safe-Docx MCP server SHALL apply document validation as an internal primitive during download, and auto-repair as an internal primitive during normalize-on-open.
 
 #### Scenario: validate packed or unpacked DOCX inputs
-- **WHEN** a document is downloaded via the `download` tool
+- **WHEN** a document is downloaded via the `save` tool
 - **THEN** the server SHALL validate the document before output
 - **AND** SHALL return structured pass/fail diagnostics on validation failure
 
@@ -665,5 +646,5 @@ The MCP-exposed tool surface SHALL rely on file-first session entry and SHALL NO
 #### Scenario: open_document call is rejected as unsupported
 - **WHEN** a client attempts to call `open_document` via MCP
 - **THEN** the server returns an unknown/unsupported tool error
-- **AND** error guidance directs callers to file-first tool calls (`read_file`, `grep`, `replace_text`, `insert_paragraph`, `download`, `get_session_status`)
+- **AND** error guidance directs callers to file-first tool calls (`read_file`, `grep`, `replace_text`, `insert_paragraph`, `save`, `get_session_status`)
 

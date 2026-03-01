@@ -11,7 +11,7 @@ import {
   type ReconstructionFallbackDiagnostics,
 } from '@usejunior/docx-core';
 
-export type DownloadFormat = 'clean' | 'tracked' | 'both';
+export type SaveFormat = 'clean' | 'tracked' | 'both';
 
 export type TrackedChangesStats = {
   insertions: number;
@@ -19,10 +19,10 @@ export type TrackedChangesStats = {
   modifications: number;
 };
 
-export type DownloadCacheEntry = {
+export type SaveCacheEntry = {
   cacheKey: string;
   revision: number;
-  format: DownloadFormat;
+  format: SaveFormat;
   cleanBookmarks: boolean;
   trackedEngine: 'auto' | 'atomizer' | 'diffmatch';
   trackedAuthor: string;
@@ -62,7 +62,7 @@ export type Session = {
   doc: DocxDocument;
   editCount: number;
   editRevision: number;
-  downloadCache: Map<string, DownloadCacheEntry>;
+  saveCache: Map<string, SaveCacheEntry>;
   extractionCache: ExtractionCacheEntry | null;
   createdAt: Date;
   lastAccessedAt: Date;
@@ -121,7 +121,7 @@ export class SessionManager {
       doc,
       editCount: 0,
       editRevision: 0,
-      downloadCache: new Map<string, DownloadCacheEntry>(),
+      saveCache: new Map<string, SaveCacheEntry>(),
       extractionCache: null,
       createdAt: now,
       lastAccessedAt: now,
@@ -206,16 +206,16 @@ export class SessionManager {
     session.editRevision += 1;
     // Any edit creates a new canonical revision; previously generated artifacts
     // are no longer current and should not be reused by default.
-    session.downloadCache.clear();
+    session.saveCache.clear();
     session.extractionCache = null;
   }
 
-  getDownloadCache(session: Session, cacheKey: string): DownloadCacheEntry | null {
-    return session.downloadCache.get(cacheKey) ?? null;
+  getSaveCache(session: Session, cacheKey: string): SaveCacheEntry | null {
+    return session.saveCache.get(cacheKey) ?? null;
   }
 
-  setDownloadCache(session: Session, entry: DownloadCacheEntry): void {
-    session.downloadCache.set(entry.cacheKey, entry);
+  setSaveCache(session: Session, entry: SaveCacheEntry): void {
+    session.saveCache.set(entry.cacheKey, entry);
   }
 
   getExtractionCache(session: Session): ExtractionCacheEntry | null {
