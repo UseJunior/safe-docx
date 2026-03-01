@@ -348,7 +348,7 @@ jobs:
       - name: Check for changes
         id: diff
         run: |
-          if git diff --quiet -- site/src/_data/changelog.json; then
+          if git diff --quiet -- site/src/_raw/changelog.json; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -364,7 +364,7 @@ jobs:
 
           # Create or reset branch
           git checkout -B "$BRANCH"
-          git add site/src/_data/changelog.json
+          git add site/src/_raw/changelog.json
           git commit -m "$(cat <<'EOF'
           chore(site): update changelog data for ${{ env.RELEASE_TAG }}
 

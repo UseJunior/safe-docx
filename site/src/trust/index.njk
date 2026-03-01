@@ -34,7 +34,7 @@ title: Trust | Safe DOCX
     <p>
       {% if changelog.hasReleases %}
         Latest: <strong>{{ changelog.releases[0].tag }}</strong>
-        ({{ changelog.releases[0].published_display }})
+        {% if changelog.releases[0].published_display %}({{ changelog.releases[0].published_display }}){% endif %}
       {% else %}
         Release history auto-generated from GitHub Releases.
       {% endif %}

@@ -45,7 +45,7 @@ export default [
   },
   {
     label: 'File Operations',
-    description: 'Download, duplicate, or clear the current session.',
-    tools: ['download', 'duplicate_document', 'clear_session'],
+    description: 'Save or clear the current session.',
+    tools: ['save', 'clear_session'],
   },
 ];

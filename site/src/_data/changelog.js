@@ -22,10 +22,11 @@ function formatDate(isoString) {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    timeZone: 'UTC',
   });
 }
 
-const changelogPath = resolve(__dirname, 'changelog.json');
+const changelogPath = resolve(__dirname, '..', '_raw', 'changelog.json');
 const data = loadJson(changelogPath);
 
 const releases = (data?.releases ?? []).map((r) => ({
