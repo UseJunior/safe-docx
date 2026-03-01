@@ -46,8 +46,8 @@ describe('replace_text branch coverage', () => {
       { newString: '<header>bad', expected: 'UNBALANCED_HEADER_TAGS' },
       { newString: '</RunInHeader>bad', expected: 'UNBALANCED_HEADER_TAGS' },
       { newString: '<RunInHeader>bad', expected: 'UNBALANCED_HEADER_TAGS' },
-      { newString: '</highlighting>bad', expected: 'UNBALANCED_HIGHLIGHT_TAGS' },
-      { newString: '<highlighting>bad', expected: 'UNBALANCED_HIGHLIGHT_TAGS' },
+      { newString: '</highlight>bad', expected: 'UNBALANCED_HIGHLIGHT_TAGS' },
+      { newString: '<highlight>bad', expected: 'UNBALANCED_HIGHLIGHT_TAGS' },
       { newString: '</b>bad', expected: 'UNBALANCED_BOLD_TAGS' },
       { newString: '<b>bad', expected: 'UNBALANCED_BOLD_TAGS' },
       { newString: '</i>bad', expected: 'UNBALANCED_ITALIC_TAGS' },
@@ -64,8 +64,7 @@ describe('replace_text branch coverage', () => {
         new_string: tc.newString,
         instruction: tc.expected,
       });
-      assertFailure(result, 'EDIT_ERROR', tc.newString);
-      expect(result.error.message).toContain(tc.expected);
+      assertFailure(result, tc.expected, tc.newString);
     }
   });
 
@@ -149,7 +148,7 @@ describe('replace_text branch coverage', () => {
       target_paragraph_id: paraId,
       old_string: '[CLIENT]',
       new_string: 'Acme Corp',
-      instruction: 'clear placeholder highlighting',
+      instruction: 'clear placeholder highlight',
     });
     assertSuccess(edited, 'replace highlighted placeholder');
 
@@ -167,41 +166,39 @@ describe('replace_text branch coverage', () => {
     expect(acmeRuns.some((r) => runHasHighlight(r))).toBe(false);
   });
 
-  test('uses definition role-model formatting for explicit quoted term spans in plain replacements', async () => {
-    const xml = makeDocXml(
-      `<w:p>` +
-        `<w:r><w:rPr><w:b/></w:rPr><w:t>"Company"</w:t></w:r>` +
-        `<w:r><w:t> means the legal entity.</w:t></w:r>` +
-      `</w:p>` +
-      `<w:p><w:r><w:t>Term placeholder</w:t></w:r></w:p>`,
-    );
-    const opened = await openSession([], { xml });
-    const targetId = opened.paraIds[1]!;
+  test('applies <font> tags with color, size, and face in replacement text', async () => {
+    const opened = await openSession(['replace target text']);
+    const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
       session_id: opened.sessionId,
-      target_paragraph_id: targetId,
-      old_string: 'Term placeholder',
-      new_string: 'The term "Service" means the services set out below.',
-      instruction: 'explicit definition span branch',
+      target_paragraph_id: paraId,
+      old_string: 'replace target text',
+      new_string: '<font color="FF0000" size="14" face="Arial">styled text</font>',
+      instruction: 'font tag branch',
     });
-    assertSuccess(edited, 'replace with explicit definition span');
+    assertSuccess(edited, 'replace with font tags');
 
     const session = opened.mgr.getSession(opened.sessionId);
-    const pEl = session.doc.getParagraphElementById(targetId);
+    const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
-    const serviceRun = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'r')).find((r) => {
+    const runs = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'r'));
+    const styledRun = runs.find((r) => {
       const text = Array.from(r.getElementsByTagNameNS(W_NS, 't'))
         .map((t) => t.textContent ?? '')
         .join('');
-      return text.includes('Service');
+      return text.includes('styled text');
     });
-    expect(serviceRun).toBeTruthy();
-    const hasBold = !!serviceRun!.getElementsByTagNameNS(W_NS, 'b').item(0);
-    expect(hasBold).toBe(true);
+    expect(styledRun).toBeTruthy();
+    const rPr = styledRun!.getElementsByTagNameNS(W_NS, 'rPr').item(0);
+    expect(rPr).toBeTruthy();
+    expect(rPr!.getElementsByTagNameNS(W_NS, 'color').item(0)?.getAttribute('w:val')).toBe('FF0000');
+    expect(rPr!.getElementsByTagNameNS(W_NS, 'sz').item(0)?.getAttribute('w:val')).toBe('28');
+    const rFonts = rPr!.getElementsByTagNameNS(W_NS, 'rFonts').item(0);
+    expect(rFonts?.getAttribute('w:ascii')).toBe('Arial');
   });
 
-  test('applies balanced markup replacement path with header/highlighting tags', async () => {
+  test('applies balanced markup replacement path with header/highlight tags', async () => {
     const opened = await openSession(['replace me']);
     const paraId = firstParaIdFromToon(opened.content);
 
@@ -209,7 +206,7 @@ describe('replace_text branch coverage', () => {
       session_id: opened.sessionId,
       target_paragraph_id: paraId,
       old_string: 'replace me',
-      new_string: '<header><u>Heading:</u></header> body <highlighting>text</highlighting>',
+      new_string: '<header><u>Heading:</u></header> body <highlight>text</highlight>',
       instruction: 'hasMarkup branch',
     });
     assertSuccess(edited, 'replace with markup');
@@ -224,7 +221,7 @@ describe('replace_text branch coverage', () => {
   });
 
   test('normalizes semantic/formatting/hyperlink tags in old/new strings before replacing in default mode', async () => {
-    const opened = await openSession(['"Original target"']);
+    const opened = await openSession(['Original target']);
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
@@ -232,9 +229,9 @@ describe('replace_text branch coverage', () => {
       target_paragraph_id: paraId,
       old_string:
         '<a href="https://example.test">' +
-        '<highlighting><b><i><u><definition>Original target</definition></u></i></b></highlighting>' +
+        '<highlight><b><i><u>Original target</u></i></b></highlight>' +
         '</a>',
-      new_string: '<a href="https://example.test"><definition>Replaced target</definition></a>',
+      new_string: '<a href="https://example.test">Replaced target</a>',
       instruction: 'strip semantic and hyperlink tags before replace',
     });
     assertSuccess(edited, 'replace after old/new normalization');
@@ -245,70 +242,8 @@ describe('replace_text branch coverage', () => {
       format: 'simple',
     });
     assertSuccess(read, 'read normalized replacement');
-    expect(String(read.content)).toContain('"Replaced target"');
+    expect(String(read.content)).toContain('Replaced target');
     expect(String(read.content)).not.toContain('<a ');
-  });
-
-  test('accepts true/yes/on env values for legacy definition-tag mode', async () => {
-    const previous = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-
-    try {
-      for (const truthy of ['true', 'yes', 'on'] as const) {
-        process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = truthy;
-
-        const opened = await openSession(['Placeholder text']);
-        const paraId = firstParaIdFromToon(opened.content);
-
-        const edited = await replaceText(opened.mgr, {
-          session_id: opened.sessionId,
-          target_paragraph_id: paraId,
-          old_string: 'Placeholder text',
-          new_string: '<definition>Company</definition> means the legal entity.',
-          instruction: `legacy truthy mode: ${truthy}`,
-        });
-        assertSuccess(edited, `replace in legacy truthy mode: ${truthy}`);
-
-        const read = await readFile(opened.mgr, {
-          session_id: opened.sessionId,
-          node_ids: [paraId],
-          format: 'simple',
-        });
-        assertSuccess(read, `read legacy truthy mode: ${truthy}`);
-        expect(String(read.content)).toContain('"Company" means the legal entity.');
-      }
-    } finally {
-      if (typeof previous === 'undefined') {
-        delete process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-      } else {
-        process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = previous;
-      }
-    }
-  });
-
-  test('legacy definition mode surfaces definition tag parse errors', async () => {
-    const previous = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-    process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = '1';
-
-    try {
-      const opened = await openSession(['replace target text']);
-      const paraId = firstParaIdFromToon(opened.content);
-
-      const malformed = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
-        target_paragraph_id: paraId,
-        old_string: 'replace target text',
-        new_string: '<definition>unterminated',
-        instruction: 'legacy definition parser error',
-      });
-      assertFailure(malformed, 'EDIT_ERROR', 'legacy malformed definition');
-      expect(malformed.error.message).toContain('UNBALANCED_DEFINITION_TAGS');
-    } finally {
-      if (typeof previous === 'undefined') {
-        delete process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-      } else {
-        process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = previous;
-      }
-    }
   });
 
   humanReadableReplaceTest

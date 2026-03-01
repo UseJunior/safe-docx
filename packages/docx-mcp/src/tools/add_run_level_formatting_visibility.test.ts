@@ -99,7 +99,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
       expect(content).toContain('<b>Bold</b>');
       expect(content).toContain('<i>Italic</i>');
       expect(content).toContain('<u>Underline</u>');
-      expect(content).toContain('<highlighting>Marked</highlighting>');
+      expect(content).toContain('<highlight>Marked</highlight>');
       expect(content).toContain('<a href="https://example.com/portal">Portal</a>');
     },
   );
@@ -123,7 +123,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
       expect(content).not.toContain('<b>');
       expect(content).not.toContain('<i>');
       expect(content).not.toContain('<u>');
-      expect(content).not.toContain('<highlighting>');
+      expect(content).not.toContain('<highlight>');
       expect(content).not.toContain('<a href=');
       expect(content).toContain('Body text Bold and Italic and Underline and Marked and Portal');
     },
@@ -144,7 +144,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
         session_id: sessionId,
         target_paragraph_id: firstParaId,
         old_string: '[X]',
-        new_string: '<b>Bold</b> <i>Italic</i> <u>Underline</u> <highlighting>Marked</highlighting>',
+        new_string: '<b>Bold</b> <i>Italic</i> <u>Underline</u> <highlight>Marked</highlight>',
         instruction: 'Validate writable formatting tags in new_string',
       });
       assertSuccess(edited, 'replace_text');

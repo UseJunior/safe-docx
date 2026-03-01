@@ -18,6 +18,7 @@ import {
   getLeafText, childElements, findChildByTagName, insertAfterElement,
   wrapElement, splitRunAtVisibleOffset, visibleLengthForEl, getDirectContentElements,
 } from '../../primitives/index.js';
+import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { warn } from './debug.js';
 
@@ -492,11 +493,12 @@ function cloneUnemittedSourceBookmarkMarkers(
   return clones;
 }
 
-function prependMarkersToWrapper(wrapper: Element, markers: Element[]): void {
-  for (let i = markers.length - 1; i >= 0; i--) {
-    const marker = markers[i];
+function insertMarkersBeforeWrapper(wrapper: Element, markers: Element[]): void {
+  const parent = wrapper.parentNode;
+  if (!parent) return;
+  for (const marker of markers) {
     if (!marker) continue;
-    wrapper.insertBefore(marker, wrapper.firstChild);
+    parent.insertBefore(marker, wrapper);
   }
 }
 
@@ -670,8 +672,16 @@ function addParagraphMarkRevisionMarker(
   let rPr = findChildByTagName(pPr, 'w:rPr');
   if (!rPr) {
     rPr = createEl('w:rPr');
-    // Keep existing pPr children order stable; rPr commonly appears after spacing/jc.
-    pPr.appendChild(rPr);
+    // CT_PPr ordering: ... base props ..., w:rPr, w:sectPr?, w:pPrChange?
+    // Insert rPr in schema-correct position (before sectPr/pPrChange).
+    const sectPr = findChildByTagName(pPr, 'w:sectPr');
+    const pPrChange = findChildByTagName(pPr, 'w:pPrChange');
+    const insertBefore = sectPr ?? pPrChange ?? null;
+    if (insertBefore) {
+      pPr.insertBefore(rPr, insertBefore);
+    } else {
+      pPr.appendChild(rPr);
+    }
   }
 
   // Avoid duplicating markers.
@@ -797,7 +807,7 @@ export function insertDeletedRun(
   }
 
   const sourceMarkers = cloneUnemittedSourceBookmarkMarkers(sourceRun, targetParagraph, state, context);
-  if (sourceMarkers.length > 0) prependMarkersToWrapper(del, sourceMarkers);
+  if (sourceMarkers.length > 0) insertMarkersBeforeWrapper(del, sourceMarkers);
 
   return del;
 }
@@ -889,7 +899,7 @@ export function insertMoveFromRun(
   }
 
   const sourceMarkers = cloneUnemittedSourceBookmarkMarkers(sourceRun, targetParagraph, state, context);
-  if (sourceMarkers.length > 0) prependMarkersToWrapper(moveFrom, sourceMarkers);
+  if (sourceMarkers.length > 0) insertMarkersBeforeWrapper(moveFrom, sourceMarkers);
 
   return moveFrom;
 }
@@ -1110,16 +1120,64 @@ export function addFormatChange(
     'w:date': dateStr,
   });
 
-  // Clone old properties as children of rPrChange
+  // Clone old properties into a w:rPr wrapper inside rPrChange (OOXML spec requires
+  // rPrChange to contain a single w:rPr child holding the previous formatting).
   if (oldRunProperties) {
+    const oldRPr = createEl('w:rPr');
     for (const child of childElements(oldRunProperties)) {
       const cloned = child.cloneNode(true) as Element;
-      rPrChange.appendChild(cloned);
+      oldRPr.appendChild(cloned);
     }
+    rPrChange.appendChild(oldRPr);
   }
 
   // Add rPrChange to rPr
   rPr.appendChild(rPrChange);
+}
+
+/**
+ * Add a paragraph property change element (w:pPrChange) to record the "before"
+ * state of paragraph properties.  This is needed for Google Docs to display
+ * inserted paragraphs as tracked changes.
+ *
+ * The child `<w:pPr>` inside `w:pPrChange` must conform to CT_PPrBase — it
+ * MUST NOT contain w:rPr, w:sectPr, or w:pPrChange.
+ *
+ * @param paragraph - The w:p element
+ * @param author - Author name
+ * @param dateStr - Formatted date
+ * @param state - Revision ID state
+ */
+export function addParagraphPropertyChange(
+  paragraph: Element,
+  author: string,
+  dateStr: string,
+  state: RevisionIdState
+): void {
+  let pPr = findChildByTagName(paragraph, 'w:pPr');
+  if (!pPr) {
+    pPr = createEl('w:pPr');
+    paragraph.insertBefore(pPr, paragraph.firstChild);
+  }
+  // Idempotent — don't add a second pPrChange.
+  if (findChildByTagName(pPr, 'w:pPrChange')) return;
+
+  const id = allocateRevisionId(state);
+  const pPrChange = createEl('w:pPrChange', {
+    'w:id': String(id),
+    'w:author': author,
+    'w:date': dateStr,
+  });
+
+  // Clone current pPr content as "before" snapshot.
+  // pPrChange child pPr must be CT_PPrBase — exclude rPr, rPrChange, sectPr, pPrChange.
+  const EXCLUDED = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
+  const oldPPr = createEl('w:pPr');
+  for (const child of childElements(pPr)) {
+    if (!EXCLUDED.has(child.tagName)) oldPPr.appendChild(child.cloneNode(true) as Element);
+  }
+  pPrChange.appendChild(oldPPr);
+  pPr.appendChild(pPrChange); // pPrChange goes last in pPr per schema
 }
 
 /**
@@ -1133,15 +1191,17 @@ export function addFormatChange(
  * @param state - Revision ID state
  */
 export function wrapParagraphAsInserted(
-  paragraph: Element,
-  author: string,
-  dateStr: string,
-  state: RevisionIdState
+  _paragraph: Element,
+  _author: string,
+  _dateStr: string,
+  _state: RevisionIdState
 ): boolean {
-  // IMPORTANT: <w:ins> is not a container for <w:p> in WordprocessingML.
-  // For paragraph insertions (including empty paragraphs), we encode a paragraph-mark
-  // revision marker in w:pPr/w:rPr instead of wrapping the paragraph element.
-  addParagraphMarkRevisionMarker(paragraph, 'w:ins', author, dateStr, state);
+  // No-op: paragraph-mark w:ins markers and pPrChange inside pPr/rPr are valid
+  // OOXML but Google Docs ignores (or actively hides) w:ins-wrapped runs when
+  // they coexist with those markers.  Since the individual runs in an inserted
+  // paragraph are already wrapped with <w:ins> by the comparison engine, the
+  // paragraph-level markers are redundant and omitting them maximises
+  // cross-application compatibility.
   return true;
 }
 
@@ -1362,6 +1422,9 @@ export function modifyRevisedDocument(
   // Merge adjacent <w:ins>/<w:del> siblings to reduce revision fragmentation.
   mergeAdjacentTrackChangeSiblings(ctx.body);
 
+  // Apply strict post-render consumer compatibility pass
+  enforceConsumerCompatibility(revisedRoot, () => allocateRevisionId(state));
+
   // Serialize the modified tree
   return new XMLSerializer().serializeToString(revisedRoot.ownerDocument || revisedRoot);
 }
@@ -1402,6 +1465,12 @@ interface ProcessingContext {
    * When we encounter deleted content, we insert it AFTER this run.
    */
   lastProcessedRun: Element | null;
+  /**
+   * The most recent revised run element we've encountered.
+   * Used to prevent moving the lastProcessedRun backwards when processing
+   * multiple atoms from the same run (word-level splitting).
+   */
+  lastRevisedRunAnchor: Element | null;
   /**
    * Last processed paragraph - used to know which paragraph to insert content into.
    * Also used as insertion point for deleted paragraphs.
@@ -1452,6 +1521,8 @@ interface ProcessingContext {
 interface HandlerResult {
   /** New value for lastProcessedRun (null means no change) */
   newLastRun?: Element | null;
+  /** New value for lastRevisedRunAnchor (null means no change) */
+  newLastRevisedRunAnchor?: Element | null;
   /** New value for lastProcessedParagraph (null means no change) */
   newLastParagraph?: Element | null;
   /** New value for lastParagraphIndex */
@@ -1483,8 +1554,17 @@ function handleInserted(atom: ComparisonUnitAtom, ctx: ProcessingContext): Handl
     }
     const endRun = getAtomRunAtBoundary(atom, 'end') ?? runs[runs.length - 1]!;
     const insertionPoint = getRunInsertionAnchor(endRun);
+
+    if (insertionPoint === ctx.lastRevisedRunAnchor) {
+      return {
+        newLastParagraph: atom.sourceParagraphElement ?? ctx.lastProcessedParagraph,
+        newLastParagraphIndex: atom.paragraphIndex,
+      };
+    }
+
     return {
       newLastRun: insertionPoint,
+      newLastRevisedRunAnchor: insertionPoint,
       newLastParagraph: atom.sourceParagraphElement ?? ctx.lastProcessedParagraph,
       newLastParagraphIndex: atom.paragraphIndex,
     };
@@ -1788,8 +1868,17 @@ function handleMovedDestination(atom: ComparisonUnitAtom, ctx: ProcessingContext
     }
     const endRun = getAtomRunAtBoundary(atom, 'end') ?? runs[runs.length - 1]!;
     const insertionPoint = getRunInsertionAnchor(endRun);
+
+    if (insertionPoint === ctx.lastRevisedRunAnchor) {
+      return {
+        newLastParagraph: atom.sourceParagraphElement ?? ctx.lastProcessedParagraph,
+        newLastParagraphIndex: atom.paragraphIndex,
+      };
+    }
+
     return {
       newLastRun: insertionPoint,
+      newLastRevisedRunAnchor: insertionPoint,
       newLastParagraph: atom.sourceParagraphElement ?? ctx.lastProcessedParagraph,
       newLastParagraphIndex: atom.paragraphIndex,
     };
@@ -1805,9 +1894,19 @@ function handleFormatChanged(atom: ComparisonUnitAtom, ctx: ProcessingContext): 
   const run = getAtomRunAtBoundary(atom, 'start');
   if (run && atom.formatChange?.oldRunProperties) {
     addFormatChange(run, atom.formatChange.oldRunProperties, ctx.author, ctx.dateStr, ctx.state);
-    const insertionPoint = getRunInsertionAnchor(getAtomRunAtBoundary(atom, 'end') ?? run);
+    const endRun = getAtomRunAtBoundary(atom, 'end') ?? run;
+    const insertionPoint = getRunInsertionAnchor(endRun);
+
+    if (insertionPoint === ctx.lastRevisedRunAnchor) {
+      return {
+        newLastParagraph: atom.sourceParagraphElement ?? ctx.lastProcessedParagraph,
+        newLastParagraphIndex: atom.paragraphIndex,
+      };
+    }
+
     return {
       newLastRun: insertionPoint,
+      newLastRevisedRunAnchor: insertionPoint,
       newLastParagraph: atom.sourceParagraphElement ?? ctx.lastProcessedParagraph,
       newLastParagraphIndex: atom.paragraphIndex,
     };
@@ -1834,8 +1933,19 @@ function handleEqual(atom: ComparisonUnitAtom, ctx: ProcessingContext): HandlerR
   const run = getAtomRunAtBoundary(atom, 'end');
   if (run) {
     const insertionPoint = getRunInsertionAnchor(run);
+
+    // BUG FIX: Don't move the insertion point backwards if we are still in the same run.
+    // This prevents Deleted atoms inserted between words of the same run from being reversed.
+    if (insertionPoint === ctx.lastRevisedRunAnchor) {
+      return {
+        newLastParagraph: atom.sourceParagraphElement ?? ctx.lastProcessedParagraph,
+        newLastParagraphIndex: atom.paragraphIndex,
+      };
+    }
+
     return {
       newLastRun: insertionPoint,
+      newLastRevisedRunAnchor: insertionPoint,
       newLastParagraph: atom.sourceParagraphElement ?? ctx.lastProcessedParagraph,
       newLastParagraphIndex: atom.paragraphIndex,
     };
@@ -1854,6 +1964,7 @@ function handleEqual(atom: ComparisonUnitAtom, ctx: ProcessingContext): HandlerR
     // Setting newLastRun to null explicitly resets it.
     return {
       newLastRun: null, // Reset - we're in a new paragraph with no runs yet
+      newLastRevisedRunAnchor: null,
       // Use the revised paragraph (not the original's sourceParagraphElement!)
       newLastParagraph: revisedParagraph ?? ctx.lastProcessedParagraph,
       newLastParagraphIndex: atom.paragraphIndex,
@@ -1903,6 +2014,7 @@ function processAtoms(
       state,
       body: revisedRoot,
       lastProcessedRun: null,
+      lastRevisedRunAnchor: null,
       lastProcessedParagraph: null,
       lastParagraphIndex: undefined,
       unifiedParaToElement: new Map(),
@@ -1952,6 +2064,7 @@ function processAtoms(
     state,
     body,
     lastProcessedRun: null,
+    lastRevisedRunAnchor: null,
     lastProcessedParagraph: null,
     lastParagraphIndex: undefined,
     unifiedParaToElement,
@@ -1969,6 +2082,9 @@ function processAtoms(
     // Update position tracking based on handler result
     if (result.newLastRun !== undefined) {
       ctx.lastProcessedRun = result.newLastRun;
+    }
+    if (result.newLastRevisedRunAnchor !== undefined) {
+      ctx.lastRevisedRunAnchor = result.newLastRevisedRunAnchor;
     }
     if (result.newLastParagraph !== undefined) {
       ctx.lastProcessedParagraph = result.newLastParagraph;

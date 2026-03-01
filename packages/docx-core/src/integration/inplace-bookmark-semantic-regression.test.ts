@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { itAllure, allureStep, allureJsonAttachment } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { compareDocuments } from '../index.js';
@@ -194,6 +194,11 @@ async function runInplaceComparison(originalPath: string, revisedPath: string): 
   };
 }
 
+const it = itAllure.epic('Document Comparison').withLabels({
+  feature: 'Inplace Reconstruction',
+  severity: 'critical',
+});
+
 describe('Inplace bookmark semantic regression coverage (Allure)', () => {
   let synthetic: InplaceRun;
   let ilpa: InplaceRun;
@@ -208,32 +213,19 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
   it(
     'Synthetic/inplace keeps read_text parity without fallback',
     async () => {
-      await allure.epic('Document Comparison');
-      await allure.feature('Inplace Reconstruction');
-      await allure.story('Read-text round-trip invariants');
-      await allure.severity('critical');
-
-      await allure.step('Given synthetic output from inplace reconstruction', async () => {
-        await allure.attachment(
-          'synthetic-reconstruction-metadata.json',
-          JSON.stringify(
-            {
-              reconstructionModeUsed: synthetic.reconstructionModeUsed,
-              fallbackReason: synthetic.fallbackReason,
-            },
-            null,
-            2
-          ),
-          'application/json'
-        );
+      await allureStep('Given synthetic output from inplace reconstruction', async () => {
+        await allureJsonAttachment('synthetic-reconstruction-metadata.json', {
+          reconstructionModeUsed: synthetic.reconstructionModeUsed,
+          fallbackReason: synthetic.fallbackReason,
+        });
       });
 
-      await allure.step('When the output is projected through Accept All and Reject All', async () => {
+      await allureStep('When the output is projected through Accept All and Reject All', async () => {
         assertReadTextParity(synthetic.revisedXml, synthetic.acceptedXml, 'Synthetic/inplace/accept-all');
         assertReadTextParity(synthetic.originalXml, synthetic.rejectedXml, 'Synthetic/inplace/reject-all');
       });
 
-      await allure.step('Then inplace is retained and no fallback reason is emitted', async () => {
+      await allureStep('Then inplace is retained and no fallback reason is emitted', async () => {
         expect(synthetic.reconstructionModeUsed).toBe('inplace');
         expect(synthetic.fallbackReason).toBeUndefined();
         expect(synthetic.fallbackDiagnostics).toBeUndefined();
@@ -245,39 +237,26 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
   it(
     'Synthetic/inplace preserves semantic bookmark parity',
     async () => {
-      await allure.epic('Document Comparison');
-      await allure.feature('Inplace Reconstruction');
-      await allure.story('Semantic bookmark parity');
-      await allure.severity('critical');
-
       let acceptedExpected: BookmarkSemanticDiagnostics;
       let acceptedActual: BookmarkSemanticDiagnostics;
       let rejectedExpected: BookmarkSemanticDiagnostics;
       let rejectedActual: BookmarkSemanticDiagnostics;
 
-      await allure.step('Given semantic bookmark diagnostics for synthetic baselines and projections', async () => {
+      await allureStep('Given semantic bookmark diagnostics for synthetic baselines and projections', async () => {
         acceptedExpected = bookmarkDiagnostics(synthetic.revisedXml);
         acceptedActual = bookmarkDiagnostics(synthetic.acceptedXml);
         rejectedExpected = bookmarkDiagnostics(synthetic.originalXml);
         rejectedActual = bookmarkDiagnostics(synthetic.rejectedXml);
 
-        await allure.attachment(
-          'synthetic-bookmark-diagnostics.json',
-          JSON.stringify(
-            {
-              acceptExpected: acceptedExpected,
-              acceptActual: acceptedActual,
-              rejectExpected: rejectedExpected,
-              rejectActual: rejectedActual,
-            },
-            null,
-            2
-          ),
-          'application/json'
-        );
+        await allureJsonAttachment('synthetic-bookmark-diagnostics.json', {
+          acceptExpected: acceptedExpected,
+          acceptActual: acceptedActual,
+          rejectExpected: rejectedExpected,
+          rejectActual: rejectedActual,
+        });
       });
 
-      await allure.step('When parity checks ignore strict bookmark ID identity', async () => {
+      await allureStep('When parity checks ignore strict bookmark ID identity', async () => {
         assertSemanticBookmarkParity(
           acceptedExpected!,
           acceptedActual!,
@@ -290,7 +269,7 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
         );
       });
 
-      await allure.step('Then semantic bookmark parity holds for both projections', async () => {
+      await allureStep('Then semantic bookmark parity holds for both projections', async () => {
         expect(acceptedActual!.unresolvedReferenceNames).toEqual(acceptedExpected!.unresolvedReferenceNames);
         expect(rejectedActual!.unresolvedReferenceNames).toEqual(rejectedExpected!.unresolvedReferenceNames);
       });
@@ -299,32 +278,22 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
   );
 
   it(
-    'ILPA/inplace downgrades to rebuild with explicit safety diagnostics',
+    'ILPA/inplace keeps read_text parity (v0.3: improved matching allows inplace)',
     async () => {
-      await allure.epic('Document Comparison');
-      await allure.feature('Inplace Reconstruction');
-      await allure.story('Fallback diagnostics');
-      await allure.severity('normal');
-
-      await allure.step('Given ILPA output from requested inplace reconstruction', async () => {
-        await allure.attachment(
-          'ilpa-fallback-diagnostics.json',
-          JSON.stringify(ilpa.fallbackDiagnostics, null, 2),
-          'application/json'
-        );
+      await allureStep('Given ILPA output from requested inplace reconstruction', async () => {
+        await allureJsonAttachment('ilpa-reconstruction-metadata.json', {
+          reconstructionModeUsed: ilpa.reconstructionModeUsed,
+          fallbackReason: ilpa.fallbackReason,
+        });
       });
 
-      await allure.step('Then reconstruction downgrades to rebuild with the expected reason', async () => {
-        expect(ilpa.reconstructionModeUsed).toBe('rebuild');
-        expect(ilpa.fallbackReason).toBe('round_trip_safety_check_failed');
+      await allureStep('Then reconstruction retains inplace mode', async () => {
+        expect(ilpa.reconstructionModeUsed).toBe('inplace');
+        expect(ilpa.fallbackReason).toBeUndefined();
       });
 
-      await allure.step('And fallback diagnostics include at least one failed safety check', async () => {
-        const diagnostics = ilpa.fallbackDiagnostics as
-          | { attempts?: Array<{ failedChecks?: string[] }> }
-          | undefined;
-        const failedChecks = diagnostics?.attempts?.flatMap((attempt) => attempt.failedChecks ?? []) ?? [];
-        expect(failedChecks.length).toBeGreaterThan(0);
+      await allureStep('And read_text parity holds after accept all', async () => {
+        assertReadTextParity(ilpa.revisedXml, ilpa.acceptedXml, 'ILPA/inplace/accept-all');
       });
     },
     180000

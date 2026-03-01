@@ -266,12 +266,15 @@ function cleanupEmptyRuns(parent: Node): void {
 }
 
 export type AddRunProps = {
-  // Additive formatting: set these to true (or set underline val) to ensure the property is applied.
-  // We intentionally do not support disabling formatting here (parity with Python's <b>/<u> tags).
+  // Additive or subtractive formatting.
+  // Set to true to enable, false to explicitly disable/remove.
   bold?: boolean;
   italic?: boolean;
-  underline?: boolean | string; // true => w:val="single", string => w:val=string
-  highlight?: boolean | string; // true => yellow, string => specific w:highlight val
+  underline?: boolean | string; // true => "single", false => remove, string => specific w:val
+  highlight?: boolean | string; // true => "yellow", false => remove, string => specific w:val
+  fontSize?: number; // Half-points (e.g., 24 for 12pt)
+  fontName?: string;
+  color?: string; // Hex color (e.g., "FF0000")
 };
 
 export type ReplacementPart = {
@@ -298,25 +301,30 @@ function ensureRPr(doc: Document, run: Element): Element {
   return rPr;
 }
 
-function ensureBoolProp(doc: Document, rPr: Element, localName: string): void {
+function ensureBoolProp(doc: Document, rPr: Element, localName: string, val: boolean): void {
   let el = rPr.getElementsByTagNameNS(OOXML.W_NS, localName).item(0) as Element | null;
-  if (!el) {
-    el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
-    rPr.appendChild(el);
+  if (val) {
+    if (!el) {
+      el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
+      rPr.insertBefore(el, rPr.firstChild);
+    }
+    el.setAttribute('w:val', '1');
+  } else if (el) {
+    el.parentNode?.removeChild(el);
   }
-  // Ensure truthy by removing any explicit false.
-  el.removeAttributeNS(OOXML.W_NS, 'val');
-  el.removeAttribute('w:val');
-  el.removeAttribute('val');
 }
 
-function ensureUnderline(doc: Document, rPr: Element, val: string | null): void {
+function ensureUnderline(doc: Document, rPr: Element, val: boolean | string): void {
   let el = rPr.getElementsByTagNameNS(OOXML.W_NS, W.u).item(0) as Element | null;
+  if (val === false) {
+    if (el) el.parentNode?.removeChild(el);
+    return;
+  }
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.u}`);
-    rPr.appendChild(el);
+    rPr.insertBefore(el, rPr.firstChild);
   }
-  const v = val ?? 'single';
+  const v = typeof val === 'string' ? val : 'single';
   el.setAttribute('w:val', v);
 }
 
@@ -325,13 +333,48 @@ function clearHighlightProp(rPr: Element): void {
   for (const h of hs) h.parentNode?.removeChild(h);
 }
 
-function ensureHighlight(doc: Document, rPr: Element, val: string | null): void {
+function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): void {
+  if (val === false) {
+    clearHighlightProp(rPr);
+    return;
+  }
   let el = rPr.getElementsByTagNameNS(OOXML.W_NS, W.highlight).item(0) as Element | null;
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.highlight}`);
-    rPr.appendChild(el);
+    rPr.insertBefore(el, rPr.firstChild);
   }
-  el.setAttribute('w:val', val ?? 'yellow');
+  el.setAttribute('w:val', typeof val === 'string' ? val : 'yellow');
+}
+
+function ensureSz(doc: Document, rPr: Element, halfPoints: number): void {
+  for (const localName of [W.sz, W.szCs]) {
+    let el = rPr.getElementsByTagNameNS(OOXML.W_NS, localName).item(0) as Element | null;
+    if (!el) {
+      el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
+      rPr.insertBefore(el, rPr.firstChild);
+    }
+    el.setAttributeNS(OOXML.W_NS, 'w:val', Math.round(halfPoints).toString());
+  }
+}
+
+function ensureColor(doc: Document, rPr: Element, hex: string): void {
+  let el = rPr.getElementsByTagNameNS(OOXML.W_NS, W.color).item(0) as Element | null;
+  if (!el) {
+    el = doc.createElementNS(OOXML.W_NS, `w:${W.color}`);
+    rPr.insertBefore(el, rPr.firstChild);
+  }
+  el.setAttributeNS(OOXML.W_NS, 'w:val', hex.replace('#', ''));
+}
+
+function ensureFont(doc: Document, rPr: Element, name: string): void {
+  let el = rPr.getElementsByTagNameNS(OOXML.W_NS, W.rFonts).item(0) as Element | null;
+  if (!el) {
+    el = doc.createElementNS(OOXML.W_NS, `w:${W.rFonts}`);
+    rPr.insertBefore(el, rPr.firstChild);
+  }
+  el.setAttributeNS(OOXML.W_NS, 'w:ascii', name);
+  el.setAttributeNS(OOXML.W_NS, 'w:hAnsi', name);
+  el.setAttributeNS(OOXML.W_NS, 'w:cs', name);
 }
 
 function applyRunProps(doc: Document, run: Element, add: AddRunProps | undefined, clearHighlight: boolean | undefined): void {
@@ -339,10 +382,14 @@ function applyRunProps(doc: Document, run: Element, add: AddRunProps | undefined
   const rPr = ensureRPr(doc, run);
   if (clearHighlight) clearHighlightProp(rPr);
   if (!add) return;
-  if (add.bold) ensureBoolProp(doc, rPr, W.b);
-  if (add.italic) ensureBoolProp(doc, rPr, W.i);
-  if (add.underline) ensureUnderline(doc, rPr, typeof add.underline === 'string' ? add.underline : null);
-  if (add.highlight) ensureHighlight(doc, rPr, typeof add.highlight === 'string' ? add.highlight : null);
+  
+  if (add.bold !== undefined) ensureBoolProp(doc, rPr, W.b, add.bold);
+  if (add.italic !== undefined) ensureBoolProp(doc, rPr, W.i, add.italic);
+  if (add.underline !== undefined) ensureUnderline(doc, rPr, add.underline);
+  if (add.highlight !== undefined) ensureHighlight(doc, rPr, add.highlight);
+  if (add.fontSize !== undefined) ensureSz(doc, rPr, add.fontSize);
+  if (add.color !== undefined) ensureColor(doc, rPr, add.color);
+  if (add.fontName !== undefined) ensureFont(doc, rPr, add.fontName);
 }
 
 export function replaceParagraphTextRange(

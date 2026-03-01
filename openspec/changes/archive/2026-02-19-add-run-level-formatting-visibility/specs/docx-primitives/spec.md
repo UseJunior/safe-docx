@@ -3,10 +3,10 @@
 ### Requirement: Effective Run Formatting Extraction
 The docx-primitives library SHALL extract effective formatting metadata per run, resolving the inheritance chain from paragraph style through run style to direct formatting.
 
-#### Scenario: extract bold, italic, underline, highlighting tuple per run
+#### Scenario: extract bold, italic, underline, highlight tuple per run
 - **GIVEN** a paragraph containing multiple runs with varying formatting
 - **WHEN** effective formatting is extracted
-- **THEN** each run SHALL produce a `(bold, italic, underline, highlighting)` tuple reflecting the resolved formatting
+- **THEN** each run SHALL produce a `(bold, italic, underline, highlight)` tuple reflecting the resolved formatting
 - **AND** inherited styles SHALL be resolved before direct formatting overrides
 
 #### Scenario: detect hyperlink runs and extract href
@@ -37,4 +37,4 @@ The docx-primitives library SHALL compute a char-weighted modal formatting basel
 #### Scenario: tags nested in consistent order
 - **GIVEN** a run with multiple formatting properties (e.g., bold + italic + underline)
 - **WHEN** formatting tags are emitted
-- **THEN** tags SHALL be nested in the order: `<b>` > `<i>` > `<u>` > `<highlighting>` (outermost to innermost)
+- **THEN** tags SHALL be nested in the order: `<b>` > `<i>` > `<u>` > `<highlight>` (outermost to innermost)

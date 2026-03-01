@@ -546,32 +546,7 @@ describe('Parity regression', () => {
     expect(dl3.edit_revision).toBe(2);
   });
 
-  test('read_file emits <definition> tags for explicit definitions (quotes absorbed)', async () => {
-    const mgr = createTestSessionManager();
-
-    const xml =
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-      `<w:body>` +
-      `<w:p><w:r><w:t>"Company" means ABC Corp.</w:t></w:r></w:p>` +
-      `</w:body></w:document>`;
-
-    const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
-    const inputPath = path.join(tmpDir, 'input.docx');
-    await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
-
-    const opened = await openDocument(mgr, { file_path: inputPath });
-    assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
-
-    const read1 = await readFile(mgr, { session_id: sessionId });
-    assertSuccess(read1, 'read');
-    const out = String(read1.content);
-    expect(out).toContain('<definition>Company</definition> means ABC Corp.');
-    expect(out).not.toContain('"Company" means');
-  });
-
-  test('read_file emits <highlighting> tags for highlighted runs', async () => {
+  test('read_file emits <highlight> tags for highlighted runs', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
@@ -596,24 +571,16 @@ describe('Parity regression', () => {
     const read1 = await readFile(mgr, { session_id: sessionId });
     assertSuccess(read1, 'read');
     const out = String(read1.content);
-    expect(out).toContain('<highlighting>[PLACEHOLDER]</highlighting>');
+    expect(out).toContain('<highlight>[PLACEHOLDER]</highlight>');
   });
 
-  test('replace_text clears placeholder highlight by default and treats <definition> as plain quoted text', async () => {
+  test('replace_text clears placeholder highlight by default', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>` +
-      // Role-model definition style: underline only on the term, quotes not underlined.
-      `<w:p>` +
-      `<w:r><w:t xml:space="preserve">Definition: </w:t></w:r>` +
-      `<w:r><w:t>"</w:t></w:r>` +
-      `<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Confidential Information</w:t></w:r>` +
-      `<w:r><w:t>" shall mean X.</w:t></w:r>` +
-      `</w:p>` +
-      // Local context formatting: highlight placeholder.
       `<w:p>` +
       `<w:r><w:t xml:space="preserve">Purpose: </w:t></w:r>` +
       `<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>[PLACEHOLDER]</w:t></w:r>` +
@@ -639,7 +606,7 @@ describe('Parity regression', () => {
       session_id: sessionId,
       target_paragraph_id: pid!,
       old_string: '[PLACEHOLDER]',
-      new_string: 'the <definition>R&D Business</definition>',
+      new_string: 'the R&D Business',
       instruction: 'test',
     });
     assertSuccess(edited, 'edit');
@@ -652,18 +619,11 @@ describe('Parity regression', () => {
     });
     assertSuccess(saved, 'download');
 
-    const { dom, runs, runText, hasUnderline, hasHighlight } = await parseOutputXml(outPath);
-    const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    const { runs, runText, hasHighlight } = await parseOutputXml(outPath);
 
     const termRun = runs.find((r) => runText(r).includes('R&D Business'));
     expect(termRun).toBeTruthy();
-    expect(hasUnderline(termRun!)).toBe(false);
     expect(hasHighlight(termRun!)).toBe(false);
-
-    const editedParaText = Array.from(dom.getElementsByTagNameNS(W_NS, 'p'))
-      .map((p) => Array.from((p as Element).getElementsByTagNameNS(W_NS, 't')).map((t) => t.textContent ?? '').join(''))
-      .find((t) => t.includes('Purpose:'));
-    expect(editedParaText).toContain('the "R&D Business"');
   });
 
   test('replace_text supports explicit <b>/<i>/<u> tags in new_string', async () => {
@@ -728,86 +688,7 @@ describe('Parity regression', () => {
     expect(hasUnderline(plainRun!)).toBe(false);
   });
 
-  test('replace_text supports legacy definition role-model behavior behind env flag', async () => {
-    const prevLegacy = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-    process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = '1';
-
-    try {
-      const mgr = createTestSessionManager();
-
-      const xml =
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-        `<w:body>` +
-        `<w:p>` +
-        `<w:r><w:t xml:space="preserve">Definition: </w:t></w:r>` +
-        `<w:r><w:t>"</w:t></w:r>` +
-        `<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Confidential Information</w:t></w:r>` +
-        `<w:r><w:t>" shall mean X.</w:t></w:r>` +
-        `</w:p>` +
-        `<w:p>` +
-        `<w:r><w:t xml:space="preserve">Purpose: </w:t></w:r>` +
-        `<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>[PLACEHOLDER]</w:t></w:r>` +
-        `</w:p>` +
-        `</w:body></w:document>`;
-
-      const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
-      const inputPath = path.join(tmpDir, 'input.docx');
-      const outPath = path.join(tmpDir, 'output.docx');
-      await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
-
-      const opened = await openDocument(mgr, { file_path: inputPath });
-      assertSuccess(opened, 'open');
-      const sessionId = opened.session_id as string;
-
-      const view = await readFile(mgr, { session_id: sessionId, format: 'json' });
-      assertSuccess(view, 'read json');
-      const nodes = JSON.parse(view.content as string) as Array<{ id: string; clean_text: string }>;
-      const pid = nodes.find((n) => String(n.clean_text).includes('[PLACEHOLDER]'))?.id;
-      expect(pid).toMatch(/^_bk_[0-9a-f]{12}$/);
-
-      const edited = await replaceText(mgr, {
-        session_id: sessionId,
-        target_paragraph_id: pid!,
-        old_string: '[PLACEHOLDER]',
-        new_string: 'the <definition>R&D Business</definition>',
-        instruction: 'test',
-      });
-      assertSuccess(edited, 'edit');
-
-      const saved = await download(mgr, {
-        session_id: sessionId,
-        save_to_local_path: outPath,
-        clean_bookmarks: true,
-        download_format: 'clean',
-      });
-      assertSuccess(saved, 'download');
-
-      const { runs, runText, hasUnderline, hasHighlight } = await parseOutputXml(outPath);
-
-      const termIdx = runs.findIndex((r) => runText(r) === 'R&D Business');
-      expect(termIdx).toBeGreaterThan(0);
-      expect(termIdx).toBeLessThan(runs.length - 1);
-
-      const before = runs[termIdx - 1]!;
-      const termRun = runs[termIdx]!;
-      const after = runs[termIdx + 1]!;
-
-      expect(runText(before)).toBe('"');
-      expect(runText(after)).toBe('"');
-      expect(hasUnderline(termRun)).toBe(true);
-      expect(hasHighlight(termRun)).toBe(false);
-      expect(hasUnderline(before)).toBe(false);
-      expect(hasUnderline(after)).toBe(false);
-      expect(hasHighlight(before)).toBe(false);
-      expect(hasHighlight(after)).toBe(false);
-    } finally {
-      if (prevLegacy === undefined) delete process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-      else process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = prevLegacy;
-    }
-  });
-
-  test('replace_text supports explicit <highlighting> tags in new_string', async () => {
+  test('replace_text supports explicit <highlight> tags in new_string', async () => {
     const mgr = createTestSessionManager();
 
     const xml =
@@ -839,7 +720,7 @@ describe('Parity regression', () => {
       session_id: sessionId,
       target_paragraph_id: pid!,
       old_string: '[VALUE]',
-      new_string: '<highlighting>Final Number</highlighting>',
+      new_string: '<highlight>Final Number</highlight>',
       instruction: 'test',
     });
     assertSuccess(edited, 'edit');

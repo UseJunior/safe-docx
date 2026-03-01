@@ -234,26 +234,31 @@ The server SHALL detect run-in headers programmatically and represent them in th
 ### Requirement: Semantic Tags and Role Model Rendering
 The server SHALL support semantic tags in inserted/replacement text and render them into concrete OOXML formatting using role models discovered in the document.
 
-#### Scenario: defined term bolding via <definition> role model
-- **GIVEN** a document with existing explicit definitions where defined terms are styled (e.g., bold + quoted)
-- **WHEN** an insertion or replacement includes `<definition>Term</definition> means …`
-- **THEN** the server SHALL render `Term` using the discovered role model’s styling
-- **AND** the saved `.docx` SHALL NOT contain the literal `<definition>` tag text
-
-### Requirement: Explicit Definition Auto-Tagging
-The server SHALL automatically detect explicit definition patterns in inserted/replacement text and apply definition styling via role models without requiring the caller to include `<definition>` tags.
-
-#### Scenario: auto-tagged explicit definition gets role model styling
-- **GIVEN** a document with existing explicit definitions where the defined term has a consistent style (e.g., bold)
-- **WHEN** an insertion or replacement includes an explicit definition like `"Closing Cash" means …` (without semantic tags)
-- **THEN** the server SHALL detect `"Closing Cash"` as the definition term
-- **AND** apply the role model definition styling to the term
-- **AND** preserve quotes/brackets exactly as provided in the input text
-
 #### Scenario: header semantics accepted via tags for backward compatibility
 - **WHEN** an edit includes `<RunInHeader>Header</RunInHeader>` or `<header>Header</header>`
 - **THEN** the server SHALL render the header into the `header` column representation
 - **AND** apply stored header formatting metadata when writing OOXML runs
+
+### Requirement: Font Tag Support in Replacement Strings
+The server SHALL support `<font>` tags in `replace_text` and `insert_paragraph` `new_string` parameters to control font color, size, and face on sub-runs. The `size` attribute uses points (e.g., `<font size="14">` = 14pt). The `color` attribute is a hex string (e.g., `"FF0000"`). The `face` attribute is a font family name.
+
+#### Scenario: font tag applies color, size, and face to OOXML runs
+- **WHEN** an edit includes `<font color="FF0000" size="14" face="Arial">text</font>`
+- **THEN** the server SHALL produce OOXML runs with `<w:color w:val="FF0000"/>`, `<w:sz w:val="28"/>`, and `<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>`
+- **AND** the saved `.docx` SHALL NOT contain the literal `<font>` tag text
+
+### Requirement: Font Tag Emission in read_file Output
+The server SHALL emit `<font>` tags in `read_file` output (with `show_formatting=true`) when font properties vary within a paragraph, using paragraph-local baselines.
+
+#### Scenario: paragraph-local font baseline suppression
+- **GIVEN** a paragraph where all runs share the same color, font size, and font name
+- **WHEN** `read_file` is called with `show_formatting=true`
+- **THEN** no `<font>` tags SHALL be emitted for that paragraph
+
+#### Scenario: mixed-font paragraph emits font tags for deviations
+- **GIVEN** a paragraph where one run has a different color from the modal baseline
+- **WHEN** `read_file` is called with `show_formatting=true`
+- **THEN** only the deviating run SHALL be wrapped in `<font color="...">` tags
 
 ### Requirement: Formatting Surgeon (Deterministic)
 The server SHALL use a deterministic formatting surgeon for edits that require run splitting, multi-run replacements, and field-aware visible-text mapping.

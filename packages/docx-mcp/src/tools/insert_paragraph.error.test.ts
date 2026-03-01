@@ -47,19 +47,18 @@ describe('insert_paragraph validation + tag handling', () => {
     });
     expect(malformed.success).toBe(false);
     if (!malformed.success) {
-      expect(malformed.error.code).toBe('INSERT_ERROR');
-      expect(malformed.error.message).toContain('UNBALANCED_BOLD_TAGS');
+      expect(malformed.error.code).toBe('UNBALANCED_BOLD_TAGS');
     }
   });
 
-  it('strips hyperlink/definition tags in default mode and inserts clean text', async () => {
+  it('strips hyperlink tags in default mode and inserts clean text', async () => {
     const opened = await openSession(['Anchor paragraph']);
     const paraId = firstParaIdFromToon(opened.content);
 
     const inserted = await insertParagraph(opened.mgr, {
       session_id: opened.sessionId,
       positional_anchor_node_id: paraId,
-      new_string: 'Link: <a href="https://example.com">Example</a> and <definition>Term</definition>',
+      new_string: 'Link: <a href="https://example.com">Example</a> and Term',
       instruction: 'strip unsupported tags',
       position: 'AFTER',
     });
@@ -72,37 +71,7 @@ describe('insert_paragraph validation + tag handling', () => {
     });
     assertSuccess(read, 'read inserted');
     const content = String(read.content);
-    expect(content).toContain('Link: Example and "Term"');
+    expect(content).toContain('Link: Example and Term');
     expect(content).not.toContain('<a ');
-    expect(content).not.toContain('<definition>');
-  });
-
-  it('legacy definition mode converts definition tags to quoted terms', async () => {
-    const prev = process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-    process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = '1';
-    try {
-      const opened = await openSession(['Anchor paragraph']);
-      const paraId = firstParaIdFromToon(opened.content);
-
-      const inserted = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
-        positional_anchor_node_id: paraId,
-        new_string: 'Defined term: <definition>Company</definition>.',
-        instruction: 'legacy definition tags',
-        position: 'AFTER',
-      });
-      assertSuccess(inserted, 'insert_paragraph legacy definition');
-
-      const read = await readFile(opened.mgr, {
-        session_id: opened.sessionId,
-        node_ids: [String(inserted.new_paragraph_id)],
-        format: 'simple',
-      });
-      assertSuccess(read, 'read inserted legacy');
-      expect(String(read.content)).toContain('Defined term: "Company".');
-    } finally {
-      if (typeof prev === 'undefined') delete process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS;
-      else process.env.SAFE_DOCX_ENABLE_LEGACY_DEFINITION_TAGS = prev;
-    }
   });
 });

@@ -44,6 +44,7 @@ export interface AllureLabelDefaults<TEpic extends string = string> {
   title?: string;
   epic?: TEpic;
   feature?: string;
+  story?: string;
   parentSuite?: string;
   suite?: string;
   subSuite?: string;
