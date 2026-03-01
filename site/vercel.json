@@ -4,7 +4,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "_site",
   "cleanUrls": true,
-  "trailingSlash": false,
+  "trailingSlash": true,
   "headers": [
     {
       "source": "/(.*)",
