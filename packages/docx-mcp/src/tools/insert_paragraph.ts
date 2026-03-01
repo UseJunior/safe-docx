@@ -197,7 +197,7 @@ export async function insertParagraph(
 
     manager.markEdited(session);
 
-    return ok(mergeSessionResolutionMetadata({
+    const responseData: Record<string, unknown> = {
       success: true,
       session_id: session.sessionId,
       edit_count: session.editCount,
@@ -206,7 +206,11 @@ export async function insertParagraph(
       new_paragraph_ids: res.newParagraphIds,
       position: positionUpper,
       inserted_text: previewText(plainParagraphs.join('\n\n'), RESULT_PREVIEW_CHARS),
-    }, metadata));
+    };
+    if (res.styleSourceFallback) {
+      responseData.style_source_warning = `style_source_id '${params.style_source_id}' not found; fell back to anchor paragraph formatting.`;
+    }
+    return ok(mergeSessionResolutionMetadata(responseData, metadata));
   } catch (e: unknown) {
     return err('INSERT_ERROR', `Failed to insert paragraph: ${errorMessage(e)}`);
   }
