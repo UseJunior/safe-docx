@@ -50,6 +50,8 @@
     "allure:generate:package-view": "node scripts/generate_allure_report.mjs --group-by epic,feature,suite,package,story",
     "allure:deploy": "node scripts/deploy_allure_report.mjs",
     "allure:summary:export": "node scripts/export_allure_summary.mjs",
+    "generate:changelog": "node scripts/generate_changelog_data.mjs",
+    "check:changelog": "node scripts/check_changelog_data.mjs",
     "generate:trust-metrics": "node scripts/generate_trust_metrics.mjs",
     "check:trust-metrics": "npm run generate:trust-metrics && git diff --exit-code -- site/src/trust/metrics.json",
     "trust:rebuild": "npm run generate:trust-metrics && npm run allure:summary:export",
