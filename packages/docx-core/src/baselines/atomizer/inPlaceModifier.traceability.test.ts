@@ -470,7 +470,7 @@ describe('In-Place AST Modifier', () => {
         expect(oldRPr.tagName).toBe('w:rPr');
         const oldProps = childElements(oldRPr);
         expect(oldProps).toHaveLength(1);
-        expect(oldProps[0].tagName).toBe('w:b');
+        expect(oldProps[0]!.tagName).toBe('w:b');
       });
     });
 
@@ -629,7 +629,7 @@ describe('In-Place AST Modifier', () => {
         assertDefined(innerPPr, 'inner pPr');
         const innerChildren = childElements(innerPPr);
         expect(innerChildren).toHaveLength(1);
-        expect(innerChildren[0].tagName).toBe('w:jc');
+        expect(innerChildren[0]!.tagName).toBe('w:jc');
       });
     });
 
