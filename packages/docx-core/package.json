@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-core",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "OOXML (.docx) core library: primitives, comparison, and track changes",
   "type": "module",
   "main": "dist/index.js",

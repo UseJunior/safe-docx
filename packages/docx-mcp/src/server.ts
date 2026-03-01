@@ -98,7 +98,7 @@ export async function dispatchToolCall(
 
 export async function runServer(): Promise<void> {
   const server = new Server(
-    { name: 'safe-docx', version: '0.1.0' },
+    { name: 'safe-docx', version: '0.2.0' },
     {
       capabilities: {
         tools: {},

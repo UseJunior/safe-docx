@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/safedocx-mcpb",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "Claude Desktop MCP Bundle (.mcpb) wrapper for @usejunior/safe-docx",
   "type": "module",
@@ -14,7 +14,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@usejunior/safe-docx": "^0.1.2"
+    "@usejunior/safe-docx": "^0.2.0"
   },
   "devDependencies": {
     "@vitest/runner": "^3.2.4",
