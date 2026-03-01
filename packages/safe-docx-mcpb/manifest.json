@@ -105,6 +105,10 @@
       "description": "Delete a footnote and its reference from the document."
     },
     {
+      "name": "clear_formatting",
+      "description": "Clear bold and/or highlight formatting from paragraphs."
+    },
+    {
       "name": "extract_revisions",
       "description": "Extract tracked-change revisions as structured JSON."
     }

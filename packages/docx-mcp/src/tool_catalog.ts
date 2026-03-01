@@ -306,6 +306,22 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
+    name: 'clear_formatting',
+    description:
+      'Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs. Accepts session_id or file_path.',
+    input: z.object({
+      ...SESSION_OR_FILE_FIELDS,
+      paragraph_ids: z.array(z.string()).optional().describe('Paragraph IDs to clear formatting from. If omitted, clears from all paragraphs.'),
+      clear_highlight: z.boolean().optional().describe('Remove highlight formatting.'),
+      clear_bold: z.boolean().optional().describe('Remove bold formatting.'),
+      clear_italic: z.boolean().optional().describe('Remove italic formatting.'),
+      clear_underline: z.boolean().optional().describe('Remove underline formatting.'),
+      clear_color: z.boolean().optional().describe('Remove font color.'),
+      clear_font: z.boolean().optional().describe('Remove font family and size.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
     name: 'extract_revisions',
     description:
       'Extract tracked changes as structured JSON with before/after text per paragraph, revision details, and comments. Supports pagination via offset and limit. Read-only - does not modify the document.',
