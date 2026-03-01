@@ -1,11 +1,9 @@
 # Changelog
 
-All notable changes to this repository will be documented in this file.
+This project uses [GitHub Releases](https://github.com/UseJunior/safe-docx/releases)
+as the canonical changelog. Each release is auto-categorized from PR labels.
 
-The format is based on Keep a Changelog and this project follows SemVer for published package versions.
+Browse the full history:
 
-## [Unreleased]
-
-### Added
-
-- OSS governance docs (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CODEOWNERS`).
+- **GitHub Releases:** <https://github.com/UseJunior/safe-docx/releases>
+- **Trust site changelog:** <https://safedocx.com/trust/changelog/>

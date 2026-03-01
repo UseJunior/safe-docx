@@ -1,0 +1,105 @@
+name: PR Title Lint
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  validate:
+    name: Validate conventional title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            refactor
+            test
+            docs
+            chore
+            ci
+            perf
+            style
+            revert
+            build
+          requireScope: false
+          subjectPattern: ^[a-z].+$
+          subjectPatternError: |
+            The subject must start with a lowercase letter.
+
+            Examples of valid PR titles:
+              feat(docx-core): add paragraph diffing
+              fix: correct bookmark cleanup order
+              chore(release): bump workspace versions
+              ci: add PR title validation
+
+  auto-label:
+    name: Apply type label from PR title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse title and set label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.pull_request.title;
+            const match = title.match(/^(\w+)(\(.+?\))?!?:/);
+            if (!match) {
+              core.info('PR title does not match conventional format — skipping label.');
+              return;
+            }
+
+            const type = match[1];
+            const typeLabels = [
+              'feat', 'fix', 'refactor', 'test', 'docs',
+              'chore', 'ci', 'perf', 'style', 'revert', 'build',
+            ];
+
+            if (!typeLabels.includes(type)) {
+              core.info(`Unknown type "${type}" — skipping label.`);
+              return;
+            }
+
+            // Remove any existing type labels, then apply the current one.
+            const current = context.payload.pull_request.labels.map(l => l.name);
+            const toRemove = current.filter(l => typeLabels.includes(l) && l !== type);
+
+            for (const label of toRemove) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: label,
+              });
+            }
+
+            // Ensure the label exists (creates it if missing).
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: type,
+              });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: type,
+                color: 'ededed',
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: [type],
+            });
+            core.info(`Applied label: ${type}`);
