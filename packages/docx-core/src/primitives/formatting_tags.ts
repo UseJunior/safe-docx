@@ -333,7 +333,7 @@ export function emitFormattingTags(params: {
 // ── Adjacent tag merging ─────────────────────────────────────────────
 
 // Build a pattern matching </font><font ...> with identical attributes.
-const FONT_ADJACENT_RE = /<\/font>(<font\s[^>]*>)/g;
+const FONT_ADJACENT_RE = /<\/font>(<font [^>]*>)/g;
 
 export function mergeAdjacentTags(tagged: string): string {
   let result = tagged;

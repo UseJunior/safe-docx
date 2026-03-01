@@ -8,12 +8,12 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
   <p class="eyebrow">Safe DOCX</p>
   <h1>Deterministic DOCX editing with auditable behavior.</h1>
   <p>
-    Safe DOCX keeps edits local-first and spec-driven — 23 tools for reading, writing, commenting, formatting, and tracking changes in Word documents. No remote servers, no black boxes.
+    Safe DOCX keeps edits local-first and spec-driven — 22 tools for reading, writing, commenting, formatting, and tracking changes in Word documents. No remote servers, no black boxes.
   </p>
 
   <div class="hero-copy">
-    <code class="install-copy">npx -y @usejunior/docx-mcp</code>
-    <button class="copy-btn" data-copy="npx -y @usejunior/docx-mcp" aria-label="Copy npx command">
+    <code class="install-copy">npx -y @usejunior/safe-docx</code>
+    <button class="copy-btn" data-copy="npx -y @usejunior/safe-docx" aria-label="Copy npx command">
       <span class="copy-label">Copy</span>
     </button>
   </div>
@@ -26,11 +26,14 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
 
   <div class="badge-stack">
     <div class="badge-row">
-      <a class="trust-badge" href="https://www.npmjs.com/package/@usejunior/docx-mcp" target="_blank" rel="noopener">
-        <img src="https://img.shields.io/npm/dm/@usejunior/docx-mcp?label=npm%20downloads&color=a43820" alt="npm downloads" loading="lazy" />
+      <a class="trust-badge" href="https://www.npmjs.com/package/@usejunior/safe-docx" target="_blank" rel="noopener">
+        <img src="https://img.shields.io/npm/dm/@usejunior/safe-docx?label=npm%20downloads&color=2d7e5e" alt="npm downloads" loading="lazy" />
       </a>
       <a class="trust-badge" href="https://github.com/usejunior/safe-docx/actions" target="_blank" rel="noopener">
         <img src="https://img.shields.io/github/actions/workflow/status/usejunior/safe-docx/ci.yml?label=CI&color=2d7e5e" alt="CI status" loading="lazy" />
+      </a>
+      <a class="trust-badge" href="https://app.codecov.io/gh/UseJunior/safe-docx" target="_blank" rel="noopener">
+        <img src="https://img.shields.io/codecov/c/github/UseJunior/safe-docx/main" alt="coverage" loading="lazy" />
       </a>
     </div>
   </div>
@@ -39,19 +42,40 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/docx-mcp"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }</script>
 </section>
 
+{# ── Value Props ─────────────────────────────────── #}
+<section class="grid reveal">
+  <article class="card">
+    <h2>Open Source</h2>
+    <p>MIT-licensed. Read every line, fork it, vendor it. No black-box service calls, no usage metering.</p>
+  </article>
+  <article class="card">
+    <h2>Runs Locally</h2>
+    <p>All edits happen in-process on your machine. Documents never leave your environment, even during AI-driven workflows.</p>
+  </article>
+  <article class="card">
+    <h2>Runs Anywhere JS Runs</h2>
+    <p>Pure TypeScript. No native binaries, no .NET, no LibreOffice. Deploy in Cloudflare Workers, Vercel Edge, Lambda, or any V8 isolate.</p>
+  </article>
+  <article class="card">
+    <h2>Auditable by Design</h2>
+    <p>Every operation is tested, traced, and published. Inspect the evidence before you ship.</p>
+  </article>
+</section>
+
 {# ── Function Gallery ────────────────────────────── #}
 <section id="functions" class="reveal">
-  <h2 class="section-heading">23 tools across 7 categories</h2>
+  <h2 class="section-heading">22 tools across 7 categories</h2>
   <div class="grid">
     {% for cat in toolCatalog %}
     <article class="card">
-      <h3>{{ cat.label }} <span class="tool-count">{{ cat.tools.length }}</span></h3>
+      <h3>{{ cat.label }}</h3>
+      <span class="tool-count">{{ cat.tools.length }} tool{{ "s" if cat.tools.length != 1 }}</span>
       <p>{{ cat.description }}</p>
       <ul class="tool-list">
         {% for tool in cat.tools %}
@@ -75,7 +99,7 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
   "mcpServers": {
     "safe-docx": {
       "command": "npx",
-      "args": ["-y", "@usejunior/docx-mcp"]
+      "args": ["-y", "@usejunior/safe-docx"]
     }
   }
 }</code></pre>
@@ -88,40 +112,13 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
       <h3>npm</h3>
       <p>Install as a dependency:</p>
       <div class="install-pre-wrap">
-        <pre><code>npm install @usejunior/docx-mcp</code></pre>
-        <button class="copy-btn" data-copy="npm install @usejunior/docx-mcp" aria-label="Copy npm command">
+        <pre><code>npm install @usejunior/safe-docx</code></pre>
+        <button class="copy-btn" data-copy="npm install @usejunior/safe-docx" aria-label="Copy npm command">
           <span class="copy-label">Copy</span>
         </button>
       </div>
     </div>
   </div>
-</section>
-
-{# ── Demo placeholder ────────────────────────────── #}
-<section id="demo" class="reveal">
-  <div class="demo-placeholder">
-    <p class="demo-caption">Demo video</p>
-  </div>
-</section>
-
-{# ── Value Props ─────────────────────────────────── #}
-<section class="grid reveal">
-  <article class="card">
-    <h2>Open Source</h2>
-    <p>MIT-licensed. Read every line, fork it, vendor it. No black-box service calls, no usage metering.</p>
-  </article>
-  <article class="card">
-    <h2>Runs Locally</h2>
-    <p>All edits happen in-process on your machine. Documents never leave your environment, even during AI-driven workflows.</p>
-  </article>
-  <article class="card">
-    <h2>Runs Anywhere JS Runs</h2>
-    <p>Pure TypeScript. No native binaries, no .NET, no LibreOffice. Deploy in Cloudflare Workers, Vercel Edge, Lambda, or any V8 isolate.</p>
-  </article>
-  <article class="card">
-    <h2>Auditable by Design</h2>
-    <p>Every operation is tested, traced, and published. Inspect the evidence before you ship.</p>
-  </article>
 </section>
 
 {# ── FAQ ─────────────────────────────────────────── #}
@@ -142,7 +139,7 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
   <div class="hero-actions">
     <a class="cta" href="trust/index.html">View Trust Evidence</a>
     <a class="cta cta-ghost" href="https://github.com/usejunior/safe-docx" target="_blank" rel="noopener">GitHub</a>
-    <a class="cta cta-ghost" href="https://www.npmjs.com/package/@usejunior/docx-mcp" target="_blank" rel="noopener">npm</a>
+    <a class="cta cta-ghost" href="https://www.npmjs.com/package/@usejunior/safe-docx" target="_blank" rel="noopener">npm</a>
   </div>
 </section>
 

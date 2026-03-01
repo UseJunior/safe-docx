@@ -23,7 +23,7 @@ const REPO_ROOT = resolve(__dirname, '..');
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  let outputPath = resolve(REPO_ROOT, 'site', 'src', '_data', 'changelog.json');
+  let outputPath = resolve(REPO_ROOT, 'site', 'src', '_raw', 'changelog.json');
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--output') {

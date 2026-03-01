@@ -128,17 +128,3 @@ npm run coverage:matrix
 - [Security Policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 
-### npm Trusted Publisher
-
-1. In npm package settings, add a trusted publisher.
-2. Provider: GitHub Actions.
-3. Owner: `UseJunior`
-4. Repository: `safe-docx`
-5. Workflow file: `.github/workflows/release.yml`
-6. Environment: leave empty (unless you later add an Actions environment constraint).
-
-Packages to configure:
-
-- `@usejunior/docx-core`
-- `@usejunior/docx-mcp`
-- `@usejunior/safe-docx`

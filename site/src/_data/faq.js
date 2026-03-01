@@ -29,6 +29,6 @@ export default [
   },
   {
     q: 'How do I install it?',
-    a: 'The fastest way is npx: run <code>npx -y @usejunior/docx-mcp</code> in your terminal. For permanent installs, add the MCP JSON config to your AI client or install via npm with <code>npm install @usejunior/docx-mcp</code>.',
+    a: 'The fastest way is npx: run <code>npx -y @usejunior/safe-docx</code> in your terminal. For permanent installs, add the MCP JSON config to your AI client or install via npm with <code>npm install @usejunior/safe-docx</code>.',
   },
 ];

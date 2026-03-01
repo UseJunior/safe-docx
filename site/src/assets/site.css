@@ -555,15 +555,11 @@ a {
 /* ── Tool gallery ───────────────────────────────── */
 
 .tool-count {
-  display: inline-block;
-  background: var(--accent);
-  color: #fff;
+  display: block;
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.72rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  vertical-align: middle;
-  margin-left: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.3rem;
 }
 
 .tool-list {
@@ -622,19 +618,11 @@ a {
   color: #fff;
 }
 
-/* ── Demo placeholder ───────────────────────────── */
+/* ── Section spacing ────────────────────────────── */
 
-.demo-placeholder {
-  border: 2px dashed var(--line);
-  border-radius: 12px;
-  padding: 3rem 1rem;
-  text-align: center;
-  color: var(--ink-soft);
-}
-
-.demo-caption {
-  margin: 0;
-  font-size: 0.9rem;
+.hero ~ .reveal,
+.hero ~ .callout {
+  margin-top: 1.5rem;
 }
 
 /* ── Callout section ────────────────────────────── */
