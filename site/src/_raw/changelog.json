@@ -1,6 +1,46 @@
 {
-  "generated_at_utc": "2026-02-26T02:23:52.194Z",
+  "generated_at_utc": "2026-03-01T05:13:57.792Z",
   "releases": [
+    {
+      "version": "0.2.0",
+      "tag": "v0.2.0",
+      "title": "v0.2.0",
+      "published_at": "2026-03-01T05:13:06Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.2.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.2.0 -->\n\n## What's Changed\n### Features\n* feat(site): add changelog page and rework trust site content by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/16\n* feat: site IA, function gallery, auxiliary merge generalization, and test expansion by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/17\n### CI / Infrastructure\n* ci: add changelog pipeline with release metadata and PR title enforcement by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/15\n### Refactoring\n* refactor(docx-mcp): delete duplicate_document, rename download to save, fix SKILL.md by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/18\n### Other Changes\n* chore(release): bump workspace to 0.2.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/19\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.1.2...v0.2.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "size": 388719,
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.2.0/safe-docx.mcpb"
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "size": 105,
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.2.0/safe-docx.mcpb.sha256"
+        }
+      ]
+    },
+    {
+      "version": "0.1.2",
+      "tag": "v0.1.2",
+      "title": "v0.1.2",
+      "published_at": "2026-02-26T02:26:02Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.1.2",
+      "body_md": "## What's Changed\n* fix(safe-docx): extension startup + isolated runtime smoke + xmldom parser by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/14\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.1.1...v0.1.2",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "size": 385843,
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.2/safe-docx.mcpb"
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "size": 105,
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.1.2/safe-docx.mcpb.sha256"
+        }
+      ]
+    },
     {
       "version": "0.1.1",
       "tag": "v0.1.1",
