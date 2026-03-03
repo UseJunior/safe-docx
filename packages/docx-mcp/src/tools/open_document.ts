@@ -72,31 +72,16 @@ export async function openDocument(
     const filename = path.basename(safePath);
     const session = await manager.createSession(content as Buffer, filename, safePath);
 
-    // Normalize: merge runs + simplify redlines BEFORE bookmark allocation.
-    if (!params.skip_normalization) {
-      session.normalizationStats = session.doc.normalize();
-    }
+    const { paragraphCount } = await manager.finalizeNewSession(session, {
+      skipNormalization: params.skip_normalization,
+    });
 
-    // Insert paragraph bookmarks for stable paragraph ids.
-    const info = session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
-
-    // Compute comparison baselines AFTER normalization + bookmark insertion.
-    // These baselines are used for tracked-changes comparison instead of originalBuffer,
-    // preventing normalization artifacts from appearing as false tracked changes.
-    const [cleanBaseline, bookmarkedBaseline] = await Promise.all([
-      session.doc.toBuffer({ cleanBookmarks: true }),
-      session.doc.toBuffer({ cleanBookmarks: false }),
-    ]);
-    session.comparisonBaseline = cleanBaseline.buffer;
-    session.comparisonBaselineWithBookmarks = bookmarkedBaseline.buffer;
-
-    manager.touch(session);
     return ok({
       session_id: session.sessionId,
       expires_at: session.expiresAt.toISOString(),
       document: {
         filename,
-        paragraphs: info.paragraphCount,
+        paragraphs: paragraphCount,
         size_bytes: content.length,
       },
       normalization: session.normalizationStats
