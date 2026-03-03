@@ -126,8 +126,8 @@ describe('SessionManager.getMostRecentlyUsedSessionForPath', () => {
     const s1 = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
     const s2 = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
 
-    // Touch s2 to make it most recent
-    mgr.touch(s2);
+    // Guarantee s2 has a strictly later timestamp (wall clock may not advance between calls)
+    s2.lastAccessedAt = new Date(s1.lastAccessedAt.getTime() + 1);
 
     const normalized = mgr.normalizePath('/tmp/test.docx');
     const found = mgr.getMostRecentlyUsedSessionForPath(normalized);
