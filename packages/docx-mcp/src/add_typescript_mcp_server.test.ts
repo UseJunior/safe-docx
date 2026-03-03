@@ -236,7 +236,7 @@ describe('TypeScript MCP server behavior', () => {
     assertSuccess(read, 'read');
     expect(read.total_paragraphs).toBeGreaterThan(0);
     expect(read.paragraphs_returned).toBeGreaterThan(0);
-    expect(Array.isArray(read.paragraph_ids)).toBe(true);
+    expect(typeof read.has_more).toBe('boolean');
   });
 
   humanReadableTest.openspec('grep tool')('Scenario: grep tool', async () => {

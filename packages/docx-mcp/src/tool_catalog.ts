@@ -22,11 +22,11 @@ const PLAN_OBJECT_SCHEMA = z.object({}).catchall(z.unknown());
 export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'read_file',
-    description: 'Read document content with paragraph IDs. Accepts session_id or file_path.',
+    description: 'Read document content. Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate. Accepts session_id or file_path.',
     input: z.object({
       ...SESSION_OR_FILE_FIELDS,
-      offset: z.number().optional(),
-      limit: z.number().optional(),
+      offset: z.number().optional().describe('1-based paragraph offset for pagination. Negative values count from end.'),
+      limit: z.number().optional().describe('Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination.'),
       node_ids: z.array(z.string()).optional(),
       format: z.enum(['toon', 'json', 'simple']).optional(),
       show_formatting: z

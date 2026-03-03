@@ -1,9 +1,10 @@
 import { SessionManager } from '../session/manager.js';
-import { errorCode, errorMessage } from "../error_utils.js";
+import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { OOXML, W, renderToon } from '@usejunior/docx-core';
 import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
+import { estimateTokens, DEFAULT_CONTENT_TOKEN_BUDGET, buildPaginationMeta } from './pagination.js';
 
 function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
@@ -48,21 +49,25 @@ export async function readFile(
     });
     const totalParagraphs = nodes.length;
 
+    // Determine if the user explicitly specified pagination/targeting params
+    const hasExplicitLimit = typeof params.limit === 'number';
+    const hasExplicitOffset = typeof params.offset === 'number';
+    const hasNodeIds = params.node_ids != null && params.node_ids.length > 0;
+    const budgetActive = !hasExplicitLimit && !hasExplicitOffset && !hasNodeIds;
+
     let filtered = nodes;
-    if (params.node_ids && params.node_ids.length > 0) {
-      const set = new Set(params.node_ids);
+    let startIdx = 0;
+    if (hasNodeIds) {
+      const set = new Set(params.node_ids!);
       filtered = nodes.filter((n) => set.has(n.id));
     } else {
-      let startIdx = 0;
-      if (typeof params.offset === 'number') {
-        if (params.offset > 0) startIdx = Math.max(0, params.offset - 1);
-        if (params.offset < 0) startIdx = Math.max(0, totalParagraphs + params.offset);
+      if (hasExplicitOffset) {
+        if (params.offset! > 0) startIdx = Math.max(0, params.offset! - 1);
+        if (params.offset! < 0) startIdx = Math.max(0, totalParagraphs + params.offset!);
       }
-      const endIdx = typeof params.limit === 'number' ? Math.min(totalParagraphs, startIdx + params.limit) : totalParagraphs;
+      const endIdx = hasExplicitLimit ? Math.min(totalParagraphs, startIdx + params.limit!) : totalParagraphs;
       filtered = nodes.slice(startIdx, endIdx);
     }
-
-    const paraIds = filtered.map((n) => n.id);
 
     let enriched = filtered;
     try {
@@ -90,28 +95,128 @@ export async function readFile(
     }
 
     let content: string;
-    if (format === 'json') {
-      content = JSON.stringify(enriched, null, 2);
-    } else if (format === 'simple') {
-      const lines: string[] = ['#TOON id | text'];
-      for (const n of enriched) {
-        const text = previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS);
-        lines.push(`${n.id} | ${text}`);
+    let paragraphsReturned: number;
+
+    if (!budgetActive) {
+      // Explicit limit/offset/node_ids — render everything, no budget
+      if (format === 'json') {
+        content = JSON.stringify(enriched, null, 2);
+      } else if (format === 'simple') {
+        const lines: string[] = ['#TOON id | text'];
+        for (const n of enriched) {
+          const text = previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS);
+          lines.push(`${n.id} | ${text}`);
+        }
+        content = lines.join('\n');
+      } else {
+        content = renderToon(enriched);
       }
-      content = lines.join('\n');
+      paragraphsReturned = enriched.length;
     } else {
-      content = renderToon(enriched);
+      // One-pass token-budget accumulation
+      const budget = DEFAULT_CONTENT_TOKEN_BUDGET;
+      const result = renderWithBudget(enriched, format, budget);
+      content = result.content;
+      paragraphsReturned = result.count;
     }
+
+    const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
 
     return ok(mergeSessionResolutionMetadata({
       session_id: session.sessionId,
       content,
       total_paragraphs: totalParagraphs,
-      paragraphs_returned: enriched.length,
-      paragraph_ids: paraIds,
+      paragraphs_returned: paragraphsReturned,
+      ...paginationMeta,
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);
     return err('READ_ERROR', msg, 'Check session status and try again.');
   }
+}
+
+interface BudgetResult {
+  content: string;
+  count: number;
+}
+
+function renderWithBudget(
+  enriched: readonly { id: string; list_label: string; header: string; style: string; tagged_text: string; clean_text: string; [key: string]: unknown }[],
+  format: string,
+  budget: number,
+): BudgetResult {
+  if (format === 'json') {
+    return renderJsonWithBudget(enriched, budget);
+  }
+  if (format === 'simple') {
+    return renderSimpleWithBudget(enriched, budget);
+  }
+  return renderToonWithBudget(enriched, budget);
+}
+
+function renderToonWithBudget(
+  enriched: readonly { id: string; [key: string]: unknown }[],
+  budget: number,
+): BudgetResult {
+  // Render all nodes with renderToon, then accumulate line-by-line
+  const headerLine = '#SCHEMA id | list_label | header | style | text';
+  let accumulated = headerLine;
+  let count = 0;
+
+  for (const node of enriched) {
+    // Use renderToon on a single node and extract the data line
+    const rendered = renderToon([node as Parameters<typeof renderToon>[0][number]]);
+    const lines = rendered.split('\n');
+    const dataLine = lines[1]; // second line is the data
+    if (!dataLine) continue;
+
+    const candidate = accumulated + '\n' + dataLine;
+    if (count > 0 && estimateTokens(candidate) > budget) break;
+    accumulated = candidate;
+    count++;
+  }
+
+  return { content: accumulated, count };
+}
+
+function renderSimpleWithBudget(
+  enriched: readonly { id: string; clean_text: string; [key: string]: unknown }[],
+  budget: number,
+): BudgetResult {
+  const headerLine = '#TOON id | text';
+  let accumulated = headerLine;
+  let count = 0;
+
+  for (const n of enriched) {
+    const text = previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS);
+    const dataLine = `${n.id} | ${text}`;
+    const candidate = accumulated + '\n' + dataLine;
+    if (count > 0 && estimateTokens(candidate) > budget) break;
+    accumulated = candidate;
+    count++;
+  }
+
+  return { content: accumulated, count };
+}
+
+function renderJsonWithBudget(
+  enriched: readonly Record<string, unknown>[],
+  budget: number,
+): BudgetResult {
+  const items: string[] = [];
+  let totalChars = 2; // for "[\n" and "]"
+  let count = 0;
+
+  for (const node of enriched) {
+    const serialized = JSON.stringify(node, null, 2);
+    const overhead = items.length > 0 ? 2 : 0; // ",\n" between items
+    const candidateChars = totalChars + overhead + serialized.length;
+    if (count > 0 && Math.ceil(candidateChars / 4) > budget) break;
+    items.push(serialized);
+    totalChars = candidateChars;
+    count++;
+  }
+
+  const content = '[\n' + items.join(',\n') + '\n]';
+  return { content, count };
 }
