@@ -7,7 +7,7 @@ Do not edit manually. Regenerate with:
 
 ## `read_file`
 
-Read document content with paragraph IDs. Accepts session_id or file_path.
+Read document content. Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate. Accepts session_id or file_path.
 
 - readOnly: `true`
 - destructive: `false`
@@ -16,8 +16,8 @@ Read document content with paragraph IDs. Accepts session_id or file_path.
 | --- | --- | --- | --- |
 | `session_id` | `string` | no |  |
 | `file_path` | `string` | no |  |
-| `offset` | `number` | no |  |
-| `limit` | `number` | no |  |
+| `offset` | `number` | no | 1-based paragraph offset for pagination. Negative values count from end. |
+| `limit` | `number` | no | Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination. |
 | `node_ids` | `array<string>` | no |  |
 | `format` | `enum("toon", "json", "simple")` | no |  |
 | `show_formatting` | `boolean` | no | When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags. |
