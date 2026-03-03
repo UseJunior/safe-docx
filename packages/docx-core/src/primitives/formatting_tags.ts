@@ -9,6 +9,17 @@
 import { HIGHLIGHT_TAG } from './semantic_tags.js';
 import type { RunFormatting } from './styles.js';
 
+// ── Formatting mode ─────────────────────────────────────────────────
+
+/**
+ * Controls formatting tag emission behaviour.
+ *
+ * - `compact` — 60% threshold suppression (default, current behavior)
+ * - `full`   — all formatting emitted, no suppression (benchmark mode)
+ * - `plain_text` — no formatting tags at all (future: fast text-only views)
+ */
+export type FormattingMode = 'compact' | 'full' | 'plain_text';
+
 // ── Public types ─────────────────────────────────────────────────────
 
 export type AnnotatedRun = {
@@ -45,7 +56,12 @@ function fmtKey(bold: boolean, italic: boolean, underline: boolean): FormattingK
   return `${bold}|${italic}|${underline}` as FormattingKey;
 }
 
-export function computeModalBaseline(runs: AnnotatedRun[]): FormattingBaseline {
+export function computeModalBaseline(
+  runs: AnnotatedRun[],
+  options?: { formattingMode?: FormattingMode },
+): FormattingBaseline {
+  const mode = options?.formattingMode ?? 'compact';
+
   // Only consider non-header body runs for baseline computation.
   const bodyRuns = runs.filter((r) => !r.isHeaderRun && r.charCount > 0);
   const totalChars = bodyRuns.reduce((sum, r) => sum + r.charCount, 0);
@@ -83,7 +99,7 @@ export function computeModalBaseline(runs: AnnotatedRun[]): FormattingBaseline {
   const bold = boldStr === 'true';
   const italic = italicStr === 'true';
   const underline = underlineStr === 'true';
-  const suppressed = bestChars / totalChars >= SUPPRESSION_THRESHOLD;
+  const suppressed = mode === 'compact' && bestChars / totalChars >= SUPPRESSION_THRESHOLD;
 
   return { bold, italic, underline, suppressed };
 }
@@ -93,6 +109,7 @@ export function computeModalBaseline(runs: AnnotatedRun[]): FormattingBaseline {
 function computeModalString(
   runs: AnnotatedRun[],
   extract: (r: AnnotatedRun) => string | null,
+  mode: FormattingMode = 'compact',
 ): { modal: string | null; suppressed: boolean } {
   const bodyRuns = runs.filter((r) => !r.isHeaderRun && r.charCount > 0);
   const totalChars = bodyRuns.reduce((sum, r) => sum + r.charCount, 0);
@@ -115,13 +132,14 @@ function computeModalString(
 
   return {
     modal: bestVal || null,
-    suppressed: bestChars / totalChars >= SUPPRESSION_THRESHOLD,
+    suppressed: mode === 'compact' && bestChars / totalChars >= SUPPRESSION_THRESHOLD,
   };
 }
 
 function computeModalNumber(
   runs: AnnotatedRun[],
   extract: (r: AnnotatedRun) => number,
+  mode: FormattingMode = 'compact',
 ): { modal: number; suppressed: boolean } {
   const bodyRuns = runs.filter((r) => !r.isHeaderRun && r.charCount > 0);
   const totalChars = bodyRuns.reduce((sum, r) => sum + r.charCount, 0);
@@ -144,14 +162,18 @@ function computeModalNumber(
 
   return {
     modal: bestVal,
-    suppressed: bestChars / totalChars >= SUPPRESSION_THRESHOLD,
+    suppressed: mode === 'compact' && bestChars / totalChars >= SUPPRESSION_THRESHOLD,
   };
 }
 
-export function computeParagraphFontBaseline(runs: AnnotatedRun[]): FontBaseline {
-  const color = computeModalString(runs, (r) => r.formatting.colorHex);
-  const fontSize = computeModalNumber(runs, (r) => r.formatting.fontSizePt);
-  const fontName = computeModalString(runs, (r) => r.formatting.fontName);
+export function computeParagraphFontBaseline(
+  runs: AnnotatedRun[],
+  options?: { formattingMode?: FormattingMode },
+): FontBaseline {
+  const mode = options?.formattingMode ?? 'compact';
+  const color = computeModalString(runs, (r) => r.formatting.colorHex, mode);
+  const fontSize = computeModalNumber(runs, (r) => r.formatting.fontSizePt, mode);
+  const fontName = computeModalString(runs, (r) => r.formatting.fontName, mode);
 
   return {
     modalColor: color.modal,

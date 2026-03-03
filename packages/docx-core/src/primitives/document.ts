@@ -10,6 +10,7 @@ import {
 } from './bookmarks.js';
 import { getParagraphRuns, getParagraphText, replaceParagraphTextRange, type ReplacementPart } from './text.js';
 import { buildNodesForDocumentView, type DocumentStyles, type DocumentViewNode } from './document_view.js';
+import type { FormattingMode } from './formatting_tags.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
 import {
@@ -92,7 +93,7 @@ export class DocxDocument {
   private footnotesXml: Document | null;
   private relsMap: RelsMap;
   private dirty: boolean;
-  private documentViewCache: { includeSemanticTags: boolean; showFormatting: boolean; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
+  private documentViewCache: { includeSemanticTags: boolean; showFormatting: boolean; formattingMode: FormattingMode; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
 
   private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap) {
     this.zip = zip;
@@ -243,11 +244,12 @@ export class DocxDocument {
     return { paragraphs: all.slice(startIdx, endIdx), totalParagraphs: total };
   }
 
-  buildDocumentView(opts?: { includeSemanticTags?: boolean; showFormatting?: boolean }): { nodes: DocumentViewNode[]; styles: DocumentStyles } {
+  buildDocumentView(opts?: { includeSemanticTags?: boolean; showFormatting?: boolean; formattingMode?: FormattingMode }): { nodes: DocumentViewNode[]; styles: DocumentStyles } {
     const includeSemanticTags = opts?.includeSemanticTags ?? true;
     const showFormatting = opts?.showFormatting ?? false;
+    const formattingMode: FormattingMode = opts?.formattingMode ?? 'compact';
     const cached = this.documentViewCache;
-    if (!this.dirty && cached && cached.includeSemanticTags === includeSemanticTags && cached.showFormatting === showFormatting) {
+    if (!this.dirty && cached && cached.includeSemanticTags === includeSemanticTags && cached.showFormatting === showFormatting && cached.formattingMode === formattingMode) {
       return { nodes: cached.nodes, styles: cached.styles };
     }
 
@@ -265,12 +267,13 @@ export class DocxDocument {
       numberingXml: this.numberingXml,
       include_semantic_tags: includeSemanticTags,
       show_formatting: showFormatting,
+      formatting_mode: formattingMode,
       relsMap: this.relsMap,
       documentXml: this.documentXml,
       footnotesXml: this.footnotesXml,
     });
 
-    this.documentViewCache = { includeSemanticTags, showFormatting, nodes, styles };
+    this.documentViewCache = { includeSemanticTags, showFormatting, formattingMode, nodes, styles };
     this.dirty = false;
     return { nodes, styles };
   }
