@@ -4,7 +4,7 @@ import { extractListLabel, stripListLabel, LabelType } from './list_labels.js';
 import { parseNumberingXml, type NumberingCounters, computeListLabelForParagraph } from './numbering.js';
 import { parseStylesXml, type StylesModel, extractParagraphFormatting, extractEffectiveRunFormatting, type ParagraphAlignment, type RunFormatting } from './styles.js';
 import { HIGHLIGHT_TAG } from './semantic_tags.js';
-import { type AnnotatedRun, type FormattingBaseline, computeModalBaseline, computeParagraphFontBaseline, emitFormattingTags, mergeAdjacentTags } from './formatting_tags.js';
+import { type AnnotatedRun, type FormattingBaseline, type FormattingMode, computeModalBaseline, computeParagraphFontBaseline, emitFormattingTags, mergeAdjacentTags } from './formatting_tags.js';
 import type { RelsMap } from './relationships.js';
 import { isReservedFootnote } from './footnotes.js';
 
@@ -573,6 +573,7 @@ export function buildNodesForDocumentView(params: {
   numberingXml: Document | null;
   include_semantic_tags?: boolean;
   show_formatting?: boolean;
+  formatting_mode?: FormattingMode;
   relsMap?: RelsMap;
   documentXml?: Document;
   footnotesXml?: Document | null;
@@ -580,6 +581,7 @@ export function buildNodesForDocumentView(params: {
   const { paragraphs, stylesXml, numberingXml, relsMap } = params;
   const includeSemantic = params.include_semantic_tags ?? true;
   const showFormatting = params.show_formatting ?? false;
+  const formattingMode = params.formatting_mode ?? 'compact';
 
   // Build footnote display number map if documentXml is provided
   const footnoteDisplayMap = params.documentXml
@@ -642,7 +644,7 @@ export function buildNodesForDocumentView(params: {
   }
 
   const docBaseline: FormattingBaseline = showFormatting
-    ? computeModalBaseline(allBodyRuns)
+    ? computeModalBaseline(allBodyRuns, { formattingMode })
     : { bold: false, italic: false, underline: false, suppressed: false };
 
   // ── Pass 2: main loop ──
@@ -782,7 +784,7 @@ export function buildNodesForDocumentView(params: {
       }
 
       // Emit formatting tags from run-level metadata.
-      const paraFontBaseline = computeParagraphFontBaseline(bodyRuns);
+      const paraFontBaseline = computeParagraphFontBaseline(bodyRuns, { formattingMode });
       tagged = emitFormattingTags({ runs: bodyRuns, baseline: docBaseline, fontBaseline: paraFontBaseline });
       tagged = mergeAdjacentTags(tagged);
 

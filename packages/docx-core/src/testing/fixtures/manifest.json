@@ -1,0 +1,65 @@
+{
+  "base_dir": ".",
+  "fixtures": [
+    {
+      "name": "simple-word-change",
+      "original": "simple-word-change/original.docx",
+      "revised": "simple-word-change/revised.docx",
+      "tags": ["synthetic", "word-level"]
+    },
+    {
+      "name": "paragraph-insert",
+      "original": "paragraph-insert/original.docx",
+      "revised": "paragraph-insert/revised.docx",
+      "tags": ["synthetic", "insertion"]
+    },
+    {
+      "name": "paragraph-delete",
+      "original": "paragraph-delete/original.docx",
+      "revised": "paragraph-delete/revised.docx",
+      "tags": ["synthetic", "deletion"]
+    },
+    {
+      "name": "run-level-change",
+      "original": "run-level-change/original.docx",
+      "revised": "run-level-change/revised.docx",
+      "tags": ["synthetic", "formatting"]
+    },
+    {
+      "name": "multiple-changes",
+      "original": "multiple-changes/original.docx",
+      "revised": "multiple-changes/revised.docx",
+      "tags": ["synthetic", "multi-change"]
+    },
+    {
+      "name": "no-change",
+      "original": "no-change/original.docx",
+      "revised": "no-change/revised.docx",
+      "tags": ["synthetic", "edge-case"]
+    },
+    {
+      "name": "empty-to-content",
+      "original": "empty-to-content/original.docx",
+      "revised": "empty-to-content/revised.docx",
+      "tags": ["synthetic", "edge-case"]
+    },
+    {
+      "name": "complete-rewrite",
+      "original": "complete-rewrite/original.docx",
+      "revised": "complete-rewrite/revised.docx",
+      "tags": ["synthetic", "full-rewrite"]
+    },
+    {
+      "name": "split-run-boundary-change",
+      "original": "split-run-boundary-change/original.docx",
+      "revised": "split-run-boundary-change/revised.docx",
+      "tags": ["synthetic", "run-boundary"]
+    },
+    {
+      "name": "ILPA",
+      "original": "../../../../../tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx",
+      "revised": "../../../../../tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx",
+      "tags": ["real-world", "contract", "numbering", "tables", "footnotes"]
+    }
+  ]
+}
