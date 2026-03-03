@@ -216,12 +216,7 @@ export async function resolveSessionForTool(
     loaded.normalizedPath,
   );
 
-  // Normalize: merge runs + simplify redlines BEFORE bookmark allocation.
-  session.normalizationStats = session.doc.normalize();
-
-  // Backfill missing intrinsic paragraph IDs before first read/edit.
-  session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
-  manager.touch(session);
+  await manager.finalizeNewSession(session);
 
   return {
     ok: true,

@@ -132,6 +132,32 @@ export class SessionManager {
     return session;
   }
 
+  /**
+   * Finalize a newly created session by normalizing the document, inserting
+   * paragraph bookmarks, and capturing post-normalization comparison baselines.
+   *
+   * INVARIANT: All production session creation paths must call
+   * `finalizeNewSession` before returning a session. `createSession` alone
+   * leaves baselines null and is incomplete for tool use.
+   */
+  async finalizeNewSession(
+    session: Session,
+    opts?: { skipNormalization?: boolean },
+  ): Promise<{ normalizationStats: NormalizationResult | null; paragraphCount: number }> {
+    if (!opts?.skipNormalization) {
+      session.normalizationStats = session.doc.normalize();
+    }
+    const info = session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
+    const [cleanBaseline, bookmarkedBaseline] = await Promise.all([
+      session.doc.toBuffer({ cleanBookmarks: true }),
+      session.doc.toBuffer({ cleanBookmarks: false }),
+    ]);
+    session.comparisonBaseline = cleanBaseline.buffer;
+    session.comparisonBaselineWithBookmarks = bookmarkedBaseline.buffer;
+    this.touch(session);
+    return { normalizationStats: session.normalizationStats, paragraphCount: info.paragraphCount };
+  }
+
   getSession(sessionId: string): Session {
     if (!SessionManager.SESSION_ID_PATTERN.test(sessionId)) {
       throw new Error(`INVALID_SESSION_ID:${sessionId}`);
