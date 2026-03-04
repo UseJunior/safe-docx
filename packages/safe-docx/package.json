@@ -24,7 +24,7 @@
     "safedocx": "./bin/safe-docx.js"
   },
   "dependencies": {
-    "@usejunior/docx-mcp": "^0.2.0"
+    "@usejunior/docx-mcp": "^0.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
