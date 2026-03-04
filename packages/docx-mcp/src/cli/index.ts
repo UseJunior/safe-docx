@@ -2,11 +2,18 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { runServeCommand } from './commands/serve.js';
 import { runCompareCommand, type CompareCommandArgs, type CompareCommandResult } from './commands/compare.js';
+import { parseEditArgs, runEditCommand } from './commands/edit.js';
+import { parseBoolean, toSnakeCase } from './parse_utils.js';
+import { parseToolFlags, generateToolHelp } from './flag_parser.js';
+import { renderTopLevelHelp } from './help.js';
+import { runToolCommand } from './tool_runner.js';
+import { SAFE_DOCX_TOOL_CATALOG } from '../tool_catalog.js';
 
-interface CliHandlers {
+export interface CliHandlers {
   serve: () => Promise<void>;
   compare: (args: CompareCommandArgs) => Promise<CompareCommandResult>;
   write: (line: string) => void;
+  writeError: (line: string) => void;
 }
 
 export interface CliProgram {
@@ -21,37 +28,6 @@ function packageVersion(): string {
   } catch {
     return '0.0.0';
   }
-}
-
-function renderHelp(): string {
-  return [
-    'safe-docx CLI',
-    '',
-    'Usage:',
-    '  safe-docx [command] [options]',
-    '  safedocx [command] [options]',
-    '',
-    'Commands:',
-    '  serve                                       Start the MCP server (default)',
-    '  compare <original> <revised> [output]       Compare two DOCX files and write redline output',
-    '',
-    'Compare options:',
-    '  --engine <auto|atomizer|diffmatch>          Comparison engine (default: atomizer)',
-    '  --mode <inplace|rebuild>                    Reconstruction mode (default: rebuild)',
-    '  --author <name>                             Track-changes author label (default: Comparison)',
-    '  --premerge-runs <true|false>                Enable run premerge optimization',
-    '',
-    'Global options:',
-    '  -h, --help                                  Show help',
-    '  -v, --version                               Show version',
-  ].join('\n');
-}
-
-function parseBoolean(raw: string, flagName: string): boolean {
-  const normalized = raw.trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  throw new Error(`Invalid value for ${flagName}: ${raw}. Use true or false.`);
 }
 
 function parseCompareArgs(args: string[]): CompareCommandArgs {
@@ -119,6 +95,10 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
       // eslint-disable-next-line no-console
       console.log(line);
     },
+    writeError: (line) => {
+      // eslint-disable-next-line no-console
+      console.error(line);
+    },
     ...overrides,
   };
 
@@ -139,7 +119,7 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
       const rest = args.slice(1);
 
       if (command === '--help' || command === '-h' || command === 'help') {
-        handlers.write(renderHelp());
+        handlers.write(renderTopLevelHelp());
         return;
       }
 
@@ -157,6 +137,26 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
         const parsed = parseCompareArgs(rest);
         const result = await handlers.compare(parsed);
         handlers.write(JSON.stringify(result));
+        return;
+      }
+
+      // Edit command — batched apply_plan wrapper
+      if (command === 'edit') {
+        const editArgs = parseEditArgs(rest);
+        await runEditCommand(editArgs, { write: handlers.write, writeError: handlers.writeError });
+        return;
+      }
+
+      // Generic tool dispatch — kebab-case command → snake_case tool name
+      const toolName = toSnakeCase(command);
+      const catalogEntry = SAFE_DOCX_TOOL_CATALOG.find((t) => t.name === toolName);
+      if (catalogEntry) {
+        const { args: toolArgs, help } = parseToolFlags(rest, toolName);
+        if (help) {
+          handlers.write(generateToolHelp(toolName));
+          return;
+        }
+        await runToolCommand(toolName, toolArgs, { write: handlers.write, writeError: handlers.writeError });
         return;
       }
 
