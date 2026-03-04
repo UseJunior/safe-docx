@@ -1,6 +1,26 @@
 {
-  "generated_at_utc": "2026-03-01T05:13:57.792Z",
+  "generated_at_utc": "2026-03-04T07:48:07.783Z",
   "releases": [
+    {
+      "version": "0.3.0",
+      "tag": "v0.3.0",
+      "title": "v0.3.0",
+      "published_at": "2026-03-04T07:47:17Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.3.0",
+      "body_md": "<!-- Release notes generated using configuration in .github/release.yml at v0.3.0 -->\n\n## What's Changed\n### Features\n* feat(docx-core): atomizer vs diffmatch quality benchmark (Phase 0+1) by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/25\n* feat(docx-mcp): cli subcommands, range-trimmed replace_text, NVCA regression by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/29\n### Bug Fixes\n* fix(site): landing page overhaul, changelog data fix, CodeQL regex fix by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/21\n* fix(site): trailing slashes, feedback link, Gemini CLI install by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/22\n* fix(docx-mcp): eliminate flaky MRU session test by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/23\n* fix(docx-mcp): capture comparison baselines on auto-opened sessions by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/24\n* fix(docx-mcp)!: add token-budget pagination to read_file, remove paragraph_ids by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/26\n* fix(docx-mcp): concurrent session auto-open race + grep empty-pattern guard by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/27\n### Other Changes\n* chore(site): update changelog data for v0.2.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/20\n* chore(release): bump workspace versions to 0.3.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/30\n* chore(release): bump mcpb manifest version to 0.3.0 by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/31\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/compare/v0.2.0...v0.3.0",
+      "assets": [
+        {
+          "name": "safe-docx.mcpb",
+          "size": 391592,
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.3.0/safe-docx.mcpb"
+        },
+        {
+          "name": "safe-docx.mcpb.sha256",
+          "size": 105,
+          "url": "https://github.com/UseJunior/safe-docx/releases/download/v0.3.0/safe-docx.mcpb.sha256"
+        }
+      ]
+    },
     {
       "version": "0.2.0",
       "tag": "v0.2.0",
