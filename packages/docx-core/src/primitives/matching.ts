@@ -150,6 +150,63 @@ function findAllMatchIndices(haystack: string, needle: string): number[] {
   return hits;
 }
 
+/**
+ * Transfer the document's smart-quote style to a target string.
+ *
+ * Scans `documentText` for the first left/right double and single smart-quote
+ * variants, then replaces straight quotes in `targetText` with those variants.
+ * Uses positional context (after whitespace/punctuation/start → opening, else closing)
+ * to choose the correct direction.
+ *
+ * Returns `targetText` unchanged when `documentText` contains no smart quotes.
+ * Angle quotes (« » ‹ ›) are explicitly non-goal for v1.
+ */
+export function applyDocumentQuoteStyle(documentText: string, targetText: string): string {
+  // Detect which smart-quote variants the document uses.
+  let leftDouble: string | null = null;
+  let rightDouble: string | null = null;
+  let leftSingle: string | null = null;
+  let rightSingle: string | null = null;
+
+  // Angle quotes are excluded from transfer (v1 non-goal).
+  const ANGLE_QUOTES = new Set(['\u00ab', '\u00bb', '\u2039', '\u203a']);
+
+  for (const ch of documentText) {
+    if (ANGLE_QUOTES.has(ch)) continue;
+    if (ch === '\u201c' && !leftDouble) leftDouble = ch;
+    if (ch === '\u201d' && !rightDouble) rightDouble = ch;
+    if (ch === '\u2018' && !leftSingle) leftSingle = ch;
+    if (ch === '\u2019' && !rightSingle) rightSingle = ch;
+  }
+
+  // No smart quotes in document → return unchanged.
+  if (!leftDouble && !rightDouble && !leftSingle && !rightSingle) return targetText;
+
+  let result = '';
+  for (let i = 0; i < targetText.length; i++) {
+    const ch = targetText[i]!;
+
+    if (ch === '"' && (leftDouble || rightDouble)) {
+      // Determine opening vs closing by looking at the preceding character.
+      const prev = i > 0 ? targetText[i - 1]! : '';
+      const isOpening = i === 0 || /[\s(\[{]/.test(prev);
+      result += isOpening ? (leftDouble ?? rightDouble!) : (rightDouble ?? leftDouble!);
+      continue;
+    }
+
+    if (ch === "'" && (leftSingle || rightSingle)) {
+      const prev = i > 0 ? targetText[i - 1]! : '';
+      const isOpening = i === 0 || /[\s(\[{]/.test(prev);
+      result += isOpening ? (leftSingle ?? rightSingle!) : (rightSingle ?? leftSingle!);
+      continue;
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
 export function findUniqueSubstringMatch(
   haystack: string,
   needle: string,
