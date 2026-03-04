@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "safe-docx",
   "display_name": "Safe Docx",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AI-native Word document editing with stable paragraph anchors and deterministic DOCX operations.",
   "long_description": "Safe Docx lets Claude work directly with .docx files on your local filesystem. It provides stable paragraph IDs (jr_para_*) for precise editing while preserving formatting and structure.\n\nCore capabilities include reading/searching content, formatting-preserving edits and inserts, deterministic layout controls, tracked-changes output, comments, footnote tools, document comparison, and revision extraction.",
   "author": {
