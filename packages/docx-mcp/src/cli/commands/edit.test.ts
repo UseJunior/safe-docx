@@ -118,15 +118,23 @@ describe('runEditCommand E2E', () => {
     const errors: string[] = [];
 
     await allureStep('Run edit command with --replace and -o', async () => {
-      await runEditCommand(
-        {
-          file_path: inputPath,
-          replaces: [{ paragraph_id: firstParaId, old_string: 'Hello', new_string: 'Goodbye' }],
-          inserts: [],
-          output_path: outPath,
-        },
-        { write: (l) => output.push(l), writeError: (l) => errors.push(l) },
-      );
+      try {
+        await runEditCommand(
+          {
+            file_path: inputPath,
+            replaces: [{ paragraph_id: firstParaId, old_string: 'Hello', new_string: 'Goodbye' }],
+            inserts: [],
+            output_path: outPath,
+          },
+          { write: (l) => output.push(l), writeError: (l) => errors.push(l) },
+        );
+      } catch (e) {
+        if (errors.length > 0) {
+          // eslint-disable-next-line no-console
+          console.error('Save stderr:', errors.join('\n'));
+        }
+        throw e;
+      }
     });
 
     await allureStep('Verify output file was created', async () => {

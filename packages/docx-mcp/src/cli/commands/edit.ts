@@ -176,7 +176,6 @@ export async function runEditCommand(args: EditCommandArgs, opts: EditCommandIO)
     const saveResult = await dispatchToolCall(mgr, 'save', {
       file_path: args.file_path,
       save_to_local_path: args.output_path,
-      save_format: 'clean',
     });
 
     const saveSuccess = (saveResult as { success?: boolean }).success;
