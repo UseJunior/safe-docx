@@ -21,7 +21,18 @@ export async function grep(
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
 
-    const patterns = params.patterns ?? [];
+    // Accept both "patterns" (array) and "pattern" (string) for ergonomics
+    let patterns = params.patterns ?? [];
+    if (patterns.length === 0 && typeof (params as Record<string, unknown>).pattern === 'string') {
+      patterns = [(params as Record<string, unknown>).pattern as string];
+    }
+    if (patterns.length === 0) {
+      return err(
+        'MISSING_PATTERN',
+        'No search patterns provided.',
+        'Pass patterns: ["your search term"] (array of regex strings).',
+      );
+    }
     const caseSensitive = params.case_sensitive ?? false;
     const wholeWord = params.whole_word ?? false;
     const maxResults = params.max_results ?? 100;
