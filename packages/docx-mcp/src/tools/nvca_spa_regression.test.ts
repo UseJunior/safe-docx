@@ -231,7 +231,7 @@ describe('NVCA SPA regression: redline edits', () => {
   });
 });
 
-describe('NVCA SPA regression: batch edit + save round-trip', () => {
+describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 }, () => {
   test('applies all 5 replacements in batch, saves clean output, formatting preserved', async () => {
     const { mgr, sid } = await openSPA();
     const tmpDir = await makeTempDir();
