@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from './helpers/allure-test.js';
+import { itAllure as it, allureStep } from './helpers/allure-test.js';
 import JSZip from 'jszip';
 import { parseXml, serializeXml } from '../src/primitives/xml.js';
 import { OOXML, W } from '../src/primitives/namespaces.js';
@@ -9,7 +9,6 @@ import { bootstrapCommentParts, addComment, addCommentReply, getComments, getCom
 
 const W_NS = OOXML.W_NS;
 const W15_NS = OOXML.W15_NS;
-declare const allure: { epic: (name: string) => void | Promise<void>; feature: (name: string) => void | Promise<void>; parentSuite: (name: string) => void | Promise<void>; suite: (name: string) => void | Promise<void>; subSuite: (name: string) => void | Promise<void>; severity: (level: string) => void | Promise<void>; story: (name: string) => void | Promise<void>; id: (id: string) => void | Promise<void>; allureId: (id: string) => void | Promise<void>; displayName: (value: string) => void | Promise<void>; label: (name: string, value: string) => void | Promise<void>; description: (value: string) => void | Promise<void>; tags: (...values: string[]) => void | Promise<void>; tag: (value: string) => void | Promise<void>; test: (value: unknown) => void | Promise<void>; step: <T>(name: string, body: (...args: unknown[]) => T | Promise<T>) => Promise<T>; parameter: (name: string, value: string) => void | Promise<void>; attachment: (name: string, content: string | Uint8Array, contentType?: string) => void | Promise<void>; };
 
 function makeDocXml(bodyXml: string): string {
   return (
@@ -353,14 +352,10 @@ describe('comments', () => {
 
   describe('getComments', () => {
     it('returns empty array when no comments.xml exists', async () => {
-      await allure.epic('DOCX Primitives');
-      await allure.feature('Comments');
-      await allure.story('Read Comments');
-      await allure.severity('normal');
 
       let comments: Awaited<ReturnType<typeof getComments>>;
 
-      await allure.step('Given a document with no comment parts', async () => {
+      await allureStep('Given a document with no comment parts', async () => {
         const buf = await makeDocxBuffer('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>');
         const zip = await loadZip(buf);
         const docXml = await zip.readText('word/document.xml');
@@ -368,22 +363,18 @@ describe('comments', () => {
         comments = await getComments(zip, doc);
       });
 
-      await allure.step('Then getComments returns an empty array', async () => {
+      await allureStep('Then getComments returns an empty array', async () => {
         expect(comments).toEqual([]);
       });
     });
 
     it('reads comments written by addComment', async () => {
-      await allure.epic('DOCX Primitives');
-      await allure.feature('Comments');
-      await allure.story('Read Comments');
-      await allure.severity('critical');
 
       let zip: DocxZip;
       let doc: Document;
       let comments: Awaited<ReturnType<typeof getComments>>;
 
-      await allure.step('Given a document with a comment added via addComment', async () => {
+      await allureStep('Given a document with a comment added via addComment', async () => {
         const bodyXml = '<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>';
         const buf = await makeDocxBuffer(bodyXml);
         zip = await loadZip(buf);
@@ -401,54 +392,50 @@ describe('comments', () => {
         });
       });
 
-      await allure.step('When reading comments via getComments', async () => {
+      await allureStep('When reading comments via getComments', async () => {
         comments = await getComments(zip, doc);
       });
 
-      await allure.step('Then exactly one comment is returned', async () => {
+      await allureStep('Then exactly one comment is returned', async () => {
         expect(comments).toHaveLength(1);
       });
 
-      await allure.step('And comment ID is 0', async () => {
+      await allureStep('And comment ID is 0', async () => {
         expect(comments[0]!.id).toBe(0);
       });
 
-      await allure.step('And author is Alice', async () => {
+      await allureStep('And author is Alice', async () => {
         expect(comments[0]!.author).toBe('Alice');
       });
 
-      await allure.step('And text is "Nice intro"', async () => {
+      await allureStep('And text is "Nice intro"', async () => {
         expect(comments[0]!.text).toBe('Nice intro');
       });
 
-      await allure.step('And initials is "A"', async () => {
+      await allureStep('And initials is "A"', async () => {
         expect(comments[0]!.initials).toBe('A');
       });
 
-      await allure.step('And date is populated', async () => {
+      await allureStep('And date is populated', async () => {
         expect(comments[0]!.date).toBeTruthy();
       });
 
-      await allure.step('And paragraphId is populated', async () => {
+      await allureStep('And paragraphId is populated', async () => {
         expect(comments[0]!.paragraphId).toBeTruthy();
       });
 
-      await allure.step('And replies array is empty', async () => {
+      await allureStep('And replies array is empty', async () => {
         expect(comments[0]!.replies).toEqual([]);
       });
     });
 
     it('reads multiple comments', async () => {
-      await allure.epic('DOCX Primitives');
-      await allure.feature('Comments');
-      await allure.story('Read Comments');
-      await allure.severity('normal');
 
       let zip: DocxZip;
       let doc: Document;
       let comments: Awaited<ReturnType<typeof getComments>>;
 
-      await allure.step('Given a document with two comments on different ranges', async () => {
+      await allureStep('Given a document with two comments on different ranges', async () => {
         const bodyXml = '<w:p><w:r><w:t>Hello World Foo</w:t></w:r></w:p>';
         const buf = await makeDocxBuffer(bodyXml);
         zip = await loadZip(buf);
@@ -460,34 +447,30 @@ describe('comments', () => {
         await addComment(doc, zip, { paragraphEl: p, start: 6, end: 11, author: 'Bob', text: 'Second comment' });
       });
 
-      await allure.step('When reading comments via getComments', async () => {
+      await allureStep('When reading comments via getComments', async () => {
         comments = await getComments(zip, doc);
       });
 
-      await allure.step('Then two comments are returned', async () => {
+      await allureStep('Then two comments are returned', async () => {
         expect(comments).toHaveLength(2);
       });
 
-      await allure.step('And first comment text is "First comment"', async () => {
+      await allureStep('And first comment text is "First comment"', async () => {
         expect(comments[0]!.text).toBe('First comment');
       });
 
-      await allure.step('And second comment text is "Second comment"', async () => {
+      await allureStep('And second comment text is "Second comment"', async () => {
         expect(comments[1]!.text).toBe('Second comment');
       });
     });
 
     it('builds threaded replies from addCommentReply', async () => {
-      await allure.epic('DOCX Primitives');
-      await allure.feature('Comments');
-      await allure.story('Threaded Replies');
-      await allure.severity('critical');
 
       let zip: DocxZip;
       let doc: Document;
       let comments: Awaited<ReturnType<typeof getComments>>;
 
-      await allure.step('Given a root comment with two replies', async () => {
+      await allureStep('Given a root comment with two replies', async () => {
         const bodyXml = '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>';
         const buf = await makeDocxBuffer(bodyXml);
         zip = await loadZip(buf);
@@ -500,42 +483,38 @@ describe('comments', () => {
         await addCommentReply(doc, zip, { parentCommentId: root.commentId, author: 'Replier2', text: 'Reply two' });
       });
 
-      await allure.step('When reading comments via getComments', async () => {
+      await allureStep('When reading comments via getComments', async () => {
         comments = await getComments(zip, doc);
       });
 
-      await allure.step('Then only one root comment is returned at top level', async () => {
+      await allureStep('Then only one root comment is returned at top level', async () => {
         expect(comments).toHaveLength(1);
       });
 
-      await allure.step('And root comment text is "Root comment"', async () => {
+      await allureStep('And root comment text is "Root comment"', async () => {
         expect(comments[0]!.text).toBe('Root comment');
       });
 
-      await allure.step('And root comment has two replies', async () => {
+      await allureStep('And root comment has two replies', async () => {
         expect(comments[0]!.replies).toHaveLength(2);
       });
 
-      await allure.step('And first reply text is "Reply one" by "Replier"', async () => {
+      await allureStep('And first reply text is "Reply one" by "Replier"', async () => {
         expect(comments[0]!.replies[0]!.text).toBe('Reply one');
         expect(comments[0]!.replies[0]!.author).toBe('Replier');
       });
 
-      await allure.step('And second reply text is "Reply two"', async () => {
+      await allureStep('And second reply text is "Reply two"', async () => {
         expect(comments[0]!.replies[1]!.text).toBe('Reply two');
       });
     });
 
     it('round-trip: write comments, save, reload, read back', async () => {
-      await allure.epic('DOCX Primitives');
-      await allure.feature('Comments');
-      await allure.story('Round-Trip Fidelity');
-      await allure.severity('critical');
 
       let buffer: Buffer;
       let comments: Awaited<ReturnType<typeof getComments>>;
 
-      await allure.step('Given a document with a comment and a reply', async () => {
+      await allureStep('Given a document with a comment and a reply', async () => {
         const bodyXml = '<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>';
         const buf = await makeDocxBuffer(bodyXml);
         const doc = await DocxDocument.load(buf);
@@ -548,24 +527,24 @@ describe('comments', () => {
         ({ buffer } = await doc.toBuffer());
       });
 
-      await allure.step('When reloading from buffer and reading comments', async () => {
+      await allureStep('When reloading from buffer and reading comments', async () => {
         const reloaded = await DocxDocument.load(buffer);
         comments = await reloaded.getComments();
       });
 
-      await allure.step('Then one root comment is returned', async () => {
+      await allureStep('Then one root comment is returned', async () => {
         expect(comments).toHaveLength(1);
       });
 
-      await allure.step('And root comment text matches "Round trip comment"', async () => {
+      await allureStep('And root comment text matches "Round trip comment"', async () => {
         expect(comments[0]!.text).toBe('Round trip comment');
       });
 
-      await allure.step('And root comment author matches "RoundTrip Author"', async () => {
+      await allureStep('And root comment author matches "RoundTrip Author"', async () => {
         expect(comments[0]!.author).toBe('RoundTrip Author');
       });
 
-      await allure.step('And reply is preserved with correct text', async () => {
+      await allureStep('And reply is preserved with correct text', async () => {
         expect(comments[0]!.replies).toHaveLength(1);
         expect(comments[0]!.replies[0]!.text).toBe('Round trip reply');
       });
@@ -574,16 +553,12 @@ describe('comments', () => {
 
   describe('getComment', () => {
     it('finds a root comment by ID', async () => {
-      await allure.epic('DOCX Primitives');
-      await allure.feature('Comments');
-      await allure.story('Single Comment Lookup');
-      await allure.severity('normal');
 
       let zip: DocxZip;
       let doc: Document;
       let found: Awaited<ReturnType<typeof getComment>>;
 
-      await allure.step('Given a document with one comment (ID 0)', async () => {
+      await allureStep('Given a document with one comment (ID 0)', async () => {
         const bodyXml = '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>';
         const buf = await makeDocxBuffer(bodyXml);
         zip = await loadZip(buf);
@@ -594,35 +569,31 @@ describe('comments', () => {
         await addComment(doc, zip, { paragraphEl: p, start: 0, end: 5, author: 'FindMe', text: 'Target comment' });
       });
 
-      await allure.step('When looking up comment by ID 0', async () => {
+      await allureStep('When looking up comment by ID 0', async () => {
         found = await getComment(zip, doc, 0);
       });
 
-      await allure.step('Then the comment is found', async () => {
+      await allureStep('Then the comment is found', async () => {
         expect(found).not.toBeNull();
       });
 
-      await allure.step('And text is "Target comment"', async () => {
+      await allureStep('And text is "Target comment"', async () => {
         expect(found!.text).toBe('Target comment');
       });
 
-      await allure.step('And author is "FindMe"', async () => {
+      await allureStep('And author is "FindMe"', async () => {
         expect(found!.author).toBe('FindMe');
       });
     });
 
     it('finds a reply comment by ID', async () => {
-      await allure.epic('DOCX Primitives');
-      await allure.feature('Comments');
-      await allure.story('Single Comment Lookup');
-      await allure.severity('normal');
 
       let zip: DocxZip;
       let doc: Document;
       let replyId: number;
       let found: Awaited<ReturnType<typeof getComment>>;
 
-      await allure.step('Given a root comment with a reply', async () => {
+      await allureStep('Given a root comment with a reply', async () => {
         const bodyXml = '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>';
         const buf = await makeDocxBuffer(bodyXml);
         zip = await loadZip(buf);
@@ -635,28 +606,24 @@ describe('comments', () => {
         replyId = reply.commentId;
       });
 
-      await allure.step('When looking up the reply by its ID', async () => {
+      await allureStep('When looking up the reply by its ID', async () => {
         found = await getComment(zip, doc, replyId);
       });
 
-      await allure.step('Then the reply is found', async () => {
+      await allureStep('Then the reply is found', async () => {
         expect(found).not.toBeNull();
       });
 
-      await allure.step('And text is "Nested reply"', async () => {
+      await allureStep('And text is "Nested reply"', async () => {
         expect(found!.text).toBe('Nested reply');
       });
     });
 
     it('returns null for non-existent ID', async () => {
-      await allure.epic('DOCX Primitives');
-      await allure.feature('Comments');
-      await allure.story('Single Comment Lookup');
-      await allure.severity('minor');
 
       let found: Awaited<ReturnType<typeof getComment>>;
 
-      await allure.step('Given a document with no comments', async () => {
+      await allureStep('Given a document with no comments', async () => {
         const bodyXml = '<w:p><w:r><w:t>Hello</w:t></w:r></w:p>';
         const buf = await makeDocxBuffer(bodyXml);
         const zip = await loadZip(buf);
@@ -666,7 +633,7 @@ describe('comments', () => {
         found = await getComment(zip, doc, 999);
       });
 
-      await allure.step('Then getComment returns null', async () => {
+      await allureStep('Then getComment returns null', async () => {
         expect(found).toBeNull();
       });
     });

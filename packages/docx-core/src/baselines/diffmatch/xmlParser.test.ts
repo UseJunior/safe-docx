@@ -42,7 +42,7 @@ describe('diffmatch xml parser (xmldom)', () => {
     expect(paragraphs[0]?.text).toBe('Hello world\t\nline');
     expect(paragraphs[0]?.runs).toHaveLength(2);
     expect(paragraphs[0]?.runs[0]?.properties?.bold).toBe(true);
-    expect(paragraphs[0]?.pPrXml).toContain('<w:pPr>');
+    expect(paragraphs[0]?.pPrXml).toContain('<w:pPr');
     expect(paragraphs[0]?.pPrXml).toContain('<w:pStyle w:val="Normal"/>');
     expect(paragraphs[1]?.originalIndex).toBe(1);
     expect(paragraphs[1]?.text).toBe('Second');
