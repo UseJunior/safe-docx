@@ -1,7 +1,13 @@
 import { describe, expect, vi } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { itAllure, allureStep } from '../testing/allure-test.js';
 import { createProgram } from './index.js';
 import type { CompareCommandArgs } from './commands/compare.js';
+import { makeMinimalDocx } from '../testing/docx_test_utils.js';
+import { createTrackedTempDir, registerCleanup } from '../testing/session-test-utils.js';
+
+registerCleanup();
 
 const it = itAllure.epic('Document Editing').withLabels({ feature: 'CLI Routing' });
 
@@ -182,6 +188,122 @@ describe('safe-docx CLI routing', () => {
       await expect(program.parseAsync(['node', 'safe-docx', 'unknown'])).rejects.toThrow(
         'Unknown command: unknown. Use --help to see available commands.',
       );
+    });
+  });
+});
+
+describe('safe-docx CLI — generic tool routing', () => {
+  it('routes read-file to tool dispatch', async () => {
+    const tmpDir = await createTrackedTempDir();
+    const inputPath = path.join(tmpDir, 'test.docx');
+    const buf = await makeMinimalDocx(['Hello world']);
+    await fs.writeFile(inputPath, new Uint8Array(buf));
+
+    const output: string[] = [];
+    const errors: string[] = [];
+    const program = createProgram({
+      serve: vi.fn(async () => undefined),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      write: (line) => output.push(line),
+      writeError: (line) => errors.push(line),
+    });
+
+    await allureStep('When read-file is invoked with a file path', async () => {
+      await program.parseAsync(['node', 'safe-docx', 'read-file', inputPath]);
+    });
+
+    await allureStep('Then tool output is JSON with success=true', () => {
+      expect(errors).toHaveLength(0);
+      expect(output).toHaveLength(1);
+      const result = JSON.parse(output[0]!) as { success: boolean; content: string };
+      expect(result.success).toBe(true);
+      expect(result.content).toContain('Hello world');
+    });
+  });
+
+  it('routes read-file --help to per-tool help', async () => {
+    const output: string[] = [];
+    const program = createProgram({
+      serve: vi.fn(async () => undefined),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      write: (line) => output.push(line),
+      writeError: () => undefined,
+    });
+
+    await allureStep('When read-file --help is invoked', async () => {
+      await program.parseAsync(['node', 'safe-docx', 'read-file', '--help']);
+    });
+
+    await allureStep('Then per-tool help is displayed', () => {
+      expect(output).toHaveLength(1);
+      expect(output[0]).toContain('safe-docx read-file');
+      expect(output[0]).toContain('--format');
+    });
+  });
+
+  it('top-level --help shows all tools', async () => {
+    const output: string[] = [];
+    const program = createProgram({
+      serve: vi.fn(async () => undefined),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      write: (line) => output.push(line),
+      writeError: () => undefined,
+    });
+
+    await allureStep('When top-level --help is invoked', async () => {
+      await program.parseAsync(['node', 'safe-docx', '--help']);
+    });
+
+    await allureStep('Then all tool names are listed', () => {
+      expect(output).toHaveLength(1);
+      const helpText = output[0]!;
+      expect(helpText).toContain('read-file');
+      expect(helpText).toContain('replace-text');
+      expect(helpText).toContain('insert-paragraph');
+      expect(helpText).toContain('save');
+      expect(helpText).toContain('grep');
+      expect(helpText).toContain('edit');
+    });
+  });
+
+  it('routes edit command to edit handler', async () => {
+    const tmpDir = await createTrackedTempDir();
+    const inputPath = path.join(tmpDir, 'test.docx');
+    const buf = await makeMinimalDocx(['Hello world']);
+    await fs.writeFile(inputPath, new Uint8Array(buf));
+
+    const output: string[] = [];
+    const errors: string[] = [];
+    const program = createProgram({
+      serve: vi.fn(async () => undefined),
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      write: (line) => output.push(line),
+      writeError: (line) => errors.push(line),
+    });
+
+    await allureStep('When edit command fails with unknown paragraph', async () => {
+      // This will fail because _bk_unknown doesn't exist, but it proves routing works
+      await expect(
+        program.parseAsync(['node', 'safe-docx', 'edit', inputPath, '--replace', '_bk_unknown', 'old', 'new']),
+      ).rejects.toThrow();
+    });
+  });
+
+  it('existing serve routing is unchanged', async () => {
+    const serve = vi.fn(async () => undefined);
+    const program = createProgram({
+      serve,
+      compare: vi.fn(async () => ({ output: '', engine: 'atomizer', mode: 'rebuild' as const, mode_requested: 'rebuild' as const, bytes: 0, stats: {} })),
+      write: () => undefined,
+      writeError: () => undefined,
+    });
+
+    await allureStep('When serve is invoked explicitly', async () => {
+      await program.parseAsync(['node', 'safe-docx', 'serve']);
+    });
+
+    await allureStep('Then serve handler is called', () => {
+      expect(serve).toHaveBeenCalledTimes(1);
     });
   });
 });

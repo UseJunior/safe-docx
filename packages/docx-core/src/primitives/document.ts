@@ -297,6 +297,19 @@ export class DocxDocument {
     this.documentViewCache = null;
   }
 
+  /**
+   * Replace text at a known character range without re-searching.
+   * Used by the range-trimming approach where the caller has already located the match.
+   */
+  replaceTextAtRange(params: { targetParagraphId: string; start: number; end: number; replaceText: string | ReplacementPart[] }): void {
+    const { targetParagraphId, start, end, replaceText } = params;
+    const p = findParagraphByBookmarkId(this.documentXml, targetParagraphId);
+    if (!p) throw new Error(`Paragraph not found: ${targetParagraphId}`);
+    replaceParagraphTextRange(p, start, end, replaceText);
+    this.dirty = true;
+    this.documentViewCache = null;
+  }
+
   insertParagraph(params: {
     positionalAnchorNodeId: string;
     relativePosition: 'BEFORE' | 'AFTER';

@@ -7,6 +7,7 @@ import {
   OOXML,
   W,
   findUniqueSubstringMatch,
+  applyDocumentQuoteStyle,
   getParagraphRuns,
   hasHighlightTags,
   hasHyperlinkTags,
@@ -114,57 +115,25 @@ function chooseContextTemplateRun(
   return { templateRun: template, allOverlappedRunsHighlighted: allHl };
 }
 
-function buildDistributedPartsAcrossRuns(
-  runs: Array<{ r: Element; text: string }>,
-  matchStart: number,
-  matchEnd: number,
-  newStr: string,
-  shouldClearHighlight: boolean,
-): ReplacementPart[] | null {
-  const overlaps: Array<{ r: Element; text: string; start: number; end: number }> = [];
-  let pos = 0;
-  for (const run of runs) {
-    const runStart = pos;
-    const runEnd = pos + run.text.length;
-    const overlap = Math.max(0, Math.min(matchEnd, runEnd) - Math.max(matchStart, runStart));
-    if (overlap > 0) {
-      overlaps.push({
-        r: run.r,
-        text: run.text,
-        start: Math.max(0, matchStart - runStart),
-        end: Math.min(run.text.length, matchEnd - runStart),
-      });
-    }
-    pos = runEnd;
-  }
+/**
+ * Count shared leading characters between two strings.
+ */
+export function commonPrefixLength(a: string, b: string): number {
+  const len = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < len && a[i] === b[i]) i++;
+  return i;
+}
 
-  if (overlaps.length <= 1) return null;
-
-  const totalOldLen = overlaps.reduce((sum, o) => sum + (o.end - o.start), 0);
-  if (totalOldLen === 0) return null;
-
-  const parts: ReplacementPart[] = [];
-  let distributedLen = 0;
-  for (let i = 0; i < overlaps.length; i++) {
-    const o = overlaps[i]!;
-    const oldPartLen = o.end - o.start;
-    const ratio = oldPartLen / totalOldLen;
-    let newPartLen = Math.round(ratio * newStr.length);
-    if (i === overlaps.length - 1) newPartLen = newStr.length - distributedLen;
-
-    const text = newStr.slice(distributedLen, distributedLen + newPartLen);
-    distributedLen += newPartLen;
-
-    if (text) {
-      parts.push({
-        text,
-        templateRun: o.r,
-        clearHighlight: shouldClearHighlight,
-      });
-    }
-  }
-
-  return parts;
+/**
+ * Count shared trailing characters between two strings,
+ * non-overlapping with a known prefix of length `prefixLen`.
+ */
+export function commonSuffixLength(a: string, b: string, prefixLen: number): number {
+  const maxSuffix = Math.min(a.length - prefixLen, b.length - prefixLen);
+  let i = 0;
+  while (i < maxSuffix && a[a.length - 1 - i] === b[b.length - 1 - i]) i++;
+  return i;
 }
 
 function isLikelyFieldPlaceholder(text: string): boolean {
@@ -265,16 +234,40 @@ export async function replaceText(
         parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
       }
       replaceText = parts;
+      session.doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText });
     } else {
-      const distributed = buildDistributedPartsAcrossRuns(paraRuns, matchStart, matchEnd, newStr, shouldClearHighlight);
-      if (distributed && distributed.length > 0) {
-        replaceText = distributed.map(d => ({ ...d, addRunProps: mergeAddRunProps(d.addRunProps, explicitAddProps) }));
-      } else if (shouldClearHighlight || contextTemplateRun || Object.keys(explicitAddProps).length > 0) {
-        replaceText = [{ text: newStr, templateRun: contextTemplateRun ?? undefined, addRunProps: explicitAddProps, clearHighlight: shouldClearHighlight }];
+      // Fix 2: Transfer document quote style to new_string for non-exact matches.
+      if (textMatch.mode !== 'exact' && textMatch.mode !== 'clean') {
+        newStr = applyDocumentQuoteStyle(matchedOldStr, newStr);
       }
-    }
 
-    session.doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText });
+      // Fix 1: Range trimming — compute common prefix/suffix between matched old text
+      // and new text, then only replace the changed middle. This preserves formatting
+      // on unchanged prefix/suffix characters and naturally avoids field intersections.
+      const prefixLen = commonPrefixLength(matchedOldStr, newStr);
+      const suffixLen = commonSuffixLength(matchedOldStr, newStr, prefixLen);
+      const trimmedNewStr = newStr.slice(prefixLen, newStr.length - suffixLen);
+      const trimmedStart = matchStart + prefixLen;
+      const trimmedEnd = matchEnd - suffixLen;
+
+      if (trimmedStart < trimmedEnd || trimmedNewStr.length > 0) {
+        // There IS a changed middle — trim and replace.
+        let trimmedReplace: string | ReplacementPart[];
+        if (shouldClearHighlight || Object.keys(explicitAddProps).length > 0) {
+          const { templateRun } = chooseContextTemplateRun(paraRuns, trimmedStart, trimmedEnd);
+          trimmedReplace = [{ text: trimmedNewStr, templateRun: templateRun ?? undefined,
+                              addRunProps: explicitAddProps, clearHighlight: shouldClearHighlight }];
+        } else {
+          trimmedReplace = trimmedNewStr;
+        }
+
+        session.doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
+        // Range trimming splits the original run at prefix/suffix boundaries, producing
+        // adjacent runs with identical formatting. Merge them back to keep output clean.
+        session.doc.mergeRunsOnly();
+      }
+      // else: text is identical after normalization — no-op
+    }
     manager.markEdited(session);
 
     return ok(mergeSessionResolutionMetadata({

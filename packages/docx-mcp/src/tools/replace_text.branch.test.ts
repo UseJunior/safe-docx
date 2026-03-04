@@ -100,7 +100,9 @@ describe('replace_text branch coverage', () => {
     assertFailure(missingAnchor, 'ANCHOR_NOT_FOUND', 'anchor missing');
   });
 
-  test('distributes replacements across overlapping runs in non-markup mode', async () => {
+  test('non-markup replacement across mixed-format runs uses template from trimmed range', async () => {
+    // "Alpha " (plain) + "Beta" (bold) → "Gamma Delta"
+    // No shared prefix/suffix → full range replacement with predominant template run.
     const xml = makeDocXml(
       `<w:p>` +
         `<w:r><w:t>Alpha </w:t></w:r>` +
@@ -115,22 +117,20 @@ describe('replace_text branch coverage', () => {
       target_paragraph_id: paraId,
       old_string: 'Alpha Beta',
       new_string: 'Gamma Delta',
-      instruction: 'distributed replacement branch',
+      instruction: 'full replacement uses template run',
     });
-    assertSuccess(edited, 'replace distributed parts');
+    assertSuccess(edited, 'replace with template run');
 
     const session = opened.mgr.getSession(opened.sessionId);
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
-    const runs = getParagraphRuns(pEl!).filter((r) => r.text.length > 0);
-    expect(runs.length).toBeGreaterThan(1);
 
     const read = await readFile(opened.mgr, {
       session_id: opened.sessionId,
       node_ids: [paraId],
       format: 'simple',
     });
-    assertSuccess(read, 'read distributed replacement');
+    assertSuccess(read, 'read replacement');
     expect(String(read.content)).toContain('Gamma Delta');
   });
 
@@ -246,6 +246,313 @@ describe('replace_text branch coverage', () => {
     expect(String(read.content)).not.toContain('<a ');
   });
 
+  // ── Fix 1: Range-trimmed formatting preservation tests ──────────────
+
+  test('preserves bold+plain formatting when appending text after unchanged prefix (Fix 1)', async () => {
+    // Bold "MAE" + plain " means X" — replace entire span, appending text.
+    // The range trimming should keep "MAE" means X" in original runs and only operate on the changed suffix.
+    const xml = makeDocXml(
+      `<w:p>` +
+        `<w:r><w:rPr><w:b/></w:rPr><w:t>\u201CMAE\u201D</w:t></w:r>` +
+        `<w:r><w:t xml:space="preserve"> means X</w:t></w:r>` +
+      `</w:p>`,
+    );
+    const opened = await openSession([], { xml });
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: '\u201CMAE\u201D means X',
+      new_string: '\u201CMAE\u201D means X; provided however',
+      instruction: 'append text preserving formatting',
+    });
+    assertSuccess(edited, 'replace with appended text');
+
+    const session = opened.mgr.getSession(opened.sessionId);
+    const pEl = session.doc.getParagraphElementById(paraId);
+    expect(pEl).toBeTruthy();
+    const runs = getParagraphRuns(pEl!).filter((r) => r.text.length > 0);
+
+    // The bold run containing "MAE" should still exist and be bold.
+    const boldRun = runs.find((r) => r.text.includes('\u201CMAE\u201D'));
+    expect(boldRun).toBeTruthy();
+    const boldRPr = boldRun!.r.getElementsByTagNameNS(W_NS, 'rPr').item(0);
+    expect(boldRPr).toBeTruthy();
+    expect(boldRPr!.getElementsByTagNameNS(W_NS, 'b').length).toBeGreaterThan(0);
+
+    // The full text should contain the appended text.
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toContain('; provided however');
+  });
+
+  test('prefix change preserves suffix formatting (Fix 1)', async () => {
+    // Bold "Hello" + italic " World" → "Goodbye World"
+    // Range trim: prefix is empty (first char differs), suffix is " World" (unchanged).
+    const xml = makeDocXml(
+      `<w:p>` +
+        `<w:r><w:rPr><w:b/></w:rPr><w:t>Hello</w:t></w:r>` +
+        `<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve"> World</w:t></w:r>` +
+      `</w:p>`,
+    );
+    const opened = await openSession([], { xml });
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'Hello World',
+      new_string: 'Goodbye World',
+      instruction: 'prefix change preserves suffix',
+    });
+    assertSuccess(edited, 'replace prefix');
+
+    const session = opened.mgr.getSession(opened.sessionId);
+    const pEl = session.doc.getParagraphElementById(paraId);
+    expect(pEl).toBeTruthy();
+    const runs = getParagraphRuns(pEl!).filter((r) => r.text.length > 0);
+
+    // " World" should still be italic (untouched by range trim).
+    const worldRun = runs.find((r) => r.text.includes(' World'));
+    expect(worldRun).toBeTruthy();
+    const worldRPr = worldRun!.r.getElementsByTagNameNS(W_NS, 'rPr').item(0);
+    expect(worldRPr).toBeTruthy();
+    expect(worldRPr!.getElementsByTagNameNS(W_NS, 'i').length).toBeGreaterThan(0);
+
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toBe('Goodbye World');
+  });
+
+  test('suffix change preserves prefix formatting (Fix 1)', async () => {
+    // Bold "Hello" + italic " World" → "Hello Earth"
+    // Range trim: prefix "Hello" stays bold, only " World" → " Earth".
+    const xml = makeDocXml(
+      `<w:p>` +
+        `<w:r><w:rPr><w:b/></w:rPr><w:t>Hello</w:t></w:r>` +
+        `<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve"> World</w:t></w:r>` +
+      `</w:p>`,
+    );
+    const opened = await openSession([], { xml });
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'Hello World',
+      new_string: 'Hello Earth',
+      instruction: 'suffix change preserves prefix',
+    });
+    assertSuccess(edited, 'replace suffix');
+
+    const session = opened.mgr.getSession(opened.sessionId);
+    const pEl = session.doc.getParagraphElementById(paraId);
+    expect(pEl).toBeTruthy();
+    const runs = getParagraphRuns(pEl!).filter((r) => r.text.length > 0);
+
+    // "Hello" should still be bold (untouched by range trim).
+    const helloRun = runs.find((r) => r.text.includes('Hello'));
+    expect(helloRun).toBeTruthy();
+    const helloRPr = helloRun!.r.getElementsByTagNameNS(W_NS, 'rPr').item(0);
+    expect(helloRPr).toBeTruthy();
+    expect(helloRPr!.getElementsByTagNameNS(W_NS, 'b').length).toBeGreaterThan(0);
+
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toBe('Hello Earth');
+  });
+
+  test('identical text after normalization is a no-op (Fix 1)', async () => {
+    const opened = await openSession(['Hello World']);
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'Hello World',
+      new_string: 'Hello World',
+      instruction: 'no-op identical text',
+    });
+    assertSuccess(edited, 'no-op replace');
+
+    // Text should be unchanged.
+    const session = opened.mgr.getSession(opened.sessionId);
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toBe('Hello World');
+  });
+
+  test('pure insertion at end when prefix covers all of old text (Fix 1)', async () => {
+    const opened = await openSession(['AB']);
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'AB',
+      new_string: 'ABX',
+      instruction: 'append X at end',
+    });
+    assertSuccess(edited, 'insert at end');
+
+    const session = opened.mgr.getSession(opened.sessionId);
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toBe('ABX');
+  });
+
+  test('pure insertion in middle when prefix and suffix cover old text (Fix 1)', async () => {
+    const opened = await openSession(['AB']);
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'AB',
+      new_string: 'AXB',
+      instruction: 'insert X between A and B',
+    });
+    assertSuccess(edited, 'insert in middle');
+
+    const session = opened.mgr.getSession(opened.sessionId);
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toBe('AXB');
+  });
+
+  // ── Fix 3: Field code preservation via diff trimming ──────────────
+
+  test('edit around field preserves field structure (Fix 3)', async () => {
+    // Paragraph: "total " + [FIELD: $1,000] + " dollars"
+    // Replace entire span → "total " + [FIELD: $1,000] + " US dollars"
+    // The diff should trim to just inserting "US " before "dollars", leaving the field untouched.
+    const xml = makeDocXml(
+      `<w:p>` +
+        `<w:r><w:t xml:space="preserve">total </w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> REF amount </w:instrText></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+        `<w:r><w:t>$1,000</w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        `<w:r><w:t xml:space="preserve"> dollars</w:t></w:r>` +
+      `</w:p>`,
+    );
+    const opened = await openSession([], { xml });
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'total $1,000 dollars',
+      new_string: 'total $1,000 US dollars',
+      instruction: 'edit around field preserves field',
+    });
+    assertSuccess(edited, 'edit around field');
+
+    // Verify field structures (fldChar) still exist in the DOM.
+    const session = opened.mgr.getSession(opened.sessionId);
+    const pEl = session.doc.getParagraphElementById(paraId);
+    expect(pEl).toBeTruthy();
+    const fldChars = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'fldChar'));
+    expect(fldChars.length).toBe(3); // begin, separate, end
+
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toContain('US dollars');
+  });
+
+  test('edit before field preserves field (Fix 3)', async () => {
+    // "The " + [FIELD: Agreement] → "This " + [FIELD: Agreement]
+    // Diff trims: "Th" prefix is common, "e" → "is" change, " [FIELD] Agreement" suffix is preserved.
+    const xml = makeDocXml(
+      `<w:p>` +
+        `<w:r><w:t xml:space="preserve">The </w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> DOCPROPERTY title </w:instrText></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+        `<w:r><w:t>Agreement</w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+      `</w:p>`,
+    );
+    const opened = await openSession([], { xml });
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'The Agreement',
+      new_string: 'This Agreement',
+      instruction: 'edit before field',
+    });
+    assertSuccess(edited, 'edit before field');
+
+    const session = opened.mgr.getSession(opened.sessionId);
+    const pEl = session.doc.getParagraphElementById(paraId);
+    expect(pEl).toBeTruthy();
+    const fldChars = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'fldChar'));
+    expect(fldChars.length).toBe(3);
+
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toContain('This');
+    expect(afterText).toContain('Agreement');
+  });
+
+  test('edit after field preserves field (Fix 3)', async () => {
+    // [FIELD: effective] + " date" → [FIELD: effective] + " commencement date"
+    const xml = makeDocXml(
+      `<w:p>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> REF term </w:instrText></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+        `<w:r><w:t>effective</w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        `<w:r><w:t xml:space="preserve"> date</w:t></w:r>` +
+      `</w:p>`,
+    );
+    const opened = await openSession([], { xml });
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'effective date',
+      new_string: 'effective commencement date',
+      instruction: 'edit after field',
+    });
+    assertSuccess(edited, 'edit after field');
+
+    const session = opened.mgr.getSession(opened.sessionId);
+    const pEl = session.doc.getParagraphElementById(paraId);
+    expect(pEl).toBeTruthy();
+    const fldChars = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'fldChar'));
+    expect(fldChars.length).toBe(3);
+
+    const afterText = session.doc.getParagraphTextById(paraId);
+    expect(afterText).toContain('commencement date');
+  });
+
+  test('edit that changes field text still throws UNSUPPORTED_EDIT (Fix 3)', async () => {
+    // Try to change the field result text itself — primitive should reject.
+    const xml = makeDocXml(
+      `<w:p>` +
+        `<w:r><w:t xml:space="preserve">see </w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText> REF x </w:instrText></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+        `<w:r><w:t>Visible</w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        `<w:r><w:t xml:space="preserve"> here</w:t></w:r>` +
+      `</w:p>`,
+    );
+    const opened = await openSession([], { xml });
+    const paraId = firstParaIdFromToon(opened.content);
+
+    const edited = await replaceText(opened.mgr, {
+      session_id: opened.sessionId,
+      target_paragraph_id: paraId,
+      old_string: 'see Visible here',
+      new_string: 'see Changed here',
+      instruction: 'edit that changes field text',
+    });
+    // This should fail with UNSUPPORTED_EDIT wrapped as EDIT_ERROR because the
+    // trimmed range "Visible" → "Changed" crosses the field result run.
+    assertFailure(edited, 'EDIT_ERROR', 'edit crossing field');
+  });
+
   humanReadableReplaceTest
     .allure({
       title: 'replace_text exposes edited document XML previews',
@@ -322,7 +629,10 @@ describe('replace_text branch coverage', () => {
           const outputXml = await readZipText(buffer, 'word/document.xml');
           expect(outputXml).not.toBeNull();
           const xml = String(outputXml ?? '');
-          expect(xml).toContain(replacement.new_string);
+          // With range trimming, the replacement text may span multiple runs in the XML,
+          // so check paragraph text instead of raw XML for contiguous string.
+          const afterText = session.doc.getParagraphTextById(firstParaId) ?? '';
+          expect(afterText).toContain(replacement.new_string);
           await attachXmlPreviews(xml, {
             wordLikeName: '01 Output Word-like preview',
             xmlName: '02 Output XML fixture (pretty XML)',
