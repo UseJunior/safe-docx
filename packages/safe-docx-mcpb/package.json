@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/safedocx-mcpb",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Claude Desktop MCP Bundle (.mcpb) wrapper for @usejunior/safe-docx",
   "type": "module",

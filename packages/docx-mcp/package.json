@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Safe Docx MCP server (TypeScript)",
   "type": "module",
   "main": "dist/index.js",
