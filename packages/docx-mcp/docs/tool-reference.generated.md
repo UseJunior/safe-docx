@@ -33,7 +33,8 @@ Search paragraphs with regex. Accepts session_id or file_path.
 | --- | --- | --- | --- |
 | `session_id` | `string` | no |  |
 | `file_path` | `string` | no |  |
-| `patterns` | `array<string>` | yes |  |
+| `patterns` | `array<string>` | no |  |
+| `pattern` | `string` | no |  |
 | `case_sensitive` | `boolean` | no |  |
 | `whole_word` | `boolean` | no |  |
 | `max_results` | `number` | no |  |

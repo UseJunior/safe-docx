@@ -43,7 +43,8 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     description: 'Search paragraphs with regex. Accepts session_id or file_path.',
     input: z.object({
       ...SESSION_OR_FILE_FIELDS,
-      patterns: z.array(z.string()),
+      patterns: z.array(z.string()).optional(),
+      pattern: z.string().optional(),
       case_sensitive: z.boolean().optional(),
       whole_word: z.boolean().optional(),
       max_results: z.number().optional(),

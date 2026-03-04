@@ -26,6 +26,21 @@ export type SessionResolutionOutcome =
       response: ToolResponse;
     };
 
+// ---------------------------------------------------------------------------
+// Concurrent auto-open deduplication
+// ---------------------------------------------------------------------------
+
+const pendingByManager = new WeakMap<SessionManager, Map<string, Promise<SessionResolutionOutcome>>>();
+
+function getPendingMap(manager: SessionManager): Map<string, Promise<SessionResolutionOutcome>> {
+  let map = pendingByManager.get(manager);
+  if (!map) {
+    map = new Map();
+    pendingByManager.set(manager, map);
+  }
+  return map;
+}
+
 function mapSessionLookupError(message: string, sessionId: string): ToolResponse {
   if (message.startsWith('INVALID_SESSION_ID:')) {
     return err(
@@ -205,26 +220,72 @@ export async function resolveSessionForTool(
     };
   }
 
-  const loaded = await validateAndLoadDocxFromPath(manager, filePath);
-  if (!loaded.ok) {
-    return { ok: false, response: loaded.response };
+  // --- Concurrent auto-open deduplication ---
+  const pendingMap = getPendingMap(manager);
+  const pending = pendingMap.get(normalizedPath);
+
+  if (pending) {
+    // Waiter: another request is already creating a session for this path
+    const outcome = await pending;
+    if (outcome.ok) {
+      manager.touch(outcome.session);
+      return {
+        ok: true,
+        session: outcome.session,
+        metadata: {
+          ...outcome.metadata,
+          session_resolution: 'reused_existing_session' as SessionResolutionMode,
+          reused_existing_session: true,
+          session_resolution_detail: 'awaited_concurrent_open',
+          warning: `Using existing editing session ${outcome.session.sessionId} for ${normalizedPath}.`,
+          resolved_session_id: outcome.session.sessionId,
+          resolved_file_path: normalizedPath,
+        },
+      };
+    }
+    // Leader failed — return the same structured error to the waiter
+    return outcome;
   }
 
-  const session = await manager.createSession(
-    loaded.content,
-    loaded.filename,
-    loaded.normalizedPath,
-  );
+  // Leader: first concurrent request for this path
+  let storedPromise!: Promise<SessionResolutionOutcome>;
 
-  await manager.finalizeNewSession(session);
+  const outcomePromise: Promise<SessionResolutionOutcome> = (async () => {
+    try {
+      const loaded = await validateAndLoadDocxFromPath(manager, filePath);
+      if (!loaded.ok) {
+        return { ok: false as const, response: loaded.response };
+      }
 
-  return {
-    ok: true,
-    session,
-    metadata: {
-      session_resolution: 'opened_new_session' as SessionResolutionMode,
-      resolved_session_id: session.sessionId,
-      resolved_file_path: loaded.normalizedPath,
-    },
-  };
+      const session = await manager.createSession(
+        loaded.content,
+        loaded.filename,
+        loaded.normalizedPath,
+      );
+      await manager.finalizeNewSession(session);
+
+      return {
+        ok: true as const,
+        session,
+        metadata: {
+          session_resolution: 'opened_new_session' as SessionResolutionMode,
+          resolved_session_id: session.sessionId,
+          resolved_file_path: loaded.normalizedPath,
+        },
+      };
+    } finally {
+      // Identity-guarded cleanup
+      if (pendingMap.get(normalizedPath) === storedPromise) {
+        pendingMap.delete(normalizedPath);
+      }
+    }
+  })();
+
+  storedPromise = outcomePromise;
+
+  // Prevent unhandled rejection warnings for exceptional throws
+  outcomePromise.catch(() => {});
+
+  pendingMap.set(normalizedPath, outcomePromise);
+  return await outcomePromise;
 }
