@@ -199,9 +199,25 @@ function convertToDelText(element: Element): void {
  * Collapsed field atoms use a synthetic w:t as their top-level contentElement,
  * but retain the original field sequence in collapsedFieldAtoms. For insertion,
  * we must replay the original sequence rather than the synthetic text.
+ *
+ * @param filterRun - When provided, only return content elements whose
+ *   collapsed field atom belongs to this specific source run. Used by
+ *   insertDeletedRun/insertMoveFromRun to emit one cloned run per original
+ *   source run, preserving multi-run field structure.
  */
-function getInsertableAtomContentElements(atom: ComparisonUnitAtom): Element[] {
+function getInsertableAtomContentElements(
+  atom: ComparisonUnitAtom,
+  filterRun?: Element
+): Element[] {
   if (atom.collapsedFieldAtoms && atom.collapsedFieldAtoms.length > 0) {
+    if (filterRun) {
+      return atom.collapsedFieldAtoms
+        .filter((fieldAtom) => {
+          const run = fieldAtom.sourceRunElement ?? findAncestorByTag(fieldAtom, 'w:r');
+          return run === filterRun;
+        })
+        .map((fieldAtom) => fieldAtom.contentElement);
+    }
     return atom.collapsedFieldAtoms.map((fieldAtom) => fieldAtom.contentElement);
   }
   return [atom.contentElement];
@@ -211,10 +227,14 @@ function getInsertableAtomContentElements(atom: ComparisonUnitAtom): Element[] {
  * Clone a source run and replace its non-rPr children with atom content.
  *
  * This keeps run-level formatting while allowing atom-level fragment insertion.
+ *
+ * @param filterRun - When provided, only include content elements belonging
+ *   to this source run (for multi-run collapsed field replay).
  */
 function cloneRunWithAtomContent(
   sourceRun: Element,
-  atom: ComparisonUnitAtom
+  atom: ComparisonUnitAtom,
+  filterRun?: Element
 ): Element {
   const clonedRun = sourceRun.cloneNode(true) as Element;
 
@@ -233,7 +253,7 @@ function cloneRunWithAtomContent(
     clonedRun.appendChild(child);
   }
 
-  for (const contentElement of getInsertableAtomContentElements(atom)) {
+  for (const contentElement of getInsertableAtomContentElements(atom, filterRun)) {
     const fragment = contentElement.cloneNode(true) as Element;
     clonedRun.appendChild(fragment);
   }
@@ -774,14 +794,6 @@ export function insertDeletedRun(
     return null;
   }
 
-  // Clone only the atom fragment while preserving run-level formatting.
-  // For collapsed fields, replay the original field sequence rather than
-  // the synthetic collapsed w:t placeholder.
-  const clonedRun = cloneRunWithAtomContent(sourceRun, deletedAtom);
-
-  // Convert w:t to w:delText
-  convertToDelText(clonedRun);
-
   // Create w:del wrapper
   const id = allocateRevisionId(state);
   const del = createEl('w:del', {
@@ -790,8 +802,21 @@ export function insertDeletedRun(
     'w:date': dateStr,
   });
 
-  // Add cloned run as child of del
-  del.appendChild(clonedRun);
+  // For collapsed field atoms, replay one cloned run per original source run
+  // to preserve multi-run field structure. Without this, all field elements
+  // get packed into a single run, breaking Word's field parsing.
+  const runs = getAtomRuns(deletedAtom);
+  if (runs.length > 1) {
+    for (const run of runs) {
+      const clonedRun = cloneRunWithAtomContent(run, deletedAtom, run);
+      convertToDelText(clonedRun);
+      del.appendChild(clonedRun);
+    }
+  } else {
+    const clonedRun = cloneRunWithAtomContent(sourceRun, deletedAtom);
+    convertToDelText(clonedRun);
+    del.appendChild(clonedRun);
+  }
 
   // Insert at correct position
   if (insertAfterRun) {
@@ -844,13 +869,20 @@ export function insertMoveFromRun(
     return null;
   }
 
-  // Clone only the atom fragment while preserving run-level formatting.
-  // For collapsed fields, replay the original field sequence rather than
-  // the synthetic collapsed w:t placeholder.
-  const clonedRun = cloneRunWithAtomContent(sourceRun, atom);
-
-  // Convert w:t to w:delText (moved-from content appears as deleted)
-  convertToDelText(clonedRun);
+  // For collapsed field atoms, replay one cloned run per original source run.
+  const runs = getAtomRuns(atom);
+  const clonedRuns: Element[] = [];
+  if (runs.length > 1) {
+    for (const run of runs) {
+      const clonedRun = cloneRunWithAtomContent(run, atom, run);
+      convertToDelText(clonedRun);
+      clonedRuns.push(clonedRun);
+    }
+  } else {
+    const clonedRun = cloneRunWithAtomContent(sourceRun, atom);
+    convertToDelText(clonedRun);
+    clonedRuns.push(clonedRun);
+  }
 
   // Get or allocate move range IDs
   const ids = getMoveRangeIds(state, moveName);
@@ -876,8 +908,10 @@ export function insertMoveFromRun(
     'w:id': String(ids.sourceRangeId),
   });
 
-  // Add cloned run as child of moveFrom
-  moveFrom.appendChild(clonedRun);
+  // Add cloned run(s) as children of moveFrom
+  for (const clonedRun of clonedRuns) {
+    moveFrom.appendChild(clonedRun);
+  }
 
   // Insert at correct position: rangeStart -> moveFrom(run) -> rangeEnd
   if (insertAfterRun) {
