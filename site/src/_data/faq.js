@@ -5,7 +5,7 @@ export default [
   },
   {
     q: 'How did Safe DOCX start?',
-    a: 'UseJunior began on October 1, 2024 after founder Steven Obiajulu left Ropes &amp; Gray to build practical tools for lawyers. Early users repeatedly asked for reliable editing of existing Word documents, which became the core Safe DOCX focus. See <a href="/about/">About</a> for the full story.',
+    a: 'UseJunior began on October 1, 2024 after founder Steven Obiajulu decided to leave Ropes &amp; Gray to build practical tools for lawyers. Early users repeatedly asked for reliable editing of existing Word documents, which became the core Safe DOCX focus. See <a href="/about/">About</a> for the full story.',
   },
   {
     q: 'Does it send data to remote servers?',
