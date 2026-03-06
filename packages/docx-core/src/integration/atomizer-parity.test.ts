@@ -10,6 +10,7 @@ import { itAllure as it } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { compareDocuments, type CompareResult } from '../index.js';
+import { compareDocumentsBaselineB } from '../baselines/diffmatch/pipeline.js';
 import {
   FIXTURE_STABLE_DATE,
   getIntegrationOutputModeLabel,
@@ -50,12 +51,11 @@ describe('Atomizer Pipeline Parity Test', () => {
       engine: 'atomizer',
     });
 
-    // Run diffmatch comparison for comparison
-    diffmatchResult = await compareDocuments(originalBuffer, revisedBuffer, {
+    // Run diffmatch comparison for comparison (direct import, dev-only)
+    diffmatchResult = await compareDocumentsBaselineB(originalBuffer, revisedBuffer, {
       author: 'DiffmatchTest',
       date: FIXTURE_STABLE_DATE,
-      engine: 'diffmatch',
-    });
+    }) as unknown as CompareResult;
 
     // Save output for inspection
     try {

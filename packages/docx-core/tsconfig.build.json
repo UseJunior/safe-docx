@@ -7,5 +7,5 @@
     "declarationMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["src/**/*.test.ts", "src/testing/**/*", "src/debug/**/*"]
+  "exclude": ["src/**/*.test.ts", "src/testing/**/*", "src/debug/**/*", "src/baselines/diffmatch/**/*", "src/benchmark/**/*"]
 }

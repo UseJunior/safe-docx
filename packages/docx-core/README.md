@@ -54,7 +54,6 @@ console.log(result.engine, result.stats);
 ## Engine Model
 
 - `atomizer` (default via `auto`): primary production path
-- `diffmatch`: optional baseline/debug path
 - `wmlcomparer`: not available through supported programmatic API usage
 
 ## Dependency Footprint
@@ -63,7 +62,6 @@ Runtime dependencies are intentionally small:
 
 - `@xmldom/xmldom` for XML DOM handling
 - `jszip` for DOCX zip container handling
-- `diff-match-patch` for optional `diffmatch` baseline behavior
 
 No native binaries, and no .NET prerequisite for supported runtime API usage.
 

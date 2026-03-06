@@ -102,11 +102,11 @@ export async function save(
     const format: SaveFormat = formatRaw;
 
     const engine = params.tracked_changes_engine ?? 'atomizer';
-    if (engine !== 'auto' && engine !== 'atomizer' && engine !== 'diffmatch' && engine !== 'wmlcomparer') {
-      return err('INVALID_TRACKED_ENGINE', `Invalid tracked_changes_engine: ${String(engine)}`, "Use one of: 'auto', 'atomizer', or 'diffmatch'.");
+    if (engine !== 'auto' && engine !== 'atomizer' && engine !== 'wmlcomparer') {
+      return err('INVALID_TRACKED_ENGINE', `Invalid tracked_changes_engine: ${String(engine)}`, "Use one of: 'auto' or 'atomizer'.");
     }
     if (engine === 'wmlcomparer') {
-      return err('INVALID_TRACKED_ENGINE', "tracked_changes_engine 'wmlcomparer' is not supported here", "Use 'auto', 'atomizer', or 'diffmatch'.");
+      return err('INVALID_TRACKED_ENGINE', "tracked_changes_engine 'wmlcomparer' is not supported here", "Use 'auto' or 'atomizer'.");
     }
     const trackedEngine: CompareOptions['engine'] = engine;
 

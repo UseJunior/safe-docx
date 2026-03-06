@@ -451,6 +451,42 @@ describe('Collapsed field inplace reconstruction', () => {
     });
   });
 
+  describe('instrText conversion', () => {
+    it('deleted field uses w:delInstrText instead of w:instrText', async () => {
+      const [original, revised] = await Promise.all([
+        createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
+        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+      ]);
+
+      const result = await compareDocuments(original, revised, {
+        engine: 'atomizer',
+        reconstructionMode: 'inplace',
+      });
+
+      const archive = await DocxArchive.load(result.document);
+      const xml = await archive.getDocumentXml();
+
+      await allureStep('Then instrText inside w:del uses w:delInstrText tag', async () => {
+        // Check that w:del wrappers use w:delInstrText (not w:instrText)
+        const delRegex = /<w:del[^>]*>(.*?)<\/w:del>/gs;
+        let match;
+        while ((match = delRegex.exec(xml)) !== null) {
+          const delContent = match[1]!;
+          if (delContent.includes('InstrText') || delContent.includes('instrText')) {
+            expect(delContent).toContain('w:delInstrText');
+            expect(delContent).not.toMatch(/<w:instrText/);
+          }
+        }
+      });
+
+      await allureStep('And reject-all converts w:delInstrText back to w:instrText', async () => {
+        const rejectedXml = rejectAllChanges(xml);
+        // After rejection, w:del content is unwrapped and w:delInstrText becomes w:instrText
+        expect(rejectedXml).not.toContain('w:delInstrText');
+      });
+    });
+  });
+
   describe('Edge cases', () => {
     it('inserted field preserves multi-run structure in w:ins wrapper', async () => {
       // Original has no field, revised adds one

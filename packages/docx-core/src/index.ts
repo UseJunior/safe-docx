@@ -3,11 +3,10 @@
  *
  * Provides multiple comparison approaches:
  * - Baseline A: WmlComparer wrapper (Docxodus WASM or dotnet CLI)
- * - Baseline B: Pure TypeScript (diff-match-patch + OOXML renderer) - paragraph level
+ * - Baseline B: Pure TypeScript (diff-match-patch + OOXML renderer) - paragraph level (dev-only)
  * - Atomizer: Pure TypeScript with atom-level comparison, move detection, format detection
  */
 
-import { compareDocumentsBaselineB } from './baselines/diffmatch/pipeline.js';
 import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
 
 export interface CompareOptions {
@@ -24,7 +23,7 @@ export interface CompareOptions {
    * Atomizer-only normalization: merge adjacent <w:r> siblings with identical formatting
    * prior to comparison. This can reduce overly-granular diffs for heavily-fragmented docs.
    *
-   * Default: false.
+   * Default: true.
    */
   premergeRuns?: boolean;
   /**
@@ -38,13 +37,12 @@ export interface CompareOptions {
   /**
    * Comparison engine to use:
    * - 'atomizer': Character-level comparison with move detection (recommended)
-   * - 'diffmatch': Paragraph-level comparison (faster, less precise)
    * - 'wmlcomparer': .NET WmlComparer (requires external runtime)
    * - 'auto': Automatically select best available engine (currently 'atomizer')
    *
    * Default: 'auto'
    */
-  engine?: 'wmlcomparer' | 'diffmatch' | 'atomizer' | 'auto';
+  engine?: 'wmlcomparer' | 'atomizer' | 'auto';
 }
 
 export interface CompareStats {
@@ -61,13 +59,15 @@ export type ReconstructionSafetyCheckName =
   | 'acceptText'
   | 'rejectText'
   | 'acceptBookmarks'
-  | 'rejectBookmarks';
+  | 'rejectBookmarks'
+  | 'fieldStructure';
 
 export interface ReconstructionSafetyChecks {
   acceptText: boolean;
   rejectText: boolean;
   acceptBookmarks: boolean;
   rejectBookmarks: boolean;
+  fieldStructure: boolean;
 }
 
 export interface ReconstructionTextMismatchDetails {
@@ -164,7 +164,7 @@ export interface CompareResult {
   /** Statistics about the comparison */
   stats: CompareStats;
   /** Which engine was used */
-  engine: 'wmlcomparer' | 'diffmatch' | 'atomizer';
+  engine: 'wmlcomparer' | 'atomizer';
   /**
    * Requested reconstruction mode. Present for atomizer outputs.
    */
@@ -200,6 +200,14 @@ export async function compareDocuments(
 ): Promise<CompareResult> {
   const { engine = 'auto', author, date, reconstructionMode, premergeRuns } = options;
 
+  // Migration error for removed diffmatch engine
+  if ((engine as string) === 'diffmatch') {
+    throw new Error(
+      "The 'diffmatch' engine has been removed from the public API. " +
+      "Use engine: 'atomizer' (recommended) or 'auto'."
+    );
+  }
+
   // Atomizer engine (recommended) - character-level with move detection
   if (engine === 'atomizer' || engine === 'auto') {
     return compareDocumentsAtomizer(original, revised, {
@@ -210,15 +218,10 @@ export async function compareDocuments(
     });
   }
 
-  // Diffmatch engine - paragraph-level (fallback)
-  if (engine === 'diffmatch') {
-    return compareDocumentsBaselineB(original, revised, { author, date });
-  }
-
   // WmlComparer engine requires --docxodus option at CLI level
   throw new Error(
     'WmlComparer engine is only available through the benchmark CLI. ' +
-    'Use engine: "diffmatch" or "atomizer" for programmatic access.'
+    'Use engine: "atomizer" or "auto" for programmatic access.'
   );
 }
 

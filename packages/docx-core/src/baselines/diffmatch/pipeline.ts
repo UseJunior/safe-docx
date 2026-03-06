@@ -11,8 +11,14 @@
  */
 
 import { DocxArchive } from '../../shared/docx/DocxArchive.js';
-import type { CompareResult, CompareStats } from '../../index.js';
 import type { AlignmentResult } from '../../shared/ooxml/types.js';
+
+/** Local result type to avoid importing from index.ts (which no longer exports diffmatch). */
+interface BaselineBResult {
+  document: Buffer;
+  stats: { insertions: number; deletions: number; modifications: number };
+  engine: 'diffmatch';
+}
 import { extractParagraphs } from './xmlParser.js';
 import { alignParagraphs, classifyAlignment } from './paragraphAlignment.js';
 import { resetRevisionIds } from './trackChangesRenderer.js';
@@ -46,7 +52,7 @@ export async function compareDocumentsBaselineB(
   original: Buffer,
   revised: Buffer,
   options: BaselineBOptions = {}
-): Promise<CompareResult> {
+): Promise<BaselineBResult> {
   const {
     author = 'Comparison',
     date = new Date(),
@@ -107,7 +113,7 @@ export async function compareDocumentsBaselineB(
 function computeStats(
   alignment: AlignmentResult,
   operations: ParagraphOperation[]
-): CompareStats {
+): BaselineBResult['stats'] {
   // Count operations
   let insertions = 0;
   let deletions = 0;

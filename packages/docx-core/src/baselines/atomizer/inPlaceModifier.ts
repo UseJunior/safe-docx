@@ -172,8 +172,9 @@ function formatDate(date: Date): string {
  * @param element - The element to process
  */
 function convertToDelText(element: Element): void {
-  if (element.tagName === 'w:t') {
-    const newEl = createEl('w:delText');
+  if (element.tagName === 'w:t' || element.tagName === 'w:instrText') {
+    const newTag = element.tagName === 'w:t' ? 'w:delText' : 'w:delInstrText';
+    const newEl = createEl(newTag);
     // Copy text content
     while (element.firstChild) newEl.appendChild(element.firstChild);
     // Copy attributes
@@ -182,10 +183,6 @@ function convertToDelText(element: Element): void {
       newEl.setAttribute(attr.name, attr.value);
     }
     element.parentNode?.replaceChild(newEl, element);
-    // Recurse into children of the new element (none expected for w:t, but be safe)
-    for (const child of childElements(newEl)) {
-      convertToDelText(child);
-    }
     return;
   }
   for (const child of childElements(element)) {

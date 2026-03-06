@@ -9,6 +9,7 @@ import { resolve, dirname } from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { compareDocuments } from '../index.js';
+import { compareDocumentsBaselineB } from '../baselines/diffmatch/pipeline.js';
 import { extractTextWithParagraphs } from '../baselines/atomizer/trackChangesAcceptorAst.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { createTimer } from './metrics.js';
@@ -80,7 +81,7 @@ async function produceRedline(
   }
 
   if (engine === 'diffmatch') {
-    const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'diffmatch', author });
+    const result = await compareDocumentsBaselineB(originalBuffer, revisedBuffer, { author });
     return result.document;
   }
 
