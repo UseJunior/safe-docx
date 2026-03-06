@@ -4,6 +4,10 @@ export default [
     a: 'Safe DOCX is an open-source MCP server that gives AI systems deterministic, local-first Word document editing. It exposes 23 tools for reading, writing, commenting, formatting, and tracking changes in .docx files — all without sending data to remote servers.',
   },
   {
+    q: 'How did Safe DOCX start?',
+    a: 'UseJunior began on October 1, 2024 after founder Steven Obiajulu left Ropes &amp; Gray to build practical tools for lawyers. Early users repeatedly asked for reliable editing of existing Word documents, which became the core Safe DOCX focus. See <a href="/about/">About</a> for the full story.',
+  },
+  {
     q: 'Does it send data to remote servers?',
     a: 'No. All operations run in-process on your machine. Documents never leave your environment, even during AI-driven workflows.',
   },
@@ -14,6 +18,10 @@ export default [
   {
     q: 'What can it actually do to a document?',
     a: 'Read content, search with grep, replace text, insert paragraphs, add and delete comments, manage footnotes, format layouts, accept tracked changes, compare document versions, and more — 23 tools across 7 categories.',
+  },
+  {
+    q: 'Why focus on existing documents instead of generating new ones?',
+    a: 'Safe DOCX is optimized for brownfield editing of real-world .docx files where formatting and review semantics matter. For from-scratch generation, use a generation-first library such as <code>docx</code>.',
   },
   {
     q: 'Is it free?',

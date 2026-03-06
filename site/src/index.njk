@@ -6,9 +6,10 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
 {# ── Hero ────────────────────────────────────────── #}
 <section class="hero">
   <p class="eyebrow">Safe DOCX</p>
-  <h1>Deterministic DOCX editing with auditable behavior.</h1>
+  <h1>Brownfield DOCX editing for AI workflows.</h1>
   <p>
-    Safe DOCX keeps edits local-first and spec-driven — 22 tools for reading, writing, commenting, formatting, and tracking changes in Word documents. No remote servers, no black boxes.
+    Safe DOCX keeps edits local-first and auditable — 23 tools for reading, writing, commenting, formatting, and tracking changes in existing Word documents.
+    Built by UseJunior from lawyer-requested workflows, then open sourced for transparent collaboration.
   </p>
 
   <div class="hero-copy">
@@ -21,6 +22,7 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
 
   <div class="hero-actions">
     <a class="cta" href="#install">Install Guide</a>
+    <a class="cta cta-ghost" href="about/index.html">About Us</a>
     <a class="cta cta-ghost" href="trust/index.html">Trust Evidence</a>
   </div>
 
@@ -68,9 +70,22 @@ description: Deterministic DOCX operations for AI systems. Fast, safe, composabl
   </article>
 </section>
 
+{# ── Origin ───────────────────────────────────────── #}
+<section class="content reveal">
+  <h2>Why we built Safe DOCX</h2>
+  <p>
+    UseJunior started on October 1, 2024 to build useful tools for lawyers.
+    Early users consistently asked for reliable edits to existing Word files, so we focused on deterministic brownfield operations instead of from-scratch generation.
+  </p>
+  <p>
+    As users asked for more transparency, we wrote our own specs and Python implementations around python-docx conventions, then ported that work to our own TypeScript codebase for MCP-native distribution and improved incrementally as bugs surfaced.
+    <a href="about/index.html">Read the full story.</a>
+  </p>
+</section>
+
 {# ── Function Gallery ────────────────────────────── #}
 <section id="functions" class="reveal">
-  <h2 class="section-heading">22 tools across 7 categories</h2>
+  <h2 class="section-heading">23 tools across 7 categories</h2>
   <div class="grid">
     {% for cat in toolCatalog %}
     <article class="card">
