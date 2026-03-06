@@ -207,8 +207,6 @@ const it = itAllure.epic('Document Comparison').withLabels({
 describe('Collapsed field inplace reconstruction', () => {
   describe('Dedicated-run field (PAGEREF)', () => {
     let resultXml: string;
-    let reconstructionModeUsed: string;
-    let fallbackReason: string | undefined;
 
     it('deleted field preserves multi-run structure in w:del wrapper', async () => {
       await allureStep('Given original and revised docs with a PAGEREF field change (23 -> 42)', async () => {
@@ -226,8 +224,6 @@ describe('Collapsed field inplace reconstruction', () => {
           engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
-        reconstructionModeUsed = result.reconstructionModeUsed;
-        fallbackReason = result.fallbackReason;
         const archive = await DocxArchive.load(result.document);
         resultXml = await archive.getDocumentXml();
         await allureJsonAttachment('comparison-metadata.json', {
