@@ -1,6 +1,15 @@
 {
-  "generated_at_utc": "2026-03-04T07:48:07.783Z",
+  "generated_at_utc": "2026-03-06T22:28:30.153Z",
   "releases": [
+    {
+      "version": "0.1.0",
+      "tag": "v0.1.0",
+      "title": "v0.1.0",
+      "published_at": "2026-03-06T20:27:07Z",
+      "url": "https://github.com/UseJunior/safe-docx/releases/tag/v0.1.0",
+      "body_md": "## What's Changed\n* feat!: merge docx-primitives + docx-comparison into @usejunior/docx-core by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/2\n* fix(docx-core): pre-split mixed-status inplace runs + publish wiring by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/3\n* ci(safe-docx): harden npm installs with retry backoff by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/4\n* fix(ci): restore deploy-allure artifact download path by @stevenobiajulu in https://github.com/UseJunior/safe-docx/pull/5\n\n\n**Full Changelog**: https://github.com/UseJunior/safe-docx/commits/v0.1.0",
+      "assets": []
+    },
     {
       "version": "0.3.0",
       "tag": "v0.3.0",

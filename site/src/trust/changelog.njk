@@ -72,6 +72,60 @@ description: Release history for Safe DOCX, auto-generated from GitHub Releases.
     margin-top: 1.6rem;
     font-size: 0.92rem;
   }
+
+  /* Grouped release notes */
+  .cl-warning {
+    background: color-mix(in srgb, var(--accent-soft) 12%, white);
+    border-left: 3px solid var(--accent);
+    padding: 10px 14px;
+    margin: 0 0 16px;
+    font-size: 0.88rem;
+    color: var(--ink);
+  }
+  .cl-group {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 4px 12px;
+    align-items: start;
+    margin: 5px 0;
+  }
+  .cl-type-label {
+    color: var(--ink-soft);
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding-top: 3px;
+    white-space: nowrap;
+  }
+  .cl-entries {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .cl-entries li {
+    margin: 2px 0;
+    font-size: 0.9rem;
+    padding-left: 14px;
+    position: relative;
+  }
+  .cl-entries li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: var(--ink-soft);
+  }
+  .cl-scope {
+    color: var(--ink-soft);
+    font-size: 0.84rem;
+  }
+  .cl-scope::before { content: "("; }
+  .cl-scope::after  { content: ")"; }
+  .cl-pr {
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    font-family: monospace;
+  }
 </style>
 
 <section class="hero">
@@ -91,7 +145,7 @@ description: Release history for Safe DOCX, auto-generated from GitHub Releases.
       <time datetime="{{ release.published_at }}">{{ release.published_display }}</time>
     </div>
     <div class="changelog-body">
-      {{ release.body_md | renderMarkdown | safe }}
+      {{ release.body_md | formatReleaseNotes | safe }}
     </div>
     {% if release.assets.length %}
     <div class="changelog-assets">
