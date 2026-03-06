@@ -584,6 +584,11 @@ export function rejectAllChanges(documentXml: string): string {
     renameElement(delText, 'w:t');
   }
 
+  // Convert w:delInstrText to w:instrText
+  for (const delInstrText of findAllByTagName(root, 'w:delInstrText')) {
+    renameElement(delInstrText, 'w:instrText');
+  }
+
   // Remove format change tracking
   removeAllByTagName(root, 'w:rPrChange');
   removeAllByTagName(root, 'w:pPrChange');

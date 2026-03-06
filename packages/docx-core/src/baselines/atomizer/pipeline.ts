@@ -92,7 +92,7 @@ export interface AtomizerOptions {
    * This reduces overly-fragmented diffs without relying on atom-level cross-run text merging,
    * and can improve revision grouping in Word.
    *
-   * Default: false.
+   * Default: true.
    */
   premergeRuns?: boolean;
   /**
@@ -341,6 +341,65 @@ function buildFailureSummary(
   return Object.keys(summary).length > 0 ? summary : undefined;
 }
 
+/**
+ * Validate field structure integrity in document XML.
+ *
+ * Checks that fldChar begin/end are balanced and that w:instrText only
+ * appears inside a proper field sequence (between begin and separate).
+ * Orphaned instrText elements render as visible text in Word.
+ */
+function validateFieldStructure(documentXml: string): boolean {
+  const root = parseDocumentXml(documentXml);
+
+  // Walk the document in order, tracking field nesting
+  const allFldChars = findAllByTagName(root, 'w:fldChar');
+  const allInstrTexts = findAllByTagName(root, 'w:instrText');
+
+  // Quick balance check
+  let begins = 0;
+  let ends = 0;
+  for (const fc of allFldChars) {
+    const type = fc.getAttribute('w:fldCharType');
+    if (type === 'begin') begins++;
+    else if (type === 'end') ends++;
+  }
+  if (begins !== ends) return false;
+
+  // Check that instrText elements are inside a field (between begin and separate).
+  // Walk all elements in document order using a recursive scan.
+  if (allInstrTexts.length === 0) return true; // No instrText, nothing to validate
+
+  // Depth-first scan to check instrText placement
+  let depth = 0;
+  const pastSeparatorAtDepth: number[] = []; // track separator state per depth
+  function scan(node: Element): boolean {
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType !== 1) continue; // skip non-elements
+      const el = child as Element;
+
+      if (el.tagName === 'w:fldChar') {
+        const type = el.getAttribute('w:fldCharType');
+        if (type === 'begin') {
+          depth++;
+          pastSeparatorAtDepth[depth] = 0;
+        } else if (type === 'separate') {
+          if (depth > 0) pastSeparatorAtDepth[depth] = 1;
+        } else if (type === 'end') {
+          if (depth > 0) depth--;
+        }
+      } else if (el.tagName === 'w:instrText') {
+        // instrText must be inside a field (depth > 0) and before the separator
+        if (depth === 0 || pastSeparatorAtDepth[depth]) return false;
+      }
+
+      if (!scan(el)) return false;
+    }
+    return true;
+  }
+
+  return scan(root);
+}
+
 function evaluateSafetyChecks(
   originalTextForRoundTrip: string,
   revisedTextForRoundTrip: string,
@@ -372,6 +431,13 @@ function evaluateSafetyChecks(
     rejectedBookmarkDiagnostics
   );
 
+  // Validate field structure: after accept-all and reject-all, every
+  // w:instrText must be inside a proper field sequence (between fldChar
+  // begin and fldChar separate). Orphaned instrText renders as visible
+  // text in Word.
+  const fieldStructureOk =
+    validateFieldStructure(acceptedXml) && validateFieldStructure(rejectedXml);
+
   const checks: ReconstructionSafetyChecks = {
     acceptText: acceptTextComparison.normalizedIdentical,
     rejectText: rejectTextComparison.normalizedIdentical,
@@ -380,6 +446,7 @@ function evaluateSafetyChecks(
     // Log mismatches in diagnostics but don't trigger fallback to rebuild.
     acceptBookmarks: true,
     rejectBookmarks: true,
+    fieldStructure: fieldStructureOk,
   };
 
   const failedChecks: ReconstructionSafetyCheckName[] = (Object.entries(checks) as Array<
@@ -451,7 +518,7 @@ export async function compareDocumentsAtomizer(
     moveDetection = {},
     formatDetection = {},
     numbering = {},
-    premergeRuns = false,
+    premergeRuns = true,
     reconstructionMode = 'rebuild',
   } = options;
 

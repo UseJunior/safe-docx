@@ -668,10 +668,22 @@ export function collapseFieldSequences(
       }
 
       // Check if field spans multiple paragraphs (like TOC, INDEX)
-      // If so, don't collapse - preserve paragraph structure
+      // If so, don't collapse the outer field - preserve paragraph structure.
+      // But recursively collapse inner single-paragraph fields (e.g., PAGEREF
+      // nested inside TOC) so they are treated as single atoms during LCS.
       if (fieldSpansMultipleParagraphs(fieldAtoms)) {
-        // Pass through all field atoms unchanged
-        result.push(...fieldAtoms);
+        if (separatorIndex >= 0 && separatorIndex < fieldAtoms.length - 1) {
+          // Pass through outer field markers: begin, instrText..., separate
+          result.push(...fieldAtoms.slice(0, separatorIndex + 1));
+          // Recursively collapse inner content (between separator and end)
+          const innerContent = fieldAtoms.slice(separatorIndex + 1, -1);
+          result.push(...collapseFieldSequences(innerContent));
+          // Pass through outer end marker
+          result.push(fieldAtoms[fieldAtoms.length - 1]!);
+        } else {
+          // No separator found (unusual), pass through unchanged
+          result.push(...fieldAtoms);
+        }
         continue;
       }
 

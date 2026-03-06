@@ -24,7 +24,7 @@ export type SaveCacheEntry = {
   revision: number;
   format: SaveFormat;
   cleanBookmarks: boolean;
-  trackedEngine: 'auto' | 'atomizer' | 'diffmatch';
+  trackedEngine: 'auto' | 'atomizer';
   trackedAuthor: string;
   revisedBuffer: Buffer;
   trackedBuffer: Buffer | null;

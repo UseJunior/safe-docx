@@ -634,7 +634,9 @@ function buildParagraphXml(
     for (const runGroup of group.runGroups) {
       const plainRun = buildRunContentAsPlainRun(runGroup);
       parts.push(
-        plainRun.replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>')
+        plainRun
+          .replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>')
+          .replace(/<w:instrText([^>]*)>([^<]*)<\/w:instrText>/g, '<w:delInstrText$1>$2</w:delInstrText>')
       );
     }
     parts.push('</w:del>');
@@ -1073,8 +1075,10 @@ function wrapWithDel(
   revState: RevisionIdState
 ): string {
   const id = allocateRevisionId(revState);
-  // For deletions, we need to convert w:t to w:delText
-  const delContent = content.replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>');
+  // For deletions, convert w:t to w:delText and w:instrText to w:delInstrText
+  const delContent = content
+    .replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>')
+    .replace(/<w:instrText([^>]*)>([^<]*)<\/w:instrText>/g, '<w:delInstrText$1>$2</w:delInstrText>');
   return `<w:del w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">${delContent}</w:del>`;
 }
 
@@ -1091,8 +1095,10 @@ function wrapWithMoveFrom(
   const ids = getMoveRangeIds(revState, moveName);
   const moveId = allocateRevisionId(revState);
 
-  // Convert w:t to w:delText for moved-from content
-  const delContent = content.replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>');
+  // Convert w:t to w:delText and w:instrText to w:delInstrText for moved-from content
+  const delContent = content
+    .replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>')
+    .replace(/<w:instrText([^>]*)>([^<]*)<\/w:instrText>/g, '<w:delInstrText$1>$2</w:delInstrText>');
 
   return (
     `<w:moveFromRangeStart w:id="${ids.sourceRangeId}" w:name="${moveName}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}"/>` +

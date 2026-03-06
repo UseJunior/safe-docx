@@ -133,7 +133,7 @@ Save clean and/or tracked changes output back to the local filesystem. Defaults 
 | `allow_overwrite` | `boolean` | no |  |
 | `tracked_save_to_local_path` | `string` | no |  |
 | `tracked_changes_author` | `string` | no |  |
-| `tracked_changes_engine` | `enum("auto", "atomizer", "diffmatch")` | no |  |
+| `tracked_changes_engine` | `enum("auto", "atomizer")` | no |  |
 | `fail_on_rebuild_fallback` | `boolean` | no | When true, return an error instead of a destructive output if the comparison engine falls back to rebuild mode (which destroys table structure). Default: false. |
 
 ## `format_layout`
@@ -260,7 +260,7 @@ Compare two DOCX documents and produce a tracked-changes output document. Provid
 | `file_path` | `string` | no |  |
 | `save_to_local_path` | `string` | yes | Path to save the tracked-changes DOCX output. |
 | `author` | `string` | no | Author name for track changes. Default: 'Comparison'. |
-| `engine` | `enum("auto", "atomizer", "diffmatch")` | no | Comparison engine. Default: 'auto'. |
+| `engine` | `enum("auto", "atomizer")` | no | Comparison engine. Default: 'auto'. |
 
 ## `get_footnotes`
 

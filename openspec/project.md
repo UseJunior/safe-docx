@@ -18,7 +18,7 @@ The core product goal is local-first legal-document editing with deterministic b
 - npm workspaces monorepo (`packages/*`)
 - `@modelcontextprotocol/sdk` for MCP server transport/contracts
 - OOXML/DOCX processing: `@xmldom/xmldom`, `jszip`, `fast-xml-parser`
-- Comparison and diffing: `diff-match-patch`
+- Comparison and diffing: `diff-match-patch` (dev-only, benchmarking)
 - CLI/runtime utilities: `uuid`, `tsx`
 - Testing: `vitest`, `@vitest/coverage-v8`, `allure-vitest`
 - Spec-driven process: OpenSpec (`openspec/`)
@@ -105,6 +105,6 @@ Release preflight verifies tag/version alignment, npm duplicates, build/tests, c
 - [xmldom](https://www.npmjs.com/package/@xmldom/xmldom) - DOM-compatible XML parsing for OOXML
 - [JSZip](https://www.npmjs.com/package/jszip) - DOCX archive read/write
 - [fast-xml-parser](https://www.npmjs.com/package/fast-xml-parser) - XML parsing in comparison pipelines
-- [diff-match-patch](https://www.npmjs.com/package/diff-match-patch) - text diff foundation
+- [diff-match-patch](https://www.npmjs.com/package/diff-match-patch) - text diff foundation (dev-only, benchmarking)
 - [Vitest](https://vitest.dev/) - test runner
 - [Allure Vitest](https://www.npmjs.com/package/allure-vitest) - traceability reporting

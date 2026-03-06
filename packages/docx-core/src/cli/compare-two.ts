@@ -4,7 +4,7 @@ import { compareDocuments, type CompareOptions } from '../index.js';
 
 const USAGE =
   'Usage: docx-comparison <original.docx> <revised.docx> [output.docx] ' +
-  '[--engine atomizer|diffmatch|auto] [--mode inplace|rebuild] [--author "Name"] [--premerge-runs true|false]';
+  '[--engine atomizer|auto] [--mode inplace|rebuild] [--author "Name"] [--premerge-runs true|false]';
 
 export interface ParsedCompareCliArgs {
   originalPath: string;
@@ -47,7 +47,7 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
     engine: 'atomizer',
     reconstructionMode: 'rebuild',
     author: 'Comparison',
-    premergeRuns: false,
+    premergeRuns: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -71,8 +71,8 @@ export function parseCompareCliArgs(argv: string[]): ParsedCompareCliArgs {
     switch (token) {
       case '--engine': {
         const engine = consumeValue(token);
-        if (engine !== 'atomizer' && engine !== 'diffmatch' && engine !== 'auto') {
-          throw new Error(`Unsupported engine: ${engine}. Use atomizer, diffmatch, or auto.`);
+        if (engine !== 'atomizer' && engine !== 'auto') {
+          throw new Error(`Unsupported engine: ${engine}. Use atomizer or auto.`);
         }
         options.engine = engine;
         break;

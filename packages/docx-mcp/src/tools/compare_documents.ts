@@ -59,11 +59,11 @@ export async function compareDocuments_tool(
 
     // Validate engine
     const engine = params.engine ?? 'auto';
-    if (engine !== 'auto' && engine !== 'atomizer' && engine !== 'diffmatch') {
+    if (engine !== 'auto' && engine !== 'atomizer') {
       if (engine === 'wmlcomparer') {
-        return err('INVALID_ENGINE', "Engine 'wmlcomparer' is not supported.", "Use 'auto', 'atomizer', or 'diffmatch'.");
+        return err('INVALID_ENGINE', "Engine 'wmlcomparer' is not supported.", "Use 'auto' or 'atomizer'.");
       }
-      return err('INVALID_ENGINE', `Invalid engine: ${String(engine)}`, "Use 'auto', 'atomizer', or 'diffmatch'.");
+      return err('INVALID_ENGINE', `Invalid engine: ${String(engine)}`, "Use 'auto' or 'atomizer'.");
     }
     const compareEngine: CompareOptions['engine'] = engine;
 

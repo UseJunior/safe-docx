@@ -13,7 +13,8 @@ import { describe, expect, beforeAll } from 'vitest';
 import { itAllure as it } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments, type CompareResult } from '../index.js';
+import { type CompareResult } from '../index.js';
+import { compareDocumentsBaselineB } from '../baselines/diffmatch/pipeline.js';
 import {
   FIXTURE_STABLE_DATE,
   getIntegrationOutputModeLabel,
@@ -48,12 +49,11 @@ describe('Document Comparison Parity Test', () => {
       throw error;
     }
 
-    // Run comparison
-    result = await compareDocuments(originalBuffer, revisedBuffer, {
+    // Run comparison using direct import (diffmatch is dev-only)
+    result = await compareDocumentsBaselineB(originalBuffer, revisedBuffer, {
       author: 'IntegrationTest',
       date: FIXTURE_STABLE_DATE,
-      engine: 'diffmatch',
-    });
+    }) as unknown as CompareResult;
 
     // Save output for inspection (optional)
     try {
@@ -144,9 +144,8 @@ describe('Track Changes Validation', () => {
     const originalBuffer = await readFile(ORIGINAL_DOC);
     const revisedBuffer = await readFile(REVISED_DOC);
 
-    const result = await compareDocuments(originalBuffer, revisedBuffer, {
+    const result = await compareDocumentsBaselineB(originalBuffer, revisedBuffer, {
       author: 'ValidationTest',
-      engine: 'diffmatch',
     });
 
     resultDocument = result.document;

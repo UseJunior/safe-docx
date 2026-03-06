@@ -136,7 +136,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       allow_overwrite: z.boolean().optional(),
       tracked_save_to_local_path: z.string().optional(),
       tracked_changes_author: z.string().optional(),
-      tracked_changes_engine: z.enum(['auto', 'atomizer', 'diffmatch']).optional(),
+      tracked_changes_engine: z.enum(['auto', 'atomizer']).optional(),
       fail_on_rebuild_fallback: z
         .boolean()
         .optional()
@@ -263,7 +263,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       file_path: z.string().optional(),
       save_to_local_path: z.string().describe('Path to save the tracked-changes DOCX output.'),
       author: z.string().optional().describe("Author name for track changes. Default: 'Comparison'."),
-      engine: z.enum(['auto', 'atomizer', 'diffmatch']).optional().describe("Comparison engine. Default: 'auto'."),
+      engine: z.enum(['auto', 'atomizer']).optional().describe("Comparison engine. Default: 'auto'."),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },

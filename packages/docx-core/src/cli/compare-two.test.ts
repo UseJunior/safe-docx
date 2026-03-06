@@ -19,7 +19,7 @@ describe('docx-comparison CLI argument parsing', () => {
           engine: 'atomizer',
           reconstructionMode: 'rebuild',
           author: 'Comparison',
-          premergeRuns: false,
+          premergeRuns: true,
         },
       });
     });
@@ -34,7 +34,7 @@ describe('docx-comparison CLI argument parsing', () => {
         'b.docx',
         'out.docx',
         '--engine',
-        'diffmatch',
+        'atomizer',
         '--mode',
         'inplace',
         '--author',
@@ -50,7 +50,7 @@ describe('docx-comparison CLI argument parsing', () => {
         revisedPath: 'b.docx',
         outputPath: 'out.docx',
         options: {
-          engine: 'diffmatch',
+          engine: 'atomizer',
           reconstructionMode: 'inplace',
           author: 'Junior',
           premergeRuns: true,

@@ -5,7 +5,6 @@ import { compareDocuments, type CompareOptions } from '@usejunior/docx-core';
 const SUPPORTED_ENGINES: ReadonlySet<NonNullable<CompareOptions['engine']>> = new Set([
   'auto',
   'atomizer',
-  'diffmatch',
 ]);
 
 export interface CompareCommandArgs {
@@ -31,7 +30,7 @@ export interface CompareCommandResult {
 function normalizeEngine(raw: string | undefined): NonNullable<CompareOptions['engine']> {
   const candidate = (raw ?? 'atomizer').trim() as NonNullable<CompareOptions['engine']>;
   if (!SUPPORTED_ENGINES.has(candidate)) {
-    throw new Error(`Unsupported engine: ${String(raw)}. Use auto, atomizer, or diffmatch.`);
+    throw new Error(`Unsupported engine: ${String(raw)}. Use auto or atomizer.`);
   }
   return candidate;
 }
