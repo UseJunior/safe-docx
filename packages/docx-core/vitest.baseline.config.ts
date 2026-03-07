@@ -54,7 +54,7 @@ export default defineConfig({
               resultsDir: allureResultsDir,
               cleanResultsDir: true,
               packageName: 'DOCX Comparison',
-              packageNameOverrides: { 'test-primitives': 'DOCX Primitives' },
+              packageNameOverrides: { 'src/primitives': 'DOCX Primitives' },
             },
           ],
         ]

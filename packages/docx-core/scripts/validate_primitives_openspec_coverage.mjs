@@ -9,11 +9,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
-const TEST_ROOT = path.join(PACKAGE_ROOT, 'test-primitives');
+const TEST_ROOT = path.join(PACKAGE_ROOT, 'src', 'primitives');
 const SRC_ROOT = path.join(PACKAGE_ROOT, 'src', 'primitives');
 const CANONICAL_SPEC = path.join(REPO_ROOT, 'openspec', 'specs', 'docx-primitives', 'spec.md');
 const CHANGES_ROOT = path.join(REPO_ROOT, 'openspec', 'changes');
-const DEFAULT_MATRIX_PATH = path.join(TEST_ROOT, 'DOCX_PRIMITIVES_OPENSPEC_TRACEABILITY.md');
+const DEFAULT_MATRIX_PATH = path.join(PACKAGE_ROOT, 'docs', 'DOCX_PRIMITIVES_OPENSPEC_TRACEABILITY.md');
 
 function isTraceabilityTestFile(filePath) {
   return filePath.endsWith('.test.ts');
