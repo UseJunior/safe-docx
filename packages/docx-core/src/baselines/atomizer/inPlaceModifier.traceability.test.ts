@@ -508,7 +508,7 @@ describe('In-Place AST Modifier', () => {
   describe('Empty Paragraph Wrapping', () => {
     const paragraphIt = it.allure({ story: 'Empty Paragraph Handling', severity: 'normal' });
 
-    paragraphIt('should be a no-op for inserted paragraphs (Google Docs compat — runs already wrapped)', async () => {
+    paragraphIt('should add PPR-INS marker for empty paragraphs so reject-all removes them', async () => {
       let p: Element;
       let result: boolean;
 
@@ -525,15 +525,15 @@ describe('In-Place AST Modifier', () => {
         expect(result).toBe(true);
       });
 
-      await allureStep('And pPr is unchanged (no paragraph-mark marker or pPrChange added)', async () => {
+      await allureStep('And a PPR-INS marker is added in pPr/rPr', async () => {
         const pChildren = childElements(p);
         const pPr = pChildren.find((c) => c.tagName === 'w:pPr');
         assertDefined(pPr, 'pPr');
         const pPrChildren = childElements(pPr);
         const rPr = pPrChildren.find((c) => c.tagName === 'w:rPr');
-        expect(rPr).toBeUndefined();
-        const pPrChange = pPrChildren.find((c) => c.tagName === 'w:pPrChange');
-        expect(pPrChange).toBeUndefined();
+        expect(rPr).toBeDefined();
+        const insMarker = childElements(rPr!).find((c) => c.tagName === 'w:ins');
+        expect(insMarker).toBeDefined();
       });
     });
 

@@ -1212,6 +1212,29 @@ export function addParagraphPropertyChange(
 }
 
 /**
+ * Tag names that represent visible content inside a w:r element.
+ * A run containing at least one of these is considered substantive (non-empty).
+ */
+const RUN_VISIBLE_CONTENT_TAGS: ReadonlySet<string> = new Set([
+  'w:t', 'w:tab', 'w:br', 'w:cr', 'w:drawing', 'w:object', 'w:pict',
+  'w:sym', 'w:fldChar', 'w:instrText',
+]);
+
+/**
+ * Returns true if a w:r element contains at least one visible content child.
+ * Empty runs (containing only w:rPr or nothing) return false.
+ */
+function runHasVisibleContent(run: Element): boolean {
+  for (let i = 0; i < run.childNodes.length; i++) {
+    const child = run.childNodes[i]!;
+    if (child.nodeType === 1 && RUN_VISIBLE_CONTENT_TAGS.has((child as Element).tagName)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Wrap an inserted empty paragraph with <w:ins>.
  *
  * For empty paragraphs (no content, only pPr), we wrap the entire paragraph.
@@ -1222,17 +1245,46 @@ export function addParagraphPropertyChange(
  * @param state - Revision ID state
  */
 export function wrapParagraphAsInserted(
-  _paragraph: Element,
-  _author: string,
-  _dateStr: string,
-  _state: RevisionIdState
+  paragraph: Element,
+  author: string,
+  dateStr: string,
+  state: RevisionIdState
 ): boolean {
-  // No-op: paragraph-mark w:ins markers and pPrChange inside pPr/rPr are valid
-  // OOXML but Google Docs ignores (or actively hides) w:ins-wrapped runs when
-  // they coexist with those markers.  Since the individual runs in an inserted
-  // paragraph are already wrapped with <w:ins> by the comparison engine, the
-  // paragraph-level markers are redundant and omitting them maximises
-  // cross-application compatibility.
+  // For paragraphs with substantive run content: skip the paragraph-mark marker.
+  // Google Docs ignores (or actively hides) w:ins-wrapped runs when they
+  // coexist with PPR-INS markers. Since individual runs are already wrapped
+  // with <w:ins>, the paragraph-level marker is redundant for non-empty
+  // paragraphs and omitting it maximises cross-application compatibility.
+  //
+  // For empty paragraphs (no runs, or only empty w:r shells): we MUST add
+  // the PPR-INS marker so that Reject All removes the paragraph. Without it,
+  // the empty paragraph shell survives reject, causing round-trip safety failures.
+  //
+  // Important: empty <w:r> elements (no w:t, w:tab, w:br, etc.) should NOT
+  // count as substantive content. They are empty shells that don't produce
+  // visible output and should not prevent PPR-INS from being added.
+  let hasSubstantiveContent = false;
+  for (const child of childElements(paragraph)) {
+    if (child.tagName === 'w:ins') {
+      // Check if the w:ins wrapper contains runs with visible content
+      for (let i = 0; i < child.childNodes.length; i++) {
+        const insChild = child.childNodes[i]!;
+        if (insChild.nodeType === 1 && (insChild as Element).tagName === 'w:r' &&
+            runHasVisibleContent(insChild as Element)) {
+          hasSubstantiveContent = true;
+          break;
+        }
+      }
+      if (hasSubstantiveContent) break;
+    } else if (child.tagName === 'w:r' && runHasVisibleContent(child)) {
+      hasSubstantiveContent = true;
+      break;
+    }
+  }
+  if (hasSubstantiveContent) {
+    return true;
+  }
+  addParagraphMarkRevisionMarker(paragraph, 'w:ins', author, dateStr, state);
   return true;
 }
 
@@ -1408,6 +1460,161 @@ export function preSplitMixedStatusRuns(mergedAtoms: ComparisonUnitAtom[]): void
 }
 
 /**
+ * Pre-split revised-tree runs where word-split Equal atoms from the same run
+ * are interleaved with Deleted/MovedSource atoms in the merged atom list.
+ *
+ * `preSplitMixedStatusRuns` handles the case where a single run contains atoms
+ * with DIFFERENT statuses (e.g., some Equal and some Inserted). But it cannot
+ * handle the case where ALL atoms from a run are Equal yet Deleted atoms (from
+ * the original tree) are interspersed between them in the merged list.
+ *
+ * Without this split, `handleEqual` sees all Equal atoms pointing to the same
+ * run and skips position advancement (the `lastRevisedRunAnchor` optimization).
+ * Subsequent `handleDeleted` calls then insert deleted content at the wrong
+ * position because the cursor never advanced past the shared run.
+ *
+ * This function detects interleaved sequences and splits the DOM run so each
+ * contiguous group of Equal atoms gets its own run fragment. The handlers then
+ * advance the cursor correctly across fragments.
+ */
+export function preSplitInterleavedWordRuns(mergedAtoms: ComparisonUnitAtom[]): void {
+  // Build a map from each revised run to the groups of contiguous atoms from
+  // that run as they appear in the merged atom list. Each group also tracks
+  // the cumulative visible offset within the run.
+  //
+  // A "group" is a contiguous subsequence of merged atoms that all share the
+  // same sourceRunElement and are NOT Deleted/MovedSource (i.e., they come
+  // from the revised tree).
+  interface AtomGroup {
+    /** Start offset (in visible characters) of this group within the run */
+    startOffset: number;
+    /** Total visible length of atoms in this group */
+    length: number;
+    /** Atoms in this group */
+    atoms: ComparisonUnitAtom[];
+  }
+
+  const runToGroups = new Map<Element, AtomGroup[]>();
+  // Track cumulative offset per run (sums visible lengths of atoms seen so far)
+  const runToOffset = new Map<Element, number>();
+
+  let lastRevisedRun: Element | null = null;
+
+  for (const atom of mergedAtoms) {
+    // Skip atoms from the original tree (Deleted/MovedSource have runs in the
+    // original tree, not the revised tree).
+    if (
+      atom.correlationStatus === CorrelationStatus.Deleted ||
+      atom.correlationStatus === CorrelationStatus.MovedSource
+    ) {
+      // A Deleted/MovedSource atom between Equal atoms from the same run
+      // creates an interleaving gap. Mark this by clearing lastRevisedRun
+      // so the next Equal atom from the same run starts a new group.
+      lastRevisedRun = null;
+      continue;
+    }
+
+    const run = atom.sourceRunElement;
+    if (!run) continue;
+
+    // Skip collapsed field atoms — multi-run field sequences.
+    if (atom.collapsedFieldAtoms && atom.collapsedFieldAtoms.length > 0) continue;
+
+    // Skip field character elements — semantically fragile.
+    if (FIELD_CHAR_TAG_NAMES.has(atom.contentElement.tagName)) continue;
+
+    const atomLen = atomContentVisibleLength(atom.contentElement);
+    const currentOffset = runToOffset.get(run) ?? 0;
+    runToOffset.set(run, currentOffset + atomLen);
+
+    const groups = runToGroups.get(run);
+    if (!groups) {
+      // First time seeing this run — create initial group.
+      runToGroups.set(run, [{
+        startOffset: currentOffset,
+        length: atomLen,
+        atoms: [atom],
+      }]);
+      lastRevisedRun = run;
+      continue;
+    }
+
+    if (lastRevisedRun === run) {
+      // Contiguous with the previous atom from the same run — extend group.
+      const lastGroup = groups[groups.length - 1]!;
+      lastGroup.length += atomLen;
+      lastGroup.atoms.push(atom);
+    } else {
+      // Gap detected (a Deleted/MovedSource atom intervened). Start new group.
+      groups.push({
+        startOffset: currentOffset,
+        length: atomLen,
+        atoms: [atom],
+      });
+    }
+
+    lastRevisedRun = run;
+  }
+
+  // Now split runs that have more than one group.
+  for (const [run, groups] of runToGroups) {
+    if (groups.length <= 1) continue;
+
+    // Guard: skip runs already detached from the tree.
+    if (!run.parentNode) continue;
+
+    try {
+      // Compute actual visible length of the DOM run.
+      const contentEls = getDirectContentElements(run);
+      let runVisibleLength = 0;
+      for (const cel of contentEls) {
+        runVisibleLength += visibleLengthForEl(cel);
+      }
+
+      // Safety: if the sum of atom lengths exceeds run visible length,
+      // something is off (cross-run atoms, etc.). Skip.
+      let sumAtomLengths = 0;
+      for (const group of groups) {
+        sumAtomLengths += group.length;
+      }
+      if (sumAtomLengths > runVisibleLength) continue;
+
+      // Collect split points: the startOffset of each group after the first.
+      const splitPoints: number[] = [];
+      for (let i = 1; i < groups.length; i++) {
+        const pt = groups[i]!.startOffset;
+        if (pt > 0 && pt < runVisibleLength) {
+          splitPoints.push(pt);
+        }
+      }
+
+      if (splitPoints.length === 0) continue;
+
+      // Split DOM run right-to-left to keep earlier offsets valid.
+      const rightFragments: Element[] = [];
+      for (let i = splitPoints.length - 1; i >= 0; i--) {
+        const { right } = splitRunAtVisibleOffset(run, splitPoints[i]!);
+        rightFragments.push(right);
+      }
+
+      // Map fragments: [originalRun (leftmost), ...reverse(rightFragments)]
+      const fragments = [run, ...rightFragments.reverse()];
+
+      // Update atom sourceRunElement pointers to the correct fragment.
+      for (let i = 0; i < groups.length; i++) {
+        const fragment = fragments[i];
+        if (!fragment) continue;
+        for (const atom of groups[i]!.atoms) {
+          atom.sourceRunElement = fragment;
+        }
+      }
+    } catch (_err) {
+      warn('preSplitInterleavedWordRuns', `Skipping run split due to error: ${_err}`);
+    }
+  }
+}
+
+/**
  * Modify the revised document's AST in-place based on comparison results.
  *
  * @param revisedRoot - Root element of the revised document
@@ -1431,6 +1638,7 @@ export function modifyRevisedDocument(
   attachSourceElementPointers(originalAtoms);
   attachSourceElementPointers(revisedAtoms);
   preSplitMixedStatusRuns(mergedAtoms);
+  preSplitInterleavedWordRuns(mergedAtoms);
 
   // Process atoms and apply track changes to the revised tree
   // Group atoms by paragraph for efficient processing
@@ -2019,6 +2227,60 @@ const ATOM_HANDLERS: Record<CorrelationStatus, AtomHandler> = {
   [CorrelationStatus.Unknown]: handleEqual,
 };
 
+const DELETION_LIKE_STATUSES: ReadonlySet<CorrelationStatus> = new Set([
+  CorrelationStatus.Deleted,
+  CorrelationStatus.MovedSource,
+]);
+
+const INSERTION_LIKE_STATUSES: ReadonlySet<CorrelationStatus> = new Set([
+  CorrelationStatus.Inserted,
+  CorrelationStatus.MovedDestination,
+]);
+
+/**
+ * Reorder merged atoms so that within each contiguous block of non-equal atoms,
+ * all deletion-like atoms come before all insertion-like atoms.
+ *
+ * This produces grouped tracked changes ("<del>old words</del><ins>new words</ins>")
+ * instead of alternating word-by-word pairs ("<del>old1</del><ins>new1</ins><del>old2</del>...").
+ */
+function groupDeletionsBeforeInsertions(atoms: ComparisonUnitAtom[]): ComparisonUnitAtom[] {
+  const result: ComparisonUnitAtom[] = [];
+  let i = 0;
+
+  while (i < atoms.length) {
+    const atom = atoms[i]!;
+    const status = atom.correlationStatus;
+
+    // Pass through equal/format-changed/unknown atoms unchanged
+    if (!DELETION_LIKE_STATUSES.has(status) && !INSERTION_LIKE_STATUSES.has(status)) {
+      result.push(atom);
+      i++;
+      continue;
+    }
+
+    // Collect a contiguous block of change atoms (deletions + insertions)
+    const deletions: ComparisonUnitAtom[] = [];
+    const insertions: ComparisonUnitAtom[] = [];
+    while (i < atoms.length) {
+      const s = atoms[i]!.correlationStatus;
+      if (DELETION_LIKE_STATUSES.has(s)) {
+        deletions.push(atoms[i]!);
+      } else if (INSERTION_LIKE_STATUSES.has(s)) {
+        insertions.push(atoms[i]!);
+      } else {
+        break;
+      }
+      i++;
+    }
+
+    // Emit all deletions first, then all insertions
+    result.push(...deletions, ...insertions);
+  }
+
+  return result;
+}
+
 /**
  * Process atoms and apply track changes to the revised AST.
  *
@@ -2106,7 +2368,12 @@ function processAtoms(
     createdParagraphTrailingBookmarks: new Map(),
   };
 
-  for (const atom of mergedAtoms) {
+  // Reorder atoms so consecutive deletions precede consecutive insertions.
+  // This produces grouped tracked changes (all <w:del> then all <w:ins>)
+  // instead of alternating word-by-word del/ins pairs.
+  const reorderedAtoms = groupDeletionsBeforeInsertions(mergedAtoms);
+
+  for (const atom of reorderedAtoms) {
     const handler = ATOM_HANDLERS[atom.correlationStatus];
     const result = handler(atom, ctx);
 

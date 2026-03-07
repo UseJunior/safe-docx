@@ -504,7 +504,7 @@ describe('inPlaceModifier', () => {
   });
 
   describe('wrapParagraphAsInserted', () => {
-    it('should be a no-op that returns true (paragraph-mark markers omitted for Google Docs compat)', () => {
+    it('should add PPR-INS marker for empty paragraphs (no runs) so reject-all removes them', () => {
       const pPr = el('w:pPr');
       const p = el('w:p', {}, [pPr]);
       el('w:body', {}, [p]);
@@ -514,14 +514,48 @@ describe('inPlaceModifier', () => {
 
       expect(result).toBe(true);
 
-      // No paragraph-mark w:ins marker should be added
+      // PPR-INS marker should be added for empty paragraphs
+      const pPrChildren = childElements(pPr);
+      const rPr = pPrChildren.find((c) => c.tagName === 'w:rPr');
+      expect(rPr).toBeDefined();
+      const insMarker = childElements(rPr!).find((c) => c.tagName === 'w:ins');
+      expect(insMarker).toBeDefined();
+    });
+
+    it('should add PPR-INS marker for paragraphs with only empty w:r shells (no visible content)', () => {
+      const pPr = el('w:pPr');
+      const emptyRun = el('w:r', {}, [el('w:rPr')]); // run with only rPr, no text
+      const p = el('w:p', {}, [pPr, emptyRun]);
+      el('w:body', {}, [p]);
+
+      const state = createRevisionIdState();
+      const result = wrapParagraphAsInserted(p, author, dateStr, state);
+
+      expect(result).toBe(true);
+
+      // PPR-INS marker should be added because the run has no visible content
+      const pPrChildren = childElements(pPr);
+      const rPr = pPrChildren.find((c) => c.tagName === 'w:rPr');
+      expect(rPr).toBeDefined();
+      const insMarker = childElements(rPr!).find((c) => c.tagName === 'w:ins');
+      expect(insMarker).toBeDefined();
+    });
+
+    it('should be a no-op for paragraphs with substantive runs (Google Docs compat)', () => {
+      const pPr = el('w:pPr');
+      const run = el('w:r', {}, [el('w:t')]); // run with visible content
+      const p = el('w:p', {}, [pPr, run]);
+      el('w:body', {}, [p]);
+
+      const state = createRevisionIdState();
+      const result = wrapParagraphAsInserted(p, author, dateStr, state);
+
+      expect(result).toBe(true);
+
+      // No PPR-INS marker — runs with visible content already wrapped by w:ins
       const pPrChildren = childElements(pPr);
       const rPr = pPrChildren.find((c) => c.tagName === 'w:rPr');
       expect(rPr).toBeUndefined();
-
-      // No pPrChange should be added
-      const pPrChange = pPrChildren.find((c) => c.tagName === 'w:pPrChange');
-      expect(pPrChange).toBeUndefined();
     });
   });
 
