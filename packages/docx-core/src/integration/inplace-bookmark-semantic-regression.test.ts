@@ -290,11 +290,11 @@ describe('Inplace bookmark semantic regression coverage (Allure)', () => {
         });
       });
 
-      await allureStep('Then reconstruction falls back to rebuild with premerge enabled', async () => {
-        // With premergeRuns: true (default), ILPA falls back to rebuild.
-        // See GitHub issue #TBD (premerge-enabled inplace safety check failure).
-        expect(ilpa.reconstructionModeUsed).toBe('rebuild');
-        expect(ilpa.fallbackReason).toBeDefined();
+      await allureStep('Then reconstruction succeeds in inplace mode', async () => {
+        // Issue #35 fixed: setLeafText now correctly syncs both `data` and `nodeValue`
+        // on xmldom text nodes, so premergeRuns: true no longer causes round-trip failure.
+        expect(ilpa.reconstructionModeUsed).toBe('inplace');
+        expect(ilpa.fallbackReason).toBeUndefined();
       });
 
       await allureStep('And read_text parity holds after accept all', async () => {
