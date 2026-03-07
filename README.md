@@ -17,6 +17,18 @@ AI coding CLIs are great with code and text files but weak on brownfield `.docx`
 - making surgical edits without destroying formatting
 - producing clean/tracked outputs and revision extraction artifacts
 
+Mission: enable coding agents to do paperwork too. Safe Docx focuses on deterministic edits to existing Word files where formatting and review semantics must survive automation.
+
+## Positioning
+
+Safe Docx is optimized for agent workflows that need deterministic, local-first edits on existing `.docx` files:
+
+- typed MCP tools for edit, compare, revision extraction, comments, footnotes, and layout
+- auditable behavior with test evidence and traceability artifacts
+- TypeScript runtime distribution without requiring Python or LibreOffice for supported usage
+
+Safe Docx is not intended to replace generation-first `.docx` libraries.
+
 ## Start Here
 
 For setup and daily usage, go to:
@@ -127,4 +139,3 @@ npm run coverage:matrix
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security Policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
-

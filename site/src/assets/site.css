@@ -99,16 +99,44 @@ a {
 
 .topbar-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
-.gh-link {
-  font-size: 0.88rem;
+.topbar-actions a,
+.topbar-actions a:visited,
+.topbar-actions a:active {
   color: var(--ink-soft);
   text-decoration: none;
 }
 
-.gh-link:hover {
+.topbar-actions a:hover,
+.topbar-actions a:focus-visible {
   color: var(--ink);
+  text-decoration: none;
+}
+
+.topbar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.topbar-link-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+}
+
+.topbar-sep {
+  color: #8c817a;
+  font-size: 0.84rem;
+  line-height: 1;
+  user-select: none;
 }
 
 /* ── Hamburger toggle ─────────────────────────────── */
@@ -703,10 +731,11 @@ a {
   }
 
   .nav-open .topbar-actions {
-    display: block;
+    display: flex;
     flex-basis: 100%;
     padding-top: 0.5rem;
     border-top: 1px solid var(--line);
+    margin-left: 0;
   }
 
   .content table {
