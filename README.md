@@ -17,7 +17,7 @@ AI coding CLIs are great with code and text files but weak on brownfield `.docx`
 - making surgical edits without destroying formatting
 - producing clean/tracked outputs and revision extraction artifacts
 
-UseJunior began on October 1, 2024 to build practical tools for lawyers. Early customer requests made one pain point clear: teams needed safe edits to existing Word files more than new document generation. Safe Docx reflects that product direction.
+Mission: enable coding agents to do paperwork too. Safe Docx focuses on deterministic edits to existing Word files where formatting and review semantics must survive automation.
 
 ## Positioning
 

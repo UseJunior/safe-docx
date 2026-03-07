@@ -8,7 +8,7 @@ Local MCP server for surgical editing of existing Microsoft Word `.docx` files w
 
 Safe Docx is built for brownfield paperwork workflows: apply accepted AI edits to real Word documents while preserving formatting and review semantics.
 
-UseJunior started on October 1, 2024 to build practical tools for lawyers. In early customer workflows, editing existing Word documents safely was a repeated request, so this package focuses on deterministic brownfield edits rather than from-scratch generation.
+Mission: enable coding agents to do paperwork too. This package focuses on deterministic brownfield edits to existing Word documents rather than from-scratch generation.
 
 For end-user installation, use the canonical wrapper package: `npx -y @usejunior/safe-docx`.
 
