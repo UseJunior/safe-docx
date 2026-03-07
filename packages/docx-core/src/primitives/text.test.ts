@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { itAllure as it } from './testing/allure-test.js';
 import { parseXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
@@ -410,6 +410,24 @@ describe('replaceParagraphTextRange', () => {
     replaceParagraphTextRange(p, 3, 5, 'XYZ');
 
     expect(getParagraphText(p)).toBe('ABCXYZ');
+  });
+
+  it('throws UNSAFE_CONTAINER_BOUNDARY when replacement spans different run containers', () => {
+    const doc = makeDoc(
+      `<w:p>` +
+      `<w:hyperlink r:id="rId1"><w:r><w:t>Link</w:t></w:r></w:hyperlink>` +
+      `<w:r><w:t>Tail</w:t></w:r>` +
+      `</w:p>`,
+    );
+    const p = firstParagraph(doc);
+
+    expect(() => replaceParagraphTextRange(p, 2, 6, 'Changed')).toThrowError(SafeDocxError);
+    try {
+      replaceParagraphTextRange(p, 2, 6, 'Changed');
+    } catch (e: unknown) {
+      if (!(e instanceof SafeDocxError)) throw e;
+      expect(e.code).toBe('UNSAFE_CONTAINER_BOUNDARY');
+    }
   });
 });
 

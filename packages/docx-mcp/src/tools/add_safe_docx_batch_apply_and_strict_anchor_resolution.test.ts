@@ -5,7 +5,7 @@ import { describe, expect } from 'vitest';
 import { MCP_TOOLS, dispatchToolCall } from '../server.js';
 import { mergePlans } from './merge_plans.js';
 import { readFile } from './read_file.js';
-import { testAllure } from '../testing/allure-test.js';
+import { testAllure, allureStep } from '../testing/allure-test.js';
 import {
   createTestSessionManager,
   createTrackedTempDir,
@@ -33,99 +33,132 @@ describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
   humanReadableTest.openspec('canonical names are advertised')(
     'Scenario: canonical names are advertised',
     async () => {
-      const toolNames = new Set<string>(MCP_TOOLS.map((tool) => tool.name));
-      expect(toolNames.has('replace_text')).toBe(true);
-      expect(toolNames.has('insert_paragraph')).toBe(true);
+      const toolNames = await allureStep('Given the MCP tool catalog', async () => {
+        return new Set<string>(MCP_TOOLS.map((tool) => tool.name));
+      });
+
+      await allureStep('Then replace_text and insert_paragraph are advertised', () => {
+        expect(toolNames.has('replace_text')).toBe(true);
+        expect(toolNames.has('insert_paragraph')).toBe(true);
+      });
     },
   );
 
   humanReadableTest.openspec('legacy aliases are unavailable')(
     'Scenario: legacy aliases are unavailable',
     async () => {
-      const toolNames = new Set<string>(MCP_TOOLS.map((tool) => tool.name));
-      expect(toolNames.has('smart_edit')).toBe(false);
-      expect(toolNames.has('smart_insert')).toBe(false);
+      const toolNames = await allureStep('Given the MCP tool catalog', async () => {
+        return new Set<string>(MCP_TOOLS.map((tool) => tool.name));
+      });
+
+      await allureStep('Then smart_edit and smart_insert are absent', () => {
+        expect(toolNames.has('smart_edit')).toBe(false);
+        expect(toolNames.has('smart_insert')).toBe(false);
+      });
     },
   );
 
   humanReadableTest.openspec('legacy aliases are rejected inside plan operations')(
     'Scenario: legacy aliases are rejected inside plan operations',
     async () => {
-      const result = await mergePlans({
-        plans: [
-          {
-            plan_id: 'legacy-edit',
-            base_revision: 1,
-            steps: [
-              {
-                step_id: 's1',
-                operation: 'smart_edit',
-                target_paragraph_id: '_bk_1',
-                old_string: 'old',
-                new_string: 'new',
-                instruction: 'legacy operation',
-              },
-            ],
-          },
-          {
-            plan_id: 'legacy-insert',
-            base_revision: 1,
-            steps: [
-              {
-                step_id: 's2',
-                operation: 'smart_insert',
-                positional_anchor_node_id: '_bk_1',
-                new_string: 'new paragraph',
-                instruction: 'legacy operation',
-              },
-            ],
-          },
-        ],
+      const result = await allureStep('When mergePlans is called with smart_edit and smart_insert steps', async () => {
+        return mergePlans({
+          plans: [
+            {
+              plan_id: 'legacy-edit',
+              base_revision: 1,
+              steps: [
+                {
+                  step_id: 's1',
+                  operation: 'smart_edit',
+                  target_paragraph_id: '_bk_1',
+                  old_string: 'old',
+                  new_string: 'new',
+                  instruction: 'legacy operation',
+                },
+              ],
+            },
+            {
+              plan_id: 'legacy-insert',
+              base_revision: 1,
+              steps: [
+                {
+                  step_id: 's2',
+                  operation: 'smart_insert',
+                  positional_anchor_node_id: '_bk_1',
+                  new_string: 'new paragraph',
+                  instruction: 'legacy operation',
+                },
+              ],
+            },
+          ],
+        });
       });
 
-      expect(result.success).toBe(false);
-      if (result.success) return;
-      const conflicts = result.conflicts as Array<{ code: string }>;
-      expect(conflicts.some((conflict) => conflict.code === 'INVALID_STEP_OPERATION')).toBe(true);
+      await allureStep('Then merge fails with INVALID_STEP_OPERATION conflict', () => {
+        expect(result.success).toBe(false);
+        if (result.success) return;
+        const conflicts = result.conflicts as Array<{ code: string }>;
+        expect(conflicts.some((conflict) => conflict.code === 'INVALID_STEP_OPERATION')).toBe(true);
+      });
     },
   );
 
   humanReadableTest.openspec('MCP catalog omits open_document')(
     'Scenario: MCP catalog omits open_document',
     async () => {
-      const toolNames = new Set<string>(MCP_TOOLS.map((tool) => tool.name));
-      expect(toolNames.has('open_document')).toBe(false);
-      expect(toolNames.has('read_file')).toBe(true);
-      expect(toolNames.has('grep')).toBe(true);
+      const toolNames = await allureStep('Given the MCP tool catalog', async () => {
+        return new Set<string>(MCP_TOOLS.map((tool) => tool.name));
+      });
+
+      await allureStep('Then open_document is absent but read_file and grep are present', () => {
+        expect(toolNames.has('open_document')).toBe(false);
+        expect(toolNames.has('read_file')).toBe(true);
+        expect(toolNames.has('grep')).toBe(true);
+      });
     },
   );
 
   humanReadableTest.openspec('open_document call is rejected as unsupported')(
     'Scenario: open_document call is rejected as unsupported',
     async () => {
-      const manager = createTestSessionManager();
-      const result = await dispatchToolCall(manager, 'open_document', {});
+      const manager = await allureStep('Given a test session manager', async () => {
+        return createTestSessionManager();
+      });
 
-      expect(result.success).toBe(false);
-      expect((result.error as { code?: string }).code).toBe('UNKNOWN_TOOL');
-      expect(String((result.error as { message?: string }).message ?? '')).toContain('open_document');
-      expect(String((result.error as { hint?: string }).hint ?? '')).toContain('read_file');
+      const result = await allureStep('When open_document is dispatched', async () => {
+        return dispatchToolCall(manager, 'open_document', {});
+      });
+
+      await allureStep('Then it fails with UNKNOWN_TOOL and hints at read_file', () => {
+        expect(result.success).toBe(false);
+        expect((result.error as { code?: string }).code).toBe('UNKNOWN_TOOL');
+        expect(String((result.error as { message?: string }).message ?? '')).toContain('open_document');
+        expect(String((result.error as { hint?: string }).hint ?? '')).toContain('read_file');
+      });
     },
   );
 
   humanReadableTest.openspec('document tools accept file-first entry without pre-open')(
     'Scenario: document tools accept file-first entry without pre-open',
     async () => {
-      const manager = createTestSessionManager();
-      const filePath = await writeDocx(['Alpha clause']);
+      const { manager, filePath } = await allureStep('Given a session manager and a docx file', async () => {
+        const mgr = createTestSessionManager();
+        const fp = await writeDocx(['Alpha clause']);
+        return { manager: mgr, filePath: fp };
+      });
 
-      const read = await readFile(manager, { file_path: filePath, format: 'simple' });
+      const read = await allureStep('When readFile is called with file_path (no prior open)', async () => {
+        return readFile(manager, { file_path: filePath, format: 'simple' });
+      });
 
-      expect(read.success).toBe(true);
-      if (!read.success) return;
-      expect(read.session_resolution).toBe('opened_new_session');
-      expect(typeof read.resolved_session_id).toBe('string');
-      expect(read.resolved_file_path).toBe(manager.normalizePath(filePath));
+      await allureStep('Then a new session is opened and the file is resolved', () => {
+        expect(read.success).toBe(true);
+        if (!read.success) return;
+        expect(read.session_resolution).toBe('opened_new_session');
+        expect(typeof read.resolved_session_id).toBe('string');
+        expect(read.resolved_file_path).toBe(manager.normalizePath(filePath));
+      });
     },
   );
 });

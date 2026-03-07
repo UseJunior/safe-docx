@@ -42,7 +42,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts', 'test-primitives/**/*.test.ts'],
+    include: ['src/**/*.test.ts'],
     exclude: ['src/baselines/**/*.test.ts'],
     coverage: {
       provider: 'v8',
@@ -72,7 +72,7 @@ export default defineConfig({
               resultsDir: allureResultsDir,
               cleanResultsDir: true,
               packageName: 'DOCX Comparison',
-              packageNameOverrides: { 'test-primitives': 'DOCX Primitives' },
+              packageNameOverrides: { 'src/primitives': 'DOCX Primitives' },
             },
           ],
         ]

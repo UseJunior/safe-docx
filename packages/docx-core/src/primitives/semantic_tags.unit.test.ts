@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { itAllure as it } from './testing/allure-test.js';
 import {
   hasFormattingTags,
   stripFormattingTags,

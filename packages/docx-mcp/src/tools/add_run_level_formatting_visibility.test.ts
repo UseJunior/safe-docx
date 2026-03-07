@@ -4,7 +4,7 @@ import path from 'node:path';
 import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
 import { save } from './save.js';
-import { testAllure } from '../testing/allure-test.js';
+import { testAllure, allureStep } from '../testing/allure-test.js';
 import {
   assertSuccess,
   parseOutputXml,
@@ -83,95 +83,114 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
   humanReadableTest.openspec('TOON output shows inline formatting tags at run boundaries by default')(
     'Scenario: TOON output shows inline formatting tags at run boundaries by default',
     async () => {
-      const { mgr, sessionId } = await openSession([], {
-        xml: buildFormattingFixtureXml(),
-        extraFiles: {
-          '[Content_Types].xml': CONTENT_TYPES_XML,
-          '_rels/.rels': RELS_XML,
-          'word/_rels/document.xml.rels': DOCUMENT_RELS_XML,
-        },
+      const { mgr, sessionId } = await allureStep('Given a doc with bold, italic, underline, highlight, and hyperlink runs', async () => {
+        return await openSession([], {
+          xml: buildFormattingFixtureXml(),
+          extraFiles: {
+            '[Content_Types].xml': CONTENT_TYPES_XML,
+            '_rels/.rels': RELS_XML,
+            'word/_rels/document.xml.rels': DOCUMENT_RELS_XML,
+          },
+        });
       });
 
-      const read = await readFile(mgr, { session_id: sessionId });
-      assertSuccess(read, 'read_file');
-      const content = String(read.content);
+      const content = await allureStep('When read_file is called with default formatting', async () => {
+        const read = await readFile(mgr, { session_id: sessionId });
+        assertSuccess(read, 'read_file');
+        return String(read.content);
+      });
 
-      expect(content).toContain('<b>Bold</b>');
-      expect(content).toContain('<i>Italic</i>');
-      expect(content).toContain('<u>Underline</u>');
-      expect(content).toContain('<highlight>Marked</highlight>');
-      expect(content).toContain('<a href="https://example.com/portal">Portal</a>');
+      await allureStep('Then TOON output contains inline formatting tags', async () => {
+        expect(content).toContain('<b>Bold</b>');
+        expect(content).toContain('<i>Italic</i>');
+        expect(content).toContain('<u>Underline</u>');
+        expect(content).toContain('<highlight>Marked</highlight>');
+        expect(content).toContain('<a href="https://example.com/portal">Portal</a>');
+      });
     },
   );
 
   humanReadableTest.openspec('show_formatting=false suppresses inline tags')(
     'Scenario: show_formatting=false suppresses inline tags',
     async () => {
-      const { mgr, sessionId } = await openSession([], {
-        xml: buildFormattingFixtureXml(),
-        extraFiles: {
-          '[Content_Types].xml': CONTENT_TYPES_XML,
-          '_rels/.rels': RELS_XML,
-          'word/_rels/document.xml.rels': DOCUMENT_RELS_XML,
-        },
+      const { mgr, sessionId } = await allureStep('Given a doc with formatted runs', async () => {
+        return await openSession([], {
+          xml: buildFormattingFixtureXml(),
+          extraFiles: {
+            '[Content_Types].xml': CONTENT_TYPES_XML,
+            '_rels/.rels': RELS_XML,
+            'word/_rels/document.xml.rels': DOCUMENT_RELS_XML,
+          },
+        });
       });
 
-      const read = await readFile(mgr, { session_id: sessionId, show_formatting: false });
-      assertSuccess(read, 'read_file show_formatting=false');
-      const content = String(read.content);
+      const content = await allureStep('When read_file is called with show_formatting=false', async () => {
+        const read = await readFile(mgr, { session_id: sessionId, show_formatting: false });
+        assertSuccess(read, 'read_file show_formatting=false');
+        return String(read.content);
+      });
 
-      expect(content).not.toContain('<b>');
-      expect(content).not.toContain('<i>');
-      expect(content).not.toContain('<u>');
-      expect(content).not.toContain('<highlight>');
-      expect(content).not.toContain('<a href=');
-      expect(content).toContain('Body text Bold and Italic and Underline and Marked and Portal');
+      await allureStep('Then no inline formatting tags appear and plain text is intact', async () => {
+        expect(content).not.toContain('<b>');
+        expect(content).not.toContain('<i>');
+        expect(content).not.toContain('<u>');
+        expect(content).not.toContain('<highlight>');
+        expect(content).not.toContain('<a href=');
+        expect(content).toContain('Body text Bold and Italic and Underline and Marked and Portal');
+      });
     },
   );
 
   humanReadableTest.openspec('writable tag vocabulary matches replace_text new_string vocabulary')(
     'Scenario: writable tag vocabulary matches replace_text new_string vocabulary',
     async () => {
-      const { mgr, sessionId, firstParaId, tmpDir } = await openSession([], {
-        xml: buildEditFixtureXml(),
-        extraFiles: {
-          '[Content_Types].xml': CONTENT_TYPES_XML,
-          '_rels/.rels': RELS_XML,
-        },
+      const { mgr, sessionId, firstParaId, tmpDir } = await allureStep('Given a doc with a placeholder paragraph', async () => {
+        return await openSession([], {
+          xml: buildEditFixtureXml(),
+          extraFiles: {
+            '[Content_Types].xml': CONTENT_TYPES_XML,
+            '_rels/.rels': RELS_XML,
+          },
+        });
       });
 
-      const edited = await replaceText(mgr, {
-        session_id: sessionId,
-        target_paragraph_id: firstParaId,
-        old_string: '[X]',
-        new_string: '<b>Bold</b> <i>Italic</i> <u>Underline</u> <highlight>Marked</highlight>',
-        instruction: 'Validate writable formatting tags in new_string',
+      const outputPath = await allureStep('When replace_text injects formatting tags and the doc is saved', async () => {
+        const edited = await replaceText(mgr, {
+          session_id: sessionId,
+          target_paragraph_id: firstParaId,
+          old_string: '[X]',
+          new_string: '<b>Bold</b> <i>Italic</i> <u>Underline</u> <highlight>Marked</highlight>',
+          instruction: 'Validate writable formatting tags in new_string',
+        });
+        assertSuccess(edited, 'replace_text');
+
+        const outputPath = path.join(tmpDir, 'formatted-output.docx');
+        const saved = await save(mgr, {
+          session_id: sessionId,
+          save_to_local_path: outputPath,
+          clean_bookmarks: true,
+          save_format: 'clean',
+        });
+        assertSuccess(saved, 'save');
+        return outputPath;
       });
-      assertSuccess(edited, 'replace_text');
 
-      const outputPath = path.join(tmpDir, 'formatted-output.docx');
-      const saved = await save(mgr, {
-        session_id: sessionId,
-        save_to_local_path: outputPath,
-        clean_bookmarks: true,
-        save_format: 'clean',
+      await allureStep('Then saved OOXML contains correct run-level formatting properties', async () => {
+        const { runs, runText, hasBold, hasItalic, hasUnderline, hasHighlight } = await parseOutputXml(outputPath);
+        const boldRun = runs.find((r) => runText(r).includes('Bold'));
+        const italicRun = runs.find((r) => runText(r).includes('Italic'));
+        const underlineRun = runs.find((r) => runText(r).includes('Underline'));
+        const highlightRun = runs.find((r) => runText(r).includes('Marked'));
+
+        expect(boldRun).toBeTruthy();
+        expect(italicRun).toBeTruthy();
+        expect(underlineRun).toBeTruthy();
+        expect(highlightRun).toBeTruthy();
+        expect(hasBold(boldRun!)).toBe(true);
+        expect(hasItalic(italicRun!)).toBe(true);
+        expect(hasUnderline(underlineRun!)).toBe(true);
+        expect(hasHighlight(highlightRun!)).toBe(true);
       });
-      assertSuccess(saved, 'save');
-
-      const { runs, runText, hasBold, hasItalic, hasUnderline, hasHighlight } = await parseOutputXml(outputPath);
-      const boldRun = runs.find((r) => runText(r).includes('Bold'));
-      const italicRun = runs.find((r) => runText(r).includes('Italic'));
-      const underlineRun = runs.find((r) => runText(r).includes('Underline'));
-      const highlightRun = runs.find((r) => runText(r).includes('Marked'));
-
-      expect(boldRun).toBeTruthy();
-      expect(italicRun).toBeTruthy();
-      expect(underlineRun).toBeTruthy();
-      expect(highlightRun).toBeTruthy();
-      expect(hasBold(boldRun!)).toBe(true);
-      expect(hasItalic(italicRun!)).toBe(true);
-      expect(hasUnderline(underlineRun!)).toBe(true);
-      expect(hasHighlight(highlightRun!)).toBe(true);
     },
   );
 });
