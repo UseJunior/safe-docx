@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import { itAllure as it } from './testing/allure-test.js';
 import { parseXml } from './xml.js';
-import { OOXML, W } from './namespaces.js';
+import { OOXML } from './namespaces.js';
 import { validateDocument } from './validate_document.js';
 
 const W_NS = OOXML.W_NS;
@@ -61,8 +61,8 @@ describe('validate_document', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.warnings).toHaveLength(1);
-      expect(result.warnings[0].code).toBe('ORPHANED_BOOKMARK_START');
-      expect(result.warnings[0].message).toContain('orphan_start');
+      expect(result.warnings[0]!.code).toBe('ORPHANED_BOOKMARK_START');
+      expect(result.warnings[0]!.message).toContain('orphan_start');
     });
 
     it('detects bookmarkEnd without matching bookmarkStart', () => {
@@ -77,7 +77,7 @@ describe('validate_document', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.warnings).toHaveLength(1);
-      expect(result.warnings[0].code).toBe('ORPHANED_BOOKMARK_END');
+      expect(result.warnings[0]!.code).toBe('ORPHANED_BOOKMARK_END');
     });
 
     it('does not flag matched bookmark pairs', () => {
@@ -111,7 +111,7 @@ describe('validate_document', () => {
       expect(result.isValid).toBe(false);
       const malformed = result.warnings.filter(w => w.code === 'MALFORMED_TRACKED_CHANGE');
       expect(malformed.length).toBeGreaterThanOrEqual(1);
-      expect(malformed[0].message).toContain('w:author');
+      expect(malformed[0]!.message).toContain('w:author');
     });
 
     it('detects w:del missing w:date attribute', () => {
@@ -128,7 +128,7 @@ describe('validate_document', () => {
       expect(result.isValid).toBe(false);
       const malformed = result.warnings.filter(w => w.code === 'MALFORMED_TRACKED_CHANGE');
       expect(malformed.length).toBeGreaterThanOrEqual(1);
-      expect(malformed[0].message).toContain('w:date');
+      expect(malformed[0]!.message).toContain('w:date');
     });
 
     it('detects empty tracked-change wrapper', () => {

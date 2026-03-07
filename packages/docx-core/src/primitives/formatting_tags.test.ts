@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure, itAllure, allureStep } from './testing/allure-test.js';
+import { testAllure, allureStep } from './testing/allure-test.js';
 
 const test = testAllure;
 
@@ -9,7 +9,6 @@ import {
   emitFormattingTags,
   type AnnotatedRun,
   type FormattingBaseline,
-  type FontBaseline,
 } from './formatting_tags.js';
 import type { RunFormatting } from './styles.js';
 
@@ -234,7 +233,7 @@ describe('formatting_tags — OpenSpec traceability', () => {
   humanReadableTest.openspec('char-weighted modal baseline selects dominant formatting tuple')(
     'char-weighted modal baseline selects dominant formatting tuple',
     async () => {
-      const { runs, baseline } = await allureStep('Given 10 bold chars and 4 plain chars', () => {
+      const { baseline } = await allureStep('Given 10 bold chars and 4 plain chars', () => {
         const r: AnnotatedRun[] = [
           {
             text: 'AAAAAAAAAA',

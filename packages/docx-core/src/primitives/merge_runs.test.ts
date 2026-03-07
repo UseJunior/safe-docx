@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import { itAllure, allureStep, allureJsonAttachment } from './testing/allure-test.js';
 
 const it = itAllure;
-import { parseXml, serializeXml } from './xml.js';
+import { parseXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
 import { mergeRuns } from './merge_runs.js';
 

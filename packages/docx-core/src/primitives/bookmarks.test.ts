@@ -37,7 +37,7 @@ describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
     await allureStep('Then each paragraph SHALL receive a _bk_* identifier matching the pattern', () => {
       const paras = doc.getElementsByTagNameNS(OOXML.W_NS, 'p');
       for (let i = 0; i < paras.length; i++) {
-        const id = getParagraphBookmarkId(paras[i]);
+        const id = getParagraphBookmarkId(paras[i]!);
         expect(id).not.toBeNull();
         expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
       }
@@ -52,7 +52,7 @@ describe('Traceability: docx-primitives — Paragraph Bookmarks', () => {
     });
 
     const id = await allureStep('When getParagraphBookmarkId is called', async () => {
-      const para = doc.getElementsByTagNameNS(OOXML.W_NS, 'p')[0];
+      const para = doc.getElementsByTagNameNS(OOXML.W_NS, 'p')[0]!;
       const result = getParagraphBookmarkId(para);
       await allureJsonAttachment('Result', { id: result });
       return result;

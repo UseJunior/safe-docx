@@ -27,9 +27,6 @@ function makeDoc(bodyXml: string): Document {
   );
 }
 
-function getBody(doc: Document): Element {
-  return doc.getElementsByTagName('w:body')[0]!;
-}
 
 // ── getLeafText ────────────────────────────────────────────────────
 
@@ -233,7 +230,6 @@ describe('unwrapAllByTagName', () => {
     const doc = makeDoc(
       '<w:p><w:ins><w:r><w:t>A</w:t></w:r></w:ins><w:ins><w:r><w:t>B</w:t></w:r></w:ins></w:p>',
     );
-    const body = getBody(doc);
     const wp = doc.getElementsByTagName('w:p')[0]!;
     const count = unwrapAllByTagName(wp, 'w:ins');
     expect(count).toBe(2);
