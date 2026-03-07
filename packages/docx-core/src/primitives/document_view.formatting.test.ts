@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure } from './testing/allure-test.js';
+import { testAllure, allureStep } from './testing/allure-test.js';
 import { buildNodesForDocumentView, renderToon } from './document_view.js';
 import { parseXml } from './xml.js';
 import type { RelsMap } from './relationships.js';
@@ -67,29 +67,33 @@ describe('document_view formatting tags', () => {
 
   humanReadableTest.openspec('extract bold, italic, underline, highlight tuple per run')(
     'extract bold, italic, underline, highlight tuple per run',
-    () => {
-      const bodyXml =
-        `<w:p>` +
-        `<w:r><w:rPr><w:b/></w:rPr><w:t>BBBBBBBBBBBBBBBBBBBB</w:t></w:r>` +
-        `<w:r><w:rPr><w:i/></w:rPr><w:t>IIIIIIIIIIIIIIIIIIII</w:t></w:r>` +
-        `<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>UUUUUUUUUUUUUUUUUUUU</w:t></w:r>` +
-        `<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>HHHHHHHHHHHHHHHHHHHH</w:t></w:r>` +
-        `<w:r><w:t>PPPPPPPPPPPPPPPPPPPP</w:t></w:r>` +
-        `</w:p>`;
-      const paragraphs = makeParagraphs(bodyXml);
-      const { nodes } = buildNodesForDocumentView({
-        paragraphs,
-        stylesXml: null,
-        numberingXml: null,
-        show_formatting: true,
-        include_semantic_tags: true,
+    async () => {
+      const nodes = await allureStep('Given a paragraph with bold, italic, underline, highlight, and plain runs', () => {
+        const bodyXml =
+          `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>BBBBBBBBBBBBBBBBBBBB</w:t></w:r>` +
+          `<w:r><w:rPr><w:i/></w:rPr><w:t>IIIIIIIIIIIIIIIIIIII</w:t></w:r>` +
+          `<w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>UUUUUUUUUUUUUUUUUUUU</w:t></w:r>` +
+          `<w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>HHHHHHHHHHHHHHHHHHHH</w:t></w:r>` +
+          `<w:r><w:t>PPPPPPPPPPPPPPPPPPPP</w:t></w:r>` +
+          `</w:p>`;
+        const paragraphs = makeParagraphs(bodyXml);
+        return buildNodesForDocumentView({
+          paragraphs,
+          stylesXml: null,
+          numberingXml: null,
+          show_formatting: true,
+          include_semantic_tags: true,
+        }).nodes;
       });
 
-      expect(nodes.length).toBe(1);
-      expect(nodes[0]!.tagged_text).toContain('<b>BBBBBBBBBBBBBBBBBBBB</b>');
-      expect(nodes[0]!.tagged_text).toContain('<i>IIIIIIIIIIIIIIIIIIII</i>');
-      expect(nodes[0]!.tagged_text).toContain('<u>UUUUUUUUUUUUUUUUUUUU</u>');
-      expect(nodes[0]!.tagged_text).toContain('<highlight>HHHHHHHHHHHHHHHHHHHH</highlight>');
+      await allureStep('Then each formatting type emits its own inline tag', () => {
+        expect(nodes.length).toBe(1);
+        expect(nodes[0]!.tagged_text).toContain('<b>BBBBBBBBBBBBBBBBBBBB</b>');
+        expect(nodes[0]!.tagged_text).toContain('<i>IIIIIIIIIIIIIIIIIIII</i>');
+        expect(nodes[0]!.tagged_text).toContain('<u>UUUUUUUUUUUUUUUUUUUU</u>');
+        expect(nodes[0]!.tagged_text).toContain('<highlight>HHHHHHHHHHHHHHHHHHHH</highlight>');
+      });
     },
   );
 
@@ -115,27 +119,31 @@ describe('document_view formatting tags', () => {
 
   humanReadableTest.openspec('detect hyperlink runs and extract href')(
     'detect hyperlink runs and extract href',
-    () => {
-      const relsMap: RelsMap = new Map([['rId1', 'https://example.com']]);
-      const bodyXml =
-        `<w:p>` +
-        `<w:r><w:t>Click </w:t></w:r>` +
-        `<w:hyperlink r:id="rId1"><w:r><w:t>here</w:t></w:r></w:hyperlink>` +
-        `<w:r><w:t> for details.</w:t></w:r>` +
-        `</w:p>`;
-      const paragraphs = makeParagraphs(bodyXml);
-      const { nodes } = buildNodesForDocumentView({
-        paragraphs,
-        stylesXml: null,
-        numberingXml: null,
-        show_formatting: true,
-        include_semantic_tags: true,
-        relsMap,
+    async () => {
+      const nodes = await allureStep('Given a paragraph with a hyperlink run referencing rId1', () => {
+        const relsMap: RelsMap = new Map([['rId1', 'https://example.com']]);
+        const bodyXml =
+          `<w:p>` +
+          `<w:r><w:t>Click </w:t></w:r>` +
+          `<w:hyperlink r:id="rId1"><w:r><w:t>here</w:t></w:r></w:hyperlink>` +
+          `<w:r><w:t> for details.</w:t></w:r>` +
+          `</w:p>`;
+        const paragraphs = makeParagraphs(bodyXml);
+        return buildNodesForDocumentView({
+          paragraphs,
+          stylesXml: null,
+          numberingXml: null,
+          show_formatting: true,
+          include_semantic_tags: true,
+          relsMap,
+        }).nodes;
       });
 
-      expect(nodes.length).toBe(1);
-      expect(nodes[0]!.tagged_text).toContain('<a href="https://example.com">here</a>');
-      expect(nodes[0]!.tagged_text).toContain('Click ');
+      await allureStep('Then the hyperlink is emitted as an <a> tag with the resolved href', () => {
+        expect(nodes.length).toBe(1);
+        expect(nodes[0]!.tagged_text).toContain('<a href="https://example.com">here</a>');
+        expect(nodes[0]!.tagged_text).toContain('Click ');
+      });
     },
   );
 
@@ -211,75 +219,79 @@ describe('document_view formatting tags', () => {
 
   humanReadableTest.openspec('suppression disabled when baseline coverage below 60%')(
     'suppression disabled when baseline coverage below 60%',
-    () => {
-    // 59 chars plain + 41 chars bold = 59% plain = suppressed=false (because 59 < 60 threshold)
-    // Actually 59% IS < 60%, so suppressed should be false.
+    async () => {
     const plain59 = 'A'.repeat(59);
     const bold41 = 'B'.repeat(41);
-    const bodyXml59 =
-      `<w:p>` +
-      `<w:r><w:t>${plain59}</w:t></w:r>` +
-      `<w:r><w:rPr><w:b/></w:rPr><w:t>${bold41}</w:t></w:r>` +
-      `</w:p>`;
-    const paragraphs59 = makeParagraphs(bodyXml59);
-    const { nodes: nodes59 } = buildNodesForDocumentView({
-      paragraphs: paragraphs59,
-      stylesXml: null,
-      numberingXml: null,
-      show_formatting: true,
-      include_semantic_tags: true,
-    });
-
-    // With 59% plain, suppressed=false → all runs get absolute tags.
-    // The plain text gets no tags (bold=false), the bold text gets <b>.
-    expect(nodes59[0]!.tagged_text).toContain(`<b>${bold41}</b>`);
-
-    // 61 chars plain + 39 chars bold = 61% plain → suppressed=true
     const plain61 = 'A'.repeat(61);
     const bold39 = 'B'.repeat(39);
-    const bodyXml61 =
-      `<w:p>` +
-      `<w:r><w:t>${plain61}</w:t></w:r>` +
-      `<w:r><w:rPr><w:b/></w:rPr><w:t>${bold39}</w:t></w:r>` +
-      `</w:p>`;
-    const paragraphs61 = makeParagraphs(bodyXml61);
-    const { nodes: nodes61 } = buildNodesForDocumentView({
-      paragraphs: paragraphs61,
-      stylesXml: null,
-      numberingXml: null,
-      show_formatting: true,
-      include_semantic_tags: true,
+
+    const nodes59 = await allureStep('Given a paragraph with 59% plain and 41% bold (below 60% threshold)', () => {
+      const bodyXml59 =
+        `<w:p>` +
+        `<w:r><w:t>${plain59}</w:t></w:r>` +
+        `<w:r><w:rPr><w:b/></w:rPr><w:t>${bold41}</w:t></w:r>` +
+        `</w:p>`;
+      const paragraphs59 = makeParagraphs(bodyXml59);
+      return buildNodesForDocumentView({
+        paragraphs: paragraphs59,
+        stylesXml: null,
+        numberingXml: null,
+        show_formatting: true,
+        include_semantic_tags: true,
+      }).nodes;
     });
 
-    // With 61% plain, suppressed=true → only deviations get tags.
-    // Bold is a deviation, so it gets <b>.
-    expect(nodes61[0]!.tagged_text).toContain(`<b>${bold39}</b>`);
-    // The plain portion should NOT be tagged.
-    expect(nodes61[0]!.tagged_text).not.toMatch(new RegExp(`<b>${plain61}`));
+    await allureStep('Then suppression is disabled and bold text gets <b> tags', () => {
+      expect(nodes59[0]!.tagged_text).toContain(`<b>${bold41}</b>`);
+    });
+
+    const nodes61 = await allureStep('Given a paragraph with 61% plain and 39% bold (above 60% threshold)', () => {
+      const bodyXml61 =
+        `<w:p>` +
+        `<w:r><w:t>${plain61}</w:t></w:r>` +
+        `<w:r><w:rPr><w:b/></w:rPr><w:t>${bold39}</w:t></w:r>` +
+        `</w:p>`;
+      const paragraphs61 = makeParagraphs(bodyXml61);
+      return buildNodesForDocumentView({
+        paragraphs: paragraphs61,
+        stylesXml: null,
+        numberingXml: null,
+        show_formatting: true,
+        include_semantic_tags: true,
+      }).nodes;
+    });
+
+    await allureStep('Then suppression is enabled — only deviations get tags', () => {
+      expect(nodes61[0]!.tagged_text).toContain(`<b>${bold39}</b>`);
+      expect(nodes61[0]!.tagged_text).not.toMatch(new RegExp(`<b>${plain61}`));
+    });
     },
   );
 
   humanReadableTest.openspec('tags nested in consistent order')(
     'tags nested in consistent order',
-    () => {
-    const bodyXml =
-      `<w:p>` +
-      `<w:r><w:t>Start text for baseline padding longer text. </w:t></w:r>` +
-      `<w:r><w:rPr><w:i/><w:u w:val="single"/></w:rPr><w:t>styled</w:t></w:r>` +
-      `<w:r><w:t> end.</w:t></w:r>` +
-      `</w:p>`;
-    const paragraphs = makeParagraphs(bodyXml);
-    const { nodes } = buildNodesForDocumentView({
-      paragraphs,
-      stylesXml: null,
-      numberingXml: null,
-      show_formatting: true,
-      include_semantic_tags: true,
+    async () => {
+    const nodes = await allureStep('Given a paragraph with a run having both italic and underline', () => {
+      const bodyXml =
+        `<w:p>` +
+        `<w:r><w:t>Start text for baseline padding longer text. </w:t></w:r>` +
+        `<w:r><w:rPr><w:i/><w:u w:val="single"/></w:rPr><w:t>styled</w:t></w:r>` +
+        `<w:r><w:t> end.</w:t></w:r>` +
+        `</w:p>`;
+      const paragraphs = makeParagraphs(bodyXml);
+      return buildNodesForDocumentView({
+        paragraphs,
+        stylesXml: null,
+        numberingXml: null,
+        show_formatting: true,
+        include_semantic_tags: true,
+      }).nodes;
     });
 
-    expect(nodes.length).toBe(1);
-    // Nesting order: <a> → <b> → <i> → <u> → <highlight>
-    expect(nodes[0]!.tagged_text).toContain('<i><u>styled</u></i>');
+    await allureStep('Then tags are nested in canonical order: <a> → <b> → <i> → <u> → <highlight>', () => {
+      expect(nodes.length).toBe(1);
+      expect(nodes[0]!.tagged_text).toContain('<i><u>styled</u></i>');
+    });
     },
   );
 });

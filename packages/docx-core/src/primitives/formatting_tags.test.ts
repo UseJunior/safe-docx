@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure, itAllure } from './testing/allure-test.js';
+import { testAllure, itAllure, allureStep } from './testing/allure-test.js';
 
 const test = testAllure;
 
@@ -233,57 +233,63 @@ const humanReadableTest = testAllure.epic('DOCX Primitives').withLabels({ featur
 describe('formatting_tags — OpenSpec traceability', () => {
   humanReadableTest.openspec('char-weighted modal baseline selects dominant formatting tuple')(
     'char-weighted modal baseline selects dominant formatting tuple',
-    () => {
-      const runs: AnnotatedRun[] = [
-        {
-          text: 'AAAAAAAAAA',
-          formatting: { bold: true, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
-          hyperlinkUrl: null,
-          charCount: 10,
-          isHeaderRun: false,
-        },
-        {
-          text: 'BBBB',
-          formatting: { bold: false, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
-          hyperlinkUrl: null,
-          charCount: 4,
-          isHeaderRun: false,
-        },
-      ];
+    async () => {
+      const { runs, baseline } = await allureStep('Given 10 bold chars and 4 plain chars', () => {
+        const r: AnnotatedRun[] = [
+          {
+            text: 'AAAAAAAAAA',
+            formatting: { bold: true, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
+            hyperlinkUrl: null,
+            charCount: 10,
+            isHeaderRun: false,
+          },
+          {
+            text: 'BBBB',
+            formatting: { bold: false, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
+            hyperlinkUrl: null,
+            charCount: 4,
+            isHeaderRun: false,
+          },
+        ];
+        return { runs: r, baseline: computeModalBaseline(r) };
+      });
 
-      const baseline = computeModalBaseline(runs);
-
-      expect(baseline.bold).toBe(true);
-      expect(baseline.italic).toBe(false);
-      expect(baseline.underline).toBe(false);
-      expect(baseline.suppressed).toBe(true);
+      await allureStep('Then the modal baseline selects bold=true (dominant) with suppression enabled', () => {
+        expect(baseline.bold).toBe(true);
+        expect(baseline.italic).toBe(false);
+        expect(baseline.underline).toBe(false);
+        expect(baseline.suppressed).toBe(true);
+      });
     },
   );
 
   humanReadableTest.openspec('tie-break by earliest run when modal weights are equal')(
     'tie-break by earliest run when modal weights are equal',
-    () => {
-      const runs: AnnotatedRun[] = [
-        {
-          text: 'AAAAAA',
-          formatting: { bold: true, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
-          hyperlinkUrl: null,
-          charCount: 6,
-          isHeaderRun: false,
-        },
-        {
-          text: 'BBBBBB',
-          formatting: { bold: false, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
-          hyperlinkUrl: null,
-          charCount: 6,
-          isHeaderRun: false,
-        },
-      ];
+    async () => {
+      const baseline = await allureStep('Given two runs with equal char weight (6 bold + 6 plain)', () => {
+        const runs: AnnotatedRun[] = [
+          {
+            text: 'AAAAAA',
+            formatting: { bold: true, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
+            hyperlinkUrl: null,
+            charCount: 6,
+            isHeaderRun: false,
+          },
+          {
+            text: 'BBBBBB',
+            formatting: { bold: false, italic: false, underline: false, highlightVal: null, fontName: 'Arial', fontSizePt: 12, colorHex: null },
+            hyperlinkUrl: null,
+            charCount: 6,
+            isHeaderRun: false,
+          },
+        ];
+        return computeModalBaseline(runs);
+      });
 
-      const baseline = computeModalBaseline(runs);
-
-      expect(baseline.bold).toBe(true);
-      expect(baseline.suppressed).toBe(false);
+      await allureStep('Then tie-break selects earliest run (bold=true) with suppression disabled', () => {
+        expect(baseline.bold).toBe(true);
+        expect(baseline.suppressed).toBe(false);
+      });
     },
   );
 });
