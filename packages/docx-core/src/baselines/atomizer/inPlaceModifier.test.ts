@@ -1494,11 +1494,8 @@ describe('inPlaceModifier', () => {
     });
   });
 
-  describe('suppressNoOpChangePairs (Bug 1 regression)', () => {
-    it.fails('should not produce no-op del/ins pairs with identical text and formatting', () => {
-      // Build a DOM tree simulating the field-adjacent false no-op:
-      // <w:p><w:del><w:r><w:delText>Section </w:delText></w:r></w:del>
-      //      <w:ins><w:r><w:t>Section </w:t></w:r></w:ins></w:p>
+  describe('suppressNoOpChangePairs', () => {
+    it('unwraps adjacent w:del + w:ins with identical text and no rPr', () => {
       const delText = el('w:delText', {}, undefined, 'Section ');
       const delRun = el('w:r', {}, [delText]);
       const wDel = el('w:del', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
@@ -1512,21 +1509,154 @@ describe('inPlaceModifier', () => {
 
       suppressNoOpChangePairs(body);
 
-      // After suppression, wrappers should be gone — only a plain run remains
       const pChildren = childElements(p);
       expect(pChildren.length).toBe(1);
       expect(pChildren[0]!.tagName).toBe('w:r');
     });
+
+    it('unwraps w:del + w:ins with identical text and identical rPr', () => {
+      const delRun = el('w:r', {}, [
+        el('w:rPr', {}, [el('w:b')]),
+        el('w:delText', {}, undefined, 'bold text'),
+      ]);
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
+
+      const insRun = el('w:r', {}, [
+        el('w:rPr', {}, [el('w:b')]),
+        el('w:t', {}, undefined, 'bold text'),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [insRun]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(1);
+      expect(pChildren[0]!.tagName).toBe('w:r');
+    });
+
+    it('preserves w:del + w:ins when text differs', () => {
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'old')]),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'new')]),
+      ]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:del');
+      expect(pChildren[1]!.tagName).toBe('w:ins');
+    });
+
+    it('preserves w:del + w:ins when formatting differs', () => {
+      const delRun = el('w:r', {}, [
+        el('w:rPr', {}, [el('w:b')]),
+        el('w:delText', {}, undefined, 'text'),
+      ]);
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
+
+      const insRun = el('w:r', {}, [
+        el('w:rPr', {}, [el('w:i')]),
+        el('w:t', {}, undefined, 'text'),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [insRun]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:del');
+      expect(pChildren[1]!.tagName).toBe('w:ins');
+    });
+
+    it('preserves w:del + w:ins when non-text structure differs', () => {
+      // del has w:tab, ins doesn't
+      const delRun = el('w:r', {}, [
+        el('w:delText', {}, undefined, 'text'),
+        el('w:tab'),
+      ]);
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
+
+      const insRun = el('w:r', {}, [
+        el('w:t', {}, undefined, 'text'),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [insRun]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+    });
+
+    it('handles multi-run no-op pairs', () => {
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'first ')]),
+        el('w:r', {}, [el('w:delText', {}, undefined, 'second')]),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'first ')]),
+        el('w:r', {}, [el('w:t', {}, undefined, 'second')]),
+      ]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:r');
+      expect(pChildren[1]!.tagName).toBe('w:r');
+    });
+
+    it('does not skip subsequent pairs after mutation', () => {
+      // Two consecutive no-op pairs
+      const wDel1 = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'aaa')]),
+      ]);
+      const wIns1 = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'aaa')]),
+      ]);
+      const wDel2 = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'bbb')]),
+      ]);
+      const wIns2 = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'bbb')]),
+      ]);
+
+      const p = el('w:p', {}, [wDel1, wIns1, wDel2, wIns2]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:r');
+      expect(pChildren[1]!.tagName).toBe('w:r');
+    });
   });
 
-  describe('mergeWhitespaceBridgedTrackChanges (Bug 2 regression)', () => {
-    it.fails('should group whitespace-bridged del siblings into a single block', () => {
-      // <w:del>A</w:del><w:r><w:t> </w:t></w:r><w:del>B</w:del>
-      const delA = el('w:del', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [
+  describe('mergeWhitespaceBridgedTrackChanges', () => {
+    it('does not merge w:del siblings (del bridging is unsafe for accept projection)', () => {
+      const delA = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
         el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
       ]);
       const spaceRun = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
-      const delB = el('w:del', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [
+      const delB = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
         el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
       ]);
 
@@ -1535,10 +1665,135 @@ describe('inPlaceModifier', () => {
 
       mergeWhitespaceBridgedTrackChanges(body);
 
-      // After merge, should be a single <w:del> containing A, space (as delText), B
+      // Dels should NOT be merged — the intervening whitespace is Equal content
+      // needed by the accept projection
+      const dels = childElements(p).filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(2);
+    });
+
+    it('merges w:ins siblings bridged by whitespace-only run', () => {
+      const insA = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'X')]),
+      ]);
+      const spaceRun = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
+      const insB = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Y')]),
+      ]);
+
+      const p = el('w:p', {}, [insA, spaceRun, insB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
       const pChildren = childElements(p);
-      const dels = pChildren.filter(c => c.tagName === 'w:del');
-      expect(dels.length).toBe(1);
+      const inses = pChildren.filter(c => c.tagName === 'w:ins');
+      expect(inses.length).toBe(1);
+      // Should contain: original run + whitespace run (moved) + second run
+      const insChildren = childElements(inses[0]!);
+      expect(insChildren.length).toBe(3);
+    });
+
+    it('does not merge when bridging run has non-whitespace text', () => {
+      const delA = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const wordRun = el('w:r', {}, [el('w:t', {}, undefined, 'word')]);
+      const delB = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+
+      const p = el('w:p', {}, [delA, wordRun, delB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      const dels = childElements(p).filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(2);
+    });
+
+    it('does not merge when bridging run has w:tab', () => {
+      const delA = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const tabRun = el('w:r', {}, [el('w:tab')]);
+      const delB = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+
+      const p = el('w:p', {}, [delA, tabRun, delB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      const dels = childElements(p).filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(2);
+    });
+
+    it('does not merge across different authors', () => {
+      const delA = el('w:del', { 'w:author': 'Author1', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const spaceRun = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
+      const delB = el('w:del', { 'w:author': 'Author2', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+
+      const p = el('w:p', {}, [delA, spaceRun, delB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      const dels = childElements(p).filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(2);
+    });
+
+    it('accept/reject projection is correct after ins merge', () => {
+      // Only ins siblings get bridged (del bridging is unsafe)
+      const insX = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'X')]),
+      ]);
+      const space = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
+      const insY = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Y')]),
+      ]);
+
+      const p = el('w:p', {}, [insX, space, insY]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      // Ins siblings should be merged with whitespace moved inside
+      const inses = childElements(p).filter(c => c.tagName === 'w:ins');
+      expect(inses.length).toBe(1);
+      const insTextContent = findAllByTagName(inses[0]!, 'w:t').map(e => e.textContent).join('');
+      expect(insTextContent).toBe('X Y');
+    });
+  });
+
+  describe('runHasVisibleContent', () => {
+    it('returns true for run with w:t', () => {
+      const run = el('w:r', {}, [el('w:t', {}, undefined, 'text')]);
+      expect(runHasVisibleContent(run)).toBe(true);
+    });
+
+    it('returns true for run with w:tab', () => {
+      const run = el('w:r', {}, [el('w:tab')]);
+      expect(runHasVisibleContent(run)).toBe(true);
+    });
+
+    it('returns false for run with only w:rPr', () => {
+      const run = el('w:r', {}, [el('w:rPr', {}, [el('w:b')])]);
+      expect(runHasVisibleContent(run)).toBe(false);
+    });
+
+    it('returns false for empty run', () => {
+      const run = el('w:r');
+      expect(runHasVisibleContent(run)).toBe(false);
+    });
+
+    it('returns true for run with w:fldChar', () => {
+      const run = el('w:r', {}, [el('w:fldChar', { 'w:fldCharType': 'begin' })]);
+      expect(runHasVisibleContent(run)).toBe(true);
     });
   });
 });

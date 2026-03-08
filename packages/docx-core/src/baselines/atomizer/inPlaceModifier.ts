@@ -16,8 +16,9 @@ import { CorrelationStatus } from '../../core-types.js';
 import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
 import {
   getLeafText, childElements, findChildByTagName, insertAfterElement,
-  wrapElement, splitRunAtVisibleOffset, visibleLengthForEl, getDirectContentElements,
+  wrapElement, unwrapElement, splitRunAtVisibleOffset, visibleLengthForEl, getDirectContentElements,
 } from '../../primitives/index.js';
+import { areRunPropertiesEqual } from '../../format-detection.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import { warn } from './debug.js';
@@ -1658,8 +1659,16 @@ export function modifyRevisedDocument(
   // - Accept All should remove deleted paragraphs entirely
   applyWholeParagraphRevisionMarkers(mergedAtoms, ctx);
 
+  // Suppress field-adjacent no-op del/ins pairs (issue #42, Bug 1).
+  // Must run BEFORE merge — after merge, pairwise comparison is impossible.
+  suppressNoOpChangePairs(ctx.body);
+
   // Merge adjacent <w:ins>/<w:del> siblings to reduce revision fragmentation.
   mergeAdjacentTrackChangeSiblings(ctx.body);
+
+  // Merge whitespace-bridged track change siblings (issue #42, Bug 2).
+  // Runs AFTER mergeAdjacent so we only bridge non-adjacent same-tag wrappers.
+  mergeWhitespaceBridgedTrackChanges(ctx.body);
 
   // Apply strict post-render consumer compatibility pass
   enforceConsumerCompatibility(revisedRoot, () => allocateRevisionId(state));
@@ -2508,22 +2517,192 @@ function mergeAdjacentTrackChangeSiblings(root: Element): void {
 }
 
 // =============================================================================
-// Bug 1 + Bug 2 stubs (issue #42) — to be implemented
+// Bug 1: Suppress field-adjacent false no-op del/ins pairs (issue #42)
 // =============================================================================
 
-/** Stub — suppress field-adjacent false no-op del/ins pairs. */
-export function suppressNoOpChangePairs(_root: Element): void {
-  // TODO: implement
+/**
+ * Build a normalized content signature for a run's non-rPr children.
+ * On the del side, maps w:delText → w:t and w:delInstrText → w:instrText
+ * so that content from del wrappers can be compared to ins wrappers.
+ */
+function normalizeRunContentSignature(run: Element, isDelSide: boolean): string {
+  const parts: string[] = [];
+  for (let i = 0; i < run.childNodes.length; i++) {
+    const child = run.childNodes[i]!;
+    if (child.nodeType !== 1) continue;
+    const el = child as Element;
+    if (el.tagName === 'w:rPr') continue;
+
+    let tag = el.tagName;
+    if (isDelSide) {
+      if (tag === 'w:delText') tag = 'w:t';
+      else if (tag === 'w:delInstrText') tag = 'w:instrText';
+    }
+
+    const text = el.textContent ?? '';
+    parts.push(`<${tag}>${text}</${tag}>`);
+  }
+  return parts.join('');
 }
 
-/** Stub — merge whitespace-bridged track change siblings. */
-export function mergeWhitespaceBridgedTrackChanges(_root: Element): void {
-  // TODO: implement
+/**
+ * Check if an adjacent w:del + w:ins pair is a no-op (identical text and formatting).
+ * Both wrappers must contain the same number of runs with matching rPr and content.
+ */
+export function isNoOpPair(del: Element, ins: Element): boolean {
+  const delRuns = childElements(del).filter(c => c.tagName === 'w:r');
+  const insRuns = childElements(ins).filter(c => c.tagName === 'w:r');
+
+  if (delRuns.length !== insRuns.length) return false;
+  if (delRuns.length === 0) return false;
+
+  for (let i = 0; i < delRuns.length; i++) {
+    const delRun = delRuns[i]!;
+    const insRun = insRuns[i]!;
+
+    // Compare formatting via canonical rPr comparison
+    const delRPr = findChildByTagName(delRun, 'w:rPr');
+    const insRPr = findChildByTagName(insRun, 'w:rPr');
+    if (!areRunPropertiesEqual(delRPr ?? null, insRPr ?? null)) return false;
+
+    // Compare content structure (text, tabs, breaks, field chars, etc.)
+    const delSig = normalizeRunContentSignature(delRun, true);
+    const insSig = normalizeRunContentSignature(insRun, false);
+    if (delSig !== insSig) return false;
+  }
+
+  return true;
 }
 
-/** Stub — check if a del/ins pair is a no-op (identical text+formatting). */
-export function isNoOpPair(_del: Element, _ins: Element): boolean {
-  return false;
+/**
+ * Suppress no-op del/ins pairs — adjacent w:del + w:ins wrappers where the
+ * content and formatting are identical. These arise from field-adjacent atoms
+ * that are false-positive changes.
+ *
+ * When a no-op is detected, both wrappers are unwrapped, leaving the ins-side
+ * runs as plain (non-tracked) children. The del-side runs are removed.
+ */
+export function suppressNoOpChangePairs(root: Element): void {
+  function traverse(node: Element): void {
+    const children = childElements(node);
+
+    for (let i = 0; i < children.length - 1; ) {
+      const a = children[i]!;
+      const b = children[i + 1]!;
+
+      if (a.tagName === 'w:del' && b.tagName === 'w:ins' && isNoOpPair(a, b)) {
+        // Remove the del wrapper and its content entirely
+        node.removeChild(a);
+        // Unwrap the ins wrapper — promote its children to the parent
+        unwrapElement(b);
+        // Re-snapshot children after mutation
+        children.splice(i, 2, ...childElements(node).slice(i));
+        // Don't increment — recheck from same position
+        continue;
+      }
+
+      i++;
+    }
+
+    // Recurse into current children (re-query after mutations)
+    for (const child of childElements(node)) {
+      traverse(child);
+    }
+  }
+
+  traverse(root);
+}
+
+// =============================================================================
+// Bug 2: Merge whitespace-bridged track change siblings (issue #42)
+// =============================================================================
+
+/**
+ * Narrow whitespace predicate for bridging: returns true only if a w:r element's
+ * visible children are exclusively w:t elements with whitespace-only text content.
+ * Excludes w:tab, w:br, w:cr which have layout significance.
+ */
+function isInlineWhitespaceOnlyRun(run: Element): boolean {
+  if (run.tagName !== 'w:r') return false;
+
+  let hasVisibleChild = false;
+  for (let i = 0; i < run.childNodes.length; i++) {
+    const child = run.childNodes[i]!;
+    if (child.nodeType !== 1) continue;
+    const el = child as Element;
+    if (el.tagName === 'w:rPr') continue;
+
+    // Only w:t with whitespace-only text is allowed
+    if (el.tagName === 'w:t') {
+      const text = el.textContent ?? '';
+      if (text.length === 0 || !/^\s+$/.test(text)) return false;
+      hasVisibleChild = true;
+      continue;
+    }
+
+    // Any other visible element (w:tab, w:br, w:cr, w:fldChar, etc.) disqualifies
+    return false;
+  }
+
+  return hasVisibleChild;
+}
+
+
+/**
+ * Merge track-change wrappers (w:del or w:ins) that are separated by a
+ * whitespace-only run. This groups "word-by-word" tracked changes into
+ * contiguous blocks for cleaner presentation.
+ *
+ * For w:del: clones the whitespace run, converts w:t→w:delText, and absorbs
+ * both the whitespace and the second wrapper's children into the first wrapper.
+ *
+ * For w:ins: moves the whitespace run into the first wrapper, then absorbs
+ * the second wrapper's children.
+ *
+ * Both projections (Accept All, Reject All) remain correct because each
+ * wrapper independently contains the whitespace it needs.
+ */
+export function mergeWhitespaceBridgedTrackChanges(root: Element): void {
+  function traverse(node: Element): void {
+    const children = childElements(node);
+
+    for (let i = 0; i < children.length - 2; ) {
+      const a = children[i]!;
+      const mid = children[i + 1]!;
+      const b = children[i + 2]!;
+
+      // Check: same track-change tag, same author/date, with whitespace-only run between.
+      // Only bridge w:ins and w:moveTo — bridging w:del is unsafe because the
+      // intervening whitespace is Equal content needed by the accept projection.
+      const bridgeableTags = new Set(['w:ins', 'w:moveTo']);
+      if (a.tagName === b.tagName &&
+          bridgeableTags.has(a.tagName) &&
+          a.getAttribute('w:author') === b.getAttribute('w:author') &&
+          a.getAttribute('w:date') === b.getAttribute('w:date') &&
+          isInlineWhitespaceOnlyRun(mid)) {
+
+        // Move the whitespace run into the first wrapper, then absorb second's children
+        a.appendChild(mid);
+        while (b.firstChild) a.appendChild(b.firstChild);
+        node.removeChild(b);
+
+        // mid was moved into a, b removed from parent — splice both from snapshot
+        children.splice(i + 1, 2);
+
+        // Don't increment — recheck a with new next sibling
+        continue;
+      }
+
+      i++;
+    }
+
+    // Recurse into current children (re-query after mutations)
+    for (const child of childElements(node)) {
+      traverse(child);
+    }
+  }
+
+  traverse(root);
 }
 
 // Re-export for convenience
