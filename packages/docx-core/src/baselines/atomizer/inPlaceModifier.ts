@@ -2244,7 +2244,7 @@ const INSERTION_LIKE_STATUSES: ReadonlySet<CorrelationStatus> = new Set([
  * This produces grouped tracked changes ("<del>old words</del><ins>new words</ins>")
  * instead of alternating word-by-word pairs ("<del>old1</del><ins>new1</ins><del>old2</del>...").
  */
-function groupDeletionsBeforeInsertions(atoms: ComparisonUnitAtom[]): ComparisonUnitAtom[] {
+export function groupDeletionsBeforeInsertions(atoms: ComparisonUnitAtom[]): ComparisonUnitAtom[] {
   const result: ComparisonUnitAtom[] = [];
   let i = 0;
 

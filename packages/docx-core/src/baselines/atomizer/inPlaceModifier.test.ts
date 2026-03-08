@@ -15,6 +15,8 @@ import {
   wrapParagraphAsInserted,
   wrapParagraphAsDeleted,
   preSplitMixedStatusRuns,
+  preSplitInterleavedWordRuns,
+  groupDeletionsBeforeInsertions,
   createRevisionIdState,
 } from './inPlaceModifier.js';
 import { childElements, findAllByTagName } from '../../primitives/index.js';
@@ -1288,6 +1290,204 @@ describe('inPlaceModifier', () => {
       // Only spacing should be in the snapshot; rPrChange is excluded
       expect(innerChildren).toHaveLength(1);
       expect(innerChildren[0]!.tagName).toBe('w:spacing');
+    });
+  });
+
+  describe('groupDeletionsBeforeInsertions', () => {
+    it('passes through equal-only atoms unchanged', () => {
+      const atoms = [
+        createMockAtom({ correlationStatus: CorrelationStatus.Equal }),
+        createMockAtom({ correlationStatus: CorrelationStatus.Equal }),
+      ];
+      const result = groupDeletionsBeforeInsertions(atoms);
+      expect(result).toHaveLength(2);
+      expect(result[0]!.correlationStatus).toBe(CorrelationStatus.Equal);
+      expect(result[1]!.correlationStatus).toBe(CorrelationStatus.Equal);
+    });
+
+    it('groups alternating Deleted/Inserted: deletions first, then insertions', () => {
+      const d1 = createMockAtom({ correlationStatus: CorrelationStatus.Deleted });
+      const i1 = createMockAtom({ correlationStatus: CorrelationStatus.Inserted });
+      const d2 = createMockAtom({ correlationStatus: CorrelationStatus.Deleted });
+      const i2 = createMockAtom({ correlationStatus: CorrelationStatus.Inserted });
+      const result = groupDeletionsBeforeInsertions([d1, i1, d2, i2]);
+      expect(result.map((a) => a.correlationStatus)).toEqual([
+        CorrelationStatus.Deleted,
+        CorrelationStatus.Deleted,
+        CorrelationStatus.Inserted,
+        CorrelationStatus.Inserted,
+      ]);
+    });
+
+    it('preserves Equal atoms between change blocks', () => {
+      const d = createMockAtom({ correlationStatus: CorrelationStatus.Deleted });
+      const eq = createMockAtom({ correlationStatus: CorrelationStatus.Equal });
+      const i = createMockAtom({ correlationStatus: CorrelationStatus.Inserted });
+      const result = groupDeletionsBeforeInsertions([d, eq, i]);
+      expect(result.map((a) => a.correlationStatus)).toEqual([
+        CorrelationStatus.Deleted,
+        CorrelationStatus.Equal,
+        CorrelationStatus.Inserted,
+      ]);
+    });
+
+    it('groups MovedSource before MovedDestination', () => {
+      const ms = createMockAtom({ correlationStatus: CorrelationStatus.MovedSource });
+      const md = createMockAtom({ correlationStatus: CorrelationStatus.MovedDestination });
+      const result = groupDeletionsBeforeInsertions([md, ms]);
+      expect(result.map((a) => a.correlationStatus)).toEqual([
+        CorrelationStatus.MovedSource,
+        CorrelationStatus.MovedDestination,
+      ]);
+    });
+
+    it('handles empty array', () => {
+      expect(groupDeletionsBeforeInsertions([])).toEqual([]);
+    });
+
+    it('handles single deletion atom', () => {
+      const d = createMockAtom({ correlationStatus: CorrelationStatus.Deleted });
+      const result = groupDeletionsBeforeInsertions([d]);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.correlationStatus).toBe(CorrelationStatus.Deleted);
+    });
+
+    it('handles FormatChanged as a block boundary', () => {
+      const d = createMockAtom({ correlationStatus: CorrelationStatus.Deleted });
+      const fc = createMockAtom({ correlationStatus: CorrelationStatus.FormatChanged });
+      const i = createMockAtom({ correlationStatus: CorrelationStatus.Inserted });
+      const result = groupDeletionsBeforeInsertions([d, fc, i]);
+      expect(result.map((a) => a.correlationStatus)).toEqual([
+        CorrelationStatus.Deleted,
+        CorrelationStatus.FormatChanged,
+        CorrelationStatus.Inserted,
+      ]);
+    });
+  });
+
+  describe('preSplitInterleavedWordRuns', () => {
+    it('is a no-op for empty atom list', () => {
+      const atoms: ComparisonUnitAtom[] = [];
+      preSplitInterleavedWordRuns(atoms);
+      expect(atoms).toEqual([]);
+    });
+
+    it('is a no-op when no interleaving exists (all atoms from different runs)', () => {
+      const run1 = el('w:r', {}, [el('w:t', {}, undefined, 'hello')]);
+      const run2 = el('w:r', {}, [el('w:t', {}, undefined, 'world')]);
+      el('w:p', {}, [run1, run2]);
+
+      const atoms = [
+        createMockAtom({
+          correlationStatus: CorrelationStatus.Equal,
+          sourceRunElement: run1,
+          contentElement: el('w:t', {}, undefined, 'hello'),
+        }),
+        createMockAtom({
+          correlationStatus: CorrelationStatus.Equal,
+          sourceRunElement: run2,
+          contentElement: el('w:t', {}, undefined, 'world'),
+        }),
+      ];
+
+      preSplitInterleavedWordRuns(atoms);
+      // No split needed — atoms already from different runs
+      expect(atoms[0]!.sourceRunElement).toBe(run1);
+      expect(atoms[1]!.sourceRunElement).toBe(run2);
+    });
+
+    it('skips atoms with no sourceRunElement', () => {
+      const atoms = [
+        createMockAtom({
+          correlationStatus: CorrelationStatus.Equal,
+          sourceRunElement: undefined,
+        }),
+      ];
+      preSplitInterleavedWordRuns(atoms);
+      expect(atoms).toHaveLength(1);
+    });
+
+    it('skips Deleted atoms (original-tree)', () => {
+      const run = el('w:r', {}, [el('w:t', {}, undefined, 'hello world')]);
+      el('w:p', {}, [run]);
+
+      const atoms = [
+        createMockAtom({
+          correlationStatus: CorrelationStatus.Deleted,
+          sourceRunElement: run,
+          contentElement: el('w:t', {}, undefined, 'hello'),
+        }),
+        createMockAtom({
+          correlationStatus: CorrelationStatus.Deleted,
+          sourceRunElement: run,
+          contentElement: el('w:t', {}, undefined, 'world'),
+        }),
+      ];
+
+      preSplitInterleavedWordRuns(atoms);
+      // Deleted atoms are from original tree, not revised — no split
+      expect(atoms[0]!.sourceRunElement).toBe(run);
+      expect(atoms[1]!.sourceRunElement).toBe(run);
+    });
+
+    it('splits run when Deleted atom interleaves between Equal atoms from same run', () => {
+      const run = el('w:r', {}, [el('w:t', {}, undefined, 'helloworld')]);
+      el('w:p', {}, [run]);
+
+      const equalAtom1 = createMockAtom({
+        correlationStatus: CorrelationStatus.Equal,
+        sourceRunElement: run,
+        contentElement: el('w:t', {}, undefined, 'hello'),
+      });
+      const deletedAtom = createMockAtom({
+        correlationStatus: CorrelationStatus.Deleted,
+        sourceRunElement: el('w:r'), // from original tree
+        contentElement: el('w:t', {}, undefined, 'DELETED'),
+      });
+      const equalAtom2 = createMockAtom({
+        correlationStatus: CorrelationStatus.Equal,
+        sourceRunElement: run,
+        contentElement: el('w:t', {}, undefined, 'world'),
+      });
+
+      const atoms = [equalAtom1, deletedAtom, equalAtom2];
+      preSplitInterleavedWordRuns(atoms);
+
+      // The run should have been split — equalAtom1 and equalAtom2 now point to different elements
+      expect(equalAtom1.sourceRunElement).not.toBe(equalAtom2.sourceRunElement);
+    });
+
+    it('skips atoms with collapsedFieldAtoms', () => {
+      const run = el('w:r', {}, [el('w:t', {}, undefined, 'hello')]);
+      el('w:p', {}, [run]);
+
+      const atoms = [
+        createMockAtom({
+          correlationStatus: CorrelationStatus.Equal,
+          sourceRunElement: run,
+          contentElement: el('w:t', {}, undefined, 'hello'),
+          collapsedFieldAtoms: [createMockAtom()],
+        }),
+      ];
+
+      preSplitInterleavedWordRuns(atoms);
+      expect(atoms[0]!.sourceRunElement).toBe(run);
+    });
+
+    it('skips field character content elements', () => {
+      const run = el('w:r', {}, [el('w:fldChar', { 'w:fldCharType': 'begin' })]);
+      el('w:p', {}, [run]);
+
+      const atoms = [
+        createMockAtom({
+          correlationStatus: CorrelationStatus.Equal,
+          sourceRunElement: run,
+          contentElement: el('w:fldChar', { 'w:fldCharType': 'begin' }),
+        }),
+      ];
+
+      preSplitInterleavedWordRuns(atoms);
+      expect(atoms[0]!.sourceRunElement).toBe(run);
     });
   });
 });
