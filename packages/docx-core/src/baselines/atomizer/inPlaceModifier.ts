@@ -1666,8 +1666,12 @@ export function modifyRevisedDocument(
   // Merge adjacent <w:ins>/<w:del> siblings to reduce revision fragmentation.
   mergeAdjacentTrackChangeSiblings(ctx.body);
 
+  // Coalesce del/ins pair chains across whitespace (issue #42, Bug 2b).
+  // Merges [del:A][ins:X][ws][del:B][ins:Y] → [del:A ws B][ins:X ws Y]
+  coalesceDelInsPairChains(ctx.body);
+
   // Merge whitespace-bridged track change siblings (issue #42, Bug 2).
-  // Runs AFTER mergeAdjacent so we only bridge non-adjacent same-tag wrappers.
+  // Runs AFTER coalesce — handles ins+ws+ins and moveTo+ws+moveTo bridging.
   mergeWhitespaceBridgedTrackChanges(ctx.body);
 
   // Apply strict post-render consumer compatibility pass
@@ -2694,6 +2698,162 @@ export function mergeWhitespaceBridgedTrackChanges(root: Element): void {
       }
 
       i++;
+    }
+
+    // Recurse into current children (re-query after mutations)
+    for (const child of childElements(node)) {
+      traverse(child);
+    }
+  }
+
+  traverse(root);
+}
+
+// =============================================================================
+// Bug 2b: Coalesce del/ins pair chains across whitespace (issue #42)
+// =============================================================================
+
+/**
+ * Convert w:t → w:delText and w:instrText → w:delInstrText within a run,
+ * preserving xml:space attributes. Used for cloning whitespace runs into
+ * w:del wrappers during pair-chain coalescing.
+ */
+function convertRunTextToDelText(run: Element): void {
+  for (let i = 0; i < run.childNodes.length; i++) {
+    const child = run.childNodes[i]!;
+    if (child.nodeType !== 1) continue;
+    const el = child as Element;
+    if (el.tagName === 'w:t' || el.tagName === 'w:instrText') {
+      const newTag = el.tagName === 'w:t' ? 'w:delText' : 'w:delInstrText';
+      const newEl = createEl(newTag);
+      // Copy text content
+      while (el.firstChild) newEl.appendChild(el.firstChild);
+      // Copy attributes (including xml:space="preserve")
+      for (let j = 0; j < el.attributes.length; j++) {
+        const attr = el.attributes[j]!;
+        newEl.setAttribute(attr.name, attr.value);
+      }
+      run.replaceChild(newEl, el);
+    }
+  }
+}
+
+/**
+ * Coalesce alternating del/ins pair chains separated by whitespace-only runs
+ * into single grouped del + ins wrappers.
+ *
+ * Pattern: [w:del, w:ins, ws-segment..., w:del, w:ins, ws-segment..., w:del, w:ins]
+ *
+ * For each whitespace segment between consecutive [del, ins] pairs:
+ * 1. Clone each ws-run → convert to delText → append to first del
+ * 2. Clone each ws-run → keep as w:t → append to first ins
+ * 3. Move nextDel's children into first del
+ * 4. Move nextIns's children into first ins
+ * 5. Remove original ws-runs, empty nextDel, empty nextIns from parent
+ *
+ * Safety invariants:
+ * - Only bridges when both del AND ins absorb the whitespace (both projections correct)
+ * - Incomplete tail [del, ins, ws, del] (no trailing ins) → stop chain, don't bridge
+ * - All wrappers in chain must share same w:author and w:date
+ */
+export function coalesceDelInsPairChains(root: Element): void {
+  function traverse(node: Element): void {
+    const children = childElements(node);
+
+    for (let i = 0; i < children.length - 1; ) {
+      const firstDel = children[i]!;
+      const firstIns = children[i + 1]!;
+
+      // Must start with a [del, ins] pair
+      if (firstDel.tagName !== 'w:del' || firstIns.tagName !== 'w:ins') {
+        i++;
+        continue;
+      }
+
+      const author = firstDel.getAttribute('w:author');
+      const date = firstDel.getAttribute('w:date');
+
+      // All four must match author/date
+      if (firstIns.getAttribute('w:author') !== author ||
+          firstIns.getAttribute('w:date') !== date) {
+        i++;
+        continue;
+      }
+
+      // Try to extend the chain by absorbing subsequent [ws..., del, ins] triples
+      let cursor = i + 2; // position after firstIns
+      let chainExtended = false;
+
+      while (cursor < children.length) {
+        // Collect whitespace segment (1..N consecutive whitespace-only runs)
+        const wsStart = cursor;
+        while (cursor < children.length && isInlineWhitespaceOnlyRun(children[cursor]!)) {
+          cursor++;
+        }
+        const wsEnd = cursor;
+        const wsCount = wsEnd - wsStart;
+
+        if (wsCount === 0) break; // No whitespace → end of chain
+
+        // Must have a complete [del, ins] pair after the whitespace
+        if (cursor + 1 >= children.length) break; // Not enough elements
+        const nextDel = children[cursor]!;
+        const nextIns = children[cursor + 1]!;
+
+        if (nextDel.tagName !== 'w:del' || nextIns.tagName !== 'w:ins') break;
+
+        // Author/date must match
+        if (nextDel.getAttribute('w:author') !== author ||
+            nextDel.getAttribute('w:date') !== date ||
+            nextIns.getAttribute('w:author') !== author ||
+            nextIns.getAttribute('w:date') !== date) break;
+
+        // All conditions met — absorb this [ws..., del, ins] into the first pair
+
+        // 1. Clone whitespace runs into del (as delText) and ins (as w:t)
+        for (let w = wsStart; w < wsEnd; w++) {
+          const wsRun = children[w]!;
+
+          const delClone = wsRun.cloneNode(true) as Element;
+          convertRunTextToDelText(delClone);
+          firstDel.appendChild(delClone);
+
+          const insClone = wsRun.cloneNode(true) as Element;
+          firstIns.appendChild(insClone);
+        }
+
+        // 2. Move nextDel's children into firstDel
+        while (nextDel.firstChild) firstDel.appendChild(nextDel.firstChild);
+
+        // 3. Move nextIns's children into firstIns
+        while (nextIns.firstChild) firstIns.appendChild(nextIns.firstChild);
+
+        // 4. Remove ws-runs, nextDel, nextIns from parent
+        for (let w = wsStart; w < wsEnd; w++) {
+          node.removeChild(children[w]!);
+        }
+        node.removeChild(nextDel);
+        node.removeChild(nextIns);
+
+        // 5. Splice removed elements from children snapshot
+        // Remove wsCount + 2 elements starting at wsStart
+        children.splice(wsStart, wsCount + 2);
+
+        // Reset cursor to continue checking after firstIns
+        cursor = wsStart;
+        chainExtended = true;
+      }
+
+      // Advance past the (possibly extended) [del, ins] pair
+      i += chainExtended ? 2 : 1;
+      // If no chain was formed, we only skip the del (i++ already happened above
+      // for the non-chain case), but if it was a chain we skip both del+ins.
+      // Actually: if chain wasn't extended, we need to check if firstDel+firstIns
+      // alone should advance by 2 or by 1. Since they ARE a del+ins pair but
+      // no chain formed, skip both.
+      if (!chainExtended) {
+        i++; // skip the ins too (total i += 2 from the earlier i++)
+      }
     }
 
     // Recurse into current children (re-query after mutations)
