@@ -18,6 +18,10 @@ import {
   preSplitInterleavedWordRuns,
   groupDeletionsBeforeInsertions,
   createRevisionIdState,
+  suppressNoOpChangePairs,
+  mergeWhitespaceBridgedTrackChanges,
+  coalesceDelInsPairChains,
+  runHasVisibleContent,
 } from './inPlaceModifier.js';
 import { childElements, findAllByTagName } from '../../primitives/index.js';
 import { el } from '../../testing/dom-test-helpers.js';
@@ -1488,6 +1492,497 @@ describe('inPlaceModifier', () => {
 
       preSplitInterleavedWordRuns(atoms);
       expect(atoms[0]!.sourceRunElement).toBe(run);
+    });
+  });
+
+  describe('suppressNoOpChangePairs', () => {
+    it('unwraps adjacent w:del + w:ins with identical text and no rPr', () => {
+      const delText = el('w:delText', {}, undefined, 'Section ');
+      const delRun = el('w:r', {}, [delText]);
+      const wDel = el('w:del', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
+
+      const insText = el('w:t', {}, undefined, 'Section ');
+      const insRun = el('w:r', {}, [insText]);
+      const wIns = el('w:ins', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [insRun]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(1);
+      expect(pChildren[0]!.tagName).toBe('w:r');
+    });
+
+    it('unwraps w:del + w:ins with identical text and identical rPr', () => {
+      const delRun = el('w:r', {}, [
+        el('w:rPr', {}, [el('w:b')]),
+        el('w:delText', {}, undefined, 'bold text'),
+      ]);
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
+
+      const insRun = el('w:r', {}, [
+        el('w:rPr', {}, [el('w:b')]),
+        el('w:t', {}, undefined, 'bold text'),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [insRun]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(1);
+      expect(pChildren[0]!.tagName).toBe('w:r');
+    });
+
+    it('preserves w:del + w:ins when text differs', () => {
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'old')]),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'new')]),
+      ]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:del');
+      expect(pChildren[1]!.tagName).toBe('w:ins');
+    });
+
+    it('preserves w:del + w:ins when formatting differs', () => {
+      const delRun = el('w:r', {}, [
+        el('w:rPr', {}, [el('w:b')]),
+        el('w:delText', {}, undefined, 'text'),
+      ]);
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
+
+      const insRun = el('w:r', {}, [
+        el('w:rPr', {}, [el('w:i')]),
+        el('w:t', {}, undefined, 'text'),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [insRun]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:del');
+      expect(pChildren[1]!.tagName).toBe('w:ins');
+    });
+
+    it('preserves w:del + w:ins when non-text structure differs', () => {
+      // del has w:tab, ins doesn't
+      const delRun = el('w:r', {}, [
+        el('w:delText', {}, undefined, 'text'),
+        el('w:tab'),
+      ]);
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
+
+      const insRun = el('w:r', {}, [
+        el('w:t', {}, undefined, 'text'),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [insRun]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+    });
+
+    it('handles multi-run no-op pairs', () => {
+      const wDel = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'first ')]),
+        el('w:r', {}, [el('w:delText', {}, undefined, 'second')]),
+      ]);
+      const wIns = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'first ')]),
+        el('w:r', {}, [el('w:t', {}, undefined, 'second')]),
+      ]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:r');
+      expect(pChildren[1]!.tagName).toBe('w:r');
+    });
+
+    it('does not skip subsequent pairs after mutation', () => {
+      // Two consecutive no-op pairs
+      const wDel1 = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'aaa')]),
+      ]);
+      const wIns1 = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'aaa')]),
+      ]);
+      const wDel2 = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'bbb')]),
+      ]);
+      const wIns2 = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'bbb')]),
+      ]);
+
+      const p = el('w:p', {}, [wDel1, wIns1, wDel2, wIns2]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:r');
+      expect(pChildren[1]!.tagName).toBe('w:r');
+    });
+  });
+
+  describe('mergeWhitespaceBridgedTrackChanges', () => {
+    it('does not merge w:del siblings (del bridging is unsafe for accept projection)', () => {
+      const delA = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const spaceRun = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
+      const delB = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+
+      const p = el('w:p', {}, [delA, spaceRun, delB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      // Dels should NOT be merged — the intervening whitespace is Equal content
+      // needed by the accept projection
+      const dels = childElements(p).filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(2);
+    });
+
+    it('merges w:ins siblings bridged by whitespace-only run', () => {
+      const insA = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'X')]),
+      ]);
+      const spaceRun = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
+      const insB = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Y')]),
+      ]);
+
+      const p = el('w:p', {}, [insA, spaceRun, insB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      const pChildren = childElements(p);
+      const inses = pChildren.filter(c => c.tagName === 'w:ins');
+      expect(inses.length).toBe(1);
+      // Should contain: original run + whitespace run (moved) + second run
+      const insChildren = childElements(inses[0]!);
+      expect(insChildren.length).toBe(3);
+    });
+
+    it('does not merge when bridging run has non-whitespace text', () => {
+      const delA = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const wordRun = el('w:r', {}, [el('w:t', {}, undefined, 'word')]);
+      const delB = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+
+      const p = el('w:p', {}, [delA, wordRun, delB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      const dels = childElements(p).filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(2);
+    });
+
+    it('does not merge when bridging run has w:tab', () => {
+      const delA = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const tabRun = el('w:r', {}, [el('w:tab')]);
+      const delB = el('w:del', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+
+      const p = el('w:p', {}, [delA, tabRun, delB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      const dels = childElements(p).filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(2);
+    });
+
+    it('does not merge across different authors', () => {
+      const delA = el('w:del', { 'w:author': 'Author1', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const spaceRun = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
+      const delB = el('w:del', { 'w:author': 'Author2', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+
+      const p = el('w:p', {}, [delA, spaceRun, delB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      const dels = childElements(p).filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(2);
+    });
+
+    it('accept/reject projection is correct after ins merge', () => {
+      // Only ins siblings get bridged (del bridging is unsafe)
+      const insX = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'X')]),
+      ]);
+      const space = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
+      const insY = el('w:ins', { 'w:author': 'A', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Y')]),
+      ]);
+
+      const p = el('w:p', {}, [insX, space, insY]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      // Ins siblings should be merged with whitespace moved inside
+      const inses = childElements(p).filter(c => c.tagName === 'w:ins');
+      expect(inses.length).toBe(1);
+      const insTextContent = findAllByTagName(inses[0]!, 'w:t').map(e => e.textContent).join('');
+      expect(insTextContent).toBe('X Y');
+    });
+  });
+
+  describe('runHasVisibleContent', () => {
+    it('returns true for run with w:t', () => {
+      const run = el('w:r', {}, [el('w:t', {}, undefined, 'text')]);
+      expect(runHasVisibleContent(run)).toBe(true);
+    });
+
+    it('returns true for run with w:tab', () => {
+      const run = el('w:r', {}, [el('w:tab')]);
+      expect(runHasVisibleContent(run)).toBe(true);
+    });
+
+    it('returns false for run with only w:rPr', () => {
+      const run = el('w:r', {}, [el('w:rPr', {}, [el('w:b')])]);
+      expect(runHasVisibleContent(run)).toBe(false);
+    });
+
+    it('returns false for empty run', () => {
+      const run = el('w:r');
+      expect(runHasVisibleContent(run)).toBe(false);
+    });
+
+    it('returns true for run with w:fldChar', () => {
+      const run = el('w:r', {}, [el('w:fldChar', { 'w:fldCharType': 'begin' })]);
+      expect(runHasVisibleContent(run)).toBe(true);
+    });
+  });
+
+  describe('coalesceDelInsPairChains', () => {
+    const a = 'Author';
+    const d = '2025-01-01T00:00:00Z';
+
+    function makeDel(text: string): Element {
+      return el('w:del', { 'w:id': '1', 'w:author': a, 'w:date': d }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, text)]),
+      ]);
+    }
+
+    function makeIns(text: string): Element {
+      return el('w:ins', { 'w:id': '2', 'w:author': a, 'w:date': d }, [
+        el('w:r', {}, [el('w:t', {}, undefined, text)]),
+      ]);
+    }
+
+    function wsRun(text = ' '): Element {
+      return el('w:r', {}, [el('w:t', { 'xml:space': 'preserve' }, undefined, text)]);
+    }
+
+    it('coalesces basic del-ins pair chain', () => {
+      const del1 = makeDel('A');
+      const ins1 = makeIns('X');
+      const space = wsRun();
+      const del2 = makeDel('B');
+      const ins2 = makeIns('Y');
+
+      const p = el('w:p', {}, [del1, ins1, space, del2, ins2]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:del');
+      expect(pChildren[1]!.tagName).toBe('w:ins');
+
+      // Del should contain: run(A), run(delText:" "), run(B)
+      const delRuns = childElements(pChildren[0]!).filter(c => c.tagName === 'w:r');
+      expect(delRuns.length).toBe(3);
+
+      // Ins should contain: run(X), run(t:" "), run(Y)
+      const insRuns = childElements(pChildren[1]!).filter(c => c.tagName === 'w:r');
+      expect(insRuns.length).toBe(3);
+    });
+
+    it('coalesces 3+ pair chain', () => {
+      const p = el('w:p', {}, [
+        makeDel('A'), makeIns('X'), wsRun(), makeDel('B'), makeIns('Y'), wsRun(), makeDel('C'), makeIns('Z'),
+      ]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      expect(pChildren[0]!.tagName).toBe('w:del');
+      expect(pChildren[1]!.tagName).toBe('w:ins');
+    });
+
+    it('handles multi-run whitespace segment', () => {
+      const p = el('w:p', {}, [
+        makeDel('A'), makeIns('X'), wsRun(' '), wsRun(' '), makeDel('B'), makeIns('Y'),
+      ]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(2);
+      // Del should have: run(A) + 2 ws clones + run(B) = 4 runs
+      const delRuns = childElements(pChildren[0]!).filter(c => c.tagName === 'w:r');
+      expect(delRuns.length).toBe(4);
+    });
+
+    it('does not bridge non-whitespace', () => {
+      const p = el('w:p', {}, [
+        makeDel('A'), makeIns('X'),
+        el('w:r', {}, [el('w:t', {}, undefined, 'word')]),
+        makeDel('B'), makeIns('Y'),
+      ]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      // Should remain unchanged — 5 children
+      expect(childElements(p).length).toBe(5);
+    });
+
+    it('does not bridge different authors', () => {
+      const del1 = el('w:del', { 'w:id': '1', 'w:author': 'Alice', 'w:date': d }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const ins1 = el('w:ins', { 'w:id': '2', 'w:author': 'Alice', 'w:date': d }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'X')]),
+      ]);
+      const del2 = el('w:del', { 'w:id': '3', 'w:author': 'Bob', 'w:date': d }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+      const ins2 = el('w:ins', { 'w:id': '4', 'w:author': 'Bob', 'w:date': d }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Y')]),
+      ]);
+
+      const p = el('w:p', {}, [del1, ins1, wsRun(), del2, ins2]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      // Should remain unchanged — 5 children
+      expect(childElements(p).length).toBe(5);
+    });
+
+    it('does not coalesce single pair', () => {
+      const p = el('w:p', {}, [makeDel('A'), makeIns('X')]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      expect(childElements(p).length).toBe(2);
+    });
+
+    it('does not bridge incomplete tail (del without ins)', () => {
+      const p = el('w:p', {}, [
+        makeDel('A'), makeIns('X'), wsRun(), makeDel('B'),
+      ]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      // Should remain unchanged — 4 children
+      expect(childElements(p).length).toBe(4);
+    });
+
+    it('accept projection correct — ins text is "X Y Z"', () => {
+      const p = el('w:p', {}, [
+        makeDel('A'), makeIns('X'), wsRun(), makeDel('B'), makeIns('Y'), wsRun(), makeDel('C'), makeIns('Z'),
+      ]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      const ins = childElements(p).find(c => c.tagName === 'w:ins')!;
+      const insText = findAllByTagName(ins, 'w:t').map(e => e.textContent).join('');
+      expect(insText).toBe('X Y Z');
+    });
+
+    it('reject projection correct — del text is "A B C"', () => {
+      const p = el('w:p', {}, [
+        makeDel('A'), makeIns('X'), wsRun(), makeDel('B'), makeIns('Y'), wsRun(), makeDel('C'), makeIns('Z'),
+      ]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      const del = childElements(p).find(c => c.tagName === 'w:del')!;
+      const delText = findAllByTagName(del, 'w:delText').map(e => e.textContent).join('');
+      expect(delText).toBe('A B C');
+    });
+
+    it('does not bridge across w:tab', () => {
+      const tabRun = el('w:r', {}, [el('w:tab')]);
+      const p = el('w:p', {}, [
+        makeDel('A'), makeIns('X'), tabRun, makeDel('B'), makeIns('Y'),
+      ]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      // Should remain unchanged — 5 children
+      expect(childElements(p).length).toBe(5);
+    });
+
+    it('preserves xml:space on cloned delText', () => {
+      const spaceRun = el('w:r', {}, [el('w:t', { 'xml:space': 'preserve' }, undefined, ' ')]);
+      const p = el('w:p', {}, [makeDel('A'), makeIns('X'), spaceRun, makeDel('B'), makeIns('Y')]);
+      const body = el('w:body', {}, [p]);
+
+      coalesceDelInsPairChains(body);
+
+      const del = childElements(p).find(c => c.tagName === 'w:del')!;
+      const delTexts = findAllByTagName(del, 'w:delText');
+      // The space clone should have xml:space="preserve"
+      const spaceDelText = delTexts.find(e => e.textContent === ' ');
+      expect(spaceDelText).toBeDefined();
+      expect(spaceDelText!.getAttribute('xml:space')).toBe('preserve');
     });
   });
 });
