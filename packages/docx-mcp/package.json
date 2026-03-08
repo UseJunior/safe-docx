@@ -11,7 +11,7 @@
   },
   "scripts": {
     "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
-    "build": "npm run build -w @usejunior/docx-core &&npm run clean:dist && tsc -p tsconfig.build.json",
+    "build": "npm run build -w @usejunior/docx-core &&npm run clean:dist && tsc -p tsconfig.build.json && if [ -d src/app ]; then mkdir -p dist/app && cp src/app/*.html dist/app/; fi",
     "dev": "tsx watch src/cli.ts",
     "check:spec-coverage": "node scripts/validate_openspec_coverage.mjs",
     "conformance:discover": "tsx scripts/discover_docx_fixtures.ts --out conformance/discovery.report.json",

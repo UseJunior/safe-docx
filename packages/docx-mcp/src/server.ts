@@ -27,6 +27,7 @@ import { deleteFootnote } from './tools/delete_footnote.js';
 import { compareDocuments_tool } from './tools/compare_documents.js';
 import { extractRevisions_tool } from './tools/extract_revisions.js';
 import { clearFormatting } from './tools/clear_formatting.js';
+import { registerPreviewApp } from './app/mcp-app-resources.js';
 
 export const MCP_TRANSPORT = 'stdio' as const;
 
@@ -98,7 +99,7 @@ export async function dispatchToolCall(
 
 export async function runServer(): Promise<void> {
   const server = new Server(
-    { name: 'safe-docx', version: '0.2.0' },
+    { name: 'safe-docx', version: '0.3.0' },
     {
       capabilities: {
         tools: {},
@@ -122,6 +123,9 @@ export async function runServer(): Promise<void> {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   });
+
+  // MCP Apps: preview app (delete src/app/ + these 2 lines to remove)
+  registerPreviewApp(server, sessions, MCP_TOOLS, dispatchToolCall);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
