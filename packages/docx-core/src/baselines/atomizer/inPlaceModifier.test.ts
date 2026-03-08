@@ -18,6 +18,9 @@ import {
   preSplitInterleavedWordRuns,
   groupDeletionsBeforeInsertions,
   createRevisionIdState,
+  suppressNoOpChangePairs,
+  mergeWhitespaceBridgedTrackChanges,
+  runHasVisibleContent,
 } from './inPlaceModifier.js';
 import { childElements, findAllByTagName } from '../../primitives/index.js';
 import { el } from '../../testing/dom-test-helpers.js';
@@ -1488,6 +1491,54 @@ describe('inPlaceModifier', () => {
 
       preSplitInterleavedWordRuns(atoms);
       expect(atoms[0]!.sourceRunElement).toBe(run);
+    });
+  });
+
+  describe('suppressNoOpChangePairs (Bug 1 regression)', () => {
+    it.fails('should not produce no-op del/ins pairs with identical text and formatting', () => {
+      // Build a DOM tree simulating the field-adjacent false no-op:
+      // <w:p><w:del><w:r><w:delText>Section </w:delText></w:r></w:del>
+      //      <w:ins><w:r><w:t>Section </w:t></w:r></w:ins></w:p>
+      const delText = el('w:delText', {}, undefined, 'Section ');
+      const delRun = el('w:r', {}, [delText]);
+      const wDel = el('w:del', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [delRun]);
+
+      const insText = el('w:t', {}, undefined, 'Section ');
+      const insRun = el('w:r', {}, [insText]);
+      const wIns = el('w:ins', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [insRun]);
+
+      const p = el('w:p', {}, [wDel, wIns]);
+      const body = el('w:body', {}, [p]);
+
+      suppressNoOpChangePairs(body);
+
+      // After suppression, wrappers should be gone — only a plain run remains
+      const pChildren = childElements(p);
+      expect(pChildren.length).toBe(1);
+      expect(pChildren[0]!.tagName).toBe('w:r');
+    });
+  });
+
+  describe('mergeWhitespaceBridgedTrackChanges (Bug 2 regression)', () => {
+    it.fails('should group whitespace-bridged del siblings into a single block', () => {
+      // <w:del>A</w:del><w:r><w:t> </w:t></w:r><w:del>B</w:del>
+      const delA = el('w:del', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'A')]),
+      ]);
+      const spaceRun = el('w:r', {}, [el('w:t', {}, undefined, ' ')]);
+      const delB = el('w:del', { 'w:author': 'Author', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'B')]),
+      ]);
+
+      const p = el('w:p', {}, [delA, spaceRun, delB]);
+      const body = el('w:body', {}, [p]);
+
+      mergeWhitespaceBridgedTrackChanges(body);
+
+      // After merge, should be a single <w:del> containing A, space (as delText), B
+      const pChildren = childElements(p);
+      const dels = pChildren.filter(c => c.tagName === 'w:del');
+      expect(dels.length).toBe(1);
     });
   });
 });

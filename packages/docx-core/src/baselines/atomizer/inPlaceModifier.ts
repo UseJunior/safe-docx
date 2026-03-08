@@ -1224,7 +1224,7 @@ const RUN_VISIBLE_CONTENT_TAGS: ReadonlySet<string> = new Set([
  * Returns true if a w:r element contains at least one visible content child.
  * Empty runs (containing only w:rPr or nothing) return false.
  */
-function runHasVisibleContent(run: Element): boolean {
+export function runHasVisibleContent(run: Element): boolean {
   for (let i = 0; i < run.childNodes.length; i++) {
     const child = run.childNodes[i]!;
     if (child.nodeType === 1 && RUN_VISIBLE_CONTENT_TAGS.has((child as Element).tagName)) {
@@ -2505,6 +2505,25 @@ function mergeAdjacentTrackChangeSiblings(root: Element): void {
   }
 
   traverse(root);
+}
+
+// =============================================================================
+// Bug 1 + Bug 2 stubs (issue #42) — to be implemented
+// =============================================================================
+
+/** Stub — suppress field-adjacent false no-op del/ins pairs. */
+export function suppressNoOpChangePairs(_root: Element): void {
+  // TODO: implement
+}
+
+/** Stub — merge whitespace-bridged track change siblings. */
+export function mergeWhitespaceBridgedTrackChanges(_root: Element): void {
+  // TODO: implement
+}
+
+/** Stub — check if a del/ins pair is a no-op (identical text+formatting). */
+export function isNoOpPair(_del: Element, _ins: Element): boolean {
+  return false;
 }
 
 // Re-export for convenience
