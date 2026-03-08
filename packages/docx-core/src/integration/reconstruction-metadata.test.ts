@@ -96,11 +96,10 @@ describe('Reconstruction metadata', () => {
 
       expect(result.engine).toBe('atomizer');
       expect(result.reconstructionModeRequested).toBe('inplace');
-      // With premergeRuns: true (default), ILPA falls back to rebuild due to
-      // round-trip safety check failure. See GitHub issue #35 (premerge-enabled
-      // inplace safety check failure).
-      expect(result.reconstructionModeUsed).toBe('rebuild');
-      expect(result.fallbackReason).toBeDefined();
+      // Issue #35 fixed: setLeafText now syncs both `data` and `nodeValue` on xmldom
+      // text nodes, so ILPA no longer falls back to rebuild with premerge enabled.
+      expect(result.reconstructionModeUsed).toBe('inplace');
+      expect(result.fallbackReason).toBeUndefined();
     },
     180000
   );

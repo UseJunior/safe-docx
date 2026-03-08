@@ -43,7 +43,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts', 'test-primitives/**/*.test.ts'],
-    exclude: ['src/baselines/**/*.test.ts'],
+    exclude: [
+      'src/baselines/**/*.traceability.test.ts',
+      'src/baselines/diffmatch/**/*.test.ts',
+    ],
     coverage: {
       provider: 'v8',
       all: true,
