@@ -20,12 +20,19 @@ type DispatchFn = (
   args: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
-export function registerPreviewApp(
-  server: Server,
-  sessions: SessionManager,
-  coreTools: ReadonlyArray<Record<string, unknown>>,
-  coreDispatch: DispatchFn,
-): void {
+type RegisterPreviewAppOptions = {
+  server: Server;
+  sessions: SessionManager;
+  coreTools: ReadonlyArray<Record<string, unknown>>;
+  coreDispatch: DispatchFn;
+};
+
+export function registerPreviewApp({
+  server,
+  sessions,
+  coreTools,
+  coreDispatch,
+}: RegisterPreviewAppOptions): void {
   // Register resource capability (removed when this module is removed)
   server.registerCapabilities({ resources: {} });
 
@@ -40,7 +47,7 @@ export function registerPreviewApp(
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
 
     const result =
-      name === 'get_document_view'
+      name === GET_DOCUMENT_VIEW_TOOL.name
         ? await getDocumentView(sessions, args as Parameters<typeof getDocumentView>[1])
         : await coreDispatch(sessions, name, args);
 

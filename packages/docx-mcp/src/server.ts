@@ -125,7 +125,7 @@ export async function runServer(): Promise<void> {
   });
 
   // MCP Apps: preview app (delete src/app/ + these 2 lines to remove)
-  registerPreviewApp(server, sessions, MCP_TOOLS, dispatchToolCall);
+  registerPreviewApp({ server, sessions, coreTools: MCP_TOOLS, coreDispatch: dispatchToolCall });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
