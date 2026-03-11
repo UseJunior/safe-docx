@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
 import { getParagraphRuns, readZipText } from '@usejunior/docx-core';
-import { itAllure as it, type AllureBddContext, allureStep } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { replaceText } from './replace_text.js';
 import { readFile } from './read_file.js';
 import {
@@ -11,7 +11,7 @@ import {
 } from '../testing/session-test-utils.js';
 import { firstParaIdFromToon } from '../testing/docx_test_utils.js';
 
-const test = it.epic('Document Editing').withLabels({ feature: 'Replace Text' });
+const test = testAllure.epic('Document Editing').withLabels({ feature: 'Replace Text' });
 const humanReadableReplaceTest = test.allure({
   tags: ['human-readable'],
   parameters: { audience: 'non-technical' },
@@ -623,7 +623,7 @@ describe('replace_text branch coverage', () => {
           { expected_text: replacement.new_string },
         );
 
-        await allureStep('Evidence: edited document XML previews are attached for review', async () => {
+        await then('Evidence: edited document XML previews are attached for review', async () => {
           const session = mgr.getSession(sessionId);
           const { buffer } = await session.doc.toBuffer({ cleanBookmarks: true });
           const outputXml = await readZipText(buffer, 'word/document.xml');

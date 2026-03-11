@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure as test } from './testing/allure-test.js';
+import { testAllure as test, type AllureBddContext } from './testing/allure-test.js';
 import fs from 'node:fs/promises';
 import { DocxZip, OOXML, W, parseXml, serializeXml } from '@usejunior/docx-core';
 
@@ -83,13 +83,22 @@ async function runConcurrentFormattingOnce(): Promise<string> {
 describe('concurrency determinism: disjoint formatting operations', () => {
   registerCleanup();
 
-  test('concurrent disjoint layout operations converge to same canonical XML', async () => {
+  test('concurrent disjoint layout operations converge to same canonical XML', async ({ given, when, then }: AllureBddContext) => {
     const outputs: string[] = [];
-    for (let i = 0; i < 3; i++) {
-      outputs.push(await runConcurrentFormattingOnce());
-    }
 
-    expect(outputs[1]).toBe(outputs[0]);
-    expect(outputs[2]).toBe(outputs[0]);
+    await given('three independent concurrent formatting sessions on disjoint paragraphs', async () => {
+      // Sessions are created inside runConcurrentFormattingOnce
+    });
+
+    await when('each session runs concurrent disjoint formatLayout calls and saves', async () => {
+      for (let i = 0; i < 3; i++) {
+        outputs.push(await runConcurrentFormattingOnce());
+      }
+    });
+
+    await then('all three runs produce identical canonical XML output', () => {
+      expect(outputs[1]).toBe(outputs[0]);
+      expect(outputs[2]).toBe(outputs[0]);
+    });
   });
 });

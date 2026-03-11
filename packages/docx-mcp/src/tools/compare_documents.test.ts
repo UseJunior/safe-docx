@@ -6,7 +6,7 @@ import { createZipBuffer } from '@usejunior/docx-core';
 import { compareDocuments_tool } from './compare_documents.js';
 import { replaceText } from './replace_text.js';
 import { MCP_TOOLS } from '../server.js';
-import { testAllure, allureStep, allureJsonAttachment } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertSuccess,
   assertFailure,
@@ -64,7 +64,7 @@ describe('compare_documents tool', () => {
 
   test(
     'Two-file mode: compares two DOCX files and writes redline',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -72,7 +72,7 @@ describe('compare_documents tool', () => {
       const revisedPath = await writeTestDocx(dir, 'revised.docx', ['Hello brave new world']);
       const outputPath = path.join(dir, 'redline.docx');
 
-      const result = await allureStep('Call compare_documents (two-file)', () =>
+      const result = await when('Call compare_documents (two-file)', () =>
         compareDocuments_tool(mgr, {
           original_file_path: originalPath,
           revised_file_path: revisedPath,
@@ -80,15 +80,15 @@ describe('compare_documents tool', () => {
         }),
       );
       assertSuccess(result, 'compare_documents');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Redline file written to disk', async () => {
+      await then('Redline file written to disk', async () => {
         const stat = await fs.stat(outputPath);
         expect(stat.isFile()).toBe(true);
         expect(stat.size).toBeGreaterThan(0);
       });
 
-      await allureStep('Response includes stats and file info', () => {
+      await then('Response includes stats and file info', () => {
         expect(result.mode).toBe('two_file');
         expect(result.stats).toBeDefined();
         expect(result.saved_to).toBe(outputPath);
@@ -102,7 +102,7 @@ describe('compare_documents tool', () => {
 
   test(
     'Session mode: compares session edits against original',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const dir = await createTrackedTempDir();
 
       const docXml =
@@ -117,7 +117,7 @@ describe('compare_documents tool', () => {
         },
       });
 
-      await allureStep('Make an edit via replace_text', async () => {
+      await when('Make an edit via replace_text', async () => {
         const editResult = await replaceText(mgr, {
           session_id: sessionId,
           target_paragraph_id: firstParaId,
@@ -129,22 +129,22 @@ describe('compare_documents tool', () => {
       });
 
       const outputPath = path.join(dir, 'session-redline.docx');
-      const result = await allureStep('Call compare_documents (session)', () =>
+      const result = await when('Call compare_documents (session)', () =>
         compareDocuments_tool(mgr, {
           session_id: sessionId,
           save_to_local_path: outputPath,
         }),
       );
       assertSuccess(result, 'compare_documents');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Redline file written to disk', async () => {
+      await then('Redline file written to disk', async () => {
         const stat = await fs.stat(outputPath);
         expect(stat.isFile()).toBe(true);
         expect(stat.size).toBeGreaterThan(0);
       });
 
-      await allureStep('Response indicates session mode', () => {
+      await then('Response indicates session mode', () => {
         expect(result.mode).toBe('session');
         expect(result.stats).toBeDefined();
         expect(result.resolved_session_id).toBe(sessionId);
@@ -156,29 +156,29 @@ describe('compare_documents tool', () => {
 
   test(
     'Missing params: no file paths and no session yields error',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
       const outputPath = path.join(dir, 'output.docx');
 
-      const result = await allureStep('Call compare_documents with no inputs', () =>
+      const result = await when('Call compare_documents with no inputs', () =>
         compareDocuments_tool(mgr, {
           save_to_local_path: outputPath,
         }),
       );
       assertFailure(result, 'MISSING_PARAMS', 'compare_documents');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
     },
   );
 
   test(
     'Invalid path: non-existent file returns error',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
       const outputPath = path.join(dir, 'output.docx');
 
-      const result = await allureStep('Call compare_documents with non-existent file', () =>
+      const result = await when('Call compare_documents with non-existent file', () =>
         compareDocuments_tool(mgr, {
           original_file_path: path.join(dir, 'does-not-exist.docx'),
           revised_file_path: path.join(dir, 'also-missing.docx'),
@@ -186,13 +186,13 @@ describe('compare_documents tool', () => {
         }),
       );
       assertFailure(result, 'FILE_NOT_FOUND', 'compare_documents');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
     },
   );
 
   test(
     'Invalid engine: rejected with error',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -200,7 +200,7 @@ describe('compare_documents tool', () => {
       const revisedPath = await writeTestDocx(dir, 'revised.docx', ['Hello world']);
       const outputPath = path.join(dir, 'output.docx');
 
-      const result = await allureStep('Call compare_documents with wmlcomparer engine', () =>
+      const result = await when('Call compare_documents with wmlcomparer engine', () =>
         compareDocuments_tool(mgr, {
           original_file_path: originalPath,
           revised_file_path: revisedPath,
@@ -209,7 +209,7 @@ describe('compare_documents tool', () => {
         }),
       );
       assertFailure(result, 'INVALID_ENGINE', 'compare_documents');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
     },
   );
 

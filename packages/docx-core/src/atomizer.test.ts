@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from './testing/allure-test.js';
+import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import {
   sha1,
   hashElement,
@@ -15,201 +15,452 @@ import { CorrelationStatus, OpcPart } from './core-types.js';
 import { assertDefined } from './testing/test-utils.js';
 import { el } from './testing/dom-test-helpers.js';
 
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Atomizer' });
+
 describe('sha1', () => {
-  it('returns consistent hash for same input', () => {
-    const hash1 = sha1('hello');
-    const hash2 = sha1('hello');
-    expect(hash1).toBe(hash2);
+  test('returns consistent hash for same input', async ({ given, when, then }: AllureBddContext) => {
+    let hash1: string;
+    let hash2: string;
+
+    await given('the same input string', () => {});
+
+    await when('sha1 is called twice', () => {
+      hash1 = sha1('hello');
+      hash2 = sha1('hello');
+    });
+
+    await then('both hashes are equal', () => {
+      expect(hash1).toBe(hash2);
+    });
   });
 
-  it('returns different hash for different input', () => {
-    const hash1 = sha1('hello');
-    const hash2 = sha1('world');
-    expect(hash1).not.toBe(hash2);
+  test('returns different hash for different input', async ({ given, when, then }: AllureBddContext) => {
+    let hash1: string;
+    let hash2: string;
+
+    await given('two different input strings', () => {});
+
+    await when('sha1 is called on each', () => {
+      hash1 = sha1('hello');
+      hash2 = sha1('world');
+    });
+
+    await then('the hashes differ', () => {
+      expect(hash1).not.toBe(hash2);
+    });
   });
 
-  it('returns 40 character hex string', () => {
-    const hash = sha1('test');
-    expect(hash).toHaveLength(40);
-    expect(hash).toMatch(/^[0-9a-f]+$/);
+  test('returns 40 character hex string', async ({ given, when, then }: AllureBddContext) => {
+    let hash: string;
+
+    await given('an input string', () => {});
+
+    await when('sha1 is called', () => {
+      hash = sha1('test');
+    });
+
+    await then('the result is a 40-character hex string', () => {
+      expect(hash).toHaveLength(40);
+      expect(hash).toMatch(/^[0-9a-f]+$/);
+    });
   });
 });
 
 describe('hashElement', () => {
-  it('hashes element with tag name', () => {
-    const element = el('w:t');
+  test('hashes element with tag name', async ({ given, when, then }: AllureBddContext) => {
+    let element: Element;
+    let hash: string;
 
-    const hash = hashElement(element);
-    expect(hash).toHaveLength(40);
+    await given('a w:t element', () => {
+      element = el('w:t');
+    });
+
+    await when('hashElement is called', () => {
+      hash = hashElement(element);
+    });
+
+    await then('a 40-character hash is returned', () => {
+      expect(hash).toHaveLength(40);
+    });
   });
 
-  it('includes attributes in hash', () => {
-    // Use a meaningful attribute (not xml:space which is intentionally ignored)
-    const element1 = el('w:b', { 'w:val': 'true' });
-    const element2 = el('w:b');
+  test('includes attributes in hash', async ({ given, when, then }: AllureBddContext) => {
+    let element1: Element;
+    let element2: Element;
 
-    expect(hashElement(element1)).not.toBe(hashElement(element2));
+    await given('two elements with and without attributes', () => {
+      // Use a meaningful attribute (not xml:space which is intentionally ignored)
+      element1 = el('w:b', { 'w:val': 'true' });
+      element2 = el('w:b');
+    });
+
+    await when('both are hashed', () => {});
+
+    await then('the hashes differ', () => {
+      expect(hashElement(element1)).not.toBe(hashElement(element2));
+    });
   });
 
-  it('ignores xml:space attribute in hash', () => {
-    // xml:space is a presentation hint that should not affect content comparison
-    const element1 = el('w:t', { 'xml:space': 'preserve' }, undefined, 'Hello');
-    const element2 = el('w:t', {}, undefined, 'Hello');
+  test('ignores xml:space attribute in hash', async ({ given, when, then }: AllureBddContext) => {
+    let element1: Element;
+    let element2: Element;
 
-    // Same text content should produce same hash regardless of xml:space
-    expect(hashElement(element1)).toBe(hashElement(element2));
+    await given('two elements with same text but different xml:space', () => {
+      // xml:space is a presentation hint that should not affect content comparison
+      element1 = el('w:t', { 'xml:space': 'preserve' }, undefined, 'Hello');
+      element2 = el('w:t', {}, undefined, 'Hello');
+    });
+
+    await when('both are hashed', () => {});
+
+    await then('the hashes are equal', () => {
+      // Same text content should produce same hash regardless of xml:space
+      expect(hashElement(element1)).toBe(hashElement(element2));
+    });
   });
 
-  it('includes text content in hash', () => {
-    const element1 = el('w:t', {}, undefined, 'Hello');
-    const element2 = el('w:t', {}, undefined, 'World');
+  test('includes text content in hash', async ({ given, when, then }: AllureBddContext) => {
+    let element1: Element;
+    let element2: Element;
 
-    expect(hashElement(element1)).not.toBe(hashElement(element2));
+    await given('two elements with different text content', () => {
+      element1 = el('w:t', {}, undefined, 'Hello');
+      element2 = el('w:t', {}, undefined, 'World');
+    });
+
+    await when('both are hashed', () => {});
+
+    await then('the hashes differ', () => {
+      expect(hashElement(element1)).not.toBe(hashElement(element2));
+    });
   });
 
-  it('produces deterministic hash regardless of attribute order', () => {
-    const element1 = el('w:ins', { 'w:id': '1', 'w:author': 'John' });
-    const element2 = el('w:ins', { 'w:author': 'John', 'w:id': '1' });
+  test('produces deterministic hash regardless of attribute order', async ({ given, when, then }: AllureBddContext) => {
+    let element1: Element;
+    let element2: Element;
 
-    expect(hashElement(element1)).toBe(hashElement(element2));
+    await given('two elements with same attributes in different order', () => {
+      element1 = el('w:ins', { 'w:id': '1', 'w:author': 'John' });
+      element2 = el('w:ins', { 'w:author': 'John', 'w:id': '1' });
+    });
+
+    await when('both are hashed', () => {});
+
+    await then('the hashes are equal', () => {
+      expect(hashElement(element1)).toBe(hashElement(element2));
+    });
   });
 });
 
 describe('findRevisionTrackingElement', () => {
-  it('returns undefined for empty ancestors', () => {
-    expect(findRevisionTrackingElement([])).toBeUndefined();
+  test('returns undefined for empty ancestors', async ({ given, when, then }: AllureBddContext) => {
+    await given('an empty ancestors array', () => {});
+    await when('findRevisionTrackingElement is called', () => {});
+    await then('undefined is returned', () => {
+      expect(findRevisionTrackingElement([])).toBeUndefined();
+    });
   });
 
-  it('finds w:ins in ancestors', () => {
-    const ins = el('w:ins', { 'w:id': '1', 'w:author': 'John' });
+  test('finds w:ins in ancestors', async ({ given, when, then }: AllureBddContext) => {
+    let ins: Element;
 
-    const ancestors = [ins];
-    expect(findRevisionTrackingElement(ancestors)).toBe(ins);
+    await given('an ancestors array containing a w:ins element', () => {
+      ins = el('w:ins', { 'w:id': '1', 'w:author': 'John' });
+    });
+
+    await when('findRevisionTrackingElement is called', () => {});
+
+    await then('the w:ins element is returned', () => {
+      expect(findRevisionTrackingElement([ins])).toBe(ins);
+    });
   });
 
-  it('finds w:del in ancestors', () => {
-    const del = el('w:del', { 'w:id': '2' });
+  test('finds w:del in ancestors', async ({ given, when, then }: AllureBddContext) => {
+    let del: Element;
 
-    const ancestors = [del];
-    expect(findRevisionTrackingElement(ancestors)).toBe(del);
+    await given('an ancestors array containing a w:del element', () => {
+      del = el('w:del', { 'w:id': '2' });
+    });
+
+    await when('findRevisionTrackingElement is called', () => {});
+
+    await then('the w:del element is returned', () => {
+      expect(findRevisionTrackingElement([del])).toBe(del);
+    });
   });
 
-  it('finds w:moveFrom in ancestors', () => {
-    const moveFrom = el('w:moveFrom', { 'w:id': '3' });
+  test('finds w:moveFrom in ancestors', async ({ given, when, then }: AllureBddContext) => {
+    let moveFrom: Element;
 
-    expect(findRevisionTrackingElement([moveFrom])).toBe(moveFrom);
+    await given('an ancestors array containing a w:moveFrom element', () => {
+      moveFrom = el('w:moveFrom', { 'w:id': '3' });
+    });
+
+    await when('findRevisionTrackingElement is called', () => {});
+
+    await then('the w:moveFrom element is returned', () => {
+      expect(findRevisionTrackingElement([moveFrom])).toBe(moveFrom);
+    });
   });
 
-  it('finds w:moveTo in ancestors', () => {
-    const moveTo = el('w:moveTo', { 'w:id': '4' });
+  test('finds w:moveTo in ancestors', async ({ given, when, then }: AllureBddContext) => {
+    let moveTo: Element;
 
-    expect(findRevisionTrackingElement([moveTo])).toBe(moveTo);
+    await given('an ancestors array containing a w:moveTo element', () => {
+      moveTo = el('w:moveTo', { 'w:id': '4' });
+    });
+
+    await when('findRevisionTrackingElement is called', () => {});
+
+    await then('the w:moveTo element is returned', () => {
+      expect(findRevisionTrackingElement([moveTo])).toBe(moveTo);
+    });
   });
 
-  it('returns nearest revision element', () => {
-    const outerIns = el('w:ins', { 'w:id': '1' });
-    const innerDel = el('w:del', { 'w:id': '2' });
+  test('returns nearest revision element', async ({ given, when, then }: AllureBddContext) => {
+    let outerIns: Element;
+    let innerDel: Element;
 
-    // innerDel is more recent (later in array = closer ancestor)
-    const ancestors = [outerIns, innerDel];
-    expect(findRevisionTrackingElement(ancestors)).toBe(innerDel);
+    await given('an ancestors array with an outer ins and an inner del', () => {
+      outerIns = el('w:ins', { 'w:id': '1' });
+      innerDel = el('w:del', { 'w:id': '2' });
+    });
+
+    await when('findRevisionTrackingElement is called', () => {});
+
+    await then('the innermost revision element is returned', () => {
+      // innerDel is more recent (later in array = closer ancestor)
+      const ancestors = [outerIns, innerDel];
+      expect(findRevisionTrackingElement(ancestors)).toBe(innerDel);
+    });
   });
 
-  it('ignores non-revision elements', () => {
-    const paragraph = el('w:p');
-    const run = el('w:r');
-    const ins = el('w:ins', { 'w:id': '1' });
+  test('ignores non-revision elements', async ({ given, when, then }: AllureBddContext) => {
+    let ins: Element;
 
-    const ancestors = [paragraph, ins, run];
-    expect(findRevisionTrackingElement(ancestors)).toBe(ins);
+    await given('an ancestors array with mixed revision and non-revision elements', () => {
+      ins = el('w:ins', { 'w:id': '1' });
+    });
+
+    await when('findRevisionTrackingElement is called', () => {});
+
+    await then('only the revision element is returned', () => {
+      const paragraph = el('w:p');
+      const run = el('w:r');
+      const ancestors = [paragraph, ins, run];
+      expect(findRevisionTrackingElement(ancestors)).toBe(ins);
+    });
   });
 });
 
 describe('getStatusFromRevisionTracking', () => {
-  it('returns Unknown for undefined', () => {
-    expect(getStatusFromRevisionTracking(undefined)).toBe(CorrelationStatus.Unknown);
+  test('returns Unknown for undefined', async ({ given, when, then }: AllureBddContext) => {
+    await given('undefined as input', () => {});
+    await when('getStatusFromRevisionTracking is called', () => {});
+    await then('Unknown is returned', () => {
+      expect(getStatusFromRevisionTracking(undefined)).toBe(CorrelationStatus.Unknown);
+    });
   });
 
-  it('returns Inserted for w:ins', () => {
-    const ins = el('w:ins');
-    expect(getStatusFromRevisionTracking(ins)).toBe(CorrelationStatus.Inserted);
+  test('returns Inserted for w:ins', async ({ given, when, then }: AllureBddContext) => {
+    let ins: Element;
+
+    await given('a w:ins element', () => {
+      ins = el('w:ins');
+    });
+
+    await when('getStatusFromRevisionTracking is called', () => {});
+
+    await then('Inserted is returned', () => {
+      expect(getStatusFromRevisionTracking(ins)).toBe(CorrelationStatus.Inserted);
+    });
   });
 
-  it('returns Deleted for w:del', () => {
-    const del = el('w:del');
-    expect(getStatusFromRevisionTracking(del)).toBe(CorrelationStatus.Deleted);
+  test('returns Deleted for w:del', async ({ given, when, then }: AllureBddContext) => {
+    let del: Element;
+
+    await given('a w:del element', () => {
+      del = el('w:del');
+    });
+
+    await when('getStatusFromRevisionTracking is called', () => {});
+
+    await then('Deleted is returned', () => {
+      expect(getStatusFromRevisionTracking(del)).toBe(CorrelationStatus.Deleted);
+    });
   });
 
-  it('returns MovedSource for w:moveFrom', () => {
-    const moveFrom = el('w:moveFrom');
-    expect(getStatusFromRevisionTracking(moveFrom)).toBe(CorrelationStatus.MovedSource);
+  test('returns MovedSource for w:moveFrom', async ({ given, when, then }: AllureBddContext) => {
+    let moveFrom: Element;
+
+    await given('a w:moveFrom element', () => {
+      moveFrom = el('w:moveFrom');
+    });
+
+    await when('getStatusFromRevisionTracking is called', () => {});
+
+    await then('MovedSource is returned', () => {
+      expect(getStatusFromRevisionTracking(moveFrom)).toBe(CorrelationStatus.MovedSource);
+    });
   });
 
-  it('returns MovedDestination for w:moveTo', () => {
-    const moveTo = el('w:moveTo');
-    expect(getStatusFromRevisionTracking(moveTo)).toBe(CorrelationStatus.MovedDestination);
+  test('returns MovedDestination for w:moveTo', async ({ given, when, then }: AllureBddContext) => {
+    let moveTo: Element;
+
+    await given('a w:moveTo element', () => {
+      moveTo = el('w:moveTo');
+    });
+
+    await when('getStatusFromRevisionTracking is called', () => {});
+
+    await then('MovedDestination is returned', () => {
+      expect(getStatusFromRevisionTracking(moveTo)).toBe(CorrelationStatus.MovedDestination);
+    });
   });
 
-  it('returns Unknown for unrecognized element', () => {
-    const other = el('w:r');
-    expect(getStatusFromRevisionTracking(other)).toBe(CorrelationStatus.Unknown);
+  test('returns Unknown for unrecognized element', async ({ given, when, then }: AllureBddContext) => {
+    let other: Element;
+
+    await given('an unrecognized element', () => {
+      other = el('w:r');
+    });
+
+    await when('getStatusFromRevisionTracking is called', () => {});
+
+    await then('Unknown is returned', () => {
+      expect(getStatusFromRevisionTracking(other)).toBe(CorrelationStatus.Unknown);
+    });
   });
 });
 
 describe('extractAncestorUnids', () => {
-  it('returns empty array for no ancestors', () => {
-    expect(extractAncestorUnids([])).toEqual([]);
+  test('returns empty array for no ancestors', async ({ given, when, then }: AllureBddContext) => {
+    await given('an empty ancestors array', () => {});
+    await when('extractAncestorUnids is called', () => {});
+    await then('an empty array is returned', () => {
+      expect(extractAncestorUnids([])).toEqual([]);
+    });
   });
 
-  it('extracts w:Unid attributes', () => {
-    const ancestors = [
-      el('w:p', { 'w:Unid': 'unid-1' }),
-      el('w:r', { 'w:Unid': 'unid-2' }),
-    ];
+  test('extracts w:Unid attributes', async ({ given, when, then }: AllureBddContext) => {
+    let ancestors: Element[];
 
-    expect(extractAncestorUnids(ancestors)).toEqual(['unid-1', 'unid-2']);
+    await given('ancestors with w:Unid attributes', () => {
+      ancestors = [
+        el('w:p', { 'w:Unid': 'unid-1' }),
+        el('w:r', { 'w:Unid': 'unid-2' }),
+      ];
+    });
+
+    await when('extractAncestorUnids is called', () => {});
+
+    await then('the unids are extracted', () => {
+      expect(extractAncestorUnids(ancestors)).toEqual(['unid-1', 'unid-2']);
+    });
   });
 
-  it('skips elements without Unid', () => {
-    const ancestors = [
-      el('w:p', { 'w:Unid': 'unid-1' }),
-      el('w:r'),
-      el('w:ins', { 'w:Unid': 'unid-3' }),
-    ];
+  test('skips elements without Unid', async ({ given, when, then }: AllureBddContext) => {
+    let ancestors: Element[];
 
-    expect(extractAncestorUnids(ancestors)).toEqual(['unid-1', 'unid-3']);
+    await given('ancestors where some lack w:Unid', () => {
+      ancestors = [
+        el('w:p', { 'w:Unid': 'unid-1' }),
+        el('w:r'),
+        el('w:ins', { 'w:Unid': 'unid-3' }),
+      ];
+    });
+
+    await when('extractAncestorUnids is called', () => {});
+
+    await then('only elements with Unid are included', () => {
+      expect(extractAncestorUnids(ancestors)).toEqual(['unid-1', 'unid-3']);
+    });
   });
 });
 
 describe('isLeafNode', () => {
-  it('returns true for w:t', () => {
-    const text = el('w:t', {}, undefined, 'Hello');
-    expect(isLeafNode(text)).toBe(true);
+  test('returns true for w:t', async ({ given, when, then }: AllureBddContext) => {
+    let text: Element;
+
+    await given('a w:t element', () => {
+      text = el('w:t', {}, undefined, 'Hello');
+    });
+
+    await when('isLeafNode is called', () => {});
+
+    await then('true is returned', () => {
+      expect(isLeafNode(text)).toBe(true);
+    });
   });
 
-  it('returns true for w:br', () => {
-    const br = el('w:br');
-    expect(isLeafNode(br)).toBe(true);
+  test('returns true for w:br', async ({ given, when, then }: AllureBddContext) => {
+    let br: Element;
+
+    await given('a w:br element', () => {
+      br = el('w:br');
+    });
+
+    await when('isLeafNode is called', () => {});
+
+    await then('true is returned', () => {
+      expect(isLeafNode(br)).toBe(true);
+    });
   });
 
-  it('returns true for w:tab', () => {
-    const tab = el('w:tab');
-    expect(isLeafNode(tab)).toBe(true);
+  test('returns true for w:tab', async ({ given, when, then }: AllureBddContext) => {
+    let tab: Element;
+
+    await given('a w:tab element', () => {
+      tab = el('w:tab');
+    });
+
+    await when('isLeafNode is called', () => {});
+
+    await then('true is returned', () => {
+      expect(isLeafNode(tab)).toBe(true);
+    });
   });
 
-  it('returns true for w:footnoteReference', () => {
-    const fnRef = el('w:footnoteReference', { 'w:id': '1' });
-    expect(isLeafNode(fnRef)).toBe(true);
+  test('returns true for w:footnoteReference', async ({ given, when, then }: AllureBddContext) => {
+    let fnRef: Element;
+
+    await given('a w:footnoteReference element', () => {
+      fnRef = el('w:footnoteReference', { 'w:id': '1' });
+    });
+
+    await when('isLeafNode is called', () => {});
+
+    await then('true is returned', () => {
+      expect(isLeafNode(fnRef)).toBe(true);
+    });
   });
 
-  it('returns false for w:p', () => {
-    const paragraph = el('w:p');
-    expect(isLeafNode(paragraph)).toBe(false);
+  test('returns false for w:p', async ({ given, when, then }: AllureBddContext) => {
+    let paragraph: Element;
+
+    await given('a w:p element', () => {
+      paragraph = el('w:p');
+    });
+
+    await when('isLeafNode is called', () => {});
+
+    await then('false is returned', () => {
+      expect(isLeafNode(paragraph)).toBe(false);
+    });
   });
 
-  it('returns false for w:r', () => {
-    const run = el('w:r');
-    expect(isLeafNode(run)).toBe(false);
+  test('returns false for w:r', async ({ given, when, then }: AllureBddContext) => {
+    let run: Element;
+
+    await given('a w:r element', () => {
+      run = el('w:r');
+    });
+
+    await when('isLeafNode is called', () => {});
+
+    await then('false is returned', () => {
+      expect(isLeafNode(run)).toBe(false);
+    });
   });
 });
 
@@ -219,78 +470,122 @@ describe('createComparisonUnitAtom', () => {
     contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
   };
 
-  it('creates atom with basic properties', () => {
-    const textElement = el('w:t', {}, undefined, 'Hello');
+  test('creates atom with basic properties', async ({ given, when, then }: AllureBddContext) => {
+    let textElement: Element;
+    let atom: ReturnType<typeof createComparisonUnitAtom>;
 
-    const atom = createComparisonUnitAtom({
-      contentElement: textElement,
-      ancestors: [],
-      part: mockPart,
+    await given('a text element and empty ancestors', () => {
+      textElement = el('w:t', {}, undefined, 'Hello');
     });
 
-    expect(atom.contentElement).toBe(textElement);
-    expect(atom.part).toBe(mockPart);
-    expect(atom.sha1Hash).toHaveLength(40);
-    expect(atom.correlationStatus).toBe(CorrelationStatus.Unknown);
+    await when('createComparisonUnitAtom is called', () => {
+      atom = createComparisonUnitAtom({
+        contentElement: textElement,
+        ancestors: [],
+        part: mockPart,
+      });
+    });
+
+    await then('the atom has basic properties set', () => {
+      expect(atom.contentElement).toBe(textElement);
+      expect(atom.part).toBe(mockPart);
+      expect(atom.sha1Hash).toHaveLength(40);
+      expect(atom.correlationStatus).toBe(CorrelationStatus.Unknown);
+    });
   });
 
-  it('detects inserted status from w:ins ancestor', () => {
-    const textElement = el('w:t', {}, undefined, 'New');
-    const insElement = el('w:ins', { 'w:id': '1' });
+  test('detects inserted status from w:ins ancestor', async ({ given, when, then }: AllureBddContext) => {
+    let textElement: Element;
+    let insElement: Element;
+    let atom: ReturnType<typeof createComparisonUnitAtom>;
 
-    const atom = createComparisonUnitAtom({
-      contentElement: textElement,
-      ancestors: [insElement],
-      part: mockPart,
+    await given('a text element inside a w:ins ancestor', () => {
+      textElement = el('w:t', {}, undefined, 'New');
+      insElement = el('w:ins', { 'w:id': '1' });
     });
 
-    expect(atom.correlationStatus).toBe(CorrelationStatus.Inserted);
-    expect(atom.revTrackElement).toBe(insElement);
+    await when('createComparisonUnitAtom is called', () => {
+      atom = createComparisonUnitAtom({
+        contentElement: textElement,
+        ancestors: [insElement],
+        part: mockPart,
+      });
+    });
+
+    await then('the atom has Inserted status', () => {
+      expect(atom.correlationStatus).toBe(CorrelationStatus.Inserted);
+      expect(atom.revTrackElement).toBe(insElement);
+    });
   });
 
-  it('detects deleted status from w:del ancestor', () => {
-    const textElement = el('w:delText', {}, undefined, 'Old');
-    const delElement = el('w:del', { 'w:id': '2' });
+  test('detects deleted status from w:del ancestor', async ({ given, when, then }: AllureBddContext) => {
+    let textElement: Element;
+    let delElement: Element;
+    let atom: ReturnType<typeof createComparisonUnitAtom>;
 
-    const atom = createComparisonUnitAtom({
-      contentElement: textElement,
-      ancestors: [delElement],
-      part: mockPart,
+    await given('a delText element inside a w:del ancestor', () => {
+      textElement = el('w:delText', {}, undefined, 'Old');
+      delElement = el('w:del', { 'w:id': '2' });
     });
 
-    expect(atom.correlationStatus).toBe(CorrelationStatus.Deleted);
-    expect(atom.revTrackElement).toBe(delElement);
+    await when('createComparisonUnitAtom is called', () => {
+      atom = createComparisonUnitAtom({
+        contentElement: textElement,
+        ancestors: [delElement],
+        part: mockPart,
+      });
+    });
+
+    await then('the atom has Deleted status', () => {
+      expect(atom.correlationStatus).toBe(CorrelationStatus.Deleted);
+      expect(atom.revTrackElement).toBe(delElement);
+    });
   });
 
-  it('extracts ancestor unids', () => {
-    const textElement = el('w:t', {}, undefined, 'Test');
-    const paragraph = el('w:p', { 'w:Unid': 'para-1' });
-    const run = el('w:r', { 'w:Unid': 'run-1' });
+  test('extracts ancestor unids', async ({ given, when, then }: AllureBddContext) => {
+    let atom: ReturnType<typeof createComparisonUnitAtom>;
 
-    const atom = createComparisonUnitAtom({
-      contentElement: textElement,
-      ancestors: [paragraph, run],
-      part: mockPart,
+    await given('ancestors with Unid attributes', () => {});
+
+    await when('createComparisonUnitAtom is called', () => {
+      const textElement = el('w:t', {}, undefined, 'Test');
+      const paragraph = el('w:p', { 'w:Unid': 'para-1' });
+      const run = el('w:r', { 'w:Unid': 'run-1' });
+      atom = createComparisonUnitAtom({
+        contentElement: textElement,
+        ancestors: [paragraph, run],
+        part: mockPart,
+      });
     });
 
-    expect(atom.ancestorUnids).toEqual(['para-1', 'run-1']);
+    await then('the ancestor unids are extracted', () => {
+      expect(atom.ancestorUnids).toEqual(['para-1', 'run-1']);
+    });
   });
 
-  it('copies ancestors to avoid mutation', () => {
-    const textElement = el('w:t', {}, undefined, 'Test');
-    const ancestors = [el('w:p')];
+  test('copies ancestors to avoid mutation', async ({ given, when, then }: AllureBddContext) => {
+    let ancestors: Element[];
+    let atom: ReturnType<typeof createComparisonUnitAtom>;
 
-    const atom = createComparisonUnitAtom({
-      contentElement: textElement,
-      ancestors,
-      part: mockPart,
+    await given('an ancestors array', () => {
+      ancestors = [el('w:p')];
     });
 
-    // Modify original array
-    ancestors.push(el('w:r'));
+    await when('createComparisonUnitAtom is called and ancestors are mutated', () => {
+      const textElement = el('w:t', {}, undefined, 'Test');
+      atom = createComparisonUnitAtom({
+        contentElement: textElement,
+        ancestors,
+        part: mockPart,
+      });
+      // Modify original array
+      ancestors.push(el('w:r'));
+    });
 
-    // Atom's ancestors should be unchanged
-    expect(atom.ancestorElements).toHaveLength(1);
+    await then('the atom ancestors are unchanged', () => {
+      // Atom's ancestors should be unchanged
+      expect(atom.ancestorElements).toHaveLength(1);
+    });
   });
 });
 
@@ -300,113 +595,148 @@ describe('atomizeTree', () => {
     contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
   };
 
-  it('atomizes a simple paragraph', () => {
-    const document = el('w:p', {}, [
-      el('w:r', {}, [
-        el('w:t', {}, undefined, 'Hello World'),
-      ]),
-    ]);
+  test('atomizes a simple paragraph', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
 
-    const { atoms } = atomizeTree(document, [], mockPart);
+    await given('a simple paragraph element', () => {
+      document = el('w:p', {}, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Hello World')]),
+      ]);
+    });
 
-    // Word-level splitting produces ["Hello", " ", "World"]
-    expect(atoms).toHaveLength(3);
-    const atom0 = atoms[0];
-    const atom1 = atoms[1];
-    const atom2 = atoms[2];
-    assertDefined(atom0, 'atoms[0]');
-    assertDefined(atom1, 'atoms[1]');
-    assertDefined(atom2, 'atoms[2]');
-    expect(atom0.contentElement.textContent).toBe('Hello');
-    expect(atom1.contentElement.textContent).toBe(' ');
-    expect(atom2.contentElement.textContent).toBe('World');
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('the text is word-split into three atoms', () => {
+      // Word-level splitting produces ["Hello", " ", "World"]
+      expect(atoms).toHaveLength(3);
+      const atom0 = atoms[0];
+      const atom1 = atoms[1];
+      const atom2 = atoms[2];
+      assertDefined(atom0, 'atoms[0]');
+      assertDefined(atom1, 'atoms[1]');
+      assertDefined(atom2, 'atoms[2]');
+      expect(atom0.contentElement.textContent).toBe('Hello');
+      expect(atom1.contentElement.textContent).toBe(' ');
+      expect(atom2.contentElement.textContent).toBe('World');
+    });
   });
 
-  it('atomizes and normalizes multiple runs with same formatting', () => {
-    // Multiple runs with the same formatting (none) are merged during normalization
-    const document = el('w:p', {}, [
-      el('w:r', {}, [
-        el('w:t', {}, undefined, 'Hello '),
-      ]),
-      el('w:r', {}, [
-        el('w:t', {}, undefined, 'World'),
-      ]),
-    ]);
+  test('atomizes and normalizes multiple runs with same formatting', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
 
-    const { atoms } = atomizeTree(document, [], mockPart);
+    await given('a paragraph with multiple runs having the same formatting', () => {
+      // Multiple runs with the same formatting (none) are merged during normalization
+      document = el('w:p', {}, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Hello ')]),
+        el('w:r', {}, [el('w:t', {}, undefined, 'World')]),
+      ]);
+    });
 
-    // Merged into 1 atom due to same formatting, then word-split to 3
-    expect(atoms).toHaveLength(3);
-    const atom0 = atoms[0];
-    const atom1 = atoms[1];
-    const atom2 = atoms[2];
-    assertDefined(atom0, 'atoms[0]');
-    assertDefined(atom1, 'atoms[1]');
-    assertDefined(atom2, 'atoms[2]');
-    expect(atom0.contentElement.textContent).toBe('Hello');
-    expect(atom1.contentElement.textContent).toBe(' ');
-    expect(atom2.contentElement.textContent).toBe('World');
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('runs are merged then word-split into three atoms', () => {
+      // Merged into 1 atom due to same formatting, then word-split to 3
+      expect(atoms).toHaveLength(3);
+      const atom0 = atoms[0];
+      const atom1 = atoms[1];
+      const atom2 = atoms[2];
+      assertDefined(atom0, 'atoms[0]');
+      assertDefined(atom1, 'atoms[1]');
+      assertDefined(atom2, 'atoms[2]');
+      expect(atom0.contentElement.textContent).toBe('Hello');
+      expect(atom1.contentElement.textContent).toBe(' ');
+      expect(atom2.contentElement.textContent).toBe('World');
+    });
   });
 
-  it('includes ancestor chain for each atom', () => {
-    const document = el('w:p', { 'w:Unid': 'para-1' }, [
-      el('w:r', { 'w:Unid': 'run-1' }, [
-        el('w:t', {}, undefined, 'Test'),
-      ]),
-    ]);
+  test('includes ancestor chain for each atom', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
 
-    const { atoms } = atomizeTree(document, [], mockPart);
+    await given('a paragraph with Unid attributes on p and r', () => {
+      document = el('w:p', { 'w:Unid': 'para-1' }, [
+        el('w:r', { 'w:Unid': 'run-1' }, [el('w:t', {}, undefined, 'Test')]),
+      ]);
+    });
 
-    const atom0 = atoms[0];
-    assertDefined(atom0, 'atoms[0]');
-    expect(atom0.ancestorElements).toHaveLength(2); // p and r
-    const ancestor0 = atom0.ancestorElements[0];
-    const ancestor1 = atom0.ancestorElements[1];
-    assertDefined(ancestor0, 'ancestorElements[0]');
-    assertDefined(ancestor1, 'ancestorElements[1]');
-    expect(ancestor0.tagName).toBe('w:p');
-    expect(ancestor1.tagName).toBe('w:r');
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('the atom has both p and r as ancestors', () => {
+      const atom0 = atoms[0];
+      assertDefined(atom0, 'atoms[0]');
+      expect(atom0.ancestorElements).toHaveLength(2); // p and r
+      const ancestor0 = atom0.ancestorElements[0];
+      const ancestor1 = atom0.ancestorElements[1];
+      assertDefined(ancestor0, 'ancestorElements[0]');
+      assertDefined(ancestor1, 'ancestorElements[1]');
+      expect(ancestor0.tagName).toBe('w:p');
+      expect(ancestor1.tagName).toBe('w:r');
+    });
   });
 
-  it('handles revision tracking elements', () => {
-    const document = el('w:p', {}, [
-      el('w:ins', { 'w:id': '1', 'w:author': 'John' }, [
-        el('w:r', {}, [
-          el('w:t', {}, undefined, 'New text'),
+  test('handles revision tracking elements', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('a paragraph with a w:ins element', () => {
+      document = el('w:p', {}, [
+        el('w:ins', { 'w:id': '1', 'w:author': 'John' }, [
+          el('w:r', {}, [el('w:t', {}, undefined, 'New text')]),
         ]),
-      ]),
-    ]);
+      ]);
+    });
 
-    const { atoms } = atomizeTree(document, [], mockPart);
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
 
-    // "New text" splits to ["New", " ", "text"]
-    expect(atoms).toHaveLength(3);
-    const atom0 = atoms[0];
-    assertDefined(atom0, 'atoms[0]');
-    expect(atom0.correlationStatus).toBe(CorrelationStatus.Inserted);
-    expect(atom0.revTrackElement?.tagName).toBe('w:ins');
-    expect(atom0.contentElement.textContent).toBe('New');
+    await then('atoms are marked as inserted', () => {
+      // "New text" splits to ["New", " ", "text"]
+      expect(atoms).toHaveLength(3);
+      const atom0 = atoms[0];
+      assertDefined(atom0, 'atoms[0]');
+      expect(atom0.correlationStatus).toBe(CorrelationStatus.Inserted);
+      expect(atom0.revTrackElement?.tagName).toBe('w:ins');
+      expect(atom0.contentElement.textContent).toBe('New');
+    });
   });
 
-  it('atomizes leaf nodes like breaks and tabs', () => {
-    const document = el('w:r', {}, [
-      el('w:t', {}, undefined, 'Before'),
-      el('w:br'),
-      el('w:t', {}, undefined, 'After'),
-    ]);
+  test('atomizes leaf nodes like breaks and tabs', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
 
-    const { atoms } = atomizeTree(document, [], mockPart);
+    await given('a run with text, a break, and more text', () => {
+      document = el('w:r', {}, [
+        el('w:t', {}, undefined, 'Before'),
+        el('w:br'),
+        el('w:t', {}, undefined, 'After'),
+      ]);
+    });
 
-    expect(atoms).toHaveLength(3);
-    const atom0 = atoms[0];
-    const atom1 = atoms[1];
-    const atom2 = atoms[2];
-    assertDefined(atom0, 'atoms[0]');
-    assertDefined(atom1, 'atoms[1]');
-    assertDefined(atom2, 'atoms[2]');
-    expect(atom0.contentElement.tagName).toBe('w:t');
-    expect(atom1.contentElement.tagName).toBe('w:br');
-    expect(atom2.contentElement.tagName).toBe('w:t');
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('each leaf node is a separate atom', () => {
+      expect(atoms).toHaveLength(3);
+      const atom0 = atoms[0];
+      const atom1 = atoms[1];
+      const atom2 = atoms[2];
+      assertDefined(atom0, 'atoms[0]');
+      assertDefined(atom1, 'atoms[1]');
+      assertDefined(atom2, 'atoms[2]');
+      expect(atom0.contentElement.tagName).toBe('w:t');
+      expect(atom1.contentElement.tagName).toBe('w:br');
+      expect(atom2.contentElement.tagName).toBe('w:t');
+    });
   });
 });
 
@@ -416,167 +746,230 @@ describe('atom boundary normalization', () => {
     contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
   };
 
-  it('merges contiguous w:t elements in same run', () => {
-    const document = el('w:p', {}, [
-      el('w:r', {}, [
-        el('w:t', {}, undefined, 'Hello'),
-        el('w:t', {}, undefined, ' '),
-        el('w:t', {}, undefined, 'World'),
-      ]),
-    ]);
+  test('merges contiguous w:t elements in same run', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
 
-    const { atoms } = atomizeTree(document, [], mockPart);
-
-    // Merged then word-split: ["Hello", " ", "World"]
-    expect(atoms).toHaveLength(3);
-    const atom0 = atoms[0];
-    const atom1 = atoms[1];
-    const atom2 = atoms[2];
-    assertDefined(atom0, 'atoms[0]');
-    assertDefined(atom1, 'atoms[1]');
-    assertDefined(atom2, 'atoms[2]');
-    expect(atom0.contentElement.textContent).toBe('Hello');
-    expect(atom1.contentElement.textContent).toBe(' ');
-    expect(atom2.contentElement.textContent).toBe('World');
-  });
-
-  it('merges w:t elements across runs with same formatting', () => {
-    const document = el('w:p', {}, [
-      el('w:r', {}, [
-        el('w:rPr', {}, [el('w:b')]),
-        el('w:t', {}, undefined, 'Def'),
-      ]),
-      el('w:r', {}, [
-        el('w:rPr', {}, [el('w:b')]),
-        el('w:t', {}, undefined, 'initions'),
-      ]),
-    ]);
-
-    const { atoms } = atomizeTree(document, [], mockPart);
-
-    expect(atoms).toHaveLength(1);
-    const atom0 = atoms[0];
-    assertDefined(atom0, 'atoms[0]');
-    expect(atom0.contentElement.textContent).toBe('Definitions');
-  });
-
-  it('does not merge across runs with different formatting', () => {
-    const document = el('w:p', {}, [
-      el('w:r', {}, [
-        el('w:rPr', {}, [el('w:b')]),
-        el('w:t', {}, undefined, 'Bold'),
-      ]),
-      el('w:r', {}, [
-        el('w:rPr', {}, [el('w:i')]),
-        el('w:t', {}, undefined, 'Italic'),
-      ]),
-    ]);
-
-    const { atoms } = atomizeTree(document, [], mockPart);
-
-    expect(atoms).toHaveLength(2);
-    const atom0 = atoms[0];
-    const atom1 = atoms[1];
-    assertDefined(atom0, 'atoms[0]');
-    assertDefined(atom1, 'atoms[1]');
-    expect(atom0.contentElement.textContent).toBe('Bold');
-    expect(atom1.contentElement.textContent).toBe('Italic');
-  });
-
-  it('does not merge across w:br elements', () => {
-    const document = el('w:p', {}, [
-      el('w:r', {}, [
-        el('w:t', {}, undefined, 'Line1'),
-        el('w:br'),
-        el('w:t', {}, undefined, 'Line2'),
-      ]),
-    ]);
-
-    const { atoms } = atomizeTree(document, [], mockPart);
-
-    expect(atoms).toHaveLength(3);
-    const atom0 = atoms[0];
-    const atom1 = atoms[1];
-    const atom2 = atoms[2];
-    assertDefined(atom0, 'atoms[0]');
-    assertDefined(atom1, 'atoms[1]');
-    assertDefined(atom2, 'atoms[2]');
-    expect(atom0.contentElement.textContent).toBe('Line1');
-    expect(atom1.contentElement.tagName).toBe('w:br');
-    expect(atom2.contentElement.textContent).toBe('Line2');
-  });
-
-  it('does not merge across track change boundaries', () => {
-    const document = el('w:p', {}, [
-      el('w:r', {}, [
-        el('w:t', {}, undefined, 'Normal'),
-      ]),
-      el('w:ins', { 'w:id': '1', 'w:author': 'Test' }, [
+    await given('a run with multiple contiguous w:t elements', () => {
+      document = el('w:p', {}, [
         el('w:r', {}, [
-          el('w:t', {}, undefined, 'Inserted'),
+          el('w:t', {}, undefined, 'Hello'),
+          el('w:t', {}, undefined, ' '),
+          el('w:t', {}, undefined, 'World'),
         ]),
-      ]),
-    ]);
+      ]);
+    });
 
-    const { atoms } = atomizeTree(document, [], mockPart);
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
 
-    expect(atoms).toHaveLength(2);
-    const atom0 = atoms[0];
-    const atom1 = atoms[1];
-    assertDefined(atom0, 'atoms[0]');
-    assertDefined(atom1, 'atoms[1]');
-    expect(atom0.contentElement.textContent).toBe('Normal');
-    expect(atom1.contentElement.textContent).toBe('Inserted');
-    expect(atom1.revTrackElement?.tagName).toBe('w:ins');
+    await then('the texts are merged then word-split into three atoms', () => {
+      // Merged then word-split: ["Hello", " ", "World"]
+      expect(atoms).toHaveLength(3);
+      const atom0 = atoms[0];
+      const atom1 = atoms[1];
+      const atom2 = atoms[2];
+      assertDefined(atom0, 'atoms[0]');
+      assertDefined(atom1, 'atoms[1]');
+      assertDefined(atom2, 'atoms[2]');
+      expect(atom0.contentElement.textContent).toBe('Hello');
+      expect(atom1.contentElement.textContent).toBe(' ');
+      expect(atom2.contentElement.textContent).toBe('World');
+    });
   });
 
-  it('does not merge across paragraph boundaries', () => {
-    const document = el('w:body', {}, [
-      el('w:p', {}, [
-        el('w:r', {}, [
-          el('w:t', {}, undefined, 'Para1'),
-        ]),
-      ]),
-      el('w:p', {}, [
-        el('w:r', {}, [
-          el('w:t', {}, undefined, 'Para2'),
-        ]),
-      ]),
-    ]);
+  test('merges w:t elements across runs with same formatting', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
 
-    const { atoms } = atomizeTree(document, [], mockPart);
+    await given('two runs with the same bold formatting', () => {
+      document = el('w:p', {}, [
+        el('w:r', {}, [
+          el('w:rPr', {}, [el('w:b')]),
+          el('w:t', {}, undefined, 'Def'),
+        ]),
+        el('w:r', {}, [
+          el('w:rPr', {}, [el('w:b')]),
+          el('w:t', {}, undefined, 'initions'),
+        ]),
+      ]);
+    });
 
-    expect(atoms).toHaveLength(2);
-    const atom0 = atoms[0];
-    const atom1 = atoms[1];
-    assertDefined(atom0, 'atoms[0]');
-    assertDefined(atom1, 'atoms[1]');
-    expect(atom0.contentElement.textContent).toBe('Para1');
-    expect(atom1.contentElement.textContent).toBe('Para2');
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('the texts are merged into a single atom', () => {
+      expect(atoms).toHaveLength(1);
+      const atom0 = atoms[0];
+      assertDefined(atom0, 'atoms[0]');
+      expect(atom0.contentElement.textContent).toBe('Definitions');
+    });
+  });
+
+  test('does not merge across runs with different formatting', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('two runs with different formatting', () => {
+      document = el('w:p', {}, [
+        el('w:r', {}, [
+          el('w:rPr', {}, [el('w:b')]),
+          el('w:t', {}, undefined, 'Bold'),
+        ]),
+        el('w:r', {}, [
+          el('w:rPr', {}, [el('w:i')]),
+          el('w:t', {}, undefined, 'Italic'),
+        ]),
+      ]);
+    });
+
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('the runs remain as separate atoms', () => {
+      expect(atoms).toHaveLength(2);
+      const atom0 = atoms[0];
+      const atom1 = atoms[1];
+      assertDefined(atom0, 'atoms[0]');
+      assertDefined(atom1, 'atoms[1]');
+      expect(atom0.contentElement.textContent).toBe('Bold');
+      expect(atom1.contentElement.textContent).toBe('Italic');
+    });
+  });
+
+  test('does not merge across w:br elements', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('a run with text separated by a break', () => {
+      document = el('w:p', {}, [
+        el('w:r', {}, [
+          el('w:t', {}, undefined, 'Line1'),
+          el('w:br'),
+          el('w:t', {}, undefined, 'Line2'),
+        ]),
+      ]);
+    });
+
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('the break separates the atoms', () => {
+      expect(atoms).toHaveLength(3);
+      const atom0 = atoms[0];
+      const atom1 = atoms[1];
+      const atom2 = atoms[2];
+      assertDefined(atom0, 'atoms[0]');
+      assertDefined(atom1, 'atoms[1]');
+      assertDefined(atom2, 'atoms[2]');
+      expect(atom0.contentElement.textContent).toBe('Line1');
+      expect(atom1.contentElement.tagName).toBe('w:br');
+      expect(atom2.contentElement.textContent).toBe('Line2');
+    });
+  });
+
+  test('does not merge across track change boundaries', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('a paragraph with a normal run followed by an inserted run', () => {
+      document = el('w:p', {}, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'Normal')]),
+        el('w:ins', { 'w:id': '1', 'w:author': 'Test' }, [
+          el('w:r', {}, [el('w:t', {}, undefined, 'Inserted')]),
+        ]),
+      ]);
+    });
+
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('the track change boundary separates the atoms', () => {
+      expect(atoms).toHaveLength(2);
+      const atom0 = atoms[0];
+      const atom1 = atoms[1];
+      assertDefined(atom0, 'atoms[0]');
+      assertDefined(atom1, 'atoms[1]');
+      expect(atom0.contentElement.textContent).toBe('Normal');
+      expect(atom1.contentElement.textContent).toBe('Inserted');
+      expect(atom1.revTrackElement?.tagName).toBe('w:ins');
+    });
+  });
+
+  test('does not merge across paragraph boundaries', async ({ given, when, then }: AllureBddContext) => {
+    let document: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('a body with two paragraphs', () => {
+      document = el('w:body', {}, [
+        el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'Para1')])]),
+        el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'Para2')])]),
+      ]);
+    });
+
+    await when('the tree is atomized', () => {
+      ({ atoms } = atomizeTree(document, [], mockPart));
+    });
+
+    await then('each paragraph produces a separate atom', () => {
+      expect(atoms).toHaveLength(2);
+      const atom0 = atoms[0];
+      const atom1 = atoms[1];
+      assertDefined(atom0, 'atoms[0]');
+      assertDefined(atom1, 'atoms[1]');
+      expect(atom0.contentElement.textContent).toBe('Para1');
+      expect(atom1.contentElement.textContent).toBe('Para2');
+    });
   });
 });
 
 describe('getAncestors', () => {
-  it('returns empty array for node without parent', () => {
-    const node = el('w:t');
+  test('returns empty array for node without parent', async ({ given, when, then }: AllureBddContext) => {
+    let node: Element;
 
-    expect(getAncestors(node)).toEqual([]);
+    await given('a node with no parent', () => {
+      node = el('w:t');
+    });
+
+    await when('getAncestors is called', () => {});
+
+    await then('an empty array is returned', () => {
+      expect(getAncestors(node)).toEqual([]);
+    });
   });
 
-  it('returns ancestors from root to immediate parent', () => {
-    // Build a real DOM tree so parentElement references are set automatically
-    const text = el('w:t');
-    const run = el('w:r', {}, [text]);
-    const para = el('w:p', {}, [run]);
-    const body = el('w:body', {}, [para]);
-    const root = el('w:document', {}, [body]);
+  test('returns ancestors from root to immediate parent', async ({ given, when, then }: AllureBddContext) => {
+    let text: Element;
+    let run: Element;
+    let para: Element;
+    let body: Element;
+    let root: Element;
+    let ancestors: Element[];
 
-    const ancestors = getAncestors(text);
+    await given('a deep DOM tree', () => {
+      // Build a real DOM tree so parentElement references are set automatically
+      text = el('w:t');
+      run = el('w:r', {}, [text]);
+      para = el('w:p', {}, [run]);
+      body = el('w:body', {}, [para]);
+      root = el('w:document', {}, [body]);
+    });
 
-    expect(ancestors).toHaveLength(4);
-    expect(ancestors[0]).toBe(root);
-    expect(ancestors[1]).toBe(body);
-    expect(ancestors[2]).toBe(para);
-    expect(ancestors[3]).toBe(run);
+    await when('getAncestors is called on the text node', () => {
+      ancestors = getAncestors(text);
+    });
+
+    await then('all ancestors from root to immediate parent are returned', () => {
+      expect(ancestors).toHaveLength(4);
+      expect(ancestors[0]).toBe(root);
+      expect(ancestors[1]).toBe(body);
+      expect(ancestors[2]).toBe(para);
+      expect(ancestors[3]).toBe(run);
+    });
   });
 });

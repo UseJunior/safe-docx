@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
-import { itAllure } from './helpers/allure-test.js';
+import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { parseXml, serializeXml } from '../src/primitives/xml.js';
 import { OOXML, W } from '../src/primitives/namespaces.js';
 import { DocxZip } from '../src/primitives/zip.js';
@@ -12,8 +12,7 @@ import {
   getComments,
 } from '../src/primitives/comments.js';
 
-const TEST_FEATURE = 'add-comment-delete-tool';
-const it = itAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Delete Comment' });
 const W_NS = OOXML.W_NS;
 
 function makeDocXml(bodyXml: string): string {
@@ -36,151 +35,192 @@ async function loadZip(buffer: Buffer): Promise<DocxZip> {
 }
 
 describe('deleteComment OpenSpec traceability', () => {
-  it
-    .openspec('delete root comment with no replies')
-    ('Scenario: delete root comment with no replies', async () => {
-      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
-      await bootstrapCommentParts(zip);
+  test.openspec('delete root comment with no replies')
+    ('Scenario: delete root comment with no replies', async ({ given, when, then }: AllureBddContext) => {
+      let zip!: DocxZip;
+      let doc!: Document;
+      let root!: Awaited<ReturnType<typeof addComment>>;
 
-      const doc = parseXml(await zip.readText('word/document.xml'));
-      const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
-
-      const root = await addComment(doc, zip, {
-        paragraphEl: paragraph,
-        start: 0,
-        end: 5,
-        author: 'Author',
-        text: 'Root comment',
+      await given('a bootstrapped docx zip with one paragraph', async () => {
+        zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
+        await bootstrapCommentParts(zip);
+        doc = parseXml(await zip.readText('word/document.xml'));
       });
 
-      await deleteComment(doc, zip, { commentId: root.commentId });
+      await given('a root comment added to the paragraph', async () => {
+        const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        root = await addComment(doc, zip, {
+          paragraphEl: paragraph,
+          start: 0,
+          end: 5,
+          author: 'Author',
+          text: 'Root comment',
+        });
+      });
 
-      const comments = await getComments(zip, doc);
-      expect(comments).toEqual([]);
+      await when('the root comment is deleted', async () => {
+        await deleteComment(doc, zip, { commentId: root.commentId });
+      });
 
-      const serialized = serializeXml(doc);
-      expect(serialized).toContain('<w:body>');
+      await then('no comments remain and the document body is still intact', async () => {
+        const comments = await getComments(zip, doc);
+        expect(comments).toEqual([]);
+
+        const serialized = serializeXml(doc);
+        expect(serialized).toContain('<w:body>');
+      });
     });
 
-  it
-    .openspec('delete root comment cascade-deletes all descendants')
-    ('Scenario: delete root comment cascade-deletes all descendants', async () => {
-      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
-      await bootstrapCommentParts(zip);
+  test.openspec('delete root comment cascade-deletes all descendants')
+    ('Scenario: delete root comment cascade-deletes all descendants', async ({ given, when, then }: AllureBddContext) => {
+      let zip!: DocxZip;
+      let doc!: Document;
+      let root!: Awaited<ReturnType<typeof addComment>>;
 
-      const doc = parseXml(await zip.readText('word/document.xml'));
-      const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+      await given('a bootstrapped docx zip with root, child, and grandchild comments', async () => {
+        zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
+        await bootstrapCommentParts(zip);
+        doc = parseXml(await zip.readText('word/document.xml'));
+        const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
 
-      const root = await addComment(doc, zip, {
-        paragraphEl: paragraph,
-        start: 0,
-        end: 5,
-        author: 'Author',
-        text: 'Root comment',
+        root = await addComment(doc, zip, {
+          paragraphEl: paragraph,
+          start: 0,
+          end: 5,
+          author: 'Author',
+          text: 'Root comment',
+        });
+        const child = await addCommentReply(doc, zip, {
+          parentCommentId: root.commentId,
+          author: 'Child',
+          text: 'First reply',
+        });
+        await addCommentReply(doc, zip, {
+          parentCommentId: child.commentId,
+          author: 'Grandchild',
+          text: 'Second reply',
+        });
       });
-      const child = await addCommentReply(doc, zip, {
-        parentCommentId: root.commentId,
-        author: 'Child',
-        text: 'First reply',
-      });
-      await addCommentReply(doc, zip, {
-        parentCommentId: child.commentId,
-        author: 'Grandchild',
-        text: 'Second reply',
+
+      await when('the root comment is deleted', async () => {
+        await deleteComment(doc, zip, { commentId: root.commentId });
       });
 
-      await deleteComment(doc, zip, { commentId: root.commentId });
+      await then('all comments are removed including all descendants', async () => {
+        const comments = await getComments(zip, doc);
+        expect(comments).toEqual([]);
 
-      const comments = await getComments(zip, doc);
-      expect(comments).toEqual([]);
-
-      const commentsXml = await zip.readText('word/comments.xml');
-      expect(commentsXml).not.toContain('Root comment');
-      expect(commentsXml).not.toContain('First reply');
-      expect(commentsXml).not.toContain('Second reply');
+        const commentsXml = await zip.readText('word/comments.xml');
+        expect(commentsXml).not.toContain('Root comment');
+        expect(commentsXml).not.toContain('First reply');
+        expect(commentsXml).not.toContain('Second reply');
+      });
     });
 
-  it
-    .openspec('delete a leaf reply comment')
-    ('Scenario: delete a leaf reply comment', async () => {
-      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
-      await bootstrapCommentParts(zip);
+  test.openspec('delete a leaf reply comment')
+    ('Scenario: delete a leaf reply comment', async ({ given, when, then }: AllureBddContext) => {
+      let zip!: DocxZip;
+      let doc!: Document;
+      let root!: Awaited<ReturnType<typeof addComment>>;
+      let leaf!: Awaited<ReturnType<typeof addCommentReply>>;
 
-      const doc = parseXml(await zip.readText('word/document.xml'));
-      const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+      await given('a bootstrapped docx zip with a root comment and a leaf reply', async () => {
+        zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
+        await bootstrapCommentParts(zip);
+        doc = parseXml(await zip.readText('word/document.xml'));
+        const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
 
-      const root = await addComment(doc, zip, {
-        paragraphEl: paragraph,
-        start: 0,
-        end: 5,
-        author: 'Author',
-        text: 'Root comment',
+        root = await addComment(doc, zip, {
+          paragraphEl: paragraph,
+          start: 0,
+          end: 5,
+          author: 'Author',
+          text: 'Root comment',
+        });
+        leaf = await addCommentReply(doc, zip, {
+          parentCommentId: root.commentId,
+          author: 'Leaf',
+          text: 'Leaf reply',
+        });
       });
-      const leaf = await addCommentReply(doc, zip, {
-        parentCommentId: root.commentId,
-        author: 'Leaf',
-        text: 'Leaf reply',
+
+      await when('the leaf reply is deleted', async () => {
+        await deleteComment(doc, zip, { commentId: leaf.commentId });
       });
 
-      await deleteComment(doc, zip, { commentId: leaf.commentId });
-
-      const comments = await getComments(zip, doc);
-      expect(comments).toHaveLength(1);
-      expect(comments[0]!.text).toBe('Root comment');
-      expect(comments[0]!.replies).toEqual([]);
+      await then('only the root comment remains with no replies', async () => {
+        const comments = await getComments(zip, doc);
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.text).toBe('Root comment');
+        expect(comments[0]!.replies).toEqual([]);
+      });
     });
 
-  it
-    .openspec('delete a non-leaf reply cascades to its descendants')
-    ('Scenario: delete a non-leaf reply cascades to its descendants', async () => {
-      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
-      await bootstrapCommentParts(zip);
+  test.openspec('delete a non-leaf reply cascades to its descendants')
+    ('Scenario: delete a non-leaf reply cascades to its descendants', async ({ given, when, then }: AllureBddContext) => {
+      let zip!: DocxZip;
+      let doc!: Document;
+      let root!: Awaited<ReturnType<typeof addComment>>;
+      let nonLeafReply!: Awaited<ReturnType<typeof addCommentReply>>;
 
-      const doc = parseXml(await zip.readText('word/document.xml'));
-      const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+      await given('a bootstrapped docx zip with root, non-leaf reply, and grandchild reply', async () => {
+        zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
+        await bootstrapCommentParts(zip);
+        doc = parseXml(await zip.readText('word/document.xml'));
+        const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
 
-      const root = await addComment(doc, zip, {
-        paragraphEl: paragraph,
-        start: 0,
-        end: 5,
-        author: 'Author',
-        text: 'Root comment',
+        root = await addComment(doc, zip, {
+          paragraphEl: paragraph,
+          start: 0,
+          end: 5,
+          author: 'Author',
+          text: 'Root comment',
+        });
+        nonLeafReply = await addCommentReply(doc, zip, {
+          parentCommentId: root.commentId,
+          author: 'Reply',
+          text: 'Reply level 1',
+        });
+        await addCommentReply(doc, zip, {
+          parentCommentId: nonLeafReply.commentId,
+          author: 'Reply',
+          text: 'Reply level 2',
+        });
       });
-      const nonLeafReply = await addCommentReply(doc, zip, {
-        parentCommentId: root.commentId,
-        author: 'Reply',
-        text: 'Reply level 1',
-      });
-      await addCommentReply(doc, zip, {
-        parentCommentId: nonLeafReply.commentId,
-        author: 'Reply',
-        text: 'Reply level 2',
+
+      await when('the non-leaf reply is deleted', async () => {
+        await deleteComment(doc, zip, { commentId: nonLeafReply.commentId });
       });
 
-      await deleteComment(doc, zip, { commentId: nonLeafReply.commentId });
-
-      const comments = await getComments(zip, doc);
-      expect(comments).toHaveLength(1);
-      expect(comments[0]!.text).toBe('Root comment');
-      expect(comments[0]!.replies).toEqual([]);
+      await then('only the root comment remains with no replies', async () => {
+        const comments = await getComments(zip, doc);
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.text).toBe('Root comment');
+        expect(comments[0]!.replies).toEqual([]);
+      });
     });
 
-  it
-    .openspec('comment not found returns error')
-    ('Scenario: comment not found returns error', async () => {
-      const zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
-      await bootstrapCommentParts(zip);
+  test.openspec('comment not found returns error')
+    ('Scenario: comment not found returns error', async ({ given, when, then }: AllureBddContext) => {
+      let zip!: DocxZip;
+      let doc!: Document;
 
-      const doc = parseXml(await zip.readText('word/document.xml'));
-      const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
-      await addComment(doc, zip, {
-        paragraphEl: paragraph,
-        start: 0,
-        end: 5,
-        author: 'Author',
-        text: 'Root comment',
+      await given('a bootstrapped docx zip with one root comment', async () => {
+        zip = await loadZip(await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>'));
+        await bootstrapCommentParts(zip);
+        doc = parseXml(await zip.readText('word/document.xml'));
+        const paragraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        await addComment(doc, zip, {
+          paragraphEl: paragraph,
+          start: 0,
+          end: 5,
+          author: 'Author',
+          text: 'Root comment',
+        });
       });
 
-      await expect(deleteComment(doc, zip, { commentId: 999 })).rejects.toThrow(/not found/i);
+      await then('deleteComment with a non-existent ID rejects with "not found"', async () => {
+        await expect(deleteComment(doc, zip, { commentId: 999 })).rejects.toThrow(/not found/i);
+      });
     });
 });

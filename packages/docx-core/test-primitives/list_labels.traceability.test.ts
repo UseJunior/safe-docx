@@ -1,130 +1,120 @@
 import { describe, expect } from 'vitest';
 import { extractListLabel, stripListLabel, LabelType } from '../src/primitives/list_labels.js';
-import { itAllure, allureStep, allureJsonAttachment } from './helpers/allure-test.js';
+import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 
-const TEST_FEATURE = 'docx-primitives';
-
-const it = itAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
-
-const humanReadableIt = it.allure({
-  
-  tags: ['human-readable'],
-  
-  parameters: { audience: 'non-technical' },
-  
-});
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'List Labels' });
 
 describe('Traceability: docx-primitives — List Label Extraction', () => {
-  humanReadableIt.openspec('extract parenthesized letter labels')('Scenario: extract parenthesized letter labels', async () => {
+  test.openspec('extract parenthesized letter labels')('Scenario: extract parenthesized letter labels', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const text = '(a) First item of the agreement';
 
-    const result = await allureStep('When extractListLabel is called', async () => {
-      const r = extractListLabel(text);
-      await allureJsonAttachment('Result', r);
-      return r;
+    let result!: ReturnType<typeof extractListLabel>;
+    await when('extractListLabel is called', async () => {
+      result = extractListLabel(text);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have label_type LETTER', () => {
+    await then('the result SHALL have label_type LETTER', () => {
       expect(result.label_type).toBe(LabelType.LETTER);
       expect(result.label).toBe('(a)');
     });
   });
 
-  humanReadableIt.openspec('single-char roman-like letters classified as LETTER not ROMAN')('Scenario: single-char roman-like letters classified as LETTER not ROMAN', async () => {
+  test.openspec('single-char roman-like letters classified as LETTER not ROMAN')('Scenario: single-char roman-like letters classified as LETTER not ROMAN', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const text = '(i) First roman-like item';
 
-    const result = await allureStep('When extractListLabel is called', async () => {
-      const r = extractListLabel(text);
-      await allureJsonAttachment('Result', r);
-      return r;
+    let result!: ReturnType<typeof extractListLabel>;
+    await when('extractListLabel is called', async () => {
+      result = extractListLabel(text);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have label_type LETTER', () => {
+    await then('the result SHALL have label_type LETTER', () => {
       expect(result.label_type).toBe(LabelType.LETTER);
     });
   });
 
-  humanReadableIt.openspec('extract multi-char roman numeral labels')('Scenario: extract multi-char roman numeral labels', async () => {
+  test.openspec('extract multi-char roman numeral labels')('Scenario: extract multi-char roman numeral labels', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const text = '(ii) Second item';
 
-    const result = await allureStep('When extractListLabel is called', async () => {
-      const r = extractListLabel(text);
-      await allureJsonAttachment('Result', r);
-      return r;
+    let result!: ReturnType<typeof extractListLabel>;
+    await when('extractListLabel is called', async () => {
+      result = extractListLabel(text);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have label_type ROMAN', () => {
+    await then('the result SHALL have label_type ROMAN', () => {
       expect(result.label_type).toBe(LabelType.ROMAN);
     });
   });
 
-  humanReadableIt.openspec('extract section labels with sub-paragraph support')('Scenario: extract section labels with sub-paragraph support', async () => {
+  test.openspec('extract section labels with sub-paragraph support')('Scenario: extract section labels with sub-paragraph support', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const text = 'Section 3.1(a) of the agreement';
 
-    const result = await allureStep('When extractListLabel is called', async () => {
-      const r = extractListLabel(text);
-      await allureJsonAttachment('Result', r);
-      return r;
+    let result!: ReturnType<typeof extractListLabel>;
+    await when('extractListLabel is called', async () => {
+      result = extractListLabel(text);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have label_type SECTION', () => {
+    await then('the result SHALL have label_type SECTION', () => {
       expect(result.label_type).toBe(LabelType.SECTION);
     });
   });
 
-  humanReadableIt.openspec('extract article labels with roman numeral support')('Scenario: extract article labels with roman numeral support', async () => {
+  test.openspec('extract article labels with roman numeral support')('Scenario: extract article labels with roman numeral support', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const text = 'Article IV';
 
-    const result = await allureStep('When extractListLabel is called', async () => {
-      const r = extractListLabel(text);
-      await allureJsonAttachment('Result', r);
-      return r;
+    let result!: ReturnType<typeof extractListLabel>;
+    await when('extractListLabel is called', async () => {
+      result = extractListLabel(text);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have label_type ARTICLE', () => {
+    await then('the result SHALL have label_type ARTICLE', () => {
       expect(result.label_type).toBe(LabelType.ARTICLE);
     });
   });
 
-  humanReadableIt.openspec('extract numbered heading labels')('Scenario: extract numbered heading labels', async () => {
+  test.openspec('extract numbered heading labels')('Scenario: extract numbered heading labels', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const text = '2.3.1 Subsection heading';
 
-    const result = await allureStep('When extractListLabel is called', async () => {
-      const r = extractListLabel(text);
-      await allureJsonAttachment('Result', r);
-      return r;
+    let result!: ReturnType<typeof extractListLabel>;
+    await when('extractListLabel is called', async () => {
+      result = extractListLabel(text);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have label_type NUMBERED_HEADING', () => {
+    await then('the result SHALL have label_type NUMBERED_HEADING', () => {
       expect(result.label_type).toBe(LabelType.NUMBERED_HEADING);
     });
   });
 
-  humanReadableIt.openspec('null label for plain text without list patterns')('Scenario: null label for plain text without list patterns', async () => {
+  test.openspec('null label for plain text without list patterns')('Scenario: null label for plain text without list patterns', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const text = 'This is just a normal paragraph with no list label.';
 
-    const result = await allureStep('When extractListLabel is called', async () => {
-      const r = extractListLabel(text);
-      await allureJsonAttachment('Result', r);
-      return r;
+    let result!: ReturnType<typeof extractListLabel>;
+    await when('extractListLabel is called', async () => {
+      result = extractListLabel(text);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then label and label_type SHALL be null', () => {
+    await then('label and label_type SHALL be null', () => {
       expect(result.label).toBeNull();
       expect(result.label_type).toBeNull();
     });
   });
 
-  humanReadableIt.openspec('stripListLabel removes label and leading whitespace')('Scenario: stripListLabel removes label and leading whitespace', async () => {
+  test.openspec('stripListLabel removes label and leading whitespace')('Scenario: stripListLabel removes label and leading whitespace', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const text = '(a) First item of the agreement';
 
-    const result = await allureStep('When stripListLabel is called', async () => {
-      const r = stripListLabel(text);
-      await allureJsonAttachment('Result', r);
-      return r;
+    let result!: ReturnType<typeof stripListLabel>;
+    await when('stripListLabel is called', async () => {
+      result = stripListLabel(text);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then stripped_text SHALL have label and leading whitespace removed', () => {
+    await then('stripped_text SHALL have label and leading whitespace removed', () => {
       expect(result.stripped_text).toBe('First item of the agreement');
       expect(result.result.label).toBe('(a)');
     });

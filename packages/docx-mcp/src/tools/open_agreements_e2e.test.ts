@@ -7,7 +7,7 @@
  * including tables, XML declarations, and produces correct tracked changes.
  */
 import { describe, expect, afterEach } from 'vitest';
-import { testAllure as test } from '../testing/allure-test.js';
+import { testAllure as test, type AllureBddContext } from '../testing/allure-test.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -142,143 +142,148 @@ async function applyFirstUniqueReplacement(
 describe('Open Agreements E2E: Mutual NDA', () => {
   registerTempCleanup();
 
-  test('no-edit round-trip produces zero false tracked changes', async () => {
-    const mgr = createMgr();
-    const docPath = fixtureDocx('mutual-nda.docx');
-    const tmpDir = await makeTempDir();
+  test('no-edit round-trip produces zero false tracked changes', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createMgr>;
+    let sid: string;
+    let docPath: string;
+    let cleanPath: string;
+    let trackedPath: string;
+    let dlRes: Awaited<ReturnType<typeof save>>;
 
-    // Open
-    const openRes = await openDocument(mgr, { file_path: docPath });
-    expect(openRes.success).toBe(true);
-    const sid = openRes.session_id as string;
-
-    // Download both without any edits
-    const cleanPath = path.join(tmpDir, 'nda-nochange-clean.docx');
-    const trackedPath = path.join(tmpDir, 'nda-nochange-tracked.docx');
-    const dlRes = await save(mgr, {
-      session_id: sid,
-      save_to_local_path: cleanPath,
-      save_format: 'both',
-      tracked_save_to_local_path: trackedPath,
-      tracked_changes_author: 'E2E Test',
-      fail_on_rebuild_fallback: true,
+    await given('the Mutual NDA fixture is open with no edits applied', async () => {
+      mgr = createMgr();
+      docPath = fixtureDocx('mutual-nda.docx');
+      const tmpDir = await makeTempDir();
+      const openRes = await openDocument(mgr, { file_path: docPath });
+      expect(openRes.success).toBe(true);
+      sid = openRes.session_id as string;
+      cleanPath = path.join(tmpDir, 'nda-nochange-clean.docx');
+      trackedPath = path.join(tmpDir, 'nda-nochange-tracked.docx');
     });
-    expect(dlRes.success).toBe(true);
 
-    // Verify: zero false tracked changes
-    const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
-      { insertions: number; deletions: number; modifications: number } | undefined;
-    expect(stats).toBeDefined();
-    const totalChanges = (stats!.insertions + stats!.deletions + stats!.modifications);
-    expect(totalChanges).toBe(0);
+    await when('both clean and tracked outputs are saved without any edits', async () => {
+      dlRes = await save(mgr, {
+        session_id: sid,
+        save_to_local_path: cleanPath,
+        save_format: 'both',
+        tracked_save_to_local_path: trackedPath,
+        tracked_changes_author: 'E2E Test',
+        fail_on_rebuild_fallback: true,
+      });
+      expect(dlRes.success).toBe(true);
+    });
 
-    // Verify: inplace reconstruction (not rebuild)
-    expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
+    await then('the save produces zero false tracked changes using inplace mode', () => {
+      const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
+        { insertions: number; deletions: number; modifications: number } | undefined;
+      expect(stats).toBeDefined();
+      const totalChanges = (stats!.insertions + stats!.deletions + stats!.modifications);
+      expect(totalChanges).toBe(0);
+      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
+    });
+    await and('tables and XML declarations are preserved in both output variants', async () => {
+      const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
+      const origDocXml = await origZip.readText('word/document.xml');
+      const origTables = countTables(origDocXml);
+      expect(origTables).toBeGreaterThan(0);
 
-    // Verify: tables preserved in both outputs
-    const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
-    const origDocXml = await origZip.readText('word/document.xml');
-    const origTables = countTables(origDocXml);
-    expect(origTables).toBeGreaterThan(0); // NDA has tables
+      const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
+      const cleanDocXml = await cleanZip.readText('word/document.xml');
+      expect(countTables(cleanDocXml)).toBe(origTables);
 
-    const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
-    const cleanDocXml = await cleanZip.readText('word/document.xml');
-    expect(countTables(cleanDocXml)).toBe(origTables);
-
-    const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
-    const trackedDocXml = await trackedZip.readText('word/document.xml');
-    expect(countTables(trackedDocXml)).toBeGreaterThanOrEqual(origTables);
-
-    // Verify: XML declarations preserved
-    expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
-    expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
+      const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
+      const trackedDocXml = await trackedZip.readText('word/document.xml');
+      expect(countTables(trackedDocXml)).toBeGreaterThanOrEqual(origTables);
+      expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
+      expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
+    });
   });
 
-  test('single word edit produces correct tracked changes and preserves tables', async () => {
-    const mgr = createMgr();
-    const docPath = fixtureDocx('mutual-nda.docx');
-    const tmpDir = await makeTempDir();
+  test('single word edit produces correct tracked changes and preserves tables', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createMgr>;
+    let sid: string;
+    let docPath: string;
+    let cleanPath: string;
+    let trackedPath: string;
+    let dlRes: Awaited<ReturnType<typeof save>>;
+    let cleanDocXml: string;
+    let trackedDocXml: string;
 
-    // Open
-    const openRes = await openDocument(mgr, { file_path: docPath });
-    expect(openRes.success).toBe(true);
-    const sid = openRes.session_id as string;
+    await given('the Mutual NDA fixture is open with "partnership" replaced by "collaboration"', async () => {
+      mgr = createMgr();
+      docPath = fixtureDocx('mutual-nda.docx');
+      const tmpDir = await makeTempDir();
+      const openRes = await openDocument(mgr, { file_path: docPath });
+      expect(openRes.success).toBe(true);
+      sid = openRes.session_id as string;
 
-    // Read to confirm content
-    const readRes = await readFile(mgr, { session_id: sid, limit: 20 });
-    expect(readRes.success).toBe(true);
+      const readRes = await readFile(mgr, { session_id: sid, limit: 20 });
+      expect(readRes.success).toBe(true);
 
-    // Grep for a word to edit
-    const grepRes = await grep(mgr, {
-      session_id: sid,
-      patterns: ['partnership'],
-      max_results: 3,
+      const grepRes = await grep(mgr, {
+        session_id: sid,
+        patterns: ['partnership'],
+        max_results: 3,
+      });
+      expect(grepRes.success).toBe(true);
+      const matches = (grepRes as Record<string, unknown>).matches as Array<{ para_id: string }>;
+      if (matches.length === 0) return;
+
+      const paraId = matches[0]!.para_id;
+      const editRes = await replaceText(mgr, {
+        session_id: sid,
+        target_paragraph_id: paraId,
+        old_string: 'partnership',
+        new_string: 'collaboration',
+        instruction: 'Change partnership to collaboration',
+      });
+      expect(editRes.success).toBe(true);
+
+      cleanPath = path.join(tmpDir, 'nda-edited-clean.docx');
+      trackedPath = path.join(tmpDir, 'nda-edited-tracked.docx');
     });
-    expect(grepRes.success).toBe(true);
-    const matches = (grepRes as Record<string, unknown>).matches as Array<{ para_id: string }>;
 
-    // Skip if "partnership" not in this fixture version
-    if (matches.length === 0) return;
+    await when('both clean and tracked outputs are saved', async () => {
+      dlRes = await save(mgr, {
+        session_id: sid,
+        save_to_local_path: cleanPath,
+        save_format: 'both',
+        tracked_save_to_local_path: trackedPath,
+        tracked_changes_author: 'E2E Test',
+        fail_on_rebuild_fallback: true,
+      });
+      expect(dlRes.success).toBe(true);
 
-    const paraId = matches[0]!.para_id;
-
-    // Edit: partnership → collaboration
-    const editRes = await replaceText(mgr, {
-      session_id: sid,
-      target_paragraph_id: paraId,
-      old_string: 'partnership',
-      new_string: 'collaboration',
-      instruction: 'Change partnership to collaboration',
+      const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
+      cleanDocXml = await cleanZip.readText('word/document.xml');
+      const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
+      trackedDocXml = await trackedZip.readText('word/document.xml');
     });
-    expect(editRes.success).toBe(true);
 
-    // Download both
-    const cleanPath = path.join(tmpDir, 'nda-edited-clean.docx');
-    const trackedPath = path.join(tmpDir, 'nda-edited-tracked.docx');
-    const dlRes = await save(mgr, {
-      session_id: sid,
-      save_to_local_path: cleanPath,
-      save_format: 'both',
-      tracked_save_to_local_path: trackedPath,
-      tracked_changes_author: 'E2E Test',
-      fail_on_rebuild_fallback: true,
+    await then('both outputs contain the replacement word and tracked changes are minimal', () => {
+      expect(cleanDocXml).toContain('collaboration');
+      expect(trackedDocXml).toContain('collaboration');
+
+      const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
+        { insertions: number; deletions: number; modifications: number };
+      expect(stats).toBeDefined();
+      const totalChanges = stats.insertions + stats.deletions + stats.modifications;
+      expect(totalChanges).toBeGreaterThan(0);
+      expect(totalChanges).toBeLessThan(10);
+      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
     });
-    expect(dlRes.success).toBe(true);
+    await and('tables, XML declarations, and most zip entries are unchanged', async () => {
+      const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
+      const origDocXml = await origZip.readText('word/document.xml');
+      const origTables = countTables(origDocXml);
+      expect(countTables(cleanDocXml)).toBe(origTables);
+      expect(countTables(trackedDocXml)).toBeGreaterThanOrEqual(origTables);
+      expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
+      expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
 
-    // Verify: edit present in both outputs
-    const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
-    const cleanDocXml = await cleanZip.readText('word/document.xml');
-    expect(cleanDocXml).toContain('collaboration');
-
-    const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
-    const trackedDocXml = await trackedZip.readText('word/document.xml');
-    expect(trackedDocXml).toContain('collaboration');
-
-    // Verify: tracked changes are small (just the word replacement)
-    const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
-      { insertions: number; deletions: number; modifications: number };
-    expect(stats).toBeDefined();
-    const totalChanges = stats.insertions + stats.deletions + stats.modifications;
-    expect(totalChanges).toBeGreaterThan(0);
-    expect(totalChanges).toBeLessThan(10);
-
-    // Verify: reconstruction mode is inplace
-    expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
-
-    // Verify: tables preserved
-    const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
-    const origDocXml = await origZip.readText('word/document.xml');
-    const origTables = countTables(origDocXml);
-    expect(countTables(cleanDocXml)).toBe(origTables);
-    expect(countTables(trackedDocXml)).toBeGreaterThanOrEqual(origTables);
-
-    // Verify: XML declarations preserved
-    expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
-    expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
-
-    // Verify: most zip entries unchanged (only document.xml should differ)
-    const { unchanged, total } = await countUnchangedEntries(docPath, cleanPath);
-    expect(unchanged).toBeGreaterThanOrEqual(total - 2);
+      const { unchanged, total } = await countUnchangedEntries(docPath, cleanPath);
+      expect(unchanged).toBeGreaterThanOrEqual(total - 2);
+    });
   });
 });
 
@@ -289,124 +294,134 @@ describe('Open Agreements E2E: Mutual NDA', () => {
 describe('Open Agreements E2E: Letter of Intent', () => {
   registerTempCleanup();
 
-  test('no-edit round-trip produces zero false tracked changes', async () => {
-    const mgr = createMgr();
-    const docPath = fixtureDocx('letter-of-intent.docx');
-    const tmpDir = await makeTempDir();
+  test('no-edit round-trip produces zero false tracked changes', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createMgr>;
+    let sid: string;
+    let cleanPath: string;
+    let trackedPath: string;
+    let dlRes: Awaited<ReturnType<typeof save>>;
 
-    // Open
-    const openRes = await openDocument(mgr, { file_path: docPath });
-    expect(openRes.success).toBe(true);
-    const sid = openRes.session_id as string;
-
-    // Download both without any edits
-    const cleanPath = path.join(tmpDir, 'loi-nochange-clean.docx');
-    const trackedPath = path.join(tmpDir, 'loi-nochange-tracked.docx');
-    const dlRes = await save(mgr, {
-      session_id: sid,
-      save_to_local_path: cleanPath,
-      save_format: 'both',
-      tracked_save_to_local_path: trackedPath,
-      tracked_changes_author: 'E2E Test',
-      fail_on_rebuild_fallback: true,
+    await given('the Letter of Intent fixture is open with no edits applied', async () => {
+      mgr = createMgr();
+      const docPath = fixtureDocx('letter-of-intent.docx');
+      const tmpDir = await makeTempDir();
+      const openRes = await openDocument(mgr, { file_path: docPath });
+      expect(openRes.success).toBe(true);
+      sid = openRes.session_id as string;
+      cleanPath = path.join(tmpDir, 'loi-nochange-clean.docx');
+      trackedPath = path.join(tmpDir, 'loi-nochange-tracked.docx');
     });
-    expect(dlRes.success).toBe(true);
 
-    // Verify: zero false tracked changes
-    const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
-      { insertions: number; deletions: number; modifications: number } | undefined;
-    expect(stats).toBeDefined();
-    const totalChanges = (stats!.insertions + stats!.deletions + stats!.modifications);
-    expect(totalChanges).toBe(0);
+    await when('both clean and tracked outputs are saved without any edits', async () => {
+      dlRes = await save(mgr, {
+        session_id: sid,
+        save_to_local_path: cleanPath,
+        save_format: 'both',
+        tracked_save_to_local_path: trackedPath,
+        tracked_changes_author: 'E2E Test',
+        fail_on_rebuild_fallback: true,
+      });
+      expect(dlRes.success).toBe(true);
+    });
 
-    // Verify: inplace reconstruction
-    expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
+    await then('zero false tracked changes are produced using inplace reconstruction', () => {
+      const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
+        { insertions: number; deletions: number; modifications: number } | undefined;
+      expect(stats).toBeDefined();
+      const totalChanges = (stats!.insertions + stats!.deletions + stats!.modifications);
+      expect(totalChanges).toBe(0);
+      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
+    });
+    await and('XML declarations are preserved in both outputs', async () => {
+      const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
+      const cleanDocXml = await cleanZip.readText('word/document.xml');
+      expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
 
-    // Verify: XML declaration preserved
-    const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
-    const cleanDocXml = await cleanZip.readText('word/document.xml');
-    expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
-
-    const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
-    const trackedDocXml = await trackedZip.readText('word/document.xml');
-    expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
+      const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
+      const trackedDocXml = await trackedZip.readText('word/document.xml');
+      expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
+    });
   });
 
-  test('single word edit produces correct tracked changes', async () => {
-    const mgr = createMgr();
-    const docPath = fixtureDocx('letter-of-intent.docx');
-    const tmpDir = await makeTempDir();
+  test('single word edit produces correct tracked changes', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createMgr>;
+    let sid: string;
+    let docPath: string;
+    let cleanPath: string;
+    let trackedPath: string;
+    let dlRes: Awaited<ReturnType<typeof save>>;
+    let cleanDocXml: string;
+    let trackedDocXml: string;
 
-    // Open
-    const openRes = await openDocument(mgr, { file_path: docPath });
-    expect(openRes.success).toBe(true);
-    const sid = openRes.session_id as string;
+    await given('the Letter of Intent fixture is open with "agreement" replaced by "arrangement"', async () => {
+      mgr = createMgr();
+      docPath = fixtureDocx('letter-of-intent.docx');
+      const tmpDir = await makeTempDir();
 
-    // Read content
-    const readRes = await readFile(mgr, { session_id: sid, limit: 30 });
-    expect(readRes.success).toBe(true);
-    const content = String((readRes as Record<string, unknown>).content ?? '');
+      const openRes = await openDocument(mgr, { file_path: docPath });
+      expect(openRes.success).toBe(true);
+      sid = openRes.session_id as string;
 
-    // Find a word to edit (use "agreement" which commonly appears in legal docs)
-    const grepRes = await grep(mgr, {
-      session_id: sid,
-      patterns: ['agreement'],
-      max_results: 3,
+      const readRes = await readFile(mgr, { session_id: sid, limit: 30 });
+      expect(readRes.success).toBe(true);
+
+      const grepRes = await grep(mgr, {
+        session_id: sid,
+        patterns: ['agreement'],
+        max_results: 3,
+      });
+      expect(grepRes.success).toBe(true);
+      const matches = (grepRes as Record<string, unknown>).matches as Array<{ para_id: string }>;
+
+      if (matches.length === 0) return;
+
+      const paraId = matches[0]!.para_id;
+      const editRes = await replaceText(mgr, {
+        session_id: sid,
+        target_paragraph_id: paraId,
+        old_string: 'agreement',
+        new_string: 'arrangement',
+        instruction: 'Change agreement to arrangement',
+      });
+      expect(editRes.success).toBe(true);
+
+      cleanPath = path.join(tmpDir, 'loi-edited-clean.docx');
+      trackedPath = path.join(tmpDir, 'loi-edited-tracked.docx');
     });
-    expect(grepRes.success).toBe(true);
-    const matches = (grepRes as Record<string, unknown>).matches as Array<{ para_id: string }>;
 
-    // Skip if word not found in this fixture version
-    if (matches.length === 0) return;
+    await when('both clean and tracked outputs are saved', async () => {
+      dlRes = await save(mgr, {
+        session_id: sid,
+        save_to_local_path: cleanPath,
+        save_format: 'both',
+        tracked_save_to_local_path: trackedPath,
+        tracked_changes_author: 'E2E Test',
+        fail_on_rebuild_fallback: true,
+      });
+      expect(dlRes.success).toBe(true);
 
-    const paraId = matches[0]!.para_id;
-
-    // Edit: first "agreement" → "arrangement"
-    const editRes = await replaceText(mgr, {
-      session_id: sid,
-      target_paragraph_id: paraId,
-      old_string: 'agreement',
-      new_string: 'arrangement',
-      instruction: 'Change agreement to arrangement',
+      const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
+      cleanDocXml = await cleanZip.readText('word/document.xml');
+      const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
+      trackedDocXml = await trackedZip.readText('word/document.xml');
     });
-    expect(editRes.success).toBe(true);
 
-    // Download both
-    const cleanPath = path.join(tmpDir, 'loi-edited-clean.docx');
-    const trackedPath = path.join(tmpDir, 'loi-edited-tracked.docx');
-    const dlRes = await save(mgr, {
-      session_id: sid,
-      save_to_local_path: cleanPath,
-      save_format: 'both',
-      tracked_save_to_local_path: trackedPath,
-      tracked_changes_author: 'E2E Test',
-      fail_on_rebuild_fallback: true,
+    await then('both outputs contain the replacement word and tracked changes are minimal', () => {
+      expect(cleanDocXml).toContain('arrangement');
+      expect(trackedDocXml).toContain('arrangement');
+
+      const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
+        { insertions: number; deletions: number; modifications: number };
+      expect(stats).toBeDefined();
+      const totalChanges = stats.insertions + stats.deletions + stats.modifications;
+      expect(totalChanges).toBeGreaterThan(0);
+      expect(totalChanges).toBeLessThan(10);
+      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
     });
-    expect(dlRes.success).toBe(true);
-
-    // Verify: edit present in both outputs
-    const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
-    const cleanDocXml = await cleanZip.readText('word/document.xml');
-    expect(cleanDocXml).toContain('arrangement');
-
-    const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
-    const trackedDocXml = await trackedZip.readText('word/document.xml');
-    expect(trackedDocXml).toContain('arrangement');
-
-    // Verify: tracked changes are small (just the word replacement)
-    const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
-      { insertions: number; deletions: number; modifications: number };
-    expect(stats).toBeDefined();
-    const totalChanges = stats.insertions + stats.deletions + stats.modifications;
-    expect(totalChanges).toBeGreaterThan(0);
-    expect(totalChanges).toBeLessThan(10);
-
-    // Verify: reconstruction mode is inplace
-    expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
-
-    // Verify: XML declarations preserved
-    expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
-    expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
+    await and('XML declarations are preserved in both outputs', () => {
+      expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
+      expect(hasXmlDeclaration(trackedDocXml)).toBe(true);
+    });
   });
 });
 
@@ -419,53 +434,72 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
   ] as const;
 
   for (const fixture of fixtures) {
-    test(`${fixture} stays inplace with table structure preserved`, async () => {
-      const mgr = createMgr();
-      const docPath = fixtureDocx(fixture);
-      const tmpDir = await makeTempDir();
+    test(`${fixture} stays inplace with table structure preserved`, async ({ given, when, then, and }: AllureBddContext) => {
+      let mgr: ReturnType<typeof createMgr>;
+      let sid: string;
+      let docPath: string;
+      let cleanPath: string;
+      let trackedPath: string;
+      let dlRes: Awaited<ReturnType<typeof save>>;
+      let newText: string;
+      let origDocXml: string;
+      let cleanDocXml: string;
+      let trackedDocXml: string;
 
-      const openRes = await openDocument(mgr, { file_path: docPath });
-      expect(openRes.success).toBe(true);
-      const sid = openRes.session_id as string;
+      await given(`the ${fixture} fixture is open with a unique replacement applied`, async () => {
+        mgr = createMgr();
+        docPath = fixtureDocx(fixture);
+        const tmpDir = await makeTempDir();
 
-      const replacement = await applyFirstUniqueReplacement(mgr, sid);
-      expect(replacement).not.toBeNull();
-      const { newText } = replacement!;
+        const openRes = await openDocument(mgr, { file_path: docPath });
+        expect(openRes.success).toBe(true);
+        sid = openRes.session_id as string;
 
-      const cleanPath = path.join(tmpDir, `${fixture}.edited.clean.docx`);
-      const trackedPath = path.join(tmpDir, `${fixture}.edited.tracked.docx`);
-      const dlRes = await save(mgr, {
-        session_id: sid,
-        save_to_local_path: cleanPath,
-        save_format: 'both',
-        tracked_save_to_local_path: trackedPath,
-        tracked_changes_author: 'E2E Test',
-        fail_on_rebuild_fallback: true,
+        const replacement = await applyFirstUniqueReplacement(mgr, sid);
+        expect(replacement).not.toBeNull();
+        newText = replacement!.newText;
+
+        cleanPath = path.join(tmpDir, `${fixture}.edited.clean.docx`);
+        trackedPath = path.join(tmpDir, `${fixture}.edited.tracked.docx`);
       });
-      expect(dlRes.success).toBe(true);
-      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).toBe('inplace');
 
-      const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
-      const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
-      const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
+      await when('both clean and tracked outputs are saved', async () => {
+        dlRes = await save(mgr, {
+          session_id: sid,
+          save_to_local_path: cleanPath,
+          save_format: 'both',
+          tracked_save_to_local_path: trackedPath,
+          tracked_changes_author: 'E2E Test',
+          fail_on_rebuild_fallback: true,
+        });
+        expect(dlRes.success).toBe(true);
 
-      const origDocXml = await origZip.readText('word/document.xml');
-      const cleanDocXml = await cleanZip.readText('word/document.xml');
-      const trackedDocXml = await trackedZip.readText('word/document.xml');
+        const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
+        const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
+        const trackedZip = await DocxZip.load(await fs.readFile(trackedPath) as Buffer);
+        origDocXml = await origZip.readText('word/document.xml');
+        cleanDocXml = await cleanZip.readText('word/document.xml');
+        trackedDocXml = await trackedZip.readText('word/document.xml');
+      });
 
-      const origTables = countTables(origDocXml);
-      expect(origTables).toBeGreaterThan(0);
-      expect(countTables(cleanDocXml)).toBe(origTables);
-      expect(countTables(trackedDocXml)).toBeGreaterThanOrEqual(origTables);
+      await then('reconstruction mode is inplace and table counts are preserved', () => {
+        expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).toBe('inplace');
 
-      expect(cleanDocXml).toContain(newText);
-      expect(trackedDocXml).toContain(newText);
+        const origTables = countTables(origDocXml);
+        expect(origTables).toBeGreaterThan(0);
+        expect(countTables(cleanDocXml)).toBe(origTables);
+        expect(countTables(trackedDocXml)).toBeGreaterThanOrEqual(origTables);
+      });
+      await and('the replacement text appears in both outputs and tracked changes are minimal', () => {
+        expect(cleanDocXml).toContain(newText);
+        expect(trackedDocXml).toContain(newText);
 
-      const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
-        { insertions: number; deletions: number; modifications: number };
-      const totalChanges = stats.insertions + stats.deletions + stats.modifications;
-      expect(totalChanges).toBeGreaterThan(0);
-      expect(totalChanges).toBeLessThan(20);
+        const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
+          { insertions: number; deletions: number; modifications: number };
+        const totalChanges = stats.insertions + stats.deletions + stats.modifications;
+        expect(totalChanges).toBeGreaterThan(0);
+        expect(totalChanges).toBeLessThan(20);
+      });
     });
   }
 });

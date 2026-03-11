@@ -22,7 +22,7 @@ import {
   makeMinimalDocx,
   readDocumentXmlFromPath,
 } from './testing/docx_test_utils.js';
-import { allureStep, testAllure } from './testing/allure-test.js';
+import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import { openSession, assertSuccess, registerCleanup, createTrackedTempDir, createTestSessionManager } from './testing/session-test-utils.js';
 
 type ToolName = (typeof MCP_TOOLS)[number]['name'];
@@ -170,10 +170,10 @@ describe('TypeScript MCP server behavior', () => {
     expect(MCP_TRANSPORT).toBe('stdio');
   });
 
-  humanReadableTest.openspec('Windows compatibility')('Scenario: Windows compatibility (backslash path handling + stdio transport)', async () => {
+  humanReadableTest.openspec('Windows compatibility')('Scenario: Windows compatibility (backslash path handling + stdio transport)', async ({ and }: AllureBddContext) => {
     expect(MCP_TRANSPORT).toBe('stdio');
     if (process.platform !== 'win32') {
-      await allureStep('Non-Windows runner: backslash path behavior validated in win32 CI only', async () => {});
+      await and('Non-Windows runner: backslash path behavior validated in win32 CI only', async () => {});
       return;
     }
 

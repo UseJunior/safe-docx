@@ -38,6 +38,7 @@
     "check:spec-coverage": "npm run check:spec-coverage -w @usejunior/docx-core -- --strict && npm run check:spec-coverage -w @usejunior/docx-mcp -- --strict",
     "check:allure-labels": "node scripts/validate_allure_test_labels.mjs",
     "check:allure-quality": "node scripts/validate_allure_test_quality.mjs",
+    "check:bdd-coverage": "node scripts/check_bdd_coverage.mjs",
     "check:allure-filenames": "node scripts/check_allure_test_filename_policy.mjs --baseline coverage/allure-test-filename-baseline.json",
     "check:mcpb-manifest": "npm run check:manifest-contract -w @usejunior/safedocx-mcpb",
     "preflight:ci": "npm run lint:workspaces && npm run check:spec-coverage && npm run check:tool-docs && npm run check:mcpb-manifest && npm run check:allure-labels && npm run check:allure-filenames && npm run check:allure-quality && npm run check:site",

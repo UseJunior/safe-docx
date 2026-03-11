@@ -1,6 +1,8 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from './helpers/allure-test.js';
+import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { renderToon, type DocumentViewNode } from '../src/primitives/document_view.js';
+
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Document View' });
 
 function makeNode(overrides: Partial<DocumentViewNode>): DocumentViewNode {
   return {
@@ -39,49 +41,79 @@ function makeNode(overrides: Partial<DocumentViewNode>): DocumentViewNode {
 }
 
 describe('document_view renderToon', () => {
-  it('strips header prefix punctuation from tagged text when header column is present', () => {
-    const nodes: DocumentViewNode[] = [
-      makeNode({
-        id: '_bk_000000000111',
-        header: 'Definitions',
-        tagged_text: 'Definitions: the following terms apply.',
-      }),
-      makeNode({
-        id: '_bk_000000000112',
-        header: 'Scope',
-        tagged_text: 'Scope. applies to all sections',
-      }),
-    ];
+  test('strips header prefix punctuation from tagged text when header column is present', async ({ given, when, then }: AllureBddContext) => {
+    let nodes: DocumentViewNode[];
+    let toon: string;
 
-    const toon = renderToon(nodes);
-    expect(toon).toContain('_bk_000000000111 |  | Definitions | body | the following terms apply.');
-    expect(toon).toContain('_bk_000000000112 |  | Scope | body | applies to all sections');
+    await given('nodes with header and tagged_text containing header prefix', async () => {
+      nodes = [
+        makeNode({
+          id: '_bk_000000000111',
+          header: 'Definitions',
+          tagged_text: 'Definitions: the following terms apply.',
+        }),
+        makeNode({
+          id: '_bk_000000000112',
+          header: 'Scope',
+          tagged_text: 'Scope. applies to all sections',
+        }),
+      ];
+    });
+
+    await when('renderToon is called', async () => {
+      toon = renderToon(nodes!);
+    });
+
+    await then('header prefix punctuation is stripped from text', async () => {
+      expect(toon).toContain('_bk_000000000111 |  | Definitions | body | the following terms apply.');
+      expect(toon).toContain('_bk_000000000112 |  | Scope | body | applies to all sections');
+    });
   });
 
-  it('promotes header to text when stripping leaves an empty body', () => {
-    const nodes: DocumentViewNode[] = [
-      makeNode({
-        id: '_bk_000000000113',
-        header: 'Title',
-        tagged_text: 'Title',
-      }),
-    ];
+  test('promotes header to text when stripping leaves an empty body', async ({ given, when, then }: AllureBddContext) => {
+    let nodes: DocumentViewNode[];
+    let toon: string;
 
-    const toon = renderToon(nodes);
-    // Header column is cleared and the text column keeps the title.
-    expect(toon).toContain('_bk_000000000113 |  |  | body | Title');
+    await given('a node where tagged_text equals header exactly', async () => {
+      nodes = [
+        makeNode({
+          id: '_bk_000000000113',
+          header: 'Title',
+          tagged_text: 'Title',
+        }),
+      ];
+    });
+
+    await when('renderToon is called', async () => {
+      toon = renderToon(nodes!);
+    });
+
+    await then('header is cleared and title is kept in text column', async () => {
+      // Header column is cleared and the text column keeps the title.
+      expect(toon).toContain('_bk_000000000113 |  |  | body | Title');
+    });
   });
 
-  it('preserves tagged text when no header is present', () => {
-    const nodes: DocumentViewNode[] = [
-      makeNode({
-        id: '_bk_000000000114',
-        header: '',
-        tagged_text: 'plain body paragraph',
-      }),
-    ];
+  test('preserves tagged text when no header is present', async ({ given, when, then }: AllureBddContext) => {
+    let nodes: DocumentViewNode[];
+    let toon: string;
 
-    const toon = renderToon(nodes);
-    expect(toon).toContain('_bk_000000000114 |  |  | body | plain body paragraph');
+    await given('a node with empty header and plain body text', async () => {
+      nodes = [
+        makeNode({
+          id: '_bk_000000000114',
+          header: '',
+          tagged_text: 'plain body paragraph',
+        }),
+      ];
+    });
+
+    await when('renderToon is called', async () => {
+      toon = renderToon(nodes!);
+    });
+
+    await then('tagged text is preserved unchanged', async () => {
+      expect(toon).toContain('_bk_000000000114 |  |  | body | plain body paragraph');
+    });
   });
 });

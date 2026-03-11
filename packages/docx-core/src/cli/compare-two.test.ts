@@ -1,16 +1,18 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it, allureStep } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { parseCompareCliArgs, runCompareCli } from './compare-two.js';
 
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'CLI Compare Two' });
+
 describe('docx-comparison CLI argument parsing', () => {
-  it('parses minimal positional arguments with defaults', async () => {
+  test('parses minimal positional arguments with defaults', async ({ given, then }: AllureBddContext) => {
     let parsed: ReturnType<typeof parseCompareCliArgs>;
 
-    await allureStep('Given only original and revised inputs', async () => {
+    await given('only original and revised inputs', () => {
       parsed = parseCompareCliArgs(['original.docx', 'revised.docx']);
     });
 
-    await allureStep('Then defaults are applied for compare options', async () => {
+    await then('defaults are applied for compare options', () => {
       expect(parsed!).toEqual({
         originalPath: 'original.docx',
         revisedPath: 'revised.docx',
@@ -25,10 +27,10 @@ describe('docx-comparison CLI argument parsing', () => {
     });
   });
 
-  it('parses explicit output and option overrides', async () => {
+  test('parses explicit output and option overrides', async ({ given, then }: AllureBddContext) => {
     let parsed: ReturnType<typeof parseCompareCliArgs>;
 
-    await allureStep('Given compare arguments with explicit flags', async () => {
+    await given('compare arguments with explicit flags', () => {
       parsed = parseCompareCliArgs([
         'a.docx',
         'b.docx',
@@ -44,7 +46,7 @@ describe('docx-comparison CLI argument parsing', () => {
       ]);
     });
 
-    await allureStep('Then parser returns the requested override values', async () => {
+    await then('parser returns the requested override values', () => {
       expect(parsed!).toEqual({
         originalPath: 'a.docx',
         revisedPath: 'b.docx',
@@ -59,14 +61,14 @@ describe('docx-comparison CLI argument parsing', () => {
     });
   });
 
-  it('returns help payload when help flag is provided', async () => {
+  test('returns help payload when help flag is provided', async ({ when, then }: AllureBddContext) => {
     let result: Awaited<ReturnType<typeof runCompareCli>>;
 
-    await allureStep('When --help is passed to the compare CLI', async () => {
+    await when('--help is passed to the compare CLI', async () => {
       result = await runCompareCli(['--help']);
     });
 
-    await allureStep('Then CLI responds with usage help text', async () => {
+    await then('CLI responds with usage help text', () => {
       expect(result!).toEqual(
         expect.objectContaining({
           help: true,
@@ -78,8 +80,8 @@ describe('docx-comparison CLI argument parsing', () => {
     });
   });
 
-  it('rejects unsupported option names', async () => {
-    await allureStep('When an unsupported option is passed', async () => {
+  test('rejects unsupported option names', async ({ when }: AllureBddContext) => {
+    await when('an unsupported option is passed', () => {
       expect(() => parseCompareCliArgs(['a.docx', 'b.docx', '--unknown', 'x'])).toThrow('Unknown option: --unknown');
     });
   });

@@ -1,52 +1,78 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from '../../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { DocxArchive, DOCX_PATHS } from './DocxArchive.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'DocxArchive' });
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 describe('DocxArchive', () => {
   describe('create', () => {
-    it('creates a valid minimal DOCX', async () => {
-      const archive = await DocxArchive.create();
+    test('creates a valid minimal DOCX', async ({ given, when, then }: AllureBddContext) => {
+      let archive: DocxArchive;
 
-      // Should have required files
-      expect(archive.hasFile(DOCX_PATHS.DOCUMENT)).toBe(true);
-      expect(archive.hasFile(DOCX_PATHS.CONTENT_TYPES)).toBe(true);
-      expect(archive.hasFile('_rels/.rels')).toBe(true);
+      await given('no initial state', () => {});
 
-      // Document should have body element
-      const docXml = await archive.getDocumentXml();
-      expect(docXml).toContain('w:document');
-      expect(docXml).toContain('w:body');
+      await when('DocxArchive.create is called', async () => {
+        archive = await DocxArchive.create();
+      });
+
+      await then('the archive has required files and a valid document body', async () => {
+        // Should have required files
+        expect(archive.hasFile(DOCX_PATHS.DOCUMENT)).toBe(true);
+        expect(archive.hasFile(DOCX_PATHS.CONTENT_TYPES)).toBe(true);
+        expect(archive.hasFile('_rels/.rels')).toBe(true);
+
+        // Document should have body element
+        const docXml = await archive.getDocumentXml();
+        expect(docXml).toContain('w:document');
+        expect(docXml).toContain('w:body');
+      });
     });
 
-    it('can save and reload a created DOCX', async () => {
-      const archive = await DocxArchive.create();
-      const buffer = await archive.save();
+    test('can save and reload a created DOCX', async ({ given, when, then }: AllureBddContext) => {
+      let archive: DocxArchive;
+      let buffer: Buffer;
 
-      // Should be a valid buffer
-      expect(buffer).toBeInstanceOf(Buffer);
-      expect(buffer.length).toBeGreaterThan(0);
+      await given('a created DocxArchive', async () => {
+        archive = await DocxArchive.create();
+      });
 
-      // Should start with PK (ZIP magic bytes)
-      expect(buffer[0]).toBe(0x50); // P
-      expect(buffer[1]).toBe(0x4b); // K
+      await when('the archive is saved', async () => {
+        buffer = await archive.save();
+      });
 
-      // Should be reloadable
-      const reloaded = await DocxArchive.load(buffer);
-      const docXml = await reloaded.getDocumentXml();
-      expect(docXml).toContain('w:document');
+      await then('the buffer is a valid ZIP and can be reloaded', async () => {
+        // Should be a valid buffer
+        expect(buffer).toBeInstanceOf(Buffer);
+        expect(buffer.length).toBeGreaterThan(0);
+
+        // Should start with PK (ZIP magic bytes)
+        expect(buffer[0]).toBe(0x50); // P
+        expect(buffer[1]).toBe(0x4b); // K
+
+        // Should be reloadable
+        const reloaded = await DocxArchive.load(buffer);
+        const docXml = await reloaded.getDocumentXml();
+        expect(docXml).toContain('w:document');
+      });
     });
   });
 
   describe('setDocumentXml', () => {
-    it('modifies the document XML', async () => {
-      const archive = await DocxArchive.create();
+    test('modifies the document XML', async ({ given, when, then }: AllureBddContext) => {
+      let archive: DocxArchive;
+      let retrieved: string;
 
-      const newXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+      await given('a created DocxArchive', async () => {
+        archive = await DocxArchive.create();
+      });
+
+      await when('setDocumentXml is called with new XML', async () => {
+        const newXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body>
     <w:p>
@@ -57,54 +83,90 @@ describe('DocxArchive', () => {
   </w:body>
 </w:document>`;
 
-      archive.setDocumentXml(newXml);
-      const retrieved = await archive.getDocumentXml();
+        archive.setDocumentXml(newXml);
+        retrieved = await archive.getDocumentXml();
+      });
 
-      expect(retrieved).toContain('Hello World');
-      expect(archive.getModifiedPaths()).toContain(DOCX_PATHS.DOCUMENT);
+      await then('the new content is returned and the document path is marked modified', () => {
+        expect(retrieved).toContain('Hello World');
+        expect(archive.getModifiedPaths()).toContain(DOCX_PATHS.DOCUMENT);
+      });
     });
   });
 
   describe('clone', () => {
-    it('creates an independent copy', async () => {
-      const original = await DocxArchive.create();
-      const clone = await original.clone();
+    test('creates an independent copy', async ({ given, when, then }: AllureBddContext) => {
+      let original: DocxArchive;
+      let clone: DocxArchive;
 
-      // Modify original
-      original.setDocumentXml('<w:document><w:body><w:p/></w:body></w:document>');
+      await given('an original archive and a clone', async () => {
+        original = await DocxArchive.create();
+        clone = await original.clone();
+      });
 
-      // Clone should be unaffected
-      const cloneXml = await clone.getDocumentXml();
-      expect(cloneXml).not.toContain('<w:p/>');
+      await when('the original is modified', () => {
+        original.setDocumentXml('<w:document><w:body><w:p/></w:body></w:document>');
+      });
+
+      await then('the clone is unaffected', async () => {
+        const cloneXml = await clone.getDocumentXml();
+        expect(cloneXml).not.toContain('<w:p/>');
+      });
     });
   });
 
   describe('load', () => {
-    it('throws on invalid buffer', async () => {
-      const invalidBuffer = Buffer.from('not a zip file');
+    test('throws on invalid buffer', async ({ given, when, then }: AllureBddContext) => {
+      let invalidBuffer: Buffer;
 
-      await expect(DocxArchive.load(invalidBuffer)).rejects.toThrow();
+      await given('an invalid buffer', () => {
+        invalidBuffer = Buffer.from('not a zip file');
+      });
+
+      await when('DocxArchive.load is called', () => {});
+
+      await then('an error is thrown', async () => {
+        await expect(DocxArchive.load(invalidBuffer)).rejects.toThrow();
+      });
     });
 
-    it('throws on ZIP without document.xml', async () => {
-      // Create a ZIP that's not a DOCX
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-      zip.file('hello.txt', 'Hello World');
-      const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+    test('throws on ZIP without document.xml', async ({ given, when, then }: AllureBddContext) => {
+      let buffer: Buffer;
 
-      await expect(DocxArchive.load(buffer)).rejects.toThrow('Invalid DOCX');
+      await given('a ZIP file without document.xml', async () => {
+        // Create a ZIP that's not a DOCX
+        const JSZip = (await import('jszip')).default;
+        const zip = new JSZip();
+        zip.file('hello.txt', 'Hello World');
+        buffer = await zip.generateAsync({ type: 'nodebuffer' });
+      });
+
+      await when('DocxArchive.load is called', () => {});
+
+      await then('an error containing "Invalid DOCX" is thrown', async () => {
+        await expect(DocxArchive.load(buffer)).rejects.toThrow('Invalid DOCX');
+      });
     });
   });
 
   describe('listFiles', () => {
-    it('lists all files in archive', async () => {
-      const archive = await DocxArchive.create();
-      const files = archive.listFiles();
+    test('lists all files in archive', async ({ given, when, then }: AllureBddContext) => {
+      let archive: DocxArchive;
+      let files: string[];
 
-      expect(files).toContain(DOCX_PATHS.DOCUMENT);
-      expect(files).toContain(DOCX_PATHS.CONTENT_TYPES);
-      expect(files).toContain('_rels/.rels');
+      await given('a created DocxArchive', async () => {
+        archive = await DocxArchive.create();
+      });
+
+      await when('listFiles is called', () => {
+        files = archive.listFiles();
+      });
+
+      await then('all required files are listed', () => {
+        expect(files).toContain(DOCX_PATHS.DOCUMENT);
+        expect(files).toContain(DOCX_PATHS.CONTENT_TYPES);
+        expect(files).toContain('_rels/.rels');
+      });
     });
   });
 });
@@ -113,30 +175,36 @@ describe('DocxArchive', () => {
 describe('DocxArchive with real files', () => {
   const fixturesDir = path.join(__dirname, '../../testing/fixtures');
 
-  it.skip('loads and round-trips a real DOCX', async () => {
+  test.skip('loads and round-trips a real DOCX', async ({ given, when, then }: AllureBddContext) => {
     // This test requires a real DOCX file in fixtures
     const docxPath = path.join(fixturesDir, 'simple.docx');
+    let archive: DocxArchive;
+    let docXml: string;
 
-    try {
-      const buffer = await fs.readFile(docxPath);
-      const archive = await DocxArchive.load(buffer);
+    await given('a real DOCX file in fixtures', async () => {
+      try {
+        const buffer = await fs.readFile(docxPath);
+        archive = await DocxArchive.load(buffer);
+      } catch (error) {
+        // Skip if fixture doesn't exist
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          console.log('Skipping: simple.docx not found in fixtures');
+          return;
+        }
+        throw error;
+      }
+    });
 
-      const docXml = await archive.getDocumentXml();
-      expect(docXml).toContain('w:document');
-
-      // Round-trip
+    await when('the archive is round-tripped', async () => {
+      docXml = await archive.getDocumentXml();
       const saved = await archive.save();
       const reloaded = await DocxArchive.load(saved);
       const reloadedXml = await reloaded.getDocumentXml();
-
       expect(reloadedXml).toBe(docXml);
-    } catch (error) {
-      // Skip if fixture doesn't exist
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        console.log('Skipping: simple.docx not found in fixtures');
-        return;
-      }
-      throw error;
-    }
+    });
+
+    await then('the round-tripped XML matches the original', () => {
+      expect(docXml).toContain('w:document');
+    });
   });
 });

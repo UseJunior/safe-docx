@@ -6,7 +6,7 @@
  */
 
 import { describe, expect } from 'vitest';
-import { itAllure, allureStep, allureJsonAttachment } from '../../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { CorrelationStatus } from '../../core-types.js';
 import {
   computeAtomLcs,
@@ -18,8 +18,8 @@ import type { ComparisonUnitAtom } from '../../core-types.js';
 import { el } from '../../testing/dom-test-helpers.js';
 import { getLeafText } from '../../primitives/index.js';
 
-const it = itAllure.epic('Document Comparison').withLabels({
-  feature: 'Atom LCS Algorithm',
+const test = testAllure.epic('Document Comparison').withLabels({
+  feature: 'Atom LCS',
 });
 
 /**
@@ -45,64 +45,64 @@ function createMockAtom(
 
 describe('atomLcs Regression Tests (Allure)', () => {
   describe('MovedSource paragraph index lookup', () => {
-    const movedSourceIt = it.allure({ story: 'MovedSource Paragraph Index Bug', severity: 'critical' });
+    const movedSourceTest = test.allure({ story: 'MovedSource Paragraph Index Bug', severity: 'critical' });
 
-    movedSourceIt('assigns MovedSource atoms using original paragraph mapping (allure)', async () => {
+    movedSourceTest('assigns MovedSource atoms using original paragraph mapping (allure)', async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
       let originalAtoms: ComparisonUnitAtom[];
       let revisedAtoms: ComparisonUnitAtom[];
       let lcsResult: ReturnType<typeof computeAtomLcs>;
       let merged: ComparisonUnitAtom[];
 
-      await allureStep('Given atoms from original paragraph 0: "Hello world"', async () => {
+      await given('atoms from original paragraph 0: "Hello world"', async () => {
         originalAtoms = [
           createMockAtom('Hello', 0),
           createMockAtom('world', 0),
         ];
-        await allureJsonAttachment('Original atoms', originalAtoms.map(a => ({
+        await attachPrettyJson('Original atoms', originalAtoms.map(a => ({
           text: getLeafText(a.contentElement),
           paragraphIndex: a.paragraphIndex,
         })));
       });
 
-      await allureStep('And atoms from revised paragraph 0: "Hello universe"', async () => {
+      await and('atoms from revised paragraph 0: "Hello universe"', async () => {
         revisedAtoms = [
           createMockAtom('Hello', 0),
           createMockAtom('universe', 0),
         ];
-        await allureJsonAttachment('Revised atoms', revisedAtoms.map(a => ({
+        await attachPrettyJson('Revised atoms', revisedAtoms.map(a => ({
           text: getLeafText(a.contentElement),
           paragraphIndex: a.paragraphIndex,
         })));
       });
 
-      await allureStep('When LCS finds "Hello" matches, "world" deleted, "universe" inserted', async () => {
+      await when('LCS finds "Hello" matches, "world" deleted, "universe" inserted', async () => {
         lcsResult = {
           matches: [{ originalIndex: 0, revisedIndex: 0 }],
           deletedIndices: [1],
           insertedIndices: [1],
         };
         markCorrelationStatus(originalAtoms!, revisedAtoms!, lcsResult);
-        await allureJsonAttachment('LCS Result', lcsResult);
+        await attachPrettyJson('LCS Result', lcsResult);
       });
 
-      await allureStep('And move detection marks "world" as MovedSource', async () => {
+      await and('move detection marks "world" as MovedSource', () => {
         originalAtoms![1]!.correlationStatus = CorrelationStatus.MovedSource;
         originalAtoms![1]!.moveName = 'move1';
         revisedAtoms![1]!.correlationStatus = CorrelationStatus.MovedDestination;
         revisedAtoms![1]!.moveName = 'move1';
       });
 
-      await allureStep('And atoms are merged and paragraph indices assigned', async () => {
+      await and('atoms are merged and paragraph indices assigned', async () => {
         merged = createMergedAtomList(originalAtoms!, revisedAtoms!, lcsResult!);
         assignUnifiedParagraphIndices(originalAtoms!, revisedAtoms!, merged, lcsResult!);
-        await allureJsonAttachment('Merged atoms', merged.map(a => ({
+        await attachPrettyJson('Merged atoms', merged.map(a => ({
           text: getLeafText(a.contentElement),
           status: CorrelationStatus[a.correlationStatus],
           paragraphIndex: a.paragraphIndex,
         })));
       });
 
-      await allureStep('Then MovedSource atom has a valid paragraph index', async () => {
+      await then('MovedSource atom has a valid paragraph index', () => {
         const movedSourceAtom = merged!.find(
           (a) => a.correlationStatus === CorrelationStatus.MovedSource
         );
@@ -110,7 +110,7 @@ describe('atomLcs Regression Tests (Allure)', () => {
         expect(movedSourceAtom!.paragraphIndex).toBeDefined();
       });
 
-      await allureStep('And MovedSource is in same paragraph as its Equal sibling', async () => {
+      await and('MovedSource is in same paragraph as its Equal sibling', () => {
         const movedSourceAtom = merged!.find(
           (a) => a.correlationStatus === CorrelationStatus.MovedSource
         );

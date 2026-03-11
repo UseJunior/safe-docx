@@ -8,6 +8,11 @@ import {
   type DocPreviewFootnote as SharedDocPreviewFootnote,
 } from '../../../../testing/allure-test-factory.js';
 
+// xmlToDocPreviewRuns: import directly from docx-core in test files:
+//   import { xmlToDocPreviewRuns } from '../../../docx-core/src/testing/allure-preview-helpers.js';
+// Not re-exported here because docx-core's testing/ directory is excluded from its build output,
+// which conflicts with the tsc -b project reference resolution.
+
 type EpicName =
   | 'Document Editing'
   | 'Document Comparison'

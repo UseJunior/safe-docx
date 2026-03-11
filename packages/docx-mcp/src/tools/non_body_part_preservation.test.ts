@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure as test } from '../testing/allure-test.js';
+import { testAllure as test, type AllureBddContext } from '../testing/allure-test.js';
 import fs from 'node:fs/promises';
 import { DocxZip } from '@usejunior/docx-core';
 
@@ -24,7 +24,7 @@ async function readZipTextParts(filePath: string, parts: string[]): Promise<Reco
 describe('format_layout: non-body part preservation', () => {
   registerCleanup();
 
-  test('editing layout in document.xml does not mutate non-body package parts', async () => {
+  test('editing layout in document.xml does not mutate non-body package parts', async ({ given, when, then, and }: AllureBddContext) => {
     const documentXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -72,63 +72,75 @@ describe('format_layout: non-body part preservation', () => {
         `</cp:coreProperties>`,
     };
 
-    const opened = await openSession([], {
-      xml: documentXml,
-      extraFiles,
-      prefix: 'safe-docx-non-body-preservation-',
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let outputPath: string;
+    let formatted: Awaited<ReturnType<typeof formatLayout>>;
+    let saved: Awaited<ReturnType<typeof save>>;
+
+    await given('a document with header, footer, footnotes, comments, customXml, and core.xml parts', async () => {
+      opened = await openSession([], {
+        xml: documentXml,
+        extraFiles,
+        prefix: 'safe-docx-non-body-preservation-',
+      });
     });
 
-    const formatted = await formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
-      row_height: {
-        table_indexes: [0],
-        row_indexes: [1],
-        value_twips: 420,
-        rule: 'exact',
-      },
-      cell_padding: {
-        table_indexes: [0],
-        row_indexes: [1],
-        cell_indexes: [0],
-        top_dxa: 80,
-        bottom_dxa: 120,
-        left_dxa: 60,
-        right_dxa: 60,
-      },
-    });
-    assertSuccess(formatted, 'format_layout');
-    expect(formatted.mutation_summary).toEqual({
-      affected_paragraphs: 0,
-      affected_rows: 1,
-      affected_cells: 1,
+    await when('formatLayout mutates table row height and cell padding, then saves clean', async () => {
+      formatted = await formatLayout(opened.mgr, {
+        session_id: opened.sessionId,
+        row_height: {
+          table_indexes: [0],
+          row_indexes: [1],
+          value_twips: 420,
+          rule: 'exact',
+        },
+        cell_padding: {
+          table_indexes: [0],
+          row_indexes: [1],
+          cell_indexes: [0],
+          top_dxa: 80,
+          bottom_dxa: 120,
+          left_dxa: 60,
+          right_dxa: 60,
+        },
+      });
+      assertSuccess(formatted, 'format_layout');
+      expect(formatted.mutation_summary).toEqual({
+        affected_paragraphs: 0,
+        affected_rows: 1,
+        affected_cells: 1,
+      });
+
+      outputPath = `${opened.tmpDir}/non-body-preserved.docx`;
+      saved = await save(opened.mgr, {
+        session_id: opened.sessionId,
+        save_to_local_path: outputPath,
+        save_format: 'clean',
+        clean_bookmarks: true,
+      });
+      assertSuccess(saved, 'save');
     });
 
-    const outputPath = `${opened.tmpDir}/non-body-preserved.docx`;
-    const saved = await save(opened.mgr, {
-      session_id: opened.sessionId,
-      save_to_local_path: outputPath,
-      save_format: 'clean',
-      clean_bookmarks: true,
+    await then('all non-body package parts are byte-identical to the input', async () => {
+      const nonBodyParts = [
+        'word/header1.xml',
+        'word/footer1.xml',
+        'word/footnotes.xml',
+        'word/comments.xml',
+        'customXml/item1.xml',
+        'docProps/core.xml',
+      ];
+      const before = await readZipTextParts(opened.inputPath, nonBodyParts);
+      const after = await readZipTextParts(outputPath, nonBodyParts);
+      for (const part of nonBodyParts) {
+        expect(after[part]).toBe(before[part]);
+      }
     });
-    assertSuccess(saved, 'save');
-
-    const nonBodyParts = [
-      'word/header1.xml',
-      'word/footer1.xml',
-      'word/footnotes.xml',
-      'word/comments.xml',
-      'customXml/item1.xml',
-      'docProps/core.xml',
-    ];
-    const before = await readZipTextParts(opened.inputPath, nonBodyParts);
-    const after = await readZipTextParts(outputPath, nonBodyParts);
-    for (const part of nonBodyParts) {
-      expect(after[part]).toBe(before[part]);
-    }
-
-    const outZip = await DocxZip.load(await fs.readFile(outputPath) as Buffer);
-    const outDocumentXml = await outZip.readText('word/document.xml');
-    expect(outDocumentXml.includes('w:trHeight')).toBe(true);
-    expect(outDocumentXml.includes('w:tcMar')).toBe(true);
+    await and('document.xml contains the layout mutations', async () => {
+      const outZip = await DocxZip.load(await fs.readFile(outputPath) as Buffer);
+      const outDocumentXml = await outZip.readText('word/document.xml');
+      expect(outDocumentXml.includes('w:trHeight')).toBe(true);
+      expect(outDocumentXml.includes('w:tcMar')).toBe(true);
+    });
   });
 });

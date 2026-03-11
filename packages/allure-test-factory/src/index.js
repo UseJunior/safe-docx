@@ -1,3 +1,5 @@
+// Source of truth: github.com/usejunior/safe-docx/packages/allure-test-factory
+// Sync manually after changes. Run: diff <safe-docx>/packages/allure-test-factory <open-agreements>/packages/allure-test-factory
 import { expect, it as vitestIt, test as vitestTest } from 'vitest';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 import Prism from 'prismjs';

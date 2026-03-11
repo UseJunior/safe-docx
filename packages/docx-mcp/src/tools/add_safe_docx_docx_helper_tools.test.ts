@@ -7,7 +7,7 @@ import { addComment as addCommentTool } from './add_comment.js';
 import { replaceText } from './replace_text.js';
 import { MCP_TOOLS } from '../server.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
-import { testAllure, allureStep, allureJsonAttachment } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertSuccess,
   assertFailure,
@@ -58,10 +58,10 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('add root comment to target range')(
     'Scenario: add root comment to target range',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const opened = await openSession(['The quick brown fox jumps over the lazy dog.']);
 
-      const result = await allureStep('Call add_comment', () =>
+      const result = await when('Call add_comment', () =>
         addCommentTool(opened.mgr, {
           session_id: opened.sessionId,
           target_paragraph_id: opened.firstParaId,
@@ -72,9 +72,9 @@ describe('Traceability: DOCX Helper Tools', () => {
       );
 
       assertSuccess(result, 'add_comment');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Result includes comment_id', () => {
+      await then('Result includes comment_id', () => {
         expect(result.comment_id).toBeTypeOf('number');
         expect(result.mode).toBe('root');
         expect(result.anchor_paragraph_id).toBe(opened.firstParaId);
@@ -84,11 +84,11 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('add threaded reply linked to parent comment')(
     'Scenario: add threaded reply linked to parent comment',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const opened = await openSession(['Review this clause carefully.']);
 
       // Add root comment first
-      const root = await allureStep('Add root comment', () =>
+      const root = await given('Add root comment', () =>
         addCommentTool(opened.mgr, {
           session_id: opened.sessionId,
           target_paragraph_id: opened.firstParaId,
@@ -99,7 +99,7 @@ describe('Traceability: DOCX Helper Tools', () => {
       assertSuccess(root, 'root comment');
 
       // Add reply
-      const reply = await allureStep('Add threaded reply', () =>
+      const reply = await when('Add threaded reply', () =>
         addCommentTool(opened.mgr, {
           session_id: opened.sessionId,
           parent_comment_id: root.comment_id as number,
@@ -108,9 +108,9 @@ describe('Traceability: DOCX Helper Tools', () => {
         }),
       );
       assertSuccess(reply, 'reply comment');
-      await allureJsonAttachment('reply-result', reply);
+      await attachPrettyJson('reply-result', reply);
 
-      await allureStep('Reply links to parent', () => {
+      await then('Reply links to parent', () => {
         expect(reply.comment_id).toBeTypeOf('number');
         expect(reply.parent_comment_id).toBe(root.comment_id);
         expect(reply.mode).toBe('reply');
@@ -120,11 +120,11 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('comment parts are bootstrapped when missing')(
     'Scenario: comment parts are bootstrapped when missing',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       // Create a docx with no comment parts at all
       const opened = await openSession(['Plain paragraph with no comments.']);
 
-      const result = await allureStep('Add comment to bare doc', () =>
+      const result = await when('Add comment to bare doc', () =>
         addCommentTool(opened.mgr, {
           session_id: opened.sessionId,
           target_paragraph_id: opened.firstParaId,
@@ -134,9 +134,9 @@ describe('Traceability: DOCX Helper Tools', () => {
       );
 
       assertSuccess(result, 'add_comment with bootstrap');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Comment was created successfully', () => {
+      await then('Comment was created successfully', () => {
         expect(result.comment_id).toBeTypeOf('number');
       });
     },
@@ -146,10 +146,10 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('replace_text performs formatting-preserving replacement')(
     'Scenario: replace_text performs formatting-preserving replacement',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const opened = await openSession(['The Agreement shall be binding.']);
 
-      const result = await allureStep('Call replace_text', () =>
+      const result = await when('Call replace_text', () =>
         replaceText(opened.mgr, {
           session_id: opened.sessionId,
           target_paragraph_id: opened.firstParaId,
@@ -160,9 +160,9 @@ describe('Traceability: DOCX Helper Tools', () => {
       );
 
       assertSuccess(result, 'replace_text');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Replacement was applied', () => {
+      await then('Replacement was applied', () => {
         expect(result.replacements_made).toBe(1);
         expect(result.after_text).toContain('enforceable');
       });
@@ -171,7 +171,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('replace_text can normalize fragmented runs before search')(
     'Scenario: replace_text can normalize fragmented runs before search',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       // Create a document with text fragmented across format-identical runs
       const bodyXml =
         `<w:p>` +
@@ -184,7 +184,7 @@ describe('Traceability: DOCX Helper Tools', () => {
       // Without normalize_first, searching for "Fragmented" should work since
       // getParagraphText concatenates across runs. But let's test that
       // normalize_first explicitly merges runs first.
-      const result = await allureStep('Call replace_text with normalize_first', () =>
+      const result = await when('Call replace_text with normalize_first', () =>
         replaceText(opened.mgr, {
           session_id: opened.sessionId,
           target_paragraph_id: opened.firstParaId,
@@ -196,9 +196,9 @@ describe('Traceability: DOCX Helper Tools', () => {
       );
 
       assertSuccess(result, 'replace_text with normalize_first');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Replacement was applied after normalization', () => {
+      await then('Replacement was applied after normalization', () => {
         expect(result.replacements_made).toBe(1);
         expect(result.after_text).toContain('Merged text');
       });
@@ -209,7 +209,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('merge_runs consolidates adjacent format-identical runs')(
     'Scenario: merge_runs consolidates adjacent format-identical runs',
-    async () => {
+    async ({ then }: AllureBddContext) => {
       // Verify merge_runs behavior through normalize-on-open
       const bodyXml =
         `<w:p>` +
@@ -218,7 +218,7 @@ describe('Traceability: DOCX Helper Tools', () => {
         `</w:p>`;
       const opened = await openSession([], { xml: wrapDoc(bodyXml) });
 
-      await allureStep('Text is merged on open (normalize)', () => {
+      await then('Text is merged on open (normalize)', () => {
         // The text is accessible as a single paragraph — open normalizes runs
         expect(opened.content).toContain('Hello World');
       });
@@ -227,7 +227,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('simplify_redlines merges adjacent same-author tracked wrappers')(
     'Scenario: simplify_redlines merges adjacent same-author tracked wrappers',
-    async () => {
+    async ({ then }: AllureBddContext) => {
       const bodyXml =
         `<w:p>` +
         `<w:ins w:id="1" w:author="Editor">` +
@@ -239,7 +239,7 @@ describe('Traceability: DOCX Helper Tools', () => {
         `</w:p>`;
       const opened = await openSession([], { xml: wrapDoc(bodyXml) });
 
-      await allureStep('Adjacent wrappers from same author are readable', () => {
+      await then('Adjacent wrappers from same author are readable', () => {
         expect(opened.content).toContain('First Second');
       });
     },
@@ -247,7 +247,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('simplify_redlines reports tracked-change author summary')(
     'Scenario: simplify_redlines reports tracked-change author summary',
-    async () => {
+    async ({ when, then }: AllureBddContext) => {
       // The normalize-on-open reports stats — verified through open_document
       const bodyXml =
         `<w:p>` +
@@ -260,12 +260,12 @@ describe('Traceability: DOCX Helper Tools', () => {
       const filePath = await writeTestDocx(dir, 'redline-author.docx', bodyXml);
 
       const { openDocument } = await import('./open_document.js');
-      const result = await allureStep('Open document', () =>
+      const result = await when('Open document', () =>
         openDocument(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'open');
 
-      await allureStep('Normalization stats are returned', () => {
+      await then('Normalization stats are returned', () => {
         expect(result.normalization).toBeDefined();
       });
     },
@@ -275,13 +275,13 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('validate packed or unpacked DOCX inputs')(
     'Scenario: validate packed or unpacked DOCX inputs',
-    async () => {
+    async ({ when }: AllureBddContext) => {
       // Validate behavior: download pre-check validates before output
       const opened = await openSession(['Valid paragraph.']);
       const { save } = await import('./save.js');
 
       const outPath = path.join(opened.tmpDir, 'validated.docx');
-      const result = await allureStep('Download triggers validation', () =>
+      const result = await when('Download triggers validation', () =>
         save(opened.mgr, {
           session_id: opened.sessionId,
           save_to_local_path: outPath,
@@ -294,7 +294,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('redline validation runs when original baseline is provided')(
     'Scenario: redline validation runs when original baseline is provided',
-    async () => {
+    async ({ when, then }: AllureBddContext) => {
       // Redline validation: edits to a document are validated against the original baseline
       // on download. Here we verify the edit + clean download pipeline succeeds.
       const opened = await openSession(['Original content.']);
@@ -311,7 +311,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
       const { save } = await import('./save.js');
       const cleanPath = path.join(opened.tmpDir, 'validated-clean.docx');
-      const result = await allureStep('Download clean (validates on export)', () =>
+      const result = await when('Download clean (validates on export)', () =>
         save(opened.mgr, {
           session_id: opened.sessionId,
           save_to_local_path: cleanPath,
@@ -320,7 +320,7 @@ describe('Traceability: DOCX Helper Tools', () => {
       );
       assertSuccess(result, 'validated download');
 
-      await allureStep('Output file exists', async () => {
+      await then('Output file exists', async () => {
         const stat = await fs.stat(cleanPath);
         expect(stat.size).toBeGreaterThan(0);
       });
@@ -329,7 +329,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
   humanReadableTest.openspec('auto-repair fixes known safe issues')(
     'Scenario: auto-repair fixes known safe issues',
-    async () => {
+    async ({ then }: AllureBddContext) => {
       // Validation auto-repair is exercised through normalize-on-open
       // (proofErr removal, run merging)
       const bodyXml =
@@ -340,7 +340,7 @@ describe('Traceability: DOCX Helper Tools', () => {
         `</w:p>`;
       const opened = await openSession([], { xml: wrapDoc(bodyXml) });
 
-      await allureStep('ProofErr elements are cleaned on normalize', () => {
+      await then('ProofErr elements are cleaned on normalize', () => {
         // Document opens successfully and text is readable
         expect(opened.content).toContain('sommisspelled');
       });

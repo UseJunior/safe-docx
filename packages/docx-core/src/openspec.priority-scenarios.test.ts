@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure, allureStep } from './testing/allure-test.js';
+import { testAllure, type AllureBddContext } from './testing/allure-test.js';
 import { detectMovesInAtomList } from './move-detection.js';
 import { detectFormatChangesInAtomList } from './format-detection.js';
 import {
@@ -53,17 +53,17 @@ function createAtomWithRunProperties(
 describe('OpenSpec priority scenario mappings', () => {
   test.openspec('Move detection disabled')(
     'leaves deleted and inserted atoms unchanged when move detection is turned off',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const atoms = [
         createTextAtom('the quick brown fox moved to another section', CorrelationStatus.Deleted),
         createTextAtom('the quick brown fox moved to another section', CorrelationStatus.Inserted),
       ];
 
-      await allureStep('Given deleted and inserted blocks that would otherwise match', async () => {
+      await given('deleted and inserted blocks that would otherwise match', () => {
         expect(atoms).toHaveLength(2);
       });
 
-      await allureStep('When move detection runs with detectMoves=false', async () => {
+      await when('move detection runs with detectMoves=false', () => {
         detectMovesInAtomList(atoms, {
           detectMoves: false,
           moveSimilarityThreshold: 0.8,
@@ -72,7 +72,7 @@ describe('OpenSpec priority scenario mappings', () => {
         });
       });
 
-      await allureStep('Then correlation statuses remain deleted and inserted', async () => {
+      await then('correlation statuses remain deleted and inserted', () => {
         const deleted = atoms[0];
         const inserted = atoms[1];
         assertDefined(deleted, 'atoms[0]');
@@ -85,18 +85,18 @@ describe('OpenSpec priority scenario mappings', () => {
 
   test.openspec('Move detected between similar blocks')(
     'marks matching deleted and inserted blocks as move source and destination',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const atoms = [
         createTextAtom('the quick brown fox jumps over', CorrelationStatus.Deleted),
         createTextAtom('unchanged bridge text', CorrelationStatus.Equal),
         createTextAtom('the quick brown fox jumps over', CorrelationStatus.Inserted),
       ];
 
-      await allureStep('Given a deleted block and inserted block with matching text', async () => {
+      await given('a deleted block and inserted block with matching text', () => {
         expect(atoms).toHaveLength(3);
       });
 
-      await allureStep('When move detection runs with default matching thresholds', async () => {
+      await when('move detection runs with default matching thresholds', () => {
         detectMovesInAtomList(atoms, {
           detectMoves: true,
           moveSimilarityThreshold: 0.8,
@@ -105,7 +105,7 @@ describe('OpenSpec priority scenario mappings', () => {
         });
       });
 
-      await allureStep('Then source and destination are marked as a paired move', async () => {
+      await then('source and destination are marked as a paired move', () => {
         const source = atoms[0];
         const destination = atoms[2];
         assertDefined(source, 'atoms[0]');
@@ -120,17 +120,17 @@ describe('OpenSpec priority scenario mappings', () => {
 
   test.openspec('Short blocks ignored')(
     'does not convert tiny deleted and inserted blocks into move markup',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const atoms = [
         createTextAtom('tiny', CorrelationStatus.Deleted),
         createTextAtom('tiny', CorrelationStatus.Inserted),
       ];
 
-      await allureStep('Given deleted and inserted blocks below the minimum word threshold', async () => {
+      await given('deleted and inserted blocks below the minimum word threshold', () => {
         expect(atoms).toHaveLength(2);
       });
 
-      await allureStep('When move detection requires at least three words per block', async () => {
+      await when('move detection requires at least three words per block', () => {
         detectMovesInAtomList(atoms, {
           detectMoves: true,
           moveSimilarityThreshold: 0.8,
@@ -139,7 +139,7 @@ describe('OpenSpec priority scenario mappings', () => {
         });
       });
 
-      await allureStep('Then both blocks remain separate deleted and inserted changes', async () => {
+      await then('both blocks remain separate deleted and inserted changes', () => {
         const deleted = atoms[0];
         const inserted = atoms[1];
         assertDefined(deleted, 'atoms[0]');
@@ -152,17 +152,17 @@ describe('OpenSpec priority scenario mappings', () => {
 
   test.openspec('Below threshold treated as separate changes')(
     'does not mark moves when similarity is below the configured threshold',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const atoms = [
         createTextAtom('the quick brown fox jumps', CorrelationStatus.Deleted),
         createTextAtom('a slow gray elephant sleeps', CorrelationStatus.Inserted),
       ];
 
-      await allureStep('Given deleted and inserted blocks with low textual overlap', async () => {
+      await given('deleted and inserted blocks with low textual overlap', () => {
         expect(atoms).toHaveLength(2);
       });
 
-      await allureStep('When move detection runs with a strict similarity threshold', async () => {
+      await when('move detection runs with a strict similarity threshold', () => {
         detectMovesInAtomList(atoms, {
           detectMoves: true,
           moveSimilarityThreshold: 0.8,
@@ -171,7 +171,7 @@ describe('OpenSpec priority scenario mappings', () => {
         });
       });
 
-      await allureStep('Then both blocks stay as independent deletion and insertion', async () => {
+      await then('both blocks stay as independent deletion and insertion', () => {
         const deleted = atoms[0];
         const inserted = atoms[1];
         assertDefined(deleted, 'atoms[0]');
@@ -184,19 +184,19 @@ describe('OpenSpec priority scenario mappings', () => {
 
   test.openspec('Format detection disabled')(
     'keeps equal status when format detection is disabled',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const atom = createAtomWithRunProperties('Test', [el('w:b')]);
       atom.comparisonUnitAtomBefore = createAtomWithRunProperties('Test', []);
 
-      await allureStep('Given an equal atom where the revised run adds bold formatting', async () => {
+      await given('an equal atom where the revised run adds bold formatting', () => {
         expect(atom.correlationStatus).toBe(CorrelationStatus.Equal);
       });
 
-      await allureStep('When format detection runs with detectFormatChanges=false', async () => {
+      await when('format detection runs with detectFormatChanges=false', () => {
         detectFormatChangesInAtomList([atom], { detectFormatChanges: false });
       });
 
-      await allureStep('Then no format-change metadata is produced', async () => {
+      await then('no format-change metadata is produced', () => {
         expect(atom.correlationStatus).toBe(CorrelationStatus.Equal);
         expect(atom.formatChange).toBeUndefined();
       });
@@ -205,19 +205,19 @@ describe('OpenSpec priority scenario mappings', () => {
 
   test.openspec('Text becomes bold')(
     'marks equal text with run-property delta as format changed',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const atom = createAtomWithRunProperties('Test', [el('w:b')]);
       atom.comparisonUnitAtomBefore = createAtomWithRunProperties('Test', []);
 
-      await allureStep('Given identical text where the revised run has bold and original does not', async () => {
+      await given('identical text where the revised run has bold and original does not', () => {
         expect(atom.comparisonUnitAtomBefore).toBeDefined();
       });
 
-      await allureStep('When format detection runs with default enabled behavior', async () => {
+      await when('format detection runs with default enabled behavior', () => {
         detectFormatChangesInAtomList([atom]);
       });
 
-      await allureStep('Then the atom is marked as format changed with bold listed', async () => {
+      await then('the atom is marked as format changed with bold listed', () => {
         expect(atom.correlationStatus).toBe(CorrelationStatus.FormatChanged);
         expect(atom.formatChange?.changedProperties).toContain('bold');
       });

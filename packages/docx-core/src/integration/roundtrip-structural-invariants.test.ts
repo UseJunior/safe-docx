@@ -9,7 +9,9 @@
  */
 
 import { describe, expect, beforeAll } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Structural Round-Trip Invariants' });
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { createHash } from 'crypto';
@@ -252,48 +254,54 @@ describe('Structural Round-Trip Invariants - Synthetic Core Pair', () => {
   }, 180000);
 
   for (const mode of MODES) {
-    it(
+    test(
       `enforces accept/reject parity for non-document core OOXML parts (${mode})`,
-      async () => {
-        const artifacts = artifactsByMode.get(mode);
-        expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
-        const typedArtifacts = artifacts!;
+      async ({ given, then }: AllureBddContext) => {
+        await given(`round-trip artifacts for mode '${mode}' are pre-built in beforeAll`, () => {});
+        await then('accepted and rejected core OOXML parts match revised and original respectively', async () => {
+          const artifacts = artifactsByMode.get(mode);
+          expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
+          const typedArtifacts = artifacts!;
 
-        for (const partPath of NON_DOCUMENT_CORE_PARTS) {
-          await expectPartParity(
-            typedArtifacts.acceptedArchive,
-            typedArtifacts.revisedArchive,
-            partPath,
-            `SyntheticCore/${mode}/accept-all`
-          );
-          await expectPartParity(
-            typedArtifacts.rejectedArchive,
-            typedArtifacts.originalArchive,
-            partPath,
-            `SyntheticCore/${mode}/reject-all`
-          );
-        }
+          for (const partPath of NON_DOCUMENT_CORE_PARTS) {
+            await expectPartParity(
+              typedArtifacts.acceptedArchive,
+              typedArtifacts.revisedArchive,
+              partPath,
+              `SyntheticCore/${mode}/accept-all`
+            );
+            await expectPartParity(
+              typedArtifacts.rejectedArchive,
+              typedArtifacts.originalArchive,
+              partPath,
+              `SyntheticCore/${mode}/reject-all`
+            );
+          }
+        });
       },
       120000
     );
 
-    it(
+    test(
       `enforces read_text accept/reject parity (${mode})`,
-      async () => {
-        const artifacts = artifactsByMode.get(mode);
-        expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
-        const typedArtifacts = artifacts!;
+      async ({ given, then }: AllureBddContext) => {
+        await given(`round-trip artifacts for mode '${mode}' are pre-built in beforeAll`, () => {});
+        await then('read_text of accepted matches revised and rejected matches original', async () => {
+          const artifacts = artifactsByMode.get(mode);
+          expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
+          const typedArtifacts = artifacts!;
 
-        await expectReadTextParity(
-          typedArtifacts.acceptedArchive,
-          typedArtifacts.revisedArchive,
-          `SyntheticCore/${mode}/accept-all`
-        );
-        await expectReadTextParity(
-          typedArtifacts.rejectedArchive,
-          typedArtifacts.originalArchive,
-          `SyntheticCore/${mode}/reject-all`
-        );
+          await expectReadTextParity(
+            typedArtifacts.acceptedArchive,
+            typedArtifacts.revisedArchive,
+            `SyntheticCore/${mode}/accept-all`
+          );
+          await expectReadTextParity(
+            typedArtifacts.rejectedArchive,
+            typedArtifacts.originalArchive,
+            `SyntheticCore/${mode}/reject-all`
+          );
+        });
       },
       120000
     );
@@ -313,133 +321,145 @@ describe('Structural Round-Trip Invariants - ILPA Pair (feature-rich)', () => {
   }, 240000);
 
   for (const mode of MODES) {
-    it(
+    test(
       `enforces read_text accept/reject parity (${mode})`,
-      async () => {
-        const artifacts = artifactsByMode.get(mode);
-        expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
-        const typedArtifacts = artifacts!;
+      async ({ given, then }: AllureBddContext) => {
+        await given(`ILPA round-trip artifacts for mode '${mode}' are pre-built in beforeAll`, () => {});
+        await then('read_text of accepted matches revised and rejected matches original', async () => {
+          const artifacts = artifactsByMode.get(mode);
+          expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
+          const typedArtifacts = artifacts!;
 
-        await expectReadTextParity(
-          typedArtifacts.acceptedArchive,
-          typedArtifacts.revisedArchive,
-          `ILPA/${mode}/accept-all`
-        );
-        await expectReadTextParity(
-          typedArtifacts.rejectedArchive,
-          typedArtifacts.originalArchive,
-          `ILPA/${mode}/reject-all`
-        );
+          await expectReadTextParity(
+            typedArtifacts.acceptedArchive,
+            typedArtifacts.revisedArchive,
+            `ILPA/${mode}/accept-all`
+          );
+          await expectReadTextParity(
+            typedArtifacts.rejectedArchive,
+            typedArtifacts.originalArchive,
+            `ILPA/${mode}/reject-all`
+          );
+        });
       },
       120000
     );
 
-    it(
+    test(
       `keeps numbering references valid after accept/reject (${mode})`,
-      async () => {
-        const artifacts = artifactsByMode.get(mode);
-        expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
-        const typedArtifacts = artifacts!;
+      async ({ given, then }: AllureBddContext) => {
+        await given(`ILPA round-trip artifacts for mode '${mode}' are pre-built in beforeAll`, () => {});
+        await then('numbering diagnostics match between accepted/revised and rejected/original', async () => {
+          const artifacts = artifactsByMode.get(mode);
+          expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
+          const typedArtifacts = artifacts!;
 
-        const acceptedDocumentXml = await typedArtifacts.acceptedArchive.getDocumentXml();
-        const rejectedDocumentXml = await typedArtifacts.rejectedArchive.getDocumentXml();
-        const revisedDocumentXml = await typedArtifacts.revisedArchive.getDocumentXml();
-        const originalDocumentXml = await typedArtifacts.originalArchive.getDocumentXml();
-        const acceptedNumberingXml = await typedArtifacts.acceptedArchive.getFile(DOCX_PATHS.NUMBERING);
-        const rejectedNumberingXml = await typedArtifacts.rejectedArchive.getFile(DOCX_PATHS.NUMBERING);
-        const revisedNumberingXml = await typedArtifacts.revisedArchive.getFile(DOCX_PATHS.NUMBERING);
-        const originalNumberingXml = await typedArtifacts.originalArchive.getFile(DOCX_PATHS.NUMBERING);
+          const acceptedDocumentXml = await typedArtifacts.acceptedArchive.getDocumentXml();
+          const rejectedDocumentXml = await typedArtifacts.rejectedArchive.getDocumentXml();
+          const revisedDocumentXml = await typedArtifacts.revisedArchive.getDocumentXml();
+          const originalDocumentXml = await typedArtifacts.originalArchive.getDocumentXml();
+          const acceptedNumberingXml = await typedArtifacts.acceptedArchive.getFile(DOCX_PATHS.NUMBERING);
+          const rejectedNumberingXml = await typedArtifacts.rejectedArchive.getFile(DOCX_PATHS.NUMBERING);
+          const revisedNumberingXml = await typedArtifacts.revisedArchive.getFile(DOCX_PATHS.NUMBERING);
+          const originalNumberingXml = await typedArtifacts.originalArchive.getFile(DOCX_PATHS.NUMBERING);
 
-        const acceptedDiagnostics = validateNumberingIntegrity(acceptedDocumentXml, acceptedNumberingXml);
-        const rejectedDiagnostics = validateNumberingIntegrity(rejectedDocumentXml, rejectedNumberingXml);
-        const revisedDiagnostics = validateNumberingIntegrity(revisedDocumentXml, revisedNumberingXml);
-        const originalDiagnostics = validateNumberingIntegrity(originalDocumentXml, originalNumberingXml);
+          const acceptedDiagnostics = validateNumberingIntegrity(acceptedDocumentXml, acceptedNumberingXml);
+          const rejectedDiagnostics = validateNumberingIntegrity(rejectedDocumentXml, rejectedNumberingXml);
+          const revisedDiagnostics = validateNumberingIntegrity(revisedDocumentXml, revisedNumberingXml);
+          const originalDiagnostics = validateNumberingIntegrity(originalDocumentXml, originalNumberingXml);
 
-        expect(acceptedDiagnostics, `ILPA/${mode}/accept numbering diagnostics mismatch vs revised`).toEqual(
-          revisedDiagnostics
-        );
-        expect(rejectedDiagnostics, `ILPA/${mode}/reject numbering diagnostics mismatch vs original`).toEqual(
-          originalDiagnostics
-        );
+          expect(acceptedDiagnostics, `ILPA/${mode}/accept numbering diagnostics mismatch vs revised`).toEqual(
+            revisedDiagnostics
+          );
+          expect(rejectedDiagnostics, `ILPA/${mode}/reject numbering diagnostics mismatch vs original`).toEqual(
+            originalDiagnostics
+          );
+        });
       },
       120000
     );
 
-    it(
+    test(
       `keeps footnote/endnote references valid after accept/reject (${mode})`,
-      async () => {
-        const artifacts = artifactsByMode.get(mode);
-        expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
-        const typedArtifacts = artifacts!;
+      async ({ given, then }: AllureBddContext) => {
+        await given(`ILPA round-trip artifacts for mode '${mode}' are pre-built in beforeAll`, () => {});
+        await then('note diagnostics match between accepted/revised and rejected/original', async () => {
+          const artifacts = artifactsByMode.get(mode);
+          expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
+          const typedArtifacts = artifacts!;
 
-        const acceptedDocumentXml = await typedArtifacts.acceptedArchive.getDocumentXml();
-        const rejectedDocumentXml = await typedArtifacts.rejectedArchive.getDocumentXml();
-        const revisedDocumentXml = await typedArtifacts.revisedArchive.getDocumentXml();
-        const originalDocumentXml = await typedArtifacts.originalArchive.getDocumentXml();
+          const acceptedDocumentXml = await typedArtifacts.acceptedArchive.getDocumentXml();
+          const rejectedDocumentXml = await typedArtifacts.rejectedArchive.getDocumentXml();
+          const revisedDocumentXml = await typedArtifacts.revisedArchive.getDocumentXml();
+          const originalDocumentXml = await typedArtifacts.originalArchive.getDocumentXml();
 
-        const acceptedFootnotesXml = await typedArtifacts.acceptedArchive.getFile(DOCX_PATHS.FOOTNOTES);
-        const acceptedEndnotesXml = await typedArtifacts.acceptedArchive.getFile(DOCX_PATHS.ENDNOTES);
-        const rejectedFootnotesXml = await typedArtifacts.rejectedArchive.getFile(DOCX_PATHS.FOOTNOTES);
-        const rejectedEndnotesXml = await typedArtifacts.rejectedArchive.getFile(DOCX_PATHS.ENDNOTES);
-        const revisedFootnotesXml = await typedArtifacts.revisedArchive.getFile(DOCX_PATHS.FOOTNOTES);
-        const revisedEndnotesXml = await typedArtifacts.revisedArchive.getFile(DOCX_PATHS.ENDNOTES);
-        const originalFootnotesXml = await typedArtifacts.originalArchive.getFile(DOCX_PATHS.FOOTNOTES);
-        const originalEndnotesXml = await typedArtifacts.originalArchive.getFile(DOCX_PATHS.ENDNOTES);
+          const acceptedFootnotesXml = await typedArtifacts.acceptedArchive.getFile(DOCX_PATHS.FOOTNOTES);
+          const acceptedEndnotesXml = await typedArtifacts.acceptedArchive.getFile(DOCX_PATHS.ENDNOTES);
+          const rejectedFootnotesXml = await typedArtifacts.rejectedArchive.getFile(DOCX_PATHS.FOOTNOTES);
+          const rejectedEndnotesXml = await typedArtifacts.rejectedArchive.getFile(DOCX_PATHS.ENDNOTES);
+          const revisedFootnotesXml = await typedArtifacts.revisedArchive.getFile(DOCX_PATHS.FOOTNOTES);
+          const revisedEndnotesXml = await typedArtifacts.revisedArchive.getFile(DOCX_PATHS.ENDNOTES);
+          const originalFootnotesXml = await typedArtifacts.originalArchive.getFile(DOCX_PATHS.FOOTNOTES);
+          const originalEndnotesXml = await typedArtifacts.originalArchive.getFile(DOCX_PATHS.ENDNOTES);
 
-        const acceptedDiagnostics = validateNoteIntegrity(
-          acceptedDocumentXml,
-          acceptedFootnotesXml,
-          acceptedEndnotesXml
-        );
-        const rejectedDiagnostics = validateNoteIntegrity(
-          rejectedDocumentXml,
-          rejectedFootnotesXml,
-          rejectedEndnotesXml
-        );
-        const revisedDiagnostics = validateNoteIntegrity(
-          revisedDocumentXml,
-          revisedFootnotesXml,
-          revisedEndnotesXml
-        );
-        const originalDiagnostics = validateNoteIntegrity(
-          originalDocumentXml,
-          originalFootnotesXml,
-          originalEndnotesXml
-        );
+          const acceptedDiagnostics = validateNoteIntegrity(
+            acceptedDocumentXml,
+            acceptedFootnotesXml,
+            acceptedEndnotesXml
+          );
+          const rejectedDiagnostics = validateNoteIntegrity(
+            rejectedDocumentXml,
+            rejectedFootnotesXml,
+            rejectedEndnotesXml
+          );
+          const revisedDiagnostics = validateNoteIntegrity(
+            revisedDocumentXml,
+            revisedFootnotesXml,
+            revisedEndnotesXml
+          );
+          const originalDiagnostics = validateNoteIntegrity(
+            originalDocumentXml,
+            originalFootnotesXml,
+            originalEndnotesXml
+          );
 
-        expect(acceptedDiagnostics, `ILPA/${mode}/accept note diagnostics mismatch vs revised`).toEqual(
-          revisedDiagnostics
-        );
-        expect(rejectedDiagnostics, `ILPA/${mode}/reject note diagnostics mismatch vs original`).toEqual(
-          originalDiagnostics
-        );
+          expect(acceptedDiagnostics, `ILPA/${mode}/accept note diagnostics mismatch vs revised`).toEqual(
+            revisedDiagnostics
+          );
+          expect(rejectedDiagnostics, `ILPA/${mode}/reject note diagnostics mismatch vs original`).toEqual(
+            originalDiagnostics
+          );
+        });
       },
       120000
     );
 
-    it(
+    test(
       `keeps bookmark structure valid after accept/reject (${mode})`,
-      async () => {
-        const artifacts = artifactsByMode.get(mode);
-        expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
-        const typedArtifacts = artifacts!;
+      async ({ given, then }: AllureBddContext) => {
+        await given(`ILPA round-trip artifacts for mode '${mode}' are pre-built in beforeAll`, () => {});
+        await then('bookmark diagnostics match between accepted/revised and rejected/original', async () => {
+          const artifacts = artifactsByMode.get(mode);
+          expect(artifacts, `missing artifacts for mode ${mode}`).toBeDefined();
+          const typedArtifacts = artifacts!;
 
-        const acceptedDocumentXml = await typedArtifacts.acceptedArchive.getDocumentXml();
-        const rejectedDocumentXml = await typedArtifacts.rejectedArchive.getDocumentXml();
-        const revisedDocumentXml = await typedArtifacts.revisedArchive.getDocumentXml();
-        const originalDocumentXml = await typedArtifacts.originalArchive.getDocumentXml();
+          const acceptedDocumentXml = await typedArtifacts.acceptedArchive.getDocumentXml();
+          const rejectedDocumentXml = await typedArtifacts.rejectedArchive.getDocumentXml();
+          const revisedDocumentXml = await typedArtifacts.revisedArchive.getDocumentXml();
+          const originalDocumentXml = await typedArtifacts.originalArchive.getDocumentXml();
 
-        const acceptedDiagnostics = validateBookmarkIntegrity(acceptedDocumentXml);
-        const rejectedDiagnostics = validateBookmarkIntegrity(rejectedDocumentXml);
-        const revisedDiagnostics = validateBookmarkIntegrity(revisedDocumentXml);
-        const originalDiagnostics = validateBookmarkIntegrity(originalDocumentXml);
+          const acceptedDiagnostics = validateBookmarkIntegrity(acceptedDocumentXml);
+          const rejectedDiagnostics = validateBookmarkIntegrity(rejectedDocumentXml);
+          const revisedDiagnostics = validateBookmarkIntegrity(revisedDocumentXml);
+          const originalDiagnostics = validateBookmarkIntegrity(originalDocumentXml);
 
-        expect(acceptedDiagnostics, `ILPA/${mode}/accept bookmark diagnostics mismatch vs revised`).toEqual(
-          revisedDiagnostics
-        );
-        expect(rejectedDiagnostics, `ILPA/${mode}/reject bookmark diagnostics mismatch vs original`).toEqual(
-          originalDiagnostics
-        );
+          expect(acceptedDiagnostics, `ILPA/${mode}/accept bookmark diagnostics mismatch vs revised`).toEqual(
+            revisedDiagnostics
+          );
+          expect(rejectedDiagnostics, `ILPA/${mode}/reject bookmark diagnostics mismatch vs original`).toEqual(
+            originalDiagnostics
+          );
+        });
       },
       120000
     );

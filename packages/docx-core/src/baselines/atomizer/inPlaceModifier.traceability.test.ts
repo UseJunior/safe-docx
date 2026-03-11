@@ -6,7 +6,7 @@
  */
 
 import { describe, expect } from 'vitest';
-import { itAllure, allureStep, allureJsonAttachment } from '../../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import type { ComparisonUnitAtom, OpcPart } from '../../core-types.js';
 import { CorrelationStatus } from '../../core-types.js';
 import {
@@ -25,9 +25,7 @@ import { childElements } from '../../primitives/index.js';
 import { el } from '../../testing/dom-test-helpers.js';
 import { assertDefined } from '../../testing/test-utils.js';
 
-const it = itAllure.epic('Document Comparison').withLabels({
-  feature: 'In-Place AST Modification',
-});
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Inplace Modifier Traceability' });
 
 /**
  * Create a mock atom for testing.
@@ -54,61 +52,61 @@ describe('In-Place AST Modifier', () => {
   const dateStr = '2025-01-01T00:00:00Z';
 
   describe('Insertion Wrapping', () => {
-    const insertionIt = it.allure({ story: 'Insertion Wrapping', severity: 'critical' });
+    const insertionTest = test.allure({ story: 'Insertion Wrapping', severity: 'critical' });
 
-    insertionIt('should wrap a run element with w:ins to mark it as inserted', async () => {
+    insertionTest('should wrap a run element with w:ins to mark it as inserted', async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
       let p: Element;
       let r: Element;
       let result: boolean;
 
-      await allureStep('Given a paragraph with a run containing "inserted text"', async () => {
+      await given('a paragraph with a run containing "inserted text"', async () => {
         const t = el('w:t', {}, undefined, 'inserted text');
         r = el('w:r', {}, [t]);
         p = el('w:p', {}, [r]);
-        await allureJsonAttachment('Initial structure', {
+        await attachPrettyJson('Initial structure', {
           paragraph: { children: ['w:r'] },
           run: { children: ['w:t'], text: 'inserted text' },
         });
       });
 
-      await allureStep('When wrapAsInserted is called on the run', async () => {
+      await when('wrapAsInserted is called on the run', () => {
         const state = createRevisionIdState();
         result = wrapAsInserted(r, author, dateStr, state);
       });
 
-      await allureStep('Then the operation succeeds', async () => {
+      await then('the operation succeeds', () => {
         expect(result).toBe(true);
       });
 
-      await allureStep('And the paragraph now has w:ins as its child', async () => {
+      await and('the paragraph now has w:ins as its child', () => {
         const pChildren = childElements(p);
         const ins = pChildren[0];
         assertDefined(ins, 'p children[0]');
         expect(ins.tagName).toBe('w:ins');
       });
 
-      await allureStep('And w:ins has the correct author attribute', async () => {
+      await and('w:ins has the correct author attribute', () => {
         const pChildren = childElements(p);
         const ins = pChildren[0];
         assertDefined(ins, 'p children[0]');
         expect(ins.getAttribute('w:author')).toBe(author);
       });
 
-      await allureStep('And w:ins has the correct date attribute', async () => {
+      await and('w:ins has the correct date attribute', () => {
         const pChildren = childElements(p);
         const ins = pChildren[0];
         assertDefined(ins, 'p children[0]');
         expect(ins.getAttribute('w:date')).toBe(dateStr);
       });
 
-      await allureStep('And w:ins has a unique revision ID', async () => {
+      await and('w:ins has a unique revision ID', () => {
         const pChildren = childElements(p);
         const ins = pChildren[0];
         assertDefined(ins, 'p children[0]');
         expect(ins.getAttribute('w:id')).toBe('1');
       });
 
-      await allureStep('And w:ins contains the original run', async () => {
+      await and('w:ins contains the original run', () => {
         const pChildren = childElements(p);
         const ins = pChildren[0];
         assertDefined(ins, 'p children[0]');
@@ -117,14 +115,14 @@ describe('In-Place AST Modifier', () => {
       });
     });
 
-    const insertionNormalIt = it.allure({ story: 'Insertion Wrapping', severity: 'normal' });
+    const insertionNormalTest = test.allure({ story: 'Insertion Wrapping', severity: 'normal' });
 
-    insertionNormalIt('should not wrap the same run twice', async () => {
+    insertionNormalTest('should not wrap the same run twice', async ({ given, then, and }: AllureBddContext) => {
       let r: Element;
       let firstResult: boolean;
       let secondResult: boolean;
 
-      await allureStep('Given a run element that has already been wrapped', async () => {
+      await given('a run element that has already been wrapped', () => {
         r = el('w:r');
         el('w:p', {}, [r]); // parent needed for DOM tree structure
 
@@ -133,19 +131,19 @@ describe('In-Place AST Modifier', () => {
         secondResult = wrapAsInserted(r, author, dateStr, state);
       });
 
-      await allureStep('Then the first wrap succeeds', async () => {
+      await then('the first wrap succeeds', () => {
         expect(firstResult).toBe(true);
       });
 
-      await allureStep('And the second wrap is skipped', async () => {
+      await and('the second wrap is skipped', () => {
         expect(secondResult).toBe(false);
       });
     });
 
-    insertionNormalIt('should increment revision IDs for each wrapped run', async () => {
+    insertionNormalTest('should increment revision IDs for each wrapped run', async ({ given, then, and }: AllureBddContext) => {
       let p: Element;
 
-      await allureStep('Given a paragraph with two runs', async () => {
+      await given('a paragraph with two runs', () => {
         const r1 = el('w:r');
         const r2 = el('w:r');
         p = el('w:p', {}, [r1, r2]);
@@ -155,14 +153,14 @@ describe('In-Place AST Modifier', () => {
         wrapAsInserted(r2, author, dateStr, state);
       });
 
-      await allureStep('Then first wrap has ID 1', async () => {
+      await then('first wrap has ID 1', () => {
         const pChildren = childElements(p);
         const first = pChildren[0];
         assertDefined(first, 'p children[0]');
         expect(first.getAttribute('w:id')).toBe('1');
       });
 
-      await allureStep('And second wrap has ID 2', async () => {
+      await and('second wrap has ID 2', () => {
         const pChildren = childElements(p);
         const second = pChildren[1];
         assertDefined(second, 'p children[1]');
@@ -172,37 +170,36 @@ describe('In-Place AST Modifier', () => {
   });
 
   describe('Deletion Wrapping', () => {
-    const deletionIt = it.allure({ story: 'Deletion Wrapping', severity: 'critical' });
+    const deletionTest = test.allure({ story: 'Deletion Wrapping', severity: 'critical' });
 
-    deletionIt('should wrap a run element with w:del and convert w:t to w:delText', async () => {
+    deletionTest('should wrap a run element with w:del and convert w:t to w:delText', async ({ given, when, then, and }: AllureBddContext) => {
       let p: Element;
       let r: Element;
-      let t: Element;
       let result: boolean;
 
-      await allureStep('Given a paragraph with a run containing "deleted text"', async () => {
-        t = el('w:t', {}, undefined, 'deleted text');
+      await given('a paragraph with a run containing "deleted text"', () => {
+        const t = el('w:t', {}, undefined, 'deleted text');
         r = el('w:r', {}, [t]);
         p = el('w:p', {}, [r]);
       });
 
-      await allureStep('When wrapAsDeleted is called on the run', async () => {
+      await when('wrapAsDeleted is called on the run', () => {
         const state = createRevisionIdState();
         result = wrapAsDeleted(r, author, dateStr, state);
       });
 
-      await allureStep('Then the operation succeeds', async () => {
+      await then('the operation succeeds', () => {
         expect(result).toBe(true);
       });
 
-      await allureStep('And the paragraph now has w:del as its child', async () => {
+      await and('the paragraph now has w:del as its child', () => {
         const pChildren = childElements(p);
         const del = pChildren[0];
         assertDefined(del, 'p children[0]');
         expect(del.tagName).toBe('w:del');
       });
 
-      await allureStep('And w:del contains the original run', async () => {
+      await and('w:del contains the original run', () => {
         const pChildren = childElements(p);
         const del = pChildren[0];
         assertDefined(del, 'p children[0]');
@@ -210,7 +207,7 @@ describe('In-Place AST Modifier', () => {
         expect(delChildren[0]).toBe(r);
       });
 
-      await allureStep('And w:t has been converted to w:delText', async () => {
+      await and('w:t has been converted to w:delText', () => {
         // After conversion, the original t element is replaced in the DOM.
         // Find the delText within the run.
         const rChildren = childElements(r);
@@ -219,7 +216,7 @@ describe('In-Place AST Modifier', () => {
         expect(delText.tagName).toBe('w:delText');
       });
 
-      await allureStep('And the text content is preserved', async () => {
+      await and('the text content is preserved', () => {
         const rChildren = childElements(r);
         const delText = rChildren.find(c => c.tagName === 'w:delText');
         assertDefined(delText, 'delText');
@@ -229,14 +226,14 @@ describe('In-Place AST Modifier', () => {
   });
 
   describe('Deleted Run Insertion', () => {
-    const deletedInsertionIt = it.allure({ story: 'Deleted Content Insertion', severity: 'critical' });
+    const deletedInsertionTest = test.allure({ story: 'Deleted Content Insertion', severity: 'critical' });
 
-    deletedInsertionIt('should clone and insert a deleted run after an existing run', async () => {
+    deletedInsertionTest('should clone and insert a deleted run after an existing run', async ({ given, then, and }: AllureBddContext) => {
       let targetP: Element;
       let existingR: Element;
       let result: Element | null;
 
-      await allureStep('Given a deleted run "deleted" in the original document', async () => {
+      await given('a deleted run "deleted" in the original document', () => {
         const originalT = el('w:t', {}, undefined, 'deleted');
         const originalR = el('w:r', { id: 'original' }, [originalT]);
         const originalP = el('w:p', {}, [originalR]);
@@ -256,18 +253,18 @@ describe('In-Place AST Modifier', () => {
         result = insertDeletedRun(deletedAtom, existingR, targetP, author, dateStr, state);
       });
 
-      await allureStep('Then a w:del element is created', async () => {
+      await then('a w:del element is created', () => {
         expect(result).not.toBeNull();
         expect(result!.tagName).toBe('w:del');
       });
 
-      await allureStep('And it is inserted after the existing run', async () => {
+      await and('it is inserted after the existing run', () => {
         const targetChildren = childElements(targetP);
         expect(targetChildren).toHaveLength(2);
         expect(targetChildren[1]).toBe(result);
       });
 
-      await allureStep('And it contains a cloned run with w:delText', async () => {
+      await and('it contains a cloned run with w:delText', () => {
         assertDefined(result, 'result');
         const resultChildren = childElements(result);
         const clonedRun = resultChildren[0];
@@ -280,14 +277,14 @@ describe('In-Place AST Modifier', () => {
       });
     });
 
-    const deletedInsertionNormalIt = it.allure({ story: 'Deleted Content Insertion', severity: 'normal' });
+    const deletedInsertionNormalTest = test.allure({ story: 'Deleted Content Insertion', severity: 'normal' });
 
-    deletedInsertionNormalIt('should insert after pPr when insertAfterRun is null', async () => {
+    deletedInsertionNormalTest('should insert after pPr when insertAfterRun is null', async ({ given, then }: AllureBddContext) => {
       let targetP: Element;
       let pPr: Element;
       let result: Element | null;
 
-      await allureStep('Given a target paragraph with pPr and a run', async () => {
+      await given('a target paragraph with pPr and a run', () => {
         const originalR = el('w:r');
         el('w:p', {}, [originalR]); // parent needed for DOM tree structure
 
@@ -303,7 +300,7 @@ describe('In-Place AST Modifier', () => {
         result = insertDeletedRun(deletedAtom, null, targetP, author, dateStr, state);
       });
 
-      await allureStep('Then the order is: pPr, del, existingR', async () => {
+      await then('the order is: pPr, del, existingR', () => {
         const targetChildren = childElements(targetP);
         expect(targetChildren[0]).toBe(pPr);
         expect(targetChildren[1]).toBe(result);
@@ -315,14 +312,14 @@ describe('In-Place AST Modifier', () => {
   });
 
   describe('Move Tracking', () => {
-    const moveIt = it.allure({ story: 'Move Tracking', severity: 'critical' });
+    const moveTest = test.allure({ story: 'Move Tracking', severity: 'critical' });
 
-    moveIt('should wrap moveFrom with range markers and convert to delText', async () => {
+    moveTest('should wrap moveFrom with range markers and convert to delText', async ({ given, then, and }: AllureBddContext) => {
       let p: Element;
       let r: Element;
       let result: boolean;
 
-      await allureStep('Given a paragraph with a run to be marked as move source', async () => {
+      await given('a paragraph with a run to be marked as move source', () => {
         const t = el('w:t', {}, undefined, 'moved text');
         r = el('w:r', {}, [t]);
         p = el('w:p', {}, [r]);
@@ -331,11 +328,11 @@ describe('In-Place AST Modifier', () => {
         result = wrapAsMoveFrom(r, 'move1', author, dateStr, state);
       });
 
-      await allureStep('Then the operation succeeds', async () => {
+      await then('the operation succeeds', () => {
         expect(result).toBe(true);
       });
 
-      await allureStep('And the structure is: rangeStart, moveFrom, rangeEnd', async () => {
+      await and('the structure is: rangeStart, moveFrom, rangeEnd', () => {
         const pChildren = childElements(p);
         expect(pChildren).toHaveLength(3);
         const rangeStart = pChildren[0];
@@ -349,14 +346,14 @@ describe('In-Place AST Modifier', () => {
         expect(rangeEnd.tagName).toBe('w:moveFromRangeEnd');
       });
 
-      await allureStep('And the move name is set correctly', async () => {
+      await and('the move name is set correctly', () => {
         const pChildren = childElements(p);
         const rangeStart = pChildren[0];
         assertDefined(rangeStart, 'p children[0]');
         expect(rangeStart.getAttribute('w:name')).toBe('move1');
       });
 
-      await allureStep('And w:t is converted to w:delText', async () => {
+      await and('w:t is converted to w:delText', () => {
         // After conversion, find the delText within the run
         const rChildren = childElements(r);
         const delText = rChildren.find(c => c.tagName === 'w:delText');
@@ -365,11 +362,11 @@ describe('In-Place AST Modifier', () => {
       });
     });
 
-    moveIt('should wrap moveTo with range markers and keep w:t', async () => {
+    moveTest('should wrap moveTo with range markers and keep w:t', async ({ given, then, and }: AllureBddContext) => {
       let p: Element;
       let t: Element;
 
-      await allureStep('Given a paragraph with a run to be marked as move destination', async () => {
+      await given('a paragraph with a run to be marked as move destination', () => {
         t = el('w:t', {}, undefined, 'moved');
         const r = el('w:r', {}, [t]);
         p = el('w:p', {}, [r]);
@@ -378,7 +375,7 @@ describe('In-Place AST Modifier', () => {
         wrapAsMoveTo(r, 'move1', author, dateStr, state);
       });
 
-      await allureStep('Then the structure is: rangeStart, moveTo, rangeEnd', async () => {
+      await then('the structure is: rangeStart, moveTo, rangeEnd', () => {
         const pChildren = childElements(p);
         expect(pChildren).toHaveLength(3);
         const rangeStart = pChildren[0];
@@ -392,15 +389,15 @@ describe('In-Place AST Modifier', () => {
         expect(rangeEnd.tagName).toBe('w:moveToRangeEnd');
       });
 
-      await allureStep('And w:t is NOT converted (remains w:t)', async () => {
+      await and('w:t is NOT converted (remains w:t)', () => {
         expect(t.tagName).toBe('w:t');
       });
     });
 
-    moveIt('should use linked range IDs for moveFrom and moveTo with same name', async () => {
+    moveTest('should use linked range IDs for moveFrom and moveTo with same name', async ({ given, then, and }: AllureBddContext) => {
       let p: Element;
 
-      await allureStep('Given two runs wrapped as moveFrom and moveTo with same name', async () => {
+      await given('two runs wrapped as moveFrom and moveTo with same name', () => {
         const r1 = el('w:r');
         const r2 = el('w:r');
         p = el('w:p', {}, [r1, r2]);
@@ -410,14 +407,14 @@ describe('In-Place AST Modifier', () => {
         wrapAsMoveTo(r2, 'move1', author, dateStr, state);
       });
 
-      await allureStep('Then moveFromRangeStart has sourceRangeId', async () => {
+      await then('moveFromRangeStart has sourceRangeId', () => {
         const pChildren = childElements(p);
         const moveFromStart = pChildren[0];
         assertDefined(moveFromStart, 'p children[0]');
         expect(moveFromStart.getAttribute('w:id')).toBe('1');
       });
 
-      await allureStep('And moveToRangeStart has destRangeId', async () => {
+      await and('moveToRangeStart has destRangeId', () => {
         const pChildren = childElements(p);
         const moveToStart = pChildren[3];
         assertDefined(moveToStart, 'p children[3]');
@@ -427,12 +424,12 @@ describe('In-Place AST Modifier', () => {
   });
 
   describe('Format Change Tracking', () => {
-    const formatIt = it.allure({ story: 'Format Change Tracking', severity: 'normal' });
+    const formatTest = test.allure({ story: 'Format Change Tracking', severity: 'normal' });
 
-    formatIt('should add rPrChange to existing rPr with old properties', async () => {
+    formatTest('should add rPrChange to existing rPr with old properties', async ({ given, then, and }: AllureBddContext) => {
       let rPr: Element;
 
-      await allureStep('Given a run with bold and italic formatting', async () => {
+      await given('a run with bold and italic formatting', () => {
         rPr = el('w:rPr', {}, [
           el('w:b'),
           el('w:i'),
@@ -446,20 +443,20 @@ describe('In-Place AST Modifier', () => {
         addFormatChange(r, oldRPr, author, dateStr, state);
       });
 
-      await allureStep('Then rPr contains rPrChange', async () => {
+      await then('rPr contains rPrChange', () => {
         const rPrChildren = childElements(rPr);
         const rPrChange = rPrChildren.find(c => c.tagName === 'w:rPrChange');
         expect(rPrChange).toBeDefined();
       });
 
-      await allureStep('And rPrChange has the correct author', async () => {
+      await and('rPrChange has the correct author', () => {
         const rPrChildren = childElements(rPr);
         const rPrChange = rPrChildren.find(c => c.tagName === 'w:rPrChange');
         assertDefined(rPrChange, 'rPrChange');
         expect(rPrChange.getAttribute('w:author')).toBe(author);
       });
 
-      await allureStep('And rPrChange contains the old properties inside a w:rPr wrapper', async () => {
+      await and('rPrChange contains the old properties inside a w:rPr wrapper', () => {
         const rPrChildren = childElements(rPr);
         const rPrChange = rPrChildren.find(c => c.tagName === 'w:rPrChange');
         assertDefined(rPrChange, 'rPrChange');
@@ -474,10 +471,10 @@ describe('In-Place AST Modifier', () => {
       });
     });
 
-    formatIt('should create rPr if it does not exist', async () => {
+    formatTest('should create rPr if it does not exist', async ({ given, then, and }: AllureBddContext) => {
       let r: Element;
 
-      await allureStep('Given a run with no rPr', async () => {
+      await given('a run with no rPr', () => {
         const t = el('w:t', {}, undefined, 'text');
         r = el('w:r', {}, [t]);
 
@@ -487,14 +484,14 @@ describe('In-Place AST Modifier', () => {
         addFormatChange(r, oldRPr, author, dateStr, state);
       });
 
-      await allureStep('Then rPr is created', async () => {
+      await then('rPr is created', () => {
         const rChildren = childElements(r);
         const rPr = rChildren[0];
         assertDefined(rPr, 'r children[0]');
         expect(rPr.tagName).toBe('w:rPr');
       });
 
-      await allureStep('And it contains rPrChange', async () => {
+      await and('it contains rPrChange', () => {
         const rChildren = childElements(r);
         const rPr = rChildren[0];
         assertDefined(rPr, 'r children[0]');
@@ -506,13 +503,13 @@ describe('In-Place AST Modifier', () => {
   });
 
   describe('Empty Paragraph Wrapping', () => {
-    const paragraphIt = it.allure({ story: 'Empty Paragraph Handling', severity: 'normal' });
+    const paragraphTest = test.allure({ story: 'Empty Paragraph Handling', severity: 'normal' });
 
-    paragraphIt('should add PPR-INS marker for empty paragraphs so reject-all removes them', async () => {
+    paragraphTest('should add PPR-INS marker for empty paragraphs so reject-all removes them', async ({ given, then, and }: AllureBddContext) => {
       let p: Element;
       let result: boolean;
 
-      await allureStep('Given an empty paragraph in a body', async () => {
+      await given('an empty paragraph in a body', () => {
         const pPr = el('w:pPr');
         p = el('w:p', {}, [pPr]);
         el('w:body', {}, [p]);
@@ -521,11 +518,11 @@ describe('In-Place AST Modifier', () => {
         result = wrapParagraphAsInserted(p, author, dateStr, state);
       });
 
-      await allureStep('Then the operation succeeds', async () => {
+      await then('the operation succeeds', () => {
         expect(result).toBe(true);
       });
 
-      await allureStep('And a PPR-INS marker is added in pPr/rPr', async () => {
+      await and('a PPR-INS marker is added in pPr/rPr', () => {
         const pChildren = childElements(p);
         const pPr = pChildren.find((c) => c.tagName === 'w:pPr');
         assertDefined(pPr, 'pPr');
@@ -537,12 +534,12 @@ describe('In-Place AST Modifier', () => {
       });
     });
 
-    paragraphIt('should add a paragraph-mark w:del marker in w:pPr/w:rPr for deleted empty paragraph', async () => {
+    paragraphTest('should add a paragraph-mark w:del marker in w:pPr/w:rPr for deleted empty paragraph', async ({ given, then, and }: AllureBddContext) => {
       let body: Element;
       let p: Element;
       let result: boolean;
 
-      await allureStep('Given an empty paragraph in a body', async () => {
+      await given('an empty paragraph in a body', () => {
         p = el('w:p');
         body = el('w:body', {}, [p]);
 
@@ -550,18 +547,18 @@ describe('In-Place AST Modifier', () => {
         result = wrapParagraphAsDeleted(p, author, dateStr, state);
       });
 
-      await allureStep('Then the operation succeeds', async () => {
+      await then('the operation succeeds', () => {
         expect(result).toBe(true);
       });
 
-      await allureStep('And the body still contains the paragraph (no illegal <w:del><w:p> nesting)', async () => {
+      await and('the body still contains the paragraph (no illegal <w:del><w:p> nesting)', () => {
         const bodyChildren = childElements(body);
         const first = bodyChildren[0];
         assertDefined(first, 'body children[0]');
         expect(first.tagName).toBe('w:p');
       });
 
-      await allureStep('And w:pPr/w:rPr contains a w:del paragraph-mark marker', async () => {
+      await and('w:pPr/w:rPr contains a w:del paragraph-mark marker', () => {
         const pChildren = childElements(p);
         const pPr = pChildren.find((c) => c.tagName === 'w:pPr');
         assertDefined(pPr, 'pPr');
@@ -578,23 +575,23 @@ describe('In-Place AST Modifier', () => {
   });
 
   describe('Paragraph Property Change', () => {
-    const pPrChangeIt = it.allure({ story: 'Paragraph Property Change', severity: 'critical' });
+    const pPrChangeTest = test.allure({ story: 'Paragraph Property Change', severity: 'critical' });
 
-    pPrChangeIt('should emit pPrChange with correct author and date', async () => {
+    pPrChangeTest('should emit pPrChange with correct author and date', async ({ given, when, then }: AllureBddContext) => {
       let p: Element;
 
-      await allureStep('Given a paragraph with pPr containing jc alignment', async () => {
+      await given('a paragraph with pPr containing jc alignment', () => {
         const jc = el('w:jc', { 'w:val': 'center' });
         const pPr = el('w:pPr', {}, [jc]);
         p = el('w:p', {}, [pPr]);
       });
 
-      await allureStep('When addParagraphPropertyChange is called', async () => {
+      await when('addParagraphPropertyChange is called', () => {
         const state = createRevisionIdState();
         addParagraphPropertyChange(p, author, dateStr, state);
       });
 
-      await allureStep('Then pPr contains w:pPrChange with correct attributes', async () => {
+      await then('pPr contains w:pPrChange with correct attributes', () => {
         const pPr = childElements(p).find(c => c.tagName === 'w:pPr');
         assertDefined(pPr, 'pPr');
         const pPrChange = childElements(pPr).find(c => c.tagName === 'w:pPrChange');
@@ -604,10 +601,10 @@ describe('In-Place AST Modifier', () => {
       });
     });
 
-    pPrChangeIt('should exclude rPr, sectPr, and pPrChange from the pPrChange snapshot', async () => {
+    pPrChangeTest('should exclude rPr, sectPr, and pPrChange from the pPrChange snapshot', async ({ given, when, then }: AllureBddContext) => {
       let p: Element;
 
-      await allureStep('Given a paragraph with pPr containing jc, rPr, and sectPr', async () => {
+      await given('a paragraph with pPr containing jc, rPr, and sectPr', () => {
         const jc = el('w:jc', { 'w:val': 'center' });
         const rPr = el('w:rPr', {}, [el('w:b')]);
         const sectPr = el('w:sectPr');
@@ -615,12 +612,12 @@ describe('In-Place AST Modifier', () => {
         p = el('w:p', {}, [pPr]);
       });
 
-      await allureStep('When addParagraphPropertyChange is called', async () => {
+      await when('addParagraphPropertyChange is called', () => {
         const state = createRevisionIdState();
         addParagraphPropertyChange(p, author, dateStr, state);
       });
 
-      await allureStep('Then the pPrChange inner pPr contains only jc (excludes rPr, sectPr)', async () => {
+      await then('the pPrChange inner pPr contains only jc (excludes rPr, sectPr)', () => {
         const pPr = childElements(p).find(c => c.tagName === 'w:pPr');
         assertDefined(pPr, 'pPr');
         const pPrChange = childElements(pPr).find(c => c.tagName === 'w:pPrChange');
@@ -633,23 +630,23 @@ describe('In-Place AST Modifier', () => {
       });
     });
 
-    const pPrChangeNormalIt = it.allure({ story: 'Paragraph Property Change', severity: 'normal' });
+    const pPrChangeNormalTest = test.allure({ story: 'Paragraph Property Change', severity: 'normal' });
 
-    pPrChangeNormalIt('should be idempotent — calling twice does not duplicate pPrChange', async () => {
+    pPrChangeNormalTest('should be idempotent — calling twice does not duplicate pPrChange', async ({ given, when, then }: AllureBddContext) => {
       let p: Element;
 
-      await allureStep('Given a paragraph with pPr', async () => {
+      await given('a paragraph with pPr', () => {
         const pPr = el('w:pPr', {}, [el('w:jc', { 'w:val': 'left' })]);
         p = el('w:p', {}, [pPr]);
       });
 
-      await allureStep('When addParagraphPropertyChange is called twice', async () => {
+      await when('addParagraphPropertyChange is called twice', () => {
         const state = createRevisionIdState();
         addParagraphPropertyChange(p, author, dateStr, state);
         addParagraphPropertyChange(p, author, dateStr, state);
       });
 
-      await allureStep('Then pPr contains exactly one pPrChange', async () => {
+      await then('pPr contains exactly one pPrChange', () => {
         const pPr = childElements(p).find(c => c.tagName === 'w:pPr');
         assertDefined(pPr, 'pPr');
         const pPrChanges = childElements(pPr).filter(c => c.tagName === 'w:pPrChange');
@@ -657,22 +654,22 @@ describe('In-Place AST Modifier', () => {
       });
     });
 
-    pPrChangeNormalIt('should place pPrChange after other pPr children (schema ordering)', async () => {
+    pPrChangeNormalTest('should place pPrChange after other pPr children (schema ordering)', async ({ given, when, then }: AllureBddContext) => {
       let p: Element;
 
-      await allureStep('Given a paragraph with pPr containing jc and rPr', async () => {
+      await given('a paragraph with pPr containing jc and rPr', () => {
         const jc = el('w:jc', { 'w:val': 'right' });
         const rPr = el('w:rPr', {}, [el('w:i')]);
         const pPr = el('w:pPr', {}, [jc, rPr]);
         p = el('w:p', {}, [pPr]);
       });
 
-      await allureStep('When addParagraphPropertyChange is called', async () => {
+      await when('addParagraphPropertyChange is called', () => {
         const state = createRevisionIdState();
         addParagraphPropertyChange(p, author, dateStr, state);
       });
 
-      await allureStep('Then pPrChange is the last child of pPr', async () => {
+      await then('pPrChange is the last child of pPr', () => {
         const pPr = childElements(p).find(c => c.tagName === 'w:pPr');
         assertDefined(pPr, 'pPr');
         const pPrChildren = childElements(pPr);

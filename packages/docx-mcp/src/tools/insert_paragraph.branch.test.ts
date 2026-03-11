@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { readFile } from './read_file.js';
 import {
@@ -10,7 +10,7 @@ import {
 } from '../testing/session-test-utils.js';
 import { firstParaIdFromToon } from '../testing/docx_test_utils.js';
 
-const test = it.epic('Document Editing').withLabels({ feature: 'Insert Paragraph' });
+const test = testAllure.epic('Document Editing').withLabels({ feature: 'Insert Paragraph' });
 
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];

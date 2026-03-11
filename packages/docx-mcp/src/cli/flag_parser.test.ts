@@ -1,34 +1,34 @@
 import { describe, expect } from 'vitest';
-import { itAllure } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { parseToolFlags, generateToolHelp } from './flag_parser.js';
 
-const it = itAllure.epic('Document Editing').withLabels({ feature: 'CLI Flag Parser' });
+const test = testAllure.epic('Document Editing').withLabels({ feature: 'CLI Flag Parser' });
 
 describe('parseToolFlags', () => {
   describe('basic types', () => {
-    it('parses string flags for read_file', () => {
+    test('parses string flags for read_file', () => {
       const { args } = parseToolFlags(['test.docx', '--format', 'json'], 'read_file');
       expect(args.file_path).toBe('test.docx');
       expect(args.format).toBe('json');
     });
 
-    it('parses number flags', () => {
+    test('parses number flags', () => {
       const { args } = parseToolFlags(['test.docx', '--offset', '5', '--limit', '10'], 'read_file');
       expect(args.offset).toBe(5);
       expect(args.limit).toBe(10);
     });
 
-    it('parses boolean flags with explicit values', () => {
+    test('parses boolean flags with explicit values', () => {
       const { args } = parseToolFlags(['test.docx', '--show-formatting', 'false'], 'read_file');
       expect(args.show_formatting).toBe(false);
     });
 
-    it('parses boolean flags as bare flags (true)', () => {
+    test('parses boolean flags as bare flags (true)', () => {
       const { args } = parseToolFlags(['test.docx', '--show-formatting'], 'read_file');
       expect(args.show_formatting).toBe(true);
     });
 
-    it('parses enum flags and rejects invalid values', () => {
+    test('parses enum flags and rejects invalid values', () => {
       const { args } = parseToolFlags(['test.docx', '--format', 'toon'], 'read_file');
       expect(args.format).toBe('toon');
 
@@ -39,7 +39,7 @@ describe('parseToolFlags', () => {
   });
 
   describe('array flags', () => {
-    it('collects repeatable array flags', () => {
+    test('collects repeatable array flags', () => {
       const { args } = parseToolFlags(
         ['test.docx', '--patterns', 'foo', '--patterns', 'bar'],
         'grep',
@@ -47,14 +47,14 @@ describe('parseToolFlags', () => {
       expect(args.patterns).toEqual(['foo', 'bar']);
     });
 
-    it('supports single array value', () => {
+    test('supports single array value', () => {
       const { args } = parseToolFlags(['test.docx', '--patterns', 'hello'], 'grep');
       expect(args.patterns).toEqual(['hello']);
     });
   });
 
   describe('object flags (JSON strings)', () => {
-    it('parses JSON string for nested object params', () => {
+    test('parses JSON string for nested object params', () => {
       const { args } = parseToolFlags(
         ['test.docx', '--paragraph-spacing', '{"before_twips": 120}'],
         'format_layout',
@@ -62,7 +62,7 @@ describe('parseToolFlags', () => {
       expect(args.paragraph_spacing).toEqual({ before_twips: 120 });
     });
 
-    it('rejects invalid JSON', () => {
+    test('rejects invalid JSON', () => {
       expect(() =>
         parseToolFlags(['test.docx', '--paragraph-spacing', 'not-json'], 'format_layout'),
       ).toThrow('Invalid JSON');
@@ -70,17 +70,17 @@ describe('parseToolFlags', () => {
   });
 
   describe('positional file_path extraction', () => {
-    it('treats first positional arg as file_path', () => {
+    test('treats first positional arg as file_path', () => {
       const { args } = parseToolFlags(['/path/to/doc.docx'], 'read_file');
       expect(args.file_path).toBe('/path/to/doc.docx');
     });
 
-    it('uses --file-path flag when explicitly provided', () => {
+    test('uses --file-path flag when explicitly provided', () => {
       const { args } = parseToolFlags(['--file-path', '/explicit.docx'], 'read_file');
       expect(args.file_path).toBe('/explicit.docx');
     });
 
-    it('does not consume positional as file_path for tools without that param', () => {
+    test('does not consume positional as file_path for tools without that param', () => {
       expect(() => parseToolFlags(['extra-arg'], 'merge_plans')).toThrow(
         'Unexpected positional argument',
       );
@@ -88,7 +88,7 @@ describe('parseToolFlags', () => {
   });
 
   describe('short alias resolution', () => {
-    it('resolves --para alias for replace_text', () => {
+    test('resolves --para alias for replace_text', () => {
       const { args } = parseToolFlags(
         ['test.docx', '--para', '_bk_x', '--old', 'hello', '--new', 'world', '--instruction', 'fix'],
         'replace_text',
@@ -98,25 +98,25 @@ describe('parseToolFlags', () => {
       expect(args.new_string).toBe('world');
     });
 
-    it('resolves -o alias for save', () => {
+    test('resolves -o alias for save', () => {
       const { args } = parseToolFlags(['test.docx', '-o', '/out.docx'], 'save');
       expect(args.save_to_local_path).toBe('/out.docx');
     });
 
-    it('resolves global --session alias', () => {
+    test('resolves global --session alias', () => {
       const { args } = parseToolFlags(['--session', 'ses_abc123def456'], 'read_file');
       expect(args.session_id).toBe('ses_abc123def456');
     });
   });
 
   describe('required field validation', () => {
-    it('throws on missing required fields', () => {
+    test('throws on missing required fields', () => {
       expect(() => parseToolFlags(['test.docx'], 'replace_text')).toThrow(
         'Missing required parameter',
       );
     });
 
-    it('does not throw when all required fields are provided', () => {
+    test('does not throw when all required fields are provided', () => {
       expect(() =>
         parseToolFlags(
           [
@@ -133,7 +133,7 @@ describe('parseToolFlags', () => {
   });
 
   describe('unknown flag rejection', () => {
-    it('rejects flags not in the schema', () => {
+    test('rejects flags not in the schema', () => {
       expect(() => parseToolFlags(['test.docx', '--bogus', 'val'], 'read_file')).toThrow(
         'Unknown flag: --bogus',
       );
@@ -141,29 +141,29 @@ describe('parseToolFlags', () => {
   });
 
   describe('help flag detection', () => {
-    it('detects --help', () => {
+    test('detects --help', () => {
       const { help } = parseToolFlags(['--help'], 'read_file');
       expect(help).toBe(true);
     });
 
-    it('detects -h', () => {
+    test('detects -h', () => {
       const { help } = parseToolFlags(['-h'], 'read_file');
       expect(help).toBe(true);
     });
 
-    it('skips required field validation when help is requested', () => {
+    test('skips required field validation when help is requested', () => {
       expect(() => parseToolFlags(['--help'], 'replace_text')).not.toThrow();
     });
   });
 
   describe('number coercion', () => {
-    it('rejects NaN for number flags', () => {
+    test('rejects NaN for number flags', () => {
       expect(() => parseToolFlags(['test.docx', '--offset', 'abc'], 'read_file')).toThrow(
         'Invalid number',
       );
     });
 
-    it('parses negative numbers', () => {
+    test('parses negative numbers', () => {
       const { args } = parseToolFlags(['test.docx', '--offset', '-5'], 'read_file');
       expect(args.offset).toBe(-5);
     });
@@ -171,7 +171,7 @@ describe('parseToolFlags', () => {
 });
 
 describe('generateToolHelp', () => {
-  it('produces help text for read_file with description and flags', () => {
+  test('produces help text for read_file with description and flags', () => {
     const help = generateToolHelp('read_file');
     expect(help).toContain('safe-docx read-file');
     expect(help).toContain('Read document content');
@@ -180,18 +180,18 @@ describe('generateToolHelp', () => {
     expect(help).toContain('--limit');
   });
 
-  it('marks required params', () => {
+  test('marks required params', () => {
     const help = generateToolHelp('replace_text');
     expect(help).toContain('(required)');
     expect(help).toContain('--target-paragraph-id');
   });
 
-  it('shows aliases', () => {
+  test('shows aliases', () => {
     const help = generateToolHelp('save');
     expect(help).toContain('-o');
   });
 
-  it('throws for unknown tool', () => {
+  test('throws for unknown tool', () => {
     expect(() => generateToolHelp('nonexistent_tool')).toThrow('Unknown tool');
   });
 });

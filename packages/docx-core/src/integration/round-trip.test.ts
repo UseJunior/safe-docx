@@ -10,7 +10,9 @@
  */
 
 import { describe, expect, beforeAll } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Round-Trip Correctness' });
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { compareDocuments } from '../index.js';
@@ -44,110 +46,134 @@ const fixturesPath = join(dirname(import.meta.url.replace('file://', '')), '../t
 
 describe('Round-Trip Tests - Accept All Changes', () => {
   describe('Simple Fixtures', () => {
-    it('simple-word-change: accept changes should match revised', async () => {
-      const original = await readFile(join(fixturesPath, 'simple-word-change', 'original.docx'));
-      const revised = await readFile(join(fixturesPath, 'simple-word-change', 'revised.docx'));
+    test('simple-word-change: accept changes should match revised', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('simple-word-change fixture documents are loaded', async () => {
+        original = await readFile(join(fixturesPath, 'simple-word-change', 'original.docx'));
+        revised = await readFile(join(fixturesPath, 'simple-word-change', 'revised.docx'));
+      });
+      let acceptedText: string, revisedText: string;
+      await when('documents are compared and all changes are accepted', async () => {
+        // Compare documents
+        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
 
-      // Compare documents
-      const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        // Extract text from comparison result after accepting changes
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const acceptedXml = acceptAllChanges(resultXml);
+        acceptedText = extractTextWithParagraphs(acceptedXml);
 
-      // Extract text from comparison result after accepting changes
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const acceptedXml = acceptAllChanges(resultXml);
-      const acceptedText = extractTextWithParagraphs(acceptedXml);
+        // Extract text from revised document
+        const revisedArchive = await DocxArchive.load(revised);
+        const revisedXml = await revisedArchive.getDocumentXml();
+        revisedText = extractTextWithParagraphs(revisedXml);
+      });
+      await then('accepted text matches revised text', () => {
+        const comparison = compareTexts(revisedText, acceptedText);
 
-      // Extract text from revised document
-      const revisedArchive = await DocxArchive.load(revised);
-      const revisedXml = await revisedArchive.getDocumentXml();
-      const revisedText = extractTextWithParagraphs(revisedXml);
+        console.log('\n[simple-word-change] Accept changes comparison:');
+        console.log(`  Revised text length: ${comparison.expectedLength}`);
+        console.log(`  Accepted text length: ${comparison.actualLength}`);
+        console.log(`  Identical: ${comparison.identical}`);
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      const comparison = compareTexts(revisedText, acceptedText);
+        if (!comparison.normalizedIdentical) {
+          console.log('  Differences:', comparison.differences);
+        }
 
-      console.log('\n[simple-word-change] Accept changes comparison:');
-      console.log(`  Revised text length: ${comparison.expectedLength}`);
-      console.log(`  Accepted text length: ${comparison.actualLength}`);
-      console.log(`  Identical: ${comparison.identical}`);
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
-
-      if (!comparison.normalizedIdentical) {
-        console.log('  Differences:', comparison.differences);
-      }
-
-      expect(comparison.normalizedIdentical).toBe(true);
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
 
-    it('paragraph-insert: accept changes should match revised', async () => {
-      const original = await readFile(join(fixturesPath, 'paragraph-insert', 'original.docx'));
-      const revised = await readFile(join(fixturesPath, 'paragraph-insert', 'revised.docx'));
+    test('paragraph-insert: accept changes should match revised', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('paragraph-insert fixture documents are loaded', async () => {
+        original = await readFile(join(fixturesPath, 'paragraph-insert', 'original.docx'));
+        revised = await readFile(join(fixturesPath, 'paragraph-insert', 'revised.docx'));
+      });
+      let acceptedText: string, revisedText: string;
+      await when('documents are compared and all changes are accepted', async () => {
+        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
 
-      const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const acceptedXml = acceptAllChanges(resultXml);
+        acceptedText = extractTextWithParagraphs(acceptedXml);
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const acceptedXml = acceptAllChanges(resultXml);
-      const acceptedText = extractTextWithParagraphs(acceptedXml);
+        const revisedArchive = await DocxArchive.load(revised);
+        const revisedXml = await revisedArchive.getDocumentXml();
+        revisedText = extractTextWithParagraphs(revisedXml);
+      });
+      await then('accepted text matches revised text', () => {
+        const comparison = compareTexts(revisedText, acceptedText);
 
-      const revisedArchive = await DocxArchive.load(revised);
-      const revisedXml = await revisedArchive.getDocumentXml();
-      const revisedText = extractTextWithParagraphs(revisedXml);
+        console.log('\n[paragraph-insert] Accept changes comparison:');
+        console.log(`  Revised text length: ${comparison.expectedLength}`);
+        console.log(`  Accepted text length: ${comparison.actualLength}`);
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      const comparison = compareTexts(revisedText, acceptedText);
-
-      console.log('\n[paragraph-insert] Accept changes comparison:');
-      console.log(`  Revised text length: ${comparison.expectedLength}`);
-      console.log(`  Accepted text length: ${comparison.actualLength}`);
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
-
-      expect(comparison.normalizedIdentical).toBe(true);
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
 
-    it('paragraph-delete: accept changes should match revised', async () => {
-      const original = await readFile(join(fixturesPath, 'paragraph-delete', 'original.docx'));
-      const revised = await readFile(join(fixturesPath, 'paragraph-delete', 'revised.docx'));
+    test('paragraph-delete: accept changes should match revised', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('paragraph-delete fixture documents are loaded', async () => {
+        original = await readFile(join(fixturesPath, 'paragraph-delete', 'original.docx'));
+        revised = await readFile(join(fixturesPath, 'paragraph-delete', 'revised.docx'));
+      });
+      let acceptedText: string, revisedText: string;
+      await when('documents are compared and all changes are accepted', async () => {
+        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
 
-      const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const acceptedXml = acceptAllChanges(resultXml);
+        acceptedText = extractTextWithParagraphs(acceptedXml);
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const acceptedXml = acceptAllChanges(resultXml);
-      const acceptedText = extractTextWithParagraphs(acceptedXml);
+        const revisedArchive = await DocxArchive.load(revised);
+        const revisedXml = await revisedArchive.getDocumentXml();
+        revisedText = extractTextWithParagraphs(revisedXml);
+      });
+      await then('accepted text matches revised text', () => {
+        const comparison = compareTexts(revisedText, acceptedText);
 
-      const revisedArchive = await DocxArchive.load(revised);
-      const revisedXml = await revisedArchive.getDocumentXml();
-      const revisedText = extractTextWithParagraphs(revisedXml);
+        console.log('\n[paragraph-delete] Accept changes comparison:');
+        console.log(`  Revised text length: ${comparison.expectedLength}`);
+        console.log(`  Accepted text length: ${comparison.actualLength}`);
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      const comparison = compareTexts(revisedText, acceptedText);
-
-      console.log('\n[paragraph-delete] Accept changes comparison:');
-      console.log(`  Revised text length: ${comparison.expectedLength}`);
-      console.log(`  Accepted text length: ${comparison.actualLength}`);
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
-
-      expect(comparison.normalizedIdentical).toBe(true);
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
 
-    it('no-change: accept changes should match both original and revised', async () => {
-      const original = await readFile(join(fixturesPath, 'no-change', 'original.docx'));
-      const revised = await readFile(join(fixturesPath, 'no-change', 'revised.docx'));
+    test('no-change: accept changes should match both original and revised', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('no-change fixture documents are loaded', async () => {
+        original = await readFile(join(fixturesPath, 'no-change', 'original.docx'));
+        revised = await readFile(join(fixturesPath, 'no-change', 'revised.docx'));
+      });
+      let acceptedText: string, revisedText: string;
+      await when('identical documents are compared and all changes are accepted', async () => {
+        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
 
-      const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const acceptedXml = acceptAllChanges(resultXml);
+        acceptedText = extractTextWithParagraphs(acceptedXml);
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const acceptedXml = acceptAllChanges(resultXml);
-      const acceptedText = extractTextWithParagraphs(acceptedXml);
+        const revisedArchive = await DocxArchive.load(revised);
+        const revisedXml = await revisedArchive.getDocumentXml();
+        revisedText = extractTextWithParagraphs(revisedXml);
+      });
+      await then('accepted text matches revised text', () => {
+        const comparison = compareTexts(revisedText, acceptedText);
 
-      const revisedArchive = await DocxArchive.load(revised);
-      const revisedXml = await revisedArchive.getDocumentXml();
-      const revisedText = extractTextWithParagraphs(revisedXml);
+        console.log('\n[no-change] Accept changes comparison:');
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      const comparison = compareTexts(revisedText, acceptedText);
-
-      console.log('\n[no-change] Accept changes comparison:');
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
-
-      expect(comparison.normalizedIdentical).toBe(true);
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
   });
 
@@ -165,144 +191,173 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       });
     }, 120000);
 
-    it('accept all changes should produce text matching revised document', async () => {
-      // Extract text from comparison result after accepting changes
-      const resultArchive = await DocxArchive.load(comparisonResult.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const acceptedXml = acceptAllChanges(resultXml);
-      const acceptedText = extractTextWithParagraphs(acceptedXml);
+    test('accept all changes should produce text matching revised document', async ({ given, when, then }: AllureBddContext) => {
+      await given('ILPA comparison result is pre-computed in beforeAll', () => {});
+      let acceptedText: string, revisedText: string;
+      await when('all changes are accepted from the comparison result', async () => {
+        // Extract text from comparison result after accepting changes
+        const resultArchive = await DocxArchive.load(comparisonResult.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const acceptedXml = acceptAllChanges(resultXml);
+        acceptedText = extractTextWithParagraphs(acceptedXml);
 
-      // Extract text from revised document
-      const revisedArchive = await DocxArchive.load(revisedBuffer);
-      const revisedXml = await revisedArchive.getDocumentXml();
-      const revisedText = extractTextWithParagraphs(revisedXml);
+        // Extract text from revised document
+        const revisedArchive = await DocxArchive.load(revisedBuffer);
+        const revisedXml = await revisedArchive.getDocumentXml();
+        revisedText = extractTextWithParagraphs(revisedXml);
 
-      // Save for debugging
-      await writeIntegrationArtifact('accepted_text.txt', acceptedText);
-      await writeIntegrationArtifact('revised_text.txt', revisedText);
+        // Save for debugging
+        await writeIntegrationArtifact('accepted_text.txt', acceptedText);
+        await writeIntegrationArtifact('revised_text.txt', revisedText);
+      });
+      await then('accepted text matches the revised document text', () => {
+        const comparison = compareTexts(revisedText, acceptedText);
 
-      const comparison = compareTexts(revisedText, acceptedText);
+        console.log('\n[ILPA Large Doc] Accept changes comparison:');
+        console.log(`  Revised text length: ${comparison.expectedLength}`);
+        console.log(`  Accepted text length: ${comparison.actualLength}`);
+        console.log(`  Identical: ${comparison.identical}`);
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      console.log('\n[ILPA Large Doc] Accept changes comparison:');
-      console.log(`  Revised text length: ${comparison.expectedLength}`);
-      console.log(`  Accepted text length: ${comparison.actualLength}`);
-      console.log(`  Identical: ${comparison.identical}`);
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
+        if (!comparison.normalizedIdentical) {
+          console.log('  First differences:', comparison.differences.slice(0, 3));
+        }
+        console.log(`  Debug output mode: ${getIntegrationOutputModeLabel()}`);
 
-      if (!comparison.normalizedIdentical) {
-        console.log('  First differences:', comparison.differences.slice(0, 3));
-      }
-      console.log(`  Debug output mode: ${getIntegrationOutputModeLabel()}`);
-
-      // This is the critical assertion
-      expect(comparison.normalizedIdentical).toBe(true);
+        // This is the critical assertion
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
   });
 });
 
 describe('Round-Trip Tests - Reject All Changes', () => {
   describe('Simple Fixtures', () => {
-    it('simple-word-change: reject changes should match original', async () => {
-      const original = await readFile(join(fixturesPath, 'simple-word-change', 'original.docx'));
-      const revised = await readFile(join(fixturesPath, 'simple-word-change', 'revised.docx'));
+    test('simple-word-change: reject changes should match original', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('simple-word-change fixture documents are loaded', async () => {
+        original = await readFile(join(fixturesPath, 'simple-word-change', 'original.docx'));
+        revised = await readFile(join(fixturesPath, 'simple-word-change', 'revised.docx'));
+      });
+      let rejectedText: string, originalText: string;
+      await when('documents are compared and all changes are rejected', async () => {
+        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
 
-      const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const rejectedXml = rejectAllChanges(resultXml);
+        rejectedText = extractTextWithParagraphs(rejectedXml);
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const rejectedXml = rejectAllChanges(resultXml);
-      const rejectedText = extractTextWithParagraphs(rejectedXml);
+        const originalArchive = await DocxArchive.load(original);
+        const originalXml = await originalArchive.getDocumentXml();
+        originalText = extractTextWithParagraphs(originalXml);
+      });
+      await then('rejected text matches original text', () => {
+        const comparison = compareTexts(originalText, rejectedText);
 
-      const originalArchive = await DocxArchive.load(original);
-      const originalXml = await originalArchive.getDocumentXml();
-      const originalText = extractTextWithParagraphs(originalXml);
+        console.log('\n[simple-word-change] Reject changes comparison:');
+        console.log(`  Original text length: ${comparison.expectedLength}`);
+        console.log(`  Rejected text length: ${comparison.actualLength}`);
+        console.log(`  Identical: ${comparison.identical}`);
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      const comparison = compareTexts(originalText, rejectedText);
+        if (!comparison.normalizedIdentical) {
+          console.log('  Differences:', comparison.differences);
+        }
 
-      console.log('\n[simple-word-change] Reject changes comparison:');
-      console.log(`  Original text length: ${comparison.expectedLength}`);
-      console.log(`  Rejected text length: ${comparison.actualLength}`);
-      console.log(`  Identical: ${comparison.identical}`);
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
-
-      if (!comparison.normalizedIdentical) {
-        console.log('  Differences:', comparison.differences);
-      }
-
-      expect(comparison.normalizedIdentical).toBe(true);
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
 
-    it('paragraph-insert: reject changes should match original', async () => {
-      const original = await readFile(join(fixturesPath, 'paragraph-insert', 'original.docx'));
-      const revised = await readFile(join(fixturesPath, 'paragraph-insert', 'revised.docx'));
+    test('paragraph-insert: reject changes should match original', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('paragraph-insert fixture documents are loaded', async () => {
+        original = await readFile(join(fixturesPath, 'paragraph-insert', 'original.docx'));
+        revised = await readFile(join(fixturesPath, 'paragraph-insert', 'revised.docx'));
+      });
+      let rejectedText: string, originalText: string;
+      await when('documents are compared and all changes are rejected', async () => {
+        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
 
-      const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const rejectedXml = rejectAllChanges(resultXml);
+        rejectedText = extractTextWithParagraphs(rejectedXml);
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const rejectedXml = rejectAllChanges(resultXml);
-      const rejectedText = extractTextWithParagraphs(rejectedXml);
+        const originalArchive = await DocxArchive.load(original);
+        const originalXml = await originalArchive.getDocumentXml();
+        originalText = extractTextWithParagraphs(originalXml);
+      });
+      await then('rejected text matches original text', () => {
+        const comparison = compareTexts(originalText, rejectedText);
 
-      const originalArchive = await DocxArchive.load(original);
-      const originalXml = await originalArchive.getDocumentXml();
-      const originalText = extractTextWithParagraphs(originalXml);
+        console.log('\n[paragraph-insert] Reject changes comparison:');
+        console.log(`  Original text length: ${comparison.expectedLength}`);
+        console.log(`  Rejected text length: ${comparison.actualLength}`);
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      const comparison = compareTexts(originalText, rejectedText);
-
-      console.log('\n[paragraph-insert] Reject changes comparison:');
-      console.log(`  Original text length: ${comparison.expectedLength}`);
-      console.log(`  Rejected text length: ${comparison.actualLength}`);
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
-
-      expect(comparison.normalizedIdentical).toBe(true);
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
 
-    it('paragraph-delete: reject changes should match original', async () => {
-      const original = await readFile(join(fixturesPath, 'paragraph-delete', 'original.docx'));
-      const revised = await readFile(join(fixturesPath, 'paragraph-delete', 'revised.docx'));
+    test('paragraph-delete: reject changes should match original', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('paragraph-delete fixture documents are loaded', async () => {
+        original = await readFile(join(fixturesPath, 'paragraph-delete', 'original.docx'));
+        revised = await readFile(join(fixturesPath, 'paragraph-delete', 'revised.docx'));
+      });
+      let rejectedText: string, originalText: string;
+      await when('documents are compared and all changes are rejected', async () => {
+        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
 
-      const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const rejectedXml = rejectAllChanges(resultXml);
+        rejectedText = extractTextWithParagraphs(rejectedXml);
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const rejectedXml = rejectAllChanges(resultXml);
-      const rejectedText = extractTextWithParagraphs(rejectedXml);
+        const originalArchive = await DocxArchive.load(original);
+        const originalXml = await originalArchive.getDocumentXml();
+        originalText = extractTextWithParagraphs(originalXml);
+      });
+      await then('rejected text matches original text', () => {
+        const comparison = compareTexts(originalText, rejectedText);
 
-      const originalArchive = await DocxArchive.load(original);
-      const originalXml = await originalArchive.getDocumentXml();
-      const originalText = extractTextWithParagraphs(originalXml);
+        console.log('\n[paragraph-delete] Reject changes comparison:');
+        console.log(`  Original text length: ${comparison.expectedLength}`);
+        console.log(`  Rejected text length: ${comparison.actualLength}`);
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      const comparison = compareTexts(originalText, rejectedText);
-
-      console.log('\n[paragraph-delete] Reject changes comparison:');
-      console.log(`  Original text length: ${comparison.expectedLength}`);
-      console.log(`  Rejected text length: ${comparison.actualLength}`);
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
-
-      expect(comparison.normalizedIdentical).toBe(true);
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
 
-    it('no-change: reject changes should match both original and revised', async () => {
-      const original = await readFile(join(fixturesPath, 'no-change', 'original.docx'));
-      const revised = await readFile(join(fixturesPath, 'no-change', 'revised.docx'));
+    test('no-change: reject changes should match both original and revised', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('no-change fixture documents are loaded', async () => {
+        original = await readFile(join(fixturesPath, 'no-change', 'original.docx'));
+        revised = await readFile(join(fixturesPath, 'no-change', 'revised.docx'));
+      });
+      let rejectedText: string, originalText: string;
+      await when('identical documents are compared and all changes are rejected', async () => {
+        const result = await compareDocuments(original, revised, { engine: 'atomizer' });
 
-      const result = await compareDocuments(original, revised, { engine: 'atomizer' });
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        const rejectedXml = rejectAllChanges(resultXml);
+        rejectedText = extractTextWithParagraphs(rejectedXml);
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const rejectedXml = rejectAllChanges(resultXml);
-      const rejectedText = extractTextWithParagraphs(rejectedXml);
+        const originalArchive = await DocxArchive.load(original);
+        const originalXml = await originalArchive.getDocumentXml();
+        originalText = extractTextWithParagraphs(originalXml);
+      });
+      await then('rejected text matches original text', () => {
+        const comparison = compareTexts(originalText, rejectedText);
 
-      const originalArchive = await DocxArchive.load(original);
-      const originalXml = await originalArchive.getDocumentXml();
-      const originalText = extractTextWithParagraphs(originalXml);
+        console.log('\n[no-change] Reject changes comparison:');
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      const comparison = compareTexts(originalText, rejectedText);
-
-      console.log('\n[no-change] Reject changes comparison:');
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
-
-      expect(comparison.normalizedIdentical).toBe(true);
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
   });
 
@@ -320,45 +375,50 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       });
     }, 120000);
 
-    it('reject all changes should produce text matching original document', async () => {
-      // Extract text from comparison result after rejecting changes
-      const resultArchive = await DocxArchive.load(comparisonResult.document);
-      const resultXml = await resultArchive.getDocumentXml();
+    test('reject all changes should produce text matching original document', async ({ given, when, then }: AllureBddContext) => {
+      await given('ILPA comparison result is pre-computed in beforeAll', () => {});
+      let rejectedText: string, originalText: string;
+      await when('all changes are rejected from the comparison result', async () => {
+        // Extract text from comparison result after rejecting changes
+        const resultArchive = await DocxArchive.load(comparisonResult.document);
+        const resultXml = await resultArchive.getDocumentXml();
 
-      // Save comparison result XML for debugging
-      await writeIntegrationArtifact('comparison_result.xml', resultXml);
+        // Save comparison result XML for debugging
+        await writeIntegrationArtifact('comparison_result.xml', resultXml);
 
-      const rejectedXml = rejectAllChanges(resultXml);
+        const rejectedXml = rejectAllChanges(resultXml);
 
-      // Save rejected XML for debugging
-      await writeIntegrationArtifact('rejected.xml', rejectedXml);
+        // Save rejected XML for debugging
+        await writeIntegrationArtifact('rejected.xml', rejectedXml);
 
-      const rejectedText = extractTextWithParagraphs(rejectedXml);
+        rejectedText = extractTextWithParagraphs(rejectedXml);
 
-      // Extract text from original document
-      const originalArchive = await DocxArchive.load(originalBuffer);
-      const originalXml = await originalArchive.getDocumentXml();
-      const originalText = extractTextWithParagraphs(originalXml);
+        // Extract text from original document
+        const originalArchive = await DocxArchive.load(originalBuffer);
+        const originalXml = await originalArchive.getDocumentXml();
+        originalText = extractTextWithParagraphs(originalXml);
 
-      // Save for debugging
-      await writeIntegrationArtifact('rejected_text.txt', rejectedText);
-      await writeIntegrationArtifact('original_text.txt', originalText);
+        // Save for debugging
+        await writeIntegrationArtifact('rejected_text.txt', rejectedText);
+        await writeIntegrationArtifact('original_text.txt', originalText);
+      });
+      await then('rejected text matches the original document text', () => {
+        const comparison = compareTexts(originalText, rejectedText);
 
-      const comparison = compareTexts(originalText, rejectedText);
+        console.log('\n[ILPA Large Doc] Reject changes comparison:');
+        console.log(`  Original text length: ${comparison.expectedLength}`);
+        console.log(`  Rejected text length: ${comparison.actualLength}`);
+        console.log(`  Identical: ${comparison.identical}`);
+        console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
 
-      console.log('\n[ILPA Large Doc] Reject changes comparison:');
-      console.log(`  Original text length: ${comparison.expectedLength}`);
-      console.log(`  Rejected text length: ${comparison.actualLength}`);
-      console.log(`  Identical: ${comparison.identical}`);
-      console.log(`  Normalized identical: ${comparison.normalizedIdentical}`);
+        if (!comparison.normalizedIdentical) {
+          console.log('  First differences:', comparison.differences.slice(0, 3));
+        }
+        console.log(`  Debug output mode: ${getIntegrationOutputModeLabel()}`);
 
-      if (!comparison.normalizedIdentical) {
-        console.log('  First differences:', comparison.differences.slice(0, 3));
-      }
-      console.log(`  Debug output mode: ${getIntegrationOutputModeLabel()}`);
-
-      // This is the critical assertion
-      expect(comparison.normalizedIdentical).toBe(true);
+        // This is the critical assertion
+        expect(comparison.normalizedIdentical).toBe(true);
+      });
     });
   });
 });

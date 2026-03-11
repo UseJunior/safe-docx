@@ -1,10 +1,12 @@
 import { describe, expect, afterEach } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { SessionManager } from './manager.js';
 import { makeMinimalDocx } from '../testing/docx_test_utils.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+
+const test = testAllure.epic('Document Editing').withLabels({ feature: 'Session Manager' });
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -23,7 +25,7 @@ afterEach(async () => {
 // ── createSession ───────────────────────────────────────────────────
 
 describe('SessionManager.createSession', () => {
-  it('returns a session with a valid ID format', async () => {
+  test('returns a session with a valid ID format', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -41,7 +43,7 @@ describe('SessionManager.createSession', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('writes document to temp directory', async () => {
+  test('writes document to temp directory', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -52,7 +54,7 @@ describe('SessionManager.createSession', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('loads a DocxDocument instance', async () => {
+  test('loads a DocxDocument instance', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -65,7 +67,7 @@ describe('SessionManager.createSession', () => {
 // ── getSession ──────────────────────────────────────────────────────
 
 describe('SessionManager.getSession', () => {
-  it('retrieves a valid session by ID', async () => {
+  test('retrieves a valid session by ID', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const created = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -76,17 +78,17 @@ describe('SessionManager.getSession', () => {
     tmpDirs.push(path.dirname(created.tmpPath));
   });
 
-  it('throws INVALID_SESSION_ID for malformed ID', () => {
+  test('throws INVALID_SESSION_ID for malformed ID', () => {
     const mgr = new SessionManager();
     expect(() => mgr.getSession('bad_id')).toThrow('INVALID_SESSION_ID');
   });
 
-  it('throws SESSION_NOT_FOUND for unknown valid ID', () => {
+  test('throws SESSION_NOT_FOUND for unknown valid ID', () => {
     const mgr = new SessionManager();
     expect(() => mgr.getSession('ses_AAAAAAAAAAAA')).toThrow('SESSION_NOT_FOUND');
   });
 
-  it('throws SESSION_EXPIRED for expired session', async () => {
+  test('throws SESSION_EXPIRED for expired session', async () => {
     const mgr = new SessionManager({ ttlMs: 1 }); // 1ms TTL
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -102,12 +104,12 @@ describe('SessionManager.getSession', () => {
 // ── getMostRecentlyUsedSessionForPath ───────────────────────────────
 
 describe('SessionManager.getMostRecentlyUsedSessionForPath', () => {
-  it('returns null for unknown path', () => {
+  test('returns null for unknown path', () => {
     const mgr = new SessionManager();
     expect(mgr.getMostRecentlyUsedSessionForPath('/nonexistent')).toBeNull();
   });
 
-  it('returns the session for a matching path', async () => {
+  test('returns the session for a matching path', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -120,7 +122,7 @@ describe('SessionManager.getMostRecentlyUsedSessionForPath', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('selects most recently accessed among multiple sessions', async () => {
+  test('selects most recently accessed among multiple sessions', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const s1 = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -137,7 +139,7 @@ describe('SessionManager.getMostRecentlyUsedSessionForPath', () => {
     tmpDirs.push(path.dirname(s2.tmpPath));
   });
 
-  it('prunes expired sessions', async () => {
+  test('prunes expired sessions', async () => {
     const mgr = new SessionManager({ ttlMs: 1 });
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -153,7 +155,7 @@ describe('SessionManager.getMostRecentlyUsedSessionForPath', () => {
 // ── clearSessionById ────────────────────────────────────────────────
 
 describe('SessionManager.clearSessionById', () => {
-  it('removes session and returns it', async () => {
+  test('removes session and returns it', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -165,7 +167,7 @@ describe('SessionManager.clearSessionById', () => {
     expect(() => mgr.getSession(session.sessionId)).toThrow('SESSION_NOT_FOUND');
   });
 
-  it('cleans up temp directory', async () => {
+  test('cleans up temp directory', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -181,7 +183,7 @@ describe('SessionManager.clearSessionById', () => {
 // ── clearAllSessions ────────────────────────────────────────────────
 
 describe('SessionManager.clearAllSessions', () => {
-  it('removes all sessions and returns their IDs', async () => {
+  test('removes all sessions and returns their IDs', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const s1 = await mgr.createSession(buf, 'a.docx', '/tmp/a.docx');
@@ -195,7 +197,7 @@ describe('SessionManager.clearAllSessions', () => {
     expect(() => mgr.getSession(s2.sessionId)).toThrow('SESSION_NOT_FOUND');
   });
 
-  it('returns empty array when no sessions exist', async () => {
+  test('returns empty array when no sessions exist', async () => {
     const mgr = new SessionManager();
     const clearedIds = await mgr.clearAllSessions();
     expect(clearedIds).toEqual([]);
@@ -205,7 +207,7 @@ describe('SessionManager.clearAllSessions', () => {
 // ── markEdited ──────────────────────────────────────────────────────
 
 describe('SessionManager.markEdited', () => {
-  it('increments editCount and editRevision', async () => {
+  test('increments editCount and editRevision', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -226,7 +228,7 @@ describe('SessionManager.markEdited', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('clears save cache', async () => {
+  test('clears save cache', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -254,7 +256,7 @@ describe('SessionManager.markEdited', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('clears extraction cache', async () => {
+  test('clears extraction cache', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -270,27 +272,27 @@ describe('SessionManager.markEdited', () => {
 // ── normalizePath ───────────────────────────────────────────────────
 
 describe('SessionManager.normalizePath', () => {
-  it('resolves relative paths', () => {
+  test('resolves relative paths', () => {
     const mgr = new SessionManager();
     const result = mgr.normalizePath('relative/path.docx');
     expect(path.isAbsolute(result)).toBe(true);
   });
 
-  it('expands tilde to home directory', () => {
+  test('expands tilde to home directory', () => {
     const mgr = new SessionManager();
     const result = mgr.normalizePath('~/test.docx');
     const home = process.env.HOME || '';
     expect(result).toBe(path.resolve(path.join(home, 'test.docx')));
   });
 
-  it('normalizes trailing slashes', () => {
+  test('normalizes trailing slashes', () => {
     const mgr = new SessionManager();
     const withSlash = mgr.normalizePath('/tmp/dir/');
     const withoutSlash = mgr.normalizePath('/tmp/dir');
     expect(withSlash).toBe(withoutSlash);
   });
 
-  it('resolves parent directory references', () => {
+  test('resolves parent directory references', () => {
     const mgr = new SessionManager();
     const result = mgr.normalizePath('/tmp/foo/../bar');
     expect(result).toBe('/tmp/bar');
@@ -300,7 +302,7 @@ describe('SessionManager.normalizePath', () => {
 // ── touch ───────────────────────────────────────────────────────────
 
 describe('SessionManager.touch', () => {
-  it('updates lastAccessedAt and resets expiresAt', async () => {
+  test('updates lastAccessedAt and resets expiresAt', async () => {
     const mgr = new SessionManager({ ttlMs: 60000 });
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -321,7 +323,7 @@ describe('SessionManager.touch', () => {
 // ── Cache methods ───────────────────────────────────────────────────
 
 describe('SessionManager save cache', () => {
-  it('returns null for missing cache key', async () => {
+  test('returns null for missing cache key', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -330,7 +332,7 @@ describe('SessionManager save cache', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('stores and retrieves cache entries', async () => {
+  test('stores and retrieves cache entries', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -360,7 +362,7 @@ describe('SessionManager save cache', () => {
 });
 
 describe('SessionManager extraction cache', () => {
-  it('returns null when no extraction cache', async () => {
+  test('returns null when no extraction cache', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -369,7 +371,7 @@ describe('SessionManager extraction cache', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('returns cache when revision matches', async () => {
+  test('returns cache when revision matches', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
@@ -382,7 +384,7 @@ describe('SessionManager extraction cache', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  it('returns null and clears when revision is stale', async () => {
+  test('returns null and clears when revision is stale', async () => {
     const mgr = new SessionManager();
     const buf = await createTestDoc();
     const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');

@@ -1,5 +1,5 @@
 import { describe, expect, afterEach } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,8 @@ import { makeDocxWithDocumentXml, extractParaIdsFromToon } from '../testing/docx
 import { openDocument } from './open_document.js';
 import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
+
+const test = testAllure.epic('Document Editing').withLabels({ feature: 'Normalization Regression' });
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -41,7 +43,7 @@ registerCleanup();
 
 describe('normalization regression tests', () => {
   describe('Phase 3.1: _bk_* IDs stable after normalization', () => {
-    it('normalized and skip_normalization sessions produce same paragraph IDs for identical content', async () => {
+    test('normalized and skip_normalization sessions produce same paragraph IDs for identical content', async () => {
       // Document with mergeable runs (same paragraph, same formatting).
       const xml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -77,7 +79,7 @@ describe('normalization regression tests', () => {
       expect(normalizedSession.paraIds).toEqual(skippedIds);
     });
 
-    it('normalization stats are returned in open_document response', async () => {
+    test('normalization stats are returned in open_document response', async () => {
       const xml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -105,7 +107,7 @@ describe('normalization regression tests', () => {
       expect(normalization.proof_errors_removed).toBe(2);
     });
 
-    it('skip_normalization returns skipped marker', async () => {
+    test('skip_normalization returns skipped marker', async () => {
       const mgr = createTestSessionManager();
       const tmpDir = await createTrackedTempDir('norm-skip-stat-');
       const inputPath = path.join(tmpDir, 'input.docx');
@@ -126,7 +128,7 @@ describe('normalization regression tests', () => {
   });
 
   describe('Phase 3.2: merge barriers prevent unsafe run consolidation', () => {
-    it('field-containing runs are not merged through the full pipeline', async () => {
+    test('field-containing runs are not merged through the full pipeline', async () => {
       const xml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -157,7 +159,7 @@ describe('normalization regression tests', () => {
       expect(edited.success).toBe(false);
     });
 
-    it('bookmark-separated runs are not merged through the full pipeline', async () => {
+    test('bookmark-separated runs are not merged through the full pipeline', async () => {
       const xml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -179,7 +181,7 @@ describe('normalization regression tests', () => {
       expect(content).toContain('After');
     });
 
-    it('tracked-change wrappers from different authors are not merged through the pipeline', async () => {
+    test('tracked-change wrappers from different authors are not merged through the pipeline', async () => {
       const xml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -216,7 +218,7 @@ describe('normalization regression tests', () => {
     ];
 
     for (const fixture of FIXTURES) {
-      it(`normalization completes without error on ${fixture.label}`, async () => {
+      test(`normalization completes without error on ${fixture.label}`, async () => {
         const mgr = createTestSessionManager();
         const start = performance.now();
         const opened = await openDocument(mgr, { file_path: fixture.path });

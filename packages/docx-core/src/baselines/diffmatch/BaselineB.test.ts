@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, beforeEach } from 'vitest';
-import { itAllure as it } from '../../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -21,6 +21,8 @@ import {
   resetRevisionIds,
 } from './trackChangesRenderer.js';
 import type { ParagraphInfo, RunInfo } from '../../shared/ooxml/types.js';
+
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Baseline B' });
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesPath = join(__dirname, '../../testing/fixtures');
@@ -67,186 +69,219 @@ function createRuns(text: string): RunInfo[] {
 }
 
 describe('Baseline B - Paragraph Alignment', () => {
-  it('should detect no changes in identical documents', async () => {
-    const buffer = await readFile(join(fixturesPath, 'no-change', 'original.docx'));
-    const archive = await DocxArchive.load(buffer);
-    const xml = await archive.getDocumentXml();
-    const paragraphs = extractParagraphs(xml);
+  test('should detect no changes in identical documents', async ({ given, when, then }: AllureBddContext) => {
+    let buffer: Buffer;
+    let archive: DocxArchive;
+    let xml: string;
+    let paragraphs: ParagraphInfo[];
+    let result: ReturnType<typeof alignParagraphs>;
+    let classified: ReturnType<typeof classifyAlignment>;
 
-    const result = alignParagraphs(paragraphs, paragraphs);
-    const classified = classifyAlignment(result);
+    await given('an identical document loaded as archive', async () => {
+      buffer = await readFile(join(fixturesPath, 'no-change', 'original.docx'));
+      archive = await DocxArchive.load(buffer);
+      xml = await archive.getDocumentXml();
+      paragraphs = extractParagraphs(xml);
+    });
 
-    expect(classified.identical.length).toBe(paragraphs.length);
-    expect(classified.modified.length).toBe(0);
-    expect(result.inserted.length).toBe(0);
-    expect(result.deleted.length).toBe(0);
+    await when('paragraphs are aligned against themselves', () => {
+      result = alignParagraphs(paragraphs, paragraphs);
+      classified = classifyAlignment(result);
+    });
+
+    await then('all paragraphs are identical with no modifications', () => {
+      expect(classified.identical.length).toBe(paragraphs.length);
+      expect(classified.modified.length).toBe(0);
+      expect(result.inserted.length).toBe(0);
+      expect(result.deleted.length).toBe(0);
+    });
   });
 
-  it('should detect inserted paragraph', async () => {
-    const originalBuffer = await readFile(
-      join(fixturesPath, 'paragraph-insert', 'original.docx')
-    );
-    const revisedBuffer = await readFile(
-      join(fixturesPath, 'paragraph-insert', 'revised.docx')
-    );
+  test('should detect inserted paragraph', async ({ given, when, then }: AllureBddContext) => {
+    let originalParagraphs: ParagraphInfo[];
+    let revisedParagraphs: ParagraphInfo[];
+    let result: ReturnType<typeof alignParagraphs>;
 
-    const originalArchive = await DocxArchive.load(originalBuffer);
-    const revisedArchive = await DocxArchive.load(revisedBuffer);
+    await given('original and revised documents with an inserted paragraph', async () => {
+      const originalBuffer = await readFile(join(fixturesPath, 'paragraph-insert', 'original.docx'));
+      const revisedBuffer = await readFile(join(fixturesPath, 'paragraph-insert', 'revised.docx'));
+      const originalArchive = await DocxArchive.load(originalBuffer);
+      const revisedArchive = await DocxArchive.load(revisedBuffer);
+      const originalXml = await originalArchive.getDocumentXml();
+      const revisedXml = await revisedArchive.getDocumentXml();
+      originalParagraphs = extractParagraphs(originalXml);
+      revisedParagraphs = extractParagraphs(revisedXml);
+    });
 
-    const originalXml = await originalArchive.getDocumentXml();
-    const revisedXml = await revisedArchive.getDocumentXml();
+    await when('paragraphs are aligned', () => {
+      expect(originalParagraphs.length).toBe(2);
+      expect(revisedParagraphs.length).toBe(3);
+      result = alignParagraphs(originalParagraphs, revisedParagraphs);
+    });
 
-    const originalParagraphs = extractParagraphs(originalXml);
-    const revisedParagraphs = extractParagraphs(revisedXml);
-
-    expect(originalParagraphs.length).toBe(2);
-    expect(revisedParagraphs.length).toBe(3);
-
-    const result = alignParagraphs(originalParagraphs, revisedParagraphs);
-
-    expect(result.inserted.length).toBe(1);
-    expect(result.inserted[0]?.text).toContain('new middle paragraph');
+    await then('the inserted paragraph is detected', () => {
+      expect(result.inserted.length).toBe(1);
+      expect(result.inserted[0]?.text).toContain('new middle paragraph');
+    });
   });
 
-  it('should detect deleted paragraph', async () => {
-    const originalBuffer = await readFile(
-      join(fixturesPath, 'paragraph-delete', 'original.docx')
-    );
-    const revisedBuffer = await readFile(
-      join(fixturesPath, 'paragraph-delete', 'revised.docx')
-    );
+  test('should detect deleted paragraph', async ({ given, when, then }: AllureBddContext) => {
+    let originalParagraphs: ParagraphInfo[];
+    let revisedParagraphs: ParagraphInfo[];
+    let result: ReturnType<typeof alignParagraphs>;
 
-    const originalArchive = await DocxArchive.load(originalBuffer);
-    const revisedArchive = await DocxArchive.load(revisedBuffer);
+    await given('original and revised documents with a deleted paragraph', async () => {
+      const originalBuffer = await readFile(join(fixturesPath, 'paragraph-delete', 'original.docx'));
+      const revisedBuffer = await readFile(join(fixturesPath, 'paragraph-delete', 'revised.docx'));
+      const originalArchive = await DocxArchive.load(originalBuffer);
+      const revisedArchive = await DocxArchive.load(revisedBuffer);
+      const originalXml = await originalArchive.getDocumentXml();
+      const revisedXml = await revisedArchive.getDocumentXml();
+      originalParagraphs = extractParagraphs(originalXml);
+      revisedParagraphs = extractParagraphs(revisedXml);
+    });
 
-    const originalXml = await originalArchive.getDocumentXml();
-    const revisedXml = await revisedArchive.getDocumentXml();
+    await when('paragraphs are aligned', () => {
+      expect(originalParagraphs.length).toBe(3);
+      expect(revisedParagraphs.length).toBe(2);
+      result = alignParagraphs(originalParagraphs, revisedParagraphs);
+    });
 
-    const originalParagraphs = extractParagraphs(originalXml);
-    const revisedParagraphs = extractParagraphs(revisedXml);
-
-    expect(originalParagraphs.length).toBe(3);
-    expect(revisedParagraphs.length).toBe(2);
-
-    const result = alignParagraphs(originalParagraphs, revisedParagraphs);
-
-    expect(result.deleted.length).toBe(1);
-    expect(result.deleted[0]?.text).toContain('will be deleted');
+    await then('the deleted paragraph is detected', () => {
+      expect(result.deleted.length).toBe(1);
+      expect(result.deleted[0]?.text).toContain('will be deleted');
+    });
   });
 
-  it('should detect modified paragraph (simple word change)', async () => {
-    const originalBuffer = await readFile(
-      join(fixturesPath, 'simple-word-change', 'original.docx')
-    );
-    const revisedBuffer = await readFile(
-      join(fixturesPath, 'simple-word-change', 'revised.docx')
-    );
+  test('should detect modified paragraph (simple word change)', async ({ given, when, then }: AllureBddContext) => {
+    let originalParagraphs: ParagraphInfo[];
+    let revisedParagraphs: ParagraphInfo[];
+    let result: ReturnType<typeof alignParagraphs>;
+    let classified: ReturnType<typeof classifyAlignment>;
 
-    const originalArchive = await DocxArchive.load(originalBuffer);
-    const revisedArchive = await DocxArchive.load(revisedBuffer);
+    await given('original and revised documents with a simple word change', async () => {
+      const originalBuffer = await readFile(join(fixturesPath, 'simple-word-change', 'original.docx'));
+      const revisedBuffer = await readFile(join(fixturesPath, 'simple-word-change', 'revised.docx'));
+      const originalArchive = await DocxArchive.load(originalBuffer);
+      const revisedArchive = await DocxArchive.load(revisedBuffer);
+      const originalXml = await originalArchive.getDocumentXml();
+      const revisedXml = await revisedArchive.getDocumentXml();
+      originalParagraphs = extractParagraphs(originalXml);
+      revisedParagraphs = extractParagraphs(revisedXml);
+    });
 
-    const originalXml = await originalArchive.getDocumentXml();
-    const revisedXml = await revisedArchive.getDocumentXml();
+    await when('paragraphs are aligned with similarity threshold', () => {
+      result = alignParagraphs(originalParagraphs, revisedParagraphs, 0.6);
+      classified = classifyAlignment(result);
+    });
 
-    const originalParagraphs = extractParagraphs(originalXml);
-    const revisedParagraphs = extractParagraphs(revisedXml);
-
-    const result = alignParagraphs(originalParagraphs, revisedParagraphs, 0.6);
-    const classified = classifyAlignment(result);
-
-    // With similarity threshold, "quick" → "slow" should be detected as modified
-    // (paragraphs are similar enough to be matched, but different)
-    expect(result.matched.length + classified.modified.length).toBeGreaterThan(0);
+    await then('the modified paragraph is detected', () => {
+      // With similarity threshold, "quick" → "slow" should be detected as modified
+      // (paragraphs are similar enough to be matched, but different)
+      expect(result.matched.length + classified.modified.length).toBeGreaterThan(0);
+    });
   });
 });
 
 describe('Baseline B - Run Diffing', () => {
-  it('should diff runs with word substitution', () => {
-    const originalRuns: RunInfo[] = [
-      { text: 'The quick fox', start: 0, end: 13 },
-    ];
-    const revisedRuns: RunInfo[] = [
-      { text: 'The slow fox', start: 0, end: 12 },
-    ];
+  test('should diff runs with word substitution', async ({ given, when, then }: AllureBddContext) => {
+    let originalRuns: RunInfo[];
+    let revisedRuns: RunInfo[];
+    let result: ReturnType<typeof diffRuns>;
 
-    const result = diffRuns(originalRuns, revisedRuns);
+    await given('original and revised runs with a word substitution', () => {
+      originalRuns = [{ text: 'The quick fox', start: 0, end: 13 }];
+      revisedRuns = [{ text: 'The slow fox', start: 0, end: 12 }];
+    });
 
-    // Count deletions and insertions from mergedRuns
-    const deletions = result.mergedRuns.filter(r => r.revision?.type === 'deletion');
-    const insertions = result.mergedRuns.filter(r => r.revision?.type === 'insertion');
+    await when('runs are diffed', () => {
+      result = diffRuns(originalRuns, revisedRuns);
+    });
 
-    expect(deletions.length).toBeGreaterThan(0);
-    expect(insertions.length).toBeGreaterThan(0);
+    await then('deletions and insertions are detected', () => {
+      // Count deletions and insertions from mergedRuns
+      const deletions = result.mergedRuns.filter(r => r.revision?.type === 'deletion');
+      const insertions = result.mergedRuns.filter(r => r.revision?.type === 'insertion');
 
-    const deletedText = deletions.map((d) => d.text).join('');
-    const insertedText = insertions.map((i) => i.text).join('');
+      expect(deletions.length).toBeGreaterThan(0);
+      expect(insertions.length).toBeGreaterThan(0);
 
-    expect(deletedText).toContain('quick');
-    expect(insertedText).toContain('slow');
+      const deletedText = deletions.map((d) => d.text).join('');
+      const insertedText = insertions.map((i) => i.text).join('');
+
+      expect(deletedText).toContain('quick');
+      expect(insertedText).toContain('slow');
+    });
   });
 
-  it('should handle run-level date change', async () => {
-    const originalBuffer = await readFile(
-      join(fixturesPath, 'run-level-change', 'original.docx')
-    );
-    const revisedBuffer = await readFile(
-      join(fixturesPath, 'run-level-change', 'revised.docx')
-    );
+  test('should handle run-level date change', async ({ given, when, then }: AllureBddContext) => {
+    let originalParagraphs: ParagraphInfo[];
+    let revisedParagraphs: ParagraphInfo[];
+    let result: ReturnType<typeof diffRuns>;
 
-    const originalArchive = await DocxArchive.load(originalBuffer);
-    const revisedArchive = await DocxArchive.load(revisedBuffer);
+    await given('original and revised documents with a date change', async () => {
+      const originalBuffer = await readFile(join(fixturesPath, 'run-level-change', 'original.docx'));
+      const revisedBuffer = await readFile(join(fixturesPath, 'run-level-change', 'revised.docx'));
+      const originalArchive = await DocxArchive.load(originalBuffer);
+      const revisedArchive = await DocxArchive.load(revisedBuffer);
+      const originalXml = await originalArchive.getDocumentXml();
+      const revisedXml = await revisedArchive.getDocumentXml();
+      originalParagraphs = extractParagraphs(originalXml);
+      revisedParagraphs = extractParagraphs(revisedXml);
+    });
 
-    const originalXml = await originalArchive.getDocumentXml();
-    const revisedXml = await revisedArchive.getDocumentXml();
+    await when('runs are diffed at the paragraph level', () => {
+      expect(originalParagraphs[0]).toBeDefined();
+      expect(revisedParagraphs[0]).toBeDefined();
+      const originalRuns = createRuns(originalParagraphs[0]!.text);
+      const revisedRuns = createRuns(revisedParagraphs[0]!.text);
+      result = diffRuns(originalRuns, revisedRuns);
+    });
 
-    const originalParagraphs = extractParagraphs(originalXml);
-    const revisedParagraphs = extractParagraphs(revisedXml);
+    await then('the date change is detected', () => {
+      // Count deletions and insertions from mergedRuns
+      const deletions = result.mergedRuns.filter(r => r.revision?.type === 'deletion');
+      const insertions = result.mergedRuns.filter(r => r.revision?.type === 'insertion');
 
-    expect(originalParagraphs[0]).toBeDefined();
-    expect(revisedParagraphs[0]).toBeDefined();
+      // Should detect changes between "January 1, 2024" → "February 15, 2024"
+      const deletedText = deletions.map((d) => d.text).join('');
+      const insertedText = insertions.map((i) => i.text).join('');
 
-    // Create runs from the paragraph text
-    const originalRuns = createRuns(originalParagraphs[0]!.text);
-    const revisedRuns = createRuns(revisedParagraphs[0]!.text);
-
-    const result = diffRuns(originalRuns, revisedRuns);
-
-    // Count deletions and insertions from mergedRuns
-    const deletions = result.mergedRuns.filter(r => r.revision?.type === 'deletion');
-    const insertions = result.mergedRuns.filter(r => r.revision?.type === 'insertion');
-
-    // Should detect changes between "January 1, 2024" → "February 15, 2024"
-    const deletedText = deletions.map((d) => d.text).join('');
-    const insertedText = insertions.map((i) => i.text).join('');
-
-    // diff-match-patch may split "January" into "Jan" + "uary" depending on optimization
-    // So check for partial matches
-    expect(deletedText.length).toBeGreaterThan(0);
-    expect(insertedText.length).toBeGreaterThan(0);
-    expect(deletedText).toMatch(/Jan|1,/); // Part of "January" or "1,"
-    expect(insertedText).toMatch(/Feb|15/); // Part of "February" or "15"
+      // diff-match-patch may split "January" into "Jan" + "uary" depending on optimization
+      // So check for partial matches
+      expect(deletedText.length).toBeGreaterThan(0);
+      expect(insertedText.length).toBeGreaterThan(0);
+      expect(deletedText).toMatch(/Jan|1,/); // Part of "January" or "1,"
+      expect(insertedText).toMatch(/Feb|15/); // Part of "February" or "15"
+    });
   });
 
-  it('should produce merged runs for rendering', () => {
-    const originalRuns: RunInfo[] = [
-      { text: 'Hello world', start: 0, end: 11 },
-    ];
-    const revisedRuns: RunInfo[] = [
-      { text: 'Hello universe', start: 0, end: 14 },
-    ];
+  test('should produce merged runs for rendering', async ({ given, when, then }: AllureBddContext) => {
+    let originalRuns: RunInfo[];
+    let revisedRuns: RunInfo[];
+    let result: ReturnType<typeof diffRuns>;
 
-    const result = diffRuns(originalRuns, revisedRuns);
+    await given('original and revised runs', () => {
+      originalRuns = [{ text: 'Hello world', start: 0, end: 11 }];
+      revisedRuns = [{ text: 'Hello universe', start: 0, end: 14 }];
+    });
 
-    expect(result.mergedRuns.length).toBeGreaterThan(0);
+    await when('runs are diffed', () => {
+      result = diffRuns(originalRuns, revisedRuns);
+    });
 
-    // Check revision types
-    const hasEqual = result.mergedRuns.some(r => !r.revision);
-    const hasDeleted = result.mergedRuns.some(r => r.revision?.type === 'deletion');
-    const hasInserted = result.mergedRuns.some(r => r.revision?.type === 'insertion');
+    await then('merged runs contain equal, deleted and inserted segments', () => {
+      expect(result.mergedRuns.length).toBeGreaterThan(0);
 
-    expect(hasEqual).toBe(true);
-    expect(hasDeleted).toBe(true);
-    expect(hasInserted).toBe(true);
+      // Check revision types
+      const hasEqual = result.mergedRuns.some(r => !r.revision);
+      const hasDeleted = result.mergedRuns.some(r => r.revision?.type === 'deletion');
+      const hasInserted = result.mergedRuns.some(r => r.revision?.type === 'insertion');
+
+      expect(hasEqual).toBe(true);
+      expect(hasDeleted).toBe(true);
+      expect(hasInserted).toBe(true);
+    });
   });
 });
 
@@ -255,122 +290,123 @@ describe('Baseline B - Track Changes Rendering', () => {
     resetRevisionIds();
   });
 
-  it('should render deletions as w:del elements', () => {
-    const mergedRuns: RunInfo[] = [
-      {
-        text: 'Hello ',
-        start: 0,
-        end: 6,
-      },
-      {
-        text: 'world',
-        start: 6,
-        end: 11,
-        revision: {
-          id: 0,
-          author: 'Test',
-          date: new Date(),
-          type: 'deletion',
-        },
-      },
-    ];
+  test('should render deletions as w:del elements', async ({ given, when, then }: AllureBddContext) => {
+    let mergedRuns: RunInfo[];
+    let result: string;
 
-    const result = renderTrackChanges(mergedRuns, {
-      author: 'Test',
-      date: new Date('2024-01-15T00:00:00Z'),
+    await given('merged runs with a deletion', () => {
+      mergedRuns = [
+        { text: 'Hello ', start: 0, end: 6 },
+        {
+          text: 'world',
+          start: 6,
+          end: 11,
+          revision: { id: 0, author: 'Test', date: new Date(), type: 'deletion' },
+        },
+      ];
     });
 
-    expect(result).toContain('<w:del');
-    expect(result).toContain('w:author="Test"');
-    expect(result).toContain('<w:delText>world</w:delText>');
+    await when('track changes are rendered', () => {
+      result = renderTrackChanges(mergedRuns, {
+        author: 'Test',
+        date: new Date('2024-01-15T00:00:00Z'),
+      });
+    });
+
+    await then('the output contains w:del elements', () => {
+      expect(result).toContain('<w:del');
+      expect(result).toContain('w:author="Test"');
+      expect(result).toContain('<w:delText>world</w:delText>');
+    });
   });
 
-  it('should render insertions as w:ins elements', () => {
-    const mergedRuns: RunInfo[] = [
-      {
-        text: 'Hello ',
-        start: 0,
-        end: 6,
-      },
-      {
-        text: 'universe',
-        start: 6,
-        end: 14,
-        revision: {
-          id: 0,
-          author: 'Test',
-          date: new Date(),
-          type: 'insertion',
-        },
-      },
-    ];
+  test('should render insertions as w:ins elements', async ({ given, when, then }: AllureBddContext) => {
+    let mergedRuns: RunInfo[];
+    let result: string;
 
-    const result = renderTrackChanges(mergedRuns, {
-      author: 'Test',
-      date: new Date('2024-01-15T00:00:00Z'),
+    await given('merged runs with an insertion', () => {
+      mergedRuns = [
+        { text: 'Hello ', start: 0, end: 6 },
+        {
+          text: 'universe',
+          start: 6,
+          end: 14,
+          revision: { id: 0, author: 'Test', date: new Date(), type: 'insertion' },
+        },
+      ];
     });
 
-    expect(result).toContain('<w:ins');
-    expect(result).toContain('w:author="Test"');
-    expect(result).toContain('<w:t>universe</w:t>');
+    await when('track changes are rendered', () => {
+      result = renderTrackChanges(mergedRuns, {
+        author: 'Test',
+        date: new Date('2024-01-15T00:00:00Z'),
+      });
+    });
+
+    await then('the output contains w:ins elements', () => {
+      expect(result).toContain('<w:ins');
+      expect(result).toContain('w:author="Test"');
+      expect(result).toContain('<w:t>universe</w:t>');
+    });
   });
 
-  it('should render equal runs as plain w:r elements', () => {
-    const mergedRuns: RunInfo[] = [
-      {
-        text: 'Unchanged text',
-        start: 0,
-        end: 14,
-      },
-    ];
+  test('should render equal runs as plain w:r elements', async ({ given, when, then }: AllureBddContext) => {
+    let mergedRuns: RunInfo[];
+    let result: string;
 
-    const result = renderTrackChanges(mergedRuns, {
-      author: 'Test',
-      date: new Date('2024-01-15T00:00:00Z'),
+    await given('merged runs with no revisions', () => {
+      mergedRuns = [{ text: 'Unchanged text', start: 0, end: 14 }];
     });
 
-    expect(result).toContain('<w:r>');
-    expect(result).toContain('<w:t>Unchanged text</w:t>');
-    expect(result).not.toContain('<w:del');
-    expect(result).not.toContain('<w:ins');
+    await when('track changes are rendered', () => {
+      result = renderTrackChanges(mergedRuns, {
+        author: 'Test',
+        date: new Date('2024-01-15T00:00:00Z'),
+      });
+    });
+
+    await then('the output contains plain w:r elements with no del or ins', () => {
+      expect(result).toContain('<w:r>');
+      expect(result).toContain('<w:t>Unchanged text</w:t>');
+      expect(result).not.toContain('<w:del');
+      expect(result).not.toContain('<w:ins');
+    });
   });
 
-  it('should include revision IDs', () => {
-    resetRevisionIds();
+  test('should include revision IDs', async ({ given, when, then }: AllureBddContext) => {
+    let mergedRuns: RunInfo[];
+    let result: string;
 
-    const mergedRuns: RunInfo[] = [
-      {
-        text: 'deleted',
-        start: 0,
-        end: 7,
-        revision: {
-          id: 0,
-          author: 'Test',
-          date: new Date(),
-          type: 'deletion',
+    await given('merged runs with both deletion and insertion', () => {
+      resetRevisionIds();
+      mergedRuns = [
+        {
+          text: 'deleted',
+          start: 0,
+          end: 7,
+          revision: { id: 0, author: 'Test', date: new Date(), type: 'deletion' },
         },
-      },
-      {
-        text: 'inserted',
-        start: 0,
-        end: 8,
-        revision: {
-          id: 0,
-          author: 'Test',
-          date: new Date(),
-          type: 'insertion',
+        {
+          text: 'inserted',
+          start: 0,
+          end: 8,
+          revision: { id: 0, author: 'Test', date: new Date(), type: 'insertion' },
         },
-      },
-    ];
-
-    const result = renderTrackChanges(mergedRuns, {
-      author: 'Test',
-      date: new Date('2024-01-15T00:00:00Z'),
+      ];
     });
 
-    // IDs are allocated sequentially: 1, 2
-    expect(result).toContain('w:id="1"');
-    expect(result).toContain('w:id="2"');
+    await when('track changes are rendered', () => {
+      result = renderTrackChanges(mergedRuns, {
+        author: 'Test',
+        date: new Date('2024-01-15T00:00:00Z'),
+      });
+    });
+
+    await then('sequential revision IDs are assigned', () => {
+      // IDs are allocated sequentially: 1, 2
+      expect(result).toContain('w:id="1"');
+      expect(result).toContain('w:id="2"');
+    });
   });
 });
 
@@ -379,85 +415,87 @@ describe('Baseline B - End-to-End Pipeline', () => {
     resetRevisionIds();
   });
 
-  it('should process simple-word-change fixture', async () => {
-    const originalBuffer = await readFile(
-      join(fixturesPath, 'simple-word-change', 'original.docx')
-    );
-    const revisedBuffer = await readFile(
-      join(fixturesPath, 'simple-word-change', 'revised.docx')
-    );
+  test('should process simple-word-change fixture', async ({ given, when, then }: AllureBddContext) => {
+    let originalParagraphs: ParagraphInfo[];
+    let revisedParagraphs: ParagraphInfo[];
+    let trackChangesXml: string;
 
-    const originalArchive = await DocxArchive.load(originalBuffer);
-    const revisedArchive = await DocxArchive.load(revisedBuffer);
-
-    const originalXml = await originalArchive.getDocumentXml();
-    const revisedXml = await revisedArchive.getDocumentXml();
-
-    // Step 1: Extract paragraphs
-    const originalParagraphs = extractParagraphs(originalXml);
-    const revisedParagraphs = extractParagraphs(revisedXml);
-
-    expect(originalParagraphs.length).toBe(1);
-    expect(revisedParagraphs.length).toBe(1);
-
-    // Step 2: Align paragraphs
-    alignParagraphs(originalParagraphs, revisedParagraphs, 0.5);
-
-    // Step 3: For modified paragraphs, diff at run level
-    const originalRuns = createRuns(originalParagraphs[0]!.text);
-    const revisedRuns = createRuns(revisedParagraphs[0]!.text);
-
-    const runDiff = diffRuns(originalRuns, revisedRuns);
-
-    // Step 4: Render track changes
-    const trackChangesXml = renderTrackChanges(runDiff.mergedRuns, {
-      author: 'Comparison',
-      date: new Date('2024-01-15T00:00:00Z'),
+    await given('original and revised simple-word-change fixtures', async () => {
+      const originalBuffer = await readFile(join(fixturesPath, 'simple-word-change', 'original.docx'));
+      const revisedBuffer = await readFile(join(fixturesPath, 'simple-word-change', 'revised.docx'));
+      const originalArchive = await DocxArchive.load(originalBuffer);
+      const revisedArchive = await DocxArchive.load(revisedBuffer);
+      const originalXml = await originalArchive.getDocumentXml();
+      const revisedXml = await revisedArchive.getDocumentXml();
+      originalParagraphs = extractParagraphs(originalXml);
+      revisedParagraphs = extractParagraphs(revisedXml);
     });
 
-    // Verify the output contains expected track changes
-    expect(trackChangesXml).toContain('quick'); // deleted
-    expect(trackChangesXml).toContain('slow'); // inserted
+    await when('the full comparison pipeline is run', () => {
+      expect(originalParagraphs.length).toBe(1);
+      expect(revisedParagraphs.length).toBe(1);
+
+      // Step 2: Align paragraphs
+      alignParagraphs(originalParagraphs, revisedParagraphs, 0.5);
+
+      // Step 3: For modified paragraphs, diff at run level
+      const originalRuns = createRuns(originalParagraphs[0]!.text);
+      const revisedRuns = createRuns(revisedParagraphs[0]!.text);
+      const runDiff = diffRuns(originalRuns, revisedRuns);
+
+      // Step 4: Render track changes
+      trackChangesXml = renderTrackChanges(runDiff.mergedRuns, {
+        author: 'Comparison',
+        date: new Date('2024-01-15T00:00:00Z'),
+      });
+    });
+
+    await then('the output contains the changed words', () => {
+      // Verify the output contains expected track changes
+      expect(trackChangesXml).toContain('quick'); // deleted
+      expect(trackChangesXml).toContain('slow'); // inserted
+    });
   });
 
-  it('should handle multiple-changes fixture', async () => {
-    const originalBuffer = await readFile(
-      join(fixturesPath, 'multiple-changes', 'original.docx')
-    );
-    const revisedBuffer = await readFile(
-      join(fixturesPath, 'multiple-changes', 'revised.docx')
-    );
+  test('should handle multiple-changes fixture', async ({ given, when, then }: AllureBddContext) => {
+    let originalParagraphs: ParagraphInfo[];
+    let revisedParagraphs: ParagraphInfo[];
+    let deletions: RunInfo[];
+    let insertions: RunInfo[];
 
-    const originalArchive = await DocxArchive.load(originalBuffer);
-    const revisedArchive = await DocxArchive.load(revisedBuffer);
+    await given('original and revised multiple-changes fixtures', async () => {
+      const originalBuffer = await readFile(join(fixturesPath, 'multiple-changes', 'original.docx'));
+      const revisedBuffer = await readFile(join(fixturesPath, 'multiple-changes', 'revised.docx'));
+      const originalArchive = await DocxArchive.load(originalBuffer);
+      const revisedArchive = await DocxArchive.load(revisedBuffer);
+      const originalXml = await originalArchive.getDocumentXml();
+      const revisedXml = await revisedArchive.getDocumentXml();
+      originalParagraphs = extractParagraphs(originalXml);
+      revisedParagraphs = extractParagraphs(revisedXml);
+    });
 
-    const originalXml = await originalArchive.getDocumentXml();
-    const revisedXml = await revisedArchive.getDocumentXml();
+    await when('runs are diffed', () => {
+      const originalRuns = createRuns(originalParagraphs[0]!.text);
+      const revisedRuns = createRuns(revisedParagraphs[0]!.text);
+      const runDiff = diffRuns(originalRuns, revisedRuns);
+      deletions = runDiff.mergedRuns.filter(r => r.revision?.type === 'deletion');
+      insertions = runDiff.mergedRuns.filter(r => r.revision?.type === 'insertion');
+    });
 
-    const originalParagraphs = extractParagraphs(originalXml);
-    const revisedParagraphs = extractParagraphs(revisedXml);
+    await then('multiple changes are detected', () => {
+      // Should detect multiple changes: $1,000→$1,500, Contractor→Vendor, first→fifteenth
+      expect(deletions.length).toBeGreaterThan(0);
+      expect(insertions.length).toBeGreaterThan(0);
 
-    const originalRuns = createRuns(originalParagraphs[0]!.text);
-    const revisedRuns = createRuns(revisedParagraphs[0]!.text);
+      const deletedText = deletions.map((d) => d.text).join('');
+      const insertedText = insertions.map((i) => i.text).join('');
 
-    const runDiff = diffRuns(originalRuns, revisedRuns);
-
-    // Count deletions and insertions
-    const deletions = runDiff.mergedRuns.filter(r => r.revision?.type === 'deletion');
-    const insertions = runDiff.mergedRuns.filter(r => r.revision?.type === 'insertion');
-
-    // Should detect multiple changes: $1,000→$1,500, Contractor→Vendor, first→fifteenth
-    expect(deletions.length).toBeGreaterThan(0);
-    expect(insertions.length).toBeGreaterThan(0);
-
-    const deletedText = deletions.map((d) => d.text).join('');
-    const insertedText = insertions.map((i) => i.text).join('');
-
-    // diff-match-patch optimizes diffs, so check that we captured meaningful changes
-    // The key differences involve: 1,000→1,500, Contractor→Vendor, first→fifteenth
-    expect(deletedText.length).toBeGreaterThan(0);
-    expect(insertedText.length).toBeGreaterThan(0);
-    // Check that at least one of the key changes is detected
-    expect(deletedText + insertedText).toMatch(/Contract|Vendor|000|500|first|fifteenth/);
+      // diff-match-patch optimizes diffs, so check that we captured meaningful changes
+      // The key differences involve: 1,000→1,500, Contractor→Vendor, first→fifteenth
+      expect(deletedText.length).toBeGreaterThan(0);
+      expect(insertedText.length).toBeGreaterThan(0);
+      // Check that at least one of the key changes is detected
+      expect(deletedText + insertedText).toMatch(/Contract|Vendor|000|500|first|fifteenth/);
+    });
   });
 });
