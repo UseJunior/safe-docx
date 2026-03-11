@@ -50,7 +50,7 @@ async function createConnectedPair(opts: { withPreview: boolean }) {
 }
 
 describe('registerPreviewApp integration', () => {
-  const test = testAllure.epic('MCP Apps').withLabels({ feature: 'Preview Registration' });
+  const test = testAllure.epic('Document Reading').withLabels({ feature: 'Preview Registration' });
   registerCleanup();
 
   test('tools/list includes get_document_view when preview is registered', async () => {
@@ -126,8 +126,9 @@ describe('registerPreviewApp integration', () => {
       const content = result.contents[0]!;
       expect(content.uri).toBe(PREVIEW_RESOURCE_URI);
       expect(content.mimeType).toBe(PREVIEW_MIME_TYPE);
-      expect(typeof content.text).toBe('string');
-      expect((content.text as string)).toContain('<!DOCTYPE html>');
+      expect('text' in content).toBe(true);
+      const text = (content as { text: string }).text;
+      expect(text).toContain('<!DOCTYPE html>');
     });
   });
 });

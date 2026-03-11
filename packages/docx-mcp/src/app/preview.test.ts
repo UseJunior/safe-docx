@@ -12,7 +12,7 @@ import {
 import { getPreviewHtml } from './preview-html.js';
 
 describe('MCP App Preview', () => {
-  const test = testAllure.epic('MCP Apps').withLabels({ feature: 'Document Preview' });
+  const test = testAllure.epic('Document Reading').withLabels({ feature: 'Document Preview' });
   registerCleanup();
 
   test('get_document_view returns nodes, styles, session_id, and edit_revision', async () => {
