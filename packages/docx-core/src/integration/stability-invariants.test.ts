@@ -8,7 +8,7 @@
  */
 
 import { describe, expect } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { compareDocuments, type ReconstructionMode } from '../index.js';
@@ -19,6 +19,8 @@ import {
   extractTextWithParagraphs,
   rejectAllChanges,
 } from '../baselines/atomizer/trackChangesAcceptorAst.js';
+
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Stability Invariants' });
 
 interface SemanticView {
   raw: string;
@@ -114,136 +116,199 @@ async function runAndSnapshot(
 describe('Stability invariants', () => {
   for (const fixtureName of FIXTURES) {
     for (const mode of MODES) {
-      it(`${fixtureName}/${mode}: accept/reject transforms are idempotent`, async () => {
-        const { original, revised } = await loadFixturePair(fixtureName);
-        const result = await compareDocuments(original, revised, {
-          engine: 'atomizer',
-          reconstructionMode: mode,
+      test(`${fixtureName}/${mode}: accept/reject transforms are idempotent`, async ({ given, when, then }: AllureBddContext) => {
+        let original: Buffer;
+        let revised: Buffer;
+        let resultXml: string;
+        let acceptOnce: string;
+        let acceptTwice: string;
+        let rejectOnce: string;
+        let rejectTwice: string;
+
+        await given(`${fixtureName} original and revised documents are loaded`, async () => {
+          ({ original, revised } = await loadFixturePair(fixtureName));
         });
 
-        const resultXml = await getDocXml(result.document);
-        const acceptOnce = extractTextWithParagraphs(acceptAllChanges(resultXml));
-        const acceptTwice = extractTextWithParagraphs(acceptAllChanges(acceptAllChanges(resultXml)));
-        const rejectOnce = extractTextWithParagraphs(rejectAllChanges(resultXml));
-        const rejectTwice = extractTextWithParagraphs(rejectAllChanges(rejectAllChanges(resultXml)));
+        await when(`documents are compared in ${mode} mode and transforms are applied`, async () => {
+          const result = await compareDocuments(original, revised, {
+            engine: 'atomizer',
+            reconstructionMode: mode,
+          });
 
-        assertNormalizedEqual(acceptOnce, acceptTwice, `${fixtureName}/${mode}/accept-idempotence`);
-        assertNormalizedEqual(rejectOnce, rejectTwice, `${fixtureName}/${mode}/reject-idempotence`);
+          resultXml = await getDocXml(result.document);
+          acceptOnce = extractTextWithParagraphs(acceptAllChanges(resultXml));
+          acceptTwice = extractTextWithParagraphs(acceptAllChanges(acceptAllChanges(resultXml)));
+          rejectOnce = extractTextWithParagraphs(rejectAllChanges(resultXml));
+          rejectTwice = extractTextWithParagraphs(rejectAllChanges(rejectAllChanges(resultXml)));
+        });
+
+        await then('accept transform is idempotent', async () => {
+          assertNormalizedEqual(acceptOnce, acceptTwice, `${fixtureName}/${mode}/accept-idempotence`);
+        });
+
+        await then('reject transform is idempotent', async () => {
+          assertNormalizedEqual(rejectOnce, rejectTwice, `${fixtureName}/${mode}/reject-idempotence`);
+        });
       });
     }
   }
 
-  it('determinism: same small fixture inputs produce same semantic output across runs', async () => {
-    const { original, revised } = await loadFixturePair('split-run-boundary-change');
+  test('determinism: same small fixture inputs produce same semantic output across runs', async ({ given, when, then }: AllureBddContext) => {
+    let original: Buffer;
+    let revised: Buffer;
+    let runs: RunSnapshot[];
 
-    const runs = await Promise.all([
-      runAndSnapshot(original, revised, 'inplace'),
-      runAndSnapshot(original, revised, 'inplace'),
-      runAndSnapshot(original, revised, 'inplace'),
-    ]);
+    await given('split-run-boundary-change documents are loaded', async () => {
+      ({ original, revised } = await loadFixturePair('split-run-boundary-change'));
+    });
 
-    const [first, ...rest] = runs;
-    for (const [index, current] of rest.entries()) {
-      assertNormalizedEqual(first.semantic.raw, current.semantic.raw, `determinism/small/raw/run${index + 2}`);
-      assertNormalizedEqual(
-        first.semantic.accepted,
-        current.semantic.accepted,
-        `determinism/small/accepted/run${index + 2}`
-      );
-      assertNormalizedEqual(
-        first.semantic.rejected,
-        current.semantic.rejected,
-        `determinism/small/rejected/run${index + 2}`
-      );
+    await when('documents are compared in inplace mode three times concurrently', async () => {
+      runs = await Promise.all([
+        runAndSnapshot(original, revised, 'inplace'),
+        runAndSnapshot(original, revised, 'inplace'),
+        runAndSnapshot(original, revised, 'inplace'),
+      ]);
+    });
 
-      expect(current.reconstructionModeUsed).toBe(first.reconstructionModeUsed);
-      expect(current.fallbackReason).toBe(first.fallbackReason);
-      expect(current.failedChecks).toEqual(first.failedChecks);
-    }
+    await then('all runs produce identical semantic output', async () => {
+      const first = runs[0]!;
+      const rest = runs.slice(1);
+      for (const [index, current] of rest.entries()) {
+        assertNormalizedEqual(first.semantic.raw, current.semantic.raw, `determinism/small/raw/run${index + 2}`);
+        assertNormalizedEqual(
+          first.semantic.accepted,
+          current.semantic.accepted,
+          `determinism/small/accepted/run${index + 2}`
+        );
+        assertNormalizedEqual(
+          first.semantic.rejected,
+          current.semantic.rejected,
+          `determinism/small/rejected/run${index + 2}`
+        );
+
+        expect(current.reconstructionModeUsed).toBe(first.reconstructionModeUsed);
+        expect(current.fallbackReason).toBe(first.fallbackReason);
+        expect(current.failedChecks).toEqual(first.failedChecks);
+      }
+    });
   });
 
-  it(
+  test(
     'determinism: synthetic core corpus stays inplace without fallback',
-    async () => {
-      const [original, revised] = await Promise.all([
-        readFile(SYNTHETIC_INPLACE_ORIGINAL_DOC),
-        readFile(SYNTHETIC_INPLACE_REVISED_DOC),
-      ]);
+    async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer;
+      let revised: Buffer;
+      let runs: RunSnapshot[];
 
-      const runs = await Promise.all([
-        runAndSnapshot(original, revised, 'inplace'),
-        runAndSnapshot(original, revised, 'inplace'),
-      ]);
+      await given('synthetic split-run-boundary-change documents are loaded', async () => {
+        [original, revised] = await Promise.all([
+          readFile(SYNTHETIC_INPLACE_ORIGINAL_DOC),
+          readFile(SYNTHETIC_INPLACE_REVISED_DOC),
+        ]);
+      });
 
-      const [first, second] = runs;
-      assertNormalizedEqual(first.semantic.raw, second.semantic.raw, 'determinism/synthetic/raw');
-      assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/synthetic/accepted');
-      assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/synthetic/rejected');
+      await when('documents are compared in inplace mode twice concurrently', async () => {
+        runs = await Promise.all([
+          runAndSnapshot(original, revised, 'inplace'),
+          runAndSnapshot(original, revised, 'inplace'),
+        ]);
+      });
 
-      expect(first.reconstructionModeUsed).toBe('inplace');
-      expect(second.reconstructionModeUsed).toBe('inplace');
-      expect(first.fallbackReason).toBeUndefined();
-      expect(second.fallbackReason).toBeUndefined();
-      expect(first.failedChecks).toEqual([]);
-      expect(second.failedChecks).toEqual([]);
+      await then('both runs produce identical semantic output in inplace mode without fallback', async () => {
+        const first = runs[0]!;
+        const second = runs[1]!;
+        assertNormalizedEqual(first.semantic.raw, second.semantic.raw, 'determinism/synthetic/raw');
+        assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/synthetic/accepted');
+        assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/synthetic/rejected');
+
+        expect(first.reconstructionModeUsed).toBe('inplace');
+        expect(second.reconstructionModeUsed).toBe('inplace');
+        expect(first.fallbackReason).toBeUndefined();
+        expect(second.fallbackReason).toBeUndefined();
+        expect(first.failedChecks).toEqual([]);
+        expect(second.failedChecks).toEqual([]);
+      });
     },
     180000
   );
 
-  it(
+  test(
     'determinism: ILPA corpus inplace results are stable across runs',
-    async () => {
-      const [original, revised] = await Promise.all([
-        readFile(ILPA_ORIGINAL_DOC),
-        readFile(ILPA_REVISED_DOC),
-      ]);
+    async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer;
+      let revised: Buffer;
+      let runs: RunSnapshot[];
 
-      // premergeRuns defaults to true — do not override.
-      // Issue #35 fixed: setLeafText now syncs both `data` and `nodeValue` on xmldom
-      // text nodes, so ILPA no longer falls back to rebuild with premerge enabled.
-      const runs = await Promise.all([
-        runAndSnapshot(original, revised, 'inplace'),
-        runAndSnapshot(original, revised, 'inplace'),
-      ]);
+      await given('ILPA original and revised documents are loaded', async () => {
+        [original, revised] = await Promise.all([
+          readFile(ILPA_ORIGINAL_DOC),
+          readFile(ILPA_REVISED_DOC),
+        ]);
+      });
 
-      const [first, second] = runs;
-      assertNormalizedEqual(first.semantic.raw, second.semantic.raw, 'determinism/ilpa/raw');
-      assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/ilpa/accepted');
-      assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/ilpa/rejected');
+      await when('documents are compared in inplace mode twice concurrently', async () => {
+        // premergeRuns defaults to true — do not override.
+        // Issue #35 fixed: setLeafText now syncs both `data` and `nodeValue` on xmldom
+        // text nodes, so ILPA no longer falls back to rebuild with premerge enabled.
+        runs = await Promise.all([
+          runAndSnapshot(original, revised, 'inplace'),
+          runAndSnapshot(original, revised, 'inplace'),
+        ]);
+      });
 
-      expect(first.reconstructionModeUsed).toBe('inplace');
-      expect(second.reconstructionModeUsed).toBe('inplace');
-      expect(first.fallbackReason).toBeUndefined();
-      expect(second.fallbackReason).toBeUndefined();
-      expect(first.failedChecks).toEqual([]);
-      expect(second.failedChecks).toEqual([]);
-      expect(first.failedChecks).toEqual(second.failedChecks);
+      await then('both runs produce identical semantic output in inplace mode without fallback', async () => {
+        const first = runs[0]!;
+        const second = runs[1]!;
+        assertNormalizedEqual(first.semantic.raw, second.semantic.raw, 'determinism/ilpa/raw');
+        assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/ilpa/accepted');
+        assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/ilpa/rejected');
+
+        expect(first.reconstructionModeUsed).toBe('inplace');
+        expect(second.reconstructionModeUsed).toBe('inplace');
+        expect(first.fallbackReason).toBeUndefined();
+        expect(second.fallbackReason).toBeUndefined();
+        expect(first.failedChecks).toEqual([]);
+        expect(second.failedChecks).toEqual([]);
+        expect(first.failedChecks).toEqual(second.failedChecks);
+      });
     },
     180000
   );
 
   for (const mode of MODES) {
-    it(`no-op/${mode}: compare(original, original) yields zero semantic change`, async () => {
-      const { original } = await loadFixturePair('simple-word-change');
-      const result = await compareDocuments(original, original, {
-        engine: 'atomizer',
-        reconstructionMode: mode,
+    test(`no-op/${mode}: compare(original, original) yields zero semantic change`, async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer;
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      let originalReadText: string;
+      let resultSemantic: SemanticView;
+
+      await given('simple-word-change original document is loaded', async () => {
+        ({ original } = await loadFixturePair('simple-word-change'));
       });
 
-      expect(result.stats.insertions).toBe(0);
-      expect(result.stats.deletions).toBe(0);
-      expect(result.stats.modifications).toBe(0);
-      expect(result.fallbackReason).toBeUndefined();
+      await when(`original document is compared against itself in ${mode} mode`, async () => {
+        result = await compareDocuments(original, original, {
+          engine: 'atomizer',
+          reconstructionMode: mode,
+        });
 
-      const originalXml = await getDocXml(original);
-      const resultXml = await getDocXml(result.document);
+        const originalXml = await getDocXml(original);
+        const resultXml = await getDocXml(result.document);
 
-      const originalReadText = extractTextWithParagraphs(originalXml);
-      const resultSemantic = semanticViewFromXml(resultXml);
+        originalReadText = extractTextWithParagraphs(originalXml);
+        resultSemantic = semanticViewFromXml(resultXml);
+      });
 
-      assertNormalizedEqual(originalReadText, resultSemantic.raw, `no-op/${mode}/raw`);
-      assertNormalizedEqual(originalReadText, resultSemantic.accepted, `no-op/${mode}/accept`);
-      assertNormalizedEqual(originalReadText, resultSemantic.rejected, `no-op/${mode}/reject`);
+      await then('zero changes are detected and all semantic views match original', async () => {
+        expect(result.stats.insertions).toBe(0);
+        expect(result.stats.deletions).toBe(0);
+        expect(result.stats.modifications).toBe(0);
+        expect(result.fallbackReason).toBeUndefined();
+
+        assertNormalizedEqual(originalReadText, resultSemantic.raw, `no-op/${mode}/raw`);
+        assertNormalizedEqual(originalReadText, resultSemantic.accepted, `no-op/${mode}/accept`);
+        assertNormalizedEqual(originalReadText, resultSemantic.rejected, `no-op/${mode}/reject`);
+      });
     });
   }
 });

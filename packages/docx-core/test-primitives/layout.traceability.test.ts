@@ -3,19 +3,9 @@ import { parseXml, serializeXml } from '../src/primitives/xml.js';
 import { OOXML, W } from '../src/primitives/namespaces.js';
 import { getParagraphBookmarkId, insertParagraphBookmarks } from '../src/primitives/bookmarks.js';
 import { setParagraphSpacing, setTableCellPadding, setTableRowHeight } from '../src/primitives/layout.js';
-import { itAllure, allureStep, allureJsonAttachment } from './helpers/allure-test.js';
+import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 
-const TEST_FEATURE = 'docx-primitives';
-
-const it = itAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
-
-const humanReadableIt = it.allure({
-  
-  tags: ['human-readable'],
-  
-  parameters: { audience: 'non-technical' },
-  
-});
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Layout' });
 
 function makeDoc(bodyXml: string): Document {
   const xml =
@@ -31,17 +21,17 @@ function getWAttr(el: Element, localName: string): string | null {
 }
 
 describe('Traceability: docx-primitives — OOXML Layout', () => {
-  humanReadableIt.openspec('setParagraphSpacing creates missing pPr and spacing containers')('Scenario: setParagraphSpacing creates missing pPr and spacing containers', async () => {
+  test.openspec('setParagraphSpacing creates missing pPr and spacing containers')('Scenario: setParagraphSpacing creates missing pPr and spacing containers', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
     const doc = makeDoc('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>');
     insertParagraphBookmarks(doc, 'test-attachment');
     const p = doc.getElementsByTagNameNS(OOXML.W_NS, W.p).item(0)!;
     const paraId = getParagraphBookmarkId(p)!;
 
-    await allureStep('Given a paragraph element without w:spacing children', async () => {
-      await allureJsonAttachment('Paragraph ID', { paraId });
+    await given('a paragraph element without w:spacing children', async () => {
+      await attachPrettyJson('Paragraph ID', { paraId });
     });
 
-    await allureStep('When setParagraphSpacing is called', async () => {
+    await when('setParagraphSpacing is called', async () => {
       const result = setParagraphSpacing(doc, {
         paragraphIds: [paraId],
         beforeTwips: 120,
@@ -49,10 +39,10 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
         lineTwips: 360,
         lineRule: 'auto',
       });
-      await allureJsonAttachment('Result', result);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the engine SHALL create pPr and spacing elements', () => {
+    await then('the engine SHALL create pPr and spacing elements', () => {
       const pPr = p.getElementsByTagNameNS(OOXML.W_NS, W.pPr).item(0) as Element;
       expect(pPr).toBeTruthy();
       const spacing = pPr.getElementsByTagNameNS(OOXML.W_NS, W.spacing).item(0) as Element;
@@ -62,7 +52,7 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
     });
   });
 
-  humanReadableIt.openspec('setParagraphSpacing preserves unrelated formatting nodes')('Scenario: setParagraphSpacing preserves unrelated formatting nodes', async () => {
+  test.openspec('setParagraphSpacing preserves unrelated formatting nodes')('Scenario: setParagraphSpacing preserves unrelated formatting nodes', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
     const doc = makeDoc(
       '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Beta</w:t></w:r></w:p>',
     );
@@ -70,17 +60,17 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
     const p = doc.getElementsByTagNameNS(OOXML.W_NS, W.p).item(0)!;
     const paraId = getParagraphBookmarkId(p)!;
 
-    await allureStep('Given a paragraph with existing pPr children', async () => {
+    await given('a paragraph with existing pPr children', () => {
       const jc = doc.getElementsByTagNameNS(OOXML.W_NS, W.jc);
       expect(jc.length).toBe(1);
     });
 
-    await allureStep('When setParagraphSpacing is called', async () => {
+    await when('setParagraphSpacing is called', async () => {
       setParagraphSpacing(doc, { paragraphIds: [paraId], afterTwips: 180 });
-      await allureJsonAttachment('Result XML', serializeXml(doc));
+      await attachPrettyJson('Result XML', serializeXml(doc));
     });
 
-    await allureStep('Then existing pPr children SHALL be preserved', () => {
+    await then('existing pPr children SHALL be preserved', () => {
       const pPr = p.getElementsByTagNameNS(OOXML.W_NS, W.pPr).item(0)!;
       const jc = pPr.getElementsByTagNameNS(OOXML.W_NS, W.jc).item(0) as Element;
       expect(jc).toBeTruthy();
@@ -90,7 +80,7 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
     });
   });
 
-  humanReadableIt.openspec('setTableRowHeight reports missing indexes')('Scenario: setTableRowHeight reports missing indexes', async () => {
+  test.openspec('setTableRowHeight reports missing indexes')('Scenario: setTableRowHeight reports missing indexes', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const doc = makeDoc(
       '<w:tbl>' +
       '<w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc></w:tr>' +
@@ -98,18 +88,18 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
       '</w:tbl>',
     );
 
-    const result = await allureStep('When setTableRowHeight is called with out-of-range indexes', async () => {
-      const r = setTableRowHeight(doc, {
+    let result!: ReturnType<typeof setTableRowHeight>;
+    await when('setTableRowHeight is called with out-of-range indexes', async () => {
+      result = setTableRowHeight(doc, {
         tableIndexes: [0, 2],
         rowIndexes: [1, 5],
         valueTwips: 420,
         rule: 'exact',
       });
-      await allureJsonAttachment('Result', r);
-      return r;
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL report missing indexes', () => {
+    await then('the result SHALL report missing indexes', () => {
       expect(result.missingTableIndexes).toContain(2);
       expect(result.missingRowIndexes).toEqual(
         expect.arrayContaining([expect.objectContaining({ tableIndex: 0, rowIndex: 5 })]),
@@ -117,7 +107,7 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
     });
   });
 
-  humanReadableIt.openspec('setTableCellPadding creates tcPr and tcMar containers')('Scenario: setTableCellPadding creates tcPr and tcMar containers', async () => {
+  test.openspec('setTableCellPadding creates tcPr and tcMar containers')('Scenario: setTableCellPadding creates tcPr and tcMar containers', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
     const doc = makeDoc(
       '<w:tbl>' +
       '<w:tr>' +
@@ -127,12 +117,12 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
       '</w:tbl>',
     );
 
-    await allureStep('Given a table cell without tcPr or tcMar children', async () => {
+    await given('a table cell without tcPr or tcMar children', () => {
       const tcPr = doc.getElementsByTagNameNS(OOXML.W_NS, 'tcPr');
       expect(tcPr.length).toBe(0);
     });
 
-    await allureStep('When setTableCellPadding is called', async () => {
+    await when('setTableCellPadding is called', async () => {
       const result = setTableCellPadding(doc, {
         tableIndexes: [0],
         rowIndexes: [0],
@@ -142,10 +132,10 @@ describe('Traceability: docx-primitives — OOXML Layout', () => {
         leftDxa: 40,
         rightDxa: 60,
       });
-      await allureJsonAttachment('Result', result);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the engine SHALL create container elements and untargeted cells SHALL NOT be modified', () => {
+    await then('the engine SHALL create container elements and untargeted cells SHALL NOT be modified', () => {
       const firstCell = doc.getElementsByTagNameNS(OOXML.W_NS, W.tc).item(0)!;
       const secondCell = doc.getElementsByTagNameNS(OOXML.W_NS, W.tc).item(1)!;
 

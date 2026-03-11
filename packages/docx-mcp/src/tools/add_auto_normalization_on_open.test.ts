@@ -6,7 +6,7 @@ import { openDocument } from './open_document.js';
 import { readFile } from './read_file.js';
 import { getSessionStatus } from './get_session_status.js';
 import { extractParaIdsFromToon, makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
-import { testAllure, allureStep, allureJsonAttachment } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertFailure,
   assertSuccess,
@@ -76,62 +76,62 @@ describe('Traceability: Auto-Normalization on Open', () => {
 
   // ── ADDED: Automatic Document Normalization ─────────────────────────
 
-  humanReadableTest.openspec('document is normalized on open by default')('Scenario: document is normalized on open by default', async () => {
+  humanReadableTest.openspec('document is normalized on open by default')('Scenario: document is normalized on open by default', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-default-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
 
-    const opened = await allureStep('When a document is opened via open_document without skip_normalization', async () => {
+    const opened = await when('a document is opened via open_document without skip_normalization', async () => {
       const r = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(r, 'open_document');
-      await allureJsonAttachment('open_document response', r);
+      await attachPrettyJson('open_document response', r);
       return r;
     });
 
-    await allureStep('Then normalization SHALL have merged runs', () => {
+    await then('normalization SHALL have merged runs', () => {
       const norm = normalizationSummary(opened);
       expect(norm.runs_merged).toBeGreaterThanOrEqual(1);
       expect(norm.normalization_skipped).toBe(false);
     });
   });
 
-  humanReadableTest.openspec('skip_normalization bypasses preprocessing')('Scenario: skip_normalization bypasses preprocessing', async () => {
+  humanReadableTest.openspec('skip_normalization bypasses preprocessing')('Scenario: skip_normalization bypasses preprocessing', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-skip-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
 
-    const opened = await allureStep('When a document is opened with skip_normalization=true', async () => {
+    const opened = await when('a document is opened with skip_normalization=true', async () => {
       const r = await openDocument(mgr, { file_path: inputPath, skip_normalization: true });
       assertSuccess(r, 'open_document');
-      await allureJsonAttachment('open_document response', r);
+      await attachPrettyJson('open_document response', r);
       return r;
     });
 
-    await allureStep('Then session metadata SHALL report normalization_skipped=true', () => {
+    await then('session metadata SHALL report normalization_skipped=true', () => {
       const norm = normalizationSummary(opened);
       expect(norm.normalization_skipped).toBe(true);
     });
   });
 
-  humanReadableTest.openspec('normalization stats in session metadata')('Scenario: normalization stats in session metadata', async () => {
+  humanReadableTest.openspec('normalization stats in session metadata')('Scenario: normalization stats in session metadata', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-stats-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
 
-    const opened = await allureStep('Given a document that has been normalized on open', async () => {
+    const opened = await given('a document that has been normalized on open', async () => {
       const r = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(r, 'open_document');
       return r;
     });
 
-    const status = await allureStep('When get_session_status is called', async () => {
+    const status = await when('get_session_status is called', async () => {
       const r = await getSessionStatus(mgr, { session_id: opened.session_id as string });
       assertSuccess(r, 'get_session_status');
-      await allureJsonAttachment('get_session_status response', r);
+      await attachPrettyJson('get_session_status response', r);
       return r;
     });
 
-    await allureStep('Then the response SHALL include runs_merged, redlines_simplified, and normalization_skipped fields', () => {
+    await then('the response SHALL include runs_merged, redlines_simplified, and normalization_skipped fields', () => {
       const norm = normalizationSummary(status);
       expect(norm).toBeTruthy();
       expect(typeof norm.runs_merged).toBe('number');
@@ -141,7 +141,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  humanReadableTest.openspec('_bk_* IDs stable across normalization')('Scenario: _bk_* IDs stable across normalization', async () => {
+  humanReadableTest.openspec('_bk_* IDs stable across normalization')('Scenario: _bk_* IDs stable across normalization', async ({ given, and, then, attachPrettyJson }: AllureBddContext) => {
     const xml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W_NS}">` +
@@ -151,7 +151,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
       `<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>Third </w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>italic</w:t></w:r></w:p>` +
       `</w:body></w:document>`;
 
-    const normalizedIds = await allureStep('Given a document opened with normalization enabled', async () => {
+    const normalizedIds = await given('a document opened with normalization enabled', async () => {
       const mgr1 = createTestSessionManager();
       const tmpDir1 = await createTrackedTempDir('norm-allure-ids-on-');
       const inputPath1 = await writeTestDocx(tmpDir1, xml);
@@ -162,7 +162,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
       return extractParaIdsFromToon(String(read1.content));
     });
 
-    const skippedIds = await allureStep('And the same document opened with normalization disabled', async () => {
+    const skippedIds = await and('the same document opened with normalization disabled', async () => {
       const mgr2 = createTestSessionManager();
       const tmpDir2 = await createTrackedTempDir('norm-allure-ids-off-');
       const inputPath2 = await writeTestDocx(tmpDir2, xml);
@@ -173,9 +173,9 @@ describe('Traceability: Auto-Normalization on Open', () => {
       return extractParaIdsFromToon(String(read2.content));
     });
 
-    await allureStep('Then unchanged paragraphs SHALL receive the same _bk_* identifiers', async () => {
-      await allureJsonAttachment('normalized IDs', normalizedIds);
-      await allureJsonAttachment('skipped IDs', skippedIds);
+    await then('unchanged paragraphs SHALL receive the same _bk_* identifiers', async () => {
+      await attachPrettyJson('normalized IDs', normalizedIds);
+      await attachPrettyJson('skipped IDs', skippedIds);
       expect(normalizedIds.length).toBe(3);
       expect(skippedIds.length).toBe(3);
       expect(normalizedIds).toEqual(skippedIds);
@@ -184,19 +184,19 @@ describe('Traceability: Auto-Normalization on Open', () => {
 
   // ── MODIFIED: Tool Session Entry ────────────────────────────────────
 
-  humanReadableTest.openspec('document tools accept file-first entry without pre-open')('Scenario: document tools accept file-first entry without pre-open', async () => {
+  humanReadableTest.openspec('document tools accept file-first entry without pre-open')('Scenario: document tools accept file-first entry without pre-open', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-filefirst-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
 
-    const result = await allureStep('When readFile is called with file_path and without session_id', async () => {
+    const result = await when('readFile is called with file_path and without session_id', async () => {
       const r = await readFile(mgr, { file_path: inputPath });
       assertSuccess(r, 'readFile file-first');
-      await allureJsonAttachment('readFile response', r);
+      await attachPrettyJson('readFile response', r);
       return r;
     });
 
-    await allureStep('Then the server SHALL resolve a session and return session_resolution metadata', () => {
+    await then('the server SHALL resolve a session and return session_resolution metadata', () => {
       const meta = sessionMetadata(result);
       expect(meta.session_resolution).toBe('opened_new_session');
       expect(meta.resolved_session_id).toBeTruthy();
@@ -204,25 +204,25 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  humanReadableTest.openspec('reuse policy selects most-recently-used session')('Scenario: reuse policy selects most-recently-used session', async () => {
+  humanReadableTest.openspec('reuse policy selects most-recently-used session')('Scenario: reuse policy selects most-recently-used session', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-reuse-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
 
-    const first = await allureStep('Given a document is opened via file_path', async () => {
+    const first = await given('a document is opened via file_path', async () => {
       const r = await readFile(mgr, { file_path: inputPath });
       assertSuccess(r, 'first read');
       return r;
     });
 
-    const second = await allureStep('When the same tool is called again with the same file_path', async () => {
+    const second = await when('the same tool is called again with the same file_path', async () => {
       const r = await readFile(mgr, { file_path: inputPath });
       assertSuccess(r, 'second read');
-      await allureJsonAttachment('second readFile response', r);
+      await attachPrettyJson('second readFile response', r);
       return r;
     });
 
-    await allureStep('Then the second call SHALL reuse the existing session', () => {
+    await then('the second call SHALL reuse the existing session', () => {
       const firstMeta = sessionMetadata(first);
       const secondMeta = sessionMetadata(second);
       expect(secondMeta.resolved_session_id).toBe(firstMeta.resolved_session_id);
@@ -230,30 +230,30 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  humanReadableTest.openspec('existing session reuse is non-blocking and warns via metadata')('Scenario: existing session reuse is non-blocking and warns via metadata', async () => {
+  humanReadableTest.openspec('existing session reuse is non-blocking and warns via metadata')('Scenario: existing session reuse is non-blocking and warns via metadata', async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-warn-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
 
-    await allureStep('Given an active editing session already exists for a file', async () => {
+    await given('an active editing session already exists for a file', async () => {
       const r = await readFile(mgr, { file_path: inputPath });
       assertSuccess(r, 'initial open');
     });
 
-    const reused = await allureStep('When a document tool is called with that file_path and no session_id', async () => {
+    const reused = await when('a document tool is called with that file_path and no session_id', async () => {
       const r = await readFile(mgr, { file_path: inputPath });
       assertSuccess(r, 'reuse read');
-      await allureJsonAttachment('reuse response', r);
+      await attachPrettyJson('reuse response', r);
       return r;
     });
 
-    await allureStep('Then the server SHALL return warning metadata indicating existing session reuse', () => {
+    await then('the server SHALL return warning metadata indicating existing session reuse', () => {
       const meta = sessionMetadata(reused);
       expect(meta.reused_existing_session).toBe(true);
       expect(meta.warning).toBeTruthy();
     });
 
-    await allureStep('And SHALL include reuse context in the response', () => {
+    await and('SHALL include reuse context in the response', () => {
       const ctx = sessionMetadata(reused).reused_session_context;
       expect(ctx).toBeTruthy();
       if (!ctx) throw new Error('expected reused_session_context');
@@ -264,53 +264,53 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  humanReadableTest.openspec('conflicting `session_id` and `file_path` is rejected')('Scenario: conflicting session_id and file_path is rejected', async () => {
+  humanReadableTest.openspec('conflicting `session_id` and `file_path` is rejected')('Scenario: conflicting session_id and file_path is rejected', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-conflict-');
     const inputPath1 = await writeTestDocx(tmpDir, MERGEABLE_XML, 'doc1.docx');
     const inputPath2 = await writeTestDocx(tmpDir, MERGEABLE_XML, 'doc2.docx');
 
-    const opened = await allureStep('Given a session opened for one document', async () => {
+    const opened = await given('a session opened for one document', async () => {
       const r = await openDocument(mgr, { file_path: inputPath1 });
       assertSuccess(r, 'open doc1');
       return r;
     });
 
-    const result = await allureStep('When a tool call provides that session_id with a different file_path', async () => {
+    const result = await when('a tool call provides that session_id with a different file_path', async () => {
       const r = await readFile(mgr, {
         session_id: opened.session_id as string,
         file_path: inputPath2,
       });
-      await allureJsonAttachment('conflict response', r);
+      await attachPrettyJson('conflict response', r);
       return r;
     });
 
-    await allureStep('Then the server SHALL reject the call with a conflict error', () => {
+    await then('the server SHALL reject the call with a conflict error', () => {
       assertFailure(result, 'SESSION_FILE_CONFLICT', 'conflict');
     });
   });
 
-  humanReadableTest.openspec('new session creation includes normalization')('Scenario: new session creation includes normalization', async () => {
+  humanReadableTest.openspec('new session creation includes normalization')('Scenario: new session creation includes normalization', async ({ when, and, then, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-newsession-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
 
-    const read = await allureStep('When readFile is called with file_path on a doc with mergeable runs', async () => {
+    const read = await when('readFile is called with file_path on a doc with mergeable runs', async () => {
       const r = await readFile(mgr, { file_path: inputPath });
       assertSuccess(r, 'readFile file-first');
       return r;
     });
 
-    const status = await allureStep('And get_session_status is called for the resolved session', async () => {
+    const status = await and('get_session_status is called for the resolved session', async () => {
       const resolvedSessionId = sessionMetadata(read).resolved_session_id;
       expect(resolvedSessionId).toBeTruthy();
       const r = await getSessionStatus(mgr, { session_id: resolvedSessionId as string });
       assertSuccess(r, 'get_session_status');
-      await allureJsonAttachment('session status', r);
+      await attachPrettyJson('session status', r);
       return r;
     });
 
-    await allureStep('Then normalization stats SHALL be present and not skipped', () => {
+    await then('normalization stats SHALL be present and not skipped', () => {
       const norm = normalizationSummary(status);
       expect(norm).toBeTruthy();
       expect(norm.normalization_skipped).toBe(false);

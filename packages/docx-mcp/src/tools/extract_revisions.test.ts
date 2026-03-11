@@ -12,10 +12,6 @@ import { MCP_TOOLS } from '../server.js';
 import {
   type AllureBddContext,
   testAllure,
-  allureStep,
-  allureJsonAttachment,
-  getAllureRuntime,
-  type AllureStepContext,
 } from '../testing/allure-test.js';
 import {
   assertSuccess,
@@ -35,8 +31,6 @@ const SIMPLE_FIXTURE_DIR = path.resolve(
   TEST_DIR,
   '../../../docx-core/src/testing/fixtures/simple-word-change',
 );
-
-type StepValue = string | number | boolean;
 
 type RevisionSummary = {
   type?: string;
@@ -78,37 +72,6 @@ function asChanges(value: unknown): ExtractedChange[] {
 
 function asComments(value: unknown): ExtractedComment[] {
   return Array.isArray(value) ? (value as ExtractedComment[]) : [];
-}
-
-async function allureStepWithParameters(
-  name: string,
-  parameters: Record<string, StepValue>,
-  run: () => void | Promise<void>,
-): Promise<void> {
-  const allureRuntime = getAllureRuntime();
-  if (!allureRuntime) {
-    await run();
-    return;
-  }
-
-  await allureRuntime.step(name, async (stepContext: AllureStepContext) => {
-    for (const [key, value] of Object.entries(parameters)) {
-      if (typeof stepContext.parameter === 'function') {
-        await stepContext.parameter(key, String(value));
-      }
-    }
-    await run();
-  });
-}
-
-async function assertStepEqual(
-  name: string,
-  expected: StepValue,
-  actual: StepValue,
-): Promise<void> {
-  await allureStepWithParameters(name, { expected, actual }, async () => {
-    expect(actual).toBe(expected);
-  });
 }
 
 async function createRealTrackedChangesFixture(): Promise<string> {
@@ -409,34 +372,40 @@ describe('extract_revisions tool', () => {
     })
     .openspec('[SDX-ER-002] extracting revisions from a document with no tracked changes')(
     'Scenario: [SDX-ER-002] extracting revisions from a document with no tracked changes',
-    async () => {
+    async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
       const scenarioId = 'SDX-ER-002';
 
-      const { mgr, sessionId } = await openSession(['Hello world', 'Second paragraph']);
       const readableInputSummary = {
         scenario_id: scenarioId,
         paragraphs: ['Hello world', 'Second paragraph'],
       };
 
-      let extracted: ExtractRevisionsSuccess | undefined;
-      await allureStepWithParameters(
-        'Given a clean document with no tracked changes',
+      const { mgr, sessionId } = await given(
+        'a clean document with no tracked changes',
+        () => openSession(['Hello world', 'Second paragraph']),
         { paragraph_count: readableInputSummary.paragraphs.length },
-        async () => {},
       );
-      await allureStep('When extract_revisions is run on the clean document', async () => {
-        const result = await extractRevisions_tool(mgr, { session_id: sessionId });
-        extracted = asExtractRevisionsSuccess(result);
-      });
-      const result = extracted!;
 
-      await assertStepEqual('Then total_changes is 0', 0, Number(result.total_changes ?? -1));
-      await assertStepEqual('And changes array length is 0', 0, result.changes.length);
-      await assertStepEqual('And has_more is false', false, Boolean(result.has_more));
+      let result: ExtractRevisionsSuccess;
+      await when('extract_revisions is run on the clean document', async () => {
+        const raw = await extractRevisions_tool(mgr, { session_id: sessionId });
+        result = asExtractRevisionsSuccess(raw);
+      });
+      result = result!;
+
+      await then('total_changes is 0', async () => {
+        expect(Number(result.total_changes ?? -1)).toBe(0);
+      }, { expected: 0, actual: Number(result.total_changes ?? -1) });
+      await and('changes array length is 0', async () => {
+        expect(result.changes.length).toBe(0);
+      }, { expected: 0, actual: result.changes.length });
+      await and('has_more is false', async () => {
+        expect(Boolean(result.has_more)).toBe(false);
+      }, { expected: false, actual: Boolean(result.has_more) });
 
       // Keep technical JSON artifacts at the bottom so the narrative steps stay contiguous.
-      await allureJsonAttachment('Readable input summary', readableInputSummary);
-      await allureJsonAttachment('Raw result (engineer view)', result);
+      await attachPrettyJson('Readable input summary', readableInputSummary);
+      await attachPrettyJson('Raw result (engineer view)', result);
     },
   );
 
@@ -444,7 +413,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('property-only changes are included in extraction')(
     'Scenario: property-only changes are included in extraction',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -460,15 +429,18 @@ describe('extract_revisions tool', () => {
           `</w:r></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
+      const { mgr, sessionId } = await given(
+        'a document with a run property change tracked by Carol',
+        () => openSession([], { xml: docXml }),
+      );
 
-      const result = await allureStep('Call extract_revisions', () =>
+      const result = await when('extract_revisions is called', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Verify FORMAT_CHANGE', () => {
+      await then('FORMAT_CHANGE is reported with correct author', () => {
         expect(result.total_changes).toBe(1);
         const changes = asChanges(result.changes);
         expect(changes).toHaveLength(1);
@@ -483,7 +455,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('paginating through revisions with offset and limit')(
     'Scenario: paginating through revisions with offset and limit',
-    async () => {
+    async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -493,25 +465,29 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>C</w:t></w:r><w:ins w:author="X"><w:r><w:t>3</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
+      const { mgr, sessionId } = await given(
+        'a document with 3 paragraphs each containing an insertion',
+        () => openSession([], { xml: docXml }),
+      );
 
-      const page1 = await allureStep('Page 1: offset=0, limit=2', () =>
+      const page1 = await when('extract_revisions is called with offset=0, limit=2', () =>
         extractRevisions_tool(mgr, { session_id: sessionId, offset: 0, limit: 2 }),
       );
       assertSuccess(page1, 'page1');
-      await allureJsonAttachment('page1', page1);
+      await attachPrettyJson('page1', page1);
 
-      const page2 = await allureStep('Page 2: offset=2, limit=2', () =>
+      const page2 = await and('extract_revisions is called with offset=2, limit=2', () =>
         extractRevisions_tool(mgr, { session_id: sessionId, offset: 2, limit: 2 }),
       );
       assertSuccess(page2, 'page2');
-      await allureJsonAttachment('page2', page2);
+      await attachPrettyJson('page2', page2);
 
-      await allureStep('Verify pagination', () => {
+      await then('page 1 returns 2 changes and has_more is true', () => {
         expect(page1.total_changes).toBe(3);
         expect((asChanges(page1.changes)).length).toBe(2);
         expect(page1.has_more).toBe(true);
-
+      });
+      await and('page 2 returns 1 change and has_more is false', () => {
         expect(page2.total_changes).toBe(3);
         expect((asChanges(page2.changes)).length).toBe(1);
         expect(page2.has_more).toBe(false);
@@ -523,7 +499,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('session document is unchanged after extraction')(
     'Scenario: session document is unchanged after extraction',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -531,19 +507,23 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>Text</w:t></w:r><w:ins w:author="X"><w:r><w:t> added</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
+      const { mgr, sessionId } = await given(
+        'a document with a tracked insertion is open in a session',
+        () => openSession([], { xml: docXml }),
+      );
 
-      const revisionBefore = await allureStep('Get edit_revision before', () => {
+      let revisionBefore: unknown;
+      await given('the edit_revision before extraction is recorded', () => {
         const session = mgr.getSession(sessionId);
-        return session.editRevision;
+        revisionBefore = session.editRevision;
       });
 
-      const result = await allureStep('Call extract_revisions', () =>
+      const result = await when('extract_revisions is called', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
 
-      await allureStep('Verify edit_revision unchanged', () => {
+      await then('the edit_revision is unchanged after extraction', () => {
         const session = mgr.getSession(sessionId);
         expect(session.editRevision).toBe(revisionBefore);
         expect(result.edit_revision).toBe(revisionBefore);
@@ -555,14 +535,17 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('missing session context returns error')(
     'Scenario: missing session context returns error',
-    async () => {
-      const mgr = createTestSessionManager();
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+      const mgr = await given('a session manager with no open sessions', () => createTestSessionManager());
 
-      const result = await allureStep('Call extract_revisions with no params', () =>
+      const result = await when('extract_revisions is called with no params', () =>
         extractRevisions_tool(mgr, {}),
       );
-      assertFailure(result, 'MISSING_SESSION_CONTEXT', 'extract_revisions');
-      await allureJsonAttachment('result', result);
+
+      await then('the tool returns a MISSING_SESSION_CONTEXT error', () => {
+        assertFailure(result, 'MISSING_SESSION_CONTEXT', 'extract_revisions');
+      });
+      await attachPrettyJson('result', result);
     },
   );
 
@@ -570,32 +553,44 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('invalid limit is rejected')(
     'Scenario: invalid limit is rejected',
-    async () => {
-      const { mgr, sessionId } = await openSession(['Hello']);
+    async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
+      const { mgr, sessionId } = await given(
+        'an open session with one paragraph',
+        () => openSession(['Hello']),
+      );
 
-      const result = await allureStep('Call with limit=0', () =>
+      const result = await when('extract_revisions is called with limit=0', () =>
         extractRevisions_tool(mgr, { session_id: sessionId, limit: 0 }),
       );
-      assertFailure(result, 'INVALID_LIMIT', 'extract_revisions');
-      await allureJsonAttachment('result', result);
+      await then('the tool returns an INVALID_LIMIT error', () => {
+        assertFailure(result, 'INVALID_LIMIT', 'extract_revisions');
+      });
+      await attachPrettyJson('result (limit=0)', result);
 
-      const result2 = await allureStep('Call with limit=501', () =>
+      const result2 = await when('extract_revisions is called with limit=501', () =>
         extractRevisions_tool(mgr, { session_id: sessionId, limit: 501 }),
       );
-      assertFailure(result2, 'INVALID_LIMIT', 'extract_revisions');
+      await and('the tool returns an INVALID_LIMIT error', () => {
+        assertFailure(result2, 'INVALID_LIMIT', 'extract_revisions');
+      });
     },
   );
 
   humanReadableTest.openspec('invalid offset is rejected')(
     'Scenario: invalid offset is rejected',
-    async () => {
-      const { mgr, sessionId } = await openSession(['Hello']);
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+      const { mgr, sessionId } = await given(
+        'an open session with one paragraph',
+        () => openSession(['Hello']),
+      );
 
-      const result = await allureStep('Call with offset=-1', () =>
+      const result = await when('extract_revisions is called with offset=-1', () =>
         extractRevisions_tool(mgr, { session_id: sessionId, offset: -1 }),
       );
-      assertFailure(result, 'INVALID_OFFSET', 'extract_revisions');
-      await allureJsonAttachment('result', result);
+      await then('the tool returns an INVALID_OFFSET error', () => {
+        assertFailure(result, 'INVALID_OFFSET', 'extract_revisions');
+      });
+      await attachPrettyJson('result', result);
     },
   );
 
@@ -603,7 +598,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('repeated extraction at same revision uses cache')(
     'Scenario: repeated extraction at same revision uses cache',
-    async () => {
+    async ({ given, when, then, and }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -611,25 +606,28 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>Text</w:t></w:r><w:ins w:author="X"><w:r><w:t> added</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
+      const { mgr, sessionId } = await given(
+        'a document with a tracked insertion is open in a session',
+        () => openSession([], { xml: docXml }),
+      );
 
-      const result1 = await allureStep('First extraction', () =>
+      const result1 = await when('extract_revisions is called the first time', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result1, 'first extraction');
 
-      await allureStep('Verify cache populated', () => {
+      await then('the extraction cache is populated', () => {
         const session = mgr.getSession(sessionId);
         const cache = mgr.getExtractionCache(session);
         expect(cache).not.toBeNull();
       });
 
-      const result2 = await allureStep('Second extraction (from cache)', () =>
+      const result2 = await when('extract_revisions is called again at the same revision', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result2, 'second extraction');
 
-      await allureStep('Verify consistent results', () => {
+      await and('both extractions return the same total_changes', () => {
         expect(result2.total_changes).toBe(result1.total_changes);
       });
     },
@@ -639,7 +637,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('structurally-empty inserted paragraphs are filtered out')(
     'Scenario: structurally-empty inserted paragraphs are filtered out',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       // A paragraph with only pPr/rPr/ins (paragraph-level insertion marker)
       // and no text content — should be excluded from results.
       const docXml =
@@ -651,15 +649,18 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>Another </w:t></w:r><w:ins w:author="X"><w:r><w:t>edited</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
+      const { mgr, sessionId } = await given(
+        'a document with a structurally-empty inserted paragraph and a real content change',
+        () => openSession([], { xml: docXml }),
+      );
 
-      const result = await allureStep('Call extract_revisions', () =>
+      const result = await when('extract_revisions is called', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Verify empty structural paragraph is filtered', () => {
+      await then('only the paragraph with real content changes is returned', () => {
         // Only the third paragraph (with real content changes) should appear
         expect(result.total_changes).toBe(1);
         const changes = asChanges(result.changes);
@@ -673,31 +674,31 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('real DOCX redline with tracked changes extracts correctly')(
     'Scenario: real DOCX redline with tracked changes extracts correctly',
-    async () => {
+    async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
       const fixturePath = await createRealTrackedChangesFixture();
 
       const mgr = createTestSessionManager();
 
-      const opened = await allureStep('Open real DOCX fixture', () =>
+      const opened = await given('a real DOCX redline fixture is opened as a session', () =>
         openDocument(mgr, { file_path: fixturePath }),
       );
       assertSuccess(opened, 'open fixture');
       const sessionId = opened.session_id as string;
 
-      const result = await allureStep('Call extract_revisions', () =>
+      const result = await when('extract_revisions is called', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
       const changes = asChanges(result.changes);
       const totalChanges = result.total_changes as number;
 
-      await allureStep('Verify changes were extracted', () => {
+      await then('at least one change is extracted', () => {
         expect(totalChanges).toBeGreaterThan(0);
       });
 
-      await allureStep('Verify each change has valid structure', () => {
+      await and('each change has a valid structure', () => {
         const validTypes = new Set(['INSERTION', 'DELETION', 'MOVE_FROM', 'MOVE_TO', 'FORMAT_CHANGE']);
         for (const c of changes) {
           expect(c.para_id).toBeTruthy();
@@ -711,7 +712,7 @@ describe('extract_revisions tool', () => {
         }
       });
 
-      await allureStep('Verify pagination metadata is consistent', () => {
+      await and('the pagination metadata is consistent', () => {
         expect(totalChanges).toBeGreaterThanOrEqual(changes.length);
         if (result.has_more) {
           expect(changes.length).toBe(50); // default limit
@@ -724,7 +725,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('inserted-only paragraph has empty before text')(
     'Scenario: inserted-only paragraph has empty before text',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -736,13 +737,16 @@ describe('extract_revisions tool', () => {
           `</w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
-      const result = await allureStep('Call extract_revisions', () =>
+      const { mgr, sessionId } = await given(
+        'a document with a fully-inserted paragraph is open in a session',
+        () => openSession([], { xml: docXml }),
+      );
+      const result = await when('extract_revisions is called', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
 
-      await allureStep('Verify inserted paragraph has empty before_text', () => {
+      await then('the inserted paragraph has empty before_text and correct after_text', () => {
         const changes = asChanges(result.changes);
         expect(changes).toHaveLength(1);
         expect(changes[0].before_text).toBe('');
@@ -755,7 +759,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('deleted-only paragraph has empty after text')(
     'Scenario: deleted-only paragraph has empty after text',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -768,13 +772,16 @@ describe('extract_revisions tool', () => {
           `</w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
-      const result = await allureStep('Call extract_revisions', () =>
+      const { mgr, sessionId } = await given(
+        'a document with a fully-deleted paragraph is open in a session',
+        () => openSession([], { xml: docXml }),
+      );
+      const result = await when('extract_revisions is called', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
 
-      await allureStep('Verify deleted paragraph has empty after_text', () => {
+      await then('the deleted paragraph has correct before_text and empty after_text', () => {
         const changes = asChanges(result.changes);
         expect(changes).toHaveLength(1);
         expect(changes[0].before_text).toBe('Deleted paragraph');
@@ -787,7 +794,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('changed paragraphs inside table cells are extracted')(
     'Scenario: changed paragraphs inside table cells are extracted',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -798,13 +805,16 @@ describe('extract_revisions tool', () => {
           `</w:tc></w:tr></w:tbl>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
-      const result = await allureStep('Call extract_revisions', () =>
+      const { mgr, sessionId } = await given(
+        'a document with a tracked insertion inside a table cell is open in a session',
+        () => openSession([], { xml: docXml }),
+      );
+      const result = await when('extract_revisions is called', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
 
-      await allureStep('Verify table cell changes extracted', () => {
+      await then('the table cell change is included in the results', () => {
         expect(result.total_changes).toBe(1);
         const changes = asChanges(result.changes);
         expect(changes[0].after_text).toContain('edited');
@@ -816,7 +826,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('extracting revisions includes associated comments')(
     'Scenario: extracting revisions includes associated comments',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const commentsXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:comments xmlns:w="${W_NS}" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">` +
@@ -838,18 +848,21 @@ describe('extract_revisions tool', () => {
           `</w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], {
-        xml: docXml,
-        extraFiles: { 'word/comments.xml': commentsXml },
-      });
+      const { mgr, sessionId } = await given(
+        'a document with a tracked insertion and an associated comment from Reviewer is open in a session',
+        () => openSession([], {
+          xml: docXml,
+          extraFiles: { 'word/comments.xml': commentsXml },
+        }),
+      );
 
-      const result = await allureStep('Call extract_revisions', () =>
+      const result = await when('extract_revisions is called', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Verify comments are associated', () => {
+      await then('the comment from Reviewer is associated with the change', () => {
         const changes = asChanges(result.changes);
         expect(changes).toHaveLength(1);
         const comments = asComments(changes[0]?.comments);
@@ -864,7 +877,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('offset beyond total returns empty page')(
     'Scenario: offset beyond total returns empty page',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -872,13 +885,16 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>A</w:t></w:r><w:ins w:author="X"><w:r><w:t>1</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
-      const result = await allureStep('Call with offset=100', () =>
+      const { mgr, sessionId } = await given(
+        'a document with one changed paragraph is open in a session',
+        () => openSession([], { xml: docXml }),
+      );
+      const result = await when('extract_revisions is called with offset=100', () =>
         extractRevisions_tool(mgr, { session_id: sessionId, offset: 100 }),
       );
       assertSuccess(result, 'extract_revisions');
 
-      await allureStep('Verify empty page', () => {
+      await then('an empty page is returned with total_changes still reported correctly', () => {
         expect(result.total_changes).toBe(1);
         expect((asChanges(result.changes)).length).toBe(0);
         expect(result.has_more).toBe(false);
@@ -890,7 +906,7 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('retrieving subsequent pages with offset')(
     'Scenario: retrieving subsequent pages with offset',
-    async () => {
+    async ({ given, when, then, and }: AllureBddContext) => {
       const docXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
@@ -901,19 +917,22 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>D</w:t></w:r><w:ins w:author="X"><w:r><w:t>4</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await openSession([], { xml: docXml });
+      const { mgr, sessionId } = await given(
+        'a document with 4 changed paragraphs is open in a session',
+        () => openSession([], { xml: docXml }),
+      );
 
-      const page1 = await allureStep('Page 1', () =>
+      const page1 = await when('extract_revisions is called with offset=0, limit=2', () =>
         extractRevisions_tool(mgr, { session_id: sessionId, offset: 0, limit: 2 }),
       );
       assertSuccess(page1, 'page1');
 
-      const page2 = await allureStep('Page 2', () =>
+      const page2 = await and('extract_revisions is called with offset=2, limit=2', () =>
         extractRevisions_tool(mgr, { session_id: sessionId, offset: 2, limit: 2 }),
       );
       assertSuccess(page2, 'page2');
 
-      await allureStep('Verify no overlap between pages', () => {
+      await then('page 1 and page 2 contain different paragraph IDs with no overlap', () => {
         const p1Ids = new Set((asChanges(page1.changes)).map((c) => c.para_id));
         for (const c of asChanges(page2.changes)) {
           expect(p1Ids.has(c.para_id)).toBe(false);
@@ -1037,23 +1056,23 @@ describe('extract_revisions tool', () => {
 
   humanReadableTest.openspec('two-file comparison then extraction workflow')(
     'Scenario: two-file comparison then extraction workflow',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const fixturePath = await createRealTrackedChangesFixture();
 
       const mgr = createTestSessionManager();
 
-      const opened = await allureStep('Open redline DOCX via file_path', () =>
+      const opened = await given('a redline DOCX is opened via file_path', () =>
         openDocument(mgr, { file_path: fixturePath }),
       );
       assertSuccess(opened, 'open');
       const sessionId = opened.session_id as string;
 
-      const result = await allureStep('Extract revisions from redline', () =>
+      const result = await when('extract_revisions is called on the redline session', () =>
         extractRevisions_tool(mgr, { session_id: sessionId }),
       );
       assertSuccess(result, 'extract_revisions');
 
-      await allureStep('Verify structured diff is returned', () => {
+      await then('a structured diff is returned with at least one change', () => {
         expect(result.total_changes).toBeGreaterThan(0);
         expect(result.changes).toBeDefined();
         expect(Array.isArray(result.changes)).toBe(true);

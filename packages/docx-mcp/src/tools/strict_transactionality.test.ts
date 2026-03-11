@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure as test } from '../testing/allure-test.js';
+import { testAllure as test, type AllureBddContext } from '../testing/allure-test.js';
 import fs from 'node:fs/promises';
 import { DocxZip, parseXml, serializeXml } from '@usejunior/docx-core';
 
@@ -26,66 +26,76 @@ async function readDocumentXml(filePath: string): Promise<string> {
 describe('format_layout: strict failure transactionality', () => {
   registerCleanup();
 
-  test('strict selector failure does not mutate session state or document XML', async () => {
-    const xml =
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-      `<w:body>` +
-      `<w:p><w:r><w:t>Alpha</w:t></w:r></w:p>` +
-      `<w:tbl>` +
-      `<w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc></w:tr>` +
-      `<w:tr><w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc></w:tr>` +
-      `</w:tbl>` +
-      `</w:body>` +
-      `</w:document>`;
+  test('strict selector failure does not mutate session state or document XML', async ({ given, when, then, and }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let baselinePath: string;
+    let afterPath: string;
+    let statusBefore: Awaited<ReturnType<typeof getSessionStatus>>;
+    let statusAfter: Awaited<ReturnType<typeof getSessionStatus>>;
 
-    const opened = await openSession([], {
-      xml,
-      prefix: 'safe-docx-transactional-',
+    await given('a document with one paragraph and one 2-row table, baseline saved at revision 0', async () => {
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:body>` +
+        `<w:p><w:r><w:t>Alpha</w:t></w:r></w:p>` +
+        `<w:tbl>` +
+        `<w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc></w:tr>` +
+        `<w:tr><w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc></w:tr>` +
+        `</w:tbl>` +
+        `</w:body>` +
+        `</w:document>`;
+
+      opened = await openSession([], { xml, prefix: 'safe-docx-transactional-' });
+
+      baselinePath = `${opened.tmpDir}/baseline-clean.docx`;
+      const baselineDownload = await save(opened.mgr, {
+        session_id: opened.sessionId,
+        save_to_local_path: baselinePath,
+        save_format: 'clean',
+        clean_bookmarks: true,
+      });
+      assertSuccess(baselineDownload, 'baseline download');
+
+      statusBefore = await getSessionStatus(opened.mgr, { session_id: opened.sessionId });
+      assertSuccess(statusBefore, 'status before');
+      expect(statusBefore.edit_count).toBe(0);
+      expect(statusBefore.edit_revision).toBe(0);
     });
 
-    const baselinePath = `${opened.tmpDir}/baseline-clean.docx`;
-    const baselineDownload = await save(opened.mgr, {
-      session_id: opened.sessionId,
-      save_to_local_path: baselinePath,
-      save_format: 'clean',
-      clean_bookmarks: true,
+    await when('formatLayout is called in strict mode targeting a non-existent row index 99', async () => {
+      const failed = await formatLayout(opened.mgr, {
+        session_id: opened.sessionId,
+        strict: true,
+        row_height: {
+          table_indexes: [0],
+          row_indexes: [99],
+          value_twips: 420,
+          rule: 'exact',
+        },
+      });
+      assertFailure(failed, 'INVALID_SELECTOR', 'format_layout strict failure');
     });
-    assertSuccess(baselineDownload, 'baseline download');
 
-    const statusBefore = await getSessionStatus(opened.mgr, { session_id: opened.sessionId });
-    assertSuccess(statusBefore, 'status before');
-    expect(statusBefore.edit_count).toBe(0);
-    expect(statusBefore.edit_revision).toBe(0);
-
-    const failed = await formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
-      strict: true,
-      row_height: {
-        table_indexes: [0],
-        row_indexes: [99],
-        value_twips: 420,
-        rule: 'exact',
-      },
+    await then('session state remains at revision 0 with zero edits', async () => {
+      statusAfter = await getSessionStatus(opened.mgr, { session_id: opened.sessionId });
+      assertSuccess(statusAfter, 'status after');
+      expect(statusAfter.edit_count).toBe(0);
+      expect(statusAfter.edit_revision).toBe(0);
     });
-    assertFailure(failed, 'INVALID_SELECTOR', 'format_layout strict failure');
+    await and('document XML saved after the failure is canonically identical to the baseline', async () => {
+      afterPath = `${opened.tmpDir}/after-failure-clean.docx`;
+      const afterDownload = await save(opened.mgr, {
+        session_id: opened.sessionId,
+        save_to_local_path: afterPath,
+        save_format: 'clean',
+        clean_bookmarks: true,
+      });
+      assertSuccess(afterDownload, 'after download');
 
-    const statusAfter = await getSessionStatus(opened.mgr, { session_id: opened.sessionId });
-    assertSuccess(statusAfter, 'status after');
-    expect(statusAfter.edit_count).toBe(0);
-    expect(statusAfter.edit_revision).toBe(0);
-
-    const afterPath = `${opened.tmpDir}/after-failure-clean.docx`;
-    const afterDownload = await save(opened.mgr, {
-      session_id: opened.sessionId,
-      save_to_local_path: afterPath,
-      save_format: 'clean',
-      clean_bookmarks: true,
+      const baselineXml = await readDocumentXml(baselinePath);
+      const afterXml = await readDocumentXml(afterPath);
+      expect(canonicalizeXml(afterXml)).toBe(canonicalizeXml(baselineXml));
     });
-    assertSuccess(afterDownload, 'after download');
-
-    const baselineXml = await readDocumentXml(baselinePath);
-    const afterXml = await readDocumentXml(afterPath);
-    expect(canonicalizeXml(afterXml)).toBe(canonicalizeXml(baselineXml));
   });
 });

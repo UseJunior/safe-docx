@@ -8,7 +8,7 @@ import { openDocument } from './open_document.js';
 import { type Session } from '../session/manager.js';
 import { MCP_TOOLS } from '../server.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
-import { testAllure, allureStep, allureJsonAttachment } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertSuccess,
   registerCleanup,
@@ -72,28 +72,28 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   test(
     'Scenario: accept insertions by unwrapping w:ins wrappers',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
       const bodyXml = `<w:p><w:ins w:id="1" w:author="A"><w:r><w:t>new text</w:t></w:r></w:ins></w:p>`;
       const filePath = await writeTestDocx(dir, 'ins.docx', bodyXml);
-      await allureJsonAttachment('input-body-xml', bodyXml);
+      await attachPrettyJson('input-body-xml', bodyXml);
 
-      const result = await allureStep('Call accept_changes tool', () =>
+      const result = await when('Call accept_changes tool', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('No w:ins elements remain', () => {
+      await then('No w:ins elements remain', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'ins')).toBe(false);
       });
 
-      await allureStep('Promoted run with text present in parent w:p', () => {
+      await then('Promoted run with text present in parent w:p', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
@@ -101,7 +101,7 @@ describe('Traceability: Accept Tracked Changes', () => {
         expect(hasElement(dom, 'r')).toBe(true);
       });
 
-      await allureStep('Stats: insertionsAccepted >= 1', () => {
+      await then('Stats: insertionsAccepted >= 1', () => {
         expect(result.insertionsAccepted).toBeGreaterThanOrEqual(1);
       });
     },
@@ -109,7 +109,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   test(
     'Scenario: accept deletions by removing w:del elements and content',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -118,33 +118,33 @@ describe('Traceability: Accept Tracked Changes', () => {
         `<w:del w:id="2" w:author="A"><w:r><w:delText>old text</w:delText></w:r></w:del></w:p>`;
       const filePath = await writeTestDocx(dir, 'del.docx', bodyXml);
 
-      const result = await allureStep('Call accept_changes tool', () =>
+      const result = await when('Call accept_changes tool', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('No w:del elements remain', () => {
+      await then('No w:del elements remain', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'del')).toBe(false);
       });
 
-      await allureStep('No w:delText elements remain', () => {
+      await then('No w:delText elements remain', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'delText')).toBe(false);
       });
 
-      await allureStep('"old text" not present in document body', () => {
+      await then('"old text" not present in document body', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         expect(xml).not.toContain('old text');
       });
 
-      await allureStep('Stats: deletionsAccepted >= 1', () => {
+      await then('Stats: deletionsAccepted >= 1', () => {
         expect(result.deletionsAccepted).toBeGreaterThanOrEqual(1);
       });
     },
@@ -152,7 +152,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   test(
     'Scenario: accept property changes by removing change records',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -166,13 +166,13 @@ describe('Traceability: Accept Tracked Changes', () => {
         `<w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
       const filePath = await writeTestDocx(dir, 'prchange.docx', bodyXml);
 
-      const result = await allureStep('Call accept_changes tool', () =>
+      const result = await when('Call accept_changes tool', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('No *PrChange elements remain', () => {
+      await then('No *PrChange elements remain', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
@@ -181,7 +181,7 @@ describe('Traceability: Accept Tracked Changes', () => {
         }
       });
 
-      await allureStep('Current formatting preserved', () => {
+      await then('Current formatting preserved', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
@@ -189,7 +189,7 @@ describe('Traceability: Accept Tracked Changes', () => {
         expect(hasElement(dom, 'pStyle')).toBe(true);
       });
 
-      await allureStep('Stats: propertyChangesResolved >= 1', () => {
+      await then('Stats: propertyChangesResolved >= 1', () => {
         expect(result.propertyChangesResolved).toBeGreaterThanOrEqual(1);
       });
     },
@@ -197,7 +197,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   test(
     'Scenario: accept moves by keeping destination and removing source',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -210,20 +210,20 @@ describe('Traceability: Accept Tracked Changes', () => {
         `<w:moveToRangeEnd w:id="22"/></w:p>`;
       const filePath = await writeTestDocx(dir, 'move.docx', bodyXml);
 
-      const result = await allureStep('Call accept_changes tool', () =>
+      const result = await when('Call accept_changes tool', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('w:moveFrom removed', () => {
+      await then('w:moveFrom removed', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'moveFrom')).toBe(false);
       });
 
-      await allureStep('w:moveTo unwrapped, content at destination', () => {
+      await then('w:moveTo unwrapped, content at destination', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
@@ -231,7 +231,7 @@ describe('Traceability: Accept Tracked Changes', () => {
         expect(getBodyText(dom)).toContain('moved text');
       });
 
-      await allureStep('No move range markers remain', () => {
+      await then('No move range markers remain', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
@@ -241,7 +241,7 @@ describe('Traceability: Accept Tracked Changes', () => {
         expect(hasElement(dom, 'moveToRangeEnd')).toBe(false);
       });
 
-      await allureStep('Stats: movesResolved >= 1', () => {
+      await then('Stats: movesResolved >= 1', () => {
         expect(result.movesResolved).toBeGreaterThanOrEqual(1);
       });
     },
@@ -249,7 +249,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   test(
     'Scenario: bottom-up processing resolves nested revisions',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -260,27 +260,27 @@ describe('Traceability: Accept Tracked Changes', () => {
         `</w:ins></w:p>`;
       const filePath = await writeTestDocx(dir, 'nested.docx', bodyXml);
 
-      const result = await allureStep('Call accept_changes tool', () =>
+      const result = await when('Call accept_changes tool', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
       const session = mgr.getSession(result.session_id as string);
       const xml = serializeDoc(session);
       const dom = parseDocXml(xml);
 
-      await allureStep('Inner w:del removed (deleted text gone)', () => {
+      await then('Inner w:del removed (deleted text gone)', () => {
         expect(hasElement(dom, 'del')).toBe(false);
         expect(xml).not.toContain('deleted inside ins');
       });
 
-      await allureStep('Outer w:ins unwrapped ("kept" text remains)', () => {
+      await then('Outer w:ins unwrapped ("kept" text remains)', () => {
         expect(hasElement(dom, 'ins')).toBe(false);
         expect(getBodyText(dom)).toContain('kept');
       });
 
-      await allureStep('No orphaned elements remain', () => {
+      await then('No orphaned elements remain', () => {
         expect(hasElement(dom, 'delText')).toBe(false);
       });
     },
@@ -288,7 +288,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   test(
     'Scenario: orphaned moves handled with safe fallback',
-    async () => {
+    async ({ when, then }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -298,7 +298,7 @@ describe('Traceability: Accept Tracked Changes', () => {
         `<w:p><w:moveTo w:id="41" w:author="A"><w:r><w:t>orphan dest</w:t></w:r></w:moveTo></w:p>`;
       const filePath = await writeTestDocx(dir, 'orphan-move.docx', bodyXml);
 
-      const result = await allureStep('Call accept_changes tool', () =>
+      const result = await when('Call accept_changes tool', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
@@ -307,12 +307,12 @@ describe('Traceability: Accept Tracked Changes', () => {
       const xml = serializeDoc(session);
       const dom = parseDocXml(xml);
 
-      await allureStep('Orphaned moveFrom removed entirely', () => {
+      await then('Orphaned moveFrom removed entirely', () => {
         expect(hasElement(dom, 'moveFrom')).toBe(false);
         expect(xml).not.toContain('orphan source');
       });
 
-      await allureStep('Orphaned moveTo unwrapped, children promoted', () => {
+      await then('Orphaned moveTo unwrapped, children promoted', () => {
         expect(hasElement(dom, 'moveTo')).toBe(false);
         expect(getBodyText(dom)).toContain('orphan dest');
       });
@@ -323,7 +323,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   humanReadableTest.openspec('accept_changes produces clean document body with no revision markup')(
     'Scenario: accept_changes produces clean document body with no revision markup',
-    async () => {
+    async ({ when, then, attachPrettyJson }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -337,20 +337,20 @@ describe('Traceability: Accept Tracked Changes', () => {
         `<w:p><w:moveTo w:id="54" w:author="A"><w:r><w:t>move dst</w:t></w:r></w:moveTo></w:p>`;
       const filePath = await writeTestDocx(dir, 'mixed.docx', bodyXml);
 
-      const result = await allureStep('Call accept_changes with file_path', () =>
+      const result = await when('Call accept_changes with file_path', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
-      await allureJsonAttachment('result', result);
+      await attachPrettyJson('result', result);
 
-      await allureStep('Response includes correct stat counts', () => {
+      await then('Response includes correct stat counts', () => {
         expect(result.insertionsAccepted).toBeGreaterThanOrEqual(1);
         expect(result.deletionsAccepted).toBeGreaterThanOrEqual(1);
         expect(result.movesResolved).toBeGreaterThanOrEqual(1);
         expect(result.propertyChangesResolved).toBeGreaterThanOrEqual(1);
       });
 
-      await allureStep('Re-reading session shows no revision markup', () => {
+      await then('Re-reading session shows no revision markup', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
@@ -365,7 +365,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   humanReadableTest.openspec('accepted document opens cleanly in Microsoft Word')(
     'Scenario: accepted document opens cleanly in Microsoft Word (well-formed XML proxy)',
-    async () => {
+    async ({ when, then }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -378,12 +378,12 @@ describe('Traceability: Accept Tracked Changes', () => {
         `<w:r><w:t>para</w:t></w:r></w:p>`;
       const filePath = await writeTestDocx(dir, 'wellformed.docx', bodyXml);
 
-      const result = await allureStep('Call accept_changes', () =>
+      const result = await when('Call accept_changes', () =>
         acceptChangesTool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'accept_changes');
 
-      await allureStep('Output XML parses without errors', () => {
+      await then('Output XML parses without errors', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         // If parseDocXml throws, the step fails
@@ -391,7 +391,7 @@ describe('Traceability: Accept Tracked Changes', () => {
         expect(dom).toBeTruthy();
       });
 
-      await allureStep('No revision elements exist', () => {
+      await then('No revision elements exist', () => {
         const session = mgr.getSession(result.session_id as string);
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
@@ -409,7 +409,7 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   humanReadableTest.openspec('original document is not mutated')(
     'Scenario: original document is not mutated',
-    async () => {
+    async ({ given, when, then }: AllureBddContext) => {
       const mgr = createTestSessionManager();
       const dir = await createTrackedTempDir();
 
@@ -418,7 +418,7 @@ describe('Traceability: Accept Tracked Changes', () => {
       const filePath = await writeTestDocx(dir, 'immutable.docx', bodyXml);
 
       // Open session and snapshot originalBuffer
-      const opened = await allureStep('Open session', () =>
+      const opened = await given('Open session', () =>
         openDocument(mgr, { file_path: filePath }),
       );
       assertSuccess(opened, 'open');
@@ -427,11 +427,11 @@ describe('Traceability: Accept Tracked Changes', () => {
       const session = mgr.getSession(sessionId);
       const snapshotBefore = Buffer.from(session.originalBuffer);
 
-      await allureStep('Call accept_changes', () =>
+      await when('Call accept_changes', () =>
         acceptChangesTool(mgr, { session_id: sessionId }),
       );
 
-      await allureStep('originalBuffer is byte-identical to snapshot', () => {
+      await then('originalBuffer is byte-identical to snapshot', () => {
         expect(session.originalBuffer.equals(snapshotBefore)).toBe(true);
       });
     },
@@ -439,19 +439,19 @@ describe('Traceability: Accept Tracked Changes', () => {
 
   // ── Additional edge case tests ────────────────────────────────────
 
-  test('Empty document (no tracked changes) returns zero stats', async () => {
+  test('Empty document (no tracked changes) returns zero stats', async ({ when, then }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const dir = await createTrackedTempDir();
 
     const bodyXml = `<w:p><w:r><w:t>clean paragraph</w:t></w:r></w:p>`;
     const filePath = await writeTestDocx(dir, 'clean.docx', bodyXml);
 
-    const result = await allureStep('Call accept_changes', () =>
+    const result = await when('Call accept_changes', () =>
       acceptChangesTool(mgr, { file_path: filePath }),
     );
     assertSuccess(result, 'accept_changes');
 
-    await allureStep('All stats are 0', () => {
+    await then('All stats are 0', () => {
       expect(result.insertionsAccepted).toBe(0);
       expect(result.deletionsAccepted).toBe(0);
       expect(result.movesResolved).toBe(0);
@@ -459,7 +459,7 @@ describe('Traceability: Accept Tracked Changes', () => {
     });
   });
 
-  test('Full-paragraph deletion removes entire paragraph', async () => {
+  test('Full-paragraph deletion removes entire paragraph', async ({ when, then }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const dir = await createTrackedTempDir();
 
@@ -468,12 +468,12 @@ describe('Traceability: Accept Tracked Changes', () => {
       `<w:p><w:del w:id="80" w:author="A"><w:r><w:delText>whole para deleted</w:delText></w:r></w:del></w:p>`;
     const filePath = await writeTestDocx(dir, 'full-para-del.docx', bodyXml);
 
-    const result = await allureStep('Call accept_changes', () =>
+    const result = await when('Call accept_changes', () =>
       acceptChangesTool(mgr, { file_path: filePath }),
     );
     assertSuccess(result, 'accept_changes');
 
-    await allureStep('Deleted paragraph is removed from body', () => {
+    await then('Deleted paragraph is removed from body', () => {
       const session = mgr.getSession(result.session_id as string);
       const xml = serializeDoc(session);
       const dom = parseDocXml(xml);

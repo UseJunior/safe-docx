@@ -5,6 +5,9 @@ import {
   type AllureStepContext as SharedAllureStepContext,
 } from '../../../../testing/allure-test-factory.js';
 
+export { xmlToDocPreviewRuns } from '../../src/testing/allure-preview-helpers.js';
+export type { DocPreviewRun } from '../../src/testing/allure-preview-helpers.js';
+
 type EpicName =
   | 'DOCX Primitives';
 

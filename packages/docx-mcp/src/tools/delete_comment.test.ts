@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure, allureJsonAttachment } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertFailure,
   assertSuccess,
@@ -53,7 +53,6 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
         comment_id: added.comment_id as number,
       });
       assertSuccess(result, 'delete_comment');
-      await allureJsonAttachment('delete_comment-response', result);
       expect(result.comment_id).toBe(added.comment_id);
       expect(result.session_id).toBe(opened.sessionId);
 
@@ -238,10 +237,16 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
     },
   );
 
-  test('delete_comment tool is registered in MCP_TOOLS', () => {
-    const tool = MCP_TOOLS.find((t) => t.name === 'delete_comment');
-    expect(tool).toBeTruthy();
-    expect(tool!.annotations.readOnlyHint).toBe(false);
-    expect(tool!.annotations.destructiveHint).toBe(true);
+  test('delete_comment tool is registered in MCP_TOOLS', async ({ given, when, then }: AllureBddContext) => {
+    let tool: (typeof MCP_TOOLS)[number] | undefined;
+    await given('the MCP_TOOLS registry is loaded', () => {});
+    await when('the delete_comment tool entry is looked up', () => {
+      tool = MCP_TOOLS.find((t) => t.name === 'delete_comment');
+    });
+    await then('the tool is registered with destructiveHint=true and readOnlyHint=false', () => {
+      expect(tool).toBeTruthy();
+      expect(tool!.annotations.readOnlyHint).toBe(false);
+      expect(tool!.annotations.destructiveHint).toBe(true);
+    });
   });
 });

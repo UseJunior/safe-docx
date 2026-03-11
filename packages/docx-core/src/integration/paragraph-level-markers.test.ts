@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
@@ -10,47 +10,63 @@ function countParagraphs(xml: string): number {
   return (xml.match(/<w:p(\s|>)/g) ?? []).length;
 }
 
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Paragraph-level markers' });
+
 describe('Paragraph-Level Track Changes Markers (Aspose-Style)', () => {
-  const it = itAllure.epic('Document Comparison').withLabels({ feature: 'Paragraph-level markers' });
   const projectRoot = join(dirname(import.meta.url.replace('file://', '')), '../../../..');
 
-  it('encodes inserted/deleted paragraphs with pPr-level marker and rejects without stubs', async () => {
-    const originalPath = join(
-      projectRoot,
-      'packages/docx-core/src/testing/fixtures/paragraph-insert/original.docx'
-    );
-    const revisedPath = join(
-      projectRoot,
-      'packages/docx-core/src/testing/fixtures/paragraph-insert/revised.docx'
-    );
+  test('encodes inserted/deleted paragraphs with pPr-level marker and rejects without stubs', async ({ given, when, then, and }: AllureBddContext) => {
+    let originalBuf: Buffer;
+    let revisedBuf: Buffer;
+    let result: Awaited<ReturnType<typeof compareDocuments>>;
+    let xml: string;
 
-    const [originalBuf, revisedBuf] = await Promise.all([
-      readFile(originalPath),
-      readFile(revisedPath),
-    ]);
+    await given('original and revised paragraph-insert fixture documents are loaded', async () => {
+      const originalPath = join(
+        projectRoot,
+        'packages/docx-core/src/testing/fixtures/paragraph-insert/original.docx'
+      );
+      const revisedPath = join(
+        projectRoot,
+        'packages/docx-core/src/testing/fixtures/paragraph-insert/revised.docx'
+      );
 
-    const result = await compareDocuments(originalBuf, revisedBuf, {
-      engine: 'atomizer',
-      reconstructionMode: 'rebuild',
-      author: 'Test',
+      [originalBuf, revisedBuf] = await Promise.all([
+        readFile(originalPath),
+        readFile(revisedPath),
+      ]);
     });
 
-    const archive = await DocxArchive.load(result.document);
-    const xml = await archive.getDocumentXml();
+    await when('documents are compared in rebuild mode', async () => {
+      result = await compareDocuments(originalBuf, revisedBuf, {
+        engine: 'atomizer',
+        reconstructionMode: 'rebuild',
+        author: 'Test',
+      });
 
-    // Aspose-style paragraph insertion:
-    // <w:p><w:pPr><w:rPr><w:ins .../></w:rPr></w:pPr><w:ins ...>...</w:ins></w:p>
-    expect(xml).toMatch(/<w:pPr[\s\S]*?<w:rPr[\s\S]*?<w:ins\b[^>]*\/>/);
-    expect(xml).toMatch(/<w:ins\b[^>]*>\s*<w:r\b/);
+      const archive = await DocxArchive.load(result.document);
+      xml = await archive.getDocumentXml();
+    });
 
-    // Must NOT generate invalid structure <w:ins><w:p>...</w:p></w:ins>
-    expect(xml).not.toMatch(/<w:ins\b[^>]*>\s*<w:p\b/);
+    await then('output uses Aspose-style paragraph insertion markers', async () => {
+      // Aspose-style paragraph insertion:
+      // <w:p><w:pPr><w:rPr><w:ins .../></w:rPr></w:pPr><w:ins ...>...</w:ins></w:p>
+      expect(xml).toMatch(/<w:pPr[\s\S]*?<w:rPr[\s\S]*?<w:ins\b[^>]*\/>/);
+      expect(xml).toMatch(/<w:ins\b[^>]*>\s*<w:r\b/);
+    });
 
-    // Programmatic reject should restore the original paragraph count
-    // (a proxy for "no stub paragraph breaks"). This is a guardrail test.
-    const rejectedXml = rejectAllChanges(xml);
+    await and('output does NOT generate invalid structure', async () => {
+      // Must NOT generate invalid structure <w:ins><w:p>...</w:p></w:ins>
+      expect(xml).not.toMatch(/<w:ins\b[^>]*>\s*<w:p\b/);
+    });
 
-    const origXml = await (await DocxArchive.load(originalBuf)).getDocumentXml();
-    expect(countParagraphs(rejectedXml)).toBe(countParagraphs(origXml));
+    await and('programmatic reject restores the original paragraph count', async () => {
+      // Programmatic reject should restore the original paragraph count
+      // (a proxy for "no stub paragraph breaks"). This is a guardrail test.
+      const rejectedXml = rejectAllChanges(xml);
+
+      const origXml = await (await DocxArchive.load(originalBuf)).getDocumentXml();
+      expect(countParagraphs(rejectedXml)).toBe(countParagraphs(origXml));
+    });
   });
 });

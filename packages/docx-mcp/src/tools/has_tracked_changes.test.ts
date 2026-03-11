@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 
 import { hasTrackedChanges_tool } from './has_tracked_changes.js';
 import { MCP_TOOLS } from '../server.js';
-import { testAllure, allureStep, allureJsonAttachment } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertFailure,
   assertSuccess,
@@ -23,10 +23,10 @@ type MarkerStats = {
 };
 
 describe('has_tracked_changes tool', () => {
-  const test = testAllure.epic('Document Reading').withLabels({ feature: 'has_tracked_changes tool' });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: 'Tracked Changes Detection' });
   registerCleanup();
 
-  test('detects insertion/deletion revision wrappers in body content', async () => {
+  test('detects insertion/deletion revision wrappers in body content', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const docXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W_NS}">` +
@@ -39,16 +39,17 @@ describe('has_tracked_changes tool', () => {
 
     const { mgr, sessionId } = await openSession([], { xml: docXml });
 
-    const result = await allureStep('When has_tracked_changes is called', () =>
-      hasTrackedChanges_tool(mgr, { session_id: sessionId }),
-    );
-    assertSuccess(result, 'has_tracked_changes');
-    await allureJsonAttachment('result', result);
+    let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
+    await when('has_tracked_changes is called', async () => {
+      result = await hasTrackedChanges_tool(mgr, { session_id: sessionId });
+    });
+    assertSuccess(result!, 'has_tracked_changes');
+    await attachPrettyJson('result', result!);
 
-    await allureStep('Then tracked changes are reported with content marker counts', () => {
-      const markerStats = result.marker_stats as MarkerStats;
-      expect(result.has_tracked_changes).toBe(true);
-      expect(result.scope).toBe('document_body');
+    await then('tracked changes are reported with content marker counts', () => {
+      const markerStats = result!.marker_stats as MarkerStats;
+      expect(result!.has_tracked_changes).toBe(true);
+      expect(result!.scope).toBe('document_body');
       expect(markerStats.insertions).toBe(1);
       expect(markerStats.deletions).toBe(1);
       expect(markerStats.content_markers).toBe(2);
@@ -56,7 +57,7 @@ describe('has_tracked_changes tool', () => {
     });
   });
 
-  test('detects property-only tracked changes', async () => {
+  test('detects property-only tracked changes', async ({ when, then }: AllureBddContext) => {
     const docXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W_NS}">` +
@@ -66,38 +67,40 @@ describe('has_tracked_changes tool', () => {
 
     const { mgr, sessionId } = await openSession([], { xml: docXml });
 
-    const result = await allureStep('When has_tracked_changes is called', () =>
-      hasTrackedChanges_tool(mgr, { session_id: sessionId }),
-    );
-    assertSuccess(result, 'has_tracked_changes');
+    let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
+    await when('has_tracked_changes is called', async () => {
+      result = await hasTrackedChanges_tool(mgr, { session_id: sessionId });
+    });
+    assertSuccess(result!, 'has_tracked_changes');
 
-    await allureStep('Then tracked changes are reported from property markers', () => {
-      const markerStats = result.marker_stats as MarkerStats;
-      expect(result.has_tracked_changes).toBe(true);
+    await then('tracked changes are reported from property markers', () => {
+      const markerStats = result!.marker_stats as MarkerStats;
+      expect(result!.has_tracked_changes).toBe(true);
       expect(markerStats.property_markers).toBe(1);
       expect(markerStats.rpr_changes).toBe(1);
       expect(markerStats.total_markers).toBe(1);
     });
   });
 
-  test('returns false for a clean document', async () => {
+  test('returns false for a clean document', async ({ when, then }: AllureBddContext) => {
     const { mgr, sessionId } = await openSession(['No revisions here.']);
 
-    const result = await allureStep('When has_tracked_changes is called', () =>
-      hasTrackedChanges_tool(mgr, { session_id: sessionId }),
-    );
-    assertSuccess(result, 'has_tracked_changes');
+    let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
+    await when('has_tracked_changes is called', async () => {
+      result = await hasTrackedChanges_tool(mgr, { session_id: sessionId });
+    });
+    assertSuccess(result!, 'has_tracked_changes');
 
-    await allureStep('Then no tracked changes are reported', () => {
-      const markerStats = result.marker_stats as MarkerStats;
-      expect(result.has_tracked_changes).toBe(false);
+    await then('no tracked changes are reported', () => {
+      const markerStats = result!.marker_stats as MarkerStats;
+      expect(result!.has_tracked_changes).toBe(false);
       expect(markerStats.total_markers).toBe(0);
       expect(markerStats.content_markers).toBe(0);
       expect(markerStats.property_markers).toBe(0);
     });
   });
 
-  test('is read-only and preserves edit_revision', async () => {
+  test('is read-only and preserves edit_revision', async ({ when, then }: AllureBddContext) => {
     const docXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W_NS}">` +
@@ -107,25 +110,27 @@ describe('has_tracked_changes tool', () => {
     const { mgr, sessionId } = await openSession([], { xml: docXml });
     const revisionBefore = mgr.getSession(sessionId).editRevision;
 
-    const result = await allureStep('When has_tracked_changes is called', () =>
-      hasTrackedChanges_tool(mgr, { session_id: sessionId }),
-    );
-    assertSuccess(result, 'has_tracked_changes');
+    let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
+    await when('has_tracked_changes is called', async () => {
+      result = await hasTrackedChanges_tool(mgr, { session_id: sessionId });
+    });
+    assertSuccess(result!, 'has_tracked_changes');
 
-    await allureStep('Then session revision remains unchanged', () => {
+    await then('session revision remains unchanged', () => {
       const revisionAfter = mgr.getSession(sessionId).editRevision;
       expect(revisionAfter).toBe(revisionBefore);
-      expect(result.edit_revision).toBe(revisionBefore);
+      expect(result!.edit_revision).toBe(revisionBefore);
     });
   });
 
-  test('requires session context', async () => {
+  test('requires session context', async ({ when }: AllureBddContext) => {
     const mgr = createTestSessionManager();
-    const result = await allureStep('When called without session_id or file_path', () =>
-      hasTrackedChanges_tool(mgr, {}),
-    );
+    let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
+    await when('called without session_id or file_path', async () => {
+      result = await hasTrackedChanges_tool(mgr, {});
+    });
 
-    assertFailure(result, 'MISSING_SESSION_CONTEXT', 'has_tracked_changes');
+    assertFailure(result!, 'MISSING_SESSION_CONTEXT', 'has_tracked_changes');
   });
 
   test('is registered in MCP_TOOLS as read-only', () => {

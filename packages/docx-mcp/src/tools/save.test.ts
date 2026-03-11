@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { save } from './save.js';
 import { openDocument } from './open_document.js';
 import {
@@ -32,6 +32,8 @@ function xmlEscape(text: string): string {
 describe('save', () => {
   registerCleanup();
 
+  const test = testAllure.epic('Document Editing').withLabels({ feature: 'Save' });
+
   async function openTestDoc(texts: string[] = ['Hello World']) {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('save-test-');
@@ -59,7 +61,7 @@ describe('save', () => {
     };
   }
 
-  it('clean save writes a valid .docx', async () => {
+  test('clean save writes a valid .docx', async () => {
     const { mgr, sessionId, tmpDir } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 
@@ -77,7 +79,7 @@ describe('save', () => {
     expect(fileSize).toBeGreaterThan(0);
   });
 
-  it('tracked save includes comparison with baseline', async () => {
+  test('tracked save includes comparison with baseline', async () => {
     const { mgr, sessionId, tmpDir } = await openTestDoc();
     const outPath = path.join(tmpDir, 'tracked-output.docx');
 
@@ -95,7 +97,7 @@ describe('save', () => {
     assertSuccess(result, 'tracked save');
   });
 
-  it('both-mode generates two files', async () => {
+  test('both-mode generates two files', async () => {
     const { mgr, sessionId, tmpDir } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 
@@ -111,7 +113,7 @@ describe('save', () => {
     expect(exists).toBe(true);
   });
 
-  it('reports stats (insertions/deletions/modifications)', async () => {
+  test('reports stats (insertions/deletions/modifications)', async () => {
     const { mgr, sessionId, tmpDir } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 
@@ -131,7 +133,7 @@ describe('save', () => {
     }
   });
 
-  it('rejects invalid save_format', async () => {
+  test('rejects invalid save_format', async () => {
     const { mgr, sessionId, tmpDir } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 
@@ -143,7 +145,7 @@ describe('save', () => {
     assertFailure(result, 'INVALID_SAVE_FORMAT', 'bad format');
   });
 
-  it('fails gracefully with non-existent session', async () => {
+  test('fails gracefully with non-existent session', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('save-test-');
     const outPath = path.join(tmpDir, 'output.docx');
@@ -156,7 +158,7 @@ describe('save', () => {
     assertFailure(result, undefined, 'missing session');
   });
 
-  it('blocks overwrite of original file without allow_overwrite', async () => {
+  test('blocks overwrite of original file without allow_overwrite', async () => {
     const { mgr, sessionId, inputPath } = await openTestDoc();
 
     const result = await save(mgr, {
@@ -167,7 +169,7 @@ describe('save', () => {
     assertFailure(result, 'OVERWRITE_BLOCKED', 'overwrite blocked');
   });
 
-  it('allows overwrite of original file with allow_overwrite=true', async () => {
+  test('allows overwrite of original file with allow_overwrite=true', async () => {
     const { mgr, sessionId, inputPath } = await openTestDoc();
 
     const result = await save(mgr, {
@@ -179,7 +181,7 @@ describe('save', () => {
     assertSuccess(result, 'overwrite allowed');
   });
 
-  it('resolves session by file_path when session_id not provided', async () => {
+  test('resolves session by file_path when session_id not provided', async () => {
     const { mgr, tmpDir, inputPath } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 

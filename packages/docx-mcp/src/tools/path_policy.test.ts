@@ -1,9 +1,11 @@
 import { describe, expect, afterEach } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { enforceReadPathPolicy, enforceWritePathPolicy } from './path_policy.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+
+const test = testAllure.epic('Document Editing').withLabels({ feature: 'Path Policy' });
 
 const tmpDirs: string[] = [];
 
@@ -16,7 +18,7 @@ afterEach(async () => {
 });
 
 describe('enforceReadPathPolicy', () => {
-  it('allows paths within home directory', async () => {
+  test('allows paths within home directory', async () => {
     // Create a real temp file under a default allowed root (tmpdir)
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-test-'));
     tmpDirs.push(tmpDir);
@@ -27,7 +29,7 @@ describe('enforceReadPathPolicy', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('rejects non-existent paths with PATH_RESOLUTION_ERROR', async () => {
+  test('rejects non-existent paths with PATH_RESOLUTION_ERROR', async () => {
     const result = await enforceReadPathPolicy('/nonexistent/path/to/file.docx');
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -38,7 +40,7 @@ describe('enforceReadPathPolicy', () => {
     }
   });
 
-  it('rejects paths outside allowed roots with PATH_NOT_ALLOWED', async () => {
+  test('rejects paths outside allowed roots with PATH_NOT_ALLOWED', async () => {
     // Configure a specific allowed root
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-allowed-'));
     tmpDirs.push(tmpDir);
@@ -60,7 +62,7 @@ describe('enforceReadPathPolicy', () => {
     }
   });
 
-  it('allows paths under tmpdir by default', async () => {
+  test('allows paths under tmpdir by default', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-tmp-'));
     tmpDirs.push(tmpDir);
     const filePath = path.join(tmpDir, 'test.txt');
@@ -75,7 +77,7 @@ describe('enforceReadPathPolicy', () => {
     }
   });
 
-  it('expands tilde in path', async () => {
+  test('expands tilde in path', async () => {
     // This test verifies tilde expansion works; the actual resolution
     // may fail if file doesn't exist, but the normalization should work
     const result = await enforceReadPathPolicy('~/nonexistent-test-file.docx');
@@ -91,7 +93,7 @@ describe('enforceReadPathPolicy', () => {
 });
 
 describe('enforceWritePathPolicy', () => {
-  it('allows write to path within allowed roots', async () => {
+  test('allows write to path within allowed roots', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-write-'));
     tmpDirs.push(tmpDir);
     const filePath = path.join(tmpDir, 'output.docx');
@@ -100,7 +102,7 @@ describe('enforceWritePathPolicy', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('allows write to non-existent file in existing directory', async () => {
+  test('allows write to non-existent file in existing directory', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-write-'));
     tmpDirs.push(tmpDir);
     const filePath = path.join(tmpDir, 'does-not-exist.docx');
@@ -109,7 +111,7 @@ describe('enforceWritePathPolicy', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('rejects write to path outside allowed roots', async () => {
+  test('rejects write to path outside allowed roots', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-allowed-'));
     tmpDirs.push(tmpDir);
     process.env.SAFE_DOCX_ALLOWED_ROOTS = tmpDir;
@@ -128,7 +130,7 @@ describe('enforceWritePathPolicy', () => {
     }
   });
 
-  it('resolves path through existing ancestor directory', async () => {
+  test('resolves path through existing ancestor directory', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-ancestor-'));
     tmpDirs.push(tmpDir);
     // The nested dir doesn't exist yet, but the ancestor does

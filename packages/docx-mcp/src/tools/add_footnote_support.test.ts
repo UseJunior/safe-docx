@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure, allureJsonAttachment } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertFailure,
   assertSuccess,
@@ -45,7 +45,6 @@ describe('OpenSpec traceability: add-footnote-support', () => {
 
     const listed = await getFootnotes(opened.mgr, { session_id: opened.sessionId });
     assertSuccess(listed, 'get_footnotes');
-    await allureJsonAttachment('get_footnotes-response', listed);
 
     const notes = listed.footnotes as Array<Record<string, unknown>>;
     expect(notes).toHaveLength(2);

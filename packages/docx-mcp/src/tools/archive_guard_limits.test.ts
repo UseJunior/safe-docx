@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure as test } from '../testing/allure-test.js';
+import { testAllure as test, type AllureBddContext } from '../testing/allure-test.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createZipBuffer } from '@usejunior/docx-core';
@@ -24,16 +24,27 @@ async function makeHighlyCompressedDocx(): Promise<Buffer> {
 describe('open_document: archive guard limits', () => {
   registerCleanup();
 
-  test('open_document rejects archive entries with extreme compression ratio', async () => {
-    const mgr = createTestSessionManager();
-    const tmpDir = await createTrackedTempDir('safe-docx-archive-guard-');
-    const inputPath = path.join(tmpDir, 'compressed.docx');
-    await fs.writeFile(inputPath, new Uint8Array(await makeHighlyCompressedDocx()));
+  test('open_document rejects archive entries with extreme compression ratio', async ({ given, when, then }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createTestSessionManager>;
+    let inputPath: string;
+    let opened: Awaited<ReturnType<typeof openDocument>>;
 
-    const opened = await openDocument(mgr, { file_path: inputPath });
-    expect(opened.success).toBe(false);
-    if (!opened.success) {
-      expect(opened.error.code).toBe('DOCX_ARCHIVE_COMPRESSION_RATIO_TOO_HIGH');
-    }
+    await given('a docx file with a highly compressed payload triggering the compression-ratio guard', async () => {
+      mgr = createTestSessionManager();
+      const tmpDir = await createTrackedTempDir('safe-docx-archive-guard-');
+      inputPath = path.join(tmpDir, 'compressed.docx');
+      await fs.writeFile(inputPath, new Uint8Array(await makeHighlyCompressedDocx()));
+    });
+
+    await when('open_document is called on that file', async () => {
+      opened = await openDocument(mgr, { file_path: inputPath });
+    });
+
+    await then('the operation fails with DOCX_ARCHIVE_COMPRESSION_RATIO_TOO_HIGH', () => {
+      expect(opened.success).toBe(false);
+      if (!opened.success) {
+        expect(opened.error.code).toBe('DOCX_ARCHIVE_COMPRESSION_RATIO_TOO_HIGH');
+      }
+    });
   });
 });

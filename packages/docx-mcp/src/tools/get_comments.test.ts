@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { testAllure, allureJsonAttachment } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertFailure,
   assertSuccess,
@@ -47,7 +47,6 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
 
       const result = await getComments(opened.mgr, { session_id: opened.sessionId });
       assertSuccess(result, 'get_comments');
-      await allureJsonAttachment('get_comments-response', result);
 
       const comments = result.comments as Array<Record<string, unknown>>;
       expect(comments).toHaveLength(2);
@@ -111,7 +110,6 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
 
       const result = await getComments(opened.mgr, { session_id: opened.sessionId });
       assertSuccess(result, 'get_comments');
-      await allureJsonAttachment('get_comments-threaded', result);
 
       const comments = result.comments as Array<Record<string, unknown>>;
       expect(comments).toHaveLength(1);
@@ -195,10 +193,16 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
     },
   );
 
-  test('get_comments tool is registered in MCP_TOOLS as read-only', () => {
-    const tool = MCP_TOOLS.find((t) => t.name === 'get_comments');
-    expect(tool).toBeTruthy();
-    expect(tool!.annotations.readOnlyHint).toBe(true);
-    expect(tool!.annotations.destructiveHint).toBe(false);
+  test('get_comments tool is registered in MCP_TOOLS as read-only', async ({ given, when, then }: AllureBddContext) => {
+    let tool: (typeof MCP_TOOLS)[number] | undefined;
+    await given('the MCP_TOOLS registry is loaded', () => {});
+    await when('the get_comments tool entry is looked up', () => {
+      tool = MCP_TOOLS.find((t) => t.name === 'get_comments');
+    });
+    await then('the tool is registered with readOnlyHint=true and destructiveHint=false', () => {
+      expect(tool).toBeTruthy();
+      expect(tool!.annotations.readOnlyHint).toBe(true);
+      expect(tool!.annotations.destructiveHint).toBe(false);
+    });
   });
 });

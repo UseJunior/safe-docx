@@ -1,15 +1,11 @@
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
-import { itAllure as it, allureStep, allureJsonAttachment } from './helpers/allure-test.js';
+import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { DocxDocument } from '../src/primitives/document.js';
 import { OOXML, W } from '../src/primitives/namespaces.js';
 
 const TEST_FEATURE = 'add-apply-plan-and-style-source';
-const test = it.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
-const humanReadableTest = test.allure({
-  tags: ['human-readable'],
-  parameters: { audience: 'non-technical' },
-});
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 
 function makeDocXml(bodyXml: string): string {
   return (
@@ -77,9 +73,9 @@ function getFirstRunFormattingTags(paragraph: Element): string[] {
 }
 
 describe('Traceability: insertParagraph styleSourceId', () => {
-  humanReadableTest.openspec('styleSourceId clones pPr from specified paragraph')(
+  test.openspec('styleSourceId clones pPr from specified paragraph')(
     'styleSourceId clones pPr from specified paragraph',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const bodyXml = [
         '<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:spacing w:before="0" w:after="0"/></w:pPr><w:r><w:t>Anchor</w:t></w:r></w:p>',
         '<w:p><w:pPr><w:pStyle w:val="BodyText"/><w:spacing w:before="120" w:after="360"/></w:pPr><w:r><w:t>Style Source</w:t></w:r></w:p>',
@@ -88,7 +84,7 @@ describe('Traceability: insertParagraph styleSourceId', () => {
       let doc!: DocxDocument;
       let anchorId = '';
       let styleSourceId = '';
-      await allureStep('Given anchor and style-source paragraphs with different paragraph properties', async () => {
+      await given('anchor and style-source paragraphs with different paragraph properties', async () => {
         doc = await DocxDocument.load(await makeDocxBuffer(bodyXml));
         doc.insertParagraphBookmarks('style-source-ppr');
         const refs = doc.readParagraphs().paragraphs;
@@ -97,17 +93,17 @@ describe('Traceability: insertParagraph styleSourceId', () => {
       });
 
       let result!: ReturnType<DocxDocument['insertParagraph']>;
-      await allureStep('When insertParagraph is called with styleSourceId set to the style-source paragraph', async () => {
+      await when('insertParagraph is called with styleSourceId set to the style-source paragraph', async () => {
         result = doc.insertParagraph({
           positionalAnchorNodeId: anchorId,
           relativePosition: 'AFTER',
           newText: 'Inserted paragraph',
           styleSourceId,
         });
-        await allureJsonAttachment('insert-paragraph-style-source-ppr-result', result);
+        await attachPrettyJson('insert-paragraph-style-source-ppr-result', result);
       });
 
-      await allureStep('Then the inserted paragraph clones style-source pPr and is positioned relative to the anchor', async () => {
+      await then('the inserted paragraph clones style-source pPr and is positioned relative to the anchor', () => {
         const inserted = doc.getParagraphElementById(result.newParagraphId);
         expect(inserted).toBeTruthy();
         const insertedStyleId = getParagraphStyleId(inserted!);
@@ -121,9 +117,9 @@ describe('Traceability: insertParagraph styleSourceId', () => {
     },
   );
 
-  humanReadableTest.openspec('styleSourceId selects template run from style source')(
+  test.openspec('styleSourceId selects template run from style source')(
     'styleSourceId selects template run from style source',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const bodyXml = [
         '<w:p><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Anchor</w:t></w:r></w:p>',
         [
@@ -137,7 +133,7 @@ describe('Traceability: insertParagraph styleSourceId', () => {
       let doc!: DocxDocument;
       let anchorId = '';
       let styleSourceId = '';
-      await allureStep('Given a style-source paragraph with multiple runs and distinct run formatting', async () => {
+      await given('a style-source paragraph with multiple runs and distinct run formatting', async () => {
         doc = await DocxDocument.load(await makeDocxBuffer(bodyXml));
         doc.insertParagraphBookmarks('style-source-template-run');
         const refs = doc.readParagraphs().paragraphs;
@@ -146,7 +142,7 @@ describe('Traceability: insertParagraph styleSourceId', () => {
       });
 
       let result!: ReturnType<DocxDocument['insertParagraph']>;
-      await allureStep('When insertParagraph is called with styleSourceId', async () => {
+      await when('insertParagraph is called with styleSourceId', async () => {
         result = doc.insertParagraph({
           positionalAnchorNodeId: anchorId,
           relativePosition: 'AFTER',
@@ -155,11 +151,11 @@ describe('Traceability: insertParagraph styleSourceId', () => {
         });
       });
 
-      await allureStep('Then the inserted run formatting is cloned from the style-source template run', async () => {
+      await then('the inserted run formatting is cloned from the style-source template run', async () => {
         const inserted = doc.getParagraphElementById(result.newParagraphId);
         expect(inserted).toBeTruthy();
         const tags = getFirstRunFormattingTags(inserted!);
-        await allureJsonAttachment('insert-paragraph-style-source-template-run-tags', { tags });
+        await attachPrettyJson('insert-paragraph-style-source-template-run-tags', { tags });
 
         expect(tags).toContain('i');
         expect(tags).not.toContain('b');
@@ -168,9 +164,9 @@ describe('Traceability: insertParagraph styleSourceId', () => {
     },
   );
 
-  humanReadableTest.openspec('styleSourceId not found falls back to anchor')(
+  test.openspec('styleSourceId not found falls back to anchor')(
     'styleSourceId not found falls back to anchor',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const bodyXml = [
         '<w:p><w:pPr><w:pStyle w:val="HeadingFallback"/></w:pPr><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>Anchor</w:t></w:r></w:p>',
         '<w:p><w:pPr><w:pStyle w:val="BodyIgnored"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>Style Source</w:t></w:r></w:p>',
@@ -178,14 +174,14 @@ describe('Traceability: insertParagraph styleSourceId', () => {
 
       let doc!: DocxDocument;
       let anchorId = '';
-      await allureStep('Given a styleSourceId that does not exist in the document', async () => {
+      await given('a styleSourceId that does not exist in the document', async () => {
         doc = await DocxDocument.load(await makeDocxBuffer(bodyXml));
         doc.insertParagraphBookmarks('style-source-fallback');
         anchorId = doc.readParagraphs().paragraphs[0]!.id;
       });
 
       let result!: ReturnType<DocxDocument['insertParagraph']>;
-      await allureStep('When insertParagraph is called with the missing styleSourceId', async () => {
+      await when('insertParagraph is called with the missing styleSourceId', async () => {
         result = doc.insertParagraph({
           positionalAnchorNodeId: anchorId,
           relativePosition: 'AFTER',
@@ -194,14 +190,14 @@ describe('Traceability: insertParagraph styleSourceId', () => {
         });
       });
 
-      await allureStep('Then the primitive falls back to anchor formatting and sets styleSourceFallback=true', async () => {
+      await then('the primitive falls back to anchor formatting and sets styleSourceFallback=true', async () => {
         expect(result.styleSourceFallback).toBe(true);
         const inserted = doc.getParagraphElementById(result.newParagraphId);
         expect(inserted).toBeTruthy();
 
         const styleId = getParagraphStyleId(inserted!);
         const tags = getFirstRunFormattingTags(inserted!);
-        await allureJsonAttachment('insert-paragraph-style-source-fallback', { styleId, tags });
+        await attachPrettyJson('insert-paragraph-style-source-fallback', { styleId, tags });
 
         expect(styleId).toBe('HeadingFallback');
         expect(tags).toContain('u');
@@ -210,9 +206,9 @@ describe('Traceability: insertParagraph styleSourceId', () => {
     },
   );
 
-  humanReadableTest.openspec('styleSourceId omitted preserves existing behavior')(
+  test.openspec('styleSourceId omitted preserves existing behavior')(
     'styleSourceId omitted preserves existing behavior',
-    async () => {
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const bodyXml = [
         '<w:p><w:pPr><w:pStyle w:val="AnchorDefault"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>Anchor</w:t></w:r></w:p>',
         '<w:p><w:pPr><w:pStyle w:val="OtherStyle"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>Other</w:t></w:r></w:p>',
@@ -220,14 +216,14 @@ describe('Traceability: insertParagraph styleSourceId', () => {
 
       let doc!: DocxDocument;
       let anchorId = '';
-      await allureStep('Given anchor and non-anchor paragraphs with different formatting', async () => {
+      await given('anchor and non-anchor paragraphs with different formatting', async () => {
         doc = await DocxDocument.load(await makeDocxBuffer(bodyXml));
         doc.insertParagraphBookmarks('style-source-omitted');
         anchorId = doc.readParagraphs().paragraphs[0]!.id;
       });
 
       let result!: ReturnType<DocxDocument['insertParagraph']>;
-      await allureStep('When insertParagraph is called without styleSourceId', async () => {
+      await when('insertParagraph is called without styleSourceId', async () => {
         result = doc.insertParagraph({
           positionalAnchorNodeId: anchorId,
           relativePosition: 'AFTER',
@@ -235,14 +231,14 @@ describe('Traceability: insertParagraph styleSourceId', () => {
         });
       });
 
-      await allureStep('Then anchor formatting is used and styleSourceFallback is not set', async () => {
+      await then('anchor formatting is used and styleSourceFallback is not set', async () => {
         expect(result.styleSourceFallback).toBeUndefined();
         const inserted = doc.getParagraphElementById(result.newParagraphId);
         expect(inserted).toBeTruthy();
 
         const styleId = getParagraphStyleId(inserted!);
         const tags = getFirstRunFormattingTags(inserted!);
-        await allureJsonAttachment('insert-paragraph-style-source-omitted', { styleId, tags });
+        await attachPrettyJson('insert-paragraph-style-source-omitted', { styleId, tags });
 
         expect(styleId).toBe('AnchorDefault');
         expect(tags).toContain('b');

@@ -13,7 +13,7 @@
  */
 
 import { describe, expect } from 'vitest';
-import { itAllure, allureStep, allureJsonAttachment, allureParameter } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import JSZip from 'jszip';
 import { compareDocuments } from '../index.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
@@ -198,8 +198,8 @@ function hasLeakedInstrText(xml: string): boolean {
 // Tests
 // =============================================================================
 
-const it = itAllure.epic('Document Comparison').withLabels({
-  feature: 'Inplace Reconstruction',
+const test = testAllure.epic('Document Comparison').withLabels({
+  feature: 'Collapsed Field Inplace',
   story: 'Collapsed Field Multi-Run Replay',
   severity: 'critical',
 });
@@ -208,9 +208,9 @@ describe('Collapsed field inplace reconstruction', () => {
   describe('Dedicated-run field (PAGEREF)', () => {
     let resultXml: string;
 
-    it('deleted field preserves multi-run structure in w:del wrapper', async () => {
-      await allureStep('Given original and revised docs with a PAGEREF field change (23 -> 42)', async () => {
-        await allureParameter('fixture', 'dedicated-run-field');
+    test('deleted field preserves multi-run structure in w:del wrapper', async ({ given, when, then, and, attachPrettyJson, parameter }: AllureBddContext) => {
+      await given('original and revised docs with a PAGEREF field change (23 -> 42)', async () => {
+        await parameter('fixture', 'dedicated-run-field');
       });
 
       const [original, revised] = await Promise.all([
@@ -219,25 +219,25 @@ describe('Collapsed field inplace reconstruction', () => {
       ]);
 
       let result: Awaited<ReturnType<typeof compareDocuments>>;
-      await allureStep('When compared in inplace mode', async () => {
+      await when('compared in inplace mode', async () => {
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
         const archive = await DocxArchive.load(result.document);
         resultXml = await archive.getDocumentXml();
-        await allureJsonAttachment('comparison-metadata.json', {
+        await attachPrettyJson('comparison-metadata.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,
           fallbackReason: result.fallbackReason,
           fallbackDiagnostics: result.fallbackDiagnostics,
         });
       });
 
-      await allureStep('Then the tracked change wrappers contain valid field structure', async () => {
+      await then('the tracked change wrappers contain valid field structure', async () => {
         const fieldPairs = countFieldCharPairs(resultXml);
         const delRunCounts = countRunsInTrackedChangeWrappers(resultXml, 'w:del');
         const packedBug = hasSingleRunPackedField(resultXml, 'w:del');
-        await allureJsonAttachment('field-char-counts.json', { fieldPairs, delRunCounts, packedBug });
+        await attachPrettyJson('field-char-counts.json', { fieldPairs, delRunCounts, packedBug });
         expect(fieldPairs.balanced, 'fldChar begin/end counts must be balanced').toBe(true);
         expect(hasLeakedInstrText(resultXml), 'instrText must not leak outside field boundaries').toBe(false);
         // The deleted field must be replayed as multiple runs, not packed into one
@@ -250,14 +250,14 @@ describe('Collapsed field inplace reconstruction', () => {
         }
       });
 
-      await allureStep('And accept-all recovers revised text', async () => {
+      await and('accept-all recovers revised text', () => {
         const acceptedText = extractTextWithParagraphs(acceptAllChanges(resultXml));
         expect(acceptedText).toContain('42');
         expect(acceptedText).toContain('See page');
         expect(acceptedText).toContain('for details.');
       });
 
-      await allureStep('And reject-all recovers original text', async () => {
+      await and('reject-all recovers original text', () => {
         const rejectedText = extractTextWithParagraphs(rejectAllChanges(resultXml));
         expect(rejectedText).toContain('23');
         expect(rejectedText).toContain('See page');
@@ -265,92 +265,106 @@ describe('Collapsed field inplace reconstruction', () => {
       });
     });
 
-    it('field structure is valid: every fldChar[begin] has matching end', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('field structure is valid: every fldChar[begin] has matching end', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+      let xml: string;
+      await given('original and revised dedicated-run PAGEREF fixture documents', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-
-      await allureStep('When scanning for fldChar elements', async () => {
+      await when('scanning for fldChar elements', async () => {
         const pairs = countFieldCharPairs(xml);
-        await allureJsonAttachment('field-structure.json', pairs);
+        await attachPrettyJson('field-structure.json', pairs);
+      });
+      await then('fldChar begin/end pairs are balanced and at least one exists', () => {
+        const pairs = countFieldCharPairs(xml);
         expect(pairs.balanced).toBe(true);
         expect(pairs.begins).toBeGreaterThan(0);
       });
     });
 
-    it('no instrText leakage outside field boundaries', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('no instrText leakage outside field boundaries', async ({ given, then }: AllureBddContext) => {
+      let xml: string;
+      await given('inplace comparison result of dedicated-run PAGEREF fixtures', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-
-      expect(hasLeakedInstrText(xml)).toBe(false);
+      await then('no instrText appears outside field boundaries', () => {
+        expect(hasLeakedInstrText(xml)).toBe(false);
+      });
     });
 
-    it('accept-all recovers revised text', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('accept-all recovers revised text', async ({ given, when, then }: AllureBddContext) => {
+      let xml: string;
+      await given('inplace comparison result of dedicated-run PAGEREF fixtures', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-      const acceptedText = extractTextWithParagraphs(acceptAllChanges(xml));
-      expect(acceptedText).toContain('42');
+      await when('all changes are accepted', () => {});
+      await then('accepted text contains revised page number 42', () => {
+        const acceptedText = extractTextWithParagraphs(acceptAllChanges(xml));
+        expect(acceptedText).toContain('42');
+      });
     });
 
-    it('reject-all recovers original text', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('reject-all recovers original text', async ({ given, when, then }: AllureBddContext) => {
+      let xml: string;
+      await given('inplace comparison result of dedicated-run PAGEREF fixtures', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-      const rejectedText = extractTextWithParagraphs(rejectAllChanges(xml));
-      expect(rejectedText).toContain('23');
+      await when('all changes are rejected', () => {});
+      await then('rejected text contains original page number 23', () => {
+        const rejectedText = extractTextWithParagraphs(rejectAllChanges(xml));
+        expect(rejectedText).toContain('23');
+      });
     });
 
-    it('inplace mode succeeds without rebuild fallback', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('inplace mode succeeds without rebuild fallback', async ({ given, then, attachPrettyJson }: AllureBddContext) => {
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await given('original and revised dedicated-run PAGEREF fixture documents', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+        ]);
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
       });
-
-      await allureStep('Then reconstructionModeUsed is inplace with no fallback', async () => {
-        await allureJsonAttachment('reconstruction-metadata.json', {
+      await then('reconstructionModeUsed is inplace with no fallback', async () => {
+        await attachPrettyJson('reconstruction-metadata.json', {
           reconstructionModeUsed: result.reconstructionModeUsed,
           fallbackReason: result.fallbackReason,
         });
@@ -361,27 +375,28 @@ describe('Collapsed field inplace reconstruction', () => {
   });
 
   describe('Mixed-run field (REF with surrounding text)', () => {
-    it('deleted field does not duplicate surrounding text', async () => {
-      await allureParameter('fixture', 'mixed-run-field');
-
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('deleted field does not duplicate surrounding text', async ({ given, when, then, attachPrettyJson, parameter }: AllureBddContext) => {
+      await given('original and revised mixed-run REF field fixture documents', async () => {
+        await parameter('fixture', 'mixed-run-field');
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-
-      await allureStep('Then the non-field text appears exactly once in reject-all', async () => {
+      let xml: string;
+      await when('documents are compared in inplace mode', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
+      });
+      await then('the non-field text appears exactly once in reject-all', async () => {
         const rejectedText = extractTextWithParagraphs(rejectAllChanges(xml));
         const sectionCount = (rejectedText.match(/A notice given in accordance with Section/g) || []).length;
         const effectiveCount = (rejectedText.match(/shall be deemed effective/g) || []).length;
-        await allureJsonAttachment('text-duplication-check.json', {
+        await attachPrettyJson('text-duplication-check.json', {
           rejectedText,
           sectionCount,
           effectiveCount,
@@ -391,78 +406,91 @@ describe('Collapsed field inplace reconstruction', () => {
       });
     });
 
-    it('accept-all recovers revised text', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('accept-all recovers revised text', async ({ given, when, then }: AllureBddContext) => {
+      let xml: string;
+      await given('inplace comparison result of mixed-run REF fixtures', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-      const acceptedText = extractTextWithParagraphs(acceptAllChanges(xml));
-      expect(acceptedText).toContain('20.8.1');
+      await when('all changes are accepted', () => {});
+      await then('accepted text contains revised section reference 20.8.1', () => {
+        const acceptedText = extractTextWithParagraphs(acceptAllChanges(xml));
+        expect(acceptedText).toContain('20.8.1');
+      });
     });
 
-    it('reject-all recovers original text', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('reject-all recovers original text', async ({ given, when, then }: AllureBddContext) => {
+      let xml: string;
+      await given('inplace comparison result of mixed-run REF fixtures', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-      const rejectedText = extractTextWithParagraphs(rejectAllChanges(xml));
-      expect(rejectedText).toContain('20.7.2');
+      await when('all changes are rejected', () => {});
+      await then('rejected text contains original section reference 20.7.2', () => {
+        const rejectedText = extractTextWithParagraphs(rejectAllChanges(xml));
+        expect(rejectedText).toContain('20.7.2');
+      });
     });
 
-    it('non-field text appears exactly once', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('non-field text appears exactly once', async ({ given, when, then }: AllureBddContext) => {
+      let xml: string;
+      await given('inplace comparison result of mixed-run REF fixtures', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
+      await when('accept-all and reject-all projections are computed', () => {});
+      await then('surrounding text appears exactly once in both projections', () => {
+        const rejectedText = extractTextWithParagraphs(rejectAllChanges(xml));
+        const acceptedText = extractTextWithParagraphs(acceptAllChanges(xml));
 
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-      const rejectedText = extractTextWithParagraphs(rejectAllChanges(xml));
-      const acceptedText = extractTextWithParagraphs(acceptAllChanges(xml));
-
-      // In both accept and reject projections, surrounding text should appear once
-      expect((rejectedText.match(/shall be deemed effective/g) || []).length).toBe(1);
-      expect((acceptedText.match(/shall be deemed effective/g) || []).length).toBe(1);
+        // In both accept and reject projections, surrounding text should appear once
+        expect((rejectedText.match(/shall be deemed effective/g) || []).length).toBe(1);
+        expect((acceptedText.match(/shall be deemed effective/g) || []).length).toBe(1);
+      });
     });
   });
 
   describe('instrText conversion', () => {
-    it('deleted field uses w:delInstrText instead of w:instrText', async () => {
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
-      ]);
-
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+    test('deleted field uses w:delInstrText instead of w:instrText', async ({ given, when, then, and }: AllureBddContext) => {
+      let xml: string;
+      await given('inplace comparison result of dedicated-run PAGEREF fixtures', async () => {
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+        ]);
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-
-      await allureStep('Then instrText inside w:del uses w:delInstrText tag', async () => {
+      await when('examining w:del wrappers for instrText usage', () => {});
+      await then('instrText inside w:del uses w:delInstrText tag', () => {
         // Check that w:del wrappers use w:delInstrText (not w:instrText)
         const delRegex = /<w:del[^>]*>(.*?)<\/w:del>/gs;
         let match;
@@ -474,8 +502,7 @@ describe('Collapsed field inplace reconstruction', () => {
           }
         }
       });
-
-      await allureStep('And reject-all converts w:delInstrText back to w:instrText', async () => {
+      await and('reject-all converts w:delInstrText back to w:instrText', () => {
         const rejectedXml = rejectAllChanges(xml);
         // After rejection, w:del content is unwrapped and w:delInstrText becomes w:instrText
         expect(rejectedXml).not.toContain('w:delInstrText');
@@ -484,29 +511,34 @@ describe('Collapsed field inplace reconstruction', () => {
   });
 
   describe('Edge cases', () => {
-    it('inserted field preserves multi-run structure in w:ins wrapper', async () => {
-      // Original has no field, revised adds one
-      const noFieldOriginal = `
+    test('inserted field preserves multi-run structure in w:ins wrapper', async ({ given, when, then }: AllureBddContext) => {
+      let xml: string;
+      await given('original has plain text and revised adds a PAGEREF field', async () => {
+        // Original has no field, revised adds one
+        const noFieldOriginal = `
 <w:p>
   <w:r><w:t>See page 23 for details.</w:t></w:r>
 </w:p>`;
 
-      const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(noFieldOriginal),
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
-      ]);
+        const [original, revised] = await Promise.all([
+          createDocxWithFieldXml(noFieldOriginal),
+          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+        ]);
 
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+        const result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+
+        const archive = await DocxArchive.load(result.document);
+        xml = await archive.getDocumentXml();
       });
-
-      const archive = await DocxArchive.load(result.document);
-      const xml = await archive.getDocumentXml();
-
-      const fieldPairs = countFieldCharPairs(xml);
-      expect(fieldPairs.balanced).toBe(true);
-      expect(hasLeakedInstrText(xml)).toBe(false);
+      await when('the comparison result XML is inspected', () => {});
+      await then('fldChar pairs are balanced and no instrText leaks outside field boundaries', () => {
+        const fieldPairs = countFieldCharPairs(xml);
+        expect(fieldPairs.balanced).toBe(true);
+        expect(hasLeakedInstrText(xml)).toBe(false);
+      });
     });
   });
 });

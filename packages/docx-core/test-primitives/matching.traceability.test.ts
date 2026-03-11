@@ -1,35 +1,25 @@
 import { describe, expect } from 'vitest';
 import { findUniqueSubstringMatch } from '../src/primitives/matching.js';
-import { itAllure, allureStep, allureJsonAttachment } from './helpers/allure-test.js';
+import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 
-const TEST_FEATURE = 'docx-primitives';
-
-const it = itAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
-
-const humanReadableIt = it.allure({
-  
-  tags: ['human-readable'],
-  
-  parameters: { audience: 'non-technical' },
-  
-});
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Text Matching' });
 
 describe('Traceability: docx-primitives — Unique Substring Matching', () => {
-  humanReadableIt.openspec('exact match found for literal substring')('Scenario: exact match found for literal substring', async () => {
+  test.openspec('exact match found for literal substring')('Scenario: exact match found for literal substring', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
     const haystack = 'The Purchase Price shall be paid at Closing.';
     const needle = 'Purchase Price';
+    let result!: ReturnType<typeof findUniqueSubstringMatch>;
 
-    await allureStep('Given paragraph text containing the needle as a literal substring exactly once', async () => {
-      await allureJsonAttachment('Inputs', { haystack, needle });
+    await given('paragraph text containing the needle as a literal substring exactly once', async () => {
+      await attachPrettyJson('Inputs', { haystack, needle });
     });
 
-    const result = await allureStep('When findUniqueSubstringMatch is called', async () => {
-      const r = findUniqueSubstringMatch(haystack, needle);
-      await allureJsonAttachment('Result', r);
-      return r;
+    await when('findUniqueSubstringMatch is called', async () => {
+      result = findUniqueSubstringMatch(haystack, needle);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have status unique and mode exact', () => {
+    await then('the result SHALL have status unique and mode exact', () => {
       expect(result.status).toBe('unique');
       if (result.status !== 'unique') return;
       expect(result.mode).toBe('exact');
@@ -37,112 +27,113 @@ describe('Traceability: docx-primitives — Unique Substring Matching', () => {
     });
   });
 
-  humanReadableIt.openspec('not_found when needle is absent')('Scenario: not_found when needle is absent', async () => {
+  test.openspec('not_found when needle is absent')('Scenario: not_found when needle is absent', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const haystack = 'Hello world';
     const needle = 'missing';
+    let result!: ReturnType<typeof findUniqueSubstringMatch>;
 
-    const result = await allureStep('When findUniqueSubstringMatch is called with a needle not present', async () => {
-      const r = findUniqueSubstringMatch(haystack, needle);
-      await allureJsonAttachment('Result', r);
-      return r;
+    await when('findUniqueSubstringMatch is called with a needle not present', async () => {
+      result = findUniqueSubstringMatch(haystack, needle);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have status not_found', () => {
+    await then('the result SHALL have status not_found', () => {
       expect(result.status).toBe('not_found');
     });
   });
 
-  humanReadableIt.openspec('multiple when needle appears more than once')('Scenario: multiple when needle appears more than once', async () => {
+  test.openspec('multiple when needle appears more than once')('Scenario: multiple when needle appears more than once', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const haystack = 'The Company and the Company agree.';
     const needle = 'Company';
+    let result!: ReturnType<typeof findUniqueSubstringMatch>;
 
-    const result = await allureStep('When findUniqueSubstringMatch is called', async () => {
-      const r = findUniqueSubstringMatch(haystack, needle);
-      await allureJsonAttachment('Result', r);
-      return r;
+    await when('findUniqueSubstringMatch is called', async () => {
+      result = findUniqueSubstringMatch(haystack, needle);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have status multiple', () => {
+    await then('the result SHALL have status multiple', () => {
       expect(result.status).toBe('multiple');
       if (result.status !== 'multiple') return;
       expect(result.matchCount).toBeGreaterThan(1);
     });
   });
 
-  humanReadableIt.openspec('not_found for empty needle')('Scenario: not_found for empty needle', async () => {
-    const result = await allureStep('When findUniqueSubstringMatch is called with an empty string needle', async () => {
-      const r = findUniqueSubstringMatch('Some text', '');
-      await allureJsonAttachment('Result', r);
-      return r;
+  test.openspec('not_found for empty needle')('Scenario: not_found for empty needle', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
+    let result!: ReturnType<typeof findUniqueSubstringMatch>;
+
+    await when('findUniqueSubstringMatch is called with an empty string needle', async () => {
+      result = findUniqueSubstringMatch('Some text', '');
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have status not_found', () => {
+    await then('the result SHALL have status not_found', () => {
       expect(result.status).toBe('not_found');
     });
   });
 
-  humanReadableIt.openspec('quote_normalized matches curly quotes against straight quotes')('Scenario: quote_normalized matches curly quotes against straight quotes', async () => {
+  test.openspec('quote_normalized matches curly quotes against straight quotes')('Scenario: quote_normalized matches curly quotes against straight quotes', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const haystack = '\u201CCompany\u201D means ABC Corp.';
     const needle = '"Company" means ABC Corp.';
+    let result!: ReturnType<typeof findUniqueSubstringMatch>;
 
-    const result = await allureStep('When findUniqueSubstringMatch is called', async () => {
-      const r = findUniqueSubstringMatch(haystack, needle);
-      await allureJsonAttachment('Result', r);
-      return r;
+    await when('findUniqueSubstringMatch is called', async () => {
+      result = findUniqueSubstringMatch(haystack, needle);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have status unique and mode quote_normalized', () => {
+    await then('the result SHALL have status unique and mode quote_normalized', () => {
       expect(result.status).toBe('unique');
       if (result.status !== 'unique') return;
       expect(result.mode).toBe('quote_normalized');
     });
   });
 
-  humanReadableIt.openspec('exact mode preferred over quote_normalized when both match')('Scenario: exact mode preferred over quote_normalized when both match', async () => {
+  test.openspec('exact mode preferred over quote_normalized when both match')('Scenario: exact mode preferred over quote_normalized when both match', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const haystack = '"Company" means ABC Corp.';
     const needle = '"Company" means ABC Corp.';
+    let result!: ReturnType<typeof findUniqueSubstringMatch>;
 
-    const result = await allureStep('When findUniqueSubstringMatch is called', async () => {
-      const r = findUniqueSubstringMatch(haystack, needle);
-      await allureJsonAttachment('Result', r);
-      return r;
+    await when('findUniqueSubstringMatch is called', async () => {
+      result = findUniqueSubstringMatch(haystack, needle);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have mode exact', () => {
+    await then('the result SHALL have mode exact', () => {
       expect(result.status).toBe('unique');
       if (result.status !== 'unique') return;
       expect(result.mode).toBe('exact');
     });
   });
 
-  humanReadableIt.openspec('flexible_whitespace matches across spacing variance')('Scenario: flexible_whitespace matches across spacing variance', async () => {
+  test.openspec('flexible_whitespace matches across spacing variance')('Scenario: flexible_whitespace matches across spacing variance', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const haystack = 'The   Purchase   Price';
     const needle = 'The Purchase Price';
+    let result!: ReturnType<typeof findUniqueSubstringMatch>;
 
-    const result = await allureStep('When findUniqueSubstringMatch is called', async () => {
-      const r = findUniqueSubstringMatch(haystack, needle);
-      await allureJsonAttachment('Result', r);
-      return r;
+    await when('findUniqueSubstringMatch is called', async () => {
+      result = findUniqueSubstringMatch(haystack, needle);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have status unique and mode flexible_whitespace', () => {
+    await then('the result SHALL have status unique and mode flexible_whitespace', () => {
       expect(result.status).toBe('unique');
       if (result.status !== 'unique') return;
       expect(result.mode).toBe('flexible_whitespace');
     });
   });
 
-  humanReadableIt.openspec('quote_optional matches quoted and unquoted term references')('Scenario: quote_optional matches quoted and unquoted term references', async () => {
+  test.openspec('quote_optional matches quoted and unquoted term references')('Scenario: quote_optional matches quoted and unquoted term references', async ({ when, then, attachPrettyJson }: AllureBddContext) => {
     const haystack = 'The defined term is \u201CCompany\u201D.';
     const needle = 'defined term is Company.';
+    let result!: ReturnType<typeof findUniqueSubstringMatch>;
 
-    const result = await allureStep('When findUniqueSubstringMatch is called', async () => {
-      const r = findUniqueSubstringMatch(haystack, needle);
-      await allureJsonAttachment('Result', r);
-      return r;
+    await when('findUniqueSubstringMatch is called', async () => {
+      result = findUniqueSubstringMatch(haystack, needle);
+      await attachPrettyJson('Result', result);
     });
 
-    await allureStep('Then the result SHALL have status unique and mode quote_optional', () => {
+    await then('the result SHALL have status unique and mode quote_optional', () => {
       expect(result.status).toBe('unique');
       if (result.status !== 'unique') return;
       expect(result.mode).toBe('quote_optional');

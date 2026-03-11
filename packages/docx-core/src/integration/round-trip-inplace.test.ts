@@ -7,7 +7,7 @@
  */
 
 import { describe, expect } from 'vitest';
-import { itAllure as it } from '../testing/allure-test.js';
+import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import JSZip from 'jszip';
@@ -20,6 +20,8 @@ import {
   compareTexts,
 } from '../baselines/atomizer/trackChangesAcceptorAst.js';
 
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Inplace Round-Trip' });
+
 const fixturesPath = join(dirname(import.meta.url.replace('file://', '')), '../testing/fixtures');
 
 const FIXTURES = [
@@ -31,47 +33,71 @@ const FIXTURES = [
 
 describe('Round-Trip Tests - Inplace Reconstruction', () => {
   for (const name of FIXTURES) {
-    it(`${name}: accept changes should match revised`, async () => {
-      const original = await readFile(join(fixturesPath, name, 'original.docx'));
-      const revised = await readFile(join(fixturesPath, name, 'revised.docx'));
+    test(`${name}: accept changes should match revised`, async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer;
+      let revised: Buffer;
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      let acceptedText: string;
+      let revisedText: string;
 
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+      await given(`${name} original and revised documents are loaded`, async () => {
+        original = await readFile(join(fixturesPath, name, 'original.docx'));
+        revised = await readFile(join(fixturesPath, name, 'revised.docx'));
       });
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const acceptedText = extractTextWithParagraphs(acceptAllChanges(resultXml));
+      await when('documents are compared in inplace mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
 
-      const revisedArchive = await DocxArchive.load(revised);
-      const revisedText = extractTextWithParagraphs(await revisedArchive.getDocumentXml());
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        acceptedText = extractTextWithParagraphs(acceptAllChanges(resultXml));
 
-      expect(compareTexts(revisedText, acceptedText).normalizedIdentical).toBe(true);
+        const revisedArchive = await DocxArchive.load(revised);
+        revisedText = extractTextWithParagraphs(await revisedArchive.getDocumentXml());
+      });
+
+      await then('accepting all changes produces text matching the revised document', async () => {
+        expect(compareTexts(revisedText, acceptedText).normalizedIdentical).toBe(true);
+      });
     });
 
-    it(`${name}: reject changes should match original`, async () => {
-      const original = await readFile(join(fixturesPath, name, 'original.docx'));
-      const revised = await readFile(join(fixturesPath, name, 'revised.docx'));
+    test(`${name}: reject changes should match original`, async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer;
+      let revised: Buffer;
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      let rejectedText: string;
+      let originalText: string;
 
-      const result = await compareDocuments(original, revised, {
-        engine: 'atomizer',
-        reconstructionMode: 'inplace',
+      await given(`${name} original and revised documents are loaded`, async () => {
+        original = await readFile(join(fixturesPath, name, 'original.docx'));
+        revised = await readFile(join(fixturesPath, name, 'revised.docx'));
       });
 
-      const resultArchive = await DocxArchive.load(result.document);
-      const resultXml = await resultArchive.getDocumentXml();
-      const rejectedText = extractTextWithParagraphs(rejectAllChanges(resultXml));
+      await when('documents are compared in inplace mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
 
-      const originalArchive = await DocxArchive.load(original);
-      const originalText = extractTextWithParagraphs(await originalArchive.getDocumentXml());
+        const resultArchive = await DocxArchive.load(result.document);
+        const resultXml = await resultArchive.getDocumentXml();
+        rejectedText = extractTextWithParagraphs(rejectAllChanges(resultXml));
 
-      expect(compareTexts(originalText, rejectedText).normalizedIdentical).toBe(true);
+        const originalArchive = await DocxArchive.load(original);
+        originalText = extractTextWithParagraphs(await originalArchive.getDocumentXml());
+      });
+
+      await then('rejecting all changes produces text matching the original document', async () => {
+        expect(compareTexts(originalText, rejectedText).normalizedIdentical).toBe(true);
+      });
     });
   }
 });
 
-it('split-run-boundary-change: reject changes should match original', async () => {
+test('split-run-boundary-change: reject changes should match original', async ({ given, when, then }: AllureBddContext) => {
   const makeDocxWithRuns = async (runs: string[]): Promise<Buffer> => {
     const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -99,28 +125,40 @@ it('split-run-boundary-change: reject changes should match original', async () =
     return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
   };
 
-  const original = await makeDocxWithRuns([
-    'THIS CONFIDENTIALITY AGREEMENT (“Agreement”) is made as of t',
-    'he ______ day of _________, 201_',
-    ' by and between the parties.',
-  ]);
-  const revised = await makeDocxWithRuns([
-    'THIS CONFIDENTIALITY AGREEMENT (“Agreement”) is made as of ',
-    'January 15, 2025',
-    ' by and between the parties.',
-  ]);
+  let original: Buffer;
+  let revised: Buffer;
+  let result: Awaited<ReturnType<typeof compareDocuments>>;
+  let rejectedText: string;
+  let originalText: string;
 
-  const result = await compareDocuments(original, revised, {
-    engine: 'atomizer',
-    reconstructionMode: 'inplace',
+  await given('synthetic split-run-boundary-change documents are constructed', async () => {
+    original = await makeDocxWithRuns([
+      'THIS CONFIDENTIALITY AGREEMENT ("Agreement") is made as of t',
+      'he ______ day of _________, 201_',
+      ' by and between the parties.',
+    ]);
+    revised = await makeDocxWithRuns([
+      'THIS CONFIDENTIALITY AGREEMENT ("Agreement") is made as of ',
+      'January 15, 2025',
+      ' by and between the parties.',
+    ]);
   });
 
-  const resultArchive = await DocxArchive.load(result.document);
-  const resultXml = await resultArchive.getDocumentXml();
-  const rejectedText = extractTextWithParagraphs(rejectAllChanges(resultXml));
+  await when('documents are compared in inplace mode', async () => {
+    result = await compareDocuments(original, revised, {
+      engine: 'atomizer',
+      reconstructionMode: 'inplace',
+    });
 
-  const originalArchive = await DocxArchive.load(original);
-  const originalText = extractTextWithParagraphs(await originalArchive.getDocumentXml());
+    const resultArchive = await DocxArchive.load(result.document);
+    const resultXml = await resultArchive.getDocumentXml();
+    rejectedText = extractTextWithParagraphs(rejectAllChanges(resultXml));
 
-  expect(compareTexts(originalText, rejectedText).normalizedIdentical).toBe(true);
+    const originalArchive = await DocxArchive.load(original);
+    originalText = extractTextWithParagraphs(await originalArchive.getDocumentXml());
+  });
+
+  await then('rejecting all changes produces text matching the original document', async () => {
+    expect(compareTexts(originalText, rejectedText).normalizedIdentical).toBe(true);
+  });
 });
