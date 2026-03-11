@@ -4,7 +4,8 @@ import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { DocxDocument } from '../src/primitives/document.js';
 import { OOXML, W } from '../src/primitives/namespaces.js';
 
-const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Insert Paragraph Style Source' });
+const TEST_FEATURE = 'add-apply-plan-and-style-source';
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 
 function makeDocXml(bodyXml: string): string {
   return (

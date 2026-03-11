@@ -676,7 +676,7 @@ describe('Step 8: Empty paragraph track change encoding', () => {
     });
   });
 
-  test('empty inserted paragraph without pPr synthesizes correct pPr/rPr', async ({ given, when, then, and }: AllureBddContext) => {
+  test('empty inserted paragraph without pPr synthesizes correct pPr/rPr', async ({ given, when, then }: AllureBddContext) => {
     let atom: ComparisonUnitAtom;
     let result: string;
     let targetP: Element | undefined;

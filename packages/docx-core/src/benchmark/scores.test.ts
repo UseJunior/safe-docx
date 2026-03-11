@@ -181,7 +181,7 @@ describe('Manifest loading', () => {
   });
 
   test('formattingMode full vs compact output differs', async ({ given, then }: AllureBddContext) => {
-    let compactView: Awaited<ReturnType<InstanceType<typeof import('../primitives/document.js').DocxDocument>['buildDocumentView']>>;
+    let compactView: { nodes: any[]; [k: string]: any };
     let fullView: typeof compactView;
 
     await given('simple-word-change original is loaded with paragraph bookmarks', async () => {

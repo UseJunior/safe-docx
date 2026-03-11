@@ -31,7 +31,7 @@ async function getDocumentXml(buffer: Buffer): Promise<string> {
 }
 
 describe('G1: Text round-trip gate', () => {
-  test('G1a pass: atomizer on simple-word-change produces matching text', async ({ given, when, then }: AllureBddContext) => {
+  test('G1a pass: atomizer on simple-word-change produces matching text', async ({ given, then }: AllureBddContext) => {
     let resultDocXml: string;
     let originalText: string;
     let revisedText: string;

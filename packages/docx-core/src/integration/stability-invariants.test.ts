@@ -171,7 +171,8 @@ describe('Stability invariants', () => {
     });
 
     await then('all runs produce identical semantic output', async () => {
-      const [first, ...rest] = runs;
+      const first = runs[0]!;
+      const rest = runs.slice(1);
       for (const [index, current] of rest.entries()) {
         assertNormalizedEqual(first.semantic.raw, current.semantic.raw, `determinism/small/raw/run${index + 2}`);
         assertNormalizedEqual(
@@ -214,7 +215,8 @@ describe('Stability invariants', () => {
       });
 
       await then('both runs produce identical semantic output in inplace mode without fallback', async () => {
-        const [first, second] = runs;
+        const first = runs[0]!;
+        const second = runs[1]!;
         assertNormalizedEqual(first.semantic.raw, second.semantic.raw, 'determinism/synthetic/raw');
         assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/synthetic/accepted');
         assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/synthetic/rejected');
@@ -255,7 +257,8 @@ describe('Stability invariants', () => {
       });
 
       await then('both runs produce identical semantic output in inplace mode without fallback', async () => {
-        const [first, second] = runs;
+        const first = runs[0]!;
+        const second = runs[1]!;
         assertNormalizedEqual(first.semantic.raw, second.semantic.raw, 'determinism/ilpa/raw');
         assertNormalizedEqual(first.semantic.accepted, second.semantic.accepted, 'determinism/ilpa/accepted');
         assertNormalizedEqual(first.semantic.rejected, second.semantic.rejected, 'determinism/ilpa/rejected');

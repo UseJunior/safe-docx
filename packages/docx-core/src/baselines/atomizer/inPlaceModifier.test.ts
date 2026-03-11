@@ -497,7 +497,7 @@ describe('inPlaceModifier', () => {
   });
 
   describe('wrapAsMoveFrom', () => {
-    test('should wrap with moveFrom and add range markers', async ({ given, when, then, and }: AllureBddContext) => {
+    test('should wrap with moveFrom and add range markers', async ({ given, when, then }: AllureBddContext) => {
       let r: Element, p: Element;
       let state: ReturnType<typeof createRevisionIdState>;
       let result: boolean;

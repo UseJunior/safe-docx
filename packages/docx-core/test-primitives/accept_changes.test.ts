@@ -3,7 +3,8 @@ import { acceptChanges } from '../src/primitives/accept_changes.js';
 import { parseXml, serializeXml } from '../src/primitives/xml.js';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 
-const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Accept Changes' });
+const TEST_FEATURE = 'add-accept-tracked-changes';
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 const humanReadableTest = test.allure({
   tags: ['human-readable'],
   parameters: { audience: 'non-technical' },

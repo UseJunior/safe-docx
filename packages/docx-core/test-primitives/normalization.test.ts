@@ -7,7 +7,8 @@ import { type AllureBddContext, testAllure } from './helpers/allure-test.js';
 
 const W_NS = OOXML.W_NS;
 
-const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Normalization' });
+const TEST_FEATURE = 'add-auto-normalization-on-open';
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 
 const humanReadableTest = test.allure({
 

@@ -12,7 +12,8 @@ import {
   getComments,
 } from '../src/primitives/comments.js';
 
-const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Delete Comment' });
+const TEST_FEATURE = 'add-comment-delete-tool';
+const test = testAllure.epic('DOCX Primitives').withLabels({ feature: TEST_FEATURE });
 const W_NS = OOXML.W_NS;
 
 function makeDocXml(bodyXml: string): string {
