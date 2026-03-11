@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document Preview</title>
+<style>
+  :root {
+    --bg: #f0f0f0;
+    --page-bg: #fff;
+    --text: #1a1a1a;
+    --border: #d0d0d0;
+    --shadow: rgba(0,0,0,0.12);
+    --accent: #2563eb;
+    --error-bg: #fef2f2;
+    --error-text: #dc2626;
+    --insert-bg: #dcfce7;
+    --delete-bg: #fce7e7;
+    --heading1-size: 24pt;
+    --heading2-size: 18pt;
+    --heading3-size: 14pt;
+    --body-size: 11pt;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Calibri', 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--page-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+  }
+
+  .toolbar-title {
+    font-weight: 600;
+    flex: 1;
+  }
+
+  .toolbar button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .toolbar button:hover { opacity: 0.9; }
+
+  .toolbar .status {
+    font-size: 11px;
+    color: #666;
+  }
+
+  .page {
+    max-width: 8.5in;
+    margin: 24px auto;
+    padding: 1in;
+    background: var(--page-bg);
+    box-shadow: 0 1px 4px var(--shadow);
+    min-height: 11in;
+  }
+
+  .para {
+    outline: none;
+    padding: 2px 4px;
+    border-radius: 2px;
+    transition: background 0.15s;
+    margin-bottom: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .para:focus {
+    background: #f8fafc;
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  .para.error {
+    background: var(--error-bg);
+  }
+
+  .para .list-label {
+    font-weight: 600;
+    margin-right: 0.5em;
+    user-select: none;
+  }
+
+  .para .header-text {
+    font-weight: 700;
+  }
+
+  /* Style mappings */
+  .style-heading, .style-Heading1 { font-size: var(--heading1-size); font-weight: 700; margin-top: 16pt; margin-bottom: 8pt; }
+  .style-heading_1, .style-Heading2 { font-size: var(--heading2-size); font-weight: 700; margin-top: 14pt; margin-bottom: 6pt; }
+  .style-heading_2, .style-Heading3 { font-size: var(--heading3-size); font-weight: 700; margin-top: 12pt; margin-bottom: 4pt; }
+  .style-body, .style-Normal { font-size: var(--body-size); margin-top: 0; margin-bottom: 6pt; }
+
+  .align-LEFT { text-align: left; }
+  .align-CENTER { text-align: center; }
+  .align-RIGHT { text-align: right; }
+  .align-JUSTIFY { text-align: justify; }
+
+  mark, highlighting { background: #fef08a; }
+
+  .error-badge {
+    display: inline-block;
+    background: var(--error-text);
+    color: #fff;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-left: 8px;
+    cursor: pointer;
+  }
+
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: #666;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="toolbar-title">Document Preview</span>
+  <span class="status" id="status">Loading...</span>
+  <button id="refreshBtn" title="Refresh document view">Refresh</button>
+</div>
+
+<div class="page" id="page">
+  <div class="loading" id="loading">Loading document...</div>
+</div>
+
+<script type="module">
+// ── App initialization ──────────────────────────────────────────────
+
+let app;
+let sessionId = null;
+let filePath = null;
+let editRevision = 0;
+const originalTexts = new Map();
+let nodes = [];
+
+async function initApp() {
+  try {
+    const mod = await import('https://esm.sh/@modelcontextprotocol/ext-apps@1.2.0/app-with-deps');
+    const App = mod.App || mod.default;
+    app = new App(
+      { name: 'safe-docx-preview', version: '0.3.0' },
+      {},
+    );
+
+    app.ontoolinput = (input) => {
+      const args = input?.arguments || input?.args || input || {};
+      if (args.session_id) sessionId = args.session_id;
+      if (args.file_path) filePath = args.file_path;
+      // Auto-fetch as soon as we have either identifier
+      if (sessionId || filePath) fetchDocumentView();
+    };
+
+    app.ontoolresult = (result) => {
+      try {
+        const data = typeof result === 'string' ? JSON.parse(result) : result;
+        if (data?.nodes) {
+          handleViewData(data);
+        }
+      } catch { /* ignore parse errors */ }
+    };
+
+    app.onhostcontextchanged = () => {
+      if (typeof app.applyHostStyleVariables === 'function') {
+        app.applyHostStyleVariables();
+      }
+    };
+
+    await app.connect();
+    setStatus('Connected');
+
+    // If we got session_id or file_path from tool input, fetch view data
+    if (sessionId || filePath) {
+      await fetchDocumentView();
+    } else {
+      // Wait a moment for tool input notification, then show status
+      setTimeout(async () => {
+        if (nodes.length === 0) {
+          setStatus('No session — waiting for tool input...');
+        }
+      }, 3000);
+    }
+  } catch (e) {
+    console.error('App init error:', e);
+    setStatus('Error: ' + e.message);
+    showError('Failed to initialize MCP App connection. ' + e.message);
+  }
+}
+
+async function fetchDocumentView() {
+  if (!app) return;
+  setStatus('Fetching...');
+  try {
+    const args = {};
+    if (sessionId) args.session_id = sessionId;
+    else if (filePath) args.file_path = filePath;
+    const result = await app.callServerTool({
+      name: 'get_document_view',
+      arguments: args,
+    });
+    const data = parseToolResult(result);
+    if (data?.nodes) {
+      handleViewData(data);
+    } else if (data?.error) {
+      showError(data.error.message || 'Failed to fetch document view');
+    }
+  } catch (e) {
+    console.error('Fetch error:', e);
+    setStatus('Fetch error');
+    showError('Failed to fetch: ' + e.message);
+  }
+}
+
+function parseToolResult(result) {
+  if (!result) return null;
+  // Tool results come as content blocks
+  if (result.content) {
+    for (const block of result.content) {
+      if (block.type === 'text' && block.text) {
+        try { return JSON.parse(block.text); } catch { /* continue */ }
+      }
+    }
+  }
+  // Direct object
+  if (result.nodes) return result;
+  if (typeof result === 'string') {
+    try { return JSON.parse(result); } catch { return null; }
+  }
+  return result;
+}
+
+function handleViewData(data) {
+  if (data.session_id) sessionId = data.session_id;
+  if (data.edit_revision != null) editRevision = data.edit_revision;
+  nodes = data.nodes || [];
+  renderDocument(nodes);
+  setStatus(`${nodes.length} paragraphs — rev ${editRevision}`);
+}
+
+// ── Rendering ───────────────────────────────────────────────────────
+
+function renderDocument(viewNodes) {
+  const page = document.getElementById('page');
+  const loading = document.getElementById('loading');
+  if (loading) loading.remove();
+
+  // Preserve focused element ID
+  const focusedId = document.activeElement?.dataset?.id;
+
+  page.innerHTML = '';
+  originalTexts.clear();
+
+  for (const node of viewNodes) {
+    const el = createParagraphElement(node);
+    page.appendChild(el);
+  }
+
+  // Restore focus
+  if (focusedId) {
+    const target = page.querySelector(`[data-id="${CSS.escape(focusedId)}"]`);
+    if (target) target.focus();
+  }
+}
+
+function createParagraphElement(node) {
+  const div = document.createElement('div');
+  div.className = buildClassList(node);
+  div.dataset.id = node.id;
+  div.contentEditable = 'true';
+  div.spellcheck = false;
+
+  // Indentation
+  const leftPt = node.paragraph_indents_pt?.left || 0;
+  if (leftPt > 0) {
+    div.style.marginLeft = leftPt + 'pt';
+  }
+  const firstLine = node.paragraph_indents_pt?.first_line || 0;
+  if (firstLine !== 0) {
+    div.style.textIndent = firstLine + 'pt';
+  }
+
+  // Build content
+  let html = '';
+
+  // List label (non-editable)
+  if (node.list_label) {
+    html += `<span class="list-label" contenteditable="false">${escapeHtml(node.list_label)}</span>`;
+  }
+
+  // Tagged text with formatting
+  html += convertTaggedText(node.tagged_text);
+
+  div.innerHTML = html;
+
+  // Event handlers
+  div.addEventListener('focus', () => onParaFocus(div, node));
+  div.addEventListener('blur', () => onParaBlur(div, node));
+  div.addEventListener('paste', onPaste);
+  div.addEventListener('keydown', onKeydown);
+
+  return div;
+}
+
+function buildClassList(node) {
+  const classes = ['para'];
+
+  // Style class
+  const style = node.style || node.paragraph_style_name || 'body';
+  classes.push('style-' + style.replace(/\s+/g, '_'));
+
+  // Alignment
+  const align = node.paragraph_alignment || 'LEFT';
+  classes.push('align-' + align);
+
+  return classes.join(' ');
+}
+
+function convertTaggedText(tagged) {
+  if (!tagged) return '';
+  // Sanitize: convert tagged_text formatting tags to HTML
+  let html = escapeHtml(tagged);
+
+  // Convert formatting tags (they're already escaped, unescape known tags)
+  const tagMap = [
+    [/&lt;b&gt;/g, '<b>'], [/&lt;\/b&gt;/g, '</b>'],
+    [/&lt;i&gt;/g, '<i>'], [/&lt;\/i&gt;/g, '</i>'],
+    [/&lt;u&gt;/g, '<u>'], [/&lt;\/u&gt;/g, '</u>'],
+    [/&lt;highlighting&gt;/g, '<mark>'], [/&lt;\/highlighting&gt;/g, '</mark>'],
+    [/&lt;highlight&gt;/g, '<mark>'], [/&lt;\/highlight&gt;/g, '</mark>'],
+  ];
+
+  for (const [pattern, replacement] of tagMap) {
+    html = html.replace(pattern, replacement);
+  }
+
+  // Handle <a href="...">...</a> links
+  html = html.replace(
+    /&lt;a href=&quot;([^&]*)&quot;&gt;(.*?)&lt;\/a&gt;/g,
+    '<a href="$1" target="_blank" rel="noopener" contenteditable="false">$2</a>'
+  );
+
+  return html;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ── Edit flow ───────────────────────────────────────────────────────
+
+function onParaFocus(el, node) {
+  // Store original clean text for diff on blur
+  const cleanText = getCleanText(el);
+  originalTexts.set(node.id, cleanText);
+}
+
+async function onParaBlur(el, node) {
+  const original = originalTexts.get(node.id);
+  if (original == null) return;
+
+  const current = getCleanText(el);
+  if (current === original) {
+    originalTexts.delete(node.id);
+    return;
+  }
+
+  // Text changed — persist via replace_text
+  el.classList.remove('error');
+  setStatus('Saving...');
+
+  try {
+    const result = await app.callServerTool({
+      name: 'replace_text',
+      arguments: {
+        session_id: sessionId,
+        target_paragraph_id: node.id,
+        old_string: original,
+        new_string: current,
+        instruction: 'User edit from preview app',
+      },
+    });
+
+    const data = parseToolResult(result);
+    if (data?.success) {
+      originalTexts.set(node.id, current);
+      editRevision++;
+      setStatus(`Saved — rev ${editRevision}`);
+
+      // Notify Claude of the edit
+      try {
+        const preview = current.length > 80 ? current.slice(0, 80) + '...' : current;
+        await app.updateModelContext({
+          content: [{
+            type: 'text',
+            text: `[User Edit] Paragraph ${node.id}: text changed to "${preview}"`,
+          }],
+        });
+      } catch { /* context update is best-effort */ }
+    } else {
+      const errMsg = data?.error?.message || 'Save failed';
+      showParaError(el, errMsg);
+      setStatus('Save error — try refresh');
+      // Re-fetch on stale text error
+      if (data?.error?.code === 'TEXT_NOT_FOUND') {
+        setTimeout(() => fetchDocumentView(), 500);
+      }
+    }
+  } catch (e) {
+    console.error('Save error:', e);
+    showParaError(el, e.message);
+    setStatus('Save error');
+  }
+}
+
+function getCleanText(el) {
+  // Get text content, excluding list labels
+  const clone = el.cloneNode(true);
+  const labels = clone.querySelectorAll('.list-label');
+  for (const l of labels) l.remove();
+  return clone.textContent || '';
+}
+
+function showParaError(el, msg) {
+  el.classList.add('error');
+  // Remove existing badges
+  const existing = el.querySelector('.error-badge');
+  if (existing) existing.remove();
+  const badge = document.createElement('span');
+  badge.className = 'error-badge';
+  badge.textContent = 'Error';
+  badge.title = msg;
+  badge.onclick = (e) => { e.stopPropagation(); badge.remove(); el.classList.remove('error'); };
+  el.appendChild(badge);
+}
+
+// ── Input handling ──────────────────────────────────────────────────
+
+function onPaste(e) {
+  e.preventDefault();
+  const text = e.clipboardData?.getData('text/plain') || '';
+  document.execCommand('insertText', false, text);
+}
+
+function onKeydown(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault(); // No paragraph splitting in prototype
+  }
+}
+
+// ── Utilities ───────────────────────────────────────────────────────
+
+function setStatus(msg) {
+  const el = document.getElementById('status');
+  if (el) el.textContent = msg;
+}
+
+function showError(msg) {
+  const page = document.getElementById('page');
+  page.innerHTML = `<div class="loading" style="color:var(--error-text)">${escapeHtml(msg)}</div>`;
+}
+
+// ── Refresh ─────────────────────────────────────────────────────────
+
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  fetchDocumentView();
+});
+
+// ── Start ───────────────────────────────────────────────────────────
+
+initApp();
+</script>
+</body>
+</html>
