@@ -15,6 +15,7 @@ import {
 import { DocxDocument } from '../src/primitives/document.js';
 import { createZipBuffer } from '../src/primitives/zip.js';
 
+const TEST_FEATURE = 'add-table-context-to-document-view';
 const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Document View Tables' });
 
 // ---------------------------------------------------------------------------
@@ -101,7 +102,8 @@ function buildViewNodes(bodyXml: string): DocumentViewNode[] {
 // ---------------------------------------------------------------------------
 
 describe('document_view tables', () => {
-  test('simple table paragraphs have correct table_context', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-01')
+    ('simple table paragraphs have correct table_context', async ({ given, when, then }: AllureBddContext) => {
     let doc: DocxDocument;
     let nodes: DocumentViewNode[];
 
@@ -193,7 +195,8 @@ describe('document_view tables', () => {
     });
   });
 
-  test('w:ins-wrapped table rows get table context', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-03')
+    ('w:ins-wrapped table rows get table context', async ({ given, when, then }: AllureBddContext) => {
     let doc: DocxDocument;
     let nodes: DocumentViewNode[];
 
@@ -220,7 +223,8 @@ describe('document_view tables', () => {
     });
   });
 
-  test('gridSpan produces grid-aware col_index', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-02')
+    ('gridSpan produces grid-aware col_index', async ({ given, when, then }: AllureBddContext) => {
     let doc: DocxDocument;
     let nodes: DocumentViewNode[];
 
@@ -338,7 +342,8 @@ describe('document_view tables', () => {
     });
   });
 
-  test('empty table cells are preserved', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-05')
+    ('empty table cells are preserved', async ({ given, when, then }: AllureBddContext) => {
     let doc: DocxDocument;
     let nodes: DocumentViewNode[];
 
@@ -436,7 +441,8 @@ describe('document_view tables', () => {
     });
   });
 
-  test('nested table: inner paragraphs get outer cell context', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-04')
+    ('nested table: inner paragraphs get outer cell context', async ({ given, when, then }: AllureBddContext) => {
     let doc: DocxDocument;
     let nodes: DocumentViewNode[];
 
@@ -535,7 +541,8 @@ describe('renderToon table markers', () => {
     cell_para_count: 1,
   };
 
-  test('renderToon emits #TABLE and #END_TABLE markers', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-06')
+    ('renderToon emits #TABLE and #END_TABLE markers', async ({ given, when, then }: AllureBddContext) => {
     let nodes: DocumentViewNode[];
     let toon: string;
 
@@ -590,7 +597,8 @@ describe('renderToon table markers', () => {
     });
   });
 
-  test('renderToon uses th(r,c) for header rows and td(r,c) for data rows', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-07')
+    ('renderToon uses th(r,c) for header rows and td(r,c) for data rows', async ({ given, when, then }: AllureBddContext) => {
     let nodes: DocumentViewNode[];
     let toon: string;
 
@@ -674,4 +682,40 @@ describe('renderToon table markers', () => {
       expect(markerLine!).toBe('#TABLE _tbl_2 | 5 rows × 2 cols');
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Shared DOM helpers
+// ---------------------------------------------------------------------------
+
+describe('shared DOM helpers', () => {
+  test.openspec('SDX-TABLE-08')
+    ('isW returns true only for matching namespace + localName', async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let tblEl: Element;
+      let pEl: Element;
+
+      await given('a document with w:tbl and w:p elements', async () => {
+        doc = parseXml(
+          `<?xml version="1.0" encoding="UTF-8"?>` +
+          `<w:document xmlns:w="${OOXML.W_NS}"><w:body><w:tbl/><w:p/></w:body></w:document>`,
+        );
+        const body = doc.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0) as Element;
+        tblEl = body.getElementsByTagNameNS(OOXML.W_NS, 'tbl').item(0) as Element;
+        pEl = body.getElementsByTagNameNS(OOXML.W_NS, 'p').item(0) as Element;
+      });
+
+      await when('isW is called with various arguments', async () => {
+        // checked in then
+      });
+
+      await then('it matches namespace and localName correctly', async () => {
+        const { isW } = await import('../src/primitives/dom-helpers.js');
+        expect(isW(tblEl, 'tbl')).toBe(true);
+        expect(isW(tblEl, 'p')).toBe(false);
+        expect(isW(pEl, 'p')).toBe(true);
+        expect(isW(null, 'tbl')).toBe(false);
+        expect(isW(undefined, 'tbl')).toBe(false);
+      });
+    });
 });

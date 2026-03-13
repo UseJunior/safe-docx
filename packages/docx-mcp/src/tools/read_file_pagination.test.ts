@@ -6,6 +6,7 @@ import { readFile } from './read_file.js';
 import { estimateTokens, DEFAULT_CONTENT_TOKEN_BUDGET } from './pagination.js';
 
 const FEATURE = 'read-file-pagination';
+const TEST_FEATURE = 'add-table-context-to-document-view';
 
 describe('read_file pagination', () => {
   const test = testAllure.epic('Document Reading').withLabels({ feature: FEATURE });
@@ -205,9 +206,10 @@ describe('read_file pagination', () => {
     });
   });
 
-  // ── Table marker tests ──────────────────────────────────────────────
+  // ── Table marker tests (openspec traceability below) ────────────────
 
-  test('table markers appear in toon output', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-09')
+    ('table markers appear in toon output', async ({ given, when, then }: AllureBddContext) => {
     const tableXml =
       `<w:p><w:r><w:t>Before</w:t></w:r></w:p>` +
       `<w:tbl>` +
@@ -238,7 +240,8 @@ describe('read_file pagination', () => {
     });
   });
 
-  test('#TABLE markers do not inflate paragraphsReturned', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-10')
+    ('#TABLE markers do not inflate paragraphsReturned', async ({ given, when, then }: AllureBddContext) => {
     const tableXml =
       `<w:tbl>` +
       `<w:tr><w:tc><w:p><w:r><w:t>H1</w:t></w:r></w:p></w:tc></w:tr>` +
@@ -266,7 +269,8 @@ describe('read_file pagination', () => {
     });
   });
 
-  test('table markers in simple format', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-11')
+    ('table markers in simple format', async ({ given, when, then }: AllureBddContext) => {
     const tableXml =
       `<w:tbl>` +
       `<w:tr><w:tc><w:p><w:r><w:t>Col</w:t></w:r></w:p></w:tc></w:tr>` +
@@ -292,7 +296,8 @@ describe('read_file pagination', () => {
     });
   });
 
-  test('table_context in JSON format', async ({ given, when, then }: AllureBddContext) => {
+  test.openspec('SDX-TABLE-12')
+    ('table_context in JSON format', async ({ given, when, then }: AllureBddContext) => {
     const tableXml =
       `<w:tbl>` +
       `<w:tr><w:tc><w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc></w:tr>` +

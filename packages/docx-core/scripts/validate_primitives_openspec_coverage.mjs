@@ -131,7 +131,9 @@ function parseStoriesFromTest(content) {
   function addStory(rawValue) {
     const normalized = normalizeScenarioName(rawValue);
     stories.add(normalized);
-    const id = extractScenarioId(rawValue);
+    // Extract ID from bracket syntax (e.g. "[SDX-TABLE-01] Human name")
+    // or treat the whole value as an ID if it matches the serial ID pattern
+    const id = extractScenarioId(rawValue) ?? (SERIAL_ID_RE.test(normalized) ? normalized : null);
     if (!id) {
       return;
     }

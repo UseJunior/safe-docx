@@ -10,18 +10,18 @@ The `read_file` tool SHALL render table structure in all output formats:
 
 If budget truncation cuts mid-table, `#END_TABLE` SHALL be appended before returning. `#TABLE` and `#END_TABLE` markers SHALL always be balanced within a single response.
 
-#### Scenario: Toon format includes table markers
+#### Scenario: [SDX-TABLE-09] Toon format includes table markers
 - **WHEN** `read_file` is called on a document with tables in toon format
 - **THEN** output contains `#TABLE _tbl_N | {rows} rows × {cols} cols` and `#END_TABLE`, with column headers in `th(0,N)` rows only
 
-#### Scenario: Table markers do not inflate paragraph count
+#### Scenario: [SDX-TABLE-10] Table markers do not inflate paragraph count
 - **WHEN** a table with 2 rows is rendered
 - **THEN** `paragraphs_returned` equals 2 (not 2 + marker lines)
 
-#### Scenario: Simple format includes table markers
+#### Scenario: [SDX-TABLE-11] Simple format includes table markers
 - **WHEN** `read_file` is called with `format=simple` on a document with tables
 - **THEN** output contains `#TABLE` and `#END_TABLE` markers
 
-#### Scenario: JSON format includes table_context
+#### Scenario: [SDX-TABLE-12] JSON format includes table_context
 - **WHEN** `read_file` is called with `format=json` on a document with tables
 - **THEN** each table cell node has a `table_context` object with `table_id`, `row_index`, `col_index`, etc.
