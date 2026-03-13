@@ -204,4 +204,119 @@ describe('read_file pagination', () => {
       expect(parsed.length).toBe(Number(read.paragraphs_returned));
     });
   });
+
+  // ── Table marker tests ──────────────────────────────────────────────
+
+  test('table markers appear in toon output', async ({ given, when, then }: AllureBddContext) => {
+    const tableXml =
+      `<w:p><w:r><w:t>Before</w:t></w:r></w:p>` +
+      `<w:tbl>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>H1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>H2</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>D1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>D2</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>` +
+      `<w:p><w:r><w:t>After</w:t></w:r></w:p>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+    const mgr = createTestSessionManager();
+    const { sessionId } = await given('Create doc with a table', () => openSession([], { mgr, xml }));
+
+    const read = await when('Read file in toon format', async () => {
+      const result = await readFile(mgr, { session_id: sessionId });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('Verify #TABLE and #END_TABLE markers', async () => {
+      const content = String(read.content);
+      const lines = content.split('\n');
+      expect(lines.some((l) => l.startsWith('#TABLE _tbl_0'))).toBe(true);
+      expect(lines.some((l) => l === '#END_TABLE')).toBe(true);
+      expect(lines.some((l) => l.includes('th(0,0)'))).toBe(true);
+      expect(lines.some((l) => l.includes('td(1,0)'))).toBe(true);
+    });
+  });
+
+  test('#TABLE markers do not inflate paragraphsReturned', async ({ given, when, then }: AllureBddContext) => {
+    const tableXml =
+      `<w:tbl>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>H1</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>D1</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+    const mgr = createTestSessionManager();
+    const { sessionId } = await given('Create doc with small table', () => openSession([], { mgr, xml }));
+
+    const read = await when('Read file', async () => {
+      const result = await readFile(mgr, { session_id: sessionId });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('paragraphsReturned matches node count, not line count', async () => {
+      // 2 paragraphs (H1, D1), but content has #TABLE + #END_TABLE extra lines
+      expect(Number(read.paragraphs_returned)).toBe(2);
+      const content = String(read.content);
+      expect(content).toContain('#TABLE');
+      expect(content).toContain('#END_TABLE');
+    });
+  });
+
+  test('table markers in simple format', async ({ given, when, then }: AllureBddContext) => {
+    const tableXml =
+      `<w:tbl>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>Col</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>Val</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+    const mgr = createTestSessionManager();
+    const { sessionId } = await given('Create doc with table', () => openSession([], { mgr, xml }));
+
+    const read = await when('Read file in simple format', async () => {
+      const result = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('Simple format includes table markers', async () => {
+      const content = String(read.content);
+      expect(content).toContain('#TABLE _tbl_0');
+      expect(content).toContain('#END_TABLE');
+    });
+  });
+
+  test('table_context in JSON format', async ({ given, when, then }: AllureBddContext) => {
+    const tableXml =
+      `<w:tbl>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>H</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>D</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+    const mgr = createTestSessionManager();
+    const { sessionId } = await given('Create doc with table', () => openSession([], { mgr, xml }));
+
+    const read = await when('Read file in JSON format', async () => {
+      const result = await readFile(mgr, { session_id: sessionId, format: 'json' });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('JSON output includes table_context', async () => {
+      const parsed = JSON.parse(String(read.content));
+      expect(parsed[0].table_context).toBeDefined();
+      expect(parsed[0].table_context.table_id).toBe('_tbl_0');
+      expect(parsed[0].table_context.is_header_row).toBe(true);
+      expect(parsed[1].table_context.is_header_row).toBe(false);
+    });
+  });
 });
