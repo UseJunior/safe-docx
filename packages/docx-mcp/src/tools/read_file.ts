@@ -1,7 +1,7 @@
 import { SessionManager } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
-import { OOXML, W, renderToon } from '@usejunior/docx-core';
+import { OOXML, W, renderToon, formatToonDataLine, collectTableMarkerInfo, formatTableMarker, type DocumentViewNode } from '@usejunior/docx-core';
 import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { estimateTokens, DEFAULT_CONTENT_TOKEN_BUDGET, buildPaginationMeta } from './pagination.js';
@@ -102,12 +102,7 @@ export async function readFile(
       if (format === 'json') {
         content = JSON.stringify(enriched, null, 2);
       } else if (format === 'simple') {
-        const lines: string[] = ['#TOON id | text'];
-        for (const n of enriched) {
-          const text = previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS);
-          lines.push(`${n.id} | ${text}`);
-        }
-        content = lines.join('\n');
+        content = renderSimpleWithTableMarkers(enriched);
       } else {
         content = renderToon(enriched);
       }
@@ -141,7 +136,7 @@ interface BudgetResult {
 }
 
 function renderWithBudget(
-  enriched: readonly { id: string; list_label: string; header: string; style: string; tagged_text: string; clean_text: string; [key: string]: unknown }[],
+  enriched: readonly DocumentViewNode[],
   format: string,
   budget: number,
 ): BudgetResult {
@@ -155,45 +150,139 @@ function renderWithBudget(
 }
 
 function renderToonWithBudget(
-  enriched: readonly { id: string; [key: string]: unknown }[],
+  enriched: readonly DocumentViewNode[],
   budget: number,
 ): BudgetResult {
-  // Render all nodes with renderToon, then accumulate line-by-line
   const headerLine = '#SCHEMA id | list_label | header | style | text';
   let accumulated = headerLine;
   let count = 0;
+  let currentTableIndex: number | null = null;
+
+  // Pre-scan: collect table marker info for #TABLE lines
+  const tableInfo = collectTableMarkerInfo(enriched);
 
   for (const node of enriched) {
-    // Use renderToon on a single node and extract the data line
-    const rendered = renderToon([node as Parameters<typeof renderToon>[0][number]]);
-    const lines = rendered.split('\n');
-    const dataLine = lines[1]; // second line is the data
-    if (!dataLine) continue;
+    const tc = node.table_context;
+    const nodeTableIndex = tc ? tc.table_index : null;
 
+    // Close previous table if we left it or moved to a different table
+    if (currentTableIndex !== null && nodeTableIndex !== currentTableIndex) {
+      accumulated += '\n#END_TABLE';
+      currentTableIndex = null;
+    }
+
+    // Open new table if entering one
+    if (nodeTableIndex !== null && currentTableIndex === null) {
+      const info = tableInfo.get(nodeTableIndex);
+      if (info) {
+        const marker = formatTableMarker(info);
+        const candidateWithMarker = accumulated + '\n' + marker;
+        if (count > 0 && estimateTokens(candidateWithMarker) > budget) {
+          break;
+        }
+        accumulated = candidateWithMarker;
+      }
+      currentTableIndex = nodeTableIndex;
+    }
+
+    const dataLine = formatToonDataLine(node);
     const candidate = accumulated + '\n' + dataLine;
-    if (count > 0 && estimateTokens(candidate) > budget) break;
+    if (count > 0 && estimateTokens(candidate) > budget) {
+      // Close table before breaking
+      if (currentTableIndex !== null) {
+        accumulated += '\n#END_TABLE';
+      }
+      break;
+    }
     accumulated = candidate;
     count++;
+  }
+
+  // Close any open table at end of loop
+  if (currentTableIndex !== null) {
+    accumulated += '\n#END_TABLE';
   }
 
   return { content: accumulated, count };
 }
 
+function renderSimpleWithTableMarkers(
+  enriched: readonly DocumentViewNode[],
+): string {
+  const lines: string[] = ['#TOON id | text'];
+  const tableInfo = collectTableMarkerInfo(enriched);
+  let currentTableIndex: number | null = null;
+
+  for (const n of enriched) {
+    const tc = n.table_context;
+    const nodeTableIndex = tc ? tc.table_index : null;
+
+    if (currentTableIndex !== null && nodeTableIndex !== currentTableIndex) {
+      lines.push('#END_TABLE');
+      currentTableIndex = null;
+    }
+    if (nodeTableIndex !== null && currentTableIndex === null) {
+      const info = tableInfo.get(nodeTableIndex);
+      if (info) lines.push(formatTableMarker(info));
+      currentTableIndex = nodeTableIndex;
+    }
+
+    const text = previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS);
+    lines.push(`${n.id} | ${text}`);
+  }
+
+  if (currentTableIndex !== null) {
+    lines.push('#END_TABLE');
+  }
+
+  return lines.join('\n');
+}
+
 function renderSimpleWithBudget(
-  enriched: readonly { id: string; clean_text: string; [key: string]: unknown }[],
+  enriched: readonly DocumentViewNode[],
   budget: number,
 ): BudgetResult {
   const headerLine = '#TOON id | text';
   let accumulated = headerLine;
   let count = 0;
+  let currentTableIndex: number | null = null;
+
+  const tableInfo = collectTableMarkerInfo(enriched);
 
   for (const n of enriched) {
+    const tc = n.table_context;
+    const nodeTableIndex = tc ? tc.table_index : null;
+
+    if (currentTableIndex !== null && nodeTableIndex !== currentTableIndex) {
+      accumulated += '\n#END_TABLE';
+      currentTableIndex = null;
+    }
+    if (nodeTableIndex !== null && currentTableIndex === null) {
+      const info = tableInfo.get(nodeTableIndex);
+      if (info) {
+        const marker = formatTableMarker(info);
+        const candidateWithMarker = accumulated + '\n' + marker;
+        if (count > 0 && estimateTokens(candidateWithMarker) > budget) break;
+        accumulated = candidateWithMarker;
+      }
+      currentTableIndex = nodeTableIndex;
+    }
+
     const text = previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS);
     const dataLine = `${n.id} | ${text}`;
     const candidate = accumulated + '\n' + dataLine;
-    if (count > 0 && estimateTokens(candidate) > budget) break;
+    if (count > 0 && estimateTokens(candidate) > budget) {
+      if (currentTableIndex !== null) {
+        accumulated += '\n#END_TABLE';
+      }
+      break;
+    }
     accumulated = candidate;
     count++;
+  }
+
+  if (currentTableIndex !== null) {
+    accumulated += '\n#END_TABLE';
   }
 
   return { content: accumulated, count };
