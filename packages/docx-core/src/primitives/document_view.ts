@@ -88,6 +88,19 @@ export type DocumentStyles = {
   fingerprint_to_style: Map<string, string>; // fingerprintKey -> style_id
 };
 
+export type TableContext = {
+  table_id: string;         // "_tbl_0", "_tbl_1" — body-level table index
+  table_index: number;      // 0-based among body-level w:tbl elements
+  row_index: number;        // 0-based row within table (by w:tr position)
+  col_index: number;        // Grid-aware column (accounts for gridSpan)
+  col_header: string;       // Header text for this grid column (from row 0)
+  total_rows: number;
+  total_cols: number;       // Max grid columns (accounts for gridSpan)
+  is_header_row: boolean;
+  para_in_cell: number;     // 0-based paragraph index within cell
+  cell_para_count: number;  // Total paragraphs in this cell
+};
+
 export type DocumentViewNode = {
   id: string; // _bk_*
   list_label: string;
@@ -107,6 +120,7 @@ export type DocumentViewNode = {
   numbering: { num_id: string | null; ilvl: number | null; is_auto_numbered: boolean };
   header_formatting: HeaderFormatting | null;
   body_run_formatting: RunFormatting | null;
+  table_context?: TableContext;
 };
 
 function fingerprintKey(fp: FormattingFingerprint): string {
@@ -314,19 +328,96 @@ function headerStripFromText(params: { header: string; text: string }): string {
   return text;
 }
 
+/**
+ * Format a single toon data line for one DocumentViewNode.
+ * Handles table-context-aware style (th/td) and header stripping.
+ */
+export function formatToonDataLine(n: DocumentViewNode, options?: { compact?: boolean }): string {
+  let text = n.tagged_text;
+  if (n.header) text = headerStripFromText({ header: n.header, text });
+  let header = n.header;
+  if (header && !text) {
+    text = header;
+    header = '';
+  }
+
+  const tc = n.table_context;
+  let style: string;
+  if (tc) {
+    style = tc.is_header_row
+      ? `th(${tc.row_index},${tc.col_index})`
+      : `td(${tc.row_index},${tc.col_index})`;
+  } else {
+    style = options?.compact
+      ? computeFingerprintToken(n.style_fingerprint, n.style)
+      : n.style;
+  }
+  return `${n.id} | ${n.list_label} | ${header} | ${style} | ${text}`;
+}
+
+/**
+ * Collect table marker info (dimensions) from nodes for #TABLE markers.
+ * Column headers are NOT included in the marker — they appear once in the th() rows.
+ */
+export function collectTableMarkerInfo(
+  nodes: readonly Pick<DocumentViewNode, 'table_context'>[],
+): Map<number, { id: string; totalRows: number; totalCols: number }> {
+  const info = new Map<number, { id: string; totalRows: number; totalCols: number }>();
+  for (const n of nodes) {
+    const tc = n.table_context;
+    if (!tc) continue;
+    if (!info.has(tc.table_index)) {
+      info.set(tc.table_index, {
+        id: tc.table_id,
+        totalRows: tc.total_rows,
+        totalCols: tc.total_cols,
+      });
+    }
+  }
+  return info;
+}
+
+/**
+ * Format a #TABLE marker line from collected table info.
+ * Headers are omitted — they appear exactly once in the th(0,N) data rows.
+ */
+export function formatTableMarker(info: { id: string; totalRows: number; totalCols: number }): string {
+  return `#TABLE ${info.id} | ${info.totalRows} rows × ${info.totalCols} cols`;
+}
+
 export function renderToon(nodes: DocumentViewNode[], options: { compact?: boolean } = {}): string {
   const lines: string[] = ['#SCHEMA id | list_label | header | style | text'];
+
+  // Pre-scan: collect table marker info for #TABLE lines
+  const tableInfo = collectTableMarkerInfo(nodes);
+
+  let currentTableIndex: number | null = null;
+
   for (const n of nodes) {
-    let text = n.tagged_text;
-    if (n.header) text = headerStripFromText({ header: n.header, text });
-    let header = n.header;
-    if (header && !text) {
-      text = header;
-      header = '';
+    const tc = n.table_context;
+    const nodeTableIndex = tc ? tc.table_index : null;
+
+    // Close previous table if we left it or moved to a different table
+    if (currentTableIndex !== null && nodeTableIndex !== currentTableIndex) {
+      lines.push('#END_TABLE');
+      currentTableIndex = null;
     }
-    const style = options.compact ? computeFingerprintToken(n.style_fingerprint, n.style) : n.style;
-    lines.push(`${n.id} | ${n.list_label} | ${header} | ${style} | ${text}`);
+
+    // Open new table if entering one
+    if (nodeTableIndex !== null && currentTableIndex === null) {
+      const info = tableInfo.get(nodeTableIndex);
+      if (info) lines.push(formatTableMarker(info));
+      currentTableIndex = nodeTableIndex;
+    }
+
+    lines.push(formatToonDataLine(n, options));
   }
+
+  // Close any open table at end
+  if (currentTableIndex !== null) {
+    lines.push('#END_TABLE');
+  }
+
   return lines.join('\n');
 }
 
@@ -568,7 +659,7 @@ function injectFootnoteMarkers(
 }
 
 export function buildNodesForDocumentView(params: {
-  paragraphs: Array<{ id: string; p: Element }>;
+  paragraphs: Array<{ id: string; p: Element; tableContext?: TableContext }>;
   stylesXml: Document | null;
   numberingXml: Document | null;
   include_semantic_tags?: boolean;
@@ -651,14 +742,15 @@ export function buildNodesForDocumentView(params: {
   const nodes: DocumentViewNode[] = [];
 
   for (let idx = 0; idx < paragraphs.length; idx++) {
-    const { id, p } = paragraphs[idx]!;
+    const { id, p, tableContext } = paragraphs[idx]!;
 
     const paraPPr = p.getElementsByTagNameNS(OOXML.W_NS, W.pPr).item(0);
     const paraFmt = extractParagraphFormatting(paraPPr ?? null, stylesModel);
 
     // Visible clean text (field codes stripped).
     const fullText = getParagraphText(p).replace(/\r/g, '').replace(/\n/g, '').trim();
-    if (!fullText) continue;
+    // Preserve empty table cell paragraphs for structural completeness.
+    if (!fullText && !tableContext) continue;
 
     // Numbering (auto-numbered) info from numPr.
     let numId: string | null = null;
@@ -844,7 +936,7 @@ export function buildNodesForDocumentView(params: {
       tagged = injectFootnoteMarkers(tagged, fnMarkers);
     }
 
-    nodes.push({
+    const node: DocumentViewNode = {
       id,
       list_label: labelString,
       header: headerText ?? '',
@@ -870,7 +962,9 @@ export function buildNodesForDocumentView(params: {
       numbering: { num_id: numId, ilvl, is_auto_numbered: isAutoNumbered },
       header_formatting: headerFormatting,
       body_run_formatting: bodyFmt,
-    });
+    };
+    if (tableContext) node.table_context = tableContext;
+    nodes.push(node);
   }
 
   const styles = discoverStyles(nodes);

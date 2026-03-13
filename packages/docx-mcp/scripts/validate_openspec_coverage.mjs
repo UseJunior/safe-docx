@@ -92,7 +92,9 @@ function parseStoriesFromTest(content) {
   function addStory(rawValue) {
     const normalized = normalizeScenarioName(rawValue);
     stories.add(normalized);
-    const id = extractScenarioId(rawValue);
+    // Extract ID from bracket syntax (e.g. "[SDX-TABLE-01] Human name")
+    // or treat the whole value as an ID if it matches the serial ID pattern
+    const id = extractScenarioId(rawValue) ?? (SERIAL_ID_RE.test(normalized) ? normalized : null);
     if (!id) {
       return;
     }
@@ -345,6 +347,17 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
     }
   }
 
+  // Resolve serial-ID keys in storyIdsByName to human-readable names
+  const resolvedStoryIdsByName = new Map();
+  for (const [story, ids] of storyIdsByName) {
+    const resolvedName = SERIAL_ID_RE.test(story) && serialIdMap.has(story)
+      ? serialIdMap.get(story)
+      : story;
+    const existing = resolvedStoryIdsByName.get(resolvedName) ?? new Set();
+    for (const id of ids) existing.add(id);
+    resolvedStoryIdsByName.set(resolvedName, existing);
+  }
+
   const scenarios = scenarioEntries.map((entry) => entry.name).sort();
   const stories = [...resolvedStorySet].sort();
   const storyLookup = new Set(stories);
@@ -360,7 +373,7 @@ async function validateFeatureCoverage({ feature, testFiles, featureSpecFiles })
     if (!storyLookup.has(scenario.name)) {
       continue;
     }
-    const mappedIds = storyIdsByName.get(scenario.name) ?? new Set();
+    const mappedIds = resolvedStoryIdsByName.get(scenario.name) ?? new Set();
     if (mappedIds.size === 0) {
       scenarioIdIssues.push(
         `${scenario.name}: expected ID [${scenario.id}] in test .openspec(...) mapping, but no ID was found`,
