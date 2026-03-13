@@ -12,7 +12,7 @@ If budget truncation cuts mid-table, `#END_TABLE` SHALL be appended before retur
 
 #### Scenario: Toon format includes table markers
 - **WHEN** `read_file` is called on a document with tables in toon format
-- **THEN** output contains `#TABLE _tbl_N | {rows} rows x {cols} cols | {headers}` and `#END_TABLE`
+- **THEN** output contains `#TABLE _tbl_N | {rows} rows × {cols} cols` and `#END_TABLE`, with column headers in `th(0,N)` rows only
 
 #### Scenario: Table markers do not inflate paragraph count
 - **WHEN** a table with 2 rows is rendered

@@ -30,7 +30,7 @@ The paragraph set and ordering produced by `buildDocumentView()` SHALL remain id
 
 ### Requirement: Table-Aware Toon Rendering
 
-`renderToon()` SHALL emit `#TABLE` and `#END_TABLE` structural markers around table content. The `#TABLE` marker format SHALL be: `#TABLE {table_id} | {rows} rows x {cols} cols | {header1} | {header2} | ...`. The `#END_TABLE` marker SHALL be emitted when leaving a table.
+`renderToon()` SHALL emit `#TABLE` and `#END_TABLE` structural markers around table content. The `#TABLE` marker format SHALL be: `#TABLE {table_id} | {rows} rows × {cols} cols`. Column headers are NOT repeated in the marker — they appear exactly once in the `th(0,N)` data rows which carry editable `_bk_*` IDs. The `#END_TABLE` marker SHALL be emitted when leaving a table.
 
 Table cell paragraphs SHALL use `th(row,col)` (header row) or `td(row,col)` (data rows) in the style column instead of the paragraph style.
 
