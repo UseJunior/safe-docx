@@ -1,10 +1,17 @@
 {
   "framework": null,
   "installCommand": "npm install",
-  "buildCommand": "npm run build",
+  "buildCommand": "mkdir -p _site && echo 'redirect-only' > _site/.keep",
   "outputDirectory": "_site",
   "cleanUrls": true,
-  "trailingSlash": true,
+  "trailingSlash": false,
+  "redirects": [
+    { "source": "/", "destination": "https://usejunior.com/developer-tools/safe-docx", "statusCode": 301 },
+    { "source": "/about", "destination": "https://usejunior.com/developer-tools/safe-docx", "statusCode": 301 },
+    { "source": "/trust", "destination": "https://usejunior.com/developer-tools/safe-docx#trust", "statusCode": 301 },
+    { "source": "/trust/:path*", "destination": "https://usejunior.com/developer-tools/safe-docx#trust", "statusCode": 301 },
+    { "source": "/:path*", "destination": "https://usejunior.com/developer-tools/safe-docx", "statusCode": 301 }
+  ],
   "headers": [
     {
       "source": "/(.*)",
