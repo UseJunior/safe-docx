@@ -324,4 +324,148 @@ describe('read_file pagination', () => {
       expect(parsed[1].table_context.is_header_row).toBe(false);
     });
   });
+
+  // ── Table coverage: renderSimpleWithTableMarkers via explicit limit ───
+
+  test('renderSimpleWithTableMarkers via explicit limit + format=simple + tables', async ({ given, when, then }: AllureBddContext) => {
+    const tableXml =
+      `<w:p><w:r><w:t>Intro paragraph</w:t></w:r></w:p>` +
+      `<w:tbl>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>Name</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Age</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>Alice</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>30</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>Bob</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>25</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>` +
+      `<w:p><w:r><w:t>Outro paragraph</w:t></w:r></w:p>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+    const mgr = createTestSessionManager();
+    const { sessionId } = await given('Create doc with table and surrounding paragraphs', () => openSession([], { mgr, xml }));
+
+    const read = await when('Read file with explicit limit=100 and format=simple', async () => {
+      const result = await readFile(mgr, { session_id: sessionId, limit: 100, format: 'simple' });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('Simple output contains table markers and all paragraphs', async () => {
+      const content = String(read.content);
+      expect(content).toContain('#TABLE _tbl_0');
+      expect(content).toContain('#END_TABLE');
+      expect(content).toContain('#TOON id | text');
+      // All 8 paragraphs returned (1 intro + 6 table + 1 outro)
+      expect(Number(read.paragraphs_returned)).toBe(8);
+    });
+  });
+
+  // ── Table coverage: renderSimpleWithBudget with tables ────────────────
+
+  test('renderSimpleWithBudget truncates mid-table and appends #END_TABLE', async ({ given, when, then }: AllureBddContext) => {
+    // Create a large table that exceeds the token budget
+    const rowCount = 200;
+    const longCellText = 'This is a long cell value with repeated text to consume tokens. '.repeat(5);
+    let tableRows = `<w:tr><w:tc><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:tc></w:tr>`;
+    for (let i = 0; i < rowCount; i++) {
+      tableRows += `<w:tr><w:tc><w:p><w:r><w:t>Row ${i}: ${longCellText}</w:t></w:r></w:p></w:tc></w:tr>`;
+    }
+    const tableXml = `<w:tbl>${tableRows}</w:tbl>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+    const mgr = createTestSessionManager();
+    const { sessionId } = await given('Create doc with large table exceeding budget', () => openSession([], { mgr, xml }));
+
+    const read = await when('Read file with format=simple (budget active)', async () => {
+      const result = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('Output is truncated and #END_TABLE is appended', async () => {
+      const content = String(read.content);
+      expect(Number(read.paragraphs_returned)).toBeLessThan(rowCount + 1);
+      expect(read.has_more).toBe(true);
+      expect(content).toContain('#TABLE _tbl_0');
+      // Budget truncation should close the table
+      expect(content).toContain('#END_TABLE');
+      // Allow small overhead for the #END_TABLE marker appended after budget check
+      const END_TABLE_OVERHEAD = 10; // ~4 tokens for "\n#END_TABLE"
+      expect(estimateTokens(content)).toBeLessThanOrEqual(DEFAULT_CONTENT_TOKEN_BUDGET + END_TABLE_OVERHEAD);
+    });
+  });
+
+  // ── Table coverage: renderToonWithBudget truncation mid-table ─────────
+
+  test('renderToonWithBudget truncates mid-table and appends #END_TABLE', async ({ given, when, then }: AllureBddContext) => {
+    const rowCount = 200;
+    const longCellText = 'Budget test cell content with repeated filler words for token estimation. '.repeat(5);
+    let tableRows = `<w:tr><w:tc><w:p><w:r><w:t>ToonHeader</w:t></w:r></w:p></w:tc></w:tr>`;
+    for (let i = 0; i < rowCount; i++) {
+      tableRows += `<w:tr><w:tc><w:p><w:r><w:t>Row ${i}: ${longCellText}</w:t></w:r></w:p></w:tc></w:tr>`;
+    }
+    const tableXml = `<w:tbl>${tableRows}</w:tbl>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+    const mgr = createTestSessionManager();
+    const { sessionId } = await given('Create doc with large table for toon budget test', () => openSession([], { mgr, xml }));
+
+    const read = await when('Read file with format=toon (budget active)', async () => {
+      const result = await readFile(mgr, { session_id: sessionId, format: 'toon' });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('Toon output is truncated with #END_TABLE before budget exceeded', async () => {
+      const content = String(read.content);
+      expect(Number(read.paragraphs_returned)).toBeLessThan(rowCount + 1);
+      expect(read.has_more).toBe(true);
+      expect(content).toContain('#TABLE _tbl_0');
+      expect(content).toContain('#END_TABLE');
+      // Verify the last line is #END_TABLE (table was closed before breaking)
+      const lines = content.split('\n');
+      const lastNonEmpty = lines.filter((l) => l.trim().length > 0).pop();
+      expect(lastNonEmpty).toBe('#END_TABLE');
+      expect(estimateTokens(content)).toBeLessThanOrEqual(DEFAULT_CONTENT_TOKEN_BUDGET);
+    });
+  });
+
+  // ── Table coverage: renderToonWithBudget with body text after table ───
+
+  test('renderToonWithBudget handles transition from table to body text within budget', async ({ given, when, then }: AllureBddContext) => {
+    const tableXml =
+      `<w:tbl>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>TH</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>TD</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>` +
+      `<w:p><w:r><w:t>After table text</w:t></w:r></w:p>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+    const mgr = createTestSessionManager();
+    const { sessionId } = await given('Create doc with small table followed by body text', () => openSession([], { mgr, xml }));
+
+    const read = await when('Read file with format=toon (budget active, small doc)', async () => {
+      const result = await readFile(mgr, { session_id: sessionId, format: 'toon' });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('All content fits within budget with proper table markers', async () => {
+      const content = String(read.content);
+      expect(Number(read.paragraphs_returned)).toBe(3);
+      expect(content).toContain('#TABLE _tbl_0');
+      expect(content).toContain('#END_TABLE');
+      // Body text after table should not be inside table markers
+      const lines = content.split('\n');
+      const endTableIdx = lines.findIndex((l) => l === '#END_TABLE');
+      const afterTableLine = lines[endTableIdx + 1];
+      expect(afterTableLine).toContain('After table text');
+      expect(afterTableLine).not.toContain('#TABLE');
+    });
+  });
 });

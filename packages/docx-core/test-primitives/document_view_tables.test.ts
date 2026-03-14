@@ -12,6 +12,7 @@ import {
   type DocumentViewNode,
   type TableContext,
 } from '../src/primitives/document_view.js';
+import { isW, getDirectChildrenByName } from '../src/primitives/dom-helpers.js';
 import { DocxDocument } from '../src/primitives/document.js';
 import { createZipBuffer } from '../src/primitives/zip.js';
 
@@ -710,7 +711,6 @@ describe('shared DOM helpers', () => {
       });
 
       await then('it matches namespace and localName correctly', async () => {
-        const { isW } = await import('../src/primitives/dom-helpers.js');
         expect(isW(tblEl, 'tbl')).toBe(true);
         expect(isW(tblEl, 'p')).toBe(false);
         expect(isW(pEl, 'p')).toBe(true);
@@ -718,4 +718,330 @@ describe('shared DOM helpers', () => {
         expect(isW(undefined, 'tbl')).toBe(false);
       });
     });
+
+  test('getDirectChildrenByName returns only direct children matching localName', async ({ given, when, then }: AllureBddContext) => {
+    let body: Element;
+    let directPs: Element[];
+    let directTbls: Element[];
+
+    await given('a document with body containing w:p, w:tbl, and nested w:p inside w:tbl', async () => {
+      const doc = parseXml(
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<w:document xmlns:w="${OOXML.W_NS}">` +
+        `<w:body>` +
+        `<w:p><w:r><w:t>Body para</w:t></w:r></w:p>` +
+        `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+        `<w:p><w:r><w:t>Body para 2</w:t></w:r></w:p>` +
+        `</w:body>` +
+        `</w:document>`,
+      );
+      body = doc.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0) as Element;
+    });
+
+    await when('getDirectChildrenByName is called for p and tbl', async () => {
+      directPs = getDirectChildrenByName(body!, 'p');
+      directTbls = getDirectChildrenByName(body!, 'tbl');
+    });
+
+    await then('it returns only direct children, not nested descendants', async () => {
+      // Only 2 direct w:p children (the nested one in tbl should not be included)
+      expect(directPs!).toHaveLength(2);
+      expect(directPs![0]!.textContent).toContain('Body para');
+      expect(directPs![1]!.textContent).toContain('Body para 2');
+
+      // 1 direct w:tbl child
+      expect(directTbls!).toHaveLength(1);
+    });
+  });
+
+  test('getDirectChildrenByName returns empty array when no children match', async ({ given, when, then }: AllureBddContext) => {
+    let parent: Element;
+    let result: Element[];
+
+    await given('an element with no w:tc children', async () => {
+      const doc = parseXml(
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<w:document xmlns:w="${OOXML.W_NS}">` +
+        `<w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body>` +
+        `</w:document>`,
+      );
+      parent = doc.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0) as Element;
+    });
+
+    await when('getDirectChildrenByName is called for tc', async () => {
+      result = getDirectChildrenByName(parent!, 'tc');
+    });
+
+    await then('it returns an empty array', async () => {
+      expect(result!).toHaveLength(0);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Table edge cases (coverage for uncovered code paths)
+// ---------------------------------------------------------------------------
+
+describe('table context edge cases', () => {
+  test('empty table (0 rows) is skipped by buildTableMetaMap', async ({ given, when, then }: AllureBddContext) => {
+    let doc: DocxDocument;
+    let nodes: DocumentViewNode[];
+
+    await given('a document with an empty w:tbl element (no rows)', async () => {
+      const bodyXml =
+        `<w:p><w:r><w:t>Before</w:t></w:r></w:p>` +
+        `<w:tbl></w:tbl>` +
+        `<w:p><w:r><w:t>After</w:t></w:r></w:p>`;
+      doc = await makeDocxDocument(bodyXml);
+    });
+
+    await when('buildDocumentView is called', async () => {
+      nodes = doc!.buildDocumentView().nodes;
+    });
+
+    await then('no paragraphs have table_context', async () => {
+      expect(nodes!.length).toBeGreaterThanOrEqual(2);
+      for (const n of nodes!) {
+        expect(n.table_context).toBeUndefined();
+      }
+    });
+  });
+
+  test('cell with no tcPr defaults gridSpan to 1', async ({ given, when, then }: AllureBddContext) => {
+    let doc: DocxDocument;
+    let nodes: DocumentViewNode[];
+
+    await given('a table where cells have no w:tcPr element', async () => {
+      const bodyXml =
+        `<w:tbl>` +
+        `<w:tr>` +
+        `<w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>` +
+        `<w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `</w:tbl>`;
+      doc = await makeDocxDocument(bodyXml);
+    });
+
+    await when('buildDocumentView is called', async () => {
+      nodes = doc!.buildDocumentView().nodes;
+    });
+
+    await then('col_index increments by 1 for each cell (default gridSpan)', async () => {
+      expect(nodes!).toHaveLength(2);
+      expect(nodes![0]!.table_context!.col_index).toBe(0);
+      expect(nodes![1]!.table_context!.col_index).toBe(1);
+      expect(nodes![0]!.table_context!.total_cols).toBe(2);
+    });
+  });
+
+  test('cell with gridSpan val=0 defaults to 1', async ({ given, when, then }: AllureBddContext) => {
+    let doc: DocxDocument;
+    let nodes: DocumentViewNode[];
+
+    await given('a table cell with w:gridSpan w:val="0"', async () => {
+      const bodyXml =
+        `<w:tbl>` +
+        `<w:tr>` +
+        `<w:tc><w:tcPr><w:gridSpan w:val="0"/></w:tcPr><w:p><w:r><w:t>X</w:t></w:r></w:p></w:tc>` +
+        `<w:tc><w:p><w:r><w:t>Y</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `</w:tbl>`;
+      doc = await makeDocxDocument(bodyXml);
+    });
+
+    await when('buildDocumentView is called', async () => {
+      nodes = doc!.buildDocumentView().nodes;
+    });
+
+    await then('gridSpan of 0 is treated as 1', async () => {
+      expect(nodes![0]!.table_context!.col_index).toBe(0);
+      expect(nodes![1]!.table_context!.col_index).toBe(1);
+      expect(nodes![0]!.table_context!.total_cols).toBe(2);
+    });
+  });
+
+  test('header cell with multiple paragraphs joins their text', async ({ given, when, then }: AllureBddContext) => {
+    let doc: DocxDocument;
+    let nodes: DocumentViewNode[];
+
+    await given('a table where header cell has 2 paragraphs', async () => {
+      const bodyXml =
+        `<w:tbl>` +
+        `<w:tr>` +
+        `<w:tc>` +
+        `<w:p><w:r><w:t>Line 1</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Line 2</w:t></w:r></w:p>` +
+        `</w:tc>` +
+        `<w:tc><w:p><w:r><w:t>Other</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `<w:tr>` +
+        `<w:tc><w:p><w:r><w:t>D1</w:t></w:r></w:p></w:tc>` +
+        `<w:tc><w:p><w:r><w:t>D2</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `</w:tbl>`;
+      doc = await makeDocxDocument(bodyXml);
+    });
+
+    await when('buildDocumentView is called', async () => {
+      nodes = doc!.buildDocumentView().nodes;
+    });
+
+    await then('col_header joins multi-paragraph text from header cell', async () => {
+      // Data row cells should have col_header derived from header row
+      const dataRow = nodes!.filter((n) => n.table_context!.row_index === 1);
+      expect(dataRow).toHaveLength(2);
+      // First column header should be "Line 1 Line 2" (joined from 2 paragraphs)
+      expect(dataRow[0]!.table_context!.col_header).toBe('Line 1 Line 2');
+      expect(dataRow[1]!.table_context!.col_header).toBe('Other');
+    });
+  });
+
+  test('two consecutive tables without body text between them', async ({ given, when, then }: AllureBddContext) => {
+    let nodes: DocumentViewNode[];
+    let toon: string;
+
+    await given('a document with two adjacent tables', async () => {
+      const bodyXml =
+        simpleTable(['A'], [['1']]) +
+        simpleTable(['B'], [['2']]);
+      const doc = await makeDocxDocument(bodyXml);
+      nodes = doc.buildDocumentView().nodes;
+    });
+
+    await when('renderToon is called', async () => {
+      toon = renderToon(nodes!);
+    });
+
+    await then('#END_TABLE and new #TABLE appear between consecutive tables', async () => {
+      const lines = toon!.split('\n');
+      // Should have: #SCHEMA, #TABLE _tbl_0, th, td, #END_TABLE, #TABLE _tbl_1, th, td, #END_TABLE
+      const tableMarkers = lines.filter((l) => l.startsWith('#TABLE') || l === '#END_TABLE');
+      expect(tableMarkers).toHaveLength(4); // #TABLE, #END_TABLE, #TABLE, #END_TABLE
+      expect(tableMarkers[0]).toContain('_tbl_0');
+      expect(tableMarkers[1]).toBe('#END_TABLE');
+      expect(tableMarkers[2]).toContain('_tbl_1');
+      expect(tableMarkers[3]).toBe('#END_TABLE');
+    });
+  });
+
+  test('gridSpan header padding: headers padded when fewer cells than max grid cols', async ({ given, when, then }: AllureBddContext) => {
+    let doc: DocxDocument;
+    let nodes: DocumentViewNode[];
+
+    await given('a table where data row has more grid columns than header row cells', async () => {
+      // Header row has 2 cells, data row has 3 cells. maxGridCols = 3, headers should be padded.
+      const bodyXml =
+        `<w:tbl>` +
+        `<w:tr>` +
+        `<w:tc><w:p><w:r><w:t>H1</w:t></w:r></w:p></w:tc>` +
+        `<w:tc><w:p><w:r><w:t>H2</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `<w:tr>` +
+        `<w:tc><w:p><w:r><w:t>D1</w:t></w:r></w:p></w:tc>` +
+        `<w:tc><w:p><w:r><w:t>D2</w:t></w:r></w:p></w:tc>` +
+        `<w:tc><w:p><w:r><w:t>D3</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `</w:tbl>`;
+      doc = await makeDocxDocument(bodyXml);
+    });
+
+    await when('buildDocumentView is called', async () => {
+      nodes = doc!.buildDocumentView().nodes;
+    });
+
+    await then('col_header for columns beyond header cells is empty string', async () => {
+      const d3 = nodes!.find((n) => n.clean_text === 'D3');
+      expect(d3).toBeDefined();
+      expect(d3!.table_context!.col_index).toBe(2);
+      // Third column has no header cell -> col_header should be empty
+      expect(d3!.table_context!.col_header).toBe('');
+      expect(d3!.table_context!.total_cols).toBe(3);
+    });
+  });
+
+  test('gridSpan header trimming: headers trimmed when header row spans more than max', async ({ given, when, then }: AllureBddContext) => {
+    let doc: DocxDocument;
+    let nodes: DocumentViewNode[];
+
+    await given('a table where header row has gridSpan exceeding data row columns', async () => {
+      // Header row: cell spanning 3 cols. Data row: 2 cells. maxGridCols = 3 (from header).
+      // headers array should be trimmed to maxGridCols.
+      const bodyXml =
+        `<w:tbl>` +
+        `<w:tr>` +
+        `<w:tc><w:tcPr><w:gridSpan w:val="3"/></w:tcPr><w:p><w:r><w:t>Wide Header</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `<w:tr>` +
+        `<w:tc><w:p><w:r><w:t>D1</w:t></w:r></w:p></w:tc>` +
+        `<w:tc><w:p><w:r><w:t>D2</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `</w:tbl>`;
+      doc = await makeDocxDocument(bodyXml);
+    });
+
+    await when('buildDocumentView is called', async () => {
+      nodes = doc!.buildDocumentView().nodes;
+    });
+
+    await then('total_cols reflects max grid span across all rows', async () => {
+      // maxGridCols = 3 (from header row gridSpan), data row has 2 cells
+      const headerNode = nodes!.find((n) => n.clean_text === 'Wide Header');
+      expect(headerNode).toBeDefined();
+      expect(headerNode!.table_context!.total_cols).toBe(3);
+      expect(headerNode!.table_context!.col_header).toBe('Wide Header');
+    });
+  });
+
+  test('formatToonDataLine uses compact fingerprint token for non-table nodes', async ({ given, when, then }: AllureBddContext) => {
+    let node: DocumentViewNode;
+    let compactLine: string;
+    let normalLine: string;
+
+    await given('a body text node (no table_context)', async () => {
+      node = {
+        id: '_bk_100',
+        list_label: '',
+        header: '',
+        style: 'Normal',
+        text: 'Hello world',
+        clean_text: 'Hello world',
+        tagged_text: 'Hello world',
+        list_metadata: {
+          list_level: -1,
+          label_type: null,
+          label_string: '',
+          header_text: null,
+          header_style: null,
+          header_formatting: null,
+          is_auto_numbered: false,
+        },
+        style_fingerprint: {
+          list_level: -1,
+          left_indent_pt: 0,
+          first_line_indent_pt: 0,
+          style_name: 'Body Text',
+          alignment: 'LEFT',
+        },
+        paragraph_style_id: null,
+        paragraph_style_name: 'Body Text',
+        paragraph_alignment: 'LEFT',
+        paragraph_indents_pt: { left: 0, first_line: 0 },
+        numbering: { num_id: null, ilvl: null, is_auto_numbered: false },
+        header_formatting: null,
+        body_run_formatting: null,
+      };
+    });
+
+    await when('formatToonDataLine is called with and without compact option', async () => {
+      compactLine = formatToonDataLine(node!, { compact: true });
+      normalLine = formatToonDataLine(node!);
+    });
+
+    await then('compact mode uses fingerprint token, normal mode uses style', async () => {
+      // compact should use computeFingerprintToken format
+      expect(compactLine!).toContain('Normal:L-1:LEFT:I0:H0');
+      // non-compact should use the style field
+      expect(normalLine!).toContain('| Normal |');
+    });
+  });
 });
