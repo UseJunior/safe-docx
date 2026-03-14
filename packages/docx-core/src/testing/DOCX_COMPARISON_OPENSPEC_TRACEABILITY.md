@@ -21,6 +21,7 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Continuation pattern inherits formatting | covered | `src/openspec.traceability.test.ts` |  |
 | Creating atom with revision detection | covered | `src/openspec.traceability.test.ts` |  |
 | Creating atom without revision context | covered | `src/openspec.traceability.test.ts` |  |
+| Cross-run pass rescues inplace output | missing | n/a | No scenario mapping found in current tests |
 | Custom footnote marks respected | covered | `src/openspec.traceability.test.ts` |  |
 | Custom threshold applied | covered | `src/openspec.traceability.test.ts` |  |
 | Different properties | covered | `src/openspec.traceability.test.ts` |  |
@@ -48,6 +49,7 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Partial overlap | covered | `src/openspec.traceability.test.ts` |  |
 | Proper nested list renders hierarchically | covered | `src/openspec.traceability.test.ts` |  |
 | Range IDs properly paired | covered | `src/openspec.traceability.test.ts` |  |
+| Rebuild fallback only after all inplace passes fail | missing | n/a | No scenario mapping found in current tests |
 | Remove existing revision tracking | covered | `src/openspec.traceability.test.ts` |  |
 | Reserved footnote IDs excluded from numbering | covered | `src/openspec.traceability.test.ts` |  |
 | Run with properties | covered | `src/openspec.traceability.test.ts` |  |
@@ -61,6 +63,7 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Status for moved destination content | covered | `src/openspec.traceability.test.ts` |  |
 | Status for moved source content | covered | `src/openspec.traceability.test.ts` |  |
 | Status for unmatched atoms | covered | `src/openspec.traceability.test.ts` |  |
+| Table-heavy run-fragmented templates preserve tracked table structure | missing | n/a | No scenario mapping found in current tests |
 | Text becomes bold | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Unknown property name | covered | `src/openspec.traceability.test.ts` |  |
 

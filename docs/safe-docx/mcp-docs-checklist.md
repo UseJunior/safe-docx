@@ -48,5 +48,5 @@ Before adding more docs, trim anything that matches one of these:
 - [x] Generate tool docs from schema source (`docs/tool-reference.generated.md`).
 - [x] Add three golden prompts.
 - [ ] Publish `.mcpb` artifact in CI release flow.
-- [ ] List public package in MCP Registry when open-source launch is ready.
+- [x] List public package in MCP Registry when open-source launch is ready.
 - [ ] Add concise troubleshooting section in package README after first support feedback cycle.

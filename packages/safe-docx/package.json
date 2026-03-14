@@ -1,7 +1,8 @@
 {
   "name": "@usejunior/safe-docx",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Canonical npm package for the Safe Docx MCP server and CLI",
+  "mcpName": "io.github.usejunior/safe-docx",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -24,7 +25,7 @@
     "safedocx": "./bin/safe-docx.js"
   },
   "dependencies": {
-    "@usejunior/docx-mcp": "^0.3.1"
+    "@usejunior/docx-mcp": "^0.4.0"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -40,7 +41,8 @@
     "bin",
     "index.js",
     "index.d.ts",
-    "README.md"
+    "README.md",
+    "server.json"
   ],
   "license": "MIT",
   "keywords": [
@@ -59,9 +61,17 @@
     "serverless",
     "cloudflare-workers",
     "edge",
-    "vercel"
+    "vercel",
+    "microsoft-word",
+    "contract-review",
+    "legal-tech",
+    "document-automation",
+    "coding-agent",
+    "claude-code",
+    "cursor",
+    "windsurf"
   ],
-  "homepage": "https://github.com/UseJunior/safe-docx/tree/main/packages/safe-docx",
+  "homepage": "https://usejunior.com/developer-tools/safe-docx",
   "bugs": {
     "url": "https://github.com/UseJunior/safe-docx/issues"
   }

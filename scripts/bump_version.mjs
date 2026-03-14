@@ -67,6 +67,13 @@ function checkVersionSync() {
   const manifest = readJson(MANIFEST_JSON);
   versions.set(MANIFEST_JSON, manifest.version);
 
+  const serverJson = readJson('packages/safe-docx/server.json');
+  versions.set('packages/safe-docx/server.json', serverJson.version);
+  if (serverJson.packages?.[0]?.version !== serverJson.version) {
+    console.error('  server.json packages[0].version mismatch');
+    ok = false;
+  }
+
   const uniqueVersions = new Set(versions.values());
   if (uniqueVersions.size === 1) {
     const v = [...uniqueVersions][0];
@@ -136,6 +143,16 @@ function bumpVersion(newVersion) {
   manifest.version = newVersion;
   writeJson(MANIFEST_JSON, manifest);
   console.log(`  ✓ ${MANIFEST_JSON}`);
+
+  // 3b. Update server.json
+  const SERVER_JSON = 'packages/safe-docx/server.json';
+  const serverJson = readJson(SERVER_JSON);
+  serverJson.version = newVersion;
+  if (serverJson.packages?.[0]) {
+    serverJson.packages[0].version = newVersion;
+  }
+  writeJson(SERVER_JSON, serverJson);
+  console.log(`  ✓ ${SERVER_JSON}`);
 
   // 4. Regenerate package-lock.json
   console.log('\nRegenerating package-lock.json...');

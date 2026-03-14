@@ -54,6 +54,11 @@ jobs:
             echo "Tag version ($TAG_VERSION) must match packages/safe-docx-mcpb/manifest.json version ($MANIFEST_VERSION)."
             exit 1
           fi
+          SERVER_VERSION="$(node -e "const fs=require('fs');const s=JSON.parse(fs.readFileSync('./packages/safe-docx/server.json','utf8'));process.stdout.write(s.version)")"
+          if [ "$TAG_VERSION" != "$SERVER_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) must match packages/safe-docx/server.json version ($SERVER_VERSION)."
+            exit 1
+          fi
 
       - name: Verify release commit is on main
         run: |
