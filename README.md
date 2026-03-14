@@ -3,7 +3,9 @@
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
 
-Use coding agents for paperwork too.
+**safe-docx** by [UseJunior](https://usejunior.com) — use coding agents for paperwork too.
+
+Part of the [UseJunior developer tools](https://usejunior.com/developer-tools/safe-docx).
 
 Safe Docx is an open-source TypeScript stack for surgical editing of existing Microsoft Word `.docx` files. It is built for workflows where an agent proposes changes and a human still needs reliable, formatting-preserving document edits.
 
@@ -132,6 +134,11 @@ npm run test:coverage:packages
 npm run coverage:packages:check
 npm run coverage:matrix
 ```
+
+## See Also
+
+- [Open Agreements](https://github.com/open-agreements/open-agreements) — fill standard legal templates with coding agents (NDAs, SAFEs, NVCA)
+- [UseJunior Developer Tools](https://usejunior.com/developer-tools/safe-docx) — product page with install options and tool catalog
 
 ## Governance
 
