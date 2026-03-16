@@ -41,9 +41,9 @@ describe('Traceability: TypeScript Formatting Parity', () => {
   });
 
   humanReadableTest.openspec('read_file JSON mode returns node metadata')('Scenario: read_file JSON mode returns node metadata', async () => {
-    const { mgr, sessionId } = await openSession(['Alpha']);
+    const { mgr, inputPath } = await openSession(['Alpha']);
 
-    const read = await readFile(mgr, { session_id: sessionId, format: 'json' });
+    const read = await readFile(mgr, { file_path: inputPath, format: 'json' });
     assertSuccess(read, 'read');
     const nodes = JSON.parse(String(read.content)) as Array<Record<string, unknown>>;
     expect(nodes.length).toBeGreaterThan(0);
@@ -81,8 +81,8 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     assertSuccess(openA, 'openA');
     assertSuccess(openB, 'openB');
 
-    const readA = await readFile(mgr, { session_id: openA.session_id as string, format: 'json' });
-    const readB = await readFile(mgr, { session_id: openB.session_id as string, format: 'json' });
+    const readA = await readFile(mgr, { file_path: pathA, format: 'json' });
+    const readB = await readFile(mgr, { file_path: pathB, format: 'json' });
     assertSuccess(readA, 'readA');
     assertSuccess(readB, 'readB');
 
@@ -93,10 +93,10 @@ describe('Traceability: TypeScript Formatting Parity', () => {
   });
 
   humanReadableTest.openspec('stable style IDs within a session')('Scenario: stable style IDs within a session', async () => {
-    const { mgr, sessionId } = await openSession(['One', 'Two']);
+    const { mgr, inputPath } = await openSession(['One', 'Two']);
 
-    const read1 = await readFile(mgr, { session_id: sessionId, format: 'json' });
-    const read2 = await readFile(mgr, { session_id: sessionId, format: 'json' });
+    const read1 = await readFile(mgr, { file_path: inputPath, format: 'json' });
+    const read2 = await readFile(mgr, { file_path: inputPath, format: 'json' });
     assertSuccess(read1, 'read1');
     assertSuccess(read2, 'read2');
 
@@ -116,9 +116,9 @@ describe('Traceability: TypeScript Formatting Parity', () => {
       `</w:p>` +
       `</w:body></w:document>`;
 
-    const { mgr, sessionId } = await openSession([], { xml });
+    const { mgr, inputPath } = await openSession([], { xml });
 
-    const read = await readFile(mgr, { session_id: sessionId });
+    const read = await readFile(mgr, { file_path: inputPath });
     assertSuccess(read, 'read');
 
     const row = String(read.content)
@@ -149,11 +149,11 @@ describe('Traceability: TypeScript Formatting Parity', () => {
       `</w:p>` +
       `</w:body></w:document>`;
 
-    const { mgr, sessionId, tmpDir, firstParaId: paraId } = await openSession([], { xml, prefix: 'safe-docx-mixed-run-' });
+    const { mgr, inputPath, tmpDir, firstParaId: paraId } = await openSession([], { xml, prefix: 'safe-docx-mixed-run-' });
     const outPath = path.join(tmpDir, 'out.docx');
 
     const edited = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: paraId,
       old_string: 'ABCDEFGHI',
       new_string: '123456789',
@@ -162,7 +162,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     assertSuccess(edited, 'edit');
 
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       clean_bookmarks: true,
       save_format: 'clean',
@@ -188,17 +188,17 @@ describe('Traceability: TypeScript Formatting Parity', () => {
       `<w:p><w:r><w:t>Anchor paragraph.</w:t></w:r></w:p>` +
       `</w:body></w:document>`;
 
-    const { mgr, sessionId, tmpDir } = await openSession([], { xml, prefix: 'safe-docx-insert-semantics-' });
+    const { mgr, inputPath, tmpDir } = await openSession([], { xml, prefix: 'safe-docx-insert-semantics-' });
     const outPath = path.join(tmpDir, 'out.docx');
 
-    const read = await readFile(mgr, { session_id: sessionId, format: 'json' });
+    const read = await readFile(mgr, { file_path: inputPath, format: 'json' });
     assertSuccess(read, 'read');
     const nodes = JSON.parse(String(read.content)) as Array<{ id: string; clean_text: string; header: string; text: string }>;
     const anchorId = nodes.find((n) => n.clean_text.includes('Anchor paragraph.'))?.id;
     expect(anchorId).toMatch(/^_bk_[0-9a-f]{12}$/);
 
     const inserted = await insertParagraph(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       positional_anchor_node_id: anchorId!,
       new_string: '<RunInHeader>Security Incidents:</RunInHeader> New incident text.',
       instruction: 'semantic insert',
@@ -207,7 +207,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     assertSuccess(inserted, 'insert');
     const insertedId = inserted.new_paragraph_id as string;
 
-    const read2 = await readFile(mgr, { session_id: sessionId, format: 'json' });
+    const read2 = await readFile(mgr, { file_path: inputPath, format: 'json' });
     assertSuccess(read2, 'read2');
     const nodes2 = JSON.parse(String(read2.content)) as Array<{ id: string; header: string; text: string }>;
     const insertedNode = nodes2.find((n) => n.id === insertedId);
@@ -215,7 +215,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(insertedNode!.header).toBe('Security Incidents');
 
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       clean_bookmarks: true,
       save_format: 'clean',
@@ -242,10 +242,10 @@ describe('Traceability: TypeScript Formatting Parity', () => {
       `<w:p><w:r><w:t>Placeholder B</w:t></w:r></w:p>` +
       `</w:body></w:document>`;
 
-    const { mgr, sessionId, tmpDir } = await openSession([], { xml, prefix: 'safe-docx-header-tags-' });
+    const { mgr, inputPath, tmpDir } = await openSession([], { xml, prefix: 'safe-docx-header-tags-' });
     const outPath = path.join(tmpDir, 'out.docx');
 
-    const read = await readFile(mgr, { session_id: sessionId, format: 'json' });
+    const read = await readFile(mgr, { file_path: inputPath, format: 'json' });
     assertSuccess(read, 'read');
     const nodes = JSON.parse(String(read.content)) as Array<{ id: string; clean_text: string }>;
     const aId = nodes.find((n) => n.clean_text.includes('Placeholder A'))?.id;
@@ -254,7 +254,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(bId).toMatch(/^_bk_[0-9a-f]{12}$/);
 
     const editA = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: aId!,
       old_string: 'Placeholder A',
       new_string: '<header>Security Incidents:</header> Recipient must notify promptly.',
@@ -263,7 +263,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     assertSuccess(editA, 'editA');
 
     const editB = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: bId!,
       old_string: 'Placeholder B',
       new_string: '<RunInHeader>Security Incidents:</RunInHeader> Recipient must escalate promptly.',
@@ -271,7 +271,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     });
     assertSuccess(editB, 'editB');
 
-    const read2 = await readFile(mgr, { session_id: sessionId, format: 'json' });
+    const read2 = await readFile(mgr, { file_path: inputPath, format: 'json' });
     assertSuccess(read2, 'read2');
     const nodes2 = JSON.parse(String(read2.content)) as Array<{ id: string; header: string; text: string }>;
     const nodeA = nodes2.find((n) => n.id === aId);
@@ -281,7 +281,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(nodeA!.header).toBe('Security Incidents');
     expect(nodeB!.header).toBe('Security Incidents');
 
-    const readToon = await readFile(mgr, { session_id: sessionId });
+    const readToon = await readFile(mgr, { file_path: inputPath });
     assertSuccess(readToon, 'read TOON');
     const rowA = String(readToon.content)
       .split('\n')
@@ -301,7 +301,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     expect(colsB[4]).not.toContain('Security Incidents:');
 
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       clean_bookmarks: true,
       save_format: 'clean',
@@ -331,10 +331,10 @@ describe('Traceability: TypeScript Formatting Parity', () => {
       `</w:p>` +
       `</w:body></w:document>`;
 
-    const { mgr, sessionId, firstParaId: paraId } = await openSession([], { xml, prefix: 'safe-docx-field-' });
+    const { mgr, inputPath, firstParaId: paraId } = await openSession([], { xml, prefix: 'safe-docx-field-' });
 
     const edited = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: paraId,
       old_string: 'Amount: 100 due.',
       new_string: 'Amount: 250 due.',
@@ -345,9 +345,9 @@ describe('Traceability: TypeScript Formatting Parity', () => {
   });
 
   humanReadableTest.openspec('pagination rules deterministic for zero offset')('Scenario: pagination rules deterministic for offset=0', async () => {
-    const { mgr, sessionId } = await openSession(['A', 'B']);
+    const { mgr, inputPath } = await openSession(['A', 'B']);
 
-    const read = await readFile(mgr, { session_id: sessionId, offset: 0, limit: 1, format: 'simple' });
+    const read = await readFile(mgr, { file_path: inputPath, offset: 0, limit: 1, format: 'simple' });
     assertSuccess(read, 'read');
     expect(String(read.content)).toContain(' | A');
   });
@@ -360,11 +360,11 @@ describe('Traceability: TypeScript Formatting Parity', () => {
       `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>[PLACEHOLDER]</w:t></w:r></w:p>` +
       `</w:body></w:document>`;
 
-    const { mgr, sessionId, tmpDir, firstParaId: paraId } = await openSession([], { xml, prefix: 'safe-docx-posthook-' });
+    const { mgr, inputPath, tmpDir, firstParaId: paraId } = await openSession([], { xml, prefix: 'safe-docx-posthook-' });
     const outPath = path.join(tmpDir, 'out.docx');
 
     const edited = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: paraId,
       old_string: '[PLACEHOLDER]',
       new_string: 'X',
@@ -373,7 +373,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     assertSuccess(edited, 'edit');
 
     const inserted = await insertParagraph(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       positional_anchor_node_id: paraId,
       new_string: 'Next',
       instruction: 'ensure paragraph integrity',
@@ -382,7 +382,7 @@ describe('Traceability: TypeScript Formatting Parity', () => {
     assertSuccess(inserted, 'insert');
 
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       clean_bookmarks: true,
       save_format: 'clean',

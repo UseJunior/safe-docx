@@ -32,7 +32,6 @@ export async function compareDocuments_tool(
   params: {
     original_file_path?: string;
     revised_file_path?: string;
-    session_id?: string;
     file_path?: string;
     save_to_local_path: string;
     author?: string;
@@ -42,8 +41,7 @@ export async function compareDocuments_tool(
   try {
     const hasOriginal = typeof params.original_file_path === 'string' && params.original_file_path.trim().length > 0;
     const hasRevised = typeof params.revised_file_path === 'string' && params.revised_file_path.trim().length > 0;
-    const hasSession = (typeof params.session_id === 'string' && params.session_id.trim().length > 0) ||
-      (typeof params.file_path === 'string' && params.file_path.trim().length > 0);
+    const hasSession = typeof params.file_path === 'string' && params.file_path.trim().length > 0;
 
     // Determine mode
     const twoFileMode = hasOriginal && hasRevised;
@@ -52,7 +50,7 @@ export async function compareDocuments_tool(
     if (!twoFileMode && !sessionMode) {
       return err(
         'MISSING_PARAMS',
-        'Provide original_file_path + revised_file_path for two-file comparison, or session_id/file_path for session comparison.',
+        'Provide original_file_path + revised_file_path for two-file comparison, or file_path for session comparison.',
         'Two-file mode compares two DOCX files. Session mode compares the current session state against the original.',
       );
     }
@@ -94,8 +92,8 @@ export async function compareDocuments_tool(
       const { session, metadata } = resolved;
       sessionMetadata = metadata;
 
-      // Use comparison baseline (post-normalization with bookmarks) when available
-      // to prevent normalization artifacts from appearing as false tracked changes.
+      // Lazily generate comparison baselines if not yet available.
+      await manager.ensureBaselines(session);
       originalBuffer = session.comparisonBaselineWithBookmarks ?? session.originalBuffer;
       const revised = await session.doc.toBuffer({ cleanBookmarks: false });
       revisedBuffer = revised.buffer;

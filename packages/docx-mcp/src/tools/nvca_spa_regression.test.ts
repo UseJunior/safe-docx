@@ -50,11 +50,12 @@ async function makeTempDir(prefix = 'nvca-spa-'): Promise<string> {
   return dir;
 }
 
-async function openSPA(): Promise<{ mgr: SessionManager; sid: string }> {
+async function openSPA(): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
   const mgr = createMgr();
   const openRes = await openDocument(mgr, { file_path: SOURCE });
   expect(openRes.success).toBe(true);
-  return { mgr, sid: openRes.session_id as string };
+  const filePath = (openRes.file_path as string) ?? SOURCE;
+  return { mgr, sid: filePath, filePath };
 }
 
 function assertSuccess(result: { success: boolean }, label: string): void {
@@ -69,16 +70,17 @@ describe('NVCA SPA regression: redline edits', () => {
   test('Change 1: title "SERIES A" → "SERIES A-1" preserves formatting', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
+    let filePath: string;
     const pid = '_bk_8c71639f1440';
     let result: Awaited<ReturnType<typeof replaceText>>;
 
     await given('the NVCA SPA source document is open in a new session', async () => {
-      ({ mgr, sid } = await openSPA());
+      ({ mgr, sid, filePath } = await openSPA());
     });
 
     await when('replaceText changes the series placeholder to SERIES A-1', async () => {
       result = await replaceText(mgr, {
-        session_id: sid,
+        file_path: filePath,
         target_paragraph_id: pid,
         old_string: 'SERIES [___] PREFERRED STOCK PURCHASE AGREEMENT',
         new_string: 'SERIES A-1 PREFERRED STOCK PURCHASE AGREEMENT',
@@ -86,9 +88,9 @@ describe('NVCA SPA regression: redline edits', () => {
       });
     });
 
-    await then('the replacement succeeds and the paragraph text is updated', () => {
+    await then('the replacement succeeds and the paragraph text is updated', async () => {
       assertSuccess(result, 'title replacement');
-      const session = mgr.getSession(sid);
+      const session = (await mgr.getSessionByFilePath(filePath))!;
       const afterText = session.doc.getParagraphTextById(pid);
       expect(afterText).toBe('SERIES A-1 PREFERRED STOCK PURCHASE AGREEMENT');
     });
@@ -97,16 +99,17 @@ describe('NVCA SPA regression: redline edits', () => {
   test('Change 2: extra colon insertion after "as follows:"', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
+    let filePath: string;
     const pid = '_bk_00b3dd3a32dd';
     let result: Awaited<ReturnType<typeof replaceText>>;
 
     await given('the NVCA SPA source document is open in a new session', async () => {
-      ({ mgr, sid } = await openSPA());
+      ({ mgr, sid, filePath } = await openSPA());
     });
 
     await when('replaceText appends an extra colon after "as follows:"', async () => {
       result = await replaceText(mgr, {
-        session_id: sid,
+        file_path: filePath,
         target_paragraph_id: pid,
         old_string: 'The parties hereby agree as follows:',
         new_string: 'The parties hereby agree as follows::',
@@ -114,9 +117,9 @@ describe('NVCA SPA regression: redline edits', () => {
       });
     });
 
-    await then('the colon insertion succeeds and the paragraph contains the double colon', () => {
+    await then('the colon insertion succeeds and the paragraph contains the double colon', async () => {
       assertSuccess(result, 'colon insertion');
-      const session = mgr.getSession(sid);
+      const session = (await mgr.getSessionByFilePath(filePath))!;
       const afterText = session.doc.getParagraphTextById(pid);
       expect(afterText).toContain('follows::');
     });
@@ -125,16 +128,17 @@ describe('NVCA SPA regression: redline edits', () => {
   test('Change 3: insert RECITALS paragraph before "as follows:"', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
+    let filePath: string;
     const anchorPid = '_bk_00b3dd3a32dd';
     let result: Awaited<ReturnType<typeof insertParagraph>>;
 
     await given('the NVCA SPA source document is open in a new session', async () => {
-      ({ mgr, sid } = await openSPA());
+      ({ mgr, sid, filePath } = await openSPA());
     });
 
     await when('insertParagraph inserts a WHEREAS recitals paragraph before "as follows:"', async () => {
       result = await insertParagraph(mgr, {
-        session_id: sid,
+        file_path: filePath,
         positional_anchor_node_id: anchorPid,
         new_string: 'WHEREAS, the Company desires to sell shares of its Preferred Stock; and WHEREAS, the Purchasers desire to purchase such shares.',
         instruction: 'Insert RECITALS paragraph',
@@ -142,11 +146,11 @@ describe('NVCA SPA regression: redline edits', () => {
       });
     });
 
-    await then('the insertion succeeds and the WHEREAS paragraph appears immediately before the anchor', () => {
+    await then('the insertion succeeds and the WHEREAS paragraph appears immediately before the anchor', async () => {
       assertSuccess(result, 'RECITALS insertion');
-      const session = mgr.getSession(sid);
+      const session = (await mgr.getSessionByFilePath(filePath))!;
       const view = session.doc.buildDocumentView({ includeSemanticTags: false });
-      const followsIdx = view.nodes.findIndex(n => n.id === anchorPid);
+      const followsIdx = view.nodes.findIndex((n: { id: string }) => n.id === anchorPid);
       expect(followsIdx).toBeGreaterThan(0);
       const inserted = view.nodes[followsIdx - 1];
       expect(inserted?.text).toContain('WHEREAS');
@@ -156,16 +160,17 @@ describe('NVCA SPA regression: redline edits', () => {
   test('Change 4: Code definition expanded — appends clause preserving bold "Code"', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
+    let filePath: string;
     const pid = '_bk_edef90d4bf7c';
     let result: Awaited<ReturnType<typeof replaceText>>;
 
     await given('the NVCA SPA source document is open with the Code definition paragraph', async () => {
-      ({ mgr, sid } = await openSPA());
+      ({ mgr, sid, filePath } = await openSPA());
     });
 
     await when('replaceText expands the Code definition to include Treasury regulations', async () => {
       result = await replaceText(mgr, {
-        session_id: sid,
+        file_path: filePath,
         target_paragraph_id: pid,
         old_string: '\u201cCode\u201d means the Internal Revenue Code of 1986, as amended.',
         new_string: '\u201cCode\u201d means the Internal Revenue Code of 1986, as amended, and the Treasury regulations promulgated thereunder.',
@@ -173,15 +178,15 @@ describe('NVCA SPA regression: redline edits', () => {
       });
     });
 
-    await then('the replacement succeeds and the paragraph contains the new clause', () => {
+    await then('the replacement succeeds and the paragraph contains the new clause', async () => {
       assertSuccess(result, 'Code definition expansion');
-      const session = mgr.getSession(sid);
+      const session = (await mgr.getSessionByFilePath(filePath))!;
       const afterText = session.doc.getParagraphTextById(pid);
       expect(afterText).toContain('Treasury regulations');
       expect(afterText).toContain('\u201cCode\u201d');
     });
-    await and('"Code" run remains bold and Treasury regulations text is not bold', () => {
-      const session = mgr.getSession(sid);
+    await and('"Code" run remains bold and Treasury regulations text is not bold', async () => {
+      const session = (await mgr.getSessionByFilePath(filePath))!;
       const pEl = session.doc.getParagraphElementById(pid)!;
       const runs = getParagraphRuns(pEl);
 
@@ -202,18 +207,19 @@ describe('NVCA SPA regression: redline edits', () => {
   test('Change 5: MAE definition expanded with carve-out — preserves bold defined term', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
+    let filePath: string;
     const pid = '_bk_2b87998276ec';
     let result: Awaited<ReturnType<typeof replaceText>>;
     const oldText = '\u201cMaterial Adverse Effect\u201d means a material adverse effect on the business, assets (including intangible assets), liabilities, financial condition, property, or results of operations of the Company.';
     const newText = '\u201cMaterial Adverse Effect\u201d means a material adverse effect on the business, assets (including intangible assets), liabilities, financial condition, property, or results of operations of the Company; provided, however, that none of the following shall be deemed to constitute, and none of the following shall be taken into account in determining whether there has been, a Material Adverse Effect: (i) any adverse change, event, or effect arising from or relating to general business or economic conditions.';
 
     await given('the NVCA SPA source document is open with the MAE definition paragraph', async () => {
-      ({ mgr, sid } = await openSPA());
+      ({ mgr, sid, filePath } = await openSPA());
     });
 
     await when('replaceText expands the MAE definition with a carve-out proviso', async () => {
       result = await replaceText(mgr, {
-        session_id: sid,
+        file_path: filePath,
         target_paragraph_id: pid,
         old_string: oldText,
         new_string: newText,
@@ -221,15 +227,15 @@ describe('NVCA SPA regression: redline edits', () => {
       });
     });
 
-    await then('the expansion succeeds and the paragraph contains the proviso', () => {
+    await then('the expansion succeeds and the paragraph contains the proviso', async () => {
       assertSuccess(result, 'MAE definition expansion');
-      const session = mgr.getSession(sid);
+      const session = (await mgr.getSessionByFilePath(filePath))!;
       const afterText = session.doc.getParagraphTextById(pid);
       expect(afterText).toContain('provided, however');
       expect(afterText).toContain('Material Adverse Effect');
     });
-    await and('"Material Adverse Effect" run remains bold and proviso text is not bold', () => {
-      const session = mgr.getSession(sid);
+    await and('"Material Adverse Effect" run remains bold and proviso text is not bold', async () => {
+      const session = (await mgr.getSessionByFilePath(filePath))!;
       const pEl = session.doc.getParagraphElementById(pid)!;
       const runs = getParagraphRuns(pEl);
 
@@ -250,16 +256,17 @@ describe('NVCA SPA regression: redline edits', () => {
   test('Change 6: Oxford comma — "Corporate Power and" → "Corporate Power, and"', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
+    let filePath: string;
     const pid = '_bk_36e982f3906a';
     let result: Awaited<ReturnType<typeof replaceText>>;
 
     await given('the NVCA SPA source document is open with the qualification paragraph', async () => {
-      ({ mgr, sid } = await openSPA());
+      ({ mgr, sid, filePath } = await openSPA());
     });
 
     await when('replaceText inserts an Oxford comma before "and Qualification"', async () => {
       result = await replaceText(mgr, {
-        session_id: sid,
+        file_path: filePath,
         target_paragraph_id: pid,
         old_string: 'Organization, Good Standing, Corporate Power and Qualification',
         new_string: 'Organization, Good Standing, Corporate Power, and Qualification',
@@ -267,9 +274,9 @@ describe('NVCA SPA regression: redline edits', () => {
       });
     });
 
-    await then('the paragraph text has the Oxford comma inserted', () => {
+    await then('the paragraph text has the Oxford comma inserted', async () => {
       assertSuccess(result, 'Oxford comma insertion');
-      const session = mgr.getSession(sid);
+      const session = (await mgr.getSessionByFilePath(filePath))!;
       const afterText = session.doc.getParagraphTextById(pid);
       expect(afterText).toBe('Organization, Good Standing, Corporate Power, and Qualification');
     });
@@ -280,12 +287,13 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
   test('applies all 5 replacements in batch, saves clean output, formatting preserved', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
+    let filePath: string;
     let tmpDir: string;
     let savedCleanPath: string;
     let parsed: Awaited<ReturnType<typeof parseOutputXml>>;
 
     await given('the NVCA SPA source document is open in a new session', async () => {
-      ({ mgr, sid } = await openSPA());
+      ({ mgr, sid, filePath } = await openSPA());
       tmpDir = await makeTempDir();
     });
 
@@ -326,7 +334,7 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
 
       for (const edit of edits) {
         const result = await replaceText(mgr, {
-          session_id: sid,
+          file_path: filePath,
           target_paragraph_id: edit.pid,
           old_string: edit.old,
           new_string: edit.new_,
@@ -338,7 +346,7 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
       // Save clean output
       savedCleanPath = path.join(tmpDir, 'nvca-edited-clean.docx');
       const saveRes = await save(mgr, {
-        session_id: sid,
+        file_path: filePath,
         save_to_local_path: savedCleanPath,
         save_format: 'clean',
       });
@@ -400,14 +408,15 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
   test('saves tracked-changes output with correct redlines', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let sid: string;
+    let filePath: string;
     let trackedPath: string;
     let saveRes: Awaited<ReturnType<typeof save>>;
 
     await given('the NVCA SPA source document is open and the Code definition has been expanded', async () => {
-      ({ mgr, sid } = await openSPA());
+      ({ mgr, sid, filePath } = await openSPA());
       const tmpDir = await makeTempDir();
       const result = await replaceText(mgr, {
-        session_id: sid,
+        file_path: filePath,
         target_paragraph_id: '_bk_edef90d4bf7c',
         old_string: '\u201cCode\u201d means the Internal Revenue Code of 1986, as amended.',
         new_string: '\u201cCode\u201d means the Internal Revenue Code of 1986, as amended, and the Treasury regulations promulgated thereunder.',
@@ -419,7 +428,7 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
 
     await when('the document is saved with tracked-changes output', async () => {
       saveRes = await save(mgr, {
-        session_id: sid,
+        file_path: filePath,
         save_to_local_path: trackedPath,
         save_format: 'tracked',
         tracked_changes_author: 'NVCA Test',

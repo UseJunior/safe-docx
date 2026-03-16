@@ -63,7 +63,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
       const result = await when('Call add_comment', () =>
         addCommentTool(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           target_paragraph_id: opened.firstParaId,
           anchor_text: 'brown fox',
           author: 'Reviewer',
@@ -90,7 +90,7 @@ describe('Traceability: DOCX Helper Tools', () => {
       // Add root comment first
       const root = await given('Add root comment', () =>
         addCommentTool(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           target_paragraph_id: opened.firstParaId,
           author: 'Attorney',
           text: 'Please clarify.',
@@ -101,7 +101,7 @@ describe('Traceability: DOCX Helper Tools', () => {
       // Add reply
       const reply = await when('Add threaded reply', () =>
         addCommentTool(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           parent_comment_id: root.comment_id as number,
           author: 'Associate',
           text: 'Will update per your note.',
@@ -126,7 +126,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
       const result = await when('Add comment to bare doc', () =>
         addCommentTool(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           target_paragraph_id: opened.firstParaId,
           author: 'Bootstrapper',
           text: 'This triggers bootstrap.',
@@ -151,7 +151,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
       const result = await when('Call replace_text', () =>
         replaceText(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           target_paragraph_id: opened.firstParaId,
           old_string: 'binding',
           new_string: 'enforceable',
@@ -186,7 +186,7 @@ describe('Traceability: DOCX Helper Tools', () => {
       // normalize_first explicitly merges runs first.
       const result = await when('Call replace_text with normalize_first', () =>
         replaceText(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           target_paragraph_id: opened.firstParaId,
           old_string: 'Fragmented text',
           new_string: 'Merged text',
@@ -283,7 +283,7 @@ describe('Traceability: DOCX Helper Tools', () => {
       const outPath = path.join(opened.tmpDir, 'validated.docx');
       const result = await when('Download triggers validation', () =>
         save(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           save_to_local_path: outPath,
           save_format: 'clean',
         }),
@@ -301,7 +301,7 @@ describe('Traceability: DOCX Helper Tools', () => {
 
       // Edit to create a diff from baseline
       const edited = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         old_string: 'Original content.',
         new_string: 'Modified content.',
@@ -313,7 +313,7 @@ describe('Traceability: DOCX Helper Tools', () => {
       const cleanPath = path.join(opened.tmpDir, 'validated-clean.docx');
       const result = await when('Download clean (validates on export)', () =>
         save(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           save_to_local_path: cleanPath,
           save_format: 'clean',
         }),

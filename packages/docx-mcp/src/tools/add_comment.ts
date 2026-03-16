@@ -7,7 +7,6 @@ import { findUniqueSubstringMatch, getParagraphRuns } from '@usejunior/docx-core
 export async function addComment(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     target_paragraph_id?: string;
     anchor_text?: string;
@@ -35,7 +34,7 @@ export async function addComment(
         comment_id: result.commentId,
         parent_comment_id: result.parentCommentId,
         mode: 'reply',
-        session_id: session.sessionId,
+        file_path: manager.normalizePath(session.originalPath),
       }, metadata));
     }
 
@@ -104,7 +103,7 @@ export async function addComment(
       anchor_paragraph_id: pid,
       anchor_text: params.anchor_text ?? null,
       mode: 'root',
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
     return err('COMMENT_ERROR', errorMessage(e));

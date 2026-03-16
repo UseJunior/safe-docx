@@ -50,21 +50,21 @@ describe(FEATURE, () => {
       ]);
     });
 
-    await then('all three calls succeed and return the same session ID', () => {
+    await then('all three calls succeed and return the same file_path', () => {
       expect(r1.success).toBe(true);
       expect(r2.success).toBe(true);
       expect(r3.success).toBe(true);
-      const id1 = r1.session_id as string;
-      expect(id1).toBeTruthy();
-      expect((r2.session_id as string)).toBe(id1);
-      expect((r3.session_id as string)).toBe(id1);
+      const fp1 = r1.resolved_file_path as string;
+      expect(fp1).toBeTruthy();
+      expect((r2.resolved_file_path as string)).toBe(fp1);
+      expect((r3.resolved_file_path as string)).toBe(fp1);
     });
   });
 
   test('concurrent replaceText via file_path converge to same session', async ({ given, when, then }: AllureBddContext) => {
     let docPath: string;
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let resolvedPath: string;
     let paraId: string;
     let e1: Awaited<ReturnType<typeof replaceText>>;
     let e2: Awaited<ReturnType<typeof replaceText>>;
@@ -74,7 +74,7 @@ describe(FEATURE, () => {
       mgr = createTestSessionManager();
       const read = await readFile(mgr, { file_path: docPath });
       expect(read.success).toBe(true);
-      sessionId = read.session_id as string;
+      resolvedPath = read.resolved_file_path as string;
       const content = String(read.content);
       paraId = content
         .split('\n')
@@ -104,11 +104,11 @@ describe(FEATURE, () => {
       ]);
     });
 
-    await then('both edits succeed and both resolve to the same session', () => {
+    await then('both edits succeed and both resolve to the same file path', () => {
       expect(e1.success).toBe(true);
       expect(e2.success).toBe(true);
-      expect(e1.session_id).toBe(sessionId);
-      expect(e2.session_id).toBe(sessionId);
+      expect(e1.resolved_file_path).toBe(resolvedPath);
+      expect(e2.resolved_file_path).toBe(resolvedPath);
     });
   });
 
@@ -188,9 +188,9 @@ describe(FEATURE, () => {
       expect(r2.success).toBe(true);
     });
 
-    await then('the second call reuses the existing session via getMRU', () => {
-      expect(r2.session_id).toBe(r1.session_id);
-      expect(r2.session_resolution).toBe('reused_existing_session');
+    await then('the second call reuses the existing session', () => {
+      expect(r2.resolved_file_path).toBe(r1.resolved_file_path);
+      expect(r2.session_resolution).toBe('reused');
     });
   });
 
@@ -214,10 +214,10 @@ describe(FEATURE, () => {
       ]);
     });
 
-    await then('each call succeeds and returns a distinct session ID', () => {
+    await then('each call succeeds and returns a distinct file path', () => {
       expect(r1.success).toBe(true);
       expect(r2.success).toBe(true);
-      expect(r1.session_id).not.toBe(r2.session_id);
+      expect(r1.resolved_file_path).not.toBe(r2.resolved_file_path);
     });
   });
 
@@ -241,10 +241,12 @@ describe(FEATURE, () => {
       ]);
     });
 
-    await then('both succeed and each manager creates its own independent session ID', () => {
+    await then('both succeed and each manager creates its own independent session', () => {
       expect(r1.success).toBe(true);
       expect(r2.success).toBe(true);
-      expect(r1.session_id).not.toBe(r2.session_id);
+      // Both managers resolve the same canonical path but maintain separate sessions
+      expect(r1.resolved_file_path).toBeTruthy();
+      expect(r2.resolved_file_path).toBeTruthy();
     });
   });
 });

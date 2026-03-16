@@ -7,7 +7,6 @@ import { ok, err, type ToolResponse } from './types.js';
 export async function extractRevisions_tool(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     offset?: number;
     limit?: number;
@@ -56,7 +55,7 @@ export async function extractRevisions_tool(
       total_changes: totalChanges,
       has_more: hasMore,
       edit_revision: session.editRevision,
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
     return err('EXTRACTION_ERROR', errorMessage(e));

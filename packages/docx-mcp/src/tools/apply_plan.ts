@@ -275,7 +275,7 @@ async function loadStepsFromFile(filePath: string): Promise<{ steps: unknown[]; 
 
 async function executeSteps(
   manager: SessionManager,
-  sessionId: string,
+  filePath: string,
   steps: NormalizedStep[],
 ): Promise<{
   completed_step_ids: string[];
@@ -293,7 +293,7 @@ async function executeSteps(
 
     if (step.operation === 'replace_text') {
       result = await replaceText(manager, {
-        session_id: sessionId,
+        file_path: filePath,
         target_paragraph_id: step.fields.target_paragraph_id as string,
         old_string: step.fields.old_string as string,
         new_string: step.fields.new_string as string,
@@ -302,7 +302,7 @@ async function executeSteps(
       });
     } else {
       result = await insertParagraph(manager, {
-        session_id: sessionId,
+        file_path: filePath,
         positional_anchor_node_id: step.fields.positional_anchor_node_id as string,
         new_string: step.fields.new_string as string,
         instruction: step.fields.instruction as string,
@@ -336,7 +336,6 @@ async function executeSteps(
 export async function applyPlan(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     steps?: unknown[];
     plan_file_path?: string;
@@ -407,7 +406,7 @@ export async function applyPlan(
     const allWarnings = validations.flatMap((v) => v.warnings.map((w) => ({ step_id: v.step_id, warning: w })));
 
     // Apply phase — execute steps sequentially
-    const result = await executeSteps(manager, session.sessionId, steps);
+    const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps);
 
     if (result.failed_step_id !== undefined) {
       return {
@@ -417,7 +416,7 @@ export async function applyPlan(
           message: `Plan execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}).`,
           hint: 'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
         },
-        session_id: session.sessionId,
+        file_path: manager.normalizePath(session.originalPath),
         completed_count: result.completed_step_ids.length,
         completed_step_ids: result.completed_step_ids,
         failed_step_id: result.failed_step_id,
@@ -429,7 +428,7 @@ export async function applyPlan(
     }
 
     return ok({
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       edit_count: session.editCount,
       completed_count: result.completed_step_ids.length,
       completed_step_ids: result.completed_step_ids,

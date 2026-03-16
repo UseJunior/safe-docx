@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
-import { type Session, SessionManager } from '../session/manager.js';
+import { type DocxSession, SessionManager } from '../session/manager.js';
 import { err, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
@@ -9,13 +9,12 @@ import { validateDocxArchiveSafety } from './docx_archive_guard.js';
 const MAX_DOCX_BYTES = 50 * 1024 * 1024;
 
 export type SessionResolutionMode =
-  | 'opened_new_session'
-  | 'reused_existing_session'
-  | 'explicit_session';
+  | 'opened'
+  | 'reused';
 
 export type ResolvedSession = {
   ok: true;
-  session: Session;
+  session: DocxSession;
   metadata: Record<string, unknown>;
 };
 
@@ -39,23 +38,6 @@ function getPendingMap(manager: SessionManager): Map<string, Promise<SessionReso
     pendingByManager.set(manager, map);
   }
   return map;
-}
-
-function mapSessionLookupError(message: string, sessionId: string): ToolResponse {
-  if (message.startsWith('INVALID_SESSION_ID:')) {
-    return err(
-      'INVALID_SESSION_ID',
-      message.replace(/^INVALID_SESSION_ID:/, 'Invalid session id: '),
-      'Session IDs must match format: ses_[12 alphanumeric chars]',
-    );
-  }
-  if (message.startsWith('SESSION_NOT_FOUND:')) {
-    return err('SESSION_NOT_FOUND', `Session not found: ${sessionId}`);
-  }
-  if (message.startsWith('SESSION_EXPIRED:')) {
-    return err('SESSION_EXPIRED', `Session expired: ${sessionId}`);
-  }
-  return err('SESSION_RESOLUTION_ERROR', `Failed to resolve session: ${message}`);
 }
 
 export async function validateAndLoadDocxFromPath(
@@ -139,77 +121,57 @@ export function mergeSessionResolutionMetadata(
   return { ...extra, ...metadata };
 }
 
+/**
+ * Check if file has been modified externally since the session was opened.
+ */
+async function checkStaleness(
+  session: DocxSession,
+  canonicalPath: string,
+): Promise<string | undefined> {
+  try {
+    const stat = await fs.stat(canonicalPath);
+    if (stat.mtime > session.createdAt) {
+      return `File was modified externally at ${stat.mtime.toISOString()} (session opened at ${session.createdAt.toISOString()}). Consider closing and reopening the file.`;
+    }
+  } catch {
+    // File may have been deleted — we'll let downstream tool handle that
+  }
+  return undefined;
+}
+
 export async function resolveSessionForTool(
   manager: SessionManager,
-  params: { session_id?: unknown; file_path?: unknown },
+  params: { file_path?: unknown },
   opts: { toolName: string },
 ): Promise<SessionResolutionOutcome> {
-  const sessionId = typeof params.session_id === 'string' ? params.session_id.trim() : '';
   const filePath = typeof params.file_path === 'string' ? params.file_path.trim() : '';
 
-  if (!sessionId && !filePath) {
+  if (!filePath) {
     return {
       ok: false,
       response: err(
-        'MISSING_SESSION_CONTEXT',
-        `Tool '${opts.toolName}' requires session_id or file_path.`,
-        "Provide an existing session_id, or pass file_path to auto-open/reuse an editing session.",
+        'MISSING_FILE_PATH',
+        `Tool '${opts.toolName}' requires file_path.`,
+        "Provide the path to a .docx file in ~/Downloads/ or ~/Documents/.",
       ),
     };
   }
 
-  if (sessionId) {
-    let session: Session;
-    try {
-      session = manager.getSession(sessionId);
-    } catch (e: unknown) {
-      return {
-        ok: false,
-        response: mapSessionLookupError(errorMessage(e), sessionId),
-      };
-    }
+  const canonicalPath = await manager.canonicalizePath(filePath);
 
-    if (filePath) {
-      const requestedPath = manager.normalizePath(filePath);
-      const sessionPath = manager.normalizePath(session.originalPath);
-      if (requestedPath !== sessionPath) {
-        return {
-          ok: false,
-          response: err(
-            'SESSION_FILE_CONFLICT',
-            `session_id '${sessionId}' is bound to '${sessionPath}', but file_path resolves to '${requestedPath}'.`,
-            'Use either session_id alone, or provide a file_path that matches the same session document.',
-          ),
-        };
-      }
-    }
-
-    manager.touch(session);
-    return {
-      ok: true,
-      session,
-      metadata: {
-        session_resolution: 'explicit_session' as SessionResolutionMode,
-        resolved_session_id: session.sessionId,
-        resolved_file_path: manager.normalizePath(session.originalPath),
-      },
-    };
-  }
-
-  const normalizedPath = manager.normalizePath(filePath);
-  const existing = manager.getMostRecentlyUsedSessionForPath(normalizedPath);
+  // Check for existing session (file-path keyed)
+  const existing = manager.getSessionByPath(canonicalPath);
   if (existing) {
     const reuseLastUsed = existing.lastAccessedAt.toISOString();
     manager.touch(existing);
+    const staleWarning = await checkStaleness(existing, canonicalPath);
     return {
       ok: true,
       session: existing,
       metadata: {
-        session_resolution: 'reused_existing_session' as SessionResolutionMode,
-        reused_existing_session: true,
-        warning: `Using existing editing session ${existing.sessionId} for ${normalizedPath}.`,
-        resolved_session_id: existing.sessionId,
-        resolved_file_path: normalizedPath,
+        session_resolution: 'reused' as SessionResolutionMode,
+        resolved_file_path: canonicalPath,
+        ...(staleWarning ? { stale_warning: staleWarning } : {}),
         reused_session_context: {
           edit_revision: existing.editRevision,
           edit_count: existing.editCount,
@@ -222,7 +184,7 @@ export async function resolveSessionForTool(
 
   // --- Concurrent auto-open deduplication ---
   const pendingMap = getPendingMap(manager);
-  const pending = pendingMap.get(normalizedPath);
+  const pending = pendingMap.get(canonicalPath);
 
   if (pending) {
     // Waiter: another request is already creating a session for this path
@@ -234,12 +196,9 @@ export async function resolveSessionForTool(
         session: outcome.session,
         metadata: {
           ...outcome.metadata,
-          session_resolution: 'reused_existing_session' as SessionResolutionMode,
-          reused_existing_session: true,
+          session_resolution: 'reused' as SessionResolutionMode,
           session_resolution_detail: 'awaited_concurrent_open',
-          warning: `Using existing editing session ${outcome.session.sessionId} for ${normalizedPath}.`,
-          resolved_session_id: outcome.session.sessionId,
-          resolved_file_path: normalizedPath,
+          resolved_file_path: canonicalPath,
         },
       };
     }
@@ -268,15 +227,14 @@ export async function resolveSessionForTool(
         ok: true as const,
         session,
         metadata: {
-          session_resolution: 'opened_new_session' as SessionResolutionMode,
-          resolved_session_id: session.sessionId,
-          resolved_file_path: loaded.normalizedPath,
+          session_resolution: 'opened' as SessionResolutionMode,
+          resolved_file_path: canonicalPath,
         },
       };
     } finally {
       // Identity-guarded cleanup
-      if (pendingMap.get(normalizedPath) === storedPromise) {
-        pendingMap.delete(normalizedPath);
+      if (pendingMap.get(canonicalPath) === storedPromise) {
+        pendingMap.delete(canonicalPath);
       }
     }
   })();
@@ -286,6 +244,6 @@ export async function resolveSessionForTool(
   // Prevent unhandled rejection warnings for exceptional throws
   outcomePromise.catch(() => {});
 
-  pendingMap.set(normalizedPath, outcomePromise);
+  pendingMap.set(canonicalPath, outcomePromise);
   return await outcomePromise;
 }

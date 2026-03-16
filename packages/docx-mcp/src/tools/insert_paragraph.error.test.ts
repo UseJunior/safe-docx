@@ -23,7 +23,7 @@ describe('insert_paragraph validation + tag handling', () => {
     });
     await when('insertParagraph is called with an invalid position', async () => {
       invalidPosition = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         positional_anchor_node_id: paraId,
         new_string: 'new text',
         instruction: 'invalid position test',
@@ -36,7 +36,7 @@ describe('insert_paragraph validation + tag handling', () => {
     });
     await when('insertParagraph is called with a missing anchor', async () => {
       missingAnchor = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         positional_anchor_node_id: '_bk_missing',
         new_string: 'new text',
         instruction: 'missing anchor test',
@@ -60,7 +60,7 @@ describe('insert_paragraph validation + tag handling', () => {
     });
     await when('insertParagraph is called with malformed inline tags', async () => {
       malformed = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         positional_anchor_node_id: paraId,
         new_string: '<b>broken tag',
         instruction: 'malformed tags',
@@ -87,7 +87,7 @@ describe('insert_paragraph validation + tag handling', () => {
     });
     await when('insertParagraph is called with a hyperlink tag', async () => {
       inserted = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         positional_anchor_node_id: paraId,
         new_string: 'Link: <a href="https://example.com">Example</a> and Term',
         instruction: 'strip unsupported tags',
@@ -97,7 +97,7 @@ describe('insert_paragraph validation + tag handling', () => {
     await then('the insert succeeds', () => { assertSuccess(inserted, 'insert_paragraph default tags'); });
     await and('the inserted paragraph contains plain text without the anchor tag', async () => {
       read = await readFile(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         node_ids: [String(inserted.new_paragraph_id)],
         format: 'simple',
       });

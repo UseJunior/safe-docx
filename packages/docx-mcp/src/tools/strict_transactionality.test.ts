@@ -5,7 +5,7 @@ import { DocxZip, parseXml, serializeXml } from '@usejunior/docx-core';
 
 import { save } from './save.js';
 import { formatLayout } from './format_layout.js';
-import { getSessionStatus } from './get_session_status.js';
+import { getFileStatus } from './get_file_status.js';
 import {
   assertFailure,
   assertSuccess,
@@ -30,8 +30,8 @@ describe('format_layout: strict failure transactionality', () => {
     let opened: Awaited<ReturnType<typeof openSession>>;
     let baselinePath: string;
     let afterPath: string;
-    let statusBefore: Awaited<ReturnType<typeof getSessionStatus>>;
-    let statusAfter: Awaited<ReturnType<typeof getSessionStatus>>;
+    let statusBefore: Awaited<ReturnType<typeof getFileStatus>>;
+    let statusAfter: Awaited<ReturnType<typeof getFileStatus>>;
 
     await given('a document with one paragraph and one 2-row table, baseline saved at revision 0', async () => {
       const xml =
@@ -50,14 +50,14 @@ describe('format_layout: strict failure transactionality', () => {
 
       baselinePath = `${opened.tmpDir}/baseline-clean.docx`;
       const baselineDownload = await save(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         save_to_local_path: baselinePath,
         save_format: 'clean',
         clean_bookmarks: true,
       });
       assertSuccess(baselineDownload, 'baseline download');
 
-      statusBefore = await getSessionStatus(opened.mgr, { session_id: opened.sessionId });
+      statusBefore = await getFileStatus(opened.mgr, { file_path: opened.filePath });
       assertSuccess(statusBefore, 'status before');
       expect(statusBefore.edit_count).toBe(0);
       expect(statusBefore.edit_revision).toBe(0);
@@ -65,7 +65,7 @@ describe('format_layout: strict failure transactionality', () => {
 
     await when('formatLayout is called in strict mode targeting a non-existent row index 99', async () => {
       const failed = await formatLayout(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         strict: true,
         row_height: {
           table_indexes: [0],
@@ -78,7 +78,7 @@ describe('format_layout: strict failure transactionality', () => {
     });
 
     await then('session state remains at revision 0 with zero edits', async () => {
-      statusAfter = await getSessionStatus(opened.mgr, { session_id: opened.sessionId });
+      statusAfter = await getFileStatus(opened.mgr, { file_path: opened.filePath });
       assertSuccess(statusAfter, 'status after');
       expect(statusAfter.edit_count).toBe(0);
       expect(statusAfter.edit_revision).toBe(0);
@@ -86,7 +86,7 @@ describe('format_layout: strict failure transactionality', () => {
     await and('document XML saved after the failure is canonically identical to the baseline', async () => {
       afterPath = `${opened.tmpDir}/after-failure-clean.docx`;
       const afterDownload = await save(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         save_to_local_path: afterPath,
         save_format: 'clean',
         clean_bookmarks: true,

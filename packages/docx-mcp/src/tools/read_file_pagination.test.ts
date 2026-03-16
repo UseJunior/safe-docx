@@ -17,10 +17,10 @@ describe('read_file pagination', () => {
     const longText = 'Lorem ipsum dolor sit amet. '.repeat(20); // ~560 chars each
     const paragraphs = Array.from({ length: 200 }, (_, i) => `Paragraph ${i + 1}: ${longText}`);
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with 200 long paragraphs', () => openSession(paragraphs, { mgr }));
+    const { filePath } = await given('Create doc with 200 long paragraphs', () => openSession(paragraphs, { mgr }));
 
     const read = await when('Read file with default params (budget active)', async () => {
-      const result = await readFile(mgr, { session_id: sessionId });
+      const result = await readFile(mgr, { file_path: filePath });
       assertSuccess(result, 'read');
       await attachPrettyJson('read_response_meta', {
         total_paragraphs: result.total_paragraphs,
@@ -44,10 +44,10 @@ describe('read_file pagination', () => {
     const longText = 'Lorem ipsum dolor sit amet. '.repeat(20);
     const paragraphs = Array.from({ length: 200 }, (_, i) => `Paragraph ${i + 1}: ${longText}`);
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with 200 long paragraphs', () => openSession(paragraphs, { mgr }));
+    const { filePath } = await given('Create doc with 200 long paragraphs', () => openSession(paragraphs, { mgr }));
 
     const read = await when('Read with explicit limit=200', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, limit: 200 });
+      const result = await readFile(mgr, { file_path: filePath, limit: 200 });
       assertSuccess(result, 'read');
       await attachPrettyJson('read_response_meta', {
         total_paragraphs: result.total_paragraphs,
@@ -67,11 +67,11 @@ describe('read_file pagination', () => {
     const longText = 'Lorem ipsum dolor sit amet. '.repeat(20);
     const paragraphs = Array.from({ length: 200 }, (_, i) => `Paragraph ${i + 1}: ${longText}`);
     const mgr = createTestSessionManager();
-    const { sessionId, paraIds } = await given('Create doc and read specific nodes', () => openSession(paragraphs, { mgr }));
+    const { filePath, paraIds } = await given('Create doc and read specific nodes', () => openSession(paragraphs, { mgr }));
 
     const targetIds = paraIds.slice(0, 5);
     const read = await when('Read with node_ids', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, node_ids: targetIds });
+      const result = await readFile(mgr, { file_path: filePath, node_ids: targetIds });
       assertSuccess(result, 'read');
       return result;
     });
@@ -84,10 +84,10 @@ describe('read_file pagination', () => {
   test('small doc under budget returns all paragraphs', async ({ given, when, then }: AllureBddContext) => {
     const paragraphs = Array.from({ length: 10 }, (_, i) => `Short paragraph ${i + 1}`);
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create small doc', () => openSession(paragraphs, { mgr }));
+    const { filePath } = await given('Create small doc', () => openSession(paragraphs, { mgr }));
 
     const read = await when('Read file', async () => {
-      const result = await readFile(mgr, { session_id: sessionId });
+      const result = await readFile(mgr, { file_path: filePath });
       assertSuccess(result, 'read');
       return result;
     });
@@ -101,10 +101,10 @@ describe('read_file pagination', () => {
 
   test('paragraph_ids field is absent', async ({ given, when, then }: AllureBddContext) => {
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc', () => openSession(['Test paragraph'], { mgr }));
+    const { filePath } = await given('Create doc', () => openSession(['Test paragraph'], { mgr }));
 
     const read = await when('Read file', async () => {
-      const result = await readFile(mgr, { session_id: sessionId });
+      const result = await readFile(mgr, { file_path: filePath });
       assertSuccess(result, 'read');
       return result;
     });
@@ -118,10 +118,10 @@ describe('read_file pagination', () => {
     const longText = 'Lorem ipsum dolor sit amet. '.repeat(20);
     const paragraphs = Array.from({ length: 200 }, (_, i) => `Paragraph ${i + 1}: ${longText}`);
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Read with pagination continuation', () => openSession(paragraphs, { mgr }));
+    const { filePath } = await given('Read with pagination continuation', () => openSession(paragraphs, { mgr }));
 
     const firstPage = await when('Read first page', async () => {
-      const result = await readFile(mgr, { session_id: sessionId });
+      const result = await readFile(mgr, { file_path: filePath });
       assertSuccess(result, 'read');
       expect(result.has_more).toBe(true);
       expect(typeof result.next_offset).toBe('number');
@@ -133,7 +133,7 @@ describe('read_file pagination', () => {
     });
 
     const secondPage = await when('Read second page using next_offset', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, offset: Number(firstPage.next_offset) });
+      const result = await readFile(mgr, { file_path: filePath, offset: Number(firstPage.next_offset) });
       assertSuccess(result, 'read');
       await attachPrettyJson('second_page', {
         paragraphs_returned: result.paragraphs_returned,
@@ -168,10 +168,10 @@ describe('read_file pagination', () => {
     const longText = 'Lorem ipsum dolor sit amet. '.repeat(20);
     const paragraphs = Array.from({ length: 200 }, (_, i) => `Paragraph ${i + 1}: ${longText}`);
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create large doc and read as simple', () => openSession(paragraphs, { mgr }));
+    const { filePath } = await given('Create large doc and read as simple', () => openSession(paragraphs, { mgr }));
 
     const read = await when('Read with format=simple', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+      const result = await readFile(mgr, { file_path: filePath, format: 'simple' });
       assertSuccess(result, 'read');
       return result;
     });
@@ -187,10 +187,10 @@ describe('read_file pagination', () => {
     const longText = 'Lorem ipsum dolor sit amet. '.repeat(20);
     const paragraphs = Array.from({ length: 200 }, (_, i) => `Paragraph ${i + 1}: ${longText}`);
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create large doc and read as json', () => openSession(paragraphs, { mgr }));
+    const { filePath } = await given('Create large doc and read as json', () => openSession(paragraphs, { mgr }));
 
     const read = await when('Read with format=json', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, format: 'json' });
+      const result = await readFile(mgr, { file_path: filePath, format: 'json' });
       assertSuccess(result, 'read');
       return result;
     });
@@ -222,10 +222,10 @@ describe('read_file pagination', () => {
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>${tableXml}</w:body></w:document>`;
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with a table', () => openSession([], { mgr, xml }));
+    const { filePath } = await given('Create doc with a table', () => openSession([], { mgr, xml }));
 
     const read = await when('Read file in toon format', async () => {
-      const result = await readFile(mgr, { session_id: sessionId });
+      const result = await readFile(mgr, { file_path: filePath });
       assertSuccess(result, 'read');
       return result;
     });
@@ -252,10 +252,10 @@ describe('read_file pagination', () => {
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>${tableXml}</w:body></w:document>`;
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with small table', () => openSession([], { mgr, xml }));
+    const { filePath } = await given('Create doc with small table', () => openSession([], { mgr, xml }));
 
     const read = await when('Read file', async () => {
-      const result = await readFile(mgr, { session_id: sessionId });
+      const result = await readFile(mgr, { file_path: filePath });
       assertSuccess(result, 'read');
       return result;
     });
@@ -281,10 +281,10 @@ describe('read_file pagination', () => {
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>${tableXml}</w:body></w:document>`;
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with table', () => openSession([], { mgr, xml }));
+    const { filePath } = await given('Create doc with table', () => openSession([], { mgr, xml }));
 
     const read = await when('Read file in simple format', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+      const result = await readFile(mgr, { file_path: filePath, format: 'simple' });
       assertSuccess(result, 'read');
       return result;
     });
@@ -308,10 +308,10 @@ describe('read_file pagination', () => {
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>${tableXml}</w:body></w:document>`;
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with table', () => openSession([], { mgr, xml }));
+    const { filePath } = await given('Create doc with table', () => openSession([], { mgr, xml }));
 
     const read = await when('Read file in JSON format', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, format: 'json' });
+      const result = await readFile(mgr, { file_path: filePath, format: 'json' });
       assertSuccess(result, 'read');
       return result;
     });
@@ -341,10 +341,10 @@ describe('read_file pagination', () => {
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>${tableXml}</w:body></w:document>`;
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with table and surrounding paragraphs', () => openSession([], { mgr, xml }));
+    const { filePath } = await given('Create doc with table and surrounding paragraphs', () => openSession([], { mgr, xml }));
 
     const read = await when('Read file with explicit limit=100 and format=simple', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, limit: 100, format: 'simple' });
+      const result = await readFile(mgr, { file_path: filePath, limit: 100, format: 'simple' });
       assertSuccess(result, 'read');
       return result;
     });
@@ -375,10 +375,10 @@ describe('read_file pagination', () => {
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>${tableXml}</w:body></w:document>`;
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with large table exceeding budget', () => openSession([], { mgr, xml }));
+    const { filePath } = await given('Create doc with large table exceeding budget', () => openSession([], { mgr, xml }));
 
     const read = await when('Read file with format=simple (budget active)', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+      const result = await readFile(mgr, { file_path: filePath, format: 'simple' });
       assertSuccess(result, 'read');
       return result;
     });
@@ -411,10 +411,10 @@ describe('read_file pagination', () => {
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>${tableXml}</w:body></w:document>`;
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with large table for toon budget test', () => openSession([], { mgr, xml }));
+    const { filePath } = await given('Create doc with large table for toon budget test', () => openSession([], { mgr, xml }));
 
     const read = await when('Read file with format=toon (budget active)', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, format: 'toon' });
+      const result = await readFile(mgr, { file_path: filePath, format: 'toon' });
       assertSuccess(result, 'read');
       return result;
     });
@@ -447,10 +447,10 @@ describe('read_file pagination', () => {
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
       `<w:body>${tableXml}</w:body></w:document>`;
     const mgr = createTestSessionManager();
-    const { sessionId } = await given('Create doc with small table followed by body text', () => openSession([], { mgr, xml }));
+    const { filePath } = await given('Create doc with small table followed by body text', () => openSession([], { mgr, xml }));
 
     const read = await when('Read file with format=toon (budget active, small doc)', async () => {
-      const result = await readFile(mgr, { session_id: sessionId, format: 'toon' });
+      const result = await readFile(mgr, { file_path: filePath, format: 'toon' });
       assertSuccess(result, 'read');
       return result;
     });

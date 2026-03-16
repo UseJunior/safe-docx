@@ -274,8 +274,7 @@ async function readToonCanonicalFromPath(filePath: string): Promise<{
       message: `open_document failed: ${opened.error.code} ${opened.error.message}`,
     };
   }
-  const sessionId = String(opened.session_id);
-  const read = await readFile(mgr, { session_id: sessionId, format: 'toon' });
+  const read = await readFile(mgr, { file_path: filePath, format: 'toon' });
   if (!isToolSuccess(read)) {
     return {
       ok: false,
@@ -311,7 +310,7 @@ async function runToonRoundtripCheck(absPath: string): Promise<ConformanceCheckR
   const after = await withTempDir('safe-docx-conformance-roundtrip-', async (outDir) => {
     const cleanPath = path.join(outDir, 'clean.docx');
     const saved = await save(mgr, {
-      session_id: String(opened.session_id),
+      file_path: String(opened.file_path ?? absPath),
       save_to_local_path: cleanPath,
       save_format: 'clean',
       clean_bookmarks: true,
@@ -369,9 +368,9 @@ async function runDeterministicReplaceTextOnce(
       message: `open_document failed: ${opened.error.code} ${opened.error.message}`,
     };
   }
-  const sessionId = String(opened.session_id);
+  const filePath = String(opened.file_path ?? absPath);
 
-  const readJson = await readFile(mgr, { session_id: sessionId, format: 'json' });
+  const readJson = await readFile(mgr, { file_path: filePath, format: 'json' });
   if (!isToolSuccess(readJson)) {
     return {
       ok: false,
@@ -390,7 +389,7 @@ async function runDeterministicReplaceTextOnce(
   }
 
   const edited = await replaceText(mgr, {
-    session_id: sessionId,
+    file_path: filePath,
     target_paragraph_id: target.id,
     old_string: edit.old_string,
     new_string: edit.new_string,
@@ -407,7 +406,7 @@ async function runDeterministicReplaceTextOnce(
   return withTempDir('safe-docx-conformance-edit-', async (outDir) => {
     const cleanPath = path.join(outDir, 'edited.docx');
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: filePath,
       save_to_local_path: cleanPath,
       save_format: 'clean',
       clean_bookmarks: true,
@@ -489,9 +488,9 @@ async function runTrackedChangesCheck(
       message: `open_document failed: ${opened.error.code} ${opened.error.message}`,
     };
   }
-  const sessionId = String(opened.session_id);
+  const filePath = String(opened.file_path ?? absPath);
 
-  const readJson = await readFile(mgr, { session_id: sessionId, format: 'json' });
+  const readJson = await readFile(mgr, { file_path: filePath, format: 'json' });
   if (!isToolSuccess(readJson)) {
     return {
       check_id: 'tracked_changes_output',
@@ -512,7 +511,7 @@ async function runTrackedChangesCheck(
   }
 
   const edited = await replaceText(mgr, {
-    session_id: sessionId,
+    file_path: filePath,
     target_paragraph_id: target.id,
     old_string: edit.old_string,
     new_string: edit.new_string,
@@ -530,7 +529,7 @@ async function runTrackedChangesCheck(
   return withTempDir('safe-docx-conformance-tracked-', async (outDir) => {
     const trackedPath = path.join(outDir, 'tracked.docx');
     const tracked = await save(mgr, {
-      session_id: sessionId,
+      file_path: filePath,
       save_to_local_path: trackedPath,
       save_format: 'tracked',
       clean_bookmarks: true,

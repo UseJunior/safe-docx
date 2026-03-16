@@ -31,7 +31,7 @@ describe('open_document: paragraph ID collision safety', () => {
 
     await when('the document is read in simple format', async () => {
       if (!opened.success) return;
-      read = await readFile(mgr, { session_id: String(opened.session_id), format: 'simple' });
+      read = await readFile(mgr, { file_path: inputPath, format: 'simple' });
       expect(read.success).toBe(true);
     });
 
@@ -64,7 +64,7 @@ describe('open_document: paragraph ID collision safety', () => {
       const openA = await openDocument(mgrA, { file_path: inputPath });
       expect(openA.success).toBe(true);
       if (!openA.success) return;
-      const readA = await readFile(mgrA, { session_id: String(openA.session_id), format: 'simple' });
+      const readA = await readFile(mgrA, { file_path: inputPath, format: 'simple' });
       expect(readA.success).toBe(true);
       if (!readA.success) return;
       idsA = extractParaIdsFromToon(String(readA.content));
@@ -73,7 +73,7 @@ describe('open_document: paragraph ID collision safety', () => {
       const openB = await openDocument(mgrB, { file_path: inputPath });
       expect(openB.success).toBe(true);
       if (!openB.success) return;
-      const readB = await readFile(mgrB, { session_id: String(openB.session_id), format: 'simple' });
+      const readB = await readFile(mgrB, { file_path: inputPath, format: 'simple' });
       expect(readB.success).toBe(true);
       if (!readB.success) return;
       idsB = extractParaIdsFromToon(String(readB.content));

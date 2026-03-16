@@ -73,8 +73,8 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
       if (!result.success) return;
       expect(result.plan_context_id).toMatch(/^plctx_[A-Za-z0-9]{12}$/);
       expect(result.base_revision).toBe(0);
-      expect(typeof result.resolved_session_id).toBe('string');
-      expect(result.resolved_file_path).toBe(manager.normalizePath(filePath));
+      expect(typeof result.resolved_file_path).toBe('string');
+      expect(result.resolved_file_path).toBe(await manager.canonicalizePath(filePath));
       expect(result.plan_context).toMatchObject({
         plan_name: 'agreement-review',
         orchestrator_id: 'coordinator-1',
@@ -92,9 +92,9 @@ describe('Traceability: Multi-Agent Plan Merge (Phase 1)', () => {
 
       expect(result.success).toBe(true);
       if (!result.success) return;
-      expect(result.session_resolution).toBe('opened_new_session');
-      expect(typeof result.resolved_session_id).toBe('string');
-      expect(result.resolved_file_path).toBe(manager.normalizePath(filePath));
+      expect(result.session_resolution).toBe('opened');
+      expect(typeof result.resolved_file_path).toBe('string');
+      expect(result.resolved_file_path).toBe(await manager.canonicalizePath(filePath));
     },
   );
 

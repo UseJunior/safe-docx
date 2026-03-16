@@ -55,8 +55,8 @@
       "description": "Save the edited document to a specified path on your local filesystem. Writes to disk."
     },
     {
-      "name": "get_session_status",
-      "description": "Check the status of the current editing session. Read-only operation."
+      "name": "get_file_status",
+      "description": "Check the status of the current file editing session. Read-only operation."
     }
   ],
   "tools_generated": false,

@@ -37,11 +37,11 @@ describe('has_tracked_changes tool', () => {
       `</w:p>` +
       `</w:body></w:document>`;
 
-    const { mgr, sessionId } = await openSession([], { xml: docXml });
+    const { mgr, inputPath } = await openSession([], { xml: docXml });
 
     let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
     await when('has_tracked_changes is called', async () => {
-      result = await hasTrackedChanges_tool(mgr, { session_id: sessionId });
+      result = await hasTrackedChanges_tool(mgr, { file_path: inputPath });
     });
     assertSuccess(result!, 'has_tracked_changes');
     await attachPrettyJson('result', result!);
@@ -65,11 +65,11 @@ describe('has_tracked_changes tool', () => {
       `<w:p><w:r><w:rPr><w:rPrChange w:author="Editor" w:date="2026-01-01T00:00:00Z"><w:rPr><w:b/></w:rPr></w:rPrChange></w:rPr><w:t>Text</w:t></w:r></w:p>` +
       `</w:body></w:document>`;
 
-    const { mgr, sessionId } = await openSession([], { xml: docXml });
+    const { mgr, inputPath } = await openSession([], { xml: docXml });
 
     let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
     await when('has_tracked_changes is called', async () => {
-      result = await hasTrackedChanges_tool(mgr, { session_id: sessionId });
+      result = await hasTrackedChanges_tool(mgr, { file_path: inputPath });
     });
     assertSuccess(result!, 'has_tracked_changes');
 
@@ -83,11 +83,11 @@ describe('has_tracked_changes tool', () => {
   });
 
   test('returns false for a clean document', async ({ when, then }: AllureBddContext) => {
-    const { mgr, sessionId } = await openSession(['No revisions here.']);
+    const { mgr, inputPath } = await openSession(['No revisions here.']);
 
     let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
     await when('has_tracked_changes is called', async () => {
-      result = await hasTrackedChanges_tool(mgr, { session_id: sessionId });
+      result = await hasTrackedChanges_tool(mgr, { file_path: inputPath });
     });
     assertSuccess(result!, 'has_tracked_changes');
 
@@ -107,17 +107,18 @@ describe('has_tracked_changes tool', () => {
       `<w:body><w:p><w:r><w:t>Base</w:t></w:r><w:ins w:author="A" w:date="2026-01-01T00:00:00Z"><w:r><w:t> plus</w:t></w:r></w:ins></w:p></w:body>` +
       `</w:document>`;
 
-    const { mgr, sessionId } = await openSession([], { xml: docXml });
-    const revisionBefore = mgr.getSession(sessionId).editRevision;
+    const { mgr, inputPath, filePath } = await openSession([], { xml: docXml });
+    const session = (await mgr.getSessionByFilePath(filePath))!;
+    const revisionBefore = session.editRevision;
 
     let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
     await when('has_tracked_changes is called', async () => {
-      result = await hasTrackedChanges_tool(mgr, { session_id: sessionId });
+      result = await hasTrackedChanges_tool(mgr, { file_path: inputPath });
     });
     assertSuccess(result!, 'has_tracked_changes');
 
     await then('session revision remains unchanged', () => {
-      const revisionAfter = mgr.getSession(sessionId).editRevision;
+      const revisionAfter = session.editRevision;
       expect(revisionAfter).toBe(revisionBefore);
       expect(result!.edit_revision).toBe(revisionBefore);
     });
@@ -126,11 +127,11 @@ describe('has_tracked_changes tool', () => {
   test('requires session context', async ({ when }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     let result: Awaited<ReturnType<typeof hasTrackedChanges_tool>>;
-    await when('called without session_id or file_path', async () => {
+    await when('called without file_path', async () => {
       result = await hasTrackedChanges_tool(mgr, {});
     });
 
-    assertFailure(result!, 'MISSING_SESSION_CONTEXT', 'has_tracked_changes');
+    assertFailure(result!, 'MISSING_FILE_PATH', 'has_tracked_changes');
   });
 
   test('is registered in MCP_TOOLS as read-only', () => {
@@ -138,7 +139,6 @@ describe('has_tracked_changes tool', () => {
     expect(tool).toBeTruthy();
     expect(tool!.annotations.readOnlyHint).toBe(true);
     expect(tool!.annotations.destructiveHint).toBe(false);
-    expect(tool!.inputSchema.properties).toHaveProperty('session_id');
     expect(tool!.inputSchema.properties).toHaveProperty('file_path');
   });
 });

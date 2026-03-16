@@ -5,7 +5,7 @@ import { ok, err, type ToolResponse } from './types.js';
 
 export async function acceptChanges(
   manager: SessionManager,
-  params: { session_id?: string; file_path?: string },
+  params: { file_path?: string },
 ): Promise<ToolResponse> {
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'accept_changes' });
   if (!resolved.ok) return resolved.response;
@@ -16,7 +16,7 @@ export async function acceptChanges(
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({
       ...stats,
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
     return err('ACCEPT_CHANGES_ERROR', errorMessage(e));

@@ -6,7 +6,6 @@ import { ok, err, type ToolResponse } from './types.js';
 export async function getFootnotes(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
   },
 ): Promise<ToolResponse> {
@@ -23,7 +22,7 @@ export async function getFootnotes(
         text: f.text,
         anchored_paragraph_id: f.anchoredParagraphId,
       })),
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
     return err('FOOTNOTE_ERROR', errorMessage(e));

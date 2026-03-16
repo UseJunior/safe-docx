@@ -25,7 +25,7 @@ describe('insert_paragraph branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const inserted = await insertParagraph(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       positional_anchor_node_id: paraId,
       new_string:
         '<header><b>Section:</b></header> body <highlight><i>alpha</i></highlight>\n\n' +
@@ -38,7 +38,7 @@ describe('insert_paragraph branch coverage', () => {
     expect(newParagraphIds.length).toBe(2);
 
     const read = await readFile(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       node_ids: newParagraphIds,
       format: 'simple',
     });
@@ -69,7 +69,7 @@ describe('insert_paragraph branch coverage', () => {
 
     for (const tc of cases) {
       const result = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         positional_anchor_node_id: paraId,
         new_string: tc.newString,
         instruction: `malformed tags: ${tc.expected}`,
@@ -84,7 +84,7 @@ describe('insert_paragraph branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const inserted = await insertParagraph(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       positional_anchor_node_id: paraId,
       new_string: 'Normal and <font color="FF0000" size="14">red large</font> text.',
       instruction: 'font tag insertion test',
@@ -93,7 +93,7 @@ describe('insert_paragraph branch coverage', () => {
     assertSuccess(inserted, 'insert with font tags');
 
     const read = await readFile(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       node_ids: [String(inserted.new_paragraph_id)],
       format: 'simple',
     });
@@ -106,7 +106,7 @@ describe('insert_paragraph branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const inserted = await insertParagraph(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       positional_anchor_node_id: paraId,
       new_string: 'Inserted by default',
       instruction: 'default position should be AFTER',
@@ -114,7 +114,7 @@ describe('insert_paragraph branch coverage', () => {
     assertSuccess(inserted, 'insert default position');
 
     const read = await readFile(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       format: 'toon',
     });
     assertSuccess(read, 'read full doc after default insert');
@@ -133,7 +133,7 @@ describe('insert_paragraph branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const inserted = await insertParagraph(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       positional_anchor_node_id: paraId,
       new_string: '<a href="https://example.test">Company means the buyer.</a>',
       instruction: 'strip tags in default insert mode',
@@ -142,7 +142,7 @@ describe('insert_paragraph branch coverage', () => {
     assertSuccess(inserted, 'insert with normalized hyperlink tags');
 
     const read = await readFile(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       node_ids: [String(inserted.new_paragraph_id)],
       format: 'simple',
     });

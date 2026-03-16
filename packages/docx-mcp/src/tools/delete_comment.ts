@@ -6,7 +6,6 @@ import { ok, err, type ToolResponse } from './types.js';
 export async function deleteComment(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     comment_id?: number;
   },
@@ -25,7 +24,7 @@ export async function deleteComment(
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({
       comment_id: params.comment_id,
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);

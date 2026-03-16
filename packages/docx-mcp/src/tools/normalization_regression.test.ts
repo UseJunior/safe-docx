@@ -66,7 +66,7 @@ describe('normalization regression tests', () => {
 
       const opened2 = await openDocument(mgr2, { file_path: inputPath2, skip_normalization: true });
       assertSuccess(opened2, 'open-skip');
-      const read2 = await readFile(mgr2, { session_id: opened2.session_id as string });
+      const read2 = await readFile(mgr2, { file_path: inputPath2 });
       assertSuccess(read2, 'read-skip');
 
       // Both should have the same number of paragraphs.
@@ -144,12 +144,12 @@ describe('normalization regression tests', () => {
         `</w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId, firstParaId } = await openSession([], { xml, prefix: 'barrier-field-' });
+      const { mgr, filePath, firstParaId } = await openSession([], { xml, prefix: 'barrier-field-' });
 
       // The field text "100" should still be protected. Editing across field
       // boundaries should fail.
       const edited = await replaceText(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         target_paragraph_id: firstParaId,
         old_string: 'Amount: 100 due.',
         new_string: 'Amount: 250 due.',
@@ -172,7 +172,7 @@ describe('normalization regression tests', () => {
         `</w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId, firstParaId, content } = await openSession([], { xml, prefix: 'barrier-bm-' });
+      const { mgr, filePath, firstParaId, content } = await openSession([], { xml, prefix: 'barrier-bm-' });
 
       // After normalization, the paragraph should still have both runs
       // (bookmark is a barrier preventing merge).

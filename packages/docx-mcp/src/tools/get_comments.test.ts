@@ -30,7 +30,7 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
       ]);
 
       await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.paraIds[0]!,
         author: 'Alice',
         text: 'Please review this clause.',
@@ -38,14 +38,14 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
       });
 
       await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.paraIds[1]!,
         author: 'Bob',
         text: 'This needs clarification.',
         initials: 'BO',
       });
 
-      const result = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const result = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(result, 'get_comments');
 
       const comments = result.comments as Array<Record<string, unknown>>;
@@ -83,7 +83,7 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
           typeof comments[1]!.anchored_paragraph_id === 'string',
       ).toBe(true);
 
-      expect(result.session_id).toBe(opened.sessionId);
+      expect(result.resolved_file_path).toBeTruthy();
     },
   );
 
@@ -93,7 +93,7 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
       const opened = await openSession(['Contract clause for discussion.']);
 
       const root = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         author: 'Alice',
         text: 'Is this clause enforceable?',
@@ -101,14 +101,14 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
       assertSuccess(root, 'add_comment (root)');
 
       const reply = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         parent_comment_id: root.comment_id as number,
         author: 'Bob',
         text: 'Yes, per section 4.2.',
       });
       assertSuccess(reply, 'add_comment (reply)');
 
-      const result = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const result = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(result, 'get_comments');
 
       const comments = result.comments as Array<Record<string, unknown>>;
@@ -134,7 +134,7 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
     async () => {
       const opened = await openSession(['No comments in this document.']);
 
-      const result = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const result = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(result, 'get_comments');
       expect(result.comments).toEqual([]);
     },
@@ -146,7 +146,7 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
       const opened = await openSession(['File resolution paragraph.']);
 
       await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         author: 'Tester',
         text: 'File resolution comment.',
@@ -154,7 +154,7 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
 
       const result = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(result, 'get_comments (file_path)');
-      expect(result.session_id).toBeTruthy();
+      expect(result.resolved_file_path).toBeTruthy();
       const comments = result.comments as Array<Record<string, unknown>>;
       expect(comments).toHaveLength(1);
     },
@@ -165,7 +165,7 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
     async () => {
       const mgr = createTestSessionManager();
       const result = await getComments(mgr, {});
-      assertFailure(result, 'MISSING_SESSION_CONTEXT', 'get_comments');
+      assertFailure(result, 'MISSING_FILE_PATH', 'get_comments');
     },
   );
 
@@ -175,17 +175,17 @@ describe('OpenSpec traceability: add-comment-read-tool', () => {
       const opened = await openSession(['Immutability check paragraph.']);
 
       await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         author: 'Tester',
         text: 'Mutation guard comment.',
       });
 
-      const session = opened.mgr.getSession(opened.sessionId);
+      const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
       const revisionBefore = session.editRevision;
       const editCountBefore = session.editCount;
 
-      const result = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const result = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(result, 'get_comments');
 
       expect(session.editRevision).toBe(revisionBefore);

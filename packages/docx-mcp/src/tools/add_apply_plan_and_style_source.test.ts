@@ -31,7 +31,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world', 'Second paragraph']);
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -63,7 +63,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world']);
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -89,7 +89,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
       expect(steps?.[0]?.valid).toBe(false);
       expect(steps?.[1]?.valid).toBe(false);
 
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       expect(String(read.content)).toContain('Hello world');
       expect(String(read.content)).not.toContain('Inserted paragraph');
@@ -101,7 +101,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world', 'Second paragraph']);
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -136,7 +136,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
       expect(result.failed_step_id).toBe('s2');
       expect(result.failed_step_index).toBe(1);
 
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       expect(String(read.content)).toContain('Hello earth');
       expect(String(read.content)).not.toContain('Should not run');
@@ -148,7 +148,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world']);
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -192,7 +192,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
       assertSuccess(merged);
 
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: (merged.merged_plan as { steps: unknown[] }).steps,
       });
 
@@ -216,7 +216,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
       });
 
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: rawSteps,
       });
 
@@ -245,7 +245,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
       await fs.writeFile(planPath, JSON.stringify(fileSteps), 'utf-8');
 
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         plan_file_path: planPath,
       });
 
@@ -260,7 +260,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world']);
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [{ step_id: 's1', operation: 'replace_text' }],
         plan_file_path: '/tmp/plan.json',
       });
@@ -274,7 +274,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world']);
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -295,7 +295,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world']);
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -326,7 +326,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
 
       const opened = await openSession([], { xml });
       const result = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         positional_anchor_node_id: opened.paraIds[0],
         position: 'AFTER',
         new_string: 'Inserted with body style source',
@@ -344,7 +344,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world']);
       const result = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         positional_anchor_node_id: opened.firstParaId,
         position: 'AFTER',
         new_string: 'Inserted with fallback',
@@ -363,7 +363,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world']);
       const result = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         positional_anchor_node_id: opened.firstParaId,
         position: 'AFTER',
         new_string: 'Inserted without style source',
@@ -425,7 +425,7 @@ describe('Traceability: apply_plan + style_source_id', () => {
     async () => {
       const opened = await openSession(['Hello world']);
       const result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',

@@ -79,7 +79,7 @@ function countMarkers(doc: Document): TrackedChangeMarkerStats {
 
 export async function hasTrackedChanges_tool(
   manager: SessionManager,
-  params: { session_id?: string; file_path?: string },
+  params: { file_path?: string },
 ): Promise<ToolResponse> {
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'has_tracked_changes' });
@@ -90,7 +90,7 @@ export async function hasTrackedChanges_tool(
     const marker_stats = countMarkers(docClone);
 
     return ok(mergeSessionResolutionMetadata({
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       edit_revision: session.editRevision,
       has_tracked_changes: marker_stats.total_markers > 0,
       scope: 'document_body',

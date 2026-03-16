@@ -5,7 +5,7 @@ import { parseXml, serializeXml } from '@usejunior/docx-core';
 
 import { acceptChanges as acceptChangesTool } from './accept_changes.js';
 import { openDocument } from './open_document.js';
-import { type Session } from '../session/manager.js';
+import { type DocxSession } from '../session/manager.js';
 import { MCP_TOOLS } from '../server.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
@@ -86,15 +86,15 @@ describe('Traceability: Accept Tracked Changes', () => {
       assertSuccess(result, 'accept_changes');
       await attachPrettyJson('result', result);
 
-      await then('No w:ins elements remain', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('No w:ins elements remain', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'ins')).toBe(false);
       });
 
-      await then('Promoted run with text present in parent w:p', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('Promoted run with text present in parent w:p', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(getBodyText(dom)).toContain('new text');
@@ -124,22 +124,22 @@ describe('Traceability: Accept Tracked Changes', () => {
       assertSuccess(result, 'accept_changes');
       await attachPrettyJson('result', result);
 
-      await then('No w:del elements remain', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('No w:del elements remain', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'del')).toBe(false);
       });
 
-      await then('No w:delText elements remain', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('No w:delText elements remain', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'delText')).toBe(false);
       });
 
-      await then('"old text" not present in document body', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('"old text" not present in document body', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         expect(xml).not.toContain('old text');
       });
@@ -172,8 +172,8 @@ describe('Traceability: Accept Tracked Changes', () => {
       assertSuccess(result, 'accept_changes');
       await attachPrettyJson('result', result);
 
-      await then('No *PrChange elements remain', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('No *PrChange elements remain', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         for (const local of ['rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'trPrChange', 'tcPrChange']) {
@@ -181,8 +181,8 @@ describe('Traceability: Accept Tracked Changes', () => {
         }
       });
 
-      await then('Current formatting preserved', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('Current formatting preserved', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'b')).toBe(true);
@@ -216,23 +216,23 @@ describe('Traceability: Accept Tracked Changes', () => {
       assertSuccess(result, 'accept_changes');
       await attachPrettyJson('result', result);
 
-      await then('w:moveFrom removed', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('w:moveFrom removed', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'moveFrom')).toBe(false);
       });
 
-      await then('w:moveTo unwrapped, content at destination', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('w:moveTo unwrapped, content at destination', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'moveTo')).toBe(false);
         expect(getBodyText(dom)).toContain('moved text');
       });
 
-      await then('No move range markers remain', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('No move range markers remain', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'moveFromRangeStart')).toBe(false);
@@ -266,7 +266,7 @@ describe('Traceability: Accept Tracked Changes', () => {
       assertSuccess(result, 'accept_changes');
       await attachPrettyJson('result', result);
 
-      const session = mgr.getSession(result.session_id as string);
+      const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
       const xml = serializeDoc(session);
       const dom = parseDocXml(xml);
 
@@ -303,7 +303,7 @@ describe('Traceability: Accept Tracked Changes', () => {
       );
       assertSuccess(result, 'accept_changes');
 
-      const session = mgr.getSession(result.session_id as string);
+      const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
       const xml = serializeDoc(session);
       const dom = parseDocXml(xml);
 
@@ -350,8 +350,8 @@ describe('Traceability: Accept Tracked Changes', () => {
         expect(result.propertyChangesResolved).toBeGreaterThanOrEqual(1);
       });
 
-      await then('Re-reading session shows no revision markup', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('Re-reading session shows no revision markup', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         expect(hasElement(dom, 'ins')).toBe(false);
@@ -383,16 +383,16 @@ describe('Traceability: Accept Tracked Changes', () => {
       );
       assertSuccess(result, 'accept_changes');
 
-      await then('Output XML parses without errors', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('Output XML parses without errors', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         // If parseDocXml throws, the step fails
         const dom = parseDocXml(xml);
         expect(dom).toBeTruthy();
       });
 
-      await then('No revision elements exist', () => {
-        const session = mgr.getSession(result.session_id as string);
+      await then('No revision elements exist', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const xml = serializeDoc(session);
         const dom = parseDocXml(xml);
         const forbidden = [
@@ -422,13 +422,12 @@ describe('Traceability: Accept Tracked Changes', () => {
         openDocument(mgr, { file_path: filePath }),
       );
       assertSuccess(opened, 'open');
-      const sessionId = opened.session_id as string;
 
-      const session = mgr.getSession(sessionId);
+      const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
       const snapshotBefore = Buffer.from(session.originalBuffer);
 
       await when('Call accept_changes', () =>
-        acceptChangesTool(mgr, { session_id: sessionId }),
+        acceptChangesTool(mgr, { file_path: filePath }),
       );
 
       await then('originalBuffer is byte-identical to snapshot', () => {
@@ -473,8 +472,8 @@ describe('Traceability: Accept Tracked Changes', () => {
     );
     assertSuccess(result, 'accept_changes');
 
-    await then('Deleted paragraph is removed from body', () => {
-      const session = mgr.getSession(result.session_id as string);
+    await then('Deleted paragraph is removed from body', async () => {
+      const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
       const xml = serializeDoc(session);
       const dom = parseDocXml(xml);
 
@@ -491,14 +490,13 @@ describe('Traceability: Accept Tracked Changes', () => {
     const tool = MCP_TOOLS.find((t) => t.name === 'accept_changes');
     expect(tool).toBeTruthy();
     expect(tool!.annotations.destructiveHint).toBe(true);
-    expect(tool!.inputSchema.properties).toHaveProperty('session_id');
     expect(tool!.inputSchema.properties).toHaveProperty('file_path');
   });
 });
 
 // ── Utility ─────────────────────────────────────────────────────────
 
-function serializeDoc(session: Session): string {
+function serializeDoc(session: DocxSession): string {
   // DocxDocument stores documentXml as a private field; access it for test assertions.
   const documentXml = (session.doc as unknown as { documentXml: Document }).documentXml;
   return serializeXml(documentXml);

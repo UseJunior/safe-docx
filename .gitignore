@@ -42,6 +42,10 @@ site/downloads/
 site/schemas/
 packages/contracts-workspace/schemas/
 
+# Google service account credentials
+*-credentials.json
+.sa-key.json
+
 # Python virtual env
 .venv/
 

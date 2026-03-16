@@ -37,7 +37,6 @@ type CellPaddingInput = {
 };
 
 type FormatLayoutParams = {
-  session_id?: string;
   file_path?: string;
   strict?: boolean;
   paragraph_spacing?: ParagraphSpacingInput;
@@ -421,7 +420,7 @@ export async function formatLayout(
     manager.touch(session);
 
     return ok(mergeSessionResolutionMetadata({
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       strict,
       mutation_summary: {
         affected_paragraphs: affectedParagraphs,

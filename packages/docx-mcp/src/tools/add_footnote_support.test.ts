@@ -30,20 +30,20 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     ]);
 
     const addOne = await addFootnote(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       target_paragraph_id: opened.paraIds[0]!,
       text: 'First footnote',
     });
     assertSuccess(addOne, 'add_footnote #1');
 
     const addTwo = await addFootnote(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       target_paragraph_id: opened.paraIds[1]!,
       text: 'Second footnote',
     });
     assertSuccess(addTwo, 'add_footnote #2');
 
-    const listed = await getFootnotes(opened.mgr, { session_id: opened.sessionId });
+    const listed = await getFootnotes(opened.mgr, { file_path: opened.inputPath });
     assertSuccess(listed, 'get_footnotes');
 
     const notes = listed.footnotes as Array<Record<string, unknown>>;
@@ -67,7 +67,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     async () => {
       const opened = await openSession(['No footnotes in this paragraph.']);
 
-      const listed = await getFootnotes(opened.mgr, { session_id: opened.sessionId });
+      const listed = await getFootnotes(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(listed, 'get_footnotes');
       expect(listed.footnotes).toEqual([]);
     },
@@ -77,14 +77,14 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     const opened = await openSession(['Contract text paragraph.']);
 
     const result = await addFootnote(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       target_paragraph_id: opened.firstParaId,
       text: 'Tool-level note',
     });
 
     assertSuccess(result, 'add_footnote');
     expect(result.note_id).toBeTypeOf('number');
-    expect(result.session_id).toBe(opened.sessionId);
+    expect(result.file_path).toBe(opened.filePath);
   });
 
   humanReadableTest.openspec('error when anchor paragraph not found')(
@@ -93,7 +93,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
       const opened = await openSession(['Anchor validation.']);
 
       const result = await addFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: '_bk_missing',
         text: 'Should fail',
       });
@@ -108,7 +108,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
       const opened = await openSession(['Anchor text present here.']);
 
       const result = await addFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         after_text: 'Not in paragraph',
         text: 'Should fail',
@@ -123,20 +123,20 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     async () => {
       const opened = await openSession(['Update flow paragraph.']);
       const created = await addFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         text: 'Old note body',
       });
       assertSuccess(created, 'add_footnote');
 
       const updated = await updateFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         note_id: created.note_id as number,
         new_text: 'Updated note body',
       });
       assertSuccess(updated, 'update_footnote');
 
-      const listed = await getFootnotes(opened.mgr, { session_id: opened.sessionId });
+      const listed = await getFootnotes(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(listed, 'get_footnotes');
       const first = (listed.footnotes as Array<Record<string, unknown>>)[0]!;
       expect(String(first.text)).toContain('Updated note body');
@@ -147,7 +147,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     const opened = await openSession(['Missing-note validation paragraph.']);
 
     const result = await updateFootnote(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       note_id: 999999,
       new_text: 'No-op',
     });
@@ -160,19 +160,19 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     async () => {
       const opened = await openSession(['Delete flow paragraph.']);
       const created = await addFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         text: 'Delete me',
       });
       assertSuccess(created, 'add_footnote');
 
       const deleted = await deleteFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         note_id: created.note_id as number,
       });
       assertSuccess(deleted, 'delete_footnote');
 
-      const listed = await getFootnotes(opened.mgr, { session_id: opened.sessionId });
+      const listed = await getFootnotes(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(listed, 'get_footnotes');
       expect(listed.footnotes).toEqual([]);
     },
@@ -184,7 +184,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
       const opened = await openSession(['Delete-missing validation paragraph.']);
 
       const result = await deleteFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         note_id: 123456,
       });
 
@@ -197,14 +197,14 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     async () => {
       const opened = await openSession(['Reserved delete validation paragraph.']);
       const seeded = await addFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         text: 'Seed real note to bootstrap footnotes.xml',
       });
       assertSuccess(seeded, 'add_footnote');
 
       const result = await deleteFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         note_id: -1,
       });
 
@@ -217,14 +217,14 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     async () => {
       const opened = await openSession(['Marker display paragraph.']);
       const created = await addFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         text: 'Display marker note',
       });
       assertSuccess(created, 'add_footnote');
 
       const read = await readFile(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         format: 'simple',
         show_formatting: false,
       });
@@ -239,14 +239,14 @@ describe('OpenSpec traceability: add-footnote-support', () => {
     async () => {
       const opened = await openSession(['Replace target sentence.']);
       const created = await addFootnote(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         text: 'Matching note',
       });
       assertSuccess(created, 'add_footnote');
 
       const withMarker = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         old_string: 'Replace target sentence.[^1]',
         new_string: 'Should not apply',
@@ -255,7 +255,7 @@ describe('OpenSpec traceability: add-footnote-support', () => {
       assertFailure(withMarker, 'TEXT_NOT_FOUND', 'replace_text(marker token)');
 
       const withoutMarker = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         old_string: 'Replace target sentence.',
         new_string: 'Replaced sentence.',

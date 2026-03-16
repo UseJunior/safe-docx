@@ -91,7 +91,7 @@ describe('open_document/download: round-trip fidelity', () => {
     await when('a clean save is performed without any edits', async () => {
       outputPath = `${opened.tmpDir}/roundtrip-clean.docx`;
       const saved = await save(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         save_to_local_path: outputPath,
         save_format: 'clean',
         clean_bookmarks: true,

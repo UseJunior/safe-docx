@@ -83,7 +83,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
   humanReadableTest.openspec('TOON output shows inline formatting tags at run boundaries by default')(
     'Scenario: TOON output shows inline formatting tags at run boundaries by default',
     async () => {
-      const { mgr, sessionId } = await openSession([], {
+      const { mgr, filePath } = await openSession([], {
         xml: buildFormattingFixtureXml(),
         extraFiles: {
           '[Content_Types].xml': CONTENT_TYPES_XML,
@@ -92,7 +92,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
         },
       });
 
-      const read = await readFile(mgr, { session_id: sessionId });
+      const read = await readFile(mgr, { file_path: filePath });
       assertSuccess(read, 'read_file');
       const content = String(read.content);
 
@@ -107,7 +107,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
   humanReadableTest.openspec('show_formatting=false suppresses inline tags')(
     'Scenario: show_formatting=false suppresses inline tags',
     async () => {
-      const { mgr, sessionId } = await openSession([], {
+      const { mgr, filePath } = await openSession([], {
         xml: buildFormattingFixtureXml(),
         extraFiles: {
           '[Content_Types].xml': CONTENT_TYPES_XML,
@@ -116,7 +116,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
         },
       });
 
-      const read = await readFile(mgr, { session_id: sessionId, show_formatting: false });
+      const read = await readFile(mgr, { file_path: filePath, show_formatting: false });
       assertSuccess(read, 'read_file show_formatting=false');
       const content = String(read.content);
 
@@ -132,7 +132,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
   humanReadableTest.openspec('writable tag vocabulary matches replace_text new_string vocabulary')(
     'Scenario: writable tag vocabulary matches replace_text new_string vocabulary',
     async () => {
-      const { mgr, sessionId, firstParaId, tmpDir } = await openSession([], {
+      const { mgr, filePath, firstParaId, tmpDir } = await openSession([], {
         xml: buildEditFixtureXml(),
         extraFiles: {
           '[Content_Types].xml': CONTENT_TYPES_XML,
@@ -141,7 +141,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
       });
 
       const edited = await replaceText(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         target_paragraph_id: firstParaId,
         old_string: '[X]',
         new_string: '<b>Bold</b> <i>Italic</i> <u>Underline</u> <highlight>Marked</highlight>',
@@ -151,7 +151,7 @@ describe('Traceability: Run-Level Formatting Visibility', () => {
 
       const outputPath = path.join(tmpDir, 'formatted-output.docx');
       const saved = await save(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         save_to_local_path: outputPath,
         clean_bookmarks: true,
         save_format: 'clean',

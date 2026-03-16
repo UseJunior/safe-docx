@@ -109,7 +109,7 @@ describe('compare_documents tool', () => {
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
         `<w:body><w:p><w:r><w:t>Original text here</w:t></w:r></w:p></w:body></w:document>`;
-      const { mgr, sessionId, firstParaId } = await openSession([], {
+      const { mgr, firstParaId, inputPath } = await openSession([], {
         xml: docXml,
         extraFiles: {
           '[Content_Types].xml': CONTENT_TYPES_XML,
@@ -119,7 +119,7 @@ describe('compare_documents tool', () => {
 
       await when('Make an edit via replace_text', async () => {
         const editResult = await replaceText(mgr, {
-          session_id: sessionId,
+          file_path: inputPath,
           target_paragraph_id: firstParaId,
           old_string: 'Original text here',
           new_string: 'Modified text here',
@@ -131,7 +131,7 @@ describe('compare_documents tool', () => {
       const outputPath = path.join(dir, 'session-redline.docx');
       const result = await when('Call compare_documents (session)', () =>
         compareDocuments_tool(mgr, {
-          session_id: sessionId,
+          file_path: inputPath,
           save_to_local_path: outputPath,
         }),
       );
@@ -147,7 +147,7 @@ describe('compare_documents tool', () => {
       await then('Response indicates session mode', () => {
         expect(result.mode).toBe('session');
         expect(result.stats).toBeDefined();
-        expect(result.resolved_session_id).toBe(sessionId);
+        expect(result.resolved_file_path).toBeTruthy();
       });
     },
   );
@@ -225,7 +225,7 @@ describe('compare_documents tool', () => {
       expect(tool!.inputSchema.required).toContain('save_to_local_path');
       expect(tool!.inputSchema.properties).toHaveProperty('original_file_path');
       expect(tool!.inputSchema.properties).toHaveProperty('revised_file_path');
-      expect(tool!.inputSchema.properties).toHaveProperty('session_id');
+      expect(tool!.inputSchema.properties).toHaveProperty('file_path');
       expect(tool!.inputSchema.properties).toHaveProperty('engine');
     },
   );

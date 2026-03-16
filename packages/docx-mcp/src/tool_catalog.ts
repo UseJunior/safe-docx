@@ -12,9 +12,12 @@ type ToolCatalogEntry = {
   annotations: ToolAnnotations;
 };
 
-const SESSION_OR_FILE_FIELDS = {
-  session_id: z.string().optional(),
-  file_path: z.string().optional(),
+const FILE_FIELD = {
+  file_path: z.string().describe('Path to the DOCX file.'),
+};
+
+const FILE_FIELD_OPTIONAL = {
+  file_path: z.string().optional().describe('Path to the DOCX file.'),
 };
 
 const PLAN_OBJECT_SCHEMA = z.object({}).catchall(z.unknown());
@@ -22,9 +25,9 @@ const PLAN_OBJECT_SCHEMA = z.object({}).catchall(z.unknown());
 export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'read_file',
-    description: 'Read document content. Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate. Accepts session_id or file_path.',
+    description: 'Read document content. Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD_OPTIONAL,
       offset: z.number().optional().describe('1-based paragraph offset for pagination. Negative values count from end.'),
       limit: z.number().optional().describe('Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination.'),
       node_ids: z.array(z.string()).optional(),
@@ -40,9 +43,10 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'grep',
-    description: 'Search paragraphs with regex. Accepts session_id or file_path.',
+    description: 'Search paragraphs with regex. Use file_path for session-based search, or file_paths for stateless multi-file search.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD_OPTIONAL,
+      file_paths: z.array(z.string()).optional().describe('Multiple file paths for stateless multi-file search. No session created.'),
       patterns: z.array(z.string()).optional(),
       pattern: z.string().optional(),
       case_sensitive: z.boolean().optional(),
@@ -50,14 +54,16 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       max_results: z.number().optional(),
       context_chars: z.number().optional(),
       dedupe_by_paragraph: z.boolean().optional(),
+      search_xml: z.boolean().optional().describe('When true, search raw XML (word/document.xml) instead of paragraph text.'),
+      include_context: z.boolean().optional().describe('When false, skip document view context (list labels, headers) for faster results. Default: true.'),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: 'init_plan',
-    description: 'Initialize revision-bound context metadata for coordinated multi-agent planning. Accepts session_id or file_path.',
+    description: 'Initialize revision-bound context metadata for coordinated multi-agent planning.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       plan_name: z.string().optional(),
       orchestrator_id: z.string().optional(),
     }),
@@ -76,9 +82,9 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'apply_plan',
     description:
-      'Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a session document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.',
+      'Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       steps: z
         .array(z.object({}).catchall(z.unknown()))
         .optional()
@@ -92,9 +98,9 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'replace_text',
-    description: 'Replace text in a paragraph by _bk_* id, preserving formatting. Accepts session_id or file_path.',
+    description: 'Replace text in a paragraph by _bk_* id, preserving formatting.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD_OPTIONAL,
       target_paragraph_id: z.string(),
       old_string: z.string(),
       new_string: z.string(),
@@ -108,9 +114,9 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'insert_paragraph',
-    description: 'Insert a paragraph before/after an anchor paragraph by _bk_* id. Accepts session_id or file_path.',
+    description: 'Insert a paragraph before/after an anchor paragraph by _bk_* id.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD_OPTIONAL,
       positional_anchor_node_id: z.string(),
       new_string: z.string(),
       instruction: z.string(),
@@ -127,9 +133,9 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'save',
     description:
-      'Save clean and/or tracked changes output back to the local filesystem. Defaults to both clean and tracked outputs when no format override is provided. Accepts session_id or file_path.',
+      'Save clean and/or tracked changes output back to the local filesystem. Defaults to both clean and tracked outputs when no format override is provided.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD_OPTIONAL,
       save_to_local_path: z.string(),
       clean_bookmarks: z.boolean().optional(),
       save_format: z.enum(['clean', 'tracked', 'both']).optional(),
@@ -148,9 +154,9 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'format_layout',
-    description: 'Apply deterministic OOXML layout controls (paragraph spacing, table row height, cell padding). Accepts session_id or file_path.',
+    description: 'Apply deterministic OOXML layout controls (paragraph spacing, table row height, cell padding).',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD_OPTIONAL,
       strict: z.boolean().optional(),
       paragraph_spacing: z
         .object({
@@ -187,7 +193,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'accept_changes',
     description: 'Accept all tracked changes in the document body, producing a clean document with no revision markup. Returns acceptance stats.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
@@ -195,24 +201,23 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'has_tracked_changes',
     description: 'Check whether the document body contains tracked-change markers (insertions, deletions, moves, and property-change records). Read-only.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
-    name: 'get_session_status',
-    description: 'Get session metadata. Accepts session_id or file_path.',
+    name: 'get_file_status',
+    description: 'Get file/session metadata including edit count, normalization stats, and cache info.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD_OPTIONAL,
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
-    name: 'clear_session',
-    description: 'Clear one session, all sessions for a file path, or all sessions with explicit confirmation.',
+    name: 'close_file',
+    description: 'Close an open file session, or close all sessions with explicit confirmation.',
     input: z.object({
-      session_id: z.string().optional(),
-      file_path: z.string().optional(),
+      ...FILE_FIELD_OPTIONAL,
       clear_all: z.boolean().optional(),
       confirm: z.boolean().optional(),
     }),
@@ -223,7 +228,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     description:
       'Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       target_paragraph_id: z.string().optional().describe('Paragraph ID to anchor the comment to (for root comments).'),
       anchor_text: z.string().optional().describe('Text within the paragraph to anchor the comment to. If omitted, anchors to entire paragraph.'),
       parent_comment_id: z.number().optional().describe('Parent comment ID for threaded replies.'),
@@ -238,7 +243,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     description:
       'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies. Read-only.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
@@ -247,7 +252,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     description:
       'Delete a comment and all its threaded replies from the document. Cascade-deletes all descendants.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       comment_id: z.number().describe('Comment ID to delete.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
@@ -255,12 +260,11 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'compare_documents',
     description:
-      'Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or session_id/file_path to compare session edits against the original.',
+      'Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original.',
     input: z.object({
       original_file_path: z.string().optional().describe('Path to the original DOCX file.'),
       revised_file_path: z.string().optional().describe('Path to the revised DOCX file.'),
-      session_id: z.string().optional(),
-      file_path: z.string().optional(),
+      ...FILE_FIELD_OPTIONAL,
       save_to_local_path: z.string().describe('Path to save the tracked-changes DOCX output.'),
       author: z.string().optional().describe("Author name for track changes. Default: 'Comparison'."),
       engine: z.enum(['auto', 'atomizer']).optional().describe("Comparison engine. Default: 'auto'."),
@@ -271,7 +275,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'get_footnotes',
     description: 'Get all footnotes from the document with IDs, display numbers, text, and anchored paragraph IDs. Read-only.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
@@ -280,7 +284,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     description:
       'Add a footnote anchored to a paragraph. Optionally position the reference after specific text using after_text. Note: [^N] markers in read_file output are display-only and not part of the editable text used by replace_text.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       target_paragraph_id: z.string().describe('Paragraph ID to anchor the footnote to.'),
       after_text: z.string().optional().describe('Text after which to insert the footnote reference. If omitted, appends at end of paragraph.'),
       text: z.string().describe('Footnote body text.'),
@@ -291,7 +295,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'update_footnote',
     description: 'Update the text content of an existing footnote.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       note_id: z.number().describe('Footnote ID to update.'),
       new_text: z.string().describe('New footnote body text.'),
     }),
@@ -301,7 +305,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'delete_footnote',
     description: 'Delete a footnote and its reference from the document.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       note_id: z.number().describe('Footnote ID to delete.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
@@ -309,9 +313,9 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'clear_formatting',
     description:
-      'Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs. Accepts session_id or file_path.',
+      'Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       paragraph_ids: z.array(z.string()).optional().describe('Paragraph IDs to clear formatting from. If omitted, clears from all paragraphs.'),
       clear_highlight: z.boolean().optional().describe('Remove highlight formatting.'),
       clear_bold: z.boolean().optional().describe('Remove bold formatting.'),
@@ -327,7 +331,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     description:
       'Extract tracked changes as structured JSON with before/after text per paragraph, revision details, and comments. Supports pagination via offset and limit. Read-only - does not modify the document.',
     input: z.object({
-      ...SESSION_OR_FILE_FIELDS,
+      ...FILE_FIELD,
       offset: z.number().optional().describe('0-based offset for pagination. Default: 0.'),
       limit: z.number().optional().describe('Max entries per page (1-500). Default: 50.'),
     }),

@@ -22,6 +22,7 @@ import {
   openSession,
 } from '../testing/session-test-utils.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
+import { type DocxSession } from '../session/manager.js';
 
 const TEST_FEATURE = 'add-extract-revisions-tool';
 const REPORT_FEATURE = 'extract-revisions-tool';
@@ -191,7 +192,7 @@ describe('extract_revisions tool', () => {
           },
         );
 
-        const { mgr, sessionId } = await given(
+        const { mgr, filePath } = await given(
           'the tracked-change paragraph is opened as an editable session',
           () => openSession([], { xml: docXml, trackOpenStep: false }),
         );
@@ -207,7 +208,7 @@ describe('extract_revisions tool', () => {
 
         const result = await when(
           'extract_revisions is run in the session',
-          async () => asExtractRevisionsSuccess(await extractRevisions_tool(mgr, { session_id: sessionId })),
+          async () => asExtractRevisionsSuccess(await extractRevisions_tool(mgr, { file_path: filePath })),
         );
         debugResult = result;
 
@@ -380,7 +381,7 @@ describe('extract_revisions tool', () => {
         paragraphs: ['Hello world', 'Second paragraph'],
       };
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a clean document with no tracked changes',
         () => openSession(['Hello world', 'Second paragraph']),
         { paragraph_count: readableInputSummary.paragraphs.length },
@@ -388,7 +389,7 @@ describe('extract_revisions tool', () => {
 
       let result: ExtractRevisionsSuccess;
       await when('extract_revisions is run on the clean document', async () => {
-        const raw = await extractRevisions_tool(mgr, { session_id: sessionId });
+        const raw = await extractRevisions_tool(mgr, { file_path: filePath });
         result = asExtractRevisionsSuccess(raw);
       });
       result = result!;
@@ -429,13 +430,13 @@ describe('extract_revisions tool', () => {
           `</w:r></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with a run property change tracked by Carol',
         () => openSession([], { xml: docXml }),
       );
 
       const result = await when('extract_revisions is called', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'extract_revisions');
       await attachPrettyJson('result', result);
@@ -465,19 +466,19 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>C</w:t></w:r><w:ins w:author="X"><w:r><w:t>3</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with 3 paragraphs each containing an insertion',
         () => openSession([], { xml: docXml }),
       );
 
       const page1 = await when('extract_revisions is called with offset=0, limit=2', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId, offset: 0, limit: 2 }),
+        extractRevisions_tool(mgr, { file_path: filePath, offset: 0, limit: 2 }),
       );
       assertSuccess(page1, 'page1');
       await attachPrettyJson('page1', page1);
 
       const page2 = await and('extract_revisions is called with offset=2, limit=2', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId, offset: 2, limit: 2 }),
+        extractRevisions_tool(mgr, { file_path: filePath, offset: 2, limit: 2 }),
       );
       assertSuccess(page2, 'page2');
       await attachPrettyJson('page2', page2);
@@ -507,24 +508,24 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>Text</w:t></w:r><w:ins w:author="X"><w:r><w:t> added</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with a tracked insertion is open in a session',
         () => openSession([], { xml: docXml }),
       );
 
       let revisionBefore: unknown;
-      await given('the edit_revision before extraction is recorded', () => {
-        const session = mgr.getSession(sessionId);
+      await given('the edit_revision before extraction is recorded', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath))!;
         revisionBefore = session.editRevision;
       });
 
       const result = await when('extract_revisions is called', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'extract_revisions');
 
-      await then('the edit_revision is unchanged after extraction', () => {
-        const session = mgr.getSession(sessionId);
+      await then('the edit_revision is unchanged after extraction', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath))!;
         expect(session.editRevision).toBe(revisionBefore);
         expect(result.edit_revision).toBe(revisionBefore);
       });
@@ -542,8 +543,8 @@ describe('extract_revisions tool', () => {
         extractRevisions_tool(mgr, {}),
       );
 
-      await then('the tool returns a MISSING_SESSION_CONTEXT error', () => {
-        assertFailure(result, 'MISSING_SESSION_CONTEXT', 'extract_revisions');
+      await then('the tool returns a MISSING_FILE_PATH error', () => {
+        assertFailure(result, 'MISSING_FILE_PATH', 'extract_revisions');
       });
       await attachPrettyJson('result', result);
     },
@@ -554,13 +555,13 @@ describe('extract_revisions tool', () => {
   humanReadableTest.openspec('invalid limit is rejected')(
     'Scenario: invalid limit is rejected',
     async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'an open session with one paragraph',
         () => openSession(['Hello']),
       );
 
       const result = await when('extract_revisions is called with limit=0', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId, limit: 0 }),
+        extractRevisions_tool(mgr, { file_path: filePath, limit: 0 }),
       );
       await then('the tool returns an INVALID_LIMIT error', () => {
         assertFailure(result, 'INVALID_LIMIT', 'extract_revisions');
@@ -568,7 +569,7 @@ describe('extract_revisions tool', () => {
       await attachPrettyJson('result (limit=0)', result);
 
       const result2 = await when('extract_revisions is called with limit=501', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId, limit: 501 }),
+        extractRevisions_tool(mgr, { file_path: filePath, limit: 501 }),
       );
       await and('the tool returns an INVALID_LIMIT error', () => {
         assertFailure(result2, 'INVALID_LIMIT', 'extract_revisions');
@@ -579,13 +580,13 @@ describe('extract_revisions tool', () => {
   humanReadableTest.openspec('invalid offset is rejected')(
     'Scenario: invalid offset is rejected',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'an open session with one paragraph',
         () => openSession(['Hello']),
       );
 
       const result = await when('extract_revisions is called with offset=-1', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId, offset: -1 }),
+        extractRevisions_tool(mgr, { file_path: filePath, offset: -1 }),
       );
       await then('the tool returns an INVALID_OFFSET error', () => {
         assertFailure(result, 'INVALID_OFFSET', 'extract_revisions');
@@ -606,24 +607,24 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>Text</w:t></w:r><w:ins w:author="X"><w:r><w:t> added</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with a tracked insertion is open in a session',
         () => openSession([], { xml: docXml }),
       );
 
       const result1 = await when('extract_revisions is called the first time', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result1, 'first extraction');
 
-      await then('the extraction cache is populated', () => {
-        const session = mgr.getSession(sessionId);
+      await then('the extraction cache is populated', async () => {
+        const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
         const cache = mgr.getExtractionCache(session);
         expect(cache).not.toBeNull();
       });
 
       const result2 = await when('extract_revisions is called again at the same revision', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result2, 'second extraction');
 
@@ -649,13 +650,13 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>Another </w:t></w:r><w:ins w:author="X"><w:r><w:t>edited</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with a structurally-empty inserted paragraph and a real content change',
         () => openSession([], { xml: docXml }),
       );
 
       const result = await when('extract_revisions is called', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'extract_revisions');
       await attachPrettyJson('result', result);
@@ -683,10 +684,9 @@ describe('extract_revisions tool', () => {
         openDocument(mgr, { file_path: fixturePath }),
       );
       assertSuccess(opened, 'open fixture');
-      const sessionId = opened.session_id as string;
 
       const result = await when('extract_revisions is called', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: fixturePath }),
       );
       assertSuccess(result, 'extract_revisions');
       await attachPrettyJson('result', result);
@@ -737,12 +737,12 @@ describe('extract_revisions tool', () => {
           `</w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with a fully-inserted paragraph is open in a session',
         () => openSession([], { xml: docXml }),
       );
       const result = await when('extract_revisions is called', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'extract_revisions');
 
@@ -772,12 +772,12 @@ describe('extract_revisions tool', () => {
           `</w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with a fully-deleted paragraph is open in a session',
         () => openSession([], { xml: docXml }),
       );
       const result = await when('extract_revisions is called', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'extract_revisions');
 
@@ -805,12 +805,12 @@ describe('extract_revisions tool', () => {
           `</w:tc></w:tr></w:tbl>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with a tracked insertion inside a table cell is open in a session',
         () => openSession([], { xml: docXml }),
       );
       const result = await when('extract_revisions is called', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'extract_revisions');
 
@@ -848,7 +848,7 @@ describe('extract_revisions tool', () => {
           `</w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with a tracked insertion and an associated comment from Reviewer is open in a session',
         () => openSession([], {
           xml: docXml,
@@ -857,7 +857,7 @@ describe('extract_revisions tool', () => {
       );
 
       const result = await when('extract_revisions is called', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: filePath }),
       );
       assertSuccess(result, 'extract_revisions');
       await attachPrettyJson('result', result);
@@ -885,12 +885,12 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>A</w:t></w:r><w:ins w:author="X"><w:r><w:t>1</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with one changed paragraph is open in a session',
         () => openSession([], { xml: docXml }),
       );
       const result = await when('extract_revisions is called with offset=100', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId, offset: 100 }),
+        extractRevisions_tool(mgr, { file_path: filePath, offset: 100 }),
       );
       assertSuccess(result, 'extract_revisions');
 
@@ -917,18 +917,18 @@ describe('extract_revisions tool', () => {
           `<w:p><w:r><w:t>D</w:t></w:r><w:ins w:author="X"><w:r><w:t>4</w:t></w:r></w:ins></w:p>` +
         `</w:body></w:document>`;
 
-      const { mgr, sessionId } = await given(
+      const { mgr, filePath } = await given(
         'a document with 4 changed paragraphs is open in a session',
         () => openSession([], { xml: docXml }),
       );
 
       const page1 = await when('extract_revisions is called with offset=0, limit=2', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId, offset: 0, limit: 2 }),
+        extractRevisions_tool(mgr, { file_path: filePath, offset: 0, limit: 2 }),
       );
       assertSuccess(page1, 'page1');
 
       const page2 = await and('extract_revisions is called with offset=2, limit=2', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId, offset: 2, limit: 2 }),
+        extractRevisions_tool(mgr, { file_path: filePath, offset: 2, limit: 2 }),
       );
       assertSuccess(page2, 'page2');
 
@@ -971,7 +971,7 @@ describe('extract_revisions tool', () => {
 
       let debugResult: Record<string, unknown> | null = null;
       try {
-        const { mgr, sessionId, firstParaId } = await given(
+        const { mgr, filePath, firstParaId } = await given(
           'a clean two-paragraph document is open in a session',
           () => openSession(inputParagraphs, { trackOpenStep: false }),
           { paragraph_count: inputParagraphs.length },
@@ -979,8 +979,8 @@ describe('extract_revisions tool', () => {
 
         const result1 = await when(
           'I run extract_revisions for the first time',
-          () => extractRevisions_tool(mgr, { session_id: sessionId }),
-          { session_id: sessionId },
+          () => extractRevisions_tool(mgr, { file_path: filePath }),
+          { file_path: filePath },
         );
         assertSuccess(result1, 'first extraction');
         const rev1 = result1.edit_revision;
@@ -988,7 +988,7 @@ describe('extract_revisions tool', () => {
         await then(
           'the extraction cache is populated after the first run',
           async () => {
-            const session = mgr.getSession(sessionId);
+            const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
             expect(mgr.getExtractionCache(session)).not.toBeNull();
           },
           { expected_cache: 'present' },
@@ -997,7 +997,7 @@ describe('extract_revisions tool', () => {
         const editResult = await when(
           'I edit the first paragraph using replace_text',
           () => replaceText(mgr, {
-            session_id: sessionId,
+            file_path: filePath,
             target_paragraph_id: firstParaId,
             old_string: replaceInstruction.old_string,
             new_string: replaceInstruction.new_string,
@@ -1014,7 +1014,7 @@ describe('extract_revisions tool', () => {
         await and(
           'the extraction cache is invalidated by that edit',
           async () => {
-            const session = mgr.getSession(sessionId);
+            const session = (await mgr.getSessionByFilePath(filePath)) as DocxSession;
             expect(mgr.getExtractionCache(session)).toBeNull();
           },
           { expected_cache: 'null' },
@@ -1022,8 +1022,8 @@ describe('extract_revisions tool', () => {
 
         const result2 = await when(
           'I run extract_revisions again after the edit',
-          () => extractRevisions_tool(mgr, { session_id: sessionId }),
-          { session_id: sessionId },
+          () => extractRevisions_tool(mgr, { file_path: filePath }),
+          { file_path: filePath },
         );
         assertSuccess(result2, 'second extraction');
 
@@ -1065,10 +1065,9 @@ describe('extract_revisions tool', () => {
         openDocument(mgr, { file_path: fixturePath }),
       );
       assertSuccess(opened, 'open');
-      const sessionId = opened.session_id as string;
 
       const result = await when('extract_revisions is called on the redline session', () =>
-        extractRevisions_tool(mgr, { session_id: sessionId }),
+        extractRevisions_tool(mgr, { file_path: fixturePath }),
       );
       assertSuccess(result, 'extract_revisions');
 
@@ -1089,7 +1088,6 @@ describe('extract_revisions tool', () => {
       expect(tool).toBeTruthy();
       expect(tool!.annotations.readOnlyHint).toBe(true);
       expect(tool!.annotations.destructiveHint).toBe(false);
-      expect(tool!.inputSchema.properties).toHaveProperty('session_id');
       expect(tool!.inputSchema.properties).toHaveProperty('file_path');
       expect(tool!.inputSchema.properties).toHaveProperty('offset');
       expect(tool!.inputSchema.properties).toHaveProperty('limit');

@@ -83,7 +83,7 @@ async function countUnchangedEntries(
 
 async function applyFirstUniqueReplacement(
   mgr: SessionManager,
-  sessionId: string,
+  inputPath: string,
 ): Promise<{ pattern: string; paraId: string; oldText: string; newText: string } | null> {
   const patterns = [
     'agreement',
@@ -97,7 +97,7 @@ async function applyFirstUniqueReplacement(
 
   for (const pattern of patterns) {
     const grepRes = await grep(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       patterns: [pattern],
       max_results: 10,
       dedupe_by_paragraph: true,
@@ -112,7 +112,7 @@ async function applyFirstUniqueReplacement(
       if (!oldText || oldText.length < 3) continue;
       const newText = `${oldText}_E2E`;
       const editRes = await replaceText(mgr, {
-        session_id: sessionId,
+        file_path: inputPath,
         target_paragraph_id: match.para_id,
         old_string: oldText,
         new_string: newText,
@@ -144,7 +144,7 @@ describe('Open Agreements E2E: Mutual NDA', () => {
 
   test('no-edit round-trip produces zero false tracked changes', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
-    let sid: string;
+    let filePath: string;
     let docPath: string;
     let cleanPath: string;
     let trackedPath: string;
@@ -156,14 +156,14 @@ describe('Open Agreements E2E: Mutual NDA', () => {
       const tmpDir = await makeTempDir();
       const openRes = await openDocument(mgr, { file_path: docPath });
       expect(openRes.success).toBe(true);
-      sid = openRes.session_id as string;
+      filePath = openRes.file_path as string;
       cleanPath = path.join(tmpDir, 'nda-nochange-clean.docx');
       trackedPath = path.join(tmpDir, 'nda-nochange-tracked.docx');
     });
 
     await when('both clean and tracked outputs are saved without any edits', async () => {
       dlRes = await save(mgr, {
-        session_id: sid,
+        file_path: filePath,
         save_to_local_path: cleanPath,
         save_format: 'both',
         tracked_save_to_local_path: trackedPath,
@@ -201,7 +201,7 @@ describe('Open Agreements E2E: Mutual NDA', () => {
 
   test('single word edit produces correct tracked changes and preserves tables', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
-    let sid: string;
+    let filePath: string;
     let docPath: string;
     let cleanPath: string;
     let trackedPath: string;
@@ -215,13 +215,13 @@ describe('Open Agreements E2E: Mutual NDA', () => {
       const tmpDir = await makeTempDir();
       const openRes = await openDocument(mgr, { file_path: docPath });
       expect(openRes.success).toBe(true);
-      sid = openRes.session_id as string;
+      filePath = openRes.file_path as string;
 
-      const readRes = await readFile(mgr, { session_id: sid, limit: 20 });
+      const readRes = await readFile(mgr, { file_path: filePath, limit: 20 });
       expect(readRes.success).toBe(true);
 
       const grepRes = await grep(mgr, {
-        session_id: sid,
+        file_path: filePath,
         patterns: ['partnership'],
         max_results: 3,
       });
@@ -231,7 +231,7 @@ describe('Open Agreements E2E: Mutual NDA', () => {
 
       const paraId = matches[0]!.para_id;
       const editRes = await replaceText(mgr, {
-        session_id: sid,
+        file_path: filePath,
         target_paragraph_id: paraId,
         old_string: 'partnership',
         new_string: 'collaboration',
@@ -245,7 +245,7 @@ describe('Open Agreements E2E: Mutual NDA', () => {
 
     await when('both clean and tracked outputs are saved', async () => {
       dlRes = await save(mgr, {
-        session_id: sid,
+        file_path: filePath,
         save_to_local_path: cleanPath,
         save_format: 'both',
         tracked_save_to_local_path: trackedPath,
@@ -296,7 +296,7 @@ describe('Open Agreements E2E: Letter of Intent', () => {
 
   test('no-edit round-trip produces zero false tracked changes', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
-    let sid: string;
+    let filePath: string;
     let cleanPath: string;
     let trackedPath: string;
     let dlRes: Awaited<ReturnType<typeof save>>;
@@ -307,14 +307,14 @@ describe('Open Agreements E2E: Letter of Intent', () => {
       const tmpDir = await makeTempDir();
       const openRes = await openDocument(mgr, { file_path: docPath });
       expect(openRes.success).toBe(true);
-      sid = openRes.session_id as string;
+      filePath = openRes.file_path as string;
       cleanPath = path.join(tmpDir, 'loi-nochange-clean.docx');
       trackedPath = path.join(tmpDir, 'loi-nochange-tracked.docx');
     });
 
     await when('both clean and tracked outputs are saved without any edits', async () => {
       dlRes = await save(mgr, {
-        session_id: sid,
+        file_path: filePath,
         save_to_local_path: cleanPath,
         save_format: 'both',
         tracked_save_to_local_path: trackedPath,
@@ -345,7 +345,7 @@ describe('Open Agreements E2E: Letter of Intent', () => {
 
   test('single word edit produces correct tracked changes', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
-    let sid: string;
+    let filePath: string;
     let docPath: string;
     let cleanPath: string;
     let trackedPath: string;
@@ -360,13 +360,13 @@ describe('Open Agreements E2E: Letter of Intent', () => {
 
       const openRes = await openDocument(mgr, { file_path: docPath });
       expect(openRes.success).toBe(true);
-      sid = openRes.session_id as string;
+      filePath = openRes.file_path as string;
 
-      const readRes = await readFile(mgr, { session_id: sid, limit: 30 });
+      const readRes = await readFile(mgr, { file_path: filePath, limit: 30 });
       expect(readRes.success).toBe(true);
 
       const grepRes = await grep(mgr, {
-        session_id: sid,
+        file_path: filePath,
         patterns: ['agreement'],
         max_results: 3,
       });
@@ -377,7 +377,7 @@ describe('Open Agreements E2E: Letter of Intent', () => {
 
       const paraId = matches[0]!.para_id;
       const editRes = await replaceText(mgr, {
-        session_id: sid,
+        file_path: filePath,
         target_paragraph_id: paraId,
         old_string: 'agreement',
         new_string: 'arrangement',
@@ -391,7 +391,7 @@ describe('Open Agreements E2E: Letter of Intent', () => {
 
     await when('both clean and tracked outputs are saved', async () => {
       dlRes = await save(mgr, {
-        session_id: sid,
+        file_path: filePath,
         save_to_local_path: cleanPath,
         save_format: 'both',
         tracked_save_to_local_path: trackedPath,
@@ -436,7 +436,7 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
   for (const fixture of fixtures) {
     test(`${fixture} stays inplace with table structure preserved`, async ({ given, when, then, and }: AllureBddContext) => {
       let mgr: ReturnType<typeof createMgr>;
-      let sid: string;
+      let filePath: string;
       let docPath: string;
       let cleanPath: string;
       let trackedPath: string;
@@ -453,9 +453,9 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
 
         const openRes = await openDocument(mgr, { file_path: docPath });
         expect(openRes.success).toBe(true);
-        sid = openRes.session_id as string;
+        filePath = openRes.file_path as string;
 
-        const replacement = await applyFirstUniqueReplacement(mgr, sid);
+        const replacement = await applyFirstUniqueReplacement(mgr, filePath);
         expect(replacement).not.toBeNull();
         newText = replacement!.newText;
 
@@ -465,7 +465,7 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
 
       await when('both clean and tracked outputs are saved', async () => {
         dlRes = await save(mgr, {
-          session_id: sid,
+          file_path: filePath,
           save_to_local_path: cleanPath,
           save_format: 'both',
           tracked_save_to_local_path: trackedPath,

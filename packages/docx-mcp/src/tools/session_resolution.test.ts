@@ -65,7 +65,7 @@ describe('session resolution helpers', () => {
     });
   });
 
-  test('handles open/reuse/explicit/conflict session resolution modes', async ({ given, when, then, and }: AllureBddContext) => {
+  test('handles open/reuse session resolution modes', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
     let docPath: string;
     let opened: Awaited<ReturnType<typeof resolveSessionForTool>>;
@@ -78,7 +78,7 @@ describe('session resolution helpers', () => {
     await when('resolveSessionForTool is called with no context', async () => {
       const missingContext = await resolveSessionForTool(mgr, {}, { toolName: 'read_file' });
       expect(missingContext.ok).toBe(false);
-      if (!missingContext.ok) expect(getErrorCode(missingContext)).toBe('MISSING_SESSION_CONTEXT');
+      if (!missingContext.ok) expect(getErrorCode(missingContext)).toBe('MISSING_FILE_PATH');
     });
     await when('resolveSessionForTool is called with a file_path for the first time', async () => {
       opened = await resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
@@ -86,73 +86,15 @@ describe('session resolution helpers', () => {
     await then('it opens a new session', () => {
       expect(opened.ok).toBe(true);
       if (!opened.ok) return;
-      expect(opened.metadata.session_resolution).toBe('opened_new_session');
+      expect(opened.metadata.session_resolution).toBe('opened');
     });
     await when('resolveSessionForTool is called again with the same file_path', async () => {
       reused = await resolveSessionForTool(mgr, { file_path: docPath }, { toolName: 'read_file' });
     });
-    await and('it reuses the existing session with a warning', () => {
+    await and('it reuses the existing session', () => {
       expect(reused.ok).toBe(true);
       if (!reused.ok) return;
-      expect(reused.metadata.session_resolution).toBe('reused_existing_session');
-      expect(reused.metadata.reused_existing_session).toBe(true);
-      expect(typeof reused.metadata.warning).toBe('string');
-    });
-    await when('resolveSessionForTool is called with an explicit session_id', async () => {
-      if (!opened.ok) return;
-      const explicit = await resolveSessionForTool(
-        mgr,
-        { session_id: opened.session.sessionId },
-        { toolName: 'read_file' }
-      );
-      expect(explicit.ok).toBe(true);
-      if (explicit.ok) expect(explicit.metadata.session_resolution).toBe('explicit_session');
-    });
-    await and('it fails with SESSION_FILE_CONFLICT when session_id and a different file_path are both provided', async () => {
-      if (!opened.ok) return;
-      const otherPath = await createDoc(['Beta'], 'other.docx');
-      const conflict = await resolveSessionForTool(
-        mgr,
-        { session_id: opened.session.sessionId, file_path: otherPath },
-        { toolName: 'read_file' }
-      );
-      expect(conflict.ok).toBe(false);
-      if (!conflict.ok) expect(getErrorCode(conflict)).toBe('SESSION_FILE_CONFLICT');
-    });
-  });
-
-  test('maps explicit invalid session IDs and expired/not-found sessions', async ({ given, when, then, and }: AllureBddContext) => {
-    let mgr: ReturnType<typeof createTestSessionManager>;
-    let docPath: string;
-    let openedDoc: Awaited<ReturnType<typeof openDocument>>;
-
-    await given('a session manager with a very short TTL and an opened document', async () => {
-      mgr = createTestSessionManager({ ttlMs: 5 });
-      docPath = await createDoc(['Expirable']);
-      openedDoc = await openDocument(mgr, { file_path: docPath });
-      expect(openedDoc.success).toBe(true);
-      if (!openedDoc.success) return;
-    });
-    await when('resolveSessionForTool is called with a malformed session ID', async () => {
-      const invalid = await resolveSessionForTool(
-        mgr,
-        { session_id: 'bad-id' },
-        { toolName: 'grep' }
-      );
-      expect(invalid.ok).toBe(false);
-      if (!invalid.ok) expect(getErrorCode(invalid)).toBe('INVALID_SESSION_ID');
-    });
-    await then('after the session expires, it fails with SESSION_EXPIRED or SESSION_NOT_FOUND', async () => {
-      if (!openedDoc.success) return;
-      // Force expiry path.
-      await new Promise((r) => setTimeout(r, 15));
-      const expired = await resolveSessionForTool(
-        mgr,
-        { session_id: String(openedDoc.session_id) },
-        { toolName: 'grep' }
-      );
-      expect(expired.ok).toBe(false);
-      if (!expired.ok) expect(['SESSION_EXPIRED', 'SESSION_NOT_FOUND']).toContain(getErrorCode(expired));
+      expect(reused.metadata.session_resolution).toBe('reused');
     });
   });
 });

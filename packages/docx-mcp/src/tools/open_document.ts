@@ -77,7 +77,7 @@ export async function openDocument(
     });
 
     return ok({
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       expires_at: session.expiresAt.toISOString(),
       document: {
         filename,
@@ -97,7 +97,6 @@ export async function openDocument(
         default_variants: ['clean', 'redline'],
         default_save_format: 'both',
         supports_variant_override: true,
-        resave_by_session_id: true,
       },
       tools: getAvailableToolsSchema(),
     });

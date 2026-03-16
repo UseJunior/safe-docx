@@ -6,14 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { DocxDocument } from '@usejunior/docx-core';
-import { SessionManager } from './session/manager.js';
 import { openDocument } from './tools/open_document.js';
 import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
 import { save } from './tools/save.js';
-import { getSessionStatus } from './tools/get_session_status.js';
+import { getFileStatus } from './tools/get_file_status.js';
 import { MCP_TOOLS, MCP_TRANSPORT } from './server.js';
 import {
   extractParaIdsFromToon,
@@ -74,7 +73,7 @@ describe('TypeScript MCP server behavior', () => {
       'format_layout',
       'save',
       'has_tracked_changes',
-      'get_session_status',
+      'get_file_status',
     ] as const satisfies ReadonlyArray<ToolName>;
     for (const expected of expectedToolNames) {
       expect(toolNames.has(expected)).toBe(true);
@@ -90,7 +89,7 @@ describe('TypeScript MCP server behavior', () => {
   });
 
   humanReadableTest.openspec('Read-only tools annotated correctly')('Scenario: Read-only tools annotated correctly', async () => {
-    const readOnlyTools = new Set(['read_file', 'grep', 'init_plan', 'merge_plans', 'has_tracked_changes', 'get_session_status']);
+    const readOnlyTools = new Set(['read_file', 'grep', 'init_plan', 'merge_plans', 'has_tracked_changes', 'get_file_status']);
     for (const tool of MCP_TOOLS) {
       if (!readOnlyTools.has(tool.name)) continue;
       expect(tool.annotations.readOnlyHint).toBe(true);
@@ -109,24 +108,23 @@ describe('TypeScript MCP server behavior', () => {
 
   humanReadableTest.openspec('Session creation')('Scenario: Session creation', async () => {
     const mgr = createTestSessionManager();
-    const { sessionId } = await openSession(['Hello world'], { mgr });
-    expect(sessionId).toMatch(/^ses_[A-Za-z0-9]{12}$/);
+    const { inputPath } = await openSession(['Hello world'], { mgr });
 
-    const status = await getSessionStatus(mgr, { session_id: sessionId });
+    const status = await getFileStatus(mgr, { file_path: inputPath });
     assertSuccess(status, 'status');
     const statusMeta = status as typeof status & ToolDocMetadata;
     expect(statusMeta.document?.filename).toContain('.docx');
     expect(statusMeta.save_defaults?.default_save_format).toBe('both');
   });
 
-  humanReadableTest.openspec('Session expiration')('Scenario: Session expiration', async () => {
+  humanReadableTest.openspec('Session expiration auto-reopens')('Scenario: Session expiration auto-reopens', async () => {
     const mgr = createTestSessionManager({ ttlMs: 5 });
-    const { sessionId } = await openSession(['Hello world'], { mgr });
+    const { inputPath } = await openSession(['Hello world'], { mgr });
     await sleep(15);
-    const read = await readFile(mgr, { session_id: sessionId });
-    expect(read.success).toBe(false);
-    if (read.success) throw new Error('expected expiration error');
-    expect(read.error.code).toBe('SESSION_EXPIRED');
+    // With file-path-only API, expired sessions auto-reopen from the file
+    const read = await readFile(mgr, { file_path: inputPath });
+    expect(read.success).toBe(true);
+    expect(read.session_resolution).toBe('opened');
   });
 
   humanReadableTest.openspec('Concurrent sessions')('Scenario: Concurrent sessions', async () => {
@@ -135,7 +133,7 @@ describe('TypeScript MCP server behavior', () => {
     const b = await openSession(['Beta value'], { mgr });
 
     const editA = await replaceText(mgr, {
-      session_id: a.sessionId,
+      file_path: a.inputPath,
       target_paragraph_id: a.firstParaId,
       old_string: 'Alpha',
       new_string: 'AlphaX',
@@ -143,8 +141,8 @@ describe('TypeScript MCP server behavior', () => {
     });
     expect(editA.success).toBe(true);
 
-    const readA = await readFile(mgr, { session_id: a.sessionId, node_ids: [a.firstParaId] });
-    const readB = await readFile(mgr, { session_id: b.sessionId, node_ids: [b.firstParaId] });
+    const readA = await readFile(mgr, { file_path: a.inputPath, node_ids: [a.firstParaId] });
+    const readB = await readFile(mgr, { file_path: b.inputPath, node_ids: [b.firstParaId] });
     assertSuccess(readA, 'readA');
     assertSuccess(readB, 'readB');
     expect(String(readA.content)).toContain('AlphaX value');
@@ -207,12 +205,12 @@ describe('TypeScript MCP server behavior', () => {
     expect(opened.error.code).toBe('INVALID_FILE_TYPE');
   });
 
-  humanReadableTest.openspec('Session not found error')('Scenario: Session not found error', async () => {
+  humanReadableTest.openspec('File not found error')('Scenario: File not found error', async () => {
     const mgr = createTestSessionManager();
-    const res = await readFile(mgr, { session_id: 'ses_aaaaaaaaaaaa' });
+    const res = await readFile(mgr, { file_path: '/nonexistent/path/to/doc.docx' });
     expect(res.success).toBe(false);
-    if (res.success) throw new Error('expected SESSION_NOT_FOUND');
-    expect(res.error.code).toBe('SESSION_NOT_FOUND');
+    if (res.success) throw new Error('expected FILE_NOT_FOUND');
+    expect(res.error.code).toBe('FILE_NOT_FOUND');
   });
 
   humanReadableTest.openspec('open_document tool')('Scenario: open_document tool', async () => {
@@ -223,7 +221,7 @@ describe('TypeScript MCP server behavior', () => {
 
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    expect(String(opened.session_id)).toMatch(/^ses_[A-Za-z0-9]{12}$/);
+    expect(String(opened.file_path)).toBeTruthy();
     const openMeta = opened as typeof opened & ToolDocMetadata;
     expect(openMeta.document?.filename).toBe('input.docx');
     expect(typeof openMeta.document?.paragraphs).toBe('number');
@@ -231,8 +229,8 @@ describe('TypeScript MCP server behavior', () => {
 
   humanReadableTest.openspec('read_file tool')('Scenario: read_file tool', async () => {
     const mgr = createTestSessionManager();
-    const { sessionId } = await openSession(['Read tool paragraph'], { mgr });
-    const read = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+    const { inputPath } = await openSession(['Read tool paragraph'], { mgr });
+    const read = await readFile(mgr, { file_path: inputPath, format: 'simple' });
     assertSuccess(read, 'read');
     expect(read.total_paragraphs).toBeGreaterThan(0);
     expect(read.paragraphs_returned).toBeGreaterThan(0);
@@ -250,7 +248,7 @@ describe('TypeScript MCP server behavior', () => {
 
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    const res = await grep(mgr, { session_id: String(opened.session_id), patterns: ['Alpha'] });
+    const res = await grep(mgr, { file_path: inputPath, patterns: ['Alpha'] });
     assertSuccess(res, 'grep');
     expect(res.total_matches).toBe(1);
     expect(Array.isArray(res.matches)).toBe(true);
@@ -263,9 +261,9 @@ describe('TypeScript MCP server behavior', () => {
 
   humanReadableTest.openspec('replace_text tool')('Scenario: replace_text tool', async () => {
     const mgr = createTestSessionManager();
-    const { sessionId, firstParaId: paraId } = await openSession(['Edit me'], { mgr });
+    const { inputPath, firstParaId: paraId } = await openSession(['Edit me'], { mgr });
     const edited = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: paraId,
       old_string: 'Edit',
       new_string: 'Update',
@@ -277,9 +275,9 @@ describe('TypeScript MCP server behavior', () => {
 
   humanReadableTest.openspec('insert_paragraph tool')('Scenario: insert_paragraph tool', async () => {
     const mgr = createTestSessionManager();
-    const { sessionId, firstParaId: paraId } = await openSession(['Anchor paragraph'], { mgr });
+    const { inputPath, firstParaId: paraId } = await openSession(['Anchor paragraph'], { mgr });
     const inserted = await insertParagraph(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       positional_anchor_node_id: paraId,
       new_string: 'Inserted paragraph',
       instruction: 'tool behavior test',
@@ -300,7 +298,7 @@ describe('TypeScript MCP server behavior', () => {
     assertSuccess(opened, 'open');
 
     const saved = await save(mgr, {
-      session_id: String(opened.session_id),
+      file_path: inputPath,
       save_to_local_path: outputPath,
       save_format: 'clean',
       clean_bookmarks: true,
@@ -309,12 +307,12 @@ describe('TypeScript MCP server behavior', () => {
     await expect(fs.stat(outputPath)).resolves.toBeTruthy();
   });
 
-  humanReadableTest.openspec('get_session_status tool')('Scenario: get_session_status tool', async () => {
+  humanReadableTest.openspec('get_file_status tool')('Scenario: get_file_status tool', async () => {
     const mgr = createTestSessionManager();
-    const { sessionId } = await openSession(['Status paragraph'], { mgr });
-    const status = await getSessionStatus(mgr, { session_id: sessionId });
+    const { inputPath } = await openSession(['Status paragraph'], { mgr });
+    const status = await getFileStatus(mgr, { file_path: inputPath });
     assertSuccess(status, 'status');
-    expect(status.session_id).toBe(sessionId);
+    expect(status.file_path).toBe(inputPath);
     expect(typeof status.edit_count).toBe('number');
     expect(typeof status.edit_revision).toBe('number');
   });
@@ -336,15 +334,15 @@ describe('TypeScript MCP server behavior', () => {
 
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
+    const filePath = opened.file_path as string;
 
-    const before = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+    const before = await readFile(mgr, { file_path: inputPath, format: 'simple' });
     assertSuccess(before, 'read before');
     const ids = extractParaIdsFromToon(String(before.content));
     expect(ids.length).toBe(2);
 
     const edit = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: ids[1]!,
       old_string: 'Repeated',
       new_string: 'Updated',
@@ -352,15 +350,15 @@ describe('TypeScript MCP server behavior', () => {
     });
     expect(edit.success).toBe(true);
 
-    const afterFirst = await readFile(mgr, { session_id: sessionId, node_ids: [ids[0]!], format: 'simple' });
-    const afterSecond = await readFile(mgr, { session_id: sessionId, node_ids: [ids[1]!], format: 'simple' });
+    const afterFirst = await readFile(mgr, { file_path: inputPath, node_ids: [ids[0]!], format: 'simple' });
+    const afterSecond = await readFile(mgr, { file_path: inputPath, node_ids: [ids[1]!], format: 'simple' });
     assertSuccess(afterFirst, 'read after first');
     assertSuccess(afterSecond, 'read after second');
     expect(String(afterFirst.content)).toContain('Repeated text.');
     expect(String(afterSecond.content)).toContain('Updated text.');
 
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outputPath,
       save_format: 'clean',
       clean_bookmarks: true,
@@ -389,16 +387,15 @@ describe('TypeScript MCP server behavior', () => {
 
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    const sessionId = String(opened.session_id);
 
-    const before = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+    const before = await readFile(mgr, { file_path: inputPath, format: 'simple' });
     assertSuccess(before, 'read before');
     const ids = extractParaIdsFromToon(String(before.content));
     expect(ids.length).toBe(2);
     expect(ids[0]).not.toBe(ids[1]);
 
     const edited = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: ids[1]!,
       old_string: 'Duplicate',
       new_string: 'Updated',
@@ -406,8 +403,8 @@ describe('TypeScript MCP server behavior', () => {
     });
     expect(edited.success).toBe(true);
 
-    const firstOnly = await readFile(mgr, { session_id: sessionId, node_ids: [ids[0]!], format: 'simple' });
-    const secondOnly = await readFile(mgr, { session_id: sessionId, node_ids: [ids[1]!], format: 'simple' });
+    const firstOnly = await readFile(mgr, { file_path: inputPath, node_ids: [ids[0]!], format: 'simple' });
+    const secondOnly = await readFile(mgr, { file_path: inputPath, node_ids: [ids[1]!], format: 'simple' });
     assertSuccess(firstOnly, 'read first');
     assertSuccess(secondOnly, 'read second');
     expect(String(firstOnly.content)).toContain('Duplicate paragraph text');
@@ -423,14 +420,13 @@ describe('TypeScript MCP server behavior', () => {
 
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
 
-    const read = await readFile(mgr, { session_id: sessionId });
+    const read = await readFile(mgr, { file_path: inputPath });
     assertSuccess(read, 'read');
     const paraId = firstParaIdFromToon(String(read.content));
 
     const edited = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: paraId,
       old_string: 'Hello',
       new_string: 'Hi',
@@ -439,7 +435,7 @@ describe('TypeScript MCP server behavior', () => {
     expect(edited.success).toBe(true);
 
     const inserted = await insertParagraph(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       positional_anchor_node_id: paraId,
       new_string: 'Inserted paragraph',
       instruction: 'xml integrity insert',
@@ -447,12 +443,12 @@ describe('TypeScript MCP server behavior', () => {
     });
     expect(inserted.success).toBe(true);
 
-    const searched = await grep(mgr, { session_id: sessionId, patterns: ['Inserted'] });
+    const searched = await grep(mgr, { file_path: inputPath, patterns: ['Inserted'] });
     assertSuccess(searched, 'grep');
     expect(Number((searched as { total_matches?: number }).total_matches)).toBe(1);
 
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       save_format: 'clean',
       clean_bookmarks: true,

@@ -18,22 +18,21 @@ describe('init_plan tool', () => {
   registerCleanup();
   const test = testAllure.epic('Document Editing').withLabels({ feature: 'init_plan tool' });
 
-  test('creates revision-bound plan context from explicit session_id', async ({ given, when, then }: AllureBddContext) => {
+  test('creates revision-bound plan context from file_path', async ({ given, when, then }: AllureBddContext) => {
     let manager: ReturnType<typeof createTestSessionManager>;
-    let opened: Awaited<ReturnType<typeof openDocument>>;
+    let filePath: string;
     let result: Awaited<ReturnType<typeof initPlan>>;
 
     await given('a document is open in a known session', async () => {
       manager = createTestSessionManager();
-      const filePath = await writeDocx(['Alpha paragraph']);
-      opened = await openDocument(manager, { file_path: filePath });
+      filePath = await writeDocx(['Alpha paragraph']);
+      const opened = await openDocument(manager, { file_path: filePath });
       expect(opened.success).toBe(true);
     });
 
-    await when('initPlan is called with the session_id, plan_name, and orchestrator_id', async () => {
-      if (!opened.success) return;
+    await when('initPlan is called with the file_path, plan_name, and orchestrator_id', async () => {
       result = await initPlan(manager, {
-        session_id: String(opened.session_id),
+        file_path: filePath,
         plan_name: 'agreement-review',
         orchestrator_id: 'coordinator-1',
       });
@@ -65,13 +64,12 @@ describe('init_plan tool', () => {
       result = await initPlan(manager, { file_path: filePath });
     });
 
-    await then('the session is auto-opened and the plan context reflects the resolved session', () => {
+    await then('the session is auto-opened and the plan context reflects the resolved session', async () => {
       expect(result.success).toBe(true);
       if (!result.success) return;
       expect(result.base_revision).toBe(0);
-      expect(result.resolved_file_path).toBe(manager.normalizePath(filePath));
-      expect(typeof result.resolved_session_id).toBe('string');
-      expect(result.session_resolution).toBe('opened_new_session');
+      expect(result.resolved_file_path).toBe(await manager.canonicalizePath(filePath));
+      expect(result.session_resolution).toBe('opened');
     });
   });
 });

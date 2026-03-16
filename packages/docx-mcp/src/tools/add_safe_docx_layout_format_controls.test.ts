@@ -36,7 +36,7 @@ describe('Traceability: Layout Format Controls', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const formatted = await formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       paragraph_spacing: {
         paragraph_ids: [paraId],
         before_twips: 120,
@@ -54,7 +54,7 @@ describe('Traceability: Layout Format Controls', () => {
 
     const outPath = path.join(opened.tmpDir, 'layout-spacing.docx');
     const saved = await save(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       save_to_local_path: outPath,
       save_format: 'clean',
       clean_bookmarks: true,
@@ -91,7 +91,7 @@ describe('Traceability: Layout Format Controls', () => {
 
     const opened = await openSession([], { xml, prefix: 'safe-docx-layout-table-' });
     const formatted = await formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       row_height: {
         table_indexes: [0],
         row_indexes: [1],
@@ -117,7 +117,7 @@ describe('Traceability: Layout Format Controls', () => {
 
     const outPath = path.join(opened.tmpDir, 'layout-table.docx');
     const saved = await save(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       save_to_local_path: outPath,
       save_format: 'clean',
       clean_bookmarks: true,
@@ -147,7 +147,7 @@ describe('Traceability: Layout Format Controls', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const invalid = await formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       paragraph_spacing: {
         paragraph_ids: [paraId],
         after_twips: -1,
@@ -162,7 +162,7 @@ describe('Traceability: Layout Format Controls', () => {
     const beforeIds = extractParaIdsFromToon(opened.content);
 
     const formatted = await formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       paragraph_spacing: {
         paragraph_ids: [beforeIds[1]!],
         after_twips: 200,
@@ -171,7 +171,7 @@ describe('Traceability: Layout Format Controls', () => {
     assertSuccess(formatted, 'format_layout');
     expect(formatted.no_spacer_paragraphs).toBe(true);
 
-    const after = await readFile(opened.mgr, { session_id: opened.sessionId, format: 'simple' });
+    const after = await readFile(opened.mgr, { file_path: opened.inputPath, format: 'simple' });
     assertSuccess(after, 'read after');
     const afterIds = extractParaIdsFromToon(String(after.content));
     expect(afterIds.length).toBe(beforeIds.length);
@@ -182,7 +182,7 @@ describe('Traceability: Layout Format Controls', () => {
     const beforeIds = extractParaIdsFromToon(opened.content);
 
     const formatted = await formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       paragraph_spacing: {
         paragraph_ids: [beforeIds[0]!, beforeIds[2]!],
         before_twips: 120,
@@ -191,7 +191,7 @@ describe('Traceability: Layout Format Controls', () => {
     });
     assertSuccess(formatted, 'format_layout');
 
-    const after = await readFile(opened.mgr, { session_id: opened.sessionId, format: 'simple' });
+    const after = await readFile(opened.mgr, { file_path: opened.inputPath, format: 'simple' });
     assertSuccess(after, 'read after');
     const afterIds = extractParaIdsFromToon(String(after.content));
     expect(afterIds).toEqual(beforeIds);
@@ -224,7 +224,7 @@ describe('Traceability: Layout Format Controls', () => {
 
       try {
         const formatted = await formatLayout(opened.mgr, {
-          session_id: opened.sessionId,
+          file_path: opened.inputPath,
           paragraph_spacing: {
             paragraph_ids: [paraId],
             after_twips: 120,

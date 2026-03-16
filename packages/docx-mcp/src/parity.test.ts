@@ -24,7 +24,7 @@ import { grep } from './tools/grep.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
 import { save } from './tools/save.js';
-import { getSessionStatus } from './tools/get_session_status.js';
+import { getFileStatus } from './tools/get_file_status.js';
 
 const SIMPLE_WORD_CHANGE_FIXTURE = fileURLToPath(
   new URL('../../docx-core/src/testing/fixtures/simple-word-change/original.docx', import.meta.url),
@@ -36,7 +36,7 @@ describe('Parity regression', () => {
 
   test('tool parity: open -> read -> grep -> edit -> insert -> save -> status', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let paraId: string;
     let outPath: string;
 
@@ -49,13 +49,13 @@ describe('Parity regression', () => {
 
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      expect(opened.session_id).toMatch(/^ses_[A-Za-z0-9]{12}$/);
-      sessionId = opened.session_id as string;
+      expect(opened.file_path).toBeTruthy();
+      filePath = opened.file_path as string;
 
-      const status1 = await getSessionStatus(mgr, { session_id: sessionId });
+      const status1 = await getFileStatus(mgr, { file_path: filePath });
       assertSuccess(status1, 'status');
 
-      const read1 = await readFile(mgr, { session_id: sessionId });
+      const read1 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read1, 'read');
       expect(String(read1.content)).toContain('#SCHEMA id | list_label | header | style | text');
       expect(String(read1.content)).toContain('Hello world');
@@ -68,7 +68,7 @@ describe('Parity regression', () => {
     });
 
     await when('grep, replaceText, and insertParagraph are applied sequentially', async () => {
-      const grepRes = await grep(mgr, { session_id: sessionId, patterns: ['Hello'] });
+      const grepRes = await grep(mgr, { file_path: filePath, patterns: ['Hello'] });
       assertSuccess(grepRes, 'grep');
       expect(grepRes.total_matches).toBe(1);
       expect(Array.isArray(grepRes.matches)).toBe(true);
@@ -79,7 +79,7 @@ describe('Parity regression', () => {
       expect(typeof (grepRes.matches as Array<Record<string, unknown>>)[0].header).toBe('string');
 
       const edited = await replaceText(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         target_paragraph_id: paraId,
         old_string: 'Hello',
         new_string: 'Hi',
@@ -87,12 +87,12 @@ describe('Parity regression', () => {
       });
       assertSuccess(edited, 'edit');
 
-      const read2 = await readFile(mgr, { session_id: sessionId, node_ids: [paraId] });
+      const read2 = await readFile(mgr, { file_path: filePath, node_ids: [paraId] });
       assertSuccess(read2, 'read2');
       expect(String(read2.content)).toContain('Hi world');
 
       const inserted = await insertParagraph(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         positional_anchor_node_id: paraId,
         new_string: 'Second paragraph',
         instruction: 'test insert',
@@ -101,14 +101,14 @@ describe('Parity regression', () => {
       assertSuccess(inserted, 'insert');
       expect(String(inserted.new_paragraph_id)).toMatch(/^_bk_[0-9a-f]{12}$/);
 
-      const read3 = await readFile(mgr, { session_id: sessionId });
+      const read3 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read3, 'read3');
       expect(String(read3.content)).toContain('Second paragraph');
     });
 
     await then('save produces a clean file with bookmarks removed', async () => {
       const saved = await save(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         save_to_local_path: outPath,
         clean_bookmarks: true,
         save_format: 'clean',
@@ -121,7 +121,7 @@ describe('Parity regression', () => {
       expect(outXml.includes('edit-')).toBe(false);
     });
     await and('the session still reflects the edit after save', async () => {
-      const readAfterSave = await readFile(mgr, { session_id: sessionId });
+      const readAfterSave = await readFile(mgr, { file_path: filePath });
       assertSuccess(readAfterSave, 'readAfterSave');
       expect(String(readAfterSave.content)).toContain('Hi world');
     });
@@ -129,7 +129,7 @@ describe('Parity regression', () => {
 
   test('grep reports para_index_1based for matches in later paragraphs', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let ids: string[];
     let grepRes: Awaited<ReturnType<typeof grep>>;
 
@@ -140,8 +140,8 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeMinimalDocx(['Alpha paragraph', 'Beta target paragraph'])));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
-      const read = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+      filePath = opened.file_path as string;
+      const read = await readFile(mgr, { file_path: filePath, format: 'simple' });
       assertSuccess(read, 'read');
       ids = String(read.content)
         .split('\n')
@@ -151,7 +151,7 @@ describe('Parity regression', () => {
     });
 
     await when('grep is called for "target"', async () => {
-      grepRes = await grep(mgr, { session_id: sessionId, patterns: ['target'] });
+      grepRes = await grep(mgr, { file_path: filePath, patterns: ['target'] });
     });
 
     await then('the match is in the second paragraph with para_index_1based=2', () => {
@@ -168,7 +168,7 @@ describe('Parity regression', () => {
 
   test('grep dedupes by paragraph by default and reports per-paragraph counts', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let grepRes: Awaited<ReturnType<typeof grep>>;
 
     await given('a document with two paragraphs where the first contains two occurrences of "closing"', async () => {
@@ -178,11 +178,11 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeMinimalDocx(['Closing and closing in one paragraph', 'No match'])));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
+      filePath = opened.file_path as string;
     });
 
     await when('grep is called with patterns ["Closing", "closing"]', async () => {
-      grepRes = await grep(mgr, { session_id: sessionId, patterns: ['Closing', 'closing'] });
+      grepRes = await grep(mgr, { file_path: filePath, patterns: ['Closing', 'closing'] });
     });
 
     await then('dedupe_by_paragraph is true and the one paragraph returns a count of 2', () => {
@@ -198,7 +198,7 @@ describe('Parity regression', () => {
 
   test('grep reports truncation metadata when max_results caps returned rows', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let grepRes: Awaited<ReturnType<typeof grep>>;
 
     await given('a document with three paragraphs each containing "closing"', async () => {
@@ -208,11 +208,11 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeMinimalDocx(['Closing one', 'closing two', 'Closing three'])));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
+      filePath = opened.file_path as string;
     });
 
     await when('grep is called with max_results=2', async () => {
-      grepRes = await grep(mgr, { session_id: sessionId, patterns: ['Closing', 'closing'], max_results: 2 });
+      grepRes = await grep(mgr, { file_path: filePath, patterns: ['Closing', 'closing'], max_results: 2 });
     });
 
     await then('total_matches is 3, only 2 rows are returned, and matches_truncated is true', () => {
@@ -227,7 +227,7 @@ describe('Parity regression', () => {
 
   test('grep can return full per-match rows when dedupe_by_paragraph is false', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let grepRes: Awaited<ReturnType<typeof grep>>;
 
     await given('a document with "Closing then closing again" in one paragraph', async () => {
@@ -237,12 +237,12 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeMinimalDocx(['Closing then closing again'])));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
+      filePath = opened.file_path as string;
     });
 
     await when('grep is called with dedupe_by_paragraph=false', async () => {
       grepRes = await grep(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         patterns: ['Closing', 'closing'],
         dedupe_by_paragraph: false,
       });
@@ -259,7 +259,7 @@ describe('Parity regression', () => {
 
   test('open/read preserves existing _bk_* when stacked with edit-* bookmark on same paragraph', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
 
     await given('a document with a _bk_keepme bookmark stacked with an edit-* bookmark on the same paragraph', async () => {
       mgr = createTestSessionManager();
@@ -281,15 +281,15 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
-      const read1 = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+      filePath = opened.file_path as string;
+      const read1 = await readFile(mgr, { file_path: filePath, format: 'simple' });
       assertSuccess(read1, 'read');
       expect(String(read1.content)).toContain('_bk_keepme | Target paragraph text.');
     });
 
     await when('"Target paragraph" is replaced with "Updated paragraph" using _bk_keepme', async () => {
       const edited = await replaceText(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         target_paragraph_id: '_bk_keepme',
         old_string: 'Target paragraph',
         new_string: 'Updated paragraph',
@@ -299,7 +299,7 @@ describe('Parity regression', () => {
     });
 
     await then('the updated text is visible when reading by the _bk_keepme node ID', async () => {
-      const read2 = await readFile(mgr, { session_id: sessionId, node_ids: ['_bk_keepme'], format: 'simple' });
+      const read2 = await readFile(mgr, { file_path: filePath, node_ids: ['_bk_keepme'], format: 'simple' });
       assertSuccess(read2, 'read2');
       expect(String(read2.content)).toContain('Updated paragraph text.');
     });
@@ -322,7 +322,7 @@ describe('Parity regression', () => {
 
     await when('save is called targeting the original input path', async () => {
       saved = await save(mgr, {
-        session_id: opened.session_id as string,
+        file_path: opened.file_path as string,
         save_to_local_path: inputPath,
         save_format: 'clean',
       });
@@ -335,7 +335,7 @@ describe('Parity regression', () => {
 
   test('save supports tracked changes output', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let trackedPath: string;
     let saved: Awaited<ReturnType<typeof save>>;
 
@@ -345,17 +345,17 @@ describe('Parity regression', () => {
       trackedPath = path.join(tmpDir, 'tracked.docx');
       const opened = await openDocument(mgr, { file_path: SIMPLE_WORD_CHANGE_FIXTURE });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
-      const read1 = await readFile(mgr, { session_id: sessionId });
+      filePath = opened.file_path as string;
+      const read1 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read1, 'read');
       const paraId = String(read1.content).split('\n').find((l) => l.startsWith('_bk_'))!.split('|')[0]!.trim();
-      const edited = await replaceText(mgr, { session_id: sessionId, target_paragraph_id: paraId, old_string: 'The', new_string: 'TheX', instruction: 'test' });
+      const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: paraId, old_string: 'The', new_string: 'TheX', instruction: 'test' });
       assertSuccess(edited, 'edit');
     });
 
     await when('save is called with track_changes=true using the atomizer engine', async () => {
       saved = await save(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         save_to_local_path: trackedPath,
         track_changes: true,
         author: 'Safe-Docx Test',
@@ -376,7 +376,7 @@ describe('Parity regression', () => {
 
   test('save defaults to both clean and tracked outputs with timestamped redline name', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let cleanPath: string;
     let saved: Awaited<ReturnType<typeof save>>;
 
@@ -386,17 +386,17 @@ describe('Parity regression', () => {
       cleanPath = path.join(tmpDir, 'output.clean.docx');
       const opened = await openDocument(mgr, { file_path: SIMPLE_WORD_CHANGE_FIXTURE });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
-      const read1 = await readFile(mgr, { session_id: sessionId });
+      filePath = opened.file_path as string;
+      const read1 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read1, 'read');
       const paraId = String(read1.content).split('\n').find((l) => l.startsWith('_bk_'))!.split('|')[0]!.trim();
-      const edited = await replaceText(mgr, { session_id: sessionId, target_paragraph_id: paraId, old_string: 'The', new_string: 'TheX', instruction: 'test' });
+      const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: paraId, old_string: 'The', new_string: 'TheX', instruction: 'test' });
       assertSuccess(edited, 'edit');
     });
 
     await when('save is called with only save_to_local_path (no explicit save_format)', async () => {
       saved = await save(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         save_to_local_path: cleanPath,
         clean_bookmarks: true,
         tracked_changes_engine: 'atomizer',
@@ -417,7 +417,7 @@ describe('Parity regression', () => {
 
   test('save infers both variants when tracked_save_to_local_path is provided', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let cleanPath: string;
     let trackedPath: string;
     let saved: Awaited<ReturnType<typeof save>>;
@@ -429,17 +429,17 @@ describe('Parity regression', () => {
       trackedPath = path.join(tmpDir, 'output.redline.docx');
       const opened = await openDocument(mgr, { file_path: SIMPLE_WORD_CHANGE_FIXTURE });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
-      const read1 = await readFile(mgr, { session_id: sessionId });
+      filePath = opened.file_path as string;
+      const read1 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read1, 'read');
       const paraId = String(read1.content).split('\n').find((l) => l.startsWith('_bk_'))!.split('|')[0]!.trim();
-      const edited = await replaceText(mgr, { session_id: sessionId, target_paragraph_id: paraId, old_string: 'The', new_string: 'TheX', instruction: 'test' });
+      const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: paraId, old_string: 'The', new_string: 'TheX', instruction: 'test' });
       assertSuccess(edited, 'edit');
     });
 
     await when('save is called with tracked_save_to_local_path and track_changes=false (legacy conflict)', async () => {
       saved = await save(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         save_to_local_path: cleanPath,
         tracked_save_to_local_path: trackedPath,
         track_changes: false,
@@ -477,10 +477,10 @@ describe('Parity regression', () => {
       assertSuccess(opened1, 'open1');
       const opened2 = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened2, 'open2');
-      const read1 = await readFile(mgr, { session_id: String(opened1.session_id), format: 'json' });
+      const read1 = await readFile(mgr, { file_path: inputPath, format: 'json' });
       assertSuccess(read1, 'read1');
       ids1 = (JSON.parse(String(read1.content)) as Array<{ id: string }>).map((n) => n.id);
-      const read2 = await readFile(mgr, { session_id: String(opened2.session_id), format: 'json' });
+      const read2 = await readFile(mgr, { file_path: inputPath, format: 'json' });
       assertSuccess(read2, 'read2');
       ids2 = (JSON.parse(String(read2.content)) as Array<{ id: string }>).map((n) => n.id);
     });
@@ -501,7 +501,7 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeMinimalDocx(['Supplier', 'By:________', 'Name:', 'Title:', 'Customer', 'By:________', 'Name:', 'Title:'])));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      const view = await readFile(mgr, { session_id: String(opened.session_id), format: 'json' });
+      const view = await readFile(mgr, { file_path: inputPath, format: 'json' });
       assertSuccess(view, 'read');
       nodes = JSON.parse(String(view.content)) as Array<{ id: string; clean_text: string }>;
     });
@@ -521,7 +521,7 @@ describe('Parity regression', () => {
 
   test('save reuses cached artifacts for same session revision and invalidates on edit', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let paraId: string;
     let dl1: Awaited<ReturnType<typeof save>>;
     let dl2: Awaited<ReturnType<typeof save>>;
@@ -532,15 +532,15 @@ describe('Parity regression', () => {
       const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
       const opened = await openDocument(mgr, { file_path: SIMPLE_WORD_CHANGE_FIXTURE });
       assertSuccess(opened, 'open');
-      sessionId = String(opened.session_id);
-      const view = await readFile(mgr, { session_id: sessionId });
+      filePath = opened.file_path as string;
+      const view = await readFile(mgr, { file_path: filePath });
       assertSuccess(view, 'read');
       paraId = String(view.content).split('\n').find((l) => l.startsWith('_bk_'))!.split('|')[0]!.trim();
-      const edited = await replaceText(mgr, { session_id: sessionId, target_paragraph_id: paraId, old_string: 'The', new_string: 'TheX', instruction: 'edit for cache test' });
+      const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: paraId, old_string: 'The', new_string: 'TheX', instruction: 'edit for cache test' });
       assertSuccess(edited, 'edit');
 
       // Save once to populate cache
-      dl1 = await save(mgr, { session_id: sessionId, save_to_local_path: path.join(tmpDir, 'rev0.clean.docx'), tracked_changes_engine: 'atomizer' });
+      dl1 = await save(mgr, { file_path: filePath, save_to_local_path: path.join(tmpDir, 'rev0.clean.docx'), tracked_changes_engine: 'atomizer' });
       assertSuccess(dl1, 'save1');
       expect(dl1.cache_hit).toBe(false);
       expect(dl1.edit_revision).toBe(1);
@@ -548,13 +548,13 @@ describe('Parity regression', () => {
 
     await when('a second save at the same revision is requested, then a new edit is applied, then a third save is requested', async () => {
       const tmpDir = await createTrackedTempDir('safe-docx-ts-test-cache-');
-      dl2 = await save(mgr, { session_id: sessionId, save_to_local_path: path.join(tmpDir, 'rev0.clean.second.docx'), tracked_changes_engine: 'atomizer' });
+      dl2 = await save(mgr, { file_path: filePath, save_to_local_path: path.join(tmpDir, 'rev0.clean.second.docx'), tracked_changes_engine: 'atomizer' });
       assertSuccess(dl2, 'save2');
 
-      const edited2 = await replaceText(mgr, { session_id: sessionId, target_paragraph_id: paraId, old_string: 'TheX', new_string: 'TheY', instruction: 'second edit invalidates cache' });
+      const edited2 = await replaceText(mgr, { file_path: filePath, target_paragraph_id: paraId, old_string: 'TheX', new_string: 'TheY', instruction: 'second edit invalidates cache' });
       assertSuccess(edited2, 'edit2');
 
-      dl3 = await save(mgr, { session_id: sessionId, save_to_local_path: path.join(tmpDir, 'rev1.clean.docx'), tracked_changes_engine: 'atomizer' });
+      dl3 = await save(mgr, { file_path: filePath, save_to_local_path: path.join(tmpDir, 'rev1.clean.docx'), tracked_changes_engine: 'atomizer' });
       assertSuccess(dl3, 'save3');
     });
 
@@ -571,7 +571,7 @@ describe('Parity regression', () => {
 
   test('read_file emits <highlight> tags for highlighted runs', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let out: string;
 
     await given('a document with a yellow-highlighted [PLACEHOLDER] run open', async () => {
@@ -591,11 +591,11 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
+      filePath = opened.file_path as string;
     });
 
     await when('read_file is called', async () => {
-      const read1 = await readFile(mgr, { session_id: sessionId });
+      const read1 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read1, 'read');
       out = String(read1.content);
     });
@@ -607,7 +607,7 @@ describe('Parity regression', () => {
 
   test('replace_text clears placeholder highlight by default', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let outPath: string;
 
     await given('a document with a yellow-highlighted [PLACEHOLDER] open', async () => {
@@ -627,18 +627,18 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
+      filePath = opened.file_path as string;
     });
 
     await when('[PLACEHOLDER] is replaced with "the R&D Business" and the file is saved clean', async () => {
-      const view = await readFile(mgr, { session_id: sessionId, format: 'json' });
+      const view = await readFile(mgr, { file_path: filePath, format: 'json' });
       assertSuccess(view, 'read json');
       const nodes = JSON.parse(view.content as string) as Array<{ id: string; clean_text: string }>;
       const pid = nodes.find((n) => String(n.clean_text).includes('[PLACEHOLDER]'))?.id;
       expect(pid).toMatch(/^_bk_[0-9a-f]{12}$/);
-      const edited = await replaceText(mgr, { session_id: sessionId, target_paragraph_id: pid!, old_string: '[PLACEHOLDER]', new_string: 'the R&D Business', instruction: 'test' });
+      const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: pid!, old_string: '[PLACEHOLDER]', new_string: 'the R&D Business', instruction: 'test' });
       assertSuccess(edited, 'edit');
-      const saved = await save(mgr, { session_id: sessionId, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });
+      const saved = await save(mgr, { file_path: filePath, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });
       assertSuccess(saved, 'save');
     });
 
@@ -652,7 +652,7 @@ describe('Parity regression', () => {
 
   test('replace_text supports explicit <b>/<i>/<u> tags in new_string', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let outPath: string;
 
     await given('a document with "Value: [X]" open', async () => {
@@ -669,18 +669,18 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
+      filePath = opened.file_path as string;
     });
 
     await when('[X] is replaced with a new_string containing <b>, <i>, <u> tags and saved', async () => {
-      const view = await readFile(mgr, { session_id: sessionId, format: 'json' });
+      const view = await readFile(mgr, { file_path: filePath, format: 'json' });
       assertSuccess(view, 'read json');
       const nodes = JSON.parse(view.content as string) as Array<{ id: string; clean_text: string }>;
       const pid = nodes.find((n) => String(n.clean_text).includes('[X]'))?.id;
       expect(pid).toMatch(/^_bk_[0-9a-f]{12}$/);
-      const edited = await replaceText(mgr, { session_id: sessionId, target_paragraph_id: pid!, old_string: '[X]', new_string: '<b>bold</b> <i>ital</i> <u>under</u> plain', instruction: 'test' });
+      const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: pid!, old_string: '[X]', new_string: '<b>bold</b> <i>ital</i> <u>under</u> plain', instruction: 'test' });
       assertSuccess(edited, 'edit');
-      const saved = await save(mgr, { session_id: sessionId, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });
+      const saved = await save(mgr, { file_path: filePath, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });
       assertSuccess(saved, 'save');
     });
 
@@ -705,7 +705,7 @@ describe('Parity regression', () => {
 
   test('replace_text supports explicit <highlight> tags in new_string', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let outPath: string;
 
     await given('a document with a yellow-highlighted [VALUE] open', async () => {
@@ -725,18 +725,18 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
+      filePath = opened.file_path as string;
     });
 
     await when('[VALUE] is replaced with "<highlight>Final Number</highlight>" and saved', async () => {
-      const view = await readFile(mgr, { session_id: sessionId, format: 'json' });
+      const view = await readFile(mgr, { file_path: filePath, format: 'json' });
       assertSuccess(view, 'read json');
       const nodes = JSON.parse(view.content as string) as Array<{ id: string; clean_text: string }>;
       const pid = nodes.find((n) => String(n.clean_text).includes('[VALUE]'))?.id;
       expect(pid).toMatch(/^_bk_[0-9a-f]{12}$/);
-      const edited = await replaceText(mgr, { session_id: sessionId, target_paragraph_id: pid!, old_string: '[VALUE]', new_string: '<highlight>Final Number</highlight>', instruction: 'test' });
+      const edited = await replaceText(mgr, { file_path: filePath, target_paragraph_id: pid!, old_string: '[VALUE]', new_string: '<highlight>Final Number</highlight>', instruction: 'test' });
       assertSuccess(edited, 'edit');
-      const saved = await save(mgr, { session_id: sessionId, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });
+      const saved = await save(mgr, { file_path: filePath, save_to_local_path: outPath, clean_bookmarks: true, save_format: 'clean' });
       assertSuccess(saved, 'save');
     });
 
@@ -750,7 +750,7 @@ describe('Parity regression', () => {
 
   test('replace_text falls back to quote-normalized matching', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let paraId: string;
 
     await given('a document with curly-quoted "Company" means ABC Corp. open', async () => {
@@ -766,15 +766,15 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
-      const read1 = await readFile(mgr, { session_id: sessionId });
+      filePath = opened.file_path as string;
+      const read1 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read1, 'read');
       paraId = String(read1.content).split('\n').find((l) => l.startsWith('_bk_'))!.split('|')[0]!.trim();
     });
 
     await when('replaceText is called with straight-quote old_string matching the curly-quoted text', async () => {
       const edited = await replaceText(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         target_paragraph_id: paraId,
         old_string: '"Company" means ABC Corp.',
         new_string: '"Company" means XYZ Corp.',
@@ -784,7 +784,7 @@ describe('Parity regression', () => {
     });
 
     await then('XYZ Corp. appears in the document', async () => {
-      const read2 = await readFile(mgr, { session_id: sessionId, node_ids: [paraId] });
+      const read2 = await readFile(mgr, { file_path: filePath, node_ids: [paraId] });
       assertSuccess(read2, 'read2');
       expect(String(read2.content)).toContain('XYZ Corp.');
     });
@@ -792,7 +792,7 @@ describe('Parity regression', () => {
 
   test('replace_text falls back to flexible whitespace matching', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let paraId: string;
 
     await given('a document with "The   Purchase   Price" (triple spaces) open', async () => {
@@ -808,15 +808,15 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
-      const read1 = await readFile(mgr, { session_id: sessionId });
+      filePath = opened.file_path as string;
+      const read1 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read1, 'read');
       paraId = String(read1.content).split('\n').find((l) => l.startsWith('_bk_'))!.split('|')[0]!.trim();
     });
 
     await when('replaceText is called with single-space old_string that matches flexibly', async () => {
       const edited = await replaceText(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         target_paragraph_id: paraId,
         old_string: 'The Purchase Price',
         new_string: 'The Final Price',
@@ -826,7 +826,7 @@ describe('Parity regression', () => {
     });
 
     await then('"The Final Price" appears in the document', async () => {
-      const read2 = await readFile(mgr, { session_id: sessionId, node_ids: [paraId] });
+      const read2 = await readFile(mgr, { file_path: filePath, node_ids: [paraId] });
       assertSuccess(read2, 'read2');
       expect(String(read2.content)).toContain('The Final Price');
     });
@@ -834,7 +834,7 @@ describe('Parity regression', () => {
 
   test('replace_text falls back to quote-optional matching', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
-    let sessionId: string;
+    let filePath: string;
     let paraId: string;
 
     await given('a document with "The defined term is \u201CCompany\u201D." open', async () => {
@@ -850,15 +850,15 @@ describe('Parity regression', () => {
       await fs.writeFile(inputPath, new Uint8Array(await makeDocxWithDocumentXml(xml)));
       const opened = await openDocument(mgr, { file_path: inputPath });
       assertSuccess(opened, 'open');
-      sessionId = opened.session_id as string;
-      const read1 = await readFile(mgr, { session_id: sessionId });
+      filePath = opened.file_path as string;
+      const read1 = await readFile(mgr, { file_path: filePath });
       assertSuccess(read1, 'read');
       paraId = String(read1.content).split('\n').find((l) => l.startsWith('_bk_'))!.split('|')[0]!.trim();
     });
 
     await when('replaceText is called with bare "Company" (no quotes) as old_string', async () => {
       const edited = await replaceText(mgr, {
-        session_id: sessionId,
+        file_path: filePath,
         target_paragraph_id: paraId,
         old_string: 'Company',
         new_string: 'Buyer',
@@ -868,7 +868,7 @@ describe('Parity regression', () => {
     });
 
     await then('the curly-quoted \u201CBuyer\u201D appears in the document', async () => {
-      const read2 = await readFile(mgr, { session_id: sessionId, node_ids: [paraId] });
+      const read2 = await readFile(mgr, { file_path: filePath, node_ids: [paraId] });
       assertSuccess(read2, 'read2');
       expect(String(read2.content)).toContain('\u201CBuyer\u201D');
     });
@@ -877,7 +877,7 @@ describe('Parity regression', () => {
   describe('read_file pagination edge cases', () => {
     test('offset/limit normalization and node_ids override', async ({ given, when, then }: AllureBddContext) => {
       let mgr: ReturnType<typeof createTestSessionManager>;
-      let sessionId: string;
+      let filePath: string;
       let ids: string[];
 
       await given('a 3-paragraph document (A, B, C) open', async () => {
@@ -887,8 +887,8 @@ describe('Parity regression', () => {
         await fs.writeFile(inputPath, new Uint8Array(await makeMinimalDocx(['A', 'B', 'C'])));
         const opened = await openDocument(mgr, { file_path: inputPath });
         assertSuccess(opened, 'open');
-        sessionId = opened.session_id as string;
-        const readAll = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+        filePath = opened.file_path as string;
+        const readAll = await readFile(mgr, { file_path: filePath, format: 'simple' });
         assertSuccess(readAll, 'readAll');
         ids = String(readAll.content).split('\n').filter((l) => l.startsWith('_bk_')).map((l) => l.split('|')[0].trim());
         expect(ids.length).toBe(3);
@@ -899,15 +899,15 @@ describe('Parity regression', () => {
       });
 
       await then('offset=-1 returns C, offset=2 returns B, node_ids overrides offset/limit', async () => {
-        const readLast = await readFile(mgr, { session_id: sessionId, offset: -1, limit: 1, format: 'simple' });
+        const readLast = await readFile(mgr, { file_path: filePath, offset: -1, limit: 1, format: 'simple' });
         assertSuccess(readLast, 'readLast');
         expect(String(readLast.content)).toContain(`${ids[2]} | C`);
 
-        const readSecond = await readFile(mgr, { session_id: sessionId, offset: 2, limit: 1, format: 'simple' });
+        const readSecond = await readFile(mgr, { file_path: filePath, offset: 2, limit: 1, format: 'simple' });
         assertSuccess(readSecond, 'readSecond');
         expect(String(readSecond.content)).toContain(`${ids[1]} | B`);
 
-        const readOverride = await readFile(mgr, { session_id: sessionId, node_ids: [ids[0]], offset: -1, limit: 1, format: 'simple' });
+        const readOverride = await readFile(mgr, { file_path: filePath, node_ids: [ids[0]], offset: -1, limit: 1, format: 'simple' });
         assertSuccess(readOverride, 'readOverride');
         expect(String(readOverride.content)).toContain(`${ids[0]} | A`);
       });
@@ -915,7 +915,7 @@ describe('Parity regression', () => {
 
     test('offset=0 starts from the first paragraph', async ({ given, when, then }: AllureBddContext) => {
       let mgr: ReturnType<typeof createTestSessionManager>;
-      let sessionId: string;
+      let filePath: string;
       let res: Awaited<ReturnType<typeof readFile>>;
 
       await given('a 2-paragraph document (A, B) open', async () => {
@@ -925,11 +925,11 @@ describe('Parity regression', () => {
         await fs.writeFile(inputPath, new Uint8Array(await makeMinimalDocx(['A', 'B'])));
         const opened = await openDocument(mgr, { file_path: inputPath });
         assertSuccess(opened, 'open');
-        sessionId = opened.session_id as string;
+        filePath = opened.file_path as string;
       });
 
       await when('readFile is called with offset=0 and limit=1', async () => {
-        res = await readFile(mgr, { session_id: sessionId, offset: 0, limit: 1, format: 'simple' });
+        res = await readFile(mgr, { file_path: filePath, offset: 0, limit: 1, format: 'simple' });
       });
 
       await then('the first paragraph A is returned', () => {
@@ -938,7 +938,7 @@ describe('Parity regression', () => {
       });
     });
 
-    test('invalid session id format returns INVALID_SESSION_ID', async ({ given, when, then }: AllureBddContext) => {
+    test('missing file returns FILE_NOT_FOUND', async ({ given, when, then }: AllureBddContext) => {
       let mgr: ReturnType<typeof createTestSessionManager>;
       let res: Awaited<ReturnType<typeof readFile>>;
 
@@ -946,12 +946,12 @@ describe('Parity regression', () => {
         mgr = createTestSessionManager();
       });
 
-      await when('readFile is called with a malformed session ID "ses_bad"', async () => {
-        res = await readFile(mgr, { session_id: 'ses_bad' });
+      await when('readFile is called with a non-existent path', async () => {
+        res = await readFile(mgr, { file_path: '/nonexistent/path/to/doc.docx' });
       });
 
-      await then('the result fails with INVALID_SESSION_ID', () => {
-        assertFailure(res, 'INVALID_SESSION_ID', 'invalid session id');
+      await then('the result fails with FILE_NOT_FOUND', () => {
+        assertFailure(res, 'FILE_NOT_FOUND', 'file not found');
       });
     });
   });
