@@ -20,14 +20,22 @@ const FILE_FIELD_OPTIONAL = {
   file_path: z.string().optional().describe('Path to the DOCX file.'),
 };
 
+const GOOGLE_DOC_ID_FIELD = {
+  google_doc_id: z.string().optional().describe(
+    'Google Doc ID or URL (alternative to file_path). ' +
+    'Extract from URL: docs.google.com/document/d/{ID}/edit',
+  ),
+};
+
 const PLAN_OBJECT_SCHEMA = z.object({}).catchall(z.unknown());
 
 export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'read_file',
-    description: 'Read document content. Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.',
+    description: 'Read document content (DOCX or Google Doc). Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
       offset: z.number().optional().describe('1-based paragraph offset for pagination. Negative values count from end.'),
       limit: z.number().optional().describe('Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination.'),
       node_ids: z.array(z.string()).optional(),
@@ -43,9 +51,10 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'grep',
-    description: 'Search paragraphs with regex. Use file_path for session-based search, or file_paths for stateless multi-file search.',
+    description: 'Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
       file_paths: z.array(z.string()).optional().describe('Multiple file paths for stateless multi-file search. No session created.'),
       patterns: z.array(z.string()).optional(),
       pattern: z.string().optional(),
@@ -98,9 +107,10 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'replace_text',
-    description: 'Replace text in a paragraph by _bk_* id, preserving formatting.',
+    description: 'Replace text in a paragraph by _bk_* id, preserving formatting. Supports DOCX and Google Docs.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
       target_paragraph_id: z.string(),
       old_string: z.string(),
       new_string: z.string(),
@@ -114,9 +124,10 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'insert_paragraph',
-    description: 'Insert a paragraph before/after an anchor paragraph by _bk_* id.',
+    description: 'Insert a paragraph before/after an anchor paragraph by _bk_* id. Supports DOCX and Google Docs.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
       positional_anchor_node_id: z.string(),
       new_string: z.string(),
       instruction: z.string(),
@@ -133,9 +144,10 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'save',
     description:
-      'Save clean and/or tracked changes output back to the local filesystem. Defaults to both clean and tracked outputs when no format override is provided.',
+      'Save document. For DOCX: saves clean and/or tracked changes output. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
       save_to_local_path: z.string(),
       clean_bookmarks: z.boolean().optional(),
       save_format: z.enum(['clean', 'tracked', 'both']).optional(),
@@ -154,9 +166,10 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'format_layout',
-    description: 'Apply deterministic OOXML layout controls (paragraph spacing, table row height, cell padding).',
+    description: 'Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
       strict: z.boolean().optional(),
       paragraph_spacing: z
         .object({
@@ -207,17 +220,19 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'get_file_status',
-    description: 'Get file/session metadata including edit count, normalization stats, and cache info.',
+    description: 'Get file/session metadata including edit count, normalization stats, and cache info. Supports DOCX and Google Docs.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
     name: 'close_file',
-    description: 'Close an open file session, or close all sessions with explicit confirmation.',
+    description: 'Close an open file session, or close all sessions with explicit confirmation. Supports DOCX and Google Docs.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
       clear_all: z.boolean().optional(),
       confirm: z.boolean().optional(),
     }),

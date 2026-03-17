@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import { errorCode, errorMessage } from "../error_utils.js";
 import path from 'node:path';
-import { type DocxSession, SessionManager } from '../session/manager.js';
+import { type DocxSession, type GDocsSession, type Session, SessionManager } from '../session/manager.js';
 import { err, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
+import { loadGDocsCore } from '../gdocs_loader.js';
 
 const MAX_DOCX_BYTES = 50 * 1024 * 1024;
 
@@ -24,6 +25,10 @@ export type SessionResolutionOutcome =
       ok: false;
       response: ToolResponse;
     };
+
+export type GDocsSessionResolutionOutcome =
+  | { ok: true; session: GDocsSession; metadata: Record<string, unknown> }
+  | { ok: false; response: ToolResponse };
 
 // ---------------------------------------------------------------------------
 // Concurrent auto-open deduplication
@@ -125,7 +130,7 @@ export function mergeSessionResolutionMetadata(
  * Check if file has been modified externally since the session was opened.
  */
 async function checkStaleness(
-  session: DocxSession,
+  session: Session,
   canonicalPath: string,
 ): Promise<string | undefined> {
   try {
@@ -159,8 +164,8 @@ export async function resolveSessionForTool(
 
   const canonicalPath = await manager.canonicalizePath(filePath);
 
-  // Check for existing session (file-path keyed)
-  const existing = manager.getSessionByPath(canonicalPath);
+  // Check for existing session (file-path keyed sessions are always DocxSession)
+  const existing = manager.getSessionByPath(canonicalPath) as DocxSession | null;
   if (existing) {
     const reuseLastUsed = existing.lastAccessedAt.toISOString();
     manager.touch(existing);
@@ -245,5 +250,123 @@ export async function resolveSessionForTool(
   outcomePromise.catch(() => {});
 
   pendingMap.set(canonicalPath, outcomePromise);
+  return await outcomePromise;
+}
+
+// ---------------------------------------------------------------------------
+// Google Docs session resolution
+// ---------------------------------------------------------------------------
+
+function extractGoogleDocId(input: string): string {
+  const urlMatch = input.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+  if (urlMatch) return urlMatch[1]!;
+  return input.trim();
+}
+
+const gdocsPendingByManager = new WeakMap<SessionManager, Map<string, Promise<GDocsSessionResolutionOutcome>>>();
+
+function getGDocsPendingMap(manager: SessionManager): Map<string, Promise<GDocsSessionResolutionOutcome>> {
+  let map = gdocsPendingByManager.get(manager);
+  if (!map) {
+    map = new Map();
+    gdocsPendingByManager.set(manager, map);
+  }
+  return map;
+}
+
+export async function resolveGDocsSessionForTool(
+  manager: SessionManager,
+  params: { google_doc_id?: unknown },
+  opts: { toolName: string },
+): Promise<GDocsSessionResolutionOutcome> {
+  const rawId = typeof params.google_doc_id === 'string' ? params.google_doc_id.trim() : '';
+  if (!rawId) {
+    return {
+      ok: false,
+      response: err('MISSING_GOOGLE_DOC_ID', `Tool '${opts.toolName}' requires google_doc_id.`, 'Provide a Google Doc ID or URL.'),
+    };
+  }
+
+  const docId = extractGoogleDocId(rawId);
+  const sessionKey = `gdocs:${docId}`;
+
+  // Check existing session
+  const existing = manager.getSessionByPath(sessionKey);
+  if (existing && existing.provider === 'gdocs') {
+    manager.touch(existing);
+    return {
+      ok: true,
+      session: existing as GDocsSession,
+      metadata: {
+        session_resolution: 'reused' as SessionResolutionMode,
+        google_doc_id: docId,
+        reused_session_context: {
+          edit_revision: existing.editRevision,
+          edit_count: existing.editCount,
+          created_at: existing.createdAt.toISOString(),
+          last_used_at: existing.lastAccessedAt.toISOString(),
+        },
+      },
+    };
+  }
+
+  // Concurrent dedup
+  const pendingMap = getGDocsPendingMap(manager);
+  const pending = pendingMap.get(sessionKey);
+  if (pending) {
+    const outcome = await pending;
+    if (outcome.ok) {
+      manager.touch(outcome.session);
+      return {
+        ok: true,
+        session: outcome.session,
+        metadata: {
+          ...outcome.metadata,
+          session_resolution: 'reused' as SessionResolutionMode,
+          session_resolution_detail: 'awaited_concurrent_open',
+        },
+      };
+    }
+    return outcome;
+  }
+
+  let storedPromise!: Promise<GDocsSessionResolutionOutcome>;
+  const outcomePromise: Promise<GDocsSessionResolutionOutcome> = (async () => {
+    try {
+      const gdocsCore = await loadGDocsCore();
+      if (!gdocsCore) {
+        return {
+          ok: false as const,
+          response: err(
+            'MISSING_DEPENDENCY',
+            'Google Docs support requires @usejunior/google-docs-core.',
+            'Run: npm install @usejunior/google-docs-core',
+          ),
+        };
+      }
+
+      const doc = await gdocsCore.GoogleDocsDocument.load(docId);
+      await doc.injectAnchors();
+
+      const session = manager.createGDocsSession(docId, doc);
+
+      return {
+        ok: true as const,
+        session,
+        metadata: {
+          session_resolution: 'opened' as SessionResolutionMode,
+          google_doc_id: docId,
+        },
+      };
+    } finally {
+      if (pendingMap.get(sessionKey) === storedPromise) {
+        pendingMap.delete(sessionKey);
+      }
+    }
+  })();
+
+  storedPromise = outcomePromise;
+  outcomePromise.catch(() => {});
+  pendingMap.set(sessionKey, outcomePromise);
   return await outcomePromise;
 }

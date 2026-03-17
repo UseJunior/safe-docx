@@ -7,7 +7,7 @@ Do not edit manually. Regenerate with:
 
 ## `read_file`
 
-Read document content. Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.
+Read document content (DOCX or Google Doc). Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.
 
 - readOnly: `true`
 - destructive: `false`
@@ -15,6 +15,7 @@ Read document content. Output is token-limited (~14k tokens) by default with pag
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `offset` | `number` | no | 1-based paragraph offset for pagination. Negative values count from end. |
 | `limit` | `number` | no | Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination. |
 | `node_ids` | `array<string>` | no |  |
@@ -23,7 +24,7 @@ Read document content. Output is token-limited (~14k tokens) by default with pag
 
 ## `grep`
 
-Search paragraphs with regex. Use file_path for session-based search, or file_paths for stateless multi-file search.
+Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs.
 
 - readOnly: `true`
 - destructive: `false`
@@ -31,6 +32,7 @@ Search paragraphs with regex. Use file_path for session-based search, or file_pa
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `file_paths` | `array<string>` | no | Multiple file paths for stateless multi-file search. No session created. |
 | `patterns` | `array<string>` | no |  |
 | `pattern` | `string` | no |  |
@@ -83,7 +85,7 @@ Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a d
 
 ## `replace_text`
 
-Replace text in a paragraph by _bk_* id, preserving formatting.
+Replace text in a paragraph by _bk_* id, preserving formatting. Supports DOCX and Google Docs.
 
 - readOnly: `false`
 - destructive: `true`
@@ -91,6 +93,7 @@ Replace text in a paragraph by _bk_* id, preserving formatting.
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `target_paragraph_id` | `string` | yes |  |
 | `old_string` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
@@ -99,7 +102,7 @@ Replace text in a paragraph by _bk_* id, preserving formatting.
 
 ## `insert_paragraph`
 
-Insert a paragraph before/after an anchor paragraph by _bk_* id.
+Insert a paragraph before/after an anchor paragraph by _bk_* id. Supports DOCX and Google Docs.
 
 - readOnly: `false`
 - destructive: `true`
@@ -107,6 +110,7 @@ Insert a paragraph before/after an anchor paragraph by _bk_* id.
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `positional_anchor_node_id` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
@@ -115,7 +119,7 @@ Insert a paragraph before/after an anchor paragraph by _bk_* id.
 
 ## `save`
 
-Save clean and/or tracked changes output back to the local filesystem. Defaults to both clean and tracked outputs when no format override is provided.
+Save document. For DOCX: saves clean and/or tracked changes output. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX.
 
 - readOnly: `false`
 - destructive: `true`
@@ -123,6 +127,7 @@ Save clean and/or tracked changes output back to the local filesystem. Defaults 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `save_to_local_path` | `string` | yes |  |
 | `clean_bookmarks` | `boolean` | no |  |
 | `save_format` | `enum("clean", "tracked", "both")` | no |  |
@@ -134,7 +139,7 @@ Save clean and/or tracked changes output back to the local filesystem. Defaults 
 
 ## `format_layout`
 
-Apply deterministic OOXML layout controls (paragraph spacing, table row height, cell padding).
+Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only.
 
 - readOnly: `false`
 - destructive: `true`
@@ -142,6 +147,7 @@ Apply deterministic OOXML layout controls (paragraph spacing, table row height, 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `strict` | `boolean` | no |  |
 | `paragraph_spacing` | `object` | no |  |
 | `row_height` | `object` | no |  |
@@ -171,7 +177,7 @@ Check whether the document body contains tracked-change markers (insertions, del
 
 ## `get_file_status`
 
-Get file/session metadata including edit count, normalization stats, and cache info.
+Get file/session metadata including edit count, normalization stats, and cache info. Supports DOCX and Google Docs.
 
 - readOnly: `true`
 - destructive: `false`
@@ -179,10 +185,11 @@ Get file/session metadata including edit count, normalization stats, and cache i
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 
 ## `close_file`
 
-Close an open file session, or close all sessions with explicit confirmation.
+Close an open file session, or close all sessions with explicit confirmation. Supports DOCX and Google Docs.
 
 - readOnly: `false`
 - destructive: `true`
@@ -190,6 +197,7 @@ Close an open file session, or close all sessions with explicit confirmation.
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `clear_all` | `boolean` | no |  |
 | `confirm` | `boolean` | no |  |
 
