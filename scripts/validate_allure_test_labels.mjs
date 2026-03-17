@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 const ROOT = process.cwd();
 const TEST_PATH_RE = /^packages\/[^/]+\/(src|test)\/.+\.test\.ts$/;
+// Packages that haven't been migrated to allure wrappers yet.
+const ALLURE_EXEMPT_PACKAGES = new Set(['google-docs-core']);
 
 const helperImportRe = /from\s+['"][^'"]*allure-test\.(?:js|ts)['"]/;
 const wrapperReferenceRe = /\b(itAllure|testAllure)\b/;
@@ -38,7 +40,11 @@ function walk(dir, out) {
     }
     if (!entry.isFile() || !entry.name.endsWith('.test.ts')) continue;
     const relative = absolute.slice(`${ROOT}/`.length);
-    if (TEST_PATH_RE.test(relative)) out.push(relative);
+    if (!TEST_PATH_RE.test(relative)) continue;
+    // Skip packages exempt from allure migration.
+    const pkgName = relative.split('/')[1];
+    if (ALLURE_EXEMPT_PACKAGES.has(pkgName)) continue;
+    out.push(relative);
   }
 }
 

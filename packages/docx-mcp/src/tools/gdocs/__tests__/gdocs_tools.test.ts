@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, expect, vi, beforeEach } from 'vitest';
+import { testAllure as it } from '../../../testing/allure-test.js';
 import { SessionManager, type GDocsSession } from '../../../session/manager.js';
 import { dispatchToolCall } from '../../../server.js';
 
