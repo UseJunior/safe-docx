@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-03-14T16:27:41.537Z",
+  "packages": {
+    "docx-core": {
+      "lines": 84.97,
+      "branches": 83.8,
+      "functions": 90.52,
+      "statements": 84.97,
+      "deltas": {
+        "lines": null,
+        "branches": null,
+        "functions": null,
+        "statements": null
+      }
+    },
+    "docx-mcp": {
+      "lines": 87.07,
+      "branches": 80.72,
+      "functions": 93.04,
+      "statements": 87.07,
+      "deltas": {
+        "lines": null,
+        "branches": null,
+        "functions": null,
+        "statements": null
+      }
+    }
+  },
+  "aggregate": {
+    "lines_mean": 86.02,
+    "branches_mean": 82.26,
+    "functions_mean": 91.78,
+    "statements_mean": 86.02
+  }
+}

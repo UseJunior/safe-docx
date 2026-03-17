@@ -259,6 +259,15 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
+  humanReadableTest.openspec('missing file_path is rejected')('Scenario: missing file_path is rejected', async ({ when, then }: AllureBddContext) => {
+    const mgr = createTestSessionManager();
+    const result = await when('readFile is called without file_path', () => readFile(mgr, {} as any));
+    await then('the server returns MISSING_FILE_PATH error', () => {
+      expect(result.success).toBe(false);
+      expect((result as any).error?.code).toBe('MISSING_FILE_PATH');
+    });
+  });
+
   humanReadableTest.openspec('new session creation includes normalization')('Scenario: new session creation includes normalization', async ({ when, and, then, attachPrettyJson }: AllureBddContext) => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('norm-allure-newsession-');

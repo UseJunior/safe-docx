@@ -35,10 +35,10 @@ The server SHALL manage document editing sessions with creation, expiration, and
 - **WHEN** open_document is called
 - **THEN** a new session is created with a unique ID
 
-#### Scenario: Session expiration
-- **GIVEN** an existing session
-- **WHEN** the session TTL elapses
-- **THEN** the session is expired and resources are released
+#### Scenario: Session expiration auto-reopens
+- **GIVEN** an existing session for a file
+- **WHEN** the session TTL elapses and the file is reopened
+- **THEN** a fresh session is created and stale resources are released
 
 #### Scenario: Concurrent sessions
 - **GIVEN** multiple DOCX files
@@ -73,10 +73,10 @@ The server SHALL return meaningful error responses for common failure modes.
 - **WHEN** open_document is called
 - **THEN** a clear invalid-file-type error is returned
 
-#### Scenario: Session not found error
-- **GIVEN** an invalid session ID
-- **WHEN** a session-dependent tool is called
-- **THEN** a clear session-not-found error is returned
+#### Scenario: File not found error
+- **GIVEN** a non-existent file path
+- **WHEN** a session-dependent tool is called with that path
+- **THEN** a clear file-not-found error is returned
 
 ### Requirement: Tool Registration
 
@@ -112,10 +112,10 @@ Each MCP tool SHALL be registered and functional.
 - **WHEN** download is called
 - **THEN** the modified DOCX file is produced
 
-#### Scenario: get_session_status tool
-- **GIVEN** an active session
-- **WHEN** get_session_status is called
-- **THEN** the session status information is returned
+#### Scenario: get_file_status tool
+- **GIVEN** an open file
+- **WHEN** `get_file_status` is called
+- **THEN** the file and session status information is returned
 
 ### Requirement: Edit Integrity
 

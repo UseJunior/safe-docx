@@ -7,15 +7,14 @@ Do not edit manually. Regenerate with:
 
 ## `read_file`
 
-Read document content. Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate. Accepts session_id or file_path.
+Read document content. Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.
 
 - readOnly: `true`
 - destructive: `false`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
 | `offset` | `number` | no | 1-based paragraph offset for pagination. Negative values count from end. |
 | `limit` | `number` | no | Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination. |
 | `node_ids` | `array<string>` | no |  |
@@ -24,15 +23,15 @@ Read document content. Output is token-limited (~14k tokens) by default with pag
 
 ## `grep`
 
-Search paragraphs with regex. Accepts session_id or file_path.
+Search paragraphs with regex. Use file_path for session-based search, or file_paths for stateless multi-file search.
 
 - readOnly: `true`
 - destructive: `false`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_paths` | `array<string>` | no | Multiple file paths for stateless multi-file search. No session created. |
 | `patterns` | `array<string>` | no |  |
 | `pattern` | `string` | no |  |
 | `case_sensitive` | `boolean` | no |  |
@@ -40,18 +39,19 @@ Search paragraphs with regex. Accepts session_id or file_path.
 | `max_results` | `number` | no |  |
 | `context_chars` | `number` | no |  |
 | `dedupe_by_paragraph` | `boolean` | no |  |
+| `search_xml` | `boolean` | no | When true, search raw XML (word/document.xml) instead of paragraph text. |
+| `include_context` | `boolean` | no | When false, skip document view context (list labels, headers) for faster results. Default: true. |
 
 ## `init_plan`
 
-Initialize revision-bound context metadata for coordinated multi-agent planning. Accepts session_id or file_path.
+Initialize revision-bound context metadata for coordinated multi-agent planning.
 
 - readOnly: `true`
 - destructive: `false`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `plan_name` | `string` | no |  |
 | `orchestrator_id` | `string` | no |  |
 
@@ -70,29 +70,27 @@ Deterministically merge multiple sub-agent plans and detect hard conflicts befor
 
 ## `apply_plan`
 
-Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a session document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.
+Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `steps` | `array<object>` | no | JSON array of edit steps. Each step needs step_id, operation, and operation-specific fields. |
 | `plan_file_path` | `string` | no | Path to a .json file containing an array of edit steps. Mutually exclusive with steps. |
 
 ## `replace_text`
 
-Replace text in a paragraph by _bk_* id, preserving formatting. Accepts session_id or file_path.
+Replace text in a paragraph by _bk_* id, preserving formatting.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
 | `target_paragraph_id` | `string` | yes |  |
 | `old_string` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
@@ -101,15 +99,14 @@ Replace text in a paragraph by _bk_* id, preserving formatting. Accepts session_
 
 ## `insert_paragraph`
 
-Insert a paragraph before/after an anchor paragraph by _bk_* id. Accepts session_id or file_path.
+Insert a paragraph before/after an anchor paragraph by _bk_* id.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
 | `positional_anchor_node_id` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
@@ -118,15 +115,14 @@ Insert a paragraph before/after an anchor paragraph by _bk_* id. Accepts session
 
 ## `save`
 
-Save clean and/or tracked changes output back to the local filesystem. Defaults to both clean and tracked outputs when no format override is provided. Accepts session_id or file_path.
+Save clean and/or tracked changes output back to the local filesystem. Defaults to both clean and tracked outputs when no format override is provided.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
 | `save_to_local_path` | `string` | yes |  |
 | `clean_bookmarks` | `boolean` | no |  |
 | `save_format` | `enum("clean", "tracked", "both")` | no |  |
@@ -138,15 +134,14 @@ Save clean and/or tracked changes output back to the local filesystem. Defaults 
 
 ## `format_layout`
 
-Apply deterministic OOXML layout controls (paragraph spacing, table row height, cell padding). Accepts session_id or file_path.
+Apply deterministic OOXML layout controls (paragraph spacing, table row height, cell padding).
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
 | `strict` | `boolean` | no |  |
 | `paragraph_spacing` | `object` | no |  |
 | `row_height` | `object` | no |  |
@@ -161,8 +156,7 @@ Accept all tracked changes in the document body, producing a clean document with
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 
 ## `has_tracked_changes`
 
@@ -173,32 +167,29 @@ Check whether the document body contains tracked-change markers (insertions, del
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 
-## `get_session_status`
+## `get_file_status`
 
-Get session metadata. Accepts session_id or file_path.
+Get file/session metadata including edit count, normalization stats, and cache info.
 
 - readOnly: `true`
 - destructive: `false`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
 
-## `clear_session`
+## `close_file`
 
-Clear one session, all sessions for a file path, or all sessions with explicit confirmation.
+Close an open file session, or close all sessions with explicit confirmation.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
 | `clear_all` | `boolean` | no |  |
 | `confirm` | `boolean` | no |  |
 
@@ -211,8 +202,7 @@ Add a comment or threaded reply to a document. Provide target_paragraph_id + anc
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `target_paragraph_id` | `string` | no | Paragraph ID to anchor the comment to (for root comments). |
 | `anchor_text` | `string` | no | Text within the paragraph to anchor the comment to. If omitted, anchors to entire paragraph. |
 | `parent_comment_id` | `number` | no | Parent comment ID for threaded replies. |
@@ -229,8 +219,7 @@ Get all comments from the document with IDs, authors, dates, text, and anchored 
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 
 ## `delete_comment`
 
@@ -241,13 +230,12 @@ Delete a comment and all its threaded replies from the document. Cascade-deletes
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `comment_id` | `number` | yes | Comment ID to delete. |
 
 ## `compare_documents`
 
-Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or session_id/file_path to compare session edits against the original.
+Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original.
 
 - readOnly: `true`
 - destructive: `false`
@@ -256,8 +244,7 @@ Compare two DOCX documents and produce a tracked-changes output document. Provid
 | --- | --- | --- | --- |
 | `original_file_path` | `string` | no | Path to the original DOCX file. |
 | `revised_file_path` | `string` | no | Path to the revised DOCX file. |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | no | Path to the DOCX file. |
 | `save_to_local_path` | `string` | yes | Path to save the tracked-changes DOCX output. |
 | `author` | `string` | no | Author name for track changes. Default: 'Comparison'. |
 | `engine` | `enum("auto", "atomizer")` | no | Comparison engine. Default: 'auto'. |
@@ -271,8 +258,7 @@ Get all footnotes from the document with IDs, display numbers, text, and anchore
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 
 ## `add_footnote`
 
@@ -283,8 +269,7 @@ Add a footnote anchored to a paragraph. Optionally position the reference after 
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `target_paragraph_id` | `string` | yes | Paragraph ID to anchor the footnote to. |
 | `after_text` | `string` | no | Text after which to insert the footnote reference. If omitted, appends at end of paragraph. |
 | `text` | `string` | yes | Footnote body text. |
@@ -298,8 +283,7 @@ Update the text content of an existing footnote.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `note_id` | `number` | yes | Footnote ID to update. |
 | `new_text` | `string` | yes | New footnote body text. |
 
@@ -312,21 +296,19 @@ Delete a footnote and its reference from the document.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `note_id` | `number` | yes | Footnote ID to delete. |
 
 ## `clear_formatting`
 
-Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs. Accepts session_id or file_path.
+Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `paragraph_ids` | `array<string>` | no | Paragraph IDs to clear formatting from. If omitted, clears from all paragraphs. |
 | `clear_highlight` | `boolean` | no | Remove highlight formatting. |
 | `clear_bold` | `boolean` | no | Remove bold formatting. |
@@ -344,7 +326,6 @@ Extract tracked changes as structured JSON with before/after text per paragraph,
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `session_id` | `string` | no |  |
-| `file_path` | `string` | no |  |
+| `file_path` | `string` | yes | Path to the DOCX file. |
 | `offset` | `number` | no | 0-based offset for pagination. Default: 0. |
 | `limit` | `number` | no | Max entries per page (1-500). Default: 50. |
