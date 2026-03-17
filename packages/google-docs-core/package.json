@@ -1,0 +1,47 @@
+{
+  "name": "@usejunior/google-docs-core",
+  "version": "0.3.1",
+  "description": "Google Docs core library: read, write, and anchor management via Google Docs API",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run clean:dist && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "node ../../node_modules/vitest/vitest.mjs",
+    "test:run": "node ../../node_modules/vitest/vitest.mjs run",
+    "lint": "tsc --noEmit",
+    "test:e2e": "node ../../node_modules/vitest/vitest.mjs run src/__tests__/e2e/"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/UseJunior/safe-docx"
+  },
+  "homepage": "https://github.com/UseJunior/safe-docx/tree/main/packages/google-docs-core",
+  "bugs": {
+    "url": "https://github.com/UseJunior/safe-docx/issues"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "google-docs",
+    "google-api",
+    "document-editing",
+    "mcp",
+    "anchor-management"
+  ],
+  "license": "MIT"
+}

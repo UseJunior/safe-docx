@@ -15,5 +15,5 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
-  "references": [{ "path": "../docx-core" }]
+  "references": [{ "path": "../docx-core" }, { "path": "../google-docs-core" }]
 }

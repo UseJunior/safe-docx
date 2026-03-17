@@ -72,11 +72,31 @@ export type DocxSession = {
   normalizationStats: NormalizationResult | null;
 };
 
-export type Session = DocxSession;
+export type GDocsSession = {
+  provider: 'gdocs';
+  sessionId: string;
+  docId: string;
+  doc: any; // GoogleDocsDocument — typed via dynamic import in handlers
+  editCount: number;
+  editRevision: number;
+  createdAt: Date;
+  lastAccessedAt: Date;
+  expiresAt: Date;
+};
+
+export type Session = DocxSession | GDocsSession;
+
+export function isDocxSession(s: Session): s is DocxSession {
+  return s.provider === 'docx';
+}
+
+export function isGDocsSession(s: Session): s is GDocsSession {
+  return s.provider === 'gdocs';
+}
 
 export class SessionManager {
   /** Sessions keyed by canonical file path (realpath). */
-  private sessions = new Map<string, DocxSession>();
+  private sessions = new Map<string, Session>();
   private ttlMs: number;
 
   /** Concurrency guard: prevents double-generation of baselines for the same session. */
@@ -212,13 +232,13 @@ export class SessionManager {
   }
 
   /** Get session by file path (auto-canonicalizes). */
-  async getSessionByFilePath(filePath: string): Promise<DocxSession | null> {
+  async getSessionByFilePath(filePath: string): Promise<Session | null> {
     const canonical = await this.canonicalizePath(filePath);
     return this.getSessionByPath(canonical);
   }
 
   /** Get session by canonical file path. Returns null if not found or expired. */
-  getSessionByPath(canonicalPath: string): DocxSession | null {
+  getSessionByPath(canonicalPath: string): Session | null {
     const ses = this.sessions.get(canonicalPath);
     if (!ses) return null;
     const now = Date.now();
@@ -232,7 +252,7 @@ export class SessionManager {
   /**
    * @deprecated Use getSessionByPath instead. Kept only for backward compatibility during migration.
    */
-  getSession(sessionId: string): DocxSession {
+  getSession(sessionId: string): Session {
     // Linear scan by sessionId — only used by legacy code paths
     for (const [key, ses] of this.sessions.entries()) {
       if (ses.sessionId === sessionId) {
@@ -247,13 +267,19 @@ export class SessionManager {
     throw new Error(`SESSION_NOT_FOUND:${sessionId}`);
   }
 
-  private async cleanupSessionArtifacts(session: DocxSession): Promise<void> {
-    const tmpDir = path.dirname(session.tmpPath);
-    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  private async cleanupSessionArtifacts(session: Session): Promise<void> {
+    if (isDocxSession(session)) {
+      const tmpDir = path.dirname(session.tmpPath);
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+    // GDocs sessions have no tmp dir to clean up
   }
 
   async clearSessionByPath(filePath: string): Promise<string | null> {
-    const sessionKey = await this.canonicalizePath(filePath);
+    // GDocs sessions use "gdocs:<docId>" keys — skip filesystem canonicalization
+    const sessionKey = filePath.startsWith('gdocs:')
+      ? filePath
+      : await this.canonicalizePath(filePath);
     const session = this.sessions.get(sessionKey);
     if (!session) return null;
     this.sessions.delete(sessionKey);
@@ -269,19 +295,21 @@ export class SessionManager {
     return clearedPaths;
   }
 
-  touch(session: DocxSession): void {
+  touch(session: Session): void {
     const now = new Date();
     session.lastAccessedAt = now;
     session.expiresAt = new Date(now.getTime() + this.ttlMs);
   }
 
-  markEdited(session: DocxSession): void {
+  markEdited(session: Session): void {
     session.editCount += 1;
     session.editRevision += 1;
-    // Any edit creates a new canonical revision; previously generated artifacts
-    // are no longer current and should not be reused by default.
-    session.saveCache.clear();
-    session.extractionCache = null;
+    if (isDocxSession(session)) {
+      // Any edit creates a new canonical revision; previously generated artifacts
+      // are no longer current and should not be reused by default.
+      session.saveCache.clear();
+      session.extractionCache = null;
+    }
   }
 
   getSaveCache(session: DocxSession, cacheKey: string): SaveCacheEntry | null {
@@ -303,6 +331,35 @@ export class SessionManager {
 
   setExtractionCache(session: DocxSession, changes: ParagraphRevision[]): void {
     session.extractionCache = { revision: session.editRevision, changes };
+  }
+
+  /**
+   * Create a Google Docs session. The `doc` is an already-loaded
+   * GoogleDocsDocument instance (created via dynamic import in the handler layer).
+   */
+  createGDocsSession(docId: string, doc: any): GDocsSession {
+    const sessionKey = `gdocs:${docId}`;
+    const existing = this.sessions.get(sessionKey);
+    if (existing) {
+      this.touch(existing);
+      return existing as GDocsSession;
+    }
+
+    const sessionId = this.newSessionId();
+    const now = new Date();
+    const session: GDocsSession = {
+      provider: 'gdocs',
+      sessionId,
+      docId,
+      doc,
+      editCount: 0,
+      editRevision: 0,
+      createdAt: now,
+      lastAccessedAt: now,
+      expiresAt: new Date(now.getTime() + this.ttlMs),
+    };
+    this.sessions.set(sessionKey, session);
+    return session;
   }
 
   async saveTo(session: DocxSession, savePath: string, opts?: { cleanBookmarks?: boolean }): Promise<void> {
