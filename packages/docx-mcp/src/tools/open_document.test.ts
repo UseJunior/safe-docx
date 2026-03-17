@@ -32,9 +32,9 @@ describe('open_document', () => {
     await when('openDocument is called', async () => {
       result = await openDocument(mgr, { file_path: filePath });
     });
-    await then('it succeeds with a valid session_id', () => {
+    await then('it succeeds with a valid file_path', () => {
       assertSuccess(result, 'open_document');
-      expect(result.session_id).toMatch(/^ses_[A-Za-z0-9]{12}$/);
+      expect(result.file_path).toBeTruthy();
     });
     await and('the document info contains the filename and paragraph count', () => {
       expect((result.document as Record<string, unknown>).filename).toBe('test.docx');
@@ -42,7 +42,7 @@ describe('open_document', () => {
     });
   });
 
-  test('returns session_id and expiration info', async ({ given, when, then }: AllureBddContext) => {
+  test('returns file_path and expiration info', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
     let filePath: string;
     let result: Awaited<ReturnType<typeof openDocument>>;
@@ -57,9 +57,9 @@ describe('open_document', () => {
     await when('openDocument is called', async () => {
       result = await openDocument(mgr, { file_path: filePath });
     });
-    await then('the response includes session_id and expires_at', () => {
+    await then('the response includes file_path and expires_at', () => {
       assertSuccess(result, 'open_document');
-      expect(result.session_id).toBeTruthy();
+      expect(result.file_path).toBeTruthy();
       expect(result.expires_at).toBeTruthy();
     });
   });
@@ -97,7 +97,7 @@ describe('open_document', () => {
     await then('it fails with FILE_NOT_FOUND', () => { assertFailure(result, 'FILE_NOT_FOUND', 'missing file'); });
   });
 
-  test('creates separate sessions for same file opened twice', async ({ given, when, then }: AllureBddContext) => {
+  test('reuses session for same file opened twice', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
     let filePath: string;
     let r1: Awaited<ReturnType<typeof openDocument>>;
@@ -114,10 +114,10 @@ describe('open_document', () => {
       r1 = await openDocument(mgr, { file_path: filePath });
       r2 = await openDocument(mgr, { file_path: filePath });
     });
-    await then('two distinct session IDs are returned', () => {
+    await then('both calls succeed and return the same file_path', () => {
       assertSuccess(r1, 'first open');
       assertSuccess(r2, 'second open');
-      expect(r1.session_id).not.toBe(r2.session_id);
+      expect(r1.file_path).toBe(r2.file_path);
     });
   });
 

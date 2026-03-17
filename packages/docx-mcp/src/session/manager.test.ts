@@ -16,6 +16,15 @@ async function createTestDoc(texts: string[] = ['Hello']): Promise<Buffer> {
   return Buffer.from(await makeMinimalDocx(texts));
 }
 
+async function createTestFile(texts: string[] = ['Hello']): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-test-'));
+  tmpDirs.push(dir);
+  const filePath = path.join(dir, 'test.docx');
+  const buf = await createTestDoc(texts);
+  await fs.writeFile(filePath, new Uint8Array(buf));
+  return filePath;
+}
+
 afterEach(async () => {
   for (const dir of tmpDirs.splice(0)) {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
@@ -27,180 +36,206 @@ afterEach(async () => {
 describe('SessionManager.createSession', () => {
   test('returns a session with a valid ID format', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     expect(session.sessionId).toMatch(/^ses_[A-Za-z0-9]{12}$/);
     expect(session.filename).toBe('test.docx');
-    expect(session.originalPath).toBe('/tmp/test.docx');
+    expect(session.originalPath).toBe(filePath);
     expect(session.editCount).toBe(0);
     expect(session.editRevision).toBe(0);
     expect(session.createdAt).toBeInstanceOf(Date);
     expect(session.lastAccessedAt).toBeInstanceOf(Date);
     expect(session.expiresAt).toBeInstanceOf(Date);
-
-    // Cleanup
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 
   test('writes document to temp directory', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     const exists = await fs.stat(session.tmpPath).then(() => true).catch(() => false);
     expect(exists).toBe(true);
-
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
   test('loads a DocxDocument instance', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     expect(session.doc).toBeDefined();
     tmpDirs.push(path.dirname(session.tmpPath));
   });
-});
 
-// ── getSession ──────────────────────────────────────────────────────
-
-describe('SessionManager.getSession', () => {
-  test('retrieves a valid session by ID', async () => {
+  test('replaces existing session for same file path', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const created = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const s1 = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    const s1TmpDir = path.dirname(s1.tmpPath);
 
-    const retrieved = mgr.getSession(created.sessionId);
-    expect(retrieved.sessionId).toBe(created.sessionId);
+    const s2 = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    expect(s2.sessionId).not.toBe(s1.sessionId);
 
-    tmpDirs.push(path.dirname(created.tmpPath));
-  });
+    // Old session's tmp should be cleaned up
+    const exists = await fs.stat(s1TmpDir).then(() => true).catch(() => false);
+    expect(exists).toBe(false);
 
-  test('throws INVALID_SESSION_ID for malformed ID', () => {
-    const mgr = new SessionManager();
-    expect(() => mgr.getSession('bad_id')).toThrow('INVALID_SESSION_ID');
-  });
-
-  test('throws SESSION_NOT_FOUND for unknown valid ID', () => {
-    const mgr = new SessionManager();
-    expect(() => mgr.getSession('ses_AAAAAAAAAAAA')).toThrow('SESSION_NOT_FOUND');
-  });
-
-  test('throws SESSION_EXPIRED for expired session', async () => {
-    const mgr = new SessionManager({ ttlMs: 1 }); // 1ms TTL
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
-
-    // Wait for expiry
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(() => mgr.getSession(session.sessionId)).toThrow('SESSION_EXPIRED');
-    tmpDirs.push(path.dirname(session.tmpPath));
+    tmpDirs.push(path.dirname(s2.tmpPath));
   });
 });
 
-// ── getMostRecentlyUsedSessionForPath ───────────────────────────────
+// ── getSessionByPath ────────────────────────────────────────────────
 
-describe('SessionManager.getMostRecentlyUsedSessionForPath', () => {
-  test('returns null for unknown path', () => {
+describe('SessionManager.getSessionByPath', () => {
+  test('returns null for unknown path', async () => {
     const mgr = new SessionManager();
-    expect(mgr.getMostRecentlyUsedSessionForPath('/nonexistent')).toBeNull();
+    expect(mgr.getSessionByPath('/nonexistent')).toBeNull();
   });
 
-  test('returns the session for a matching path', async () => {
+  test('returns the session for a matching canonical path', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
-    const normalized = mgr.normalizePath('/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    const canonical = await mgr.canonicalizePath(filePath);
 
-    const found = mgr.getMostRecentlyUsedSessionForPath(normalized);
+    const found = mgr.getSessionByPath(canonical);
     expect(found).not.toBeNull();
     expect(found!.sessionId).toBe(session.sessionId);
 
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
-  test('selects most recently accessed among multiple sessions', async () => {
-    const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const s1 = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
-    const s2 = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
-
-    // Guarantee s2 has a strictly later timestamp (wall clock may not advance between calls)
-    s2.lastAccessedAt = new Date(s1.lastAccessedAt.getTime() + 1);
-
-    const normalized = mgr.normalizePath('/tmp/test.docx');
-    const found = mgr.getMostRecentlyUsedSessionForPath(normalized);
-    expect(found!.sessionId).toBe(s2.sessionId);
-
-    tmpDirs.push(path.dirname(s1.tmpPath));
-    tmpDirs.push(path.dirname(s2.tmpPath));
-  });
-
-  test('prunes expired sessions', async () => {
+  test('returns null for expired session', async () => {
     const mgr = new SessionManager({ ttlMs: 1 });
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
-    const normalized = mgr.normalizePath('/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    const canonical = await mgr.canonicalizePath(filePath);
 
+    // Wait for expiry
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(mgr.getMostRecentlyUsedSessionForPath(normalized)).toBeNull();
+    expect(mgr.getSessionByPath(canonical)).toBeNull();
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 });
 
-// ── clearSessionById ────────────────────────────────────────────────
+// ── clearSessionByPath ──────────────────────────────────────────────
 
-describe('SessionManager.clearSessionById', () => {
-  test('removes session and returns it', async () => {
+describe('SessionManager.clearSessionByPath', () => {
+  test('removes session and returns its path', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
-    const cleared = await mgr.clearSessionById(session.sessionId);
-    expect(cleared.sessionId).toBe(session.sessionId);
+    const cleared = await mgr.clearSessionByPath(filePath);
+    expect(cleared).not.toBeNull();
 
     // Session should no longer exist
-    expect(() => mgr.getSession(session.sessionId)).toThrow('SESSION_NOT_FOUND');
+    const canonical = await mgr.canonicalizePath(filePath);
+    expect(mgr.getSessionByPath(canonical)).toBeNull();
+    tmpDirs.push(path.dirname(session.tmpPath));
   });
 
   test('cleans up temp directory', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
-    const tmpDir = path.dirname(session.tmpPath);
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    const sessionTmpDir = path.dirname(session.tmpPath);
 
-    await mgr.clearSessionById(session.sessionId);
+    await mgr.clearSessionByPath(filePath);
 
-    const exists = await fs.stat(tmpDir).then(() => true).catch(() => false);
+    const exists = await fs.stat(sessionTmpDir).then(() => true).catch(() => false);
     expect(exists).toBe(false);
+  });
+
+  test('returns null for unknown path', async () => {
+    const mgr = new SessionManager();
+    const cleared = await mgr.clearSessionByPath('/tmp/nonexistent.docx');
+    expect(cleared).toBeNull();
   });
 });
 
 // ── clearAllSessions ────────────────────────────────────────────────
 
 describe('SessionManager.clearAllSessions', () => {
-  test('removes all sessions and returns their IDs', async () => {
+  test('removes all sessions and returns their paths', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const s1 = await mgr.createSession(buf, 'a.docx', '/tmp/a.docx');
-    const s2 = await mgr.createSession(buf, 'b.docx', '/tmp/b.docx');
+    const fileA = await createTestFile(['A']);
+    const fileB = await createTestFile(['B']);
+    const bufA = await fs.readFile(fileA);
+    const bufB = await fs.readFile(fileB);
+    await mgr.createSession(Buffer.from(bufA), 'a.docx', fileA);
+    await mgr.createSession(Buffer.from(bufB), 'b.docx', fileB);
 
-    const clearedIds = await mgr.clearAllSessions();
+    const clearedPaths = await mgr.clearAllSessions();
 
-    expect(clearedIds).toContain(s1.sessionId);
-    expect(clearedIds).toContain(s2.sessionId);
-    expect(() => mgr.getSession(s1.sessionId)).toThrow('SESSION_NOT_FOUND');
-    expect(() => mgr.getSession(s2.sessionId)).toThrow('SESSION_NOT_FOUND');
+    expect(clearedPaths.length).toBe(2);
+    const canonA = await mgr.canonicalizePath(fileA);
+    const canonB = await mgr.canonicalizePath(fileB);
+    expect(mgr.getSessionByPath(canonA)).toBeNull();
+    expect(mgr.getSessionByPath(canonB)).toBeNull();
   });
 
   test('returns empty array when no sessions exist', async () => {
     const mgr = new SessionManager();
-    const clearedIds = await mgr.clearAllSessions();
-    expect(clearedIds).toEqual([]);
+    const clearedPaths = await mgr.clearAllSessions();
+    expect(clearedPaths).toEqual([]);
+  });
+});
+
+// ── ensureBaselines ────────────────────────────────────────────────
+
+describe('SessionManager.ensureBaselines', () => {
+  test('baselines are null after createSession + finalizeNewSession', async () => {
+    const mgr = new SessionManager();
+    const filePath = await createTestFile(['test baseline']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    await mgr.finalizeNewSession(session);
+
+    expect(session.comparisonBaseline).toBeNull();
+    expect(session.comparisonBaselineWithBookmarks).toBeNull();
+    tmpDirs.push(path.dirname(session.tmpPath));
+  });
+
+  test('ensureBaselines generates baselines from originalBuffer', async () => {
+    const mgr = new SessionManager();
+    const filePath = await createTestFile(['test baseline']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    await mgr.finalizeNewSession(session);
+
+    await mgr.ensureBaselines(session);
+
+    expect(session.comparisonBaseline).not.toBeNull();
+    expect(session.comparisonBaselineWithBookmarks).not.toBeNull();
+    expect(session.comparisonBaseline!.length).toBeGreaterThan(0);
+    expect(session.comparisonBaselineWithBookmarks!.length).toBeGreaterThan(0);
+    tmpDirs.push(path.dirname(session.tmpPath));
+  });
+
+  test('ensureBaselines is idempotent', async () => {
+    const mgr = new SessionManager();
+    const filePath = await createTestFile(['test baseline']);
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+    await mgr.finalizeNewSession(session);
+
+    await mgr.ensureBaselines(session);
+    const first = session.comparisonBaseline;
+
+    await mgr.ensureBaselines(session);
+    expect(session.comparisonBaseline).toBe(first); // Same reference
+    tmpDirs.push(path.dirname(session.tmpPath));
   });
 });
 
@@ -209,8 +244,9 @@ describe('SessionManager.clearAllSessions', () => {
 describe('SessionManager.markEdited', () => {
   test('increments editCount and editRevision', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     expect(session.editCount).toBe(0);
     expect(session.editRevision).toBe(0);
@@ -224,16 +260,14 @@ describe('SessionManager.markEdited', () => {
 
     expect(session.editCount).toBe(2);
     expect(session.editRevision).toBe(2);
-
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 
   test('clears save cache', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
-    // Simulate a cached save entry
     session.saveCache.set('test-key', {
       cacheKey: 'test-key',
       revision: 0,
@@ -252,20 +286,17 @@ describe('SessionManager.markEdited', () => {
     expect(session.saveCache.size).toBe(1);
     mgr.markEdited(session);
     expect(session.saveCache.size).toBe(0);
-
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 
   test('clears extraction cache', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     session.extractionCache = { revision: 0, changes: [] };
     mgr.markEdited(session);
     expect(session.extractionCache).toBeNull();
-
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 });
 
@@ -304,8 +335,9 @@ describe('SessionManager.normalizePath', () => {
 describe('SessionManager.touch', () => {
   test('updates lastAccessedAt and resets expiresAt', async () => {
     const mgr = new SessionManager({ ttlMs: 60000 });
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
     const originalAccess = session.lastAccessedAt.getTime();
 
     await new Promise((r) => setTimeout(r, 5));
@@ -315,8 +347,6 @@ describe('SessionManager.touch', () => {
     expect(session.expiresAt.getTime()).toBeGreaterThan(
       session.lastAccessedAt.getTime() + 59000
     );
-
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 });
 
@@ -325,17 +355,18 @@ describe('SessionManager.touch', () => {
 describe('SessionManager save cache', () => {
   test('returns null for missing cache key', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     expect(mgr.getSaveCache(session, 'missing')).toBeNull();
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 
   test('stores and retrieves cache entries', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     const entry = {
       cacheKey: 'key1',
@@ -356,48 +387,43 @@ describe('SessionManager save cache', () => {
     const retrieved = mgr.getSaveCache(session, 'key1');
     expect(retrieved).not.toBeNull();
     expect(retrieved!.cacheKey).toBe('key1');
-
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 });
 
 describe('SessionManager extraction cache', () => {
   test('returns null when no extraction cache', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     expect(mgr.getExtractionCache(session)).toBeNull();
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 
   test('returns cache when revision matches', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     mgr.setExtractionCache(session, []);
     const cached = mgr.getExtractionCache(session);
     expect(cached).not.toBeNull();
     expect(cached!.revision).toBe(session.editRevision);
-
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 
   test('returns null and clears when revision is stale', async () => {
     const mgr = new SessionManager();
-    const buf = await createTestDoc();
-    const session = await mgr.createSession(buf, 'test.docx', '/tmp/test.docx');
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
 
     mgr.setExtractionCache(session, []);
-    mgr.markEdited(session); // increments revision, clears cache
+    mgr.markEdited(session);
 
-    // Re-set with old revision (simulate stale cache)
     session.extractionCache = { revision: 0, changes: [] };
     const cached = mgr.getExtractionCache(session);
     expect(cached).toBeNull();
     expect(session.extractionCache).toBeNull();
-
-    tmpDirs.push(path.dirname(session.tmpPath));
   });
 });

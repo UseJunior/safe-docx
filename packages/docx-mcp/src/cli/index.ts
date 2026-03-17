@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { runServeCommand } from './commands/serve.js';
 import { runCompareCommand, type CompareCommandArgs, type CompareCommandResult } from './commands/compare.js';
 import { parseEditArgs, runEditCommand } from './commands/edit.js';
+import { parseGrepArgs, runGrepCommand } from './commands/grep.js';
 import { parseBoolean, toSnakeCase } from './parse_utils.js';
 import { parseToolFlags, generateToolHelp } from './flag_parser.js';
 import { renderTopLevelHelp } from './help.js';
@@ -137,6 +138,13 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
         const parsed = parseCompareArgs(rest);
         const result = await handlers.compare(parsed);
         handlers.write(JSON.stringify(result));
+        return;
+      }
+
+      // Grep command — human-friendly search output
+      if (command === 'grep') {
+        const grepArgs = parseGrepArgs(rest);
+        await runGrepCommand(grepArgs, { write: handlers.write, writeError: handlers.writeError });
         return;
       }
 

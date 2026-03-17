@@ -6,7 +6,6 @@ import { OOXML, W } from '@usejunior/docx-core';
 export async function clearFormatting(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     paragraph_ids?: string[];
     clear_highlight?: boolean;
@@ -98,7 +97,7 @@ export async function clearFormatting(
 
     return ok(mergeSessionResolutionMetadata({
       success: true,
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       paragraphs_modified: modifiedCount,
     }, metadata));
   } catch (e: any) {

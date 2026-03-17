@@ -32,7 +32,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with a raw-format replace_text step', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -84,7 +84,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with the merged plan steps', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: mergedSteps,
       });
     });
@@ -114,7 +114,7 @@ describe('apply_plan tool', () => {
         writable: true,
       });
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: rawSteps,
       });
     });
@@ -138,7 +138,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with two steps both referencing non-existent paragraph IDs', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -169,7 +169,7 @@ describe('apply_plan tool', () => {
       expect(steps[1]!.errors.length).toBeGreaterThan(0);
     });
     await and('no edits were applied to the document', async () => {
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       expect(String(read.content)).toContain('Hello world');
     });
@@ -185,7 +185,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with a step that has an empty step_id', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: '',
@@ -214,7 +214,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with an unsupported "delete_paragraph" operation', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -243,13 +243,13 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with smart_edit and separately with smart_insert', async () => {
       result1 = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           { step_id: 's1', operation: 'smart_edit', target_paragraph_id: opened.firstParaId, old_string: 'Hello', new_string: 'Hi', instruction: 'test' },
         ],
       });
       result2 = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           { step_id: 's1', operation: 'smart_insert', positional_anchor_node_id: opened.firstParaId, new_string: 'New', instruction: 'test' },
         ],
@@ -274,7 +274,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with a replace_text step missing old_string, new_string, and instruction', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -301,7 +301,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with an insert_paragraph step missing all required fields', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -331,7 +331,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with two replace_text steps', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -359,7 +359,7 @@ describe('apply_plan tool', () => {
       expect(result.completed_step_ids).toEqual(['s1', 's2']);
     });
     await and('both replacements appear in the document', async () => {
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       const content = String(read.content);
       expect(content).toContain('Hello earth');
@@ -381,7 +381,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called where one step has a bad old_string', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -421,7 +421,7 @@ describe('apply_plan tool', () => {
       expect(steps[2]!.valid).toBe(true);
     });
     await and('no edits were applied and the document is unchanged', async () => {
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       expect(String(read.content)).toContain('Hello world');
       expect(String(read.content)).not.toContain('Hello earth');
@@ -442,7 +442,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with an insert_paragraph step AFTER the heading', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -459,7 +459,7 @@ describe('apply_plan tool', () => {
     await then('the step is completed and the inserted paragraph appears in the document', async () => {
       assertSuccess(result);
       expect(result.completed_count).toBe(1);
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       expect(String(read.content)).toContain('Inserted paragraph');
     });
@@ -493,7 +493,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with plan_file_path pointing to the plan file', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         plan_file_path: planPath,
       });
     });
@@ -501,7 +501,7 @@ describe('apply_plan tool', () => {
     await then('the step from the file is applied and the replacement appears in the document', async () => {
       assertSuccess(result);
       expect(result.completed_count).toBe(1);
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       expect(String(read.content)).toContain('Hello file');
     });
@@ -517,7 +517,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with both steps and plan_file_path', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [{ step_id: 's1', operation: 'replace_text' }],
         plan_file_path: '/tmp/plan.json',
       });
@@ -537,7 +537,7 @@ describe('apply_plan tool', () => {
     });
 
     await when('applyPlan is called with neither steps nor plan_file_path', async () => {
-      result = await applyPlan(opened.mgr, { session_id: opened.sessionId });
+      result = await applyPlan(opened.mgr, { file_path: opened.inputPath });
     });
 
     await then('the result fails with INVALID_PARAMS', () => {
@@ -555,7 +555,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with a .txt plan_file_path', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         plan_file_path: '/tmp/plan.txt',
       });
     });
@@ -580,7 +580,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with that oversized plan_file_path', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         plan_file_path: planPath,
       });
     });
@@ -613,7 +613,7 @@ describe('apply_plan tool', () => {
       const headingId = opened.paraIds[0]!;
       const bodyId = opened.paraIds[1]!;
       result = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         positional_anchor_node_id: headingId,
         position: 'AFTER',
         new_string: 'Inserted with body style',
@@ -625,7 +625,7 @@ describe('apply_plan tool', () => {
     await then('the insert succeeds without a style_source_warning and the text appears', async () => {
       assertSuccess(result);
       expect(result.style_source_warning).toBeUndefined();
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       expect(String(read.content)).toContain('Inserted with body style');
     });
@@ -641,7 +641,7 @@ describe('apply_plan tool', () => {
 
     await when('insertParagraph is called with a non-existent style_source_id', async () => {
       result = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         positional_anchor_node_id: opened.firstParaId,
         position: 'AFTER',
         new_string: 'Inserted text',
@@ -668,7 +668,7 @@ describe('apply_plan tool', () => {
 
     await when('insertParagraph is called without style_source_id', async () => {
       result = await insertParagraph(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         positional_anchor_node_id: opened.firstParaId,
         position: 'AFTER',
         new_string: 'Inserted text',
@@ -696,7 +696,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with an insert_paragraph step using a non-existent style_source_id', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [
           {
             step_id: 's1',
@@ -769,7 +769,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with the merged plan steps', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: mergedSteps,
       });
     });
@@ -777,7 +777,7 @@ describe('apply_plan tool', () => {
     await then('both steps complete and both results appear in the document', async () => {
       assertSuccess(result);
       expect(result.completed_count).toBe(2);
-      const read = await readFile(opened.mgr, { session_id: opened.sessionId });
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(read);
       const content = String(read.content);
       expect(content).toContain('Merged result');
@@ -799,7 +799,7 @@ describe('apply_plan tool', () => {
 
     await when('applyPlan is called with an empty steps array', async () => {
       result = await applyPlan(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         steps: [],
       });
     });

@@ -5,7 +5,7 @@ import {
   stripAllInlineTags,
   type ReplacementPart,
 } from '@usejunior/docx-core';
-import { SessionManager, type Session } from '../session/manager.js';
+import { SessionManager, type DocxSession } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { RESULT_PREVIEW_CHARS, previewText } from './preview.js';
@@ -65,7 +65,7 @@ function headerFormattingToAddRunProps(formatting: unknown): NonNullable<Replace
 }
 
 function findHeaderRoleModelAddRunProps(
-  session: Session,
+  session: DocxSession,
   anchorParagraphId: string,
 ): NonNullable<ReplacementPart['addRunProps']> | null {
   const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
@@ -112,7 +112,6 @@ function buildReplacementPartsForInsert(
 export async function insertParagraph(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     positional_anchor_node_id: string;
     new_string: string;
@@ -199,7 +198,7 @@ export async function insertParagraph(
 
     const responseData: Record<string, unknown> = {
       success: true,
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       edit_count: session.editCount,
       anchor_paragraph_id: params.positional_anchor_node_id,
       new_paragraph_id: res.newParagraphId,

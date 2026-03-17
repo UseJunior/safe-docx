@@ -21,7 +21,6 @@ afterEach(async () => {
 
 async function setupSessionWithFile(): Promise<{
   mgr: SessionManager;
-  sessionId: string;
   filePath: string;
 }> {
   const mgr = new SessionManager();
@@ -32,10 +31,9 @@ async function setupSessionWithFile(): Promise<{
   await fs.writeFile(filePath, new Uint8Array(buf));
 
   // Open the document through read_file (which creates a session)
-  const result = await dispatchToolCall(mgr, 'read_file', { file_path: filePath });
-  const sessionId = (result as Record<string, unknown>).session_id as string;
+  await dispatchToolCall(mgr, 'read_file', { file_path: filePath });
 
-  return { mgr, sessionId, filePath };
+  return { mgr, filePath };
 }
 
 // ── Unknown tool ────────────────────────────────────────────────────
@@ -73,82 +71,82 @@ describe('dispatchToolCall', () => {
     await then('it succeeds', () => { expect(result.success).toBe(true); });
   });
 
-  test('routes get_session_status to the correct handler', async ({ given, when, then }: AllureBddContext) => {
+  test('routes get_file_status to the correct handler', async ({ given, when, then }: AllureBddContext) => {
     let mgr: SessionManager;
-    let sessionId: string;
+    let filePath: string;
     let result: Awaited<ReturnType<typeof dispatchToolCall>>;
 
     await given('an active session', async () => {
-      ({ mgr, sessionId } = await setupSessionWithFile());
+      ({ mgr, filePath } = await setupSessionWithFile());
     });
-    await when('dispatchToolCall is called with get_session_status', async () => {
-      result = await dispatchToolCall(mgr, 'get_session_status', { session_id: sessionId });
+    await when('dispatchToolCall is called with get_file_status', async () => {
+      result = await dispatchToolCall(mgr, 'get_file_status', { file_path: filePath });
     });
     await then('it succeeds', () => { expect(result.success).toBe(true); });
   });
 
   test('routes get_comments to the correct handler', async ({ given, when, then }: AllureBddContext) => {
     let mgr: SessionManager;
-    let sessionId: string;
+    let filePath: string;
     let result: Awaited<ReturnType<typeof dispatchToolCall>>;
 
     await given('an active session', async () => {
-      ({ mgr, sessionId } = await setupSessionWithFile());
+      ({ mgr, filePath } = await setupSessionWithFile());
     });
     await when('dispatchToolCall is called with get_comments', async () => {
-      result = await dispatchToolCall(mgr, 'get_comments', { session_id: sessionId });
+      result = await dispatchToolCall(mgr, 'get_comments', { file_path: filePath });
     });
     await then('it succeeds', () => { expect(result.success).toBe(true); });
   });
 
   test('routes get_footnotes to the correct handler', async ({ given, when, then }: AllureBddContext) => {
     let mgr: SessionManager;
-    let sessionId: string;
+    let filePath: string;
     let result: Awaited<ReturnType<typeof dispatchToolCall>>;
 
     await given('an active session', async () => {
-      ({ mgr, sessionId } = await setupSessionWithFile());
+      ({ mgr, filePath } = await setupSessionWithFile());
     });
     await when('dispatchToolCall is called with get_footnotes', async () => {
-      result = await dispatchToolCall(mgr, 'get_footnotes', { session_id: sessionId });
+      result = await dispatchToolCall(mgr, 'get_footnotes', { file_path: filePath });
     });
     await then('it succeeds', () => { expect(result.success).toBe(true); });
   });
 
   test('routes has_tracked_changes to the correct handler', async ({ given, when, then }: AllureBddContext) => {
     let mgr: SessionManager;
-    let sessionId: string;
+    let filePath: string;
     let result: Awaited<ReturnType<typeof dispatchToolCall>>;
 
     await given('an active session', async () => {
-      ({ mgr, sessionId } = await setupSessionWithFile());
+      ({ mgr, filePath } = await setupSessionWithFile());
     });
     await when('dispatchToolCall is called with has_tracked_changes', async () => {
-      result = await dispatchToolCall(mgr, 'has_tracked_changes', { session_id: sessionId });
+      result = await dispatchToolCall(mgr, 'has_tracked_changes', { file_path: filePath });
     });
     await then('it succeeds', () => { expect(result.success).toBe(true); });
   });
 
-  // ── Session-based tools fail gracefully ────────────────────────
+  // ── File-based tools fail gracefully ────────────────────────
 
-  test('returns error for session-based tool with non-existent session', async ({ given, when, then }: AllureBddContext) => {
+  test('returns error for file-based tool with non-existent file', async ({ given, when, then }: AllureBddContext) => {
     let mgr: SessionManager;
     let result: Awaited<ReturnType<typeof dispatchToolCall>>;
 
     await given('a fresh session manager', () => { mgr = new SessionManager(); });
-    await when('dispatchToolCall is called with a non-existent session ID', async () => {
-      result = await dispatchToolCall(mgr, 'get_session_status', { session_id: 'ses_AAAAAAAAAAAA' });
+    await when('dispatchToolCall is called with a non-existent file path', async () => {
+      result = await dispatchToolCall(mgr, 'get_file_status', { file_path: '/tmp/nonexistent.docx' });
     });
     await then('it fails', () => { expect(result.success).toBe(false); });
   });
 
-  test('returns error for session-based tool with invalid session ID format', async ({ given, when, then }: AllureBddContext) => {
+  test('returns error for file-based tool with no file_path', async ({ given, when, then }: AllureBddContext) => {
     let mgr: SessionManager;
     let result: Awaited<ReturnType<typeof dispatchToolCall>>;
 
     await given('a fresh session manager', () => { mgr = new SessionManager(); });
-    await when('dispatchToolCall is called with an invalid session ID format', async () => {
-      result = await dispatchToolCall(mgr, 'get_session_status', { session_id: 'invalid' });
+    await when('dispatchToolCall is called without a file_path', async () => {
+      result = await dispatchToolCall(mgr, 'get_file_status', {});
     });
     await then('it fails', () => { expect(result.success).toBe(false); });
   });

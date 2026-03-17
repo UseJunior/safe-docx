@@ -34,7 +34,7 @@ export type ParsedFlags = {
 // ---------------------------------------------------------------------------
 
 const FLAG_ALIASES: Record<string, Record<string, string>> = {
-  _global: { '--session': 'session_id', '--file': 'file_path' },
+  _global: { '--file': 'file_path' },
   replace_text: { '--para': 'target_paragraph_id', '--old': 'old_string', '--new': 'new_string' },
   save: { '-o': 'save_to_local_path', '--output': 'save_to_local_path' },
   insert_paragraph: { '--anchor': 'positional_anchor_node_id', '--pos': 'position' },

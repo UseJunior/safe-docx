@@ -20,7 +20,7 @@ describe('format_layout validation + strictness', () => {
     });
     await when('formatLayout is called with an invalid strict type', async () => {
       const badStrict = await formatLayout(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         strict: 'yes' as unknown as boolean,
         paragraph_spacing: {
           paragraph_ids: [firstParaIdFromToon(opened.content)],
@@ -32,7 +32,7 @@ describe('format_layout validation + strictness', () => {
     });
     await then('formatLayout without any mutation operation also fails with VALIDATION_ERROR', async () => {
       const noMutation = await formatLayout(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         strict: true,
       });
       expect(noMutation.success).toBe(false);
@@ -59,7 +59,7 @@ describe('format_layout validation + strictness', () => {
     });
     await when('formatLayout is called with a missing paragraph ID in strict mode', async () => {
       const missingPara = await formatLayout(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         strict: true,
         paragraph_spacing: {
           paragraph_ids: ['_bk_missing'],
@@ -71,7 +71,7 @@ describe('format_layout validation + strictness', () => {
     });
     await and('formatLayout with a missing table index in strict mode fails with INVALID_SELECTOR', async () => {
       const missingTable = await formatLayout(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         strict: true,
         row_height: {
           table_indexes: [99],
@@ -84,7 +84,7 @@ describe('format_layout validation + strictness', () => {
     });
     await then('formatLayout with a missing cell index in strict mode fails with INVALID_SELECTOR', async () => {
       const missingCell = await formatLayout(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         strict: true,
         cell_padding: {
           table_indexes: [0],
@@ -118,7 +118,7 @@ describe('format_layout validation + strictness', () => {
     });
     await when('formatLayout is called with missing selectors and strict=false', async () => {
       res = await formatLayout(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         strict: false,
         paragraph_spacing: {
           paragraph_ids: ['_bk_missing'],

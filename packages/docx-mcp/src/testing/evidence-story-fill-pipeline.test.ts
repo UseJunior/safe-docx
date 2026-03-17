@@ -133,7 +133,7 @@ describe('Evidence Story: DOCX fill pipeline', () => {
         for (const r of replacements) {
           const result = await allureStep(`Replace {{${r.field}}}`, async () => {
             return replaceText(mgr, {
-              session_id: sessionId,
+              file_path: sessionResult.inputPath,
               target_paragraph_id: r.paraId,
               old_string: r.old,
               new_string: r.new_,
@@ -147,7 +147,7 @@ describe('Evidence Story: DOCX fill pipeline', () => {
       await and('the filled document is downloaded', async () => {
         outputPath = `${sessionResult.tmpDir}/filled-output.docx`;
         const saved = await save(sessionResult.mgr, {
-          session_id: sessionResult.sessionId,
+          file_path: sessionResult.inputPath,
           save_to_local_path: outputPath,
           save_format: 'clean',
           clean_bookmarks: true,
@@ -165,7 +165,7 @@ describe('Evidence Story: DOCX fill pipeline', () => {
       await then('the output document contains all filled values', async () => {
         // Re-read the filled document to verify content
         const filledRead = await readFile(sessionResult.mgr, {
-          session_id: sessionResult.sessionId,
+          file_path: sessionResult.inputPath,
           format: 'toon',
         });
         assertSuccess(filledRead, 'read filled');

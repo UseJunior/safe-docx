@@ -153,7 +153,7 @@ describe('applyDocumentQuoteStyle (Fix 2)', () => {
     const paraId = opened.firstParaId;
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: '"Company" means ABC Corp.',
       new_string: '"Company" means XYZ Inc.',
@@ -162,7 +162,7 @@ describe('applyDocumentQuoteStyle (Fix 2)', () => {
     assertSuccess(edited, 'replace with quote transfer');
 
     // Verify output has smart quotes, not straight
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const afterText = session.doc.getParagraphTextById(paraId);
     expect(afterText).toContain('\u201CCompany\u201D');
     expect(afterText).toContain('XYZ Inc.');
@@ -178,7 +178,7 @@ describe('applyDocumentQuoteStyle (Fix 2)', () => {
 
     // Use markup tags with straight quotes in attribute values — these must NOT be smartened
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: '\u201CCompany\u201D means ABC Corp.',
       new_string: '<b>"Company"</b> means ABC Corp.',
@@ -186,7 +186,7 @@ describe('applyDocumentQuoteStyle (Fix 2)', () => {
     });
     assertSuccess(edited, 'replace with markup tags');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const afterText = session.doc.getParagraphTextById(paraId);
     // The text content should contain "Company" (straight quotes from the markup)
     // because quote normalization is skipped for the markup branch

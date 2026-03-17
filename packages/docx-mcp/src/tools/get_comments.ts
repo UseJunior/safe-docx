@@ -30,7 +30,7 @@ function mapComment(c: Comment, depth = 0): McpComment {
 
 export async function getComments(
   manager: SessionManager,
-  params: { session_id?: string; file_path?: string },
+  params: { file_path?: string },
 ): Promise<ToolResponse> {
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'get_comments' });
   if (!resolved.ok) return resolved.response;
@@ -40,7 +40,7 @@ export async function getComments(
     const comments = await session.doc.getComments();
     return ok(mergeSessionResolutionMetadata({
       comments: comments.map((c) => mapComment(c)),
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
     return err('COMMENT_ERROR', errorMessage(e));

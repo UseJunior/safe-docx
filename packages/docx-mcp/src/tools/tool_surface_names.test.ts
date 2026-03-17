@@ -20,9 +20,13 @@ describe('MCP tool surface naming', () => {
       expect(toolNames.has('replace_text')).toBe(true);
       expect(toolNames.has('insert_paragraph')).toBe(true);
       expect(toolNames.has('has_tracked_changes')).toBe(true);
+      expect(toolNames.has('get_file_status')).toBe(true);
+      expect(toolNames.has('close_file')).toBe(true);
       expect(toolNames.has('open_document')).toBe(false);
       expect(toolNames.has('smart_edit')).toBe(false);
       expect(toolNames.has('smart_insert')).toBe(false);
+      expect(toolNames.has('get_session_status')).toBe(false);
+      expect(toolNames.has('clear_session')).toBe(false);
     });
   });
 });

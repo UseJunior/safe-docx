@@ -9,8 +9,8 @@ import { grep } from './grep.js';
 import { replaceText } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { save } from './save.js';
-import { getSessionStatus } from './get_session_status.js';
-import { clearSession } from './clear_session.js';
+import { getFileStatus } from './get_file_status.js';
+import { closeFile } from './close_file.js';
 import { firstParaIdFromToon, makeMinimalDocx } from '../testing/docx_test_utils.js';
 import { testAllure } from '../testing/allure-test.js';
 import { assertSuccess, assertFailure, registerCleanup, createTrackedTempDir, createTestSessionManager } from '../testing/session-test-utils.js';
@@ -44,7 +44,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
 
     const read = await readFile(mgr, { file_path: inputPath, format: 'simple' });
     assertSuccess(read, 'read');
-    expect(read.session_resolution).toBe('opened_new_session');
+    expect(read.session_resolution).toBe('opened');
     const paraId = firstParaIdFromToon(String(read.content));
 
     const searched = await grep(mgr, { file_path: inputPath, patterns: ['Alpha'] });
@@ -75,9 +75,9 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     });
     expect(saved.success).toBe(true);
 
-    const status = await getSessionStatus(mgr, { file_path: inputPath });
+    const status = await getFileStatus(mgr, { file_path: inputPath });
     assertSuccess(status, 'status');
-    expect(status.session_id).toMatch(/^ses_[A-Za-z0-9]{12}$/);
+    expect(status.file_path).toBe(inputPath);
   });
 
   humanReadableTest.openspec('reuse policy selects most-recently-used session')('Scenario: reuse policy selects most-recently-used session', async () => {
@@ -89,11 +89,12 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     assertSuccess(first, 'open first');
     assertSuccess(second, 'open second');
 
-    await getSessionStatus(mgr, { session_id: String(first.session_id) });
+    await getFileStatus(mgr, { file_path: inputPath });
     const reused = await readFile(mgr, { file_path: inputPath, format: 'simple' });
     assertSuccess(reused, 'read');
-    expect(reused.session_resolution).toBe('reused_existing_session');
-    expect(reused.resolved_session_id).toBe(first.session_id);
+    expect(reused.session_resolution).toBe('reused');
+    // resolved_file_path is the canonical (realpath) version of the path
+    expect(reused.resolved_file_path).toBeTruthy();
   });
 
   humanReadableTest.openspec('existing session reuse is non-blocking and warns via metadata')('Scenario: existing session reuse is non-blocking and warns via metadata', async () => {
@@ -102,14 +103,13 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
 
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    const sessionId = String(opened.session_id);
 
-    const read = await readFile(mgr, { session_id: sessionId });
+    const read = await readFile(mgr, { file_path: inputPath });
     assertSuccess(read, 'read');
     const paraId = firstParaIdFromToon(String(read.content));
 
     const edited = await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       target_paragraph_id: paraId,
       old_string: 'Warning',
       new_string: 'WarningX',
@@ -119,8 +119,7 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
 
     const reused = await grep(mgr, { file_path: inputPath, patterns: ['WarningX'] });
     assertSuccess(reused, 'grep');
-    expect(reused.warning).toBeTypeOf('string');
-    expect(reused.reused_existing_session).toBe(true);
+    expect(reused.session_resolution).toBe('reused');
     const context = reused.reused_session_context as Record<string, unknown>;
     expect(typeof context.edit_revision).toBe('number');
     expect(typeof context.edit_count).toBe('number');
@@ -128,18 +127,11 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     expect(typeof context.last_used_at).toBe('string');
   });
 
-  humanReadableTest.openspec('conflicting `session_id` and `file_path` is rejected')('Scenario: conflicting `session_id` and `file_path` is rejected', async () => {
+  humanReadableTest.openspec('missing file_path is rejected')('Scenario: missing file_path is rejected', async () => {
     const mgr = createTestSessionManager();
-    const pathA = await createDoc(['A']);
-    const pathB = await createDoc(['B']);
-    const opened = await openDocument(mgr, { file_path: pathA });
-    assertSuccess(opened, 'open');
 
-    const read = await readFile(mgr, {
-      session_id: String(opened.session_id),
-      file_path: pathB,
-    });
-    assertFailure(read, 'SESSION_FILE_CONFLICT', 'conflict');
+    const read = await readFile(mgr, {} as Record<string, unknown>);
+    assertFailure(read, 'MISSING_FILE_PATH', 'missing file_path');
   });
 
   humanReadableTest.openspec('quote-normalized fallback matches smart quotes and ASCII quotes')('Scenario: quote-normalized fallback matches smart quotes and ASCII quotes', async () => {
@@ -167,37 +159,39 @@ describe('Traceability: Sessionless Entry and Session Controls', () => {
     expect(true).toBe(true);
   });
 
-  humanReadableTest.openspec('clear one session by id')('Scenario: clear one session by id', async () => {
+  humanReadableTest.openspec('close file by path')('Scenario: close file by path', async () => {
     const mgr = createTestSessionManager();
     const inputPath = await createDoc(['Clear me']);
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    const sessionId = String(opened.session_id);
 
-    const cleared = await clearSession(mgr, { session_id: sessionId });
+    const cleared = await closeFile(mgr, { file_path: inputPath });
     expect(cleared.success).toBe(true);
+    const clearedPaths = cleared.cleared_file_paths as string[];
+    expect(clearedPaths.length).toBe(1);
 
-    const status = await getSessionStatus(mgr, { session_id: sessionId });
-    assertFailure(status, 'SESSION_NOT_FOUND', 'missing session');
+    // After closing, re-opening should create a fresh session (resolution = 'opened')
+    const status = await getFileStatus(mgr, { file_path: inputPath });
+    assertSuccess(status, 'status after reopen');
+    expect(status.session_resolution).toBe('opened');
   });
 
-  humanReadableTest.openspec('clear sessions by file path clears all sessions for that file')('Scenario: clear sessions by file path clears all sessions for that file', async () => {
+  humanReadableTest.openspec('close file by path clears the session for that file')('Scenario: close file by path clears the session for that file', async () => {
     const mgr = createTestSessionManager();
     const inputPath = await createDoc(['Clear by path']);
     const a = await openDocument(mgr, { file_path: inputPath });
-    const b = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(a, 'open a');
-    assertSuccess(b, 'open b');
 
-    const cleared = await clearSession(mgr, { file_path: inputPath });
+    const cleared = await closeFile(mgr, { file_path: inputPath });
     assertSuccess(cleared, 'clear');
-    const clearedIds = (cleared.cleared_session_ids as string[]).sort();
-    expect(clearedIds).toEqual([String(a.session_id), String(b.session_id)].sort());
+    const clearedPaths = cleared.cleared_file_paths as string[];
+    // cleared paths are canonical (realpath); just check count
+    expect(clearedPaths.length).toBe(1);
   });
 
-  humanReadableTest.openspec('clear all sessions requires explicit confirmation')('Scenario: clear all sessions requires explicit confirmation', async () => {
+  humanReadableTest.openspec('close all files requires explicit confirmation')('Scenario: close all files requires explicit confirmation', async () => {
     const mgr = createTestSessionManager();
-    const clearAttempt = await clearSession(mgr, { clear_all: true });
+    const clearAttempt = await closeFile(mgr, { clear_all: true });
     assertFailure(clearAttempt, 'CONFIRMATION_REQUIRED', 'confirmation');
   });
 

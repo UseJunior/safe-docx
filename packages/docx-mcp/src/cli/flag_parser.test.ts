@@ -103,9 +103,9 @@ describe('parseToolFlags', () => {
       expect(args.save_to_local_path).toBe('/out.docx');
     });
 
-    test('resolves global --session alias', () => {
-      const { args } = parseToolFlags(['--session', 'ses_abc123def456'], 'read_file');
-      expect(args.session_id).toBe('ses_abc123def456');
+    test('resolves global --file alias', () => {
+      const { args } = parseToolFlags(['--file', '/path/to/doc.docx'], 'read_file');
+      expect(args.file_path).toBe('/path/to/doc.docx');
     });
   });
 

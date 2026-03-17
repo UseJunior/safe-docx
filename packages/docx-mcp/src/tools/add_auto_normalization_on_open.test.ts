@@ -4,13 +4,11 @@ import path from 'node:path';
 
 import { openDocument } from './open_document.js';
 import { readFile } from './read_file.js';
-import { getSessionStatus } from './get_session_status.js';
+import { getFileStatus } from './get_file_status.js';
 import { extractParaIdsFromToon, makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
-  assertFailure,
   assertSuccess,
-  openSession,
   registerCleanup,
   createTestSessionManager,
   createTrackedTempDir,
@@ -34,7 +32,6 @@ type ReusedSessionContext = {
 
 type SessionResolutionMetadata = {
   session_resolution?: string;
-  resolved_session_id?: string;
   resolved_file_path?: string;
   reused_existing_session?: boolean;
   warning?: string;
@@ -124,10 +121,10 @@ describe('Traceability: Auto-Normalization on Open', () => {
       return r;
     });
 
-    const status = await when('get_session_status is called', async () => {
-      const r = await getSessionStatus(mgr, { session_id: opened.session_id as string });
-      assertSuccess(r, 'get_session_status');
-      await attachPrettyJson('get_session_status response', r);
+    const status = await when('get_file_status is called', async () => {
+      const r = await getFileStatus(mgr, { file_path: inputPath });
+      assertSuccess(r, 'get_file_status');
+      await attachPrettyJson('get_file_status response', r);
       return r;
     });
 
@@ -157,7 +154,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
       const inputPath1 = await writeTestDocx(tmpDir1, xml);
       const opened1 = await openDocument(mgr1, { file_path: inputPath1 });
       assertSuccess(opened1, 'open with normalization');
-      const read1 = await readFile(mgr1, { session_id: opened1.session_id as string });
+      const read1 = await readFile(mgr1, { file_path: inputPath1 });
       assertSuccess(read1, 'read with normalization');
       return extractParaIdsFromToon(String(read1.content));
     });
@@ -168,7 +165,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
       const inputPath2 = await writeTestDocx(tmpDir2, xml);
       const opened2 = await openDocument(mgr2, { file_path: inputPath2, skip_normalization: true });
       assertSuccess(opened2, 'open without normalization');
-      const read2 = await readFile(mgr2, { session_id: opened2.session_id as string });
+      const read2 = await readFile(mgr2, { file_path: inputPath2 });
       assertSuccess(read2, 'read without normalization');
       return extractParaIdsFromToon(String(read2.content));
     });
@@ -189,7 +186,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
     const tmpDir = await createTrackedTempDir('norm-allure-filefirst-');
     const inputPath = await writeTestDocx(tmpDir, MERGEABLE_XML);
 
-    const result = await when('readFile is called with file_path and without session_id', async () => {
+    const result = await when('readFile is called with file_path only', async () => {
       const r = await readFile(mgr, { file_path: inputPath });
       assertSuccess(r, 'readFile file-first');
       await attachPrettyJson('readFile response', r);
@@ -198,8 +195,7 @@ describe('Traceability: Auto-Normalization on Open', () => {
 
     await then('the server SHALL resolve a session and return session_resolution metadata', () => {
       const meta = sessionMetadata(result);
-      expect(meta.session_resolution).toBe('opened_new_session');
-      expect(meta.resolved_session_id).toBeTruthy();
+      expect(meta.session_resolution).toBe('opened');
       expect(meta.resolved_file_path).toBeTruthy();
     });
   });
@@ -225,8 +221,8 @@ describe('Traceability: Auto-Normalization on Open', () => {
     await then('the second call SHALL reuse the existing session', () => {
       const firstMeta = sessionMetadata(first);
       const secondMeta = sessionMetadata(second);
-      expect(secondMeta.resolved_session_id).toBe(firstMeta.resolved_session_id);
-      expect(secondMeta.session_resolution).toBe('reused_existing_session');
+      expect(secondMeta.resolved_file_path).toBe(firstMeta.resolved_file_path);
+      expect(secondMeta.session_resolution).toBe('reused');
     });
   });
 
@@ -240,17 +236,16 @@ describe('Traceability: Auto-Normalization on Open', () => {
       assertSuccess(r, 'initial open');
     });
 
-    const reused = await when('a document tool is called with that file_path and no session_id', async () => {
+    const reused = await when('a document tool is called with that file_path', async () => {
       const r = await readFile(mgr, { file_path: inputPath });
       assertSuccess(r, 'reuse read');
       await attachPrettyJson('reuse response', r);
       return r;
     });
 
-    await then('the server SHALL return warning metadata indicating existing session reuse', () => {
+    await then('the server SHALL return metadata indicating session reuse', () => {
       const meta = sessionMetadata(reused);
-      expect(meta.reused_existing_session).toBe(true);
-      expect(meta.warning).toBeTruthy();
+      expect(meta.session_resolution).toBe('reused');
     });
 
     await and('SHALL include reuse context in the response', () => {
@@ -264,29 +259,12 @@ describe('Traceability: Auto-Normalization on Open', () => {
     });
   });
 
-  humanReadableTest.openspec('conflicting `session_id` and `file_path` is rejected')('Scenario: conflicting session_id and file_path is rejected', async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+  humanReadableTest.openspec('missing file_path is rejected')('Scenario: missing file_path is rejected', async ({ when, then }: AllureBddContext) => {
     const mgr = createTestSessionManager();
-    const tmpDir = await createTrackedTempDir('norm-allure-conflict-');
-    const inputPath1 = await writeTestDocx(tmpDir, MERGEABLE_XML, 'doc1.docx');
-    const inputPath2 = await writeTestDocx(tmpDir, MERGEABLE_XML, 'doc2.docx');
-
-    const opened = await given('a session opened for one document', async () => {
-      const r = await openDocument(mgr, { file_path: inputPath1 });
-      assertSuccess(r, 'open doc1');
-      return r;
-    });
-
-    const result = await when('a tool call provides that session_id with a different file_path', async () => {
-      const r = await readFile(mgr, {
-        session_id: opened.session_id as string,
-        file_path: inputPath2,
-      });
-      await attachPrettyJson('conflict response', r);
-      return r;
-    });
-
-    await then('the server SHALL reject the call with a conflict error', () => {
-      assertFailure(result, 'SESSION_FILE_CONFLICT', 'conflict');
+    const result = await when('readFile is called without file_path', () => readFile(mgr, {} as any));
+    await then('the server returns MISSING_FILE_PATH error', () => {
+      expect(result.success).toBe(false);
+      expect((result as any).error?.code).toBe('MISSING_FILE_PATH');
     });
   });
 
@@ -301,12 +279,12 @@ describe('Traceability: Auto-Normalization on Open', () => {
       return r;
     });
 
-    const status = await and('get_session_status is called for the resolved session', async () => {
-      const resolvedSessionId = sessionMetadata(read).resolved_session_id;
-      expect(resolvedSessionId).toBeTruthy();
-      const r = await getSessionStatus(mgr, { session_id: resolvedSessionId as string });
-      assertSuccess(r, 'get_session_status');
-      await attachPrettyJson('session status', r);
+    const status = await and('get_file_status is called for the resolved file', async () => {
+      const resolvedFilePath = sessionMetadata(read).resolved_file_path;
+      expect(resolvedFilePath).toBeTruthy();
+      const r = await getFileStatus(mgr, { file_path: resolvedFilePath as string });
+      assertSuccess(r, 'get_file_status');
+      await attachPrettyJson('file status', r);
       return r;
     });
 

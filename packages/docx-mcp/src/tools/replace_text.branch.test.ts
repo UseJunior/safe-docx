@@ -58,7 +58,7 @@ describe('replace_text branch coverage', () => {
 
     for (const tc of cases) {
       const result = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         target_paragraph_id: paraId,
         old_string: 'replace target text',
         new_string: tc.newString,
@@ -73,7 +73,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const multiple = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'foo',
       new_string: 'bar',
@@ -82,7 +82,7 @@ describe('replace_text branch coverage', () => {
     assertFailure(multiple, 'MULTIPLE_MATCHES', 'multiple matches');
 
     const notFound = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'missing',
       new_string: 'bar',
@@ -91,7 +91,7 @@ describe('replace_text branch coverage', () => {
     assertFailure(notFound, 'TEXT_NOT_FOUND', 'text not found');
 
     const missingAnchor = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: '_bk_missing',
       old_string: 'foo foo',
       new_string: 'bar',
@@ -113,7 +113,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'Alpha Beta',
       new_string: 'Gamma Delta',
@@ -121,12 +121,12 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'replace with template run');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
 
     const read = await readFile(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       node_ids: [paraId],
       format: 'simple',
     });
@@ -144,7 +144,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: '[CLIENT]',
       new_string: 'Acme Corp',
@@ -152,18 +152,18 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'replace highlighted placeholder');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
-    const allRuns = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'r'));
-    const acmeRuns = allRuns.filter((r) => {
-      const text = Array.from(r.getElementsByTagNameNS(W_NS, 't'))
-        .map((t) => t.textContent ?? '')
+    const allRuns = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'r')) as Element[];
+    const acmeRuns = allRuns.filter((r: Element) => {
+      const text = Array.from(r.getElementsByTagNameNS(W_NS, 't') as ArrayLike<Element>)
+        .map((t: Element) => t.textContent ?? '')
         .join('');
       return text.includes('Acme');
     });
     expect(acmeRuns.length).toBeGreaterThan(0);
-    expect(acmeRuns.some((r) => runHasHighlight(r))).toBe(false);
+    expect(acmeRuns.some((r: Element) => runHasHighlight(r))).toBe(false);
   });
 
   test('applies <font> tags with color, size, and face in replacement text', async () => {
@@ -171,7 +171,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'replace target text',
       new_string: '<font color="FF0000" size="14" face="Arial">styled text</font>',
@@ -179,13 +179,13 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'replace with font tags');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
-    const runs = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'r'));
-    const styledRun = runs.find((r) => {
-      const text = Array.from(r.getElementsByTagNameNS(W_NS, 't'))
-        .map((t) => t.textContent ?? '')
+    const runs = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'r')) as Element[];
+    const styledRun = runs.find((r: Element) => {
+      const text = Array.from(r.getElementsByTagNameNS(W_NS, 't') as ArrayLike<Element>)
+        .map((t: Element) => t.textContent ?? '')
         .join('');
       return text.includes('styled text');
     });
@@ -203,7 +203,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'replace me',
       new_string: '<header><u>Heading:</u></header> body <highlight>text</highlight>',
@@ -212,7 +212,7 @@ describe('replace_text branch coverage', () => {
     assertSuccess(edited, 'replace with markup');
 
     const read = await readFile(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       node_ids: [paraId],
       format: 'simple',
     });
@@ -225,7 +225,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string:
         '<a href="https://example.test">' +
@@ -237,7 +237,7 @@ describe('replace_text branch coverage', () => {
     assertSuccess(edited, 'replace after old/new normalization');
 
     const read = await readFile(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       node_ids: [paraId],
       format: 'simple',
     });
@@ -261,7 +261,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: '\u201CMAE\u201D means X',
       new_string: '\u201CMAE\u201D means X; provided however',
@@ -269,7 +269,7 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'replace with appended text');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
     const runs = getParagraphRuns(pEl!).filter((r) => r.text.length > 0);
@@ -299,7 +299,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'Hello World',
       new_string: 'Goodbye World',
@@ -307,7 +307,7 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'replace prefix');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
     const runs = getParagraphRuns(pEl!).filter((r) => r.text.length > 0);
@@ -336,7 +336,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'Hello World',
       new_string: 'Hello Earth',
@@ -344,7 +344,7 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'replace suffix');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
     const runs = getParagraphRuns(pEl!).filter((r) => r.text.length > 0);
@@ -365,7 +365,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'Hello World',
       new_string: 'Hello World',
@@ -374,7 +374,7 @@ describe('replace_text branch coverage', () => {
     assertSuccess(edited, 'no-op replace');
 
     // Text should be unchanged.
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const afterText = session.doc.getParagraphTextById(paraId);
     expect(afterText).toBe('Hello World');
   });
@@ -384,7 +384,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'AB',
       new_string: 'ABX',
@@ -392,7 +392,7 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'insert at end');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const afterText = session.doc.getParagraphTextById(paraId);
     expect(afterText).toBe('ABX');
   });
@@ -402,7 +402,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'AB',
       new_string: 'AXB',
@@ -410,7 +410,7 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'insert in middle');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const afterText = session.doc.getParagraphTextById(paraId);
     expect(afterText).toBe('AXB');
   });
@@ -436,7 +436,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'total $1,000 dollars',
       new_string: 'total $1,000 US dollars',
@@ -445,7 +445,7 @@ describe('replace_text branch coverage', () => {
     assertSuccess(edited, 'edit around field');
 
     // Verify field structures (fldChar) still exist in the DOM.
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
     const fldChars = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'fldChar'));
@@ -472,7 +472,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'The Agreement',
       new_string: 'This Agreement',
@@ -480,7 +480,7 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'edit before field');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
     const fldChars = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'fldChar'));
@@ -507,7 +507,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'effective date',
       new_string: 'effective commencement date',
@@ -515,7 +515,7 @@ describe('replace_text branch coverage', () => {
     });
     assertSuccess(edited, 'edit after field');
 
-    const session = opened.mgr.getSession(opened.sessionId);
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
     const pEl = session.doc.getParagraphElementById(paraId);
     expect(pEl).toBeTruthy();
     const fldChars = Array.from(pEl!.getElementsByTagNameNS(W_NS, 'fldChar'));
@@ -542,7 +542,7 @@ describe('replace_text branch coverage', () => {
     const paraId = firstParaIdFromToon(opened.content);
 
     const edited = await replaceText(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: paraId,
       old_string: 'see Visible here',
       new_string: 'see Changed here',
@@ -585,7 +585,7 @@ describe('replace_text branch coverage', () => {
       let debugResult: Record<string, unknown> | null = null;
 
       try {
-        const { mgr, sessionId, firstParaId } = await given(
+        const { mgr, filePath, firstParaId } = await given(
           'a clean two-paragraph document is open in a session',
           () => openSession(inputParagraphs, { trackOpenStep: false }),
           { paragraph_count: inputParagraphs.length },
@@ -594,7 +594,7 @@ describe('replace_text branch coverage', () => {
         const editResult = await when(
           'I run replace_text on the first paragraph',
           () => replaceText(mgr, {
-            session_id: sessionId,
+            file_path: filePath,
             target_paragraph_id: firstParaId,
             old_string: replacement.old_string,
             new_string: replacement.new_string,
@@ -612,7 +612,7 @@ describe('replace_text branch coverage', () => {
           'the replacement appears in read_file output',
           async () => {
             const read = await readFile(mgr, {
-              session_id: sessionId,
+              file_path: filePath,
               node_ids: [firstParaId],
               format: 'simple',
             });
@@ -624,7 +624,7 @@ describe('replace_text branch coverage', () => {
         );
 
         await then('Evidence: edited document XML previews are attached for review', async () => {
-          const session = mgr.getSession(sessionId);
+          const session = (await mgr.getSessionByFilePath(filePath))!;
           const { buffer } = await session.doc.toBuffer({ cleanBookmarks: true });
           const outputXml = await readZipText(buffer, 'word/document.xml');
           expect(outputXml).not.toBeNull();

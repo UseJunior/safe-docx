@@ -46,9 +46,9 @@ The Safe-Docx MCP server SHALL support file-first entry for document tools while
 - **AND** SHALL return warning metadata indicating existing session reuse
 - **AND** SHALL include reuse context (`edit_revision`, `edit_count`, `created_at`, `last_used_at`) in the response
 
-#### Scenario: conflicting `session_id` and `file_path` is rejected
-- **WHEN** a tool call provides both `session_id` and `file_path` that resolve to different sessions/files
-- **THEN** the server SHALL reject the call with a conflict error
+#### Scenario: missing file_path is rejected
+- **WHEN** a tool call provides no `file_path`
+- **THEN** the server SHALL reject the call with a MISSING_FILE_PATH error
 - **AND** provide remediation guidance
 
 #### Scenario: new session creation includes normalization

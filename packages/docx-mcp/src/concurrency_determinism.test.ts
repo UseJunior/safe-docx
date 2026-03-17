@@ -5,7 +5,7 @@ import { DocxZip, OOXML, W, parseXml, serializeXml } from '@usejunior/docx-core'
 
 import { formatLayout } from './tools/format_layout.js';
 import { save } from './tools/save.js';
-import { getSessionStatus } from './tools/get_session_status.js';
+import { getFileStatus } from './tools/get_file_status.js';
 import { extractParaIdsFromToon } from './testing/docx_test_utils.js';
 import { assertSuccess, openSession, registerCleanup } from './testing/session-test-utils.js';
 
@@ -36,14 +36,14 @@ async function runConcurrentFormattingOnce(): Promise<string> {
 
   const [resA, resB] = await Promise.all([
     formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       paragraph_spacing: {
         paragraph_ids: [firstId],
         after_twips: 120,
       },
     }),
     formatLayout(opened.mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.inputPath,
       paragraph_spacing: {
         paragraph_ids: [thirdId],
         after_twips: 360,
@@ -53,14 +53,16 @@ async function runConcurrentFormattingOnce(): Promise<string> {
   assertSuccess(resA, 'format_layout A');
   assertSuccess(resB, 'format_layout B');
 
-  const status = await getSessionStatus(opened.mgr, { session_id: opened.sessionId });
-  assertSuccess(status, 'get_session_status');
+  const status = await getFileStatus(opened.mgr, { file_path: opened.inputPath });
+  assertSuccess(status, 'get_file_status');
   expect(status.edit_count).toBe(2);
   expect(status.edit_revision).toBe(2);
 
-  const session = opened.mgr.getSession(opened.sessionId);
-  const firstParagraph = session.doc.getParagraphElementById(firstId);
-  const thirdParagraph = session.doc.getParagraphElementById(thirdId);
+  const canonicalPath = await opened.mgr.canonicalizePath(opened.inputPath);
+  const session = opened.mgr.getSessionByPath(canonicalPath);
+  expect(session).not.toBeNull();
+  const firstParagraph = session!.doc.getParagraphElementById(firstId);
+  const thirdParagraph = session!.doc.getParagraphElementById(thirdId);
   expect(firstParagraph).toBeTruthy();
   expect(thirdParagraph).toBeTruthy();
   expect(paragraphAfterSpacingTwips(firstParagraph!)).toBe('120');
@@ -68,7 +70,7 @@ async function runConcurrentFormattingOnce(): Promise<string> {
 
   const outputPath = `${opened.tmpDir}/concurrent-out.docx`;
   const saved = await save(opened.mgr, {
-    session_id: opened.sessionId,
+    file_path: opened.inputPath,
     save_to_local_path: outputPath,
     save_format: 'clean',
     clean_bookmarks: false,

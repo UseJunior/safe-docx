@@ -130,18 +130,13 @@ The Safe-Docx MCP matching behavior SHALL retain Python-compatible fallback sema
 ### Requirement: Explicit Session Control
 The Safe-Docx MCP server SHALL provide explicit tools to clear session state without waiting for TTL expiry.
 
-#### Scenario: clear one session by id
-- **WHEN** `clear_session` is called with `session_id`
-- **THEN** the server SHALL remove that session
-- **AND** future use of that id SHALL return `SESSION_NOT_FOUND`
+#### Scenario: close file by path
+- **WHEN** `close_file` is called with `file_path`
+- **THEN** the server SHALL remove the session for that file
+- **AND** the response SHALL report the cleared path
 
-#### Scenario: clear sessions by file path clears all sessions for that file
-- **WHEN** `clear_session` is called with `file_path`
-- **THEN** the server SHALL clear all active sessions mapped to that normalized file path
-- **AND** the response SHALL report exactly which session IDs were cleared
-
-#### Scenario: clear all sessions requires explicit confirmation
-- **WHEN** `clear_session` is called with `clear_all=true`
+#### Scenario: close all files requires explicit confirmation
+- **WHEN** `close_file` is called with `clear_all=true`
 - **THEN** the server SHALL require explicit confirmation input
 - **AND** reject the call if confirmation is missing
 

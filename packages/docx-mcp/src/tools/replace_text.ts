@@ -1,4 +1,4 @@
-import { SessionManager, type Session } from '../session/manager.js';
+import { SessionManager, type DocxSession } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { ERROR_PREVIEW_CHARS, RESULT_PREVIEW_CHARS, previewText } from './preview.js';
@@ -50,7 +50,7 @@ function headerFormattingToAddRunProps(formatting: unknown): NonNullable<Replace
 }
 
 function findHeaderRoleModelAddRunProps(
-  session: Session,
+  session: DocxSession,
   anchorParagraphId: string,
 ): NonNullable<ReplacementPart['addRunProps']> | null {
   const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
@@ -144,7 +144,6 @@ function isLikelyFieldPlaceholder(text: string): boolean {
 export async function replaceText(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     target_paragraph_id: string;
     old_string: string;
@@ -272,7 +271,7 @@ export async function replaceText(
 
     return ok(mergeSessionResolutionMetadata({
       success: true,
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       edit_count: session.editCount,
       target_paragraph_id: pid,
       replacements_made: 1,

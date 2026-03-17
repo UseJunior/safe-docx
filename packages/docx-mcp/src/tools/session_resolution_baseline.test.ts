@@ -72,12 +72,12 @@ describe('auto-open baseline capture regression', () => {
       resolved = await resolveSessionForTool(mgr, { file_path: inputPath }, { toolName: 'save' });
       expect(resolved.ok).toBe(true);
       if (!resolved.ok) return;
-      expect(resolved.metadata.session_resolution).toBe('opened_new_session');
+      expect(resolved.metadata.session_resolution).toBe('opened');
     });
     await when('save is called with tracked format and no edits were made', async () => {
       if (!resolved.ok) return;
       result = await save(mgr, {
-        session_id: resolved.session.sessionId,
+        file_path: inputPath,
         save_to_local_path: savePath,
         save_format: 'tracked',
         tracked_save_to_local_path: trackedPath,
@@ -121,7 +121,7 @@ describe('auto-open baseline capture regression', () => {
     await when('compareDocuments_tool is called in session mode with no edits', async () => {
       if (!resolved.ok) return;
       result = await compareDocuments_tool(mgr, {
-        session_id: resolved.session.sessionId,
+        file_path: inputPath,
         save_to_local_path: comparePath,
       });
     });
@@ -140,7 +140,7 @@ describe('auto-open baseline capture regression', () => {
     });
   });
 
-  test('finalizeNewSession sets non-null baselines on auto-opened session', async ({ given, when, then }: AllureBddContext) => {
+  test('baselines are lazily generated via ensureBaselines', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
     let inputPath: string;
     let resolved: Awaited<ReturnType<typeof resolveSessionForTool>>;
@@ -155,9 +155,16 @@ describe('auto-open baseline capture regression', () => {
       expect(resolved.ok).toBe(true);
       if (!resolved.ok) return;
     });
-    await then('the session has non-null Buffer baselines', () => {
+    await then('baselines are null immediately after open (lazy generation)', () => {
       if (!resolved.ok) return;
       const session = resolved.session;
+      expect(session.comparisonBaseline).toBeNull();
+      expect(session.comparisonBaselineWithBookmarks).toBeNull();
+    });
+    await and('ensureBaselines generates non-null Buffer baselines', async () => {
+      if (!resolved.ok) return;
+      const session = resolved.session;
+      await mgr.ensureBaselines(session);
       expect(session.comparisonBaseline).not.toBeNull();
       expect(session.comparisonBaselineWithBookmarks).not.toBeNull();
       expect(Buffer.isBuffer(session.comparisonBaseline)).toBe(true);

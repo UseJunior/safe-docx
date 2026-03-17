@@ -6,7 +6,6 @@ import { ok, err, type ToolResponse } from './types.js';
 export async function addFootnote(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     target_paragraph_id?: string;
     after_text?: string;
@@ -42,7 +41,7 @@ export async function addFootnote(
       note_id: result.noteId,
       target_paragraph_id: pid,
       after_text: params.after_text ?? null,
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);

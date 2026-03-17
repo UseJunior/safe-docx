@@ -17,11 +17,11 @@ type JsonNode = {
 
 async function readCleanTextById(
   mgr: Parameters<typeof readFile>[0],
-  sessionId: string,
+  filePath: string,
   paragraphId: string,
 ): Promise<string> {
   const read = await readFile(mgr, {
-    session_id: sessionId,
+    file_path: filePath,
     node_ids: [paragraphId],
     format: 'json',
   });
@@ -47,14 +47,14 @@ describe('replace_text: unicode grapheme safety', () => {
 
     await when('"coder" is replaced with "engineer"', async () => {
       const edited = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         target_paragraph_id: paraId,
         old_string: 'coder',
         new_string: 'engineer',
         instruction: 'replace ascii token without touching unicode graphemes',
       });
       assertSuccess(edited, 'replace_text');
-      after = await readCleanTextById(opened.mgr, opened.sessionId, paraId);
+      after = await readCleanTextById(opened.mgr, opened.filePath, paraId);
     });
 
     await then('the ZWJ emoji, combining mark, and RTL text are untouched and only "coder" changed', () => {
@@ -86,14 +86,14 @@ describe('replace_text: unicode grapheme safety', () => {
 
     await when('the woman-technologist ZWJ sequence is replaced with a skin-tone variant', async () => {
       const edited = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         target_paragraph_id: paraId,
         old_string: zwj,
         new_string: toneZwJ,
         instruction: 'replace full zwj grapheme cluster',
       });
       assertSuccess(edited, 'replace_text');
-      after = await readCleanTextById(opened.mgr, opened.sessionId, paraId);
+      after = await readCleanTextById(opened.mgr, opened.filePath, paraId);
     });
 
     await then('the output contains the skin-tone variant and the original sequence is gone', () => {
@@ -118,14 +118,14 @@ describe('replace_text: unicode grapheme safety', () => {
 
     await when('the decomposed sequence is replaced with the precomposed form Café', async () => {
       const edited = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         target_paragraph_id: paraId,
         old_string: decomposed,
         new_string: 'Café',
         instruction: 'replace decomposed sequence with precomposed form',
       });
       assertSuccess(edited, 'replace_text');
-      after = await readCleanTextById(opened.mgr, opened.sessionId, paraId);
+      after = await readCleanTextById(opened.mgr, opened.filePath, paraId);
     });
 
     await then('the output contains the precomposed form and the surrounding text is intact', () => {

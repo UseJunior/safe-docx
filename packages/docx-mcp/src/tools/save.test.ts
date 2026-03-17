@@ -55,18 +55,17 @@ describe('save', () => {
 
     return {
       mgr,
-      sessionId: opened.session_id as string,
       tmpDir,
       inputPath: filePath,
     };
   }
 
   test('clean save writes a valid .docx', async () => {
-    const { mgr, sessionId, tmpDir } = await openTestDoc();
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 
     const result = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       save_format: 'clean',
     });
@@ -80,11 +79,11 @@ describe('save', () => {
   });
 
   test('tracked save includes comparison with baseline', async () => {
-    const { mgr, sessionId, tmpDir } = await openTestDoc();
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
     const outPath = path.join(tmpDir, 'tracked-output.docx');
 
     const result = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       save_format: 'tracked',
       tracked_changes_author: 'Test Author',
@@ -98,11 +97,11 @@ describe('save', () => {
   });
 
   test('both-mode generates two files', async () => {
-    const { mgr, sessionId, tmpDir } = await openTestDoc();
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 
     const result = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       save_format: 'both',
     });
@@ -114,11 +113,11 @@ describe('save', () => {
   });
 
   test('reports stats (insertions/deletions/modifications)', async () => {
-    const { mgr, sessionId, tmpDir } = await openTestDoc();
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 
     const result = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       save_format: 'tracked',
     });
@@ -134,35 +133,35 @@ describe('save', () => {
   });
 
   test('rejects invalid save_format', async () => {
-    const { mgr, sessionId, tmpDir } = await openTestDoc();
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 
     const result = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: outPath,
       save_format: 'invalid' as 'clean',
     });
     assertFailure(result, 'INVALID_SAVE_FORMAT', 'bad format');
   });
 
-  test('fails gracefully with non-existent session', async () => {
+  test('fails gracefully with non-existent file path', async () => {
     const mgr = createTestSessionManager();
     const tmpDir = await createTrackedTempDir('save-test-');
     const outPath = path.join(tmpDir, 'output.docx');
 
     const result = await save(mgr, {
-      session_id: 'ses_AAAAAAAAAAAA',
+      file_path: '/tmp/does-not-exist-safe-docx.docx',
       save_to_local_path: outPath,
       save_format: 'clean',
     });
-    assertFailure(result, undefined, 'missing session');
+    assertFailure(result, undefined, 'missing file');
   });
 
   test('blocks overwrite of original file without allow_overwrite', async () => {
-    const { mgr, sessionId, inputPath } = await openTestDoc();
+    const { mgr, inputPath } = await openTestDoc();
 
     const result = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: inputPath,
       save_format: 'clean',
     });
@@ -170,10 +169,10 @@ describe('save', () => {
   });
 
   test('allows overwrite of original file with allow_overwrite=true', async () => {
-    const { mgr, sessionId, inputPath } = await openTestDoc();
+    const { mgr, inputPath } = await openTestDoc();
 
     const result = await save(mgr, {
-      session_id: sessionId,
+      file_path: inputPath,
       save_to_local_path: inputPath,
       save_format: 'clean',
       allow_overwrite: true,
@@ -181,7 +180,7 @@ describe('save', () => {
     assertSuccess(result, 'overwrite allowed');
   });
 
-  test('resolves session by file_path when session_id not provided', async () => {
+  test('resolves session by file_path', async () => {
     const { mgr, tmpDir, inputPath } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
 

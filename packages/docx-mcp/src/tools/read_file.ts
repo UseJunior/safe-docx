@@ -30,7 +30,7 @@ function collectFootnoteMarkerSuffix(
 
 export async function readFile(
   manager: SessionManager,
-  params: { session_id?: string; file_path?: string; offset?: number; limit?: number; node_ids?: string[]; format?: string; show_formatting?: boolean },
+  params: { file_path?: string; offset?: number; limit?: number; node_ids?: string[]; format?: string; show_formatting?: boolean },
 ): Promise<ToolResponse> {
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'read_file' });
@@ -118,7 +118,7 @@ export async function readFile(
     const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
 
     return ok(mergeSessionResolutionMetadata({
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       content,
       total_paragraphs: totalParagraphs,
       paragraphs_returned: paragraphsReturned,

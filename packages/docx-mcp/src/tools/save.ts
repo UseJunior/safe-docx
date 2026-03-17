@@ -49,7 +49,6 @@ async function runWithoutConsoleLog<T>(fn: () => Promise<T>): Promise<T> {
 export async function save(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     save_to_local_path: string;
     clean_bookmarks?: boolean;
@@ -157,8 +156,8 @@ export async function save(
       exportTimestamp = formatUtcTimestamp(new Date());
 
       if (format === 'tracked' || format === 'both') {
-        // Use comparison baseline (post-normalization) when available to avoid
-        // false tracked changes caused by normalization transforms.
+        // Lazily generate comparison baselines if not yet available.
+        await manager.ensureBaselines(session);
         const baselineBuffer = session.comparisonBaseline ?? session.originalBuffer;
         const trackedRes = await runWithoutConsoleLog(() =>
           compareDocuments(baselineBuffer, revisedBuffer, {
@@ -252,7 +251,7 @@ export async function save(
           : ['clean', 'redline'];
 
     return ok(mergeSessionResolutionMetadata({
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
       original_filename: session.filename,
       edit_count: session.editCount,
       edit_revision: session.editRevision,
@@ -276,7 +275,6 @@ export async function save(
       returned_variants: returnedVariants,
       available_variants: ['clean', 'redline'],
       cache_hit: cacheHit,
-      redownload_by_session_id: true,
       format_source: formatSource,
       parameter_warning: parameterWarning,
       validation: validation.warnings.length > 0

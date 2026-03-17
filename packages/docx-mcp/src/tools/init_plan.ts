@@ -23,7 +23,6 @@ function optionalString(value: unknown): string | undefined {
 export async function initPlan(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     plan_name?: string;
     orchestrator_id?: string;
@@ -36,7 +35,8 @@ export async function initPlan(
 
     return ok(mergeSessionResolutionMetadata({
       plan_context_id: createPlanContextId(),
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
+      session_epoch: session.createdAt.getTime(),
       base_revision: session.editRevision,
       edit_count: session.editCount,
       created_at: new Date().toISOString(),

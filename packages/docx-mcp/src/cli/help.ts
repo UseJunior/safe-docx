@@ -45,6 +45,7 @@ export function renderTopLevelHelp(): string {
   lines.push('  serve                                       Start the MCP server (default)');
   lines.push('  compare <original> <revised> [output]       Compare two DOCX files and write redline output');
   lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file');
+  lines.push('  grep "pattern" <file> [files...]            Search DOCX files for text');
   lines.push('');
 
   for (const group of groupTools()) {

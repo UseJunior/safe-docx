@@ -55,13 +55,13 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
 
     const openedA = await openDocument(mgr1, { file_path: inputPath });
     assertSuccess(openedA, 'open A');
-    const readA = await readFile(mgr1, { session_id: openedA.session_id as string, format: 'simple' });
+    const readA = await readFile(mgr1, { file_path: inputPath, format: 'simple' });
     assertSuccess(readA, 'read A');
     const idsA = extractParaIdsFromToon(String(readA.content));
 
     const openedB = await openDocument(mgr2, { file_path: inputPath });
     assertSuccess(openedB, 'open B');
-    const readB = await readFile(mgr2, { session_id: openedB.session_id as string, format: 'simple' });
+    const readB = await readFile(mgr2, { file_path: inputPath, format: 'simple' });
     assertSuccess(readB, 'read B');
     const idsB = extractParaIdsFromToon(String(readB.content));
 
@@ -74,7 +74,7 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     const [id1, id2, id3] = opened.paraIds;
 
     const inserted = await insertParagraph(mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       positional_anchor_node_id: id2!,
       new_string: 'Two and a half',
       instruction: 'insert without renumber',
@@ -82,7 +82,7 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     });
     assertSuccess(inserted, 'insert');
 
-    const after = await readFile(mgr, { session_id: opened.sessionId, format: 'simple' });
+    const after = await readFile(mgr, { file_path: opened.filePath, format: 'simple' });
     assertSuccess(after, 'read after');
     const afterIds = extractParaIdsFromToon(String(after.content));
 
@@ -103,7 +103,7 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     expect(opened.paraIds[0]).not.toBe(opened.paraIds[1]);
 
     const edited = await replaceText(mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       target_paragraph_id: opened.paraIds[0]!,
       old_string: 'Supplier',
       new_string: 'Vendor',
@@ -111,8 +111,8 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     });
     assertSuccess(edited, 'edit');
 
-    const readFirst = await readFile(mgr, { session_id: opened.sessionId, node_ids: [opened.paraIds[0]!], format: 'simple' });
-    const readSecond = await readFile(mgr, { session_id: opened.sessionId, node_ids: [opened.paraIds[1]!], format: 'simple' });
+    const readFirst = await readFile(mgr, { file_path: opened.filePath, node_ids: [opened.paraIds[0]!], format: 'simple' });
+    const readSecond = await readFile(mgr, { file_path: opened.filePath, node_ids: [opened.paraIds[1]!], format: 'simple' });
     assertSuccess(readFirst, 'read first');
     assertSuccess(readSecond, 'read second');
     expect(String(readFirst.content)).toContain('Vendor');
@@ -137,10 +137,8 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
 
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
-
-    const read1 = await readFile(mgr, { session_id: sessionId, format: 'simple' });
-    const read2 = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+    const read1 = await readFile(mgr, { file_path: inputPath, format: 'simple' });
+    const read2 = await readFile(mgr, { file_path: inputPath, format: 'simple' });
     assertSuccess(read1, 'read1');
     assertSuccess(read2, 'read2');
 
@@ -160,13 +158,12 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
 
     const opened = await openDocument(mgr, { file_path: fixturePath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
 
-    const read = await readFile(mgr, { session_id: sessionId });
+    const read = await readFile(mgr, { file_path: fixturePath });
     assertSuccess(read, 'read');
     const paraId = firstParaIdFromToon(String(read.content));
     await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       target_paragraph_id: paraId,
       old_string: 'The',
       new_string: 'TheX',
@@ -174,7 +171,7 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     });
 
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
@@ -190,7 +187,7 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     const outputPath = path.join(opened.tmpDir, 'out.docx');
 
     const saved = await save(mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       save_to_local_path: outputPath,
       save_format: 'clean',
       clean_bookmarks: true,
@@ -208,13 +205,12 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
 
     const opened = await openDocument(mgr, { file_path: fixturePath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
 
-    const read = await readFile(mgr, { session_id: sessionId });
+    const read = await readFile(mgr, { file_path: fixturePath });
     assertSuccess(read, 'read');
     const paraId = firstParaIdFromToon(String(read.content));
     await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       target_paragraph_id: paraId,
       old_string: 'The',
       new_string: 'TheX',
@@ -222,12 +218,12 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     });
 
     const first = await save(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
     const second = await save(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
@@ -245,21 +241,20 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
 
     const opened = await openDocument(mgr, { file_path: fixturePath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
 
-    const read = await readFile(mgr, { session_id: sessionId });
+    const read = await readFile(mgr, { file_path: fixturePath });
     assertSuccess(read, 'read');
     const paraId = firstParaIdFromToon(String(read.content));
 
     await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       target_paragraph_id: paraId,
       old_string: 'The',
       new_string: 'TheX',
       instruction: 'first revision',
     });
     const first = await save(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
@@ -268,14 +263,14 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     expect(first.cache_hit).toBe(false);
 
     await replaceText(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       target_paragraph_id: paraId,
       old_string: 'TheX',
       new_string: 'TheXY',
       instruction: 'second revision',
     });
     const second = await save(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
@@ -292,20 +287,19 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
 
     const opened = await openDocument(mgr, { file_path: fixturePath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
-    const readResult = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+    const readResult = await readFile(mgr, { file_path: fixturePath, format: 'simple' });
     assertSuccess(readResult, 'read');
     const beforeIds = extractParaIdsFromToon(String(readResult.content)).slice();
     expect(beforeIds.length).toBeGreaterThan(0);
 
     const saved = await save(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       save_to_local_path: cleanPath,
       clean_bookmarks: true,
     });
     assertSuccess(saved, 'save');
 
-    const afterRead = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+    const afterRead = await readFile(mgr, { file_path: fixturePath, format: 'simple' });
     assertSuccess(afterRead, 'read after');
     const afterIds = extractParaIdsFromToon(String(afterRead.content));
     expect(afterIds).toEqual(beforeIds);
@@ -320,13 +314,12 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
 
     const opened = await openDocument(mgr, { file_path: fixturePath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
-    const readResult = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+    const readResult = await readFile(mgr, { file_path: fixturePath, format: 'simple' });
     assertSuccess(readResult, 'read');
     const baselineIds = extractParaIdsFromToon(String(readResult.content)).slice();
 
     const cleanOnly = await save(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       save_to_local_path: cleanPath,
       save_format: 'clean',
       clean_bookmarks: true,
@@ -334,14 +327,14 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     assertSuccess(cleanOnly, 'clean download');
 
     const trackedOnly = await save(mgr, {
-      session_id: sessionId,
+      file_path: fixturePath,
       save_to_local_path: trackedPath,
       save_format: 'tracked',
       clean_bookmarks: true,
     });
     assertSuccess(trackedOnly, 'tracked download');
 
-    const afterRead = await readFile(mgr, { session_id: sessionId, format: 'simple' });
+    const afterRead = await readFile(mgr, { file_path: fixturePath, format: 'simple' });
     assertSuccess(afterRead, 'read after');
     expect(extractParaIdsFromToon(String(afterRead.content))).toEqual(baselineIds);
   });
@@ -364,13 +357,13 @@ describe('Traceability: Save Defaults and Stable Node IDs', () => {
     const outputPath = path.join(opened.tmpDir, 'out.docx');
 
     const first = await save(mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       save_to_local_path: outputPath,
       save_format: 'clean',
       clean_bookmarks: true,
     });
     const second = await save(mgr, {
-      session_id: opened.sessionId,
+      file_path: opened.filePath,
       save_to_local_path: outputPath,
       save_format: 'clean',
       clean_bookmarks: true,

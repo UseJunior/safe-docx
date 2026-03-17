@@ -87,7 +87,7 @@ describe('format_layout: non-body part preservation', () => {
 
     await when('formatLayout mutates table row height and cell padding, then saves clean', async () => {
       formatted = await formatLayout(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         row_height: {
           table_indexes: [0],
           row_indexes: [1],
@@ -113,7 +113,7 @@ describe('format_layout: non-body part preservation', () => {
 
       outputPath = `${opened.tmpDir}/non-body-preserved.docx`;
       saved = await save(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.filePath,
         save_to_local_path: outputPath,
         save_format: 'clean',
         clean_bookmarks: true,

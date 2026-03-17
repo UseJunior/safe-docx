@@ -12,9 +12,9 @@ import { insertParagraph } from './tools/insert_paragraph.js';
 import { mergePlans } from './tools/merge_plans.js';
 import { applyPlan } from './tools/apply_plan.js';
 import { save } from './tools/save.js';
-import { getSessionStatus } from './tools/get_session_status.js';
+import { getFileStatus } from './tools/get_file_status.js';
 import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
-import { clearSession } from './tools/clear_session.js';
+import { closeFile } from './tools/close_file.js';
 import { formatLayout } from './tools/format_layout.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { addComment } from './tools/add_comment.js';
@@ -27,6 +27,7 @@ import { deleteFootnote } from './tools/delete_footnote.js';
 import { compareDocuments_tool } from './tools/compare_documents.js';
 import { extractRevisions_tool } from './tools/extract_revisions.js';
 import { clearFormatting } from './tools/clear_formatting.js';
+import type { ToolResponse } from './tools/types.js';
 
 export const MCP_TRANSPORT = 'stdio' as const;
 
@@ -60,10 +61,10 @@ export async function dispatchToolCall(
       return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
     case 'has_tracked_changes':
       return await hasTrackedChanges_tool(sessions, args as Parameters<typeof hasTrackedChanges_tool>[1]);
-    case 'get_session_status':
-      return await getSessionStatus(sessions, args as Parameters<typeof getSessionStatus>[1]);
-    case 'clear_session':
-      return await clearSession(sessions, args as Parameters<typeof clearSession>[1]);
+    case 'get_file_status':
+      return await getFileStatus(sessions, args as Parameters<typeof getFileStatus>[1]);
+    case 'close_file':
+      return await closeFile(sessions, args as Parameters<typeof closeFile>[1]);
     case 'add_comment':
       return await addComment(sessions, args as Parameters<typeof addComment>[1]);
     case 'get_comments':
@@ -90,7 +91,7 @@ export async function dispatchToolCall(
         error: {
           code: 'UNKNOWN_TOOL',
           message: `Unknown tool: ${name}`,
-          hint: 'Use file-first tools: read_file, grep, replace_text, insert_paragraph, save, get_session_status.',
+          hint: 'Use file-first tools: read_file, grep, replace_text, insert_paragraph, save, get_file_status.',
         },
       };
   }

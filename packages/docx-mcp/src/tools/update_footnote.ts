@@ -6,7 +6,6 @@ import { ok, err, type ToolResponse } from './types.js';
 export async function updateFootnote(
   manager: SessionManager,
   params: {
-    session_id?: string;
     file_path?: string;
     note_id?: number;
     new_text?: string;
@@ -38,7 +37,7 @@ export async function updateFootnote(
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({
       note_id: params.note_id,
-      session_id: session.sessionId,
+      file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);

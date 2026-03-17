@@ -23,7 +23,7 @@ describe(FEATURE, () => {
     });
 
     await when('grep is called with an empty patterns array', async () => {
-      result = await grep(opened.mgr, { session_id: opened.sessionId, patterns: [] });
+      result = await grep(opened.mgr, { file_path: opened.inputPath, patterns: [] });
     });
 
     await then('the result fails with MISSING_PATTERN', () => {
@@ -40,7 +40,7 @@ describe(FEATURE, () => {
     });
 
     await when('grep is called with patterns omitted entirely', async () => {
-      result = await grep(opened.mgr, { session_id: opened.sessionId } as any);
+      result = await grep(opened.mgr, { file_path: opened.inputPath } as any);
     });
 
     await then('the result fails with MISSING_PATTERN', () => {
@@ -58,7 +58,7 @@ describe(FEATURE, () => {
 
     await when('grep is called with a singular "pattern" string key', async () => {
       result = await grep(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         pattern: 'quick',
       } as any);
     });
@@ -79,7 +79,7 @@ describe(FEATURE, () => {
     });
 
     await when('grep is called with patterns: ["Alpha"]', async () => {
-      result = await grep(opened.mgr, { session_id: opened.sessionId, patterns: ['Alpha'] });
+      result = await grep(opened.mgr, { file_path: opened.inputPath, patterns: ['Alpha'] });
     });
 
     await then('two total matches across two paragraphs are returned', () => {
@@ -99,7 +99,7 @@ describe(FEATURE, () => {
 
     await when('grep is called with both patterns:["Beta"] and pattern:"Alpha"', async () => {
       result = await grep(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         patterns: ['Beta'],
         pattern: 'Alpha',
       } as any);

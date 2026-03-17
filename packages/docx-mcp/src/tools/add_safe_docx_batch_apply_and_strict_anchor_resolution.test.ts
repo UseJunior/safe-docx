@@ -123,9 +123,9 @@ describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
 
       expect(read.success).toBe(true);
       if (!read.success) return;
-      expect(read.session_resolution).toBe('opened_new_session');
-      expect(typeof read.resolved_session_id).toBe('string');
-      expect(read.resolved_file_path).toBe(manager.normalizePath(filePath));
+      expect(read.session_resolution).toBe('opened');
+      expect(typeof read.resolved_file_path).toBe('string');
+      expect(read.resolved_file_path).toBe(await manager.canonicalizePath(filePath));
     },
   );
 });

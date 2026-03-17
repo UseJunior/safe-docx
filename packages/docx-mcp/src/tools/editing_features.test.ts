@@ -26,13 +26,13 @@ describe('Editing Features', () => {
     await given('a document with text split across run boundaries', async () => {
       const xml = XML_HDR + '<w:p><w:r><w:t>Hello </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>World</w:t></w:r></w:p>' + XML_FTR;
       opened = await openSession([], { xml });
-      const session = opened.mgr.getSession(opened.sessionId);
-      const { nodes } = await session.doc.buildDocumentView();
+      const session = await opened.mgr.getSessionByFilePath(opened.filePath);
+      const { nodes } = await session!.doc.buildDocumentView();
       paraId = nodes[0]!.id;
     });
     await when('replaceText is called across run boundaries', async () => {
       edited = await replaceText(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: paraId,
         old_string: 'Hello World',
         new_string: 'Hi Universe',
@@ -42,7 +42,7 @@ describe('Editing Features', () => {
     await then('the replacement succeeds', () => { assertSuccess(edited, 'replace across run boundaries'); });
     await then('the document contains the new text', async () => {
       read = await readFile(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         node_ids: [paraId],
         format: 'simple',
       });
@@ -59,13 +59,13 @@ describe('Editing Features', () => {
     await given('a document with bold and highlighted text', async () => {
       const xml = XML_HDR + '<w:p><w:r><w:rPr><w:b/><w:highlight w:val="yellow"/></w:rPr><w:t>Bold Highlight</w:t></w:r></w:p>' + XML_FTR;
       opened = await openSession([], { xml });
-      const session = opened.mgr.getSession(opened.sessionId);
-      const { nodes } = await session.doc.buildDocumentView();
+      const session = await opened.mgr.getSessionByFilePath(opened.filePath);
+      const { nodes } = await session!.doc.buildDocumentView();
       paraId = nodes[0]!.id;
     });
     await when('clearFormatting is called with clear_bold and clear_highlight', async () => {
       cleared = await clearFormatting(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         paragraph_ids: [paraId],
         clear_bold: true,
         clear_highlight: true,
@@ -74,7 +74,7 @@ describe('Editing Features', () => {
     await then('the clear_formatting call succeeds', () => { assertSuccess(cleared, 'clear_formatting'); });
     await and('the document node has no bold or highlight formatting', async () => {
       read = await readFile(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         node_ids: [paraId],
         format: 'json',
       });

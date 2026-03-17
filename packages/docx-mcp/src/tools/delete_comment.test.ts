@@ -37,26 +37,26 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       const opened = await openSession(['Paragraph with a comment.']);
 
       const added = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         author: 'Alice',
         text: 'Root comment to delete.',
       });
       assertSuccess(added, 'add_comment');
 
-      const beforeDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const beforeDelete = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(beforeDelete, 'get_comments (before)');
       expect(commentsList(beforeDelete.comments)).toHaveLength(1);
 
       const result = await deleteComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         comment_id: added.comment_id as number,
       });
       assertSuccess(result, 'delete_comment');
       expect(result.comment_id).toBe(added.comment_id);
-      expect(result.session_id).toBe(opened.sessionId);
+      expect(result.resolved_file_path).toBeTruthy();
 
-      const afterDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const afterDelete = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(afterDelete, 'get_comments (after)');
       expect(commentsList(afterDelete.comments)).toHaveLength(0);
     },
@@ -68,7 +68,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       const opened = await openSession(['Paragraph for cascade test.']);
 
       const root = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         author: 'Alice',
         text: 'Root with replies.',
@@ -76,25 +76,25 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       assertSuccess(root, 'add_comment (root)');
 
       const reply = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         parent_comment_id: root.comment_id as number,
         author: 'Bob',
         text: 'Reply to root.',
       });
       assertSuccess(reply, 'add_comment (reply)');
 
-      const beforeDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const beforeDelete = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(beforeDelete, 'get_comments (before)');
       const rootBefore = commentsList(beforeDelete.comments)[0];
       expect(rootBefore.replies).toHaveLength(1);
 
       const result = await deleteComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         comment_id: root.comment_id as number,
       });
       assertSuccess(result, 'delete_comment (cascade)');
 
-      const afterDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const afterDelete = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(afterDelete, 'get_comments (after)');
       expect(commentsList(afterDelete.comments)).toHaveLength(0);
     },
@@ -106,7 +106,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       const opened = await openSession(['Paragraph for reply delete.']);
 
       const root = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         author: 'Alice',
         text: 'Root stays intact.',
@@ -114,7 +114,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       assertSuccess(root, 'add_comment (root)');
 
       const reply = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         parent_comment_id: root.comment_id as number,
         author: 'Bob',
         text: 'Reply to delete.',
@@ -122,12 +122,12 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       assertSuccess(reply, 'add_comment (reply)');
 
       const result = await deleteComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         comment_id: reply.comment_id as number,
       });
       assertSuccess(result, 'delete_comment (reply)');
 
-      const afterDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const afterDelete = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(afterDelete, 'get_comments (after)');
       const comments = commentsList(afterDelete.comments);
       expect(comments).toHaveLength(1);
@@ -142,7 +142,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       const opened = await openSession(['Paragraph for deep cascade.']);
 
       const root = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         author: 'Alice',
         text: 'Root comment.',
@@ -150,7 +150,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       assertSuccess(root, 'add_comment (root)');
 
       const reply1 = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         parent_comment_id: root.comment_id as number,
         author: 'Bob',
         text: 'Middle reply.',
@@ -158,7 +158,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       assertSuccess(reply1, 'add_comment (reply1)');
 
       const reply2 = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         parent_comment_id: reply1.comment_id as number,
         author: 'Carol',
         text: 'Nested reply.',
@@ -167,12 +167,12 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
 
       // Delete the middle reply — should cascade to reply2 but leave root intact
       const result = await deleteComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         comment_id: reply1.comment_id as number,
       });
       assertSuccess(result, 'delete_comment (non-leaf)');
 
-      const afterDelete = await getComments(opened.mgr, { session_id: opened.sessionId });
+      const afterDelete = await getComments(opened.mgr, { file_path: opened.inputPath });
       assertSuccess(afterDelete, 'get_comments (after)');
       const comments = commentsList(afterDelete.comments);
       expect(comments).toHaveLength(1);
@@ -187,7 +187,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       const opened = await openSession(['Paragraph for not-found test.']);
 
       const result = await deleteComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         comment_id: 999999,
       });
       assertFailure(result, 'COMMENT_NOT_FOUND', 'delete_comment');
@@ -200,7 +200,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       const opened = await openSession(['Paragraph for missing param.']);
 
       const result = await deleteComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
       });
       assertFailure(result, 'MISSING_PARAMETER', 'delete_comment');
     },
@@ -211,7 +211,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
     async () => {
       const mgr = createTestSessionManager();
       const result = await deleteComment(mgr, { comment_id: 0 });
-      assertFailure(result, 'MISSING_SESSION_CONTEXT', 'delete_comment');
+      assertFailure(result, 'MISSING_FILE_PATH', 'delete_comment');
     },
   );
 
@@ -221,7 +221,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
       const opened = await openSession(['Paragraph for file resolution.']);
 
       const added = await addComment(opened.mgr, {
-        session_id: opened.sessionId,
+        file_path: opened.inputPath,
         target_paragraph_id: opened.firstParaId,
         author: 'Tester',
         text: 'File resolution comment.',
@@ -233,7 +233,7 @@ describe('OpenSpec traceability: add-comment-delete-tool', () => {
         comment_id: added.comment_id as number,
       });
       assertSuccess(result, 'delete_comment (file_path)');
-      expect(result.session_id).toBeTruthy();
+      expect(result.resolved_file_path).toBeTruthy();
     },
   );
 

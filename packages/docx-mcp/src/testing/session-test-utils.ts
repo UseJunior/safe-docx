@@ -59,6 +59,7 @@ interface OpenSessionOptions {
 interface OpenSessionResult {
   mgr: SessionManager;
   sessionId: string;
+  filePath: string;
   content: string;
   paraIds: string[];
   firstParaId: string;
@@ -82,15 +83,16 @@ export async function openSession(
 
     const opened = await openDocument(mgr, { file_path: inputPath });
     assertSuccess(opened, 'open');
-    const sessionId = opened.session_id as string;
+    const sessionId = opened.session_id as string ?? '';
+    const filePath = (opened.file_path as string) ?? inputPath;
 
-    const read = await readFile(mgr, { session_id: sessionId, format: opts?.format });
+    const read = await readFile(mgr, { file_path: inputPath, format: opts?.format });
     assertSuccess(read, 'read');
     const content = String(read.content);
     const paraIds = extractParaIdsFromToon(content);
     const firstParaId = paraIds.length > 0 ? paraIds[0]! : firstParaIdFromToon(content);
 
-    return { mgr, sessionId, content, paraIds, firstParaId, tmpDir, inputPath };
+    return { mgr, sessionId, filePath, content, paraIds, firstParaId, tmpDir, inputPath };
   };
 
   if (opts?.trackOpenStep === false) {
