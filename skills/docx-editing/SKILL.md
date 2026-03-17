@@ -2,8 +2,10 @@
 name: docx-editing
 description: >-
   Surgically edit existing (brownfield) .docx files with formatting preservation
-  and tracked changes via the Safe-DOCX MCP server. Use when reading, searching,
-  editing, commenting on, or comparing Word documents — not for from-scratch generation.
+  and tracked changes via the Safe-DOCX MCP server. Use when user says "edit this
+  docx," "change the contract," "redline the document," "compare these Word files,"
+  "add a comment to the docx," "read this Word file," or "mark up the agreement."
+  Not for from-scratch document generation.
 ---
 
 # Editing .docx Files with Safe-DOCX
@@ -149,3 +151,7 @@ Call `accept_changes(session_id)` to flatten all tracked changes into a clean do
 ## Path Restrictions
 
 By default, only files under `~/` (home directory) and system temp directories are accessible. Symlinks must resolve to allowed roots.
+
+## Connectors
+
+For MCP server setup instructions (Claude Desktop, Cursor, Claude Code), see [CONNECTORS.md](./CONNECTORS.md).
