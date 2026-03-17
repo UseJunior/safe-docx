@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/google-docs-core",
-  "version": "0.3.1",
+  "version": "0.5.0",
   "description": "Google Docs core library: read, write, and anchor management via Google Docs API",
   "type": "module",
   "main": "dist/index.js",
@@ -32,6 +32,9 @@
   "homepage": "https://github.com/UseJunior/safe-docx/tree/main/packages/google-docs-core",
   "bugs": {
     "url": "https://github.com/UseJunior/safe-docx/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist"

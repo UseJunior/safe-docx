@@ -23,6 +23,7 @@ const PACKAGE_JSONS = [
   'packages/allure-test-factory/package.json',
   'packages/docx-core/package.json',
   'packages/docx-mcp/package.json',
+  'packages/google-docs-core/package.json',
   'packages/safe-docx-mcpb/package.json',
   'packages/safe-docx/package.json',
   'site/package.json',
