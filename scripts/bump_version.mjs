@@ -35,6 +35,7 @@ const MANIFEST_JSON = 'packages/safe-docx-mcpb/manifest.json';
 const WORKSPACE_DEPS = [
   '@usejunior/docx-core',
   '@usejunior/docx-mcp',
+  '@usejunior/google-docs-core',
   '@usejunior/safe-docx',
 ];
 
