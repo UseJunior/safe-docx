@@ -2,7 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { SessionManager } from './session/manager.js';
+import { SessionManager, type GDocsSession } from './session/manager.js';
 import { SAFE_DOCX_MCP_TOOLS } from './tool_catalog.js';
 import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
@@ -27,11 +27,60 @@ import { deleteFootnote } from './tools/delete_footnote.js';
 import { compareDocuments_tool } from './tools/compare_documents.js';
 import { extractRevisions_tool } from './tools/extract_revisions.js';
 import { clearFormatting } from './tools/clear_formatting.js';
+import { resolveGDocsSessionForTool } from './tools/session_resolution.js';
+import { checkGDocsSupport } from './tools/provider_guard.js';
 import type { ToolResponse } from './tools/types.js';
 
 export const MCP_TRANSPORT = 'stdio' as const;
 
 export const MCP_TOOLS = SAFE_DOCX_MCP_TOOLS;
+
+function isGDocsRequest(args: Record<string, unknown>): boolean {
+  return typeof args.google_doc_id === 'string' && args.google_doc_id.trim().length > 0;
+}
+
+// Lazy-loaded gdocs handler map (populated on first gdocs request)
+let gdocsHandlers: Record<string, (m: SessionManager, s: GDocsSession, p: any, meta: Record<string, unknown>) => Promise<ToolResponse>> | null = null;
+
+async function loadGDocsHandlers(): Promise<typeof gdocsHandlers> {
+  if (gdocsHandlers) return gdocsHandlers;
+  const [readFile, replaceText, insertParagraph, grep, save, formatLayout, getFileStatus, closeFile] = await Promise.all([
+    import('./tools/gdocs/read_file.js'),
+    import('./tools/gdocs/replace_text.js'),
+    import('./tools/gdocs/insert_paragraph.js'),
+    import('./tools/gdocs/grep.js'),
+    import('./tools/gdocs/save.js'),
+    import('./tools/gdocs/format_layout.js'),
+    import('./tools/gdocs/get_file_status.js'),
+    import('./tools/gdocs/close_file.js'),
+  ]);
+  gdocsHandlers = {
+    read_file: readFile.gdocsReadFile,
+    replace_text: replaceText.gdocsReplaceText,
+    insert_paragraph: insertParagraph.gdocsInsertParagraph,
+    grep: grep.gdocsGrep,
+    save: save.gdocsSave,
+    format_layout: formatLayout.gdocsFormatLayout,
+    get_file_status: getFileStatus.gdocsGetFileStatus,
+    close_file: closeFile.gdocsCloseFile,
+  };
+  return gdocsHandlers;
+}
+
+async function dispatchGDocs(
+  manager: SessionManager,
+  args: Record<string, unknown>,
+  toolName: string,
+): Promise<ToolResponse> {
+  const guard = checkGDocsSupport(toolName);
+  if (guard) return guard;
+  const resolved = await resolveGDocsSessionForTool(manager, args, { toolName });
+  if (!resolved.ok) return resolved.response;
+  const handlers = await loadGDocsHandlers();
+  const handler = handlers![toolName];
+  if (!handler) return { success: false, error: { code: 'UNKNOWN_TOOL', message: `No Google Docs handler for: ${toolName}` } };
+  return handler(manager, resolved.session, args, resolved.metadata);
+}
 
 export async function dispatchToolCall(
   sessions: SessionManager,
@@ -40,8 +89,10 @@ export async function dispatchToolCall(
 ): Promise<Record<string, unknown>> {
   switch (name) {
     case 'read_file':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'read_file');
       return await readFile(sessions, args as Parameters<typeof readFile>[1]);
     case 'grep':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'grep');
       return await grep(sessions, args as Parameters<typeof grep>[1]);
     case 'init_plan':
       return await initPlan(sessions, args as Parameters<typeof initPlan>[1]);
@@ -50,20 +101,26 @@ export async function dispatchToolCall(
     case 'apply_plan':
       return await applyPlan(sessions, args as Parameters<typeof applyPlan>[1]);
     case 'replace_text':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'replace_text');
       return await replaceText(sessions, args as Parameters<typeof replaceText>[1]);
     case 'insert_paragraph':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'insert_paragraph');
       return await insertParagraph(sessions, args as Parameters<typeof insertParagraph>[1]);
     case 'save':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'save');
       return await save(sessions, args as Parameters<typeof save>[1]);
     case 'format_layout':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'format_layout');
       return await formatLayout(sessions, args as Parameters<typeof formatLayout>[1]);
     case 'accept_changes':
       return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
     case 'has_tracked_changes':
       return await hasTrackedChanges_tool(sessions, args as Parameters<typeof hasTrackedChanges_tool>[1]);
     case 'get_file_status':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'get_file_status');
       return await getFileStatus(sessions, args as Parameters<typeof getFileStatus>[1]);
     case 'close_file':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'close_file');
       return await closeFile(sessions, args as Parameters<typeof closeFile>[1]);
     case 'add_comment':
       return await addComment(sessions, args as Parameters<typeof addComment>[1]);
