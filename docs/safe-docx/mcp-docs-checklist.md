@@ -47,6 +47,6 @@ Before adding more docs, trim anything that matches one of these:
 - [x] Keep tool schemas in one source of truth (`src/tool_catalog.ts` with Zod 4).
 - [x] Generate tool docs from schema source (`docs/tool-reference.generated.md`).
 - [x] Add three golden prompts.
-- [ ] Publish `.mcpb` artifact in CI release flow.
+- [x] Publish `.mcpb` artifact in CI release flow.
 - [x] List public package in MCP Registry when open-source launch is ready.
 - [ ] Add concise troubleshooting section in package README after first support feedback cycle.

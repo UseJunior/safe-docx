@@ -32,13 +32,11 @@ chore(release): bump workspace versions to 0.2.0
 
 ### 1. Bump versions
 
-Update the version in all four package manifests and the MCPB `manifest.json`:
+```bash
+node scripts/bump_version.mjs <version>
+```
 
-- `packages/docx-core/package.json`
-- `packages/docx-mcp/package.json`
-- `packages/safe-docx/package.json`
-- `packages/safe-docx-mcpb/package.json`
-- `packages/safe-docx-mcpb/manifest.json`
+This script is the source of truth for which files are managed (package manifests, MCPB manifest, cross-workspace dependency ranges, and `package-lock.json`). Do not bump versions manually.
 
 Commit: `chore(release): bump workspace versions to X.Y.Z`
 
@@ -65,14 +63,27 @@ preflight → publish-suite → ensure-release → publish-mcpb-asset → update
 
 ### 4. Verify
 
+- [ ] `node scripts/bump_version.mjs --check` confirms all managed files are in sync
 - [ ] npm packages are published with provenance
 - [ ] GitHub Release exists with categorized notes
 - [ ] MCPB asset is attached to the release
 - [ ] Changelog data PR is opened (merge it to update the trust site)
 
+### 5. MCP Registry Submissions
+
+After npm publish, submit the package to each registry target:
+
+1. **Official MCP Registry** (`registry.modelcontextprotocol.io`) — Requires `packages/safe-docx/server.json` (already managed by the bump script). Submit via the [registry quickstart](https://modelcontextprotocol.io/registry/quickstart).
+2. **Anthropic Connectors Directory** — Separate from the official registry. Submit local MCP servers via the [Google Form](https://support.claude.com/en/articles/12922832-local-mcp-server-submission-guide).
+3. **mcpservers.org** — Manual web form at https://mcpservers.org/submit.
+4. **Smithery.ai** — Publish via https://smithery.ai/docs/build/publish or https://smithery.ai/new.
+5. **Glama.ai** — Auto-discovers from GitHub/registry. Verify listing after registry publish + sync window (not tied to npm timing).
+
+> **Note:** These URLs were verified as of 2026-03-17. Confirm they are still current at submission time.
+
 ## Monorepo Version Coupling
 
-All publishable packages share the same version. The preflight job verifies that the tag version matches every `package.json` and the MCPB `manifest.json`. If any mismatch exists, the release fails before publishing.
+All publishable packages share the same version. The preflight job verifies that the tag version matches all files managed by `bump_version.mjs`. If any mismatch exists, the release fails before publishing.
 
 ## Fixing Bad Release Notes
 
