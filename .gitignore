@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.tgz
 .DS_Store
+.mcpregistry_*
 # Allure report artifacts (any depth)
 allure-results/
 allure-report/

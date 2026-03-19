@@ -140,6 +140,10 @@ npm run coverage:matrix
 - [Open Agreements](https://github.com/open-agreements/open-agreements) — fill standard legal templates with coding agents (NDAs, SAFEs, NVCA)
 - [UseJunior Developer Tools](https://usejunior.com/developer-tools/safe-docx) — product page with install options and tool catalog
 
+## Privacy
+
+Safe Docx runs entirely on your local machine. No document content is sent to external servers. See our [Privacy Policy](https://usejunior.com/privacy_policy) for details.
+
 ## Governance
 
 - [Contributing Guide](CONTRIBUTING.md)
