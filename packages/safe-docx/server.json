@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.usejunior/safe-docx",
+  "name": "io.github.UseJunior/safe-docx",
   "title": "Safe Docx",
   "description": "AI-native surgical editing of existing Word .docx files with formatting preservation",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "websiteUrl": "https://usejunior.com/developer-tools/safe-docx",
   "icons": [
     {
@@ -18,7 +18,7 @@
     {
       "registryType": "npm",
       "identifier": "@usejunior/safe-docx",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "transport": {
         "type": "stdio"
       },
