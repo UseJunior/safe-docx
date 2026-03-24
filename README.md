@@ -11,6 +11,8 @@ Safe Docx is an open-source TypeScript stack for surgical editing of existing Mi
 
 If you review contracts with AI, the slowest step is often applying accepted recommendations in Word. Safe Docx turns that into deterministic tool calls.
 
+[![safe-docx MCP server](https://glama.ai/mcp/servers/UseJunior/safe-docx/badges/card.svg)](https://glama.ai/mcp/servers/UseJunior/safe-docx)
+
 ## Why This Exists
 
 AI coding CLIs are great with code and text files but weak on brownfield `.docx` editing. Business and legal workflows still run on Word documents, so we built a native TypeScript path for:
