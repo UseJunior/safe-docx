@@ -3,6 +3,8 @@
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
 
+[English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
+
 **safe-docx** by [UseJunior](https://usejunior.com) — use coding agents for paperwork too.
 
 Part of the [UseJunior developer tools](https://usejunior.com/developer-tools/safe-docx).
