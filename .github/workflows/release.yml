@@ -59,6 +59,11 @@ jobs:
             echo "Tag version ($TAG_VERSION) must match packages/safe-docx/server.json version ($SERVER_VERSION)."
             exit 1
           fi
+          SMITHERY_VERSION="$(node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('./packages/safe-docx/.smithery/shttp/manifest.json','utf8'));process.stdout.write(m.payload.serverCard.serverInfo.version)")"
+          if [ "$TAG_VERSION" != "$SMITHERY_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) must match packages/safe-docx/.smithery/shttp/manifest.json version ($SMITHERY_VERSION)."
+            exit 1
+          fi
 
       - name: Verify release commit is on main
         run: |

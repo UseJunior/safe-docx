@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/safe-docx",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Canonical npm package for the Safe Docx MCP server and CLI",
   "mcpName": "io.github.UseJunior/safe-docx",
   "type": "module",
@@ -25,7 +25,7 @@
     "safedocx": "./bin/safe-docx.js"
   },
   "dependencies": {
-    "@usejunior/docx-mcp": "^0.7.1"
+    "@usejunior/docx-mcp": "^0.7.2"
   },
   "engines": {
     "node": ">=18.0.0"

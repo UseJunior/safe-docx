@@ -1,0 +1,943 @@
+{
+  "payload": {
+    "type": "hosted",
+    "stateful": false,
+    "hasAuthAdapter": false,
+    "serverCard": {
+      "serverInfo": {
+        "name": "safe-docx",
+        "version": "0.7.2"
+      },
+      "tools": [
+        {
+          "name": "read_file",
+          "description": "Read document content (DOCX or Google Doc). Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "google_doc_id": {
+                "description": "Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit",
+                "type": "string"
+              },
+              "offset": {
+                "description": "1-based paragraph offset for pagination. Negative values count from end.",
+                "type": "number"
+              },
+              "limit": {
+                "description": "Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination.",
+                "type": "number"
+              },
+              "node_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "toon",
+                  "json",
+                  "simple"
+                ]
+              },
+              "show_formatting": {
+                "description": "When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags.",
+                "type": "boolean"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "grep",
+          "description": "Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "google_doc_id": {
+                "description": "Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit",
+                "type": "string"
+              },
+              "file_paths": {
+                "description": "Multiple file paths for stateless multi-file search. No session created.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "patterns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "case_sensitive": {
+                "type": "boolean"
+              },
+              "whole_word": {
+                "type": "boolean"
+              },
+              "max_results": {
+                "type": "number"
+              },
+              "context_chars": {
+                "type": "number"
+              },
+              "dedupe_by_paragraph": {
+                "type": "boolean"
+              },
+              "search_xml": {
+                "description": "When true, search raw XML (word/document.xml) instead of paragraph text.",
+                "type": "boolean"
+              },
+              "include_context": {
+                "description": "When false, skip document view context (list labels, headers) for faster results. Default: true.",
+                "type": "boolean"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "init_plan",
+          "description": "Initialize revision-bound context metadata for coordinated multi-agent planning.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "plan_name": {
+                "type": "string"
+              },
+              "orchestrator_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "file_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "merge_plans",
+          "description": "Deterministically merge multiple sub-agent plans and detect hard conflicts before apply.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "plans": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              },
+              "fail_on_conflict": {
+                "type": "boolean"
+              },
+              "require_shared_base_revision": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "plans"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "apply_plan",
+          "description": "Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "steps": {
+                "description": "JSON array of edit steps. Each step needs step_id, operation, and operation-specific fields.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              },
+              "plan_file_path": {
+                "description": "Path to a .json file containing an array of edit steps. Mutually exclusive with steps.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "file_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "replace_text",
+          "description": "Replace text in a paragraph by _bk_* id, preserving formatting. Supports DOCX and Google Docs.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "google_doc_id": {
+                "description": "Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit",
+                "type": "string"
+              },
+              "target_paragraph_id": {
+                "type": "string"
+              },
+              "old_string": {
+                "type": "string"
+              },
+              "new_string": {
+                "type": "string"
+              },
+              "instruction": {
+                "type": "string"
+              },
+              "normalize_first": {
+                "description": "Merge format-identical adjacent runs before searching. Useful when text is fragmented across runs.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "target_paragraph_id",
+              "old_string",
+              "new_string",
+              "instruction"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "insert_paragraph",
+          "description": "Insert a paragraph before/after an anchor paragraph by _bk_* id. Supports DOCX and Google Docs.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "google_doc_id": {
+                "description": "Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit",
+                "type": "string"
+              },
+              "positional_anchor_node_id": {
+                "type": "string"
+              },
+              "new_string": {
+                "type": "string"
+              },
+              "instruction": {
+                "type": "string"
+              },
+              "position": {
+                "type": "string",
+                "enum": [
+                  "BEFORE",
+                  "AFTER"
+                ]
+              },
+              "style_source_id": {
+                "description": "Paragraph _bk_* ID to clone formatting (pPr and template run) from instead of the positional anchor. Falls back to anchor with a warning if not found.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "positional_anchor_node_id",
+              "new_string",
+              "instruction"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "save",
+          "description": "Save document. For DOCX: saves clean and/or tracked changes output. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "google_doc_id": {
+                "description": "Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit",
+                "type": "string"
+              },
+              "save_to_local_path": {
+                "type": "string"
+              },
+              "clean_bookmarks": {
+                "type": "boolean"
+              },
+              "save_format": {
+                "type": "string",
+                "enum": [
+                  "clean",
+                  "tracked",
+                  "both"
+                ]
+              },
+              "allow_overwrite": {
+                "type": "boolean"
+              },
+              "tracked_save_to_local_path": {
+                "type": "string"
+              },
+              "tracked_changes_author": {
+                "type": "string"
+              },
+              "tracked_changes_engine": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "atomizer"
+                ]
+              },
+              "fail_on_rebuild_fallback": {
+                "description": "When true, return an error instead of a destructive output if the comparison engine falls back to rebuild mode (which destroys table structure). Default: false.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "save_to_local_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "format_layout",
+          "description": "Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "google_doc_id": {
+                "description": "Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit",
+                "type": "string"
+              },
+              "strict": {
+                "type": "boolean"
+              },
+              "paragraph_spacing": {
+                "type": "object",
+                "properties": {
+                  "paragraph_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "before_twips": {
+                    "type": "number"
+                  },
+                  "after_twips": {
+                    "type": "number"
+                  },
+                  "line_twips": {
+                    "type": "number"
+                  },
+                  "line_rule": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "exact",
+                      "atLeast"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "row_height": {
+                "type": "object",
+                "properties": {
+                  "table_indexes": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "row_indexes": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "value_twips": {
+                    "type": "number"
+                  },
+                  "rule": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "exact",
+                      "atLeast"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "cell_padding": {
+                "type": "object",
+                "properties": {
+                  "table_indexes": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "row_indexes": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "cell_indexes": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "top_dxa": {
+                    "type": "number"
+                  },
+                  "bottom_dxa": {
+                    "type": "number"
+                  },
+                  "left_dxa": {
+                    "type": "number"
+                  },
+                  "right_dxa": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "accept_changes",
+          "description": "Accept all tracked changes in the document body, producing a clean document with no revision markup. Returns acceptance stats.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              }
+            },
+            "required": [
+              "file_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "has_tracked_changes",
+          "description": "Check whether the document body contains tracked-change markers (insertions, deletions, moves, and property-change records). Read-only.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              }
+            },
+            "required": [
+              "file_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "get_file_status",
+          "description": "Get file/session metadata including edit count, normalization stats, and cache info. Supports DOCX and Google Docs.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "google_doc_id": {
+                "description": "Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit",
+                "type": "string"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "close_file",
+          "description": "Close an open file session, or close all sessions with explicit confirmation. Supports DOCX and Google Docs.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "google_doc_id": {
+                "description": "Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit",
+                "type": "string"
+              },
+              "clear_all": {
+                "type": "boolean"
+              },
+              "confirm": {
+                "type": "boolean"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "add_comment",
+          "description": "Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "target_paragraph_id": {
+                "description": "Paragraph ID to anchor the comment to (for root comments).",
+                "type": "string"
+              },
+              "anchor_text": {
+                "description": "Text within the paragraph to anchor the comment to. If omitted, anchors to entire paragraph.",
+                "type": "string"
+              },
+              "parent_comment_id": {
+                "description": "Parent comment ID for threaded replies.",
+                "type": "number"
+              },
+              "author": {
+                "type": "string",
+                "description": "Comment author name."
+              },
+              "text": {
+                "type": "string",
+                "description": "Comment body text."
+              },
+              "initials": {
+                "description": "Author initials (defaults to first letter of author name).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "file_path",
+              "author",
+              "text"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "get_comments",
+          "description": "Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies. Read-only.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              }
+            },
+            "required": [
+              "file_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "delete_comment",
+          "description": "Delete a comment and all its threaded replies from the document. Cascade-deletes all descendants.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "comment_id": {
+                "type": "number",
+                "description": "Comment ID to delete."
+              }
+            },
+            "required": [
+              "file_path",
+              "comment_id"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "compare_documents",
+          "description": "Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "original_file_path": {
+                "description": "Path to the original DOCX file.",
+                "type": "string"
+              },
+              "revised_file_path": {
+                "description": "Path to the revised DOCX file.",
+                "type": "string"
+              },
+              "file_path": {
+                "description": "Path to the DOCX file.",
+                "type": "string"
+              },
+              "save_to_local_path": {
+                "type": "string",
+                "description": "Path to save the tracked-changes DOCX output."
+              },
+              "author": {
+                "description": "Author name for track changes. Default: 'Comparison'.",
+                "type": "string"
+              },
+              "engine": {
+                "description": "Comparison engine. Default: 'auto'.",
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "atomizer"
+                ]
+              }
+            },
+            "required": [
+              "save_to_local_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "get_footnotes",
+          "description": "Get all footnotes from the document with IDs, display numbers, text, and anchored paragraph IDs. Read-only.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              }
+            },
+            "required": [
+              "file_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        },
+        {
+          "name": "add_footnote",
+          "description": "Add a footnote anchored to a paragraph. Optionally position the reference after specific text using after_text. Note: [^N] markers in read_file output are display-only and not part of the editable text used by replace_text.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "target_paragraph_id": {
+                "type": "string",
+                "description": "Paragraph ID to anchor the footnote to."
+              },
+              "after_text": {
+                "description": "Text after which to insert the footnote reference. If omitted, appends at end of paragraph.",
+                "type": "string"
+              },
+              "text": {
+                "type": "string",
+                "description": "Footnote body text."
+              }
+            },
+            "required": [
+              "file_path",
+              "target_paragraph_id",
+              "text"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "update_footnote",
+          "description": "Update the text content of an existing footnote.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "note_id": {
+                "type": "number",
+                "description": "Footnote ID to update."
+              },
+              "new_text": {
+                "type": "string",
+                "description": "New footnote body text."
+              }
+            },
+            "required": [
+              "file_path",
+              "note_id",
+              "new_text"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "delete_footnote",
+          "description": "Delete a footnote and its reference from the document.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "note_id": {
+                "type": "number",
+                "description": "Footnote ID to delete."
+              }
+            },
+            "required": [
+              "file_path",
+              "note_id"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "clear_formatting",
+          "description": "Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "paragraph_ids": {
+                "description": "Paragraph IDs to clear formatting from. If omitted, clears from all paragraphs.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "clear_highlight": {
+                "description": "Remove highlight formatting.",
+                "type": "boolean"
+              },
+              "clear_bold": {
+                "description": "Remove bold formatting.",
+                "type": "boolean"
+              },
+              "clear_italic": {
+                "description": "Remove italic formatting.",
+                "type": "boolean"
+              },
+              "clear_underline": {
+                "description": "Remove underline formatting.",
+                "type": "boolean"
+              },
+              "clear_color": {
+                "description": "Remove font color.",
+                "type": "boolean"
+              },
+              "clear_font": {
+                "description": "Remove font family and size.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "file_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true
+          }
+        },
+        {
+          "name": "extract_revisions",
+          "description": "Extract tracked changes as structured JSON with before/after text per paragraph, revision details, and comments. Supports pagination via offset and limit. Read-only - does not modify the document.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the DOCX file."
+              },
+              "offset": {
+                "description": "0-based offset for pagination. Default: 0.",
+                "type": "number"
+              },
+              "limit": {
+                "description": "Max entries per page (1-500). Default: 50.",
+                "type": "number"
+              }
+            },
+            "required": [
+              "file_path"
+            ],
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false
+          },
+          "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false
+          }
+        }
+      ],
+      "resources": [],
+      "prompts": []
+    },
+    "source": {
+      "commit": "4526cdbf1ccc74bd045b5a63a75299d5081d6282",
+      "branch": "main"
+    }
+  },
+  "artifacts": {
+    "module": "module.js",
+    "sourcemap": "module.js.map"
+  }
+}

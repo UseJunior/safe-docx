@@ -30,6 +30,7 @@ const PACKAGE_JSONS = [
 ];
 
 const MANIFEST_JSON = 'packages/safe-docx-mcpb/manifest.json';
+const SMITHERY_MANIFEST_JSON = 'packages/safe-docx/.smithery/shttp/manifest.json';
 
 // Cross-workspace dependencies (package name → dep specifier pattern)
 const WORKSPACE_DEPS = [
@@ -68,6 +69,9 @@ function checkVersionSync() {
 
   const manifest = readJson(MANIFEST_JSON);
   versions.set(MANIFEST_JSON, manifest.version);
+
+  const smitheryManifest = readJson(SMITHERY_MANIFEST_JSON);
+  versions.set(SMITHERY_MANIFEST_JSON, smitheryManifest.payload?.serverCard?.serverInfo?.version);
 
   const serverJson = readJson('packages/safe-docx/server.json');
   versions.set('packages/safe-docx/server.json', serverJson.version);
@@ -145,6 +149,12 @@ function bumpVersion(newVersion) {
   manifest.version = newVersion;
   writeJson(MANIFEST_JSON, manifest);
   console.log(`  ✓ ${MANIFEST_JSON}`);
+
+  // 3a. Update Smithery manifest.json
+  const smitheryManifest = readJson(SMITHERY_MANIFEST_JSON);
+  smitheryManifest.payload.serverCard.serverInfo.version = newVersion;
+  writeJson(SMITHERY_MANIFEST_JSON, smitheryManifest);
+  console.log(`  ✓ ${SMITHERY_MANIFEST_JSON}`);
 
   // 3b. Update server.json
   const SERVER_JSON = 'packages/safe-docx/server.json';
