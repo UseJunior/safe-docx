@@ -246,12 +246,123 @@ function extractGroupTextContent(atoms: ComparisonUnitAtom[]): string {
  * - Trim whitespace
  * - Collapse multiple spaces
  * - Lowercase for case-insensitive comparison
+ *
+ * NOTE: Do NOT strip punctuation here — this function feeds normalizedTextHash
+ * which is used for Pass 1 anchoring. Changing it would alter which paragraphs
+ * are considered coarsely equal. Punctuation stripping is in tokenize() only.
  */
 function normalizeText(text: string): string {
   return text
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase();
+}
+
+// =============================================================================
+// TF-IDF Similarity
+// =============================================================================
+
+/** Precomputed TF-IDF vector for a paragraph group. */
+interface TfidfVector {
+  /** Sparse vector: word → TF-IDF weight */
+  vector: Map<string, number>;
+  /** Precomputed magnitude for O(1) cosine similarity */
+  magnitude: number;
+}
+
+/**
+ * Build an IDF (inverse document frequency) map from all paragraph groups.
+ *
+ * IDF(word) = log(totalGroups / groupsContainingWord)
+ *
+ * Words appearing in many paragraphs (legal boilerplate like "holders",
+ * "Corporation", "Preferred Stock") get low weight. Distinctive words
+ * ("Liquidation", "Dividends") get high weight.
+ */
+function buildIdfMap(groups: ComparisonUnitGroup[]): Map<string, number> {
+  const docFreq = new Map<string, number>();
+  const totalGroups = groups.length;
+
+  for (const group of groups) {
+    if (isEmptyParagraphGroup(group)) continue;
+    const words = new Set(tokenize(group.textContent));
+    for (const word of words) {
+      docFreq.set(word, (docFreq.get(word) ?? 0) + 1);
+    }
+  }
+
+  const idf = new Map<string, number>();
+  for (const [word, freq] of docFreq) {
+    idf.set(word, Math.log(totalGroups / freq));
+  }
+  return idf;
+}
+
+/**
+ * Build a precomputed TF-IDF vector for a paragraph group.
+ *
+ * TF(word) = count(word in paragraph) / totalWords
+ * TF-IDF(word) = TF(word) * IDF(word)
+ */
+function buildTfidfVector(group: ComparisonUnitGroup, idf: Map<string, number>): TfidfVector {
+  const words = tokenize(group.textContent);
+  if (words.length === 0) {
+    return { vector: new Map(), magnitude: 0 };
+  }
+
+  // Count term frequencies
+  const tf = new Map<string, number>();
+  for (const word of words) {
+    tf.set(word, (tf.get(word) ?? 0) + 1);
+  }
+
+  // Build TF-IDF vector
+  const vector = new Map<string, number>();
+  let sumSquares = 0;
+  for (const [word, count] of tf) {
+    const tfidf = (count / words.length) * (idf.get(word) ?? 0);
+    if (tfidf > 0) {
+      vector.set(word, tfidf);
+      sumSquares += tfidf * tfidf;
+    }
+  }
+
+  return { vector, magnitude: Math.sqrt(sumSquares) };
+}
+
+/**
+ * Compute cosine similarity between two precomputed TF-IDF vectors.
+ */
+function computeTfidfCosineSimilarity(a: TfidfVector, b: TfidfVector): number {
+  if (a.magnitude === 0 || b.magnitude === 0) return 0;
+
+  // Iterate over the smaller vector for efficiency
+  const [smaller, larger] = a.vector.size <= b.vector.size ? [a, b] : [b, a];
+  let dot = 0;
+  for (const [word, weight] of smaller.vector) {
+    const otherWeight = larger.vector.get(word);
+    if (otherWeight !== undefined) {
+      dot += weight * otherWeight;
+    }
+  }
+
+  return dot / (a.magnitude * b.magnitude);
+}
+
+/**
+ * Tokenize text into words for TF-IDF.
+ * Strips punctuation (unlike normalizeText) so that "Corporation," and
+ * "Corporation" produce the same token.
+ */
+function tokenize(text: string): string[] {
+  return text
+    .trim()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim()
+    .split(' ')
+    .filter(w => w.length > 0);
 }
 
 /**
@@ -317,21 +428,139 @@ function computeGroupSimilarity(a: ComparisonUnitGroup, b: ComparisonUnitGroup):
   return intersection.size / union.size;
 }
 
+// =============================================================================
+// Order-Constrained Gap Matching
+// =============================================================================
+
+/** A gap between two consecutive Pass 1 anchors. */
+interface Gap {
+  origIndices: number[];
+  revIndices: number[];
+}
+
 /**
- * Compute LCS on paragraph groups with similarity fallback.
+ * Build ordered gaps between consecutive Pass 1 anchors.
+ *
+ * Anchors divide both documents into regions. Similarity matching is scoped
+ * to each gap — a source paragraph can only match a revised paragraph if both
+ * fall within the same gap.
+ */
+function buildGaps(
+  anchors: Array<{ originalIndex: number; revisedIndex: number }>,
+  unmatchedOriginal: number[],
+  unmatchedRevised: number[],
+  n: number,
+  m: number
+): Gap[] {
+  const gaps: Gap[] = [];
+
+  // Sentinel boundaries: before first anchor and after last anchor
+  const boundaries: Array<{ origBound: number; revBound: number }> = [
+    { origBound: -1, revBound: -1 },
+    ...anchors.map(a => ({ origBound: a.originalIndex, revBound: a.revisedIndex })),
+    { origBound: n, revBound: m },
+  ];
+
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const lo = boundaries[i]!;
+    const hi = boundaries[i + 1]!;
+
+    const origInGap = unmatchedOriginal.filter(
+      idx => idx > lo.origBound && idx < hi.origBound
+    );
+    const revInGap = unmatchedRevised.filter(
+      idx => idx > lo.revBound && idx < hi.revBound
+    );
+
+    if (origInGap.length > 0 || revInGap.length > 0) {
+      gaps.push({ origIndices: origInGap, revIndices: revInGap });
+    }
+  }
+
+  return gaps;
+}
+
+/**
+ * Run LCS within a gap using TF-IDF cosine similarity as the equality criterion.
+ *
+ * Two groups are "equal" (matchable) if their TF-IDF cosine similarity
+ * exceeds the threshold. Standard DP LCS with backtracking.
+ */
+function similarityLcs(
+  origIndices: number[],
+  revIndices: number[],
+  originalGroups: ComparisonUnitGroup[],
+  revisedGroups: ComparisonUnitGroup[],
+  tfidfVectors: Map<ComparisonUnitGroup, TfidfVector>,
+  threshold: number
+): Array<{ originalIndex: number; revisedIndex: number }> {
+  const ni = origIndices.length;
+  const nj = revIndices.length;
+
+  // Similarity predicate for LCS equality check
+  const similar = (oi: number, ri: number): boolean => {
+    const origGroup = originalGroups[origIndices[oi]!]!;
+    const revGroup = revisedGroups[revIndices[ri]!]!;
+    const vecA = tfidfVectors.get(origGroup);
+    const vecB = tfidfVectors.get(revGroup);
+    if (!vecA || !vecB) return false;
+    return computeTfidfCosineSimilarity(vecA, vecB) >= threshold;
+  };
+
+  // Standard DP LCS
+  const dp: number[][] = Array(ni + 1)
+    .fill(null)
+    .map(() => Array(nj + 1).fill(0));
+
+  for (let i = 1; i <= ni; i++) {
+    for (let j = 1; j <= nj; j++) {
+      if (similar(i - 1, j - 1)) {
+        dp[i]![j] = dp[i - 1]![j - 1]! + 1;
+      } else {
+        dp[i]![j] = Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
+      }
+    }
+  }
+
+  // Backtrack
+  const matches: Array<{ originalIndex: number; revisedIndex: number }> = [];
+  let ci = ni;
+  let cj = nj;
+  while (ci > 0 && cj > 0) {
+    if (similar(ci - 1, cj - 1)) {
+      matches.unshift({
+        originalIndex: origIndices[ci - 1]!,
+        revisedIndex: revIndices[cj - 1]!,
+      });
+      ci--;
+      cj--;
+    } else if (dp[ci - 1]![cj]! > dp[ci]![cj - 1]!) {
+      ci--;
+    } else {
+      cj--;
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Compute LCS on paragraph groups with order-constrained similarity fallback.
  *
  * Two passes:
  * 1. LCS with exact text hash matching (fast path)
- * 2. Similarity matching for unmatched groups (fallback)
+ * 2. Order-constrained similarity matching: gap-scoped mini-LCS with TF-IDF
  *
  * @param originalGroups - Groups from original document
  * @param revisedGroups - Groups from revised document
- * @param similarityThreshold - Minimum similarity to consider a match (default: 0.25)
+ * @param similarityThreshold - Minimum TF-IDF cosine similarity for a match (default: 0.25)
+ * @param tfidfVectors - Precomputed TF-IDF vectors for all groups
  */
 export function computeGroupLcs(
   originalGroups: ComparisonUnitGroup[],
   revisedGroups: ComparisonUnitGroup[],
-  similarityThreshold = DEFAULT_PARAGRAPH_SIMILARITY_THRESHOLD
+  similarityThreshold = DEFAULT_PARAGRAPH_SIMILARITY_THRESHOLD,
+  tfidfVectors?: Map<ComparisonUnitGroup, TfidfVector>
 ): GroupLcsResult {
   const n = originalGroups.length;
   const m = revisedGroups.length;
@@ -386,29 +615,64 @@ export function computeGroupLcs(
     }
   }
 
-  // === Pass 2: Similarity matching for unmatched groups ===
-  // Try to find near-matches for paragraphs that were modified significantly
+  // === Pass 2: Order-constrained similarity matching via gap-scoped LCS ===
+  //
+  // Pass 1 anchors divide both documents into "gaps" — regions between consecutive
+  // exact matches. Similarity matching is scoped to each gap: a source paragraph can
+  // only match a revised paragraph within the same gap. Within each gap, a mini-LCS
+  // using TF-IDF cosine similarity preserves document order.
+  //
+  // This prevents two classes of bugs:
+  // 1. Cross-anchor matches: Source[45] stealing Revised[20] across an anchor boundary
+  // 2. Non-monotonic matches within a gap: greedy best-match could reorder paragraphs
+  //
+  // TF-IDF (instead of Jaccard) down-weights legal boilerplate words ("holders",
+  // "Preferred Stock", "Corporation") that appear in many paragraphs, preventing
+  // false matches on shared vocabulary.
   const similarityMatches: Array<{ originalIndex: number; revisedIndex: number }> = [];
 
-  for (const origIdx of unmatchedOriginal) {
-    const origGroup = originalGroups[origIdx]!;
-    let bestMatch: { revisedIndex: number; similarity: number } | null = null;
+  // Build gaps between consecutive Pass 1 anchors
+  const gaps = buildGaps(matchedGroups, unmatchedOriginal, unmatchedRevised, n, m);
 
-    for (const revIdx of unmatchedRevised) {
-      const revGroup = revisedGroups[revIdx]!;
-      const similarity = computeGroupSimilarity(origGroup, revGroup);
+  // Run mini-LCS within each gap using TF-IDF similarity (if vectors available)
+  // Falls back to Jaccard-based greedy matching if no TF-IDF vectors provided
+  if (tfidfVectors) {
+    for (const gap of gaps) {
+      if (gap.origIndices.length === 0 || gap.revIndices.length === 0) continue;
 
-      if (similarity >= similarityThreshold) {
-        if (!bestMatch || similarity > bestMatch.similarity) {
-          bestMatch = { revisedIndex: revIdx, similarity };
+      const gapMatches = similarityLcs(
+        gap.origIndices,
+        gap.revIndices,
+        originalGroups,
+        revisedGroups,
+        tfidfVectors,
+        similarityThreshold
+      );
+      similarityMatches.push(...gapMatches);
+    }
+  } else {
+    // Fallback: gap-scoped Jaccard matching (greedy within each gap)
+    for (const gap of gaps) {
+      if (gap.origIndices.length === 0 || gap.revIndices.length === 0) continue;
+
+      const candidates: Array<{ originalIndex: number; revisedIndex: number; similarity: number }> = [];
+      for (const origIdx of gap.origIndices) {
+        for (const revIdx of gap.revIndices) {
+          const similarity = computeGroupSimilarity(originalGroups[origIdx]!, revisedGroups[revIdx]!);
+          if (similarity >= similarityThreshold) {
+            candidates.push({ originalIndex: origIdx, revisedIndex: revIdx, similarity });
+          }
         }
       }
-    }
-
-    if (bestMatch) {
-      similarityMatches.push({ originalIndex: origIdx, revisedIndex: bestMatch.revisedIndex });
-      // Remove from unmatched revised
-      unmatchedRevised = unmatchedRevised.filter(idx => idx !== bestMatch!.revisedIndex);
+      candidates.sort((a, b) => b.similarity - a.similarity);
+      const assigned = new Set<number>();
+      const assignedRev = new Set<number>();
+      for (const c of candidates) {
+        if (assigned.has(c.originalIndex) || assignedRev.has(c.revisedIndex)) continue;
+        similarityMatches.push({ originalIndex: c.originalIndex, revisedIndex: c.revisedIndex });
+        assigned.add(c.originalIndex);
+        assignedRev.add(c.revisedIndex);
+      }
     }
   }
 
@@ -473,8 +737,16 @@ export function hierarchicalCompare(
     `${originalGroups.length} original groups (${origEmptyGroups.length} empty), ${revisedGroups.length} revised groups (${revEmptyGroups.length} empty)`
   );
 
-  // Step 2: LCS on paragraph groups with similarity fallback
-  const groupLcs = computeGroupLcs(originalGroups, revisedGroups, similarityThreshold);
+  // Step 1b: Build TF-IDF vectors for all groups (computed once, used by Pass 2 + inline check)
+  const allGroups = [...originalGroups, ...revisedGroups];
+  const idfMap = buildIdfMap(allGroups);
+  const tfidfVectors = new Map<ComparisonUnitGroup, TfidfVector>();
+  for (const group of allGroups) {
+    tfidfVectors.set(group, buildTfidfVector(group, idfMap));
+  }
+
+  // Step 2: LCS on paragraph groups with order-constrained similarity fallback
+  const groupLcs = computeGroupLcs(originalGroups, revisedGroups, similarityThreshold, tfidfVectors);
 
   // Count empty paragraphs in each category
   const matchedEmptyCount = groupLcs.matchedGroups.filter(m =>
@@ -517,8 +789,11 @@ export function hierarchicalCompare(
     const isExactMatch = origGroup.textHash === revGroup.textHash;
 
     // For LOW similarity matches (< threshold), skip atom LCS to avoid spurious
-    // matches on common fragments. Use the same threshold as paragraph matching.
-    const similarity = isExactMatch ? 1.0 : computeGroupSimilarity(origGroup, revGroup);
+    // matches on common fragments. Use TF-IDF cosine (same metric as paragraph matching).
+    const vecA = tfidfVectors.get(origGroup);
+    const vecB = tfidfVectors.get(revGroup);
+    const similarity = isExactMatch ? 1.0
+      : (vecA && vecB ? computeTfidfCosineSimilarity(vecA, vecB) : 0);
     const useAtomLcs = similarity >= similarityThreshold;
 
     if (!isExactMatch && !useAtomLcs) {
