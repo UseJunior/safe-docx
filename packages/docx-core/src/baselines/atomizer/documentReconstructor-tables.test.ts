@@ -5,7 +5,8 @@
  * and other structural elements when rebuilding from atoms.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect } from 'vitest';
+import { testAllure } from '../../testing/allure-test.js';
 import { DOMParser } from '@xmldom/xmldom';
 import { reconstructDocument } from './documentReconstructor.js';
 import {
@@ -111,8 +112,10 @@ const DOC_WITH_SDT = [
 // Tests
 // ---------------------------------------------------------------------------
 
+const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Document Reconstruction' });
+
 describe('Structure-preserving rebuild: table preservation', () => {
-  it('preserves table wrappers when all paragraphs are equal', () => {
+  test('preserves table wrappers when all paragraphs are equal', () => {
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Body para 1', CorrelationStatus.Equal, 0),
       makeAtom('Cell R1', CorrelationStatus.Equal, 1),
@@ -132,7 +135,7 @@ describe('Structure-preserving rebuild: table preservation', () => {
     expect(result).toContain('w:tcW');
   });
 
-  it('preserves table structure with tracked changes inside cells', () => {
+  test('preserves table structure with tracked changes inside cells', () => {
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Body para 1', CorrelationStatus.Equal, 0),
       makeAtom('Old Cell R1', CorrelationStatus.Deleted, 1),
@@ -151,7 +154,7 @@ describe('Structure-preserving rebuild: table preservation', () => {
     expect(result).toContain('w:ins');
   });
 
-  it('reconstructed text matches after accept-all', () => {
+  test('reconstructed text matches after accept-all', () => {
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Body para 1', CorrelationStatus.Equal, 0),
       makeAtom('Old Cell', CorrelationStatus.Deleted, 1),
@@ -170,7 +173,7 @@ describe('Structure-preserving rebuild: table preservation', () => {
     expect(acceptedText).not.toContain('Old Cell');
   });
 
-  it('reconstructed text matches after reject-all', () => {
+  test('reconstructed text matches after reject-all', () => {
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Body para 1', CorrelationStatus.Equal, 0),
       makeAtom('Old Cell', CorrelationStatus.Deleted, 1),
@@ -191,7 +194,7 @@ describe('Structure-preserving rebuild: table preservation', () => {
 });
 
 describe('Structure-preserving rebuild: inserted paragraphs', () => {
-  it('inserts paragraph in correct table cell context', () => {
+  test('inserts paragraph in correct table cell context', () => {
     // Original has 4 paragraphs, we add an extra inserted paragraph in cell 1
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Body para 1', CorrelationStatus.Equal, 0),
@@ -211,7 +214,7 @@ describe('Structure-preserving rebuild: inserted paragraphs', () => {
     expect(tblMatch![0]).toContain('Extra in cell');
   });
 
-  it('inserts paragraph before first body paragraph', () => {
+  test('inserts paragraph before first body paragraph', () => {
     // Insert a paragraph before the first body paragraph
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Prepended', CorrelationStatus.Inserted, 0),
@@ -231,7 +234,7 @@ describe('Structure-preserving rebuild: inserted paragraphs', () => {
 });
 
 describe('Structure-preserving rebuild: sectPr preservation', () => {
-  it('keeps sectPr as last child of body', () => {
+  test('keeps sectPr as last child of body', () => {
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Paragraph 1', CorrelationStatus.Equal, 0),
       makeAtom('Paragraph 2', CorrelationStatus.Equal, 1),
@@ -248,7 +251,7 @@ describe('Structure-preserving rebuild: sectPr preservation', () => {
     expect(lastTagMatch?.[1]).toBe('w:sectPr');
   });
 
-  it('does not insert after sectPr when appending', () => {
+  test('does not insert after sectPr when appending', () => {
     // Extra inserted paragraph should go before sectPr
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Paragraph 1', CorrelationStatus.Equal, 0),
@@ -267,7 +270,7 @@ describe('Structure-preserving rebuild: sectPr preservation', () => {
 });
 
 describe('Structure-preserving rebuild: SDT wrapper preservation', () => {
-  it('preserves SDT wrapper around paragraphs', () => {
+  test('preserves SDT wrapper around paragraphs', () => {
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Before SDT', CorrelationStatus.Equal, 0),
       makeAtom('Inside SDT', CorrelationStatus.Equal, 1),
@@ -286,7 +289,7 @@ describe('Structure-preserving rebuild: SDT wrapper preservation', () => {
 });
 
 describe('Structure-preserving rebuild: moved/format-changed classification', () => {
-  it('MovedSource paragraph consumes an original slot', () => {
+  test('MovedSource paragraph consumes an original slot', () => {
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Body para 1', CorrelationStatus.Equal, 0),
       makeAtom('Cell R1', CorrelationStatus.MovedSource, 1),
@@ -301,7 +304,7 @@ describe('Structure-preserving rebuild: moved/format-changed classification', ()
     expect(countTag(result, 'w:tr')).toBe(2);
   });
 
-  it('FormatChanged paragraph consumes an original slot', () => {
+  test('FormatChanged paragraph consumes an original slot', () => {
     const atoms: ComparisonUnitAtom[] = [
       makeAtom('Body para 1', CorrelationStatus.Equal, 0),
       makeAtom('Cell R1', CorrelationStatus.FormatChanged, 1),
