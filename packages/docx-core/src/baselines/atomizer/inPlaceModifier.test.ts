@@ -22,6 +22,9 @@ import {
   mergeWhitespaceBridgedTrackChanges,
   coalesceDelInsPairChains,
   runHasVisibleContent,
+  getContainerPath,
+  resolveContainerInRevised,
+  validateContainerTopology,
 } from './inPlaceModifier.js';
 import { childElements, findAllByTagName } from '../../primitives/index.js';
 import { el } from '../../testing/dom-test-helpers.js';
@@ -3061,6 +3064,211 @@ describe('inPlaceModifier', () => {
         const spaceDelText = delTexts.find(e => e.textContent === ' ');
         expect(spaceDelText).toBeDefined();
         expect(spaceDelText!.getAttribute('xml:space')).toBe('preserve');
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Container-aware insertion helpers (issue #65)
+  // ---------------------------------------------------------------------------
+  describe('getContainerPath', () => {
+    test('returns empty array for body-level paragraph', async ({ given, when, then }: AllureBddContext) => {
+      let path: ReturnType<typeof getContainerPath>;
+      await given('a paragraph directly inside w:body', () => {});
+      await when('getContainerPath is called', () => {
+        const body = el('w:body', {}, [el('w:p')]);
+        const p = childElements(body)[0]!;
+        path = getContainerPath(p);
+      });
+      await then('the path is empty', () => {
+        expect(path).toEqual([]);
+      });
+    });
+
+    test('returns correct path for a paragraph in a table cell', async ({ given, when, then }: AllureBddContext) => {
+      let path: ReturnType<typeof getContainerPath>;
+      await given('a paragraph inside tbl[0] > tr[0] > tc[0]', () => {});
+      await when('getContainerPath is called', () => {
+        const p = el('w:p');
+        const tc = el('w:tc', {}, [el('w:tcPr'), p]);
+        const tr = el('w:tr', {}, [tc]);
+        const tbl = el('w:tbl', {}, [tr]);
+        el('w:body', {}, [tbl]);
+        path = getContainerPath(p);
+      });
+      await then('the path has tc, tr, tbl with index 0', () => {
+        expect(path).toEqual([
+          { tag: 'w:tc', index: 0 },
+          { tag: 'w:tr', index: 0 },
+          { tag: 'w:tbl', index: 0 },
+        ]);
+      });
+    });
+
+    test('returns correct indices for multi-row multi-cell table', async ({ given, when, then }: AllureBddContext) => {
+      let path: ReturnType<typeof getContainerPath>;
+      await given('a paragraph in tbl[0] > tr[2] > tc[1]', () => {});
+      await when('getContainerPath is called', () => {
+        const p = el('w:p');
+        const targetTc = el('w:tc', {}, [p]);
+        const row0 = el('w:tr', {}, [el('w:tc', {}, [el('w:p')]), el('w:tc', {}, [el('w:p')])]);
+        const row1 = el('w:tr', {}, [el('w:tc', {}, [el('w:p')])]);
+        const row2 = el('w:tr', {}, [el('w:tc', {}, [el('w:p')]), targetTc]);
+        const tbl = el('w:tbl', {}, [row0, row1, row2]);
+        el('w:body', {}, [tbl]);
+        path = getContainerPath(p);
+      });
+      await then('the path reflects tc[1], tr[2], tbl[0]', () => {
+        expect(path).toEqual([
+          { tag: 'w:tc', index: 1 },
+          { tag: 'w:tr', index: 2 },
+          { tag: 'w:tbl', index: 0 },
+        ]);
+      });
+    });
+  });
+
+  describe('resolveContainerInRevised', () => {
+    test('finds the correct cell from a path', async ({ given, when, then }: AllureBddContext) => {
+      let result: Element | null;
+      let expectedTc: Element;
+      await given('a revised body with a 3-row table', () => {});
+      await when('resolveContainerInRevised is called with path tc[1], tr[2], tbl[0]', () => {
+        expectedTc = el('w:tc', {}, [el('w:p')]);
+        const row0 = el('w:tr', {}, [el('w:tc', {}, [el('w:p')]), el('w:tc', {}, [el('w:p')])]);
+        const row1 = el('w:tr', {}, [el('w:tc', {}, [el('w:p')])]);
+        const row2 = el('w:tr', {}, [el('w:tc', {}, [el('w:p')]), expectedTc]);
+        const tbl = el('w:tbl', {}, [row0, row1, row2]);
+        const body = el('w:body', {}, [tbl]);
+        result = resolveContainerInRevised(
+          [{ tag: 'w:tc', index: 1 }, { tag: 'w:tr', index: 2 }, { tag: 'w:tbl', index: 0 }],
+          body
+        );
+      });
+      await then('the resolved element is the expected cell', () => {
+        expect(result).toBe(expectedTc);
+      });
+    });
+
+    test('returns null on empty path', async ({ given, when, then }: AllureBddContext) => {
+      let result: Element | null;
+      await given('an empty container path', () => {});
+      await when('resolveContainerInRevised is called', () => {
+        const body = el('w:body', {}, [el('w:p')]);
+        result = resolveContainerInRevised([], body);
+      });
+      await then('it returns null', () => {
+        expect(result).toBeNull();
+      });
+    });
+
+    test('returns null on structural mismatch', async ({ given, when, then }: AllureBddContext) => {
+      let result: Element | null;
+      await given('a path requesting tr[5] but only 2 rows exist', () => {});
+      await when('resolveContainerInRevised is called', () => {
+        const row0 = el('w:tr', {}, [el('w:tc', {}, [el('w:p')])]);
+        const row1 = el('w:tr', {}, [el('w:tc', {}, [el('w:p')])]);
+        const tbl = el('w:tbl', {}, [row0, row1]);
+        const body = el('w:body', {}, [tbl]);
+        result = resolveContainerInRevised(
+          [{ tag: 'w:tc', index: 0 }, { tag: 'w:tr', index: 5 }, { tag: 'w:tbl', index: 0 }],
+          body
+        );
+      });
+      await then('it returns null', () => {
+        expect(result).toBeNull();
+      });
+    });
+  });
+
+  describe('validateContainerTopology', () => {
+    test('returns true for empty path (body-level)', async ({ given, when, then }: AllureBddContext) => {
+      let result: boolean;
+      await given('an empty path', () => {});
+      await when('validateContainerTopology is called', () => {
+        const body = el('w:body', {}, [el('w:p')]);
+        result = validateContainerTopology([], body);
+      });
+      await then('it returns true', () => {
+        expect(result).toBe(true);
+      });
+    });
+
+    test('returns false when row count differs', async ({ given, when, then }: AllureBddContext) => {
+      let result: boolean;
+      await given('a path requesting tr[3] but only 1 row exists', () => {});
+      await when('validateContainerTopology is called', () => {
+        const tbl = el('w:tbl', {}, [el('w:tr', {}, [el('w:tc', {}, [el('w:p')])])]);
+        const body = el('w:body', {}, [tbl]);
+        result = validateContainerTopology(
+          [{ tag: 'w:tc', index: 0 }, { tag: 'w:tr', index: 3 }, { tag: 'w:tbl', index: 0 }],
+          body
+        );
+      });
+      await then('it returns false', () => {
+        expect(result).toBe(false);
+      });
+    });
+
+    test('returns false when cell count differs', async ({ given, when, then }: AllureBddContext) => {
+      let result: boolean;
+      await given('a path requesting tc[2] but only 1 cell exists', () => {});
+      await when('validateContainerTopology is called', () => {
+        const tbl = el('w:tbl', {}, [el('w:tr', {}, [el('w:tc', {}, [el('w:p')])])]);
+        const body = el('w:body', {}, [tbl]);
+        result = validateContainerTopology(
+          [{ tag: 'w:tc', index: 2 }, { tag: 'w:tr', index: 0 }, { tag: 'w:tbl', index: 0 }],
+          body
+        );
+      });
+      await then('it returns false', () => {
+        expect(result).toBe(false);
+      });
+    });
+  });
+
+  describe('insertDeletedParagraph (container-aware)', () => {
+    test('inserts paragraph after w:tcPr when target is a table cell', async ({ given, when, then }: AllureBddContext) => {
+      let tc: Element;
+      await given('a table cell with w:tcPr and one paragraph', () => {
+        const tcPr = el('w:tcPr');
+        const existingP = el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'existing')])]);
+        tc = el('w:tc', {}, [tcPr, existingP]);
+      });
+      await when('insertDeletedParagraph is called with null anchor and the cell as container', () => {
+        const atom = createMockAtom({
+          isEmptyParagraph: true,
+          sourceParagraphElement: el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'deleted')])]),
+        });
+        const state = createRevisionIdState();
+        insertDeletedParagraph(atom, null, tc, author, dateStr, state);
+      });
+      await then('the new paragraph is inserted after w:tcPr, not before it', () => {
+        const children = childElements(tc);
+        expect(children[0]!.tagName).toBe('w:tcPr');
+        expect(children.length).toBe(3); // tcPr + deleted para + existing para
+        // The deleted paragraph should be between tcPr and existing
+        expect(children[1]!.tagName).toBe('w:p');
+      });
+    });
+
+    test('inserts paragraph into body when not in a table', async ({ given, when, then }: AllureBddContext) => {
+      let body: Element;
+      await given('a body with one paragraph', () => {
+        body = el('w:body', {}, [el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'existing')])])]);
+      });
+      await when('insertDeletedParagraph is called with body as container', () => {
+        const atom = createMockAtom({
+          isEmptyParagraph: true,
+          sourceParagraphElement: el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'deleted')])]),
+        });
+        const state = createRevisionIdState();
+        insertDeletedParagraph(atom, null, body, author, dateStr, state);
+      });
+      await then('the new paragraph is at the start of body', () => {
+        const children = childElements(body);
+        expect(children.length).toBe(2);
+        expect(children[0]!.tagName).toBe('w:p');
       });
     });
   });

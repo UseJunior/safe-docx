@@ -58,7 +58,7 @@ import {
   reconstructDocument,
   computeReconstructionStats,
 } from './documentReconstructor.js';
-import { modifyRevisedDocument } from './inPlaceModifier.js';
+import { modifyRevisedDocument, ContainerResolutionError } from './inPlaceModifier.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -715,7 +715,23 @@ export async function compareDocumentsAtomizer(
     const failedAttempts: ReconstructionAttemptDiagnostics[] = [];
     let selected: typeof comparisonResult | undefined;
     for (const { pass, atomizeOptions } of inplacePasses) {
-      const candidate = runComparisonPass(atomizeOptions, 'inplace');
+      let candidate: typeof comparisonResult;
+      try {
+        candidate = runComparisonPass(atomizeOptions, 'inplace');
+      } catch (e) {
+        if (e instanceof ContainerResolutionError) {
+          // Container topology mismatch — treat as failed pass (issue #65)
+          failedAttempts.push({
+            pass,
+            checks: { acceptText: false, rejectText: false, acceptBookmarks: true, rejectBookmarks: true, fieldStructure: false },
+            failedChecks: ['rejectText' as ReconstructionSafetyCheckName],
+            failureDetails: undefined,
+            firstDiffSummary: undefined,
+          });
+          continue;
+        }
+        throw e;
+      }
       const safety = evaluateRoundTripSafety(candidate.newDocumentXml);
 
       if (safety.safe) {

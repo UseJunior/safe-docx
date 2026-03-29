@@ -62,7 +62,7 @@ export interface HierarchicalCompareOptions {
  */
 export interface GroupLcsResult {
   /** Matched paragraph pairs */
-  matchedGroups: Array<{ originalIndex: number; revisedIndex: number }>;
+  matchedGroups: Array<{ originalIndex: number; revisedIndex: number; containerMatch?: boolean }>;
   /** Indices of paragraphs only in original (deleted) */
   deletedGroupIndices: number[];
   /** Indices of paragraphs only in revised (inserted) */
@@ -545,6 +545,30 @@ function similarityLcs(
 }
 
 /**
+ * Compute a container key for a paragraph group based on its first atom's ancestor chain.
+ * Returns "" for body-level paragraphs, or a path like "w:tbl:0/w:tr:2/w:tc:1" for table cells.
+ */
+function getGroupContainerKey(group: ComparisonUnitGroup): string {
+  const atom = group.atoms[0];
+  if (!atom) return '';
+  const parts: string[] = [];
+  for (const el of atom.ancestorElements) {
+    if (el.tagName === 'w:tc' || el.tagName === 'w:tr' || el.tagName === 'w:tbl') {
+      let index = 0;
+      let sibling = el.previousSibling;
+      while (sibling) {
+        if (sibling.nodeType === 1 && (sibling as Element).tagName === el.tagName) {
+          index++;
+        }
+        sibling = sibling.previousSibling;
+      }
+      parts.push(`${el.tagName}:${index}`);
+    }
+  }
+  return parts.join('/');
+}
+
+/**
  * Compute LCS on paragraph groups with order-constrained similarity fallback.
  *
  * Two passes:
@@ -677,12 +701,68 @@ export function computeGroupLcs(
   }
 
   // Combine exact matches and similarity matches
-  const allMatches = [...matchedGroups, ...similarityMatches];
+  const allMatches: Array<{ originalIndex: number; revisedIndex: number; containerMatch?: boolean }> = [...matchedGroups, ...similarityMatches];
 
   // Update matched sets
   for (const match of similarityMatches) {
     matchedOriginal.add(match.originalIndex);
     matchedRevised.add(match.revisedIndex);
+  }
+
+  // === Pass 3 (issue #65): Container-position fallback ===
+  //
+  // After TF-IDF gap matching, some paragraphs remain unmatched because their
+  // cosine similarity is below the threshold. This happens when the only differing
+  // content is high-IDF words (e.g., company names in template fills).
+  //
+  // For unmatched paragraphs that are in the same structural container position
+  // (same table cell by table/row/cell index), force a match. This preserves
+  // paragraph alignment within table cells when the content is a template fill.
+  unmatchedOriginal = [];
+  for (let idx = 0; idx < n; idx++) {
+    if (!matchedOriginal.has(idx)) unmatchedOriginal.push(idx);
+  }
+  unmatchedRevised = [];
+  for (let idx = 0; idx < m; idx++) {
+    if (!matchedRevised.has(idx)) unmatchedRevised.push(idx);
+  }
+
+  if (unmatchedOriginal.length > 0 && unmatchedRevised.length > 0) {
+    // Build container keys for unmatched groups
+    const origContainerKeys = new Map<number, string>();
+    for (const idx of unmatchedOriginal) {
+      const group = originalGroups[idx]!;
+      if (group.atoms.length > 0) {
+        origContainerKeys.set(idx, getGroupContainerKey(group));
+      }
+    }
+    const revContainerKeys = new Map<number, string>();
+    for (const idx of unmatchedRevised) {
+      const group = revisedGroups[idx]!;
+      if (group.atoms.length > 0) {
+        revContainerKeys.set(idx, getGroupContainerKey(group));
+      }
+    }
+
+    // For each unmatched original in a table cell, find an unmatched revised
+    // in the same cell. Match greedily in document order.
+    const usedRevised = new Set<number>();
+    for (const origIdx of unmatchedOriginal) {
+      const origKey = origContainerKeys.get(origIdx);
+      if (!origKey) continue; // Not in a table cell
+
+      for (const revIdx of unmatchedRevised) {
+        if (usedRevised.has(revIdx)) continue;
+        const revKey = revContainerKeys.get(revIdx);
+        if (revKey === origKey) {
+          allMatches.push({ originalIndex: origIdx, revisedIndex: revIdx, containerMatch: true });
+          matchedOriginal.add(origIdx);
+          matchedRevised.add(revIdx);
+          usedRevised.add(revIdx);
+          break;
+        }
+      }
+    }
   }
 
   // Final deleted and inserted indices
@@ -765,7 +845,7 @@ export function hierarchicalCompare(
   );
 
   // Step 3: Build combined atom-level result
-  const allMatches: Array<{ originalIndex: number; revisedIndex: number }> = [];
+  const allMatches: Array<{ originalIndex: number; revisedIndex: number; containerMatch?: boolean }> = [];
   const deletedIndices: number[] = [];
   const insertedIndices: number[] = [];
 
@@ -794,7 +874,11 @@ export function hierarchicalCompare(
     const vecB = tfidfVectors.get(revGroup);
     const similarity = isExactMatch ? 1.0
       : (vecA && vecB ? computeTfidfCosineSimilarity(vecA, vecB) : 0);
-    const useAtomLcs = similarity >= similarityThreshold;
+    // Container matches (Pass 3, issue #65) always use atom LCS regardless of threshold.
+    // These are paragraphs in the same table cell position that were matched by container
+    // key, not content similarity — atom LCS is needed to produce inline tracked changes
+    // instead of whole-paragraph delete+insert.
+    const useAtomLcs = similarity >= similarityThreshold || match.containerMatch === true;
 
     if (!isExactMatch && !useAtomLcs) {
       debug('hierarchicalLcs', `Low similarity match (${similarity.toFixed(2)}): origGroup[${match.originalIndex}] "${origGroup.textContent.slice(0, 50)}..." vs revGroup[${match.revisedIndex}] "${revGroup.textContent.slice(0, 50)}..."`);

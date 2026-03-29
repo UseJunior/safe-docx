@@ -51,6 +51,148 @@ function attachSourceElementPointers(atoms: ComparisonUnitAtom[]): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Container-aware insertion helpers (issue #65)
+// ---------------------------------------------------------------------------
+
+/**
+ * Error thrown when the original and revised documents have different table/container
+ * topology, making container-aware inplace insertion impossible.
+ * Caught by the adaptive pass loop to trigger rebuild fallback.
+ */
+export class ContainerResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ContainerResolutionError';
+  }
+}
+
+/** A single step in a structural path from a paragraph up to w:body. */
+interface ContainerPathStep {
+  tag: string;
+  index: number;
+}
+
+/**
+ * Compute the structural path from a paragraph to the document body.
+ * Walks `parentNode` from the paragraph, recording {tag, index} for each
+ * structural container (w:tc, w:tr, w:tbl). Stops at w:body.
+ * Returns innermost-first order.
+ *
+ * Uses original-tree nodes — safe because only the revised tree is mutated.
+ */
+export function getContainerPath(paragraph: Element): ContainerPathStep[] {
+  const path: ContainerPathStep[] = [];
+  let current: Node | null = paragraph.parentNode;
+  while (current && (current as Element).tagName) {
+    const el = current as Element;
+    if (el.tagName === 'w:body') break;
+
+    if (el.tagName === 'w:tc' || el.tagName === 'w:tr' || el.tagName === 'w:tbl') {
+      const parent = el.parentNode as Element;
+      if (parent) {
+        let index = 0;
+        let sibling = el.previousSibling;
+        while (sibling) {
+          if (sibling.nodeType === 1 && (sibling as Element).tagName === el.tagName) {
+            index++;
+          }
+          sibling = sibling.previousSibling;
+        }
+        path.push({ tag: el.tagName, index });
+      }
+    }
+    current = el.parentNode;
+  }
+  return path;
+}
+
+/**
+ * Resolve a container path in the revised tree.
+ * Walks the path in reverse (outermost → innermost) from `body`.
+ * Returns the deepest container (typically w:tc), or null on mismatch.
+ */
+export function resolveContainerInRevised(path: ContainerPathStep[], body: Element): Element | null {
+  if (path.length === 0) return null;
+
+  let current: Element = body;
+  // Walk outermost to innermost (path is innermost-first, so reverse)
+  for (let i = path.length - 1; i >= 0; i--) {
+    const step = path[i]!;
+    const children = childElements(current).filter(c => c.tagName === step.tag);
+    const child = children[step.index];
+    if (!child) return null; // Structural mismatch
+    current = child;
+  }
+  return current;
+}
+
+/**
+ * Validate that the revised tree has compatible topology at the given path.
+ * Checks row count and cell count match at the target position.
+ * Returns false if there's a structural mismatch (row/cell additions, gridSpan divergence).
+ */
+export function validateContainerTopology(path: ContainerPathStep[], body: Element): boolean {
+  if (path.length === 0) return true; // Body-level, always valid
+
+  let current: Element = body;
+  for (let i = path.length - 1; i >= 0; i--) {
+    const step = path[i]!;
+    const children = childElements(current).filter(c => c.tagName === step.tag);
+    if (step.index >= children.length) return false;
+    current = children[step.index]!;
+  }
+  return true;
+}
+
+/**
+ * Find the correct container and insertion anchor for a deleted/moved-source atom.
+ *
+ * For body-level atoms, returns ctx.body with the global lastProcessedParagraph anchor.
+ * For table-cell atoms, maps from the original tree container to the revised tree container
+ * by structural position, and uses the per-container anchor from lastParaByContainer.
+ *
+ * Returns null if container resolution fails (topology mismatch) — caller must throw
+ * ContainerResolutionError to trigger rebuild fallback.
+ */
+function findTargetContainerForAtom(
+  atom: ComparisonUnitAtom,
+  ctx: ProcessingContext
+): { container: Element; insertAfter: Element | null } | null {
+  // 1. Check if atom was in a table cell (original tree ancestors)
+  const sourceTc = findAncestorByTag(atom, 'w:tc');
+  if (!sourceTc) {
+    // Body-level paragraph — use global anchor (current behavior, correct)
+    return { container: ctx.body, insertAfter: ctx.lastProcessedParagraph };
+  }
+
+  // 2. Compute structural path from original tree
+  const sourcePara = atom.sourceParagraphElement;
+  if (!sourcePara) {
+    return null; // Can't resolve → force rebuild
+  }
+  const path = getContainerPath(sourcePara);
+  if (path.length === 0) {
+    // Paragraph has a w:tc ancestor but path is empty — shouldn't happen
+    return null;
+  }
+
+  // 3. Validate topology match before resolving
+  if (!validateContainerTopology(path, ctx.body)) {
+    return null; // Structural mismatch → force rebuild
+  }
+
+  // 4. Resolve container in revised tree
+  const revisedContainer = resolveContainerInRevised(path, ctx.body);
+  if (!revisedContainer) {
+    return null; // Resolution failed → force rebuild
+  }
+
+  // 5. Find container-local insertion anchor
+  const anchor = ctx.lastParaByContainer.get(revisedContainer) ?? null;
+  return { container: revisedContainer, insertAfter: anchor };
+}
+
 /**
  * Determine whether an atom is "whitespace-only" for paragraph-level classification.
  *
@@ -950,7 +1092,7 @@ export function insertMoveFromRun(
 export function insertDeletedParagraph(
   deletedAtom: ComparisonUnitAtom,
   insertAfterParagraph: Element | null,
-  targetBody: Element,
+  targetContainer: Element,
   author: string,
   dateStr: string,
   state: RevisionIdState
@@ -970,11 +1112,18 @@ export function insertDeletedParagraph(
     wrapAsDeleted(run, author, dateStr, state);
   }
 
-  // Insert at correct position
+  // Insert at correct position, preserving w:tcPr as first child when target is a table cell
   if (insertAfterParagraph) {
     insertAfterElement(insertAfterParagraph, clonedParagraph);
   } else {
-    targetBody.insertBefore(clonedParagraph, targetBody.firstChild);
+    const tcPr = targetContainer.tagName === 'w:tc'
+      ? findChildByTagName(targetContainer, 'w:tcPr')
+      : null;
+    if (tcPr) {
+      insertAfterElement(tcPr, clonedParagraph);
+    } else {
+      targetContainer.insertBefore(clonedParagraph, targetContainer.firstChild);
+    }
   }
 
   return clonedParagraph;
@@ -1765,6 +1914,12 @@ interface ProcessingContext {
    * after all inserted deleted/moved fragments have been placed.
    */
   createdParagraphTrailingBookmarks: Map<number, Element[]>;
+  /**
+   * Last processed paragraph per DOM container (w:tc or w:body).
+   * Used by findTargetContainerForAtom to find the correct insertion
+   * anchor when atoms jump between table cells.
+   */
+  lastParaByContainer: Map<Element, Element>;
 }
 
 /**
@@ -1848,10 +2003,15 @@ function handleDeleted(atom: ComparisonUnitAtom, ctx: ProcessingContext): Handle
 
   // Handle empty deleted paragraphs specially
   if (atom.isEmptyParagraph && atom.sourceParagraphElement) {
+    // Container-aware insertion (issue #65)
+    const emptyTarget = findTargetContainerForAtom(atom, ctx);
+    if (!emptyTarget) {
+      throw new ContainerResolutionError('Container topology mismatch for empty deleted paragraph');
+    }
     const createdPara = insertDeletedParagraph(
       atom,
-      ctx.lastProcessedParagraph,
-      ctx.body,
+      emptyTarget.insertAfter,
+      emptyTarget.container,
       ctx.author,
       ctx.dateStr,
       ctx.state
@@ -1923,10 +2083,22 @@ function handleDeleted(atom: ComparisonUnitAtom, ctx: ProcessingContext): Handle
             newPara.appendChild(clonedPPr);
           }
 
-          if (ctx.lastProcessedParagraph) {
-            insertAfterElement(ctx.lastProcessedParagraph, newPara);
+          // Container-aware insertion (issue #65)
+          const delTarget = findTargetContainerForAtom(atom, ctx);
+          if (!delTarget) {
+            throw new ContainerResolutionError('Container topology mismatch for deleted paragraph');
+          }
+          if (delTarget.insertAfter) {
+            insertAfterElement(delTarget.insertAfter, newPara);
           } else {
-            ctx.body.insertBefore(newPara, ctx.body.firstChild);
+            const propsEl = delTarget.container.tagName === 'w:tc'
+              ? findChildByTagName(delTarget.container, 'w:tcPr')
+              : null;
+            if (propsEl) {
+              insertAfterElement(propsEl, newPara);
+            } else {
+              delTarget.container.insertBefore(newPara, delTarget.container.firstChild);
+            }
           }
           ctx.createdParagraphs.set(unifiedPara, newPara);
           const leadingTail = insertLeadingMarkers(newPara, leadingMarkers);
@@ -2050,10 +2222,22 @@ function handleMovedSource(atom: ComparisonUnitAtom, ctx: ProcessingContext): Ha
             newPara.appendChild(clonedPPr);
           }
 
-          if (ctx.lastProcessedParagraph) {
-            insertAfterElement(ctx.lastProcessedParagraph, newPara);
+          // Container-aware insertion (issue #65)
+          const moveTarget = findTargetContainerForAtom(atom, ctx);
+          if (!moveTarget) {
+            throw new ContainerResolutionError('Container topology mismatch for moved-from paragraph');
+          }
+          if (moveTarget.insertAfter) {
+            insertAfterElement(moveTarget.insertAfter, newPara);
           } else {
-            ctx.body.insertBefore(newPara, ctx.body.firstChild);
+            const propsEl = moveTarget.container.tagName === 'w:tc'
+              ? findChildByTagName(moveTarget.container, 'w:tcPr')
+              : null;
+            if (propsEl) {
+              insertAfterElement(propsEl, newPara);
+            } else {
+              moveTarget.container.insertBefore(newPara, moveTarget.container.firstChild);
+            }
           }
           ctx.createdParagraphs.set(unifiedPara, newPara);
           const leadingTail = insertLeadingMarkers(newPara, leadingMarkers);
@@ -2329,6 +2513,7 @@ function processAtoms(
       createdParagraphs: new Map(),
       createdParagraphLastRun: new Map(),
       createdParagraphTrailingBookmarks: new Map(),
+      lastParaByContainer: new Map(),
     };
   }
 
@@ -2379,6 +2564,7 @@ function processAtoms(
     createdParagraphs: new Map(),
     createdParagraphLastRun: new Map(),
     createdParagraphTrailingBookmarks: new Map(),
+    lastParaByContainer: new Map(),
   };
 
   // Reorder atoms so consecutive deletions precede consecutive insertions.
@@ -2399,6 +2585,13 @@ function processAtoms(
     }
     if (result.newLastParagraph !== undefined) {
       ctx.lastProcessedParagraph = result.newLastParagraph;
+      // Track per-container anchor for container-aware insertion (issue #65)
+      if (result.newLastParagraph) {
+        const container = result.newLastParagraph.parentNode as Element | null;
+        if (container) {
+          ctx.lastParaByContainer.set(container, result.newLastParagraph);
+        }
+      }
     }
     if (result.newLastParagraphIndex !== undefined) {
       ctx.lastParagraphIndex = result.newLastParagraphIndex;

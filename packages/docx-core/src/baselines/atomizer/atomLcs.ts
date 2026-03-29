@@ -283,20 +283,50 @@ export function createMergedAtomList(
  * @param merged - Merged atom list
  * @param lcsResult - LCS result with matches
  */
+/**
+ * Compute a container key for an atom based on its ancestor chain.
+ * For atoms inside table cells, produces a string like "w:tbl:0/w:tr:2/w:tc:1".
+ * For atoms not in tables, produces "".
+ * Used to prevent cross-cell paragraph matches in unified index assignment.
+ */
+function getAtomContainerKey(atom: ComparisonUnitAtom): string {
+  const parts: string[] = [];
+  for (const el of atom.ancestorElements) {
+    if (el.tagName === 'w:tc' || el.tagName === 'w:tr' || el.tagName === 'w:tbl') {
+      let index = 0;
+      let sibling = el.previousSibling;
+      while (sibling) {
+        if (sibling.nodeType === 1 && (sibling as Element).tagName === el.tagName) {
+          index++;
+        }
+        sibling = sibling.previousSibling;
+      }
+      parts.push(`${el.tagName}:${index}`);
+    }
+  }
+  return parts.join('/');
+}
+
 export function assignUnifiedParagraphIndices(
   original: ComparisonUnitAtom[],
   revised: ComparisonUnitAtom[],
   merged: ComparisonUnitAtom[],
   lcsResult: LcsResult
 ): void {
-  // Build paragraph correspondence from matches
+  // Build paragraph correspondence from matches.
+  // Container-aware (issue #65): skip matches where atoms are in different
+  // structural containers (e.g., different table cells) to prevent empty
+  // paragraphs from matching across cell boundaries.
   const originalToRevisedPara = new Map<number, number>();
   for (const match of lcsResult.matches) {
     const origAtom = original[match.originalIndex]!;
     const revAtom = revised[match.revisedIndex]!;
     if (origAtom.paragraphIndex !== undefined && revAtom.paragraphIndex !== undefined) {
       if (!originalToRevisedPara.has(origAtom.paragraphIndex)) {
-        originalToRevisedPara.set(origAtom.paragraphIndex, revAtom.paragraphIndex);
+        // Only establish correspondence if atoms are in the same container
+        if (getAtomContainerKey(origAtom) === getAtomContainerKey(revAtom)) {
+          originalToRevisedPara.set(origAtom.paragraphIndex, revAtom.paragraphIndex);
+        }
       }
     }
   }
