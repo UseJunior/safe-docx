@@ -5,7 +5,7 @@
  * Generates w:ins, w:del, w:moveFrom, w:moveTo elements as appropriate.
  */
 
-import { DOMParser } from '@xmldom/xmldom';
+import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import type { ComparisonUnitAtom } from '../../core-types.js';
 import { CorrelationStatus } from '../../core-types.js';
 import { getLeafText, childElements, findChildByTagName } from '../../primitives/index.js';
@@ -129,8 +129,8 @@ export function reconstructDocument(
   const emptyCounters = getEmptyParagraphCounters();
   debug('reconstructor', `Empty paragraphs: inserted=${emptyCounters.inserted}, deleted=${emptyCounters.deleted}, equal=${emptyCounters.equal}, other=${emptyCounters.other}`);
 
-  // Reconstruct the document
-  return buildDocument(originalXml, paragraphXmls);
+  // Reconstruct the document, preserving original body structure (tables, SDTs, etc.)
+  return buildDocumentPreservingStructure(originalXml, paragraphXmls, paragraphGroups);
 }
 
 /**
@@ -1192,15 +1192,227 @@ function buildFormatChangeRun(
   return parts.join('');
 }
 
+// =============================================================================
+// Structure-Preserving Document Building
+// =============================================================================
+
 /**
- * Build the final document by replacing body content.
+ * A paragraph slot in the original body — represents one <w:p> in document order.
+ */
+interface ParagraphSlot {
+  /** Sequential index among all <w:p> in original body */
+  index: number;
+  /** The <w:p> DOM element in the original tree */
+  element: Element;
+  /** The immediate parent node (for replaceChild / insertBefore) */
+  parent: Node;
+}
+
+/**
+ * Parse the original document body into a structural map.
+ *
+ * Recursively finds ALL <w:p> elements in document order, regardless of
+ * wrapper (tables, SDTs, customXml, nested tables, etc.). This matches
+ * the atomizer's recursive tree walk in atomizer.ts.
+ */
+function parseOriginalBodyStructure(originalXml: string): {
+  doc: Document;
+  body: Element;
+  slots: ParagraphSlot[];
+} {
+  const doc = new DOMParser().parseFromString(originalXml, 'application/xml');
+  const bodies = doc.getElementsByTagName('w:body');
+  if (!bodies.length) {
+    throw new Error('Could not find w:body in document');
+  }
+  const body = bodies[0]!;
+
+  // getElementsByTagName returns ALL descendants in document order —
+  // this naturally recurses through tables, SDTs, customXml, nested tables, etc.
+  const paragraphs = body.getElementsByTagName('w:p');
+  const slots: ParagraphSlot[] = [];
+  for (let i = 0; i < paragraphs.length; i++) {
+    const el = paragraphs[i]!;
+    slots.push({ index: i, element: el, parent: el.parentNode! });
+  }
+
+  return { doc, body, slots };
+}
+
+/**
+ * Determine if a ParagraphGroup is "rooted" (maps to an original paragraph slot)
+ * or "purely inserted" (new content with no original counterpart).
+ *
+ * A group is rooted if ANY run group has a status other than Inserted or
+ * MovedDestination — i.e., it contains content from the original document.
+ * This correctly handles Equal, Deleted, MovedSource, and FormatChanged.
+ */
+function isRootedGroup(group: ParagraphGroup): boolean {
+  return group.runGroups.some(
+    (rg) =>
+      rg.status !== CorrelationStatus.Inserted &&
+      rg.status !== CorrelationStatus.MovedDestination
+  );
+}
+
+/**
+ * Build the final document preserving original body structure.
+ *
+ * Instead of replacing <w:body> content with flat paragraphs, this uses the
+ * original body DOM as a scaffold: rooted paragraphs replace their corresponding
+ * <w:p> slots, inserted paragraphs are placed adjacent to their context, and
+ * all structural wrappers (tables, SDTs, etc.) are preserved.
+ */
+function buildDocumentPreservingStructure(
+  originalXml: string,
+  paragraphXmls: string[],
+  paragraphGroups: ParagraphGroup[]
+): string {
+  const { doc, body, slots } = parseOriginalBodyStructure(originalXml);
+
+  let slotCursor = 0;
+  let lastEmittedNode: Node | null = null;
+
+  // Find body-level <w:sectPr> (must stay as last child of body)
+  const bodyChildren = childElements(body);
+  const finalSectPr = bodyChildren.length > 0 &&
+    bodyChildren[bodyChildren.length - 1]!.tagName === 'w:sectPr'
+    ? bodyChildren[bodyChildren.length - 1]!
+    : null;
+
+  for (let i = 0; i < paragraphGroups.length; i++) {
+    const group = paragraphGroups[i]!;
+    const paraXml = paragraphXmls[i]!;
+
+    // Parse the reconstructed paragraph XML into a DOM node
+    const fragDoc = new DOMParser().parseFromString(
+      `<__wrap xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">${paraXml}</__wrap>`,
+      'application/xml'
+    );
+    const newNode = doc.importNode(fragDoc.documentElement.firstChild!, true);
+
+    if (isRootedGroup(group)) {
+      // Replace the corresponding original <w:p> slot
+      if (slotCursor < slots.length) {
+        const slot = slots[slotCursor]!;
+        slot.parent.replaceChild(newNode, slot.element);
+        lastEmittedNode = newNode;
+        slotCursor++;
+      } else {
+        // More rooted paragraphs than slots — append to body (before sectPr)
+        if (finalSectPr) {
+          body.insertBefore(newNode, finalSectPr);
+        } else {
+          body.appendChild(newNode);
+        }
+        lastEmittedNode = newNode;
+      }
+    } else {
+      // Inserted paragraph — place in context
+      if (lastEmittedNode) {
+        // Insert after the previous paragraph in the same parent
+        const parent = lastEmittedNode.parentNode!;
+        const nextSibling = lastEmittedNode.nextSibling;
+
+        // Guard: never insert after body-level <w:sectPr>
+        if (nextSibling === finalSectPr && parent === body) {
+          parent.insertBefore(newNode, finalSectPr);
+        } else {
+          parent.insertBefore(newNode, nextSibling);
+        }
+        lastEmittedNode = newNode;
+      } else if (slotCursor < slots.length) {
+        // No previous node — insert before the next rooted slot
+        const nextSlot = slots[slotCursor]!;
+        nextSlot.parent.insertBefore(newNode, nextSlot.element);
+        lastEmittedNode = newNode;
+      } else {
+        // No context — append to body (before sectPr)
+        if (finalSectPr) {
+          body.insertBefore(newNode, finalSectPr);
+        } else {
+          body.appendChild(newNode);
+        }
+        lastEmittedNode = newNode;
+      }
+    }
+  }
+
+  // Remove any leftover original <w:p> slots that weren't consumed
+  // (this happens when the original has more paragraphs than the merged result)
+  for (let i = slotCursor; i < slots.length; i++) {
+    const slot = slots[i]!;
+    slot.parent.removeChild(slot.element);
+  }
+
+  // Strip inter-paragraph bookmark/comment range markers from the scaffold.
+  // These are bookmarkStart/End, commentRangeStart/End elements that were
+  // siblings of <w:p> in the original body. The paragraph rebuilder handles
+  // its own bookmark logic, so keeping these orphaned markers causes
+  // unmatched bookmark IDs.
+  const SCAFFOLD_STRIP_TAGS = new Set([
+    'w:bookmarkStart', 'w:bookmarkEnd',
+    'w:commentRangeStart', 'w:commentRangeEnd',
+  ]);
+  const toRemove: Element[] = [];
+  for (const el of Array.from(body.getElementsByTagName('*'))) {
+    if (SCAFFOLD_STRIP_TAGS.has(el.tagName) && el.parentNode) {
+      // Only strip if NOT inside a reconstructed <w:p> (i.e., it's a scaffold remnant)
+      let insideParagraph = false;
+      let ancestor: Node | null = el.parentNode;
+      while (ancestor && ancestor !== body) {
+        if ((ancestor as Element).tagName === 'w:p') {
+          insideParagraph = true;
+          break;
+        }
+        ancestor = ancestor.parentNode;
+      }
+      if (!insideParagraph) {
+        toRemove.push(el as Element);
+      }
+    }
+  }
+  for (const el of toRemove) {
+    el.parentNode!.removeChild(el);
+  }
+
+  // Serialize modified body and splice back into original envelope
+  const serializer = new XMLSerializer();
+  let newBodyXml = serializer.serializeToString(body);
+
+  // Strip redundant xmlns:w declarations from inner elements.
+  // XMLSerializer adds xmlns:w="..." on imported paragraph/rPr nodes because
+  // they were parsed in a separate fragment document. These redundant
+  // redeclarations are valid XML but confuse some OOXML consumers (Pages,
+  // Google Docs) and prevent them from rendering tracked changes.
+  // The w: namespace is already declared on the document root element.
+  const W_NS_DECL = ' xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  // Keep the first declaration (on <w:body>) but remove all others
+  let firstFound = false;
+  newBodyXml = newBodyXml.replace(
+    new RegExp(W_NS_DECL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+    (match) => {
+      if (!firstFound) { firstFound = true; return match; }
+      return '';
+    }
+  );
+
+  // Replace original body in the full document string
+  const bodyRegex = /<w:body[^>]*>[\s\S]*?<\/w:body>/;
+  return originalXml.replace(bodyRegex, newBodyXml);
+}
+
+/**
+ * Build the final document by replacing body content (legacy flat mode).
  *
  * Note: sectPr elements are NOT extracted and appended separately because:
  * 1. Section properties inside pPr elements are already preserved in the reconstructed paragraphs
  * 2. The regex to extract "final sectPr" was incorrectly matching sectPr inside pPr elements
  *    and capturing large amounts of body content, causing duplicate text.
+ *
+ * @deprecated Use buildDocumentPreservingStructure instead. Retained as fallback.
  */
-function buildDocument(originalXml: string, paragraphXmls: string[]): string {
+export function buildDocument(originalXml: string, paragraphXmls: string[]): string {
   // Extract document structure
   const bodyMatch = originalXml.match(/(<w:body[^>]*>)([\s\S]*?)(<\/w:body>)/);
 
