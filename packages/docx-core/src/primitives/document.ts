@@ -720,8 +720,8 @@ export class DocxDocument {
    */
   async addComment(params: {
     paragraphId: string;
-    start: number;
-    end: number;
+    start?: number;
+    end?: number;
     author: string;
     text: string;
     initials?: string;

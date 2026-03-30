@@ -280,6 +280,135 @@ describe('comments — edge cases and branch coverage', () => {
         expect(commentsXml).toContain('xml:space="preserve"');
       });
     });
+
+    test('defaults to full paragraph when start and end are omitted', async ({ given, when, then, and }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let result: Awaited<ReturnType<typeof addComment>>;
+
+      await given('a document with a multi-run paragraph', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:r><w:t>Hello </w:t></w:r><w:r><w:t>World</w:t></w:r></w:p>',
+        ));
+      });
+
+      await when('addComment is called without start and end', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        result = await addComment(doc, zip, {
+          paragraphEl: p,
+          author: 'Test Author',
+          text: 'Whole paragraph comment',
+        });
+      });
+
+      await then('a comment ID is allocated', () => {
+        expect(result.commentId).toBeGreaterThanOrEqual(0);
+      });
+
+      await and('range markers and reference span the entire paragraph', () => {
+        const serialized = serializeXml(doc);
+        expect(serialized).toContain('commentRangeStart');
+        expect(serialized).toContain('commentRangeEnd');
+        expect(serialized).toContain('commentReference');
+      });
+    });
+
+    test('handles empty paragraph when start and end are omitted', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let result: Awaited<ReturnType<typeof addComment>>;
+
+      await given('a document with an empty paragraph containing pPr', async () => {
+        ({ zip, doc } = await setupWithComment('<w:p><w:pPr/></w:p>'));
+      });
+
+      await when('addComment is called without start and end', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        result = await addComment(doc, zip, {
+          paragraphEl: p,
+          author: 'Test',
+          text: 'Comment on empty paragraph',
+        });
+      });
+
+      await then('comment is created and pPr stays first with markers appended after', () => {
+        expect(result.commentId).toBeGreaterThanOrEqual(0);
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const children = Array.from(p.childNodes).filter(
+          (n) => n.nodeType === 1,
+        ) as Element[];
+        expect(children[0]!.localName).toBe('pPr');
+        expect(children[1]!.localName).toBe('commentRangeStart');
+        expect(children[2]!.localName).toBe('commentRangeEnd');
+        // commentReference is inside a w:r
+        expect(children[3]!.localName).toBe('r');
+      });
+    });
+
+    test('handles paragraph with field result when start and end are omitted', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let result: Awaited<ReturnType<typeof addComment>>;
+
+      const fieldParaXml = [
+        '<w:p>',
+        '<w:r><w:t>Before </w:t></w:r>',
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>',
+        '<w:r><w:instrText> PAGEREF _bk1 </w:instrText></w:r>',
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>',
+        '<w:r><w:t>42</w:t></w:r>',
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+        '<w:r><w:t> After</w:t></w:r>',
+        '</w:p>',
+      ].join('');
+
+      await given('a document with a paragraph containing a field result', async () => {
+        ({ zip, doc } = await setupWithComment(fieldParaXml));
+      });
+
+      await when('addComment is called without start and end', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        result = await addComment(doc, zip, {
+          paragraphEl: p,
+          author: 'Test',
+          text: 'Comment on field paragraph',
+        });
+      });
+
+      await then('comment is created with markers present', () => {
+        expect(result.commentId).toBeGreaterThanOrEqual(0);
+        const serialized = serializeXml(doc);
+        expect(serialized).toContain('commentRangeStart');
+        expect(serialized).toContain('commentRangeEnd');
+        expect(serialized).toContain('commentReference');
+      });
+    });
+
+    test('throws when start > end', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let p: Element;
+
+      await given('a document with a paragraph', async () => {
+        ({ zip, doc, p } = await setupWithComment());
+      });
+
+      await when('addComment is called with start > end', async () => {
+        // no-op, assertion is in then
+      });
+
+      await then('an error is thrown', async () => {
+        await expect(
+          addComment(doc, zip, {
+            paragraphEl: p,
+            start: 5,
+            end: 2,
+            author: 'Test',
+            text: 'Invalid range',
+          }),
+        ).rejects.toThrow('Invalid comment range');
+      });
+    });
   });
 
   describe('addCommentReply', () => {

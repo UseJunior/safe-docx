@@ -8,7 +8,7 @@
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
-import { getParagraphRuns } from './text.js';
+import { getParagraphRuns, getParagraphText } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 
 // ── Relationship types ──────────────────────────────────────────────────
@@ -181,8 +181,8 @@ async function ensureRelationships(zip: DocxZip, newParts: string[]): Promise<vo
 
 export type AddCommentParams = {
   paragraphEl: Element;
-  start: number;
-  end: number;
+  start?: number;
+  end?: number;
   author: string;
   text: string;
   initials?: string;
@@ -206,7 +206,12 @@ export async function addComment(
   zip: DocxZip,
   params: AddCommentParams,
 ): Promise<AddCommentResult> {
-  const { paragraphEl, start, end, author, text, initials } = params;
+  const { paragraphEl, author, text, initials } = params;
+  const start = params.start ?? 0;
+  const end = params.end ?? getParagraphText(paragraphEl).length;
+  if (start > end) {
+    throw new Error(`Invalid comment range: start (${start}) must be <= end (${end})`);
+  }
 
   // Load comments.xml
   const commentsXml = await zip.readText('word/comments.xml');
