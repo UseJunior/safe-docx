@@ -482,6 +482,40 @@ describe('comments', () => {
         expect(commentsXml).toContain('Round Trip');
       });
     });
+
+    test('DocxDocument.addComment wraps entire paragraph when start and end are omitted', async ({ given, when, then }: AllureBddContext) => {
+      let doc: InstanceType<typeof DocxDocument>;
+      let result: Awaited<ReturnType<typeof doc.addComment>>;
+
+      await given('a document with bookmarked paragraphs', async () => {
+        const bodyXml = '<w:p><w:r><w:t>Full paragraph comment</w:t></w:r></w:p>';
+        const buf = await makeDocxBuffer(bodyXml);
+        doc = await DocxDocument.load(buf);
+        doc.insertParagraphBookmarks('test_attachment');
+      });
+
+      await when('addComment is called without start and end', async () => {
+        const { paragraphs } = doc.readParagraphs();
+        const paraId = paragraphs[0]!.id;
+        result = await doc.addComment({
+          paragraphId: paraId,
+          author: 'Wrapper Test',
+          text: 'No offsets provided',
+        });
+      });
+
+      await then('a comment is created wrapping the entire paragraph', async () => {
+        expect(result.commentId).toBeGreaterThanOrEqual(0);
+        const { buffer } = await doc.toBuffer();
+        const reloadedZip = await DocxZip.load(buffer);
+        const docXml = await reloadedZip.readText('word/document.xml');
+        expect(docXml).toContain('commentRangeStart');
+        expect(docXml).toContain('commentRangeEnd');
+        const commentsXml = await reloadedZip.readText('word/comments.xml');
+        expect(commentsXml).toContain('No offsets provided');
+        expect(commentsXml).toContain('Wrapper Test');
+      });
+    });
   });
 
   describe('getComments', () => {
