@@ -4,6 +4,8 @@
 [![CI](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
 
+**Install via the canonical package:** `npx -y @usejunior/safe-docx` — [see setup guide](../../README.md)
+
 Local MCP server for surgical editing of existing Microsoft Word `.docx` files with coding agents.
 
 Safe Docx is built for brownfield paperwork workflows: apply accepted AI edits to real Word documents while preserving formatting and review semantics.
