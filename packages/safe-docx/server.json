@@ -3,7 +3,7 @@
   "name": "io.github.UseJunior/safe-docx",
   "title": "Safe Docx",
   "description": "AI-native surgical editing of existing Word .docx files with formatting preservation",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "websiteUrl": "https://usejunior.com/developer-tools/safe-docx",
   "icons": [
     {
@@ -18,7 +18,7 @@
     {
       "registryType": "npm",
       "identifier": "@usejunior/safe-docx",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "transport": {
         "type": "stdio"
       },
