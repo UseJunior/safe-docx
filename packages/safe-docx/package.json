@@ -1,7 +1,7 @@
 {
   "name": "@usejunior/safe-docx",
-  "version": "0.8.0",
-  "description": "Canonical npm package for the Safe Docx MCP server and CLI",
+  "version": "0.8.1",
+  "description": "Edit Word (.docx) documents with tracked changes, redlines, and formatting preservation. Built for AI coding agents. MIT licensed, 100% local processing.",
   "mcpName": "io.github.UseJunior/safe-docx",
   "type": "module",
   "main": "./index.js",
@@ -25,7 +25,7 @@
     "safedocx": "./bin/safe-docx.js"
   },
   "dependencies": {
-    "@usejunior/docx-mcp": "^0.8.0"
+    "@usejunior/docx-mcp": "^0.8.1"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -69,7 +69,20 @@
     "coding-agent",
     "claude-code",
     "cursor",
-    "windsurf"
+    "windsurf",
+    "redline",
+    "redlining",
+    "contract",
+    "legal",
+    "markup",
+    "mark-up",
+    "word-editing",
+    "word-document",
+    "ai-agent",
+    "local-first",
+    "offline",
+    "diff",
+    "safedocx"
   ],
   "homepage": "https://usejunior.com/developer-tools/safe-docx",
   "bugs": {

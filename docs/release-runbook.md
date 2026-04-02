@@ -78,8 +78,11 @@ After npm publish, submit the package to each registry target:
 3. **mcpservers.org** — Manual web form at https://mcpservers.org/submit.
 4. **Smithery.ai** — Publish via https://smithery.ai/docs/build/publish or https://smithery.ai/new.
 5. **Glama.ai** — Auto-discovers from GitHub/registry. Verify listing after registry publish + sync window (not tied to npm timing).
+6. **PulseMCP** (`pulsemcp.com`) — Submit via web form.
+7. **mcp.so** — Submit via directory form.
+8. **mcpmarket.com** — Submit via listing form.
 
-> **Note:** These URLs were verified as of 2026-03-17. Confirm they are still current at submission time.
+> **Note:** These URLs were verified as of 2026-04-02. Confirm they are still current at submission time.
 
 ## Monorepo Version Coupling
 

@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
+[![npm version](https://img.shields.io/npm/v/@usejunior/safe-docx)](https://www.npmjs.com/package/@usejunior/safe-docx)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
+[![GitHub last commit](https://img.shields.io/github/last-commit/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/commits/main)
+[![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
 
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
 
@@ -35,17 +39,96 @@ Safe Docx 针对需要确定性、本地优先编辑现有 `.docx` 文件的代�
 
 Safe Docx 不旨在替代以生成为主的 `.docx` 库。
 
+## 信赖我们的用户
+
+- **Am Law 十强律所** — 多步骤合同翻译流水线
+- **150人规模区域律所** — 处理超过2200万 tokens 的合同标注
+- **Gemini CLI** — 兼容的 Word 编辑 MCP 扩展
+
 ## 从这里开始
-
-设置和日常使用请参阅：
-
-- `packages/docx-mcp/README.md`
-
-快速运行：
 
 ```bash
 npx -y @usejunior/safe-docx
 ```
+
+详细设置和工具参考请参阅 `packages/docx-mcp/README.md`。
+
+### 示例：代理编辑合同
+
+当你向已安装 Safe Docx 的编程代理（Claude Code、Cursor、Gemini CLI）发出提示时，代理会执行如下 MCP 工具调用：
+
+```text
+用户：编辑 ~/docs/NDA.docx 中的保密协议 — 将准据法从
+      "State of New York" 改为 "State of Delaware"，
+      同时保存一份干净副本和一份带修订标记的副本。
+
+代理调用：
+
+  1. read_file(file_path="~/docs/NDA.docx", format="toon")
+     → 返回带有稳定 ID 的段落：_bk_1、_bk_2 ...
+
+  2. grep(file_path="~/docs/NDA.docx", pattern="State of New York")
+     → 在段落 _bk_47 中找到匹配
+
+  3. replace_text(
+       file_path="~/docs/NDA.docx",
+       target_paragraph_id="_bk_47",
+       old_string="State of New York",
+       new_string="State of Delaware",
+       instruction="Change governing law to Delaware"
+     )
+
+  4. save(
+       file_path="~/docs/NDA.docx",
+       save_to_local_path="~/docs/NDA-clean.docx",
+       tracked_save_to_local_path="~/docs/NDA-tracked.docx",
+       save_format="both"
+     )
+```
+
+代理自动处理工具调用。你会得到一份干净文件和一份带修订标记的文件供人工审阅。
+
+## MCP 快速开始
+
+### Claude Code
+
+```bash
+claude mcp add safe-docx -- npx -y @usejunior/safe-docx
+```
+
+### Claude Desktop
+
+添加到 `~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）或 `%APPDATA%\Claude\claude_desktop_config.json`（Windows）：
+
+```json
+{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "npx",
+      "args": ["-y", "@usejunior/safe-docx"]
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+```json
+{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "npx",
+      "args": ["-y", "@usejunior/safe-docx"]
+    }
+  }
+}
+```
+
+### 任意 MCP 客户端
+
+- **命令：** `npx`
+- **参数：** `["-y", "@usejunior/safe-docx"]`
+- **传输协议：** stdio
 
 ## Safe Docx 擅长什么
 

@@ -2,6 +2,10 @@
 
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
+[![npm version](https://img.shields.io/npm/v/@usejunior/safe-docx)](https://www.npmjs.com/package/@usejunior/safe-docx)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
+[![GitHub last commit](https://img.shields.io/github/last-commit/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/commits/main)
+[![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
 
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
 
@@ -35,17 +39,96 @@ Safe Docx está optimizado para flujos de trabajo de agentes que necesitan edici
 
 Safe Docx no pretende reemplazar bibliotecas de `.docx` orientadas a la generación.
 
+## Confían en nosotros
+
+- **Firma Am Law top-10** — pipeline de traducción de contratos multietapa
+- **Firma regional de 150 abogados** — 22M+ tokens de marcado de contratos procesados
+- **Gemini CLI** — extensión MCP compatible para edición de Word
+
 ## Comienza aquí
-
-Para configuración y uso diario, ve a:
-
-- `packages/docx-mcp/README.md`
-
-Ejecución rápida:
 
 ```bash
 npx -y @usejunior/safe-docx
 ```
+
+Para configuración detallada y referencia de herramientas, consulta `packages/docx-mcp/README.md`.
+
+### Ejemplo: Agente editando un contrato
+
+Cuando le das un prompt a un agente de programación (Claude Code, Cursor, Gemini CLI) con Safe Docx instalado, el agente realiza llamadas de herramientas MCP como estas:
+
+```text
+Usuario: Edita el NDA en ~/docs/NDA.docx — cambia la ley aplicable
+         de "State of New York" a "State of Delaware" y guarda tanto
+         una copia limpia como una copia con control de cambios.
+
+Llamadas del agente:
+
+  1. read_file(file_path="~/docs/NDA.docx", format="toon")
+     → Retorna párrafos con IDs estables: _bk_1, _bk_2, ...
+
+  2. grep(file_path="~/docs/NDA.docx", pattern="State of New York")
+     → Coincidencia en párrafo _bk_47
+
+  3. replace_text(
+       file_path="~/docs/NDA.docx",
+       target_paragraph_id="_bk_47",
+       old_string="State of New York",
+       new_string="State of Delaware",
+       instruction="Change governing law to Delaware"
+     )
+
+  4. save(
+       file_path="~/docs/NDA.docx",
+       save_to_local_path="~/docs/NDA-clean.docx",
+       tracked_save_to_local_path="~/docs/NDA-tracked.docx",
+       save_format="both"
+     )
+```
+
+El agente maneja las llamadas de herramientas automáticamente. Obtienes un archivo limpio y un archivo con control de cambios para revisión humana.
+
+## Inicio rápido MCP
+
+### Claude Code
+
+```bash
+claude mcp add safe-docx -- npx -y @usejunior/safe-docx
+```
+
+### Claude Desktop
+
+Añade a `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "npx",
+      "args": ["-y", "@usejunior/safe-docx"]
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+```json
+{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "npx",
+      "args": ["-y", "@usejunior/safe-docx"]
+    }
+  }
+}
+```
+
+### Cualquier cliente MCP
+
+- **Comando:** `npx`
+- **Args:** `["-y", "@usejunior/safe-docx"]`
+- **Transporte:** stdio
 
 ## Para qué está optimizado Safe Docx
 
