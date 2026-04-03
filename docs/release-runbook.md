@@ -53,11 +53,13 @@ The workflow runs these jobs in order:
 
 ```
 preflight → publish-suite → ensure-release → publish-mcpb-asset → update-changelog-data
+                         ↘ publish-mcp-registry (parallel, soft-fail)
 ```
 
 - **preflight**: Full CI gate (build, lint, test, coverage, spec checks)
 - **publish-suite**: Publishes `@usejunior/docx-core`, `@usejunior/docx-mcp`, `@usejunior/safe-docx` to npm
 - **ensure-release**: Creates the GitHub Release with auto-generated notes
+- **publish-mcp-registry**: Publishes `server.json` to the official MCP Registry via OIDC (soft-fail; does not block other jobs)
 - **publish-mcpb-asset**: Attaches `safe-docx.mcpb` + checksum to the release
 - **update-changelog-data**: Regenerates `changelog.json` and opens a PR
 
@@ -68,12 +70,13 @@ preflight → publish-suite → ensure-release → publish-mcpb-asset → update
 - [ ] GitHub Release exists with categorized notes
 - [ ] MCPB asset is attached to the release
 - [ ] Changelog data PR is opened (merge it to update the trust site)
+- [ ] MCP Registry version is current (`publish-mcp-registry` job; soft-fail during preview)
 
 ### 5. MCP Registry Submissions
 
 After npm publish, submit the package to each registry target:
 
-1. **Official MCP Registry** (`registry.modelcontextprotocol.io`) — Requires `packages/safe-docx/server.json` (already managed by the bump script). Submit via the [registry quickstart](https://modelcontextprotocol.io/registry/quickstart).
+1. **Official MCP Registry** (`registry.modelcontextprotocol.io`) — **Automated.** Published by the `publish-mcp-registry` CI job via GitHub OIDC. Verify at `https://registry.modelcontextprotocol.io/server/io.github.UseJunior/safe-docx`. Falls back to manual via the [registry quickstart](https://modelcontextprotocol.io/registry/quickstart) if the job fails.
 2. **Anthropic Connectors Directory** — Separate from the official registry. Submit local MCP servers via the [Google Form](https://support.claude.com/en/articles/12922832-local-mcp-server-submission-guide).
 3. **mcpservers.org** — Manual web form at https://mcpservers.org/submit.
 4. **Smithery.ai** — Publish via https://smithery.ai/docs/build/publish or https://smithery.ai/new.
@@ -112,6 +115,19 @@ Then regenerate changelog data.
 ### MCPB asset job fails
 
 The GitHub Release is still created by `ensure-release` (it no longer depends on MCPB success). Re-run just the `publish-mcpb-asset` job via workflow dispatch.
+
+### MCP Registry publish fails
+
+The `publish-mcp-registry` job uses `continue-on-error: true` — failures appear yellow in the Actions UI but don't block the release. To retry:
+
+1. Re-run the failed job via the Actions UI
+2. Or publish manually:
+   ```bash
+   # Download mcp-publisher
+   curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_amd64.tar.gz" | tar xz mcp-publisher
+   ./mcp-publisher login github
+   ./mcp-publisher publish packages/safe-docx/server.json
+   ```
 
 ### Stale changelog data
 

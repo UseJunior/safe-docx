@@ -30,6 +30,6 @@
     "url": "https://github.com/UseJunior/safe-docx",
     "source": "github",
     "id": "UseJunior/safe-docx",
-    "subfolder": "packages/docx-mcp"
+    "subfolder": "packages/safe-docx"
   }
 }
