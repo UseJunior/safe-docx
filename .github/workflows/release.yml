@@ -298,7 +298,7 @@ jobs:
           echo "Downloading mcp-publisher from: $URL"
           curl -fsSL "$URL" | tar xz mcp-publisher
           chmod +x mcp-publisher
-          echo "$(pwd)" >> "$GITHUB_PATH"
+          pwd >> "$GITHUB_PATH"
 
       - name: Authenticate with GitHub OIDC
         run: mcp-publisher login github-oidc
