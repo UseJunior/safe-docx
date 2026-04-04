@@ -20,10 +20,11 @@ import {
 } from '../../primitives/index.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
-import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import { XMLSerializer } from '@xmldom/xmldom';
+import { parseXml } from '../../primitives/xml.js';
 import { warn } from './debug.js';
 
-const SYNTHETIC_DOC = new DOMParser().parseFromString('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>', 'application/xml');
+const SYNTHETIC_DOC = parseXml('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 /**

@@ -6,7 +6,7 @@
  *
  * 1. Leaf text contract — getLeafText() returns direct text child value only,
  *    unlike DOM textContent which is recursive. Critical for hash/compare code.
- * 2. Child element access — xmldom has no .children property, only .childNodes.
+ * 2. Child element access — wraps xmldom's .children (0.9+) with static array return.
  * 3. Tree manipulation — insertAfter, wrap, unwrap operations.
  * 4. Namespace-safe element creation — always use createElementNS for OOXML.
  */
@@ -54,12 +54,13 @@ export function setLeafText(el: Element, text: string): void {
   el.appendChild(el.ownerDocument!.createTextNode(text));
 }
 
-// ── Child element access (xmldom has no .children property) ────────
+// ── Child element access (static array from .children) ────────────
 
 /**
  * Get element-only children. Filters out text nodes, comments, PIs.
  */
 export function childElements(el: Element | Node): Element[] {
+  if ('children' in el) return Array.from(el.children as ArrayLike<Element>);
   const result: Element[] = [];
   for (let i = 0; i < el.childNodes.length; i++) {
     const child = el.childNodes[i]!;
@@ -69,28 +70,12 @@ export function childElements(el: Element | Node): Element[] {
 }
 
 /**
- * Get direct child elements with a specific tag name (prefix-qualified).
- */
-export function childElementsByTagName(el: Element, tagName: string): Element[] {
-  const result: Element[] = [];
-  for (let i = 0; i < el.childNodes.length; i++) {
-    const child = el.childNodes[i]!;
-    if (child.nodeType === NODE_TYPE.ELEMENT && (child as Element).tagName === tagName) {
-      result.push(child as Element);
-    }
-  }
-  return result;
-}
-
-/**
  * Find the first direct child element with a specific tag name.
  */
 export function findChildByTagName(el: Element, tagName: string): Element | null {
-  for (let i = 0; i < el.childNodes.length; i++) {
-    const child = el.childNodes[i]!;
-    if (child.nodeType === NODE_TYPE.ELEMENT && (child as Element).tagName === tagName) {
-      return child as Element;
-    }
+  const kids = el.children;
+  for (let i = 0; i < kids.length; i++) {
+    if ((kids[i] as Element).tagName === tagName) return kids[i] as Element;
   }
   return null;
 }
@@ -260,11 +245,9 @@ export function isW(el: Element | null | undefined, localName: string): boolean 
  */
 export function getDirectChildrenByName(parent: Element, localName: string): Element[] {
   const out: Element[] = [];
-  for (let i = 0; i < parent.childNodes.length; i++) {
-    const child = parent.childNodes[i]!;
-    if (child.nodeType === NODE_TYPE.ELEMENT && isW(child as Element, localName)) {
-      out.push(child as Element);
-    }
+  const kids = parent.children;
+  for (let i = 0; i < kids.length; i++) {
+    if (isW(kids[i] as Element, localName)) out.push(kids[i] as Element);
   }
   return out;
 }

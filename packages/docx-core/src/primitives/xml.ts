@@ -4,7 +4,9 @@ export type XmlDoc = Document;
 
 export function parseXml(xml: string): XmlDoc {
   // application/xml ensures XML parsing rules (vs HTML-ish parsing).
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  // xmldom 0.9.x returns its own module-scoped Document type; cast to global
+  // Document to avoid type conflicts with the DOM lib.
+  const doc = new DOMParser().parseFromString(xml, 'application/xml') as unknown as Document;
 
   // xmldom uses a <parsererror> element for some failures; keep a minimal check.
   const parseErrors = doc.getElementsByTagName('parsererror');

@@ -5,7 +5,6 @@ import {
   getLeafText,
   setLeafText,
   childElements,
-  childElementsByTagName,
   findChildByTagName,
   insertAfterElement,
   wrapElement,
@@ -186,45 +185,6 @@ describe('childElements', () => {
     });
     await and('the element is the child tag', () => {
       expect(children[0]!.tagName).toBe('child');
-    });
-  });
-});
-
-// ── childElementsByTagName ─────────────────────────────────────────
-
-describe('childElementsByTagName', () => {
-  test('returns only direct children matching the tag name', async ({ given, when, then }: AllureBddContext) => {
-    let wp!: Element;
-    let runs!: Element[];
-    await given('a paragraph with two w:r direct children and a w:pPr', async () => {
-      const doc = makeDoc(
-        '<w:p><w:r><w:t>A</w:t></w:r><w:r><w:t>B</w:t></w:r><w:pPr/></w:p>',
-      );
-      wp = doc.getElementsByTagName('w:p')[0]!;
-    });
-    await when('childElementsByTagName is called for w:r', async () => {
-      runs = childElementsByTagName(wp, 'w:r');
-    });
-    await then('it returns 2 matching direct children', () => {
-      expect(runs.length).toBe(2);
-    });
-  });
-
-  test('does not return nested descendants', async ({ given, when, then }: AllureBddContext) => {
-    let wp!: Element;
-    let texts!: Element[];
-    await given('a paragraph where w:t is a grandchild inside w:r', async () => {
-      const doc = makeDoc(
-        '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>A</w:t></w:r></w:p>',
-      );
-      wp = doc.getElementsByTagName('w:p')[0]!;
-    });
-    await when('childElementsByTagName is called for w:t on the paragraph', async () => {
-      // w:t is a grandchild, not a direct child of w:p
-      texts = childElementsByTagName(wp, 'w:t');
-    });
-    await then('it returns 0 results since w:t is not a direct child', () => {
-      expect(texts.length).toBe(0);
     });
   });
 });

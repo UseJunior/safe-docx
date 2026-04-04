@@ -7,7 +7,7 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure } from '../../testing/allure-test.js';
-import { DOMParser } from '@xmldom/xmldom';
+import { parseXml } from '../../primitives/xml.js';
 import { reconstructDocument } from './documentReconstructor.js';
 import {
   acceptAllChanges,
@@ -29,9 +29,8 @@ function makeAtom(
   status: CorrelationStatus,
   paragraphIndex: number
 ): ComparisonUnitAtom {
-  const doc = new DOMParser().parseFromString(
+  const doc = parseXml(
     `<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:r><w:t>${text}</w:t></w:r></w:p>`,
-    'application/xml'
   );
   const paragraph = doc.documentElement;
   const run = paragraph.getElementsByTagName('w:r')[0]!;

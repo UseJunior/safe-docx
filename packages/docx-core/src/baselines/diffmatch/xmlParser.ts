@@ -10,7 +10,6 @@ import { parseXml } from '../../primitives/xml.js';
 import type { ParagraphInfo, RunInfo, RunProperties } from '../../shared/ooxml/types.js';
 import { hashParagraph } from './paragraphAlignment.js';
 
-const ELEMENT_NODE = 1;
 const serializer = new XMLSerializer();
 
 /**
@@ -236,12 +235,5 @@ function elementToXml(element: Element): string {
  * Get direct element children.
  */
 function childElements(element: Element): Element[] {
-  const children: Element[] = [];
-  for (let i = 0; i < element.childNodes.length; i++) {
-    const child = element.childNodes[i];
-    if (child && child.nodeType === ELEMENT_NODE) {
-      children.push(child as Element);
-    }
-  }
-  return children;
+  return Array.from(element.children as ArrayLike<Element>);
 }
