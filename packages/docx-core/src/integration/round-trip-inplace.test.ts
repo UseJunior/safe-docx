@@ -136,6 +136,52 @@ test('multiple-changes inplace: deleted text preserves xml:space on whitespace f
   });
 });
 
+test('multiple-changes inplace: produces word-level inline changes, not full paragraph replacement', async ({ given, when, then, and }: AllureBddContext) => {
+  let original: Buffer;
+  let revised: Buffer;
+  let result: Awaited<ReturnType<typeof compareDocuments>>;
+
+  await given('multiple-changes original and revised documents', async () => {
+    original = await readFile(join(fixturesPath, 'multiple-changes', 'original.docx'));
+    revised = await readFile(join(fixturesPath, 'multiple-changes', 'revised.docx'));
+  });
+
+  await when('compared in inplace mode', async () => {
+    result = await compareDocuments(original, revised, {
+      engine: 'atomizer',
+      reconstructionMode: 'inplace',
+    });
+  });
+
+  await then('only the changed words are marked as insertions/deletions (not the whole paragraph)', () => {
+    // 3 word-level changes: $1,000→$1,500, Contractor→Vendor, first→fifteenth
+    expect(result.stats.insertions).toBeLessThanOrEqual(6);
+    expect(result.stats.deletions).toBeLessThanOrEqual(6);
+  });
+
+  await and('accept-all produces text matching revised', async () => {
+    const resultArchive = await DocxArchive.load(result.document);
+    const resultXml = await resultArchive.getDocumentXml();
+    const acceptedText = extractTextWithParagraphs(acceptAllChanges(resultXml));
+
+    const revisedArchive = await DocxArchive.load(revised);
+    const revisedText = extractTextWithParagraphs(await revisedArchive.getDocumentXml());
+
+    expect(compareTexts(revisedText, acceptedText).normalizedIdentical).toBe(true);
+  });
+
+  await and('reject-all produces text matching original', async () => {
+    const resultArchive = await DocxArchive.load(result.document);
+    const resultXml = await resultArchive.getDocumentXml();
+    const rejectedText = extractTextWithParagraphs(rejectAllChanges(resultXml));
+
+    const originalArchive = await DocxArchive.load(original);
+    const originalText = extractTextWithParagraphs(await originalArchive.getDocumentXml());
+
+    expect(compareTexts(originalText, rejectedText).normalizedIdentical).toBe(true);
+  });
+});
+
 test('split-run-boundary-change: reject changes should match original', async ({ given, when, then }: AllureBddContext) => {
   const makeDocxWithRuns = async (runs: string[]): Promise<Buffer> => {
     const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
