@@ -65,6 +65,12 @@ jobs:
             exit 1
           fi
 
+          GEMINI_VERSION="$(node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('./gemini-extension.json','utf8'));process.stdout.write(m.version)")"
+          if [ "$TAG_VERSION" != "$GEMINI_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) must match gemini-extension.json version ($GEMINI_VERSION)."
+            exit 1
+          fi
+
       - name: Verify release commit is on main
         run: |
           git fetch origin main
@@ -72,6 +78,9 @@ jobs:
             echo "Release tag commit is not contained in origin/main."
             exit 1
           fi
+
+      - name: Validate Gemini extension manifest
+        run: node scripts/check_gemini_extension_manifest.mjs
 
       - name: Install dependencies (npm ci with retry)
         run: |
