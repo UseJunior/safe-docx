@@ -21,6 +21,7 @@ import {
   childElements,
   findChildByTagName,
 } from './primitives/index.js';
+import { OOXML } from './primitives/namespaces.js';
 
 // =============================================================================
 // Shared synthetic document for creating virtual elements
@@ -701,8 +702,11 @@ export function collapseFieldSequences(
       // Create a collapsed field atom with the visible text
       const firstAtom = fieldAtoms[0]!;
       // Use w:t so it can merge with adjacent text
-      const virtualElement = SYNTHETIC_DOC.createElement('w:t');
+      const virtualElement = SYNTHETIC_DOC.createElementNS(OOXML.W_NS, 'w:t');
       setLeafText(virtualElement, visibleText);
+      if (/\s/.test(visibleText)) {
+        virtualElement.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+      }
 
       const collapsedAtom: ComparisonUnitAtom = {
         contentElement: virtualElement,
@@ -775,13 +779,17 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
     if (part === '') continue;
 
     // Create a new element for this word/whitespace
-    const wordElement = SYNTHETIC_DOC.createElement('w:t');
+    const wordElement = SYNTHETIC_DOC.createElementNS(OOXML.W_NS, 'w:t');
     // Copy attributes from the original content element
     for (let i = 0; i < atom.contentElement.attributes.length; i++) {
       const attr = atom.contentElement.attributes[i]!;
       wordElement.setAttribute(attr.name, attr.value);
     }
     setLeafText(wordElement, part);
+    // Ensure OOXML renderers preserve whitespace in this fragment
+    if (/\s/.test(part)) {
+      wordElement.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    }
 
     // Create atom for this word
     const wordAtom: ComparisonUnitAtom = {

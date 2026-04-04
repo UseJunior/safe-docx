@@ -116,4 +116,40 @@ describe('ComparisonUnitAtom.rPr', () => {
       }
     });
   });
+
+  test('word-split whitespace atoms have xml:space="preserve"', async ({ given, when, then, and }: AllureBddContext) => {
+    let textEl: Element;
+    let run: Element;
+    let paragraph: Element;
+    let wordAtoms: ReturnType<typeof splitAtomsIntoWords>;
+
+    await given('a run with multi-word text "a b"', () => {
+      textEl = el('w:t', {}, undefined, 'a b');
+      run = el('w:r', {}, [textEl]);
+      paragraph = el('w:p', {}, [run]);
+    });
+
+    await when('the atom is word-split', () => {
+      const atom = createComparisonUnitAtom({
+        contentElement: textEl,
+        ancestors: [paragraph, run],
+        part: PART,
+      });
+      wordAtoms = splitAtomsIntoWords([atom]);
+    });
+
+    await then('3 atoms are produced: "a", " ", "b"', () => {
+      expect(wordAtoms.length).toBe(3);
+    });
+
+    await and('the whitespace atom has xml:space="preserve"', () => {
+      const spaceAtom = wordAtoms[1]!;
+      expect(spaceAtom.contentElement.getAttribute('xml:space')).toBe('preserve');
+    });
+
+    await and('the whitespace atom contentElement is namespace-aware', () => {
+      const spaceEl = wordAtoms[1]!.contentElement;
+      expect(spaceEl.namespaceURI).toBe('http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+    });
+  });
 });
