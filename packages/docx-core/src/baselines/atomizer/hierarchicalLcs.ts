@@ -658,8 +658,14 @@ export function computeGroupLcs(
   // Build gaps between consecutive Pass 1 anchors
   const gaps = buildGaps(matchedGroups, unmatchedOriginal, unmatchedRevised, n, m);
 
-  // Run mini-LCS within each gap using TF-IDF similarity (if vectors available)
-  // Falls back to Jaccard-based greedy matching if no TF-IDF vectors provided
+  // Run mini-LCS within each gap using TF-IDF similarity (if vectors available),
+  // then fall back to Jaccard for any groups TF-IDF left unmatched.
+  // TF-IDF degenerates when document frequency is very low (e.g. 1-2 paragraphs):
+  // common words get IDF=0, making cosine similarity ≈ 0 even for paragraphs that
+  // share most of their content. Jaccard word overlap handles this correctly. (#78)
+  const tfidfMatchedOrig = new Set<number>();
+  const tfidfMatchedRev = new Set<number>();
+
   if (tfidfVectors) {
     for (const gap of gaps) {
       if (gap.origIndices.length === 0 || gap.revIndices.length === 0) continue;
@@ -672,31 +678,37 @@ export function computeGroupLcs(
         tfidfVectors,
         similarityThreshold
       );
+      for (const m of gapMatches) {
+        tfidfMatchedOrig.add(m.originalIndex);
+        tfidfMatchedRev.add(m.revisedIndex);
+      }
       similarityMatches.push(...gapMatches);
     }
-  } else {
-    // Fallback: gap-scoped Jaccard matching (greedy within each gap)
-    for (const gap of gaps) {
-      if (gap.origIndices.length === 0 || gap.revIndices.length === 0) continue;
+  }
 
-      const candidates: Array<{ originalIndex: number; revisedIndex: number; similarity: number }> = [];
-      for (const origIdx of gap.origIndices) {
-        for (const revIdx of gap.revIndices) {
-          const similarity = computeGroupSimilarity(originalGroups[origIdx]!, revisedGroups[revIdx]!);
-          if (similarity >= similarityThreshold) {
-            candidates.push({ originalIndex: origIdx, revisedIndex: revIdx, similarity });
-          }
+  // Jaccard fallback: match any groups that TF-IDF left unmatched (gap-scoped)
+  for (const gap of gaps) {
+    if (gap.origIndices.length === 0 || gap.revIndices.length === 0) continue;
+
+    const candidates: Array<{ originalIndex: number; revisedIndex: number; similarity: number }> = [];
+    for (const origIdx of gap.origIndices) {
+      if (matchedOriginal.has(origIdx) || tfidfMatchedOrig.has(origIdx)) continue;
+      for (const revIdx of gap.revIndices) {
+        if (matchedRevised.has(revIdx) || tfidfMatchedRev.has(revIdx)) continue;
+        const similarity = computeGroupSimilarity(originalGroups[origIdx]!, revisedGroups[revIdx]!);
+        if (similarity >= similarityThreshold) {
+          candidates.push({ originalIndex: origIdx, revisedIndex: revIdx, similarity });
         }
       }
-      candidates.sort((a, b) => b.similarity - a.similarity);
-      const assigned = new Set<number>();
-      const assignedRev = new Set<number>();
-      for (const c of candidates) {
-        if (assigned.has(c.originalIndex) || assignedRev.has(c.revisedIndex)) continue;
-        similarityMatches.push({ originalIndex: c.originalIndex, revisedIndex: c.revisedIndex });
-        assigned.add(c.originalIndex);
-        assignedRev.add(c.revisedIndex);
-      }
+    }
+    candidates.sort((a, b) => b.similarity - a.similarity);
+    const assigned = new Set<number>();
+    const assignedRev = new Set<number>();
+    for (const c of candidates) {
+      if (assigned.has(c.originalIndex) || assignedRev.has(c.revisedIndex)) continue;
+      similarityMatches.push({ originalIndex: c.originalIndex, revisedIndex: c.revisedIndex });
+      assigned.add(c.originalIndex);
+      assignedRev.add(c.revisedIndex);
     }
   }
 
@@ -860,62 +872,35 @@ export function hierarchicalCompare(
     revAtomToIndex.set(revisedAtoms[i]!, i);
   }
 
-  // For matched groups: do atom-level LCS within them
+  // For matched groups: always run atom-level LCS within them.
+  // Group matching already determined these paragraphs correspond; the atom
+  // LCS determines which words within them changed. Skipping it based on a
+  // redundant TF-IDF similarity recheck was overly conservative and caused
+  // entire paragraphs to show as deleted+inserted instead of inline changes
+  // (see issue #78).
   for (const match of groupLcs.matchedGroups) {
     const origGroup = originalGroups[match.originalIndex]!;
     const revGroup = revisedGroups[match.revisedIndex]!;
 
-    // Check if this was an exact match (hash) or similarity match
-    const isExactMatch = origGroup.textHash === revGroup.textHash;
+    const withinLcs = computeAtomLcs(origGroup.atoms, revGroup.atoms);
 
-    // For LOW similarity matches (< threshold), skip atom LCS to avoid spurious
-    // matches on common fragments. Use TF-IDF cosine (same metric as paragraph matching).
-    const vecA = tfidfVectors.get(origGroup);
-    const vecB = tfidfVectors.get(revGroup);
-    const similarity = isExactMatch ? 1.0
-      : (vecA && vecB ? computeTfidfCosineSimilarity(vecA, vecB) : 0);
-    // Container matches (Pass 3, issue #65) always use atom LCS regardless of threshold.
-    // These are paragraphs in the same table cell position that were matched by container
-    // key, not content similarity — atom LCS is needed to produce inline tracked changes
-    // instead of whole-paragraph delete+insert.
-    const useAtomLcs = similarity >= similarityThreshold || match.containerMatch === true;
-
-    if (!isExactMatch && !useAtomLcs) {
-      debug('hierarchicalLcs', `Low similarity match (${similarity.toFixed(2)}): origGroup[${match.originalIndex}] "${origGroup.textContent.slice(0, 50)}..." vs revGroup[${match.revisedIndex}] "${revGroup.textContent.slice(0, 50)}..."`);
+    for (const atomMatch of withinLcs.matches) {
+      const origAtom = origGroup.atoms[atomMatch.originalIndex]!;
+      const revAtom = revGroup.atoms[atomMatch.revisedIndex]!;
+      allMatches.push({
+        originalIndex: origAtomToIndex.get(origAtom)!,
+        revisedIndex: revAtomToIndex.get(revAtom)!,
+      });
     }
 
-    if (isExactMatch || useAtomLcs) {
-      // High-similarity match: do atom-level LCS for fine-grained changes
-      const withinLcs = computeAtomLcs(origGroup.atoms, revGroup.atoms);
+    for (const localIdx of withinLcs.deletedIndices) {
+      const origAtom = origGroup.atoms[localIdx]!;
+      deletedIndices.push(origAtomToIndex.get(origAtom)!);
+    }
 
-      // Translate local indices to global indices
-      for (const atomMatch of withinLcs.matches) {
-        const origAtom = origGroup.atoms[atomMatch.originalIndex]!;
-        const revAtom = revGroup.atoms[atomMatch.revisedIndex]!;
-        allMatches.push({
-          originalIndex: origAtomToIndex.get(origAtom)!,
-          revisedIndex: revAtomToIndex.get(revAtom)!,
-        });
-      }
-
-      for (const localIdx of withinLcs.deletedIndices) {
-        const origAtom = origGroup.atoms[localIdx]!;
-        deletedIndices.push(origAtomToIndex.get(origAtom)!);
-      }
-
-      for (const localIdx of withinLcs.insertedIndices) {
-        const revAtom = revGroup.atoms[localIdx]!;
-        insertedIndices.push(revAtomToIndex.get(revAtom)!);
-      }
-    } else {
-      // Low similarity match: treat entire paragraph as replaced
-      // This prevents spurious atom matches on common fragments
-      for (const atom of origGroup.atoms) {
-        deletedIndices.push(origAtomToIndex.get(atom)!);
-      }
-      for (const atom of revGroup.atoms) {
-        insertedIndices.push(revAtomToIndex.get(atom)!);
-      }
+    for (const localIdx of withinLcs.insertedIndices) {
+      const revAtom = revGroup.atoms[localIdx]!;
+      insertedIndices.push(revAtomToIndex.get(revAtom)!);
     }
   }
 
