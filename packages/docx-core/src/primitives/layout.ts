@@ -53,10 +53,9 @@ function isW(el: Element | null | undefined, localName: string): boolean {
 
 function getDirectChildrenByName(parent: Element, localName: string): Element[] {
   const out: Element[] = [];
-  for (const child of Array.from(parent.childNodes)) {
-    if (child.nodeType !== 1) continue;
-    const el = child as Element;
-    if (isW(el, localName)) out.push(el);
+  const kids = parent.children;
+  for (let i = 0; i < kids.length; i++) {
+    if (isW(kids[i] as Element, localName)) out.push(kids[i] as Element);
   }
   return out;
 }

@@ -20,6 +20,7 @@ import {
   RUN_PROPERTY_FRIENDLY_NAMES,
 } from './core-types.js';
 import { getLeafText, childElements } from './primitives/index.js';
+import { parseXml } from './primitives/xml.js';
 
 // =============================================================================
 // Run Property Extraction
@@ -432,7 +433,7 @@ export function generateFormatChangeMarkup(
   formatChange: FormatChangeInfo,
   options: FormatChangeMarkupOptions,
 ): Element {
-  const doc = new (require('@xmldom/xmldom').DOMParser)().parseFromString('<root/>', 'application/xml') as Document;
+  const doc = parseXml('<root/>');
   const dateStr = options.dateTime.toISOString();
   const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 

@@ -6,7 +6,8 @@
  * and document reconstruction.
  */
 
-import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import { XMLSerializer } from '@xmldom/xmldom';
+import { parseXml } from '../../primitives/xml.js';
 import { DocxArchive } from '../../shared/docx/DocxArchive.js';
 import type {
   CompareResult,
@@ -860,7 +861,7 @@ const AUXILIARY_PARTS: AuxiliaryPartDescriptor[] = [
  */
 function collectReferenceIds(documentXml: string, referenceTag: string): Set<string> {
   const ids = new Set<string>();
-  const doc = new DOMParser().parseFromString(documentXml, 'application/xml');
+  const doc = parseXml(documentXml);
   const refs = doc.getElementsByTagName(referenceTag);
   for (let i = 0; i < refs.length; i++) {
     const id = (refs[i] as Element).getAttribute('w:id');
@@ -873,7 +874,7 @@ function collectReferenceIds(documentXml: string, referenceTag: string): Set<str
  * Parse an auxiliary part and extract entry elements by ID.
  */
 function parseEntries(xml: string, entryTag: string): { doc: Document; entries: Map<string, Element> } {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const doc = parseXml(xml);
   const entries = new Map<string, Element>();
   const elements = doc.getElementsByTagName(entryTag);
   for (let i = 0; i < elements.length; i++) {
@@ -933,7 +934,7 @@ async function mergeAuxiliaryPartDefinitions(
     }
   } else {
     // Create part from scratch: clone root from original, insert missing entries
-    const newDoc = new DOMParser().parseFromString(originalPartXml, 'application/xml');
+    const newDoc = parseXml(originalPartXml);
     const rootEl = newDoc.getElementsByTagName(descriptor.rootTag)[0] as Element;
     if (rootEl) {
       // Remove all existing entries — we only want the missing ones
@@ -979,7 +980,7 @@ async function ensureOpcMetadata(
   // 1. Update [Content_Types].xml
   const ctXml = await archive.getFile('[Content_Types].xml');
   if (ctXml) {
-    const ctDoc = new DOMParser().parseFromString(ctXml, 'application/xml');
+    const ctDoc = parseXml(ctXml);
     const typesEl = ctDoc.documentElement;
     const overrides = typesEl.getElementsByTagNameNS(CT_NS, 'Override');
     const partName = `/${descriptor.partPath}`;
@@ -1005,7 +1006,7 @@ async function ensureOpcMetadata(
   const relsPath = 'word/_rels/document.xml.rels';
   const relsXml = await archive.getFile(relsPath);
   if (relsXml) {
-    const relsDoc = new DOMParser().parseFromString(relsXml, 'application/xml');
+    const relsDoc = parseXml(relsXml);
     const relsEl = relsDoc.documentElement;
     const existingRels = relsEl.getElementsByTagNameNS(REL_NS, 'Relationship');
 
@@ -1050,7 +1051,7 @@ async function mergeCommentAncillaryParts(
   const originalCommentsXml = await originalArchive.getFile('word/comments.xml');
   if (!originalCommentsXml) return;
 
-  const origDoc = new DOMParser().parseFromString(originalCommentsXml, 'application/xml');
+  const origDoc = parseXml(originalCommentsXml);
   const mergedAuthors = new Set<string>();
   const mergedParaIds = new Set<string>();
 
@@ -1089,7 +1090,7 @@ async function mergeCommentsExtended(
   const originalXml = await originalArchive.getFile('word/commentsExtended.xml');
   if (!originalXml) return;
 
-  const origDoc = new DOMParser().parseFromString(originalXml, 'application/xml');
+  const origDoc = parseXml(originalXml);
   const origEntries = origDoc.getElementsByTagName('w15:commentEx');
 
   // Collect entries whose paraId matches a merged comment's paragraph
@@ -1107,7 +1108,7 @@ async function mergeCommentsExtended(
   let resultXml = await resultArchive.getFile('word/commentsExtended.xml');
 
   if (resultXml) {
-    const resultDoc = new DOMParser().parseFromString(resultXml, 'application/xml');
+    const resultDoc = parseXml(resultXml);
     const rootEl = resultDoc.documentElement;
 
     // Check existing paraIds to avoid duplicates
@@ -1141,7 +1142,7 @@ async function mergePeople(
   const originalXml = await originalArchive.getFile('word/people.xml');
   if (!originalXml) return;
 
-  const origDoc = new DOMParser().parseFromString(originalXml, 'application/xml');
+  const origDoc = parseXml(originalXml);
   const origPersons = origDoc.getElementsByTagName('w15:person');
 
   const personsToMerge: Element[] = [];
@@ -1158,7 +1159,7 @@ async function mergePeople(
   let resultXml = await resultArchive.getFile('word/people.xml');
 
   if (resultXml) {
-    const resultDoc = new DOMParser().parseFromString(resultXml, 'application/xml');
+    const resultDoc = parseXml(resultXml);
     const rootEl = resultDoc.documentElement;
 
     // Check existing authors to avoid duplicates

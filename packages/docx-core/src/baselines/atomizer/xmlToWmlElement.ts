@@ -5,7 +5,8 @@
  * Replaces the former fast-xml-parser + WmlElement POJO approach.
  */
 
-import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import { XMLSerializer } from '@xmldom/xmldom';
+import { parseXml } from '../../primitives/xml.js';
 
 /**
  * Parse document.xml string into a DOM Element tree.
@@ -14,7 +15,7 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
  * @returns Root element (the Document's documentElement)
  */
 export function parseDocumentXml(xml: string): Element {
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const doc = parseXml(xml);
   return doc.documentElement;
 }
 

@@ -8,7 +8,7 @@
  */
 
 import { createHash } from 'crypto';
-import { DOMParser } from '@xmldom/xmldom';
+import { parseXml } from './primitives/xml.js';
 import {
   ComparisonUnitAtom,
   CorrelationStatus,
@@ -31,7 +31,7 @@ import { OOXML } from './primitives/namespaces.js';
  * A shared document used to create synthetic/virtual DOM elements.
  * These elements are not part of any real parsed document.
  */
-const SYNTHETIC_DOC = new DOMParser().parseFromString('<root/>', 'application/xml');
+const SYNTHETIC_DOC = parseXml('<root/>');
 
 // =============================================================================
 // SHA1 Hashing

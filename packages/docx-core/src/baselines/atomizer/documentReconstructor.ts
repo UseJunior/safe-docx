@@ -5,7 +5,8 @@
  * Generates w:ins, w:del, w:moveFrom, w:moveTo elements as appropriate.
  */
 
-import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import { XMLSerializer } from '@xmldom/xmldom';
+import { parseXml } from '../../primitives/xml.js';
 import type { ComparisonUnitAtom } from '../../core-types.js';
 import { CorrelationStatus } from '../../core-types.js';
 import { getLeafText, childElements, findChildByTagName } from '../../primitives/index.js';
@@ -14,10 +15,7 @@ import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
 
-const SYNTHETIC_DOC = new DOMParser().parseFromString(
-  '<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
-  'application/xml'
-);
+const SYNTHETIC_DOC = parseXml('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 function createEl(tag: string, attrs?: Record<string, string>): Element {
@@ -1220,7 +1218,7 @@ function parseOriginalBodyStructure(originalXml: string): {
   body: Element;
   slots: ParagraphSlot[];
 } {
-  const doc = new DOMParser().parseFromString(originalXml, 'application/xml');
+  const doc = parseXml(originalXml);
   const bodies = doc.getElementsByTagName('w:body');
   if (!bodies.length) {
     throw new Error('Could not find w:body in document');
@@ -1285,9 +1283,8 @@ function buildDocumentPreservingStructure(
     const paraXml = paragraphXmls[i]!;
 
     // Parse the reconstructed paragraph XML into a DOM node
-    const fragDoc = new DOMParser().parseFromString(
+    const fragDoc = parseXml(
       `<__wrap xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">${paraXml}</__wrap>`,
-      'application/xml'
     );
     const newNode = doc.importNode(fragDoc.documentElement.firstChild!, true);
 

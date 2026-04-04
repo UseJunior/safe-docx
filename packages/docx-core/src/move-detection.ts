@@ -18,6 +18,7 @@ import {
   MoveDetectionSettings,
 } from './core-types.js';
 import { getLeafText } from './primitives/index.js';
+import { parseXml } from './primitives/xml.js';
 
 // =============================================================================
 // Text Extraction
@@ -405,8 +406,7 @@ export function generateMoveSourceMarkup(
   content: Element[],
   options: MoveMarkupOptions,
 ): MoveMarkup {
-  const { DOMParser } = require('@xmldom/xmldom') as typeof import('@xmldom/xmldom');
-  const doc = new DOMParser().parseFromString('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>', 'application/xml');
+  const doc = parseXml('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>');
   const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
   const dateStr = formatDateTime(options.dateTime);
   const rangeId = options.startId.toString();
@@ -456,8 +456,7 @@ export function generateMoveDestinationMarkup(
   content: Element[],
   options: MoveMarkupOptions
 ): MoveMarkup {
-  const { DOMParser } = require('@xmldom/xmldom') as typeof import('@xmldom/xmldom');
-  const doc = new DOMParser().parseFromString('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>', 'application/xml');
+  const doc = parseXml('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>');
   const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
   const dateStr = formatDateTime(options.dateTime);
   const rangeId = options.startId.toString();

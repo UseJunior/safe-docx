@@ -254,10 +254,11 @@ export function xmlToDocPreviewRuns(xmlString: string): DocPreviewRun[] {
     const wrapped = wrapFragment(xmlString);
 
     // Suppress xmldom warnings/errors — we handle failures via fallback.
+    // xmldom 0.9.x replaced errorHandler object with onError callback.
     const parser = new DOMParser({
-      errorHandler: { warning: () => {}, error: () => {}, fatalError: () => {} },
+      onError: () => {},
     });
-    const doc = parser.parseFromString(wrapped, 'text/xml');
+    const doc = parser.parseFromString(wrapped, 'text/xml') as unknown as Document;
 
     // Find all <w:p> elements.
     const paragraphs = doc.getElementsByTagNameNS(W_NS, 'p');

@@ -5,8 +5,8 @@
  * Replaces the old WmlElement POJO pattern with actual xmldom Elements.
  */
 
-import { DOMParser } from '@xmldom/xmldom';
 import { childElements } from '../primitives/index.js';
+import { parseXml } from '../primitives/xml.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -14,9 +14,8 @@ const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
  * Shared Document instance for creating elements in tests.
  * Using a single document avoids cross-document adoption issues.
  */
-export const testDoc = new DOMParser().parseFromString(
+export const testDoc = parseXml(
   '<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
-  'application/xml',
 );
 
 /**
