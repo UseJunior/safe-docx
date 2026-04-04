@@ -47,7 +47,7 @@ describe('Multi-platform MCP discovery docs', () => {
 
       const entrypointContent = fs.readFileSync(entrypointPath, 'utf-8');
       expect(entrypointContent).toContain('read_file');
-      expect(entrypointContent).toContain('Trust Boundary');
+      expect(entrypointContent).toContain('replace_text');
 
       const server = manifest.mcpServers['safe-docx'];
       expect(server.command).toBeDefined();
