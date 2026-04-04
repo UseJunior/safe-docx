@@ -97,6 +97,45 @@ describe('Round-Trip Tests - Inplace Reconstruction', () => {
   }
 });
 
+test('multiple-changes inplace: deleted text preserves xml:space on whitespace fragments', async ({ given, when, then }: AllureBddContext) => {
+  let original: Buffer;
+  let revised: Buffer;
+  let resultXml: string;
+
+  await given('multiple-changes original and revised documents are loaded', async () => {
+    original = await readFile(join(fixturesPath, 'multiple-changes', 'original.docx'));
+    revised = await readFile(join(fixturesPath, 'multiple-changes', 'revised.docx'));
+  });
+
+  await when('documents are compared in inplace mode', async () => {
+    const result = await compareDocuments(original, revised, {
+      engine: 'atomizer',
+      reconstructionMode: 'inplace',
+    });
+    const resultArchive = await DocxArchive.load(result.document);
+    resultXml = await resultArchive.getDocumentXml();
+  });
+
+  await then('all w:delText elements containing whitespace have xml:space="preserve"', () => {
+    // Parse the result XML and check every w:delText element
+    const { DOMParser } = require('@xmldom/xmldom');
+    const doc = new DOMParser().parseFromString(resultXml, 'application/xml');
+    const delTexts = doc.getElementsByTagName('w:delText');
+    for (let i = 0; i < delTexts.length; i++) {
+      const el = delTexts[i]!;
+      const text = el.textContent ?? '';
+      if (/\s/.test(text)) {
+        expect(
+          el.getAttribute('xml:space'),
+          `w:delText with whitespace "${text}" must have xml:space="preserve"`,
+        ).toBe('preserve');
+      }
+    }
+    // Sanity check: there should be at least one deleted whitespace fragment
+    expect(delTexts.length).toBeGreaterThan(0);
+  });
+});
+
 test('split-run-boundary-change: reject changes should match original', async ({ given, when, then }: AllureBddContext) => {
   const makeDocxWithRuns = async (runs: string[]): Promise<Buffer> => {
     const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
