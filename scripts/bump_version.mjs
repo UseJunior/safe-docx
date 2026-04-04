@@ -73,6 +73,9 @@ function checkVersionSync() {
   const smitheryManifest = readJson(SMITHERY_MANIFEST_JSON);
   versions.set(SMITHERY_MANIFEST_JSON, smitheryManifest.payload?.serverCard?.serverInfo?.version);
 
+  const geminiManifest = readJson('gemini-extension.json');
+  versions.set('gemini-extension.json', geminiManifest.version);
+
   const serverJson = readJson('packages/safe-docx/server.json');
   versions.set('packages/safe-docx/server.json', serverJson.version);
   if (serverJson.packages?.[0]?.version !== serverJson.version) {
@@ -156,7 +159,14 @@ function bumpVersion(newVersion) {
   writeJson(SMITHERY_MANIFEST_JSON, smitheryManifest);
   console.log(`  ✓ ${SMITHERY_MANIFEST_JSON}`);
 
-  // 3b. Update server.json
+  // 3b. Update gemini-extension.json
+  const GEMINI_JSON = 'gemini-extension.json';
+  const geminiManifest = readJson(GEMINI_JSON);
+  geminiManifest.version = newVersion;
+  writeJson(GEMINI_JSON, geminiManifest);
+  console.log(`  ✓ ${GEMINI_JSON}`);
+
+  // 3c. Update server.json
   const SERVER_JSON = 'packages/safe-docx/server.json';
   const serverJson = readJson(SERVER_JSON);
   serverJson.version = newVersion;
