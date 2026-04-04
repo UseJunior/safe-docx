@@ -42,6 +42,13 @@ describe('Multi-platform MCP discovery docs', () => {
       expect(manifest.entrypoint).toBe('GEMINI.md');
       expect(manifest.contextFileName).toBe('GEMINI.md');
 
+      const entrypointPath = path.join(REPO_ROOT, manifest.entrypoint);
+      expect(fs.existsSync(entrypointPath)).toBe(true);
+
+      const entrypointContent = fs.readFileSync(entrypointPath, 'utf-8');
+      expect(entrypointContent).toContain('read_file');
+      expect(entrypointContent).toContain('Trust Boundary');
+
       const server = manifest.mcpServers['safe-docx'];
       expect(server.command).toBeDefined();
       expect(server.args).toBeDefined();
