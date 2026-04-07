@@ -6,6 +6,13 @@ description: >-
   docx," "change the contract," "redline the document," "compare these Word files,"
   "add a comment to the docx," "read this Word file," or "mark up the agreement."
   Not for from-scratch document generation.
+license: MIT
+compatibility: >-
+  Works with any agent. Local MCP server requires Node.js >=20
+  and runs entirely on the local filesystem.
+metadata:
+  author: safe-docx
+  version: "0.1.0"
 ---
 
 # Editing .docx Files with Safe-DOCX
