@@ -1,7 +1,7 @@
 name: PR Title Lint
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, edited, synchronize, reopened]
     branches: [main]
 
@@ -31,15 +31,18 @@ jobs:
             revert
             build
           requireScope: false
-          subjectPattern: ^[a-z].+$
+          subjectPattern: ^(?![A-Z][a-z]).+$
           subjectPatternError: |
-            The subject must start with a lowercase letter.
+            The subject must not start with a Title Case word (e.g. "Add", "Update").
+            Acronyms like SHA, API, URL are fine. Lowercase starts are fine.
 
             Examples of valid PR titles:
               feat(docx-core): add paragraph diffing
               fix: correct bookmark cleanup order
               chore(release): bump workspace versions
               ci: add PR title validation
+              ci: SHA-pin all GitHub Actions
+              feat: API migration to v2
 
   auto-label:
     name: Apply type label from PR title
