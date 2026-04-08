@@ -46,7 +46,7 @@ Longer is better — think essay, not tweet.
 Fixes: #42
 ```
 
-**Valid types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`, `style`
+**Valid types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`, `style`, `revert`, `build`
 
 **Scopes** should match the package or area you're changing:
 - `fix(docx-core):` — bug fix in the core OOXML library
@@ -56,9 +56,13 @@ Fixes: #42
 
 Scope your commits to one package when possible. Cross-package changes should use the primary package as scope.
 
+**Subject casing:** The subject (the part after the colon) must not start with a Title Case word like "Add" or "Update". Lowercase starts and all-caps acronyms (SHA, API, URL) are fine.
+
 **Reference issues** in the commit body: `Fixes: #N` (closes the issue) or `Ref: #N` (related but doesn't close).
 
 ## Pull Request Guidelines
+
+Pull request titles follow the same Conventional Commits format as commit messages. A CI check (`Validate conventional title`) enforces this on every PR.
 
 - **Keep PRs small and focused.** 10 small PRs are better than 1 monolithic one.
 - **A PR doesn't have to be done** — or even work — but it should represent clean progress in one direction.
