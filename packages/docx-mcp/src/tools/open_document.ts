@@ -55,8 +55,12 @@ export async function openDocument(
         'Copy the file to ~/Downloads/ or ~/Documents/ first, then pass that path.',
       );
     }
-    if (path.extname(expanded).toLowerCase() !== '.docx') {
-      return err('INVALID_FILE_TYPE', `Invalid file type: ${path.extname(expanded)}`, 'Only .docx files are supported.');
+    const extension = path.extname(expanded).toLowerCase();
+    if (extension !== '.docx') {
+      const hint = extension === '.dotx'
+        ? 'Only .docx files are supported in the local runtime. Convert the .dotx template to .docx before opening it.'
+        : 'Only .docx files are supported.';
+      return err('INVALID_FILE_TYPE', `Invalid file type: ${extension}`, hint);
     }
     const policy = await enforceReadPathPolicy(filePath);
     if (!policy.ok) return policy.response;

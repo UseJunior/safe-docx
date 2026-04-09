@@ -81,6 +81,30 @@ describe('open_document', () => {
     await then('it fails with INVALID_FILE_TYPE', () => { assertFailure(result, 'INVALID_FILE_TYPE', 'non-docx file'); });
   });
 
+  test('rejects .dotx template files with explicit conversion guidance', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createTestSessionManager>;
+    let filePath: string;
+    let result: Awaited<ReturnType<typeof openDocument>>;
+
+    await given('a local Word template file with a .dotx extension', async () => {
+      mgr = createTestSessionManager();
+      const tmpDir = await createTrackedTempDir('open-test-');
+      filePath = path.join(tmpDir, 'template.dotx');
+      await fs.writeFile(filePath, 'not a docx template');
+    });
+    await when('openDocument is called', async () => {
+      result = await openDocument(mgr, { file_path: filePath });
+    });
+    await then('it fails with INVALID_FILE_TYPE', () => {
+      assertFailure(result, 'INVALID_FILE_TYPE', '.dotx template file');
+    });
+    await and('the hint explains that local Safe Docx is .docx-only for now', () => {
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('expected .dotx template file to fail');
+      expect(result.error.hint).toContain('Convert the .dotx template to .docx before opening it.');
+    });
+  });
+
   test('rejects non-existent path with FILE_NOT_FOUND', async ({ given, when, then }: AllureBddContext) => {
     let mgr: ReturnType<typeof createTestSessionManager>;
     let filePath: string;

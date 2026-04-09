@@ -5,6 +5,7 @@ This checklist is the central trust artifact for the local Safe Docx MCP runtime
 ## Quick Decision
 
 - If you are editing `.docx` files, use local Safe Docx runtime: `npx -y @usejunior/safe-docx`
+- If you have a Word template file (`.dotx`), convert it to `.docx` first; the local Safe Docx runtime intentionally rejects `.dotx` for now
 - If you need hosted template filling, use a separate remote template workflow (not the local Safe Docx editor runtime)
 
 ## Trust Boundary

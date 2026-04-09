@@ -142,6 +142,8 @@ Safe Docx is not a from-scratch document generation toolkit.
 
 If your primary need is generating new `.docx` files from templates/programmatic layout, use packages such as [`docx`](https://www.npmjs.com/package/docx).
 
+The local Safe Docx runtime also intentionally rejects Word template files (`.dotx`) for now. Convert the template to a normal `.docx` document before opening it here.
+
 ## Document Families
 
 ### Automated fixture coverage in this repo
