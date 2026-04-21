@@ -8,22 +8,127 @@ description: >-
   Not for from-scratch document generation.
 license: MIT
 compatibility: >-
-  Works with any agent. Local MCP server requires Node.js >=20
-  and runs entirely on the local filesystem.
+  Works with any MCP-compatible agent. Requires Node.js >=18.0.0 and npm
+  (for npx) on the host machine. The MCP server runs locally as a stdio
+  child process. Install-time: npm registry fetch (one-time, cacheable).
+  Runtime: zero network calls, file access limited to ~/ and system temp.
+requires:
+  binaries:
+    - node (>=18.0.0)
+    - npx (bundled with npm)
+  network:
+    install_time: npm registry (registry.npmjs.org) — one-time fetch
+    runtime: none
+  filesystem:
+    - ~/ (home directory)
+    - system temp directories
 metadata:
   author: safe-docx
-  version: "0.1.0"
+  version: "0.3.0"
 ---
 
 # Editing .docx Files with Safe-DOCX
 
-Safe-DOCX is a local MCP server for surgically editing existing `.docx` files. It preserves formatting, generates tracked-changes redlines, and runs entirely on the local filesystem — no hosted endpoint, no data leaves the machine.
+Safe-DOCX is a local MCP server for surgically editing existing `.docx` files. It preserves formatting, generates tracked-changes redlines, and — once installed — runs entirely on the local filesystem with zero network activity.
+
+## Source Code and Audit
+
+Safe-DOCX is fully open source (MIT license). Review the complete source before installing:
+
+- **GitHub**: https://github.com/UseJunior/safe-docx
+- **npm registry**: https://www.npmjs.com/package/@usejunior/safe-docx
+- **Code coverage**: Published via Codecov on every release
+- **Conformance harness**: Automated spec coverage tests run in CI on every commit
+- **No postinstall scripts** — verify: `npm view @usejunior/safe-docx scripts` shows no `postinstall` or `install` hooks
+
+All security claims below are verifiable by reading the source.
+
+## Runtime Requirements
+
+Safe-DOCX requires these binaries to be available on the host:
+
+| Binary | Minimum version | Why |
+|--------|-----------------|-----|
+| `node` | 18.0.0 | Authoritative version from `packages/safe-docx/package.json` engines field |
+| `npx` | Bundled with npm | Used by the recommended MCP connector to launch the server |
+
+If you prefer not to use `npx`, see **Offline / Pinned Installation** below for alternatives.
 
 ## Safety Model
 
-- **Local-only stdio runtime** — the MCP server runs as a child process, never binds a port.
+Safe-DOCX's safety model has two distinct phases: **install time** (when the package is fetched) and **runtime** (when the MCP server is running).
+
+### Install-Time Behavior (network required, one-time)
+
+- **npm registry fetch** — the recommended connector command `npx -y @usejunior/safe-docx` downloads the package from `registry.npmjs.org` on first run. Subsequent runs use the cached copy unless the cache is cleared.
+- **No postinstall scripts** — the package declares no `postinstall`, `preinstall`, or `install` hooks. Verify with `npm view @usejunior/safe-docx scripts`.
+- **Provenance** — releases are published with npm provenance (`--provenance`), so you can verify the package was built from the public GitHub repo via GitHub Actions.
+- **If you need guaranteed offline install** — pin a specific version and vendor it locally. See the next section.
+
+### Runtime Behavior (zero network)
+
+- **Local-only stdio runtime** — the MCP server runs as a child process, never binds a port. Verify: the entry point (`src/server.ts`) uses `StdioServerTransport` with no HTTP listener. ([source](https://github.com/UseJunior/safe-docx/blob/main/packages/safe-docx/src/server.ts))
+- **No outbound network calls** — at runtime, the package makes zero outbound HTTP requests. Verify: `grep -r "fetch\|http\.\|https\.\|net\." packages/safe-docx/src/` returns no matches in application code (test fixtures excluded).
 - **Path policy** — only files under `~/` (home directory) and system temp directories are accessible. Symlinks must resolve to allowed roots.
 - **Archive guardrails** — zip bomb detection and hostile payload rejection protect against malformed `.docx` inputs.
+
+## Offline / Pinned Installation
+
+For high-security environments where `npx` auto-fetch is unacceptable, install the package manually and pin the version:
+
+```bash
+# Option 1: Pin a specific version globally
+npm install -g @usejunior/safe-docx@0.9.0
+
+# Then configure your MCP client to invoke it by path:
+# command: "safe-docx"
+# args: []
+
+# Option 2: Vendor the package into your project
+npm pack @usejunior/safe-docx@0.9.0
+# Inspect the tarball, then install it from disk:
+npm install -g ./usejunior-safe-docx-0.9.0.tgz
+
+# Option 3: Build from source (most auditable)
+git clone https://github.com/UseJunior/safe-docx.git
+cd safe-docx
+git checkout <release-tag>
+npm ci
+npm run build
+npm link packages/safe-docx
+```
+
+After any of these, your MCP client config becomes:
+
+```json
+{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "safe-docx",
+      "args": []
+    }
+  }
+}
+```
+
+Using `command: "safe-docx"` (the installed binary) instead of `command: "npx"` eliminates the install-time network fetch on every invocation.
+
+### Always pin the version
+
+Even with `npx`, you can pin the version to prevent unexpected updates:
+
+```json
+{
+  "mcpServers": {
+    "safe-docx": {
+      "command": "npx",
+      "args": ["-y", "@usejunior/safe-docx@0.9.0"]
+    }
+  }
+}
+```
+
+Before upgrading, review the changelog: https://github.com/UseJunior/safe-docx/blob/main/CHANGELOG.md
 
 ## When to Use This Skill
 
@@ -159,6 +264,16 @@ Call `accept_changes(session_id)` to flatten all tracked changes into a clean do
 
 By default, only files under `~/` (home directory) and system temp directories are accessible. Symlinks must resolve to allowed roots.
 
+## Related Skills
+
+- **Open Agreements** (`open-agreements`) — fill standard legal templates (NDAs, SAFEs, cloud service agreements) and produce signable DOCX files: `clawhub install open-agreements/open-agreements`
+- **Outlook Email Management** (`outlook-email-management`) — manage Outlook email with AI agents: `clawhub install stevenobiajulu/outlook-email-management`
+
 ## Connectors
 
 For MCP server setup instructions (Claude Desktop, Cursor, Claude Code), see [CONNECTORS.md](./CONNECTORS.md).
+
+## Feedback
+
+If this skill helped, star us on GitHub: https://github.com/UseJunior/safe-docx
+On ClawHub: `clawhub star usejunior/docx-editing`

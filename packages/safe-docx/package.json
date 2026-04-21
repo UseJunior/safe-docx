@@ -51,6 +51,8 @@
     "model-context-protocol",
     "docx",
     "word",
+    "document",
+    "editing",
     "document-editing",
     "tracked-changes",
     "document-comparison",

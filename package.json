@@ -74,5 +74,18 @@
   "engines": {
     "node": ">=20"
   },
+  "keywords": [
+    "docx",
+    "word",
+    "document",
+    "ai",
+    "mcp",
+    "legal",
+    "contract",
+    "editing",
+    "tracked-changes",
+    "redline",
+    "safedocx"
+  ],
   "license": "MIT"
 }
