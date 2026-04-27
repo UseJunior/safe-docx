@@ -201,12 +201,11 @@ const LEAF_NODE_TAGS = new Set([
   'w:footnoteReference', // Footnote reference
   'w:endnoteReference', // Endnote reference
   'w:commentReference', // Comment reference anchor (run-level child).
-  // w:commentRangeStart / w:commentRangeEnd are paragraph-level markers, not
-  // run-level leaves; treating them as leaves makes the rebuild reconstructor
-  // wrap them in a synthetic <w:r>, which is non-conformant. Trade-off: comment
-  // ranges (the highlighted span) are lost on rebuild, but the comment itself
-  // still anchors at commentReference. Restoring ranges requires reconstructor
-  // changes to emit paragraph-level atoms outside <w:r> wrappers.
+  // Note: w:commentRangeStart / w:commentRangeEnd / w:bookmarkStart / w:bookmarkEnd
+  // are paragraph-level markers (siblings of <w:r>, not children). They are
+  // tracked in PARAGRAPH_LEVEL_TAGS below and atomized via a separate branch in
+  // atomizeTreeInternal so the reconstructor can emit them outside synthetic
+  // <w:r> wrappers.
   'w:separator', // Separator
   'w:continuationSeparator', // Continuation separator
   'w:pgNum', // Page number
@@ -214,6 +213,26 @@ const LEAF_NODE_TAGS = new Set([
   'w:pict', // Picture (VML)
   'w:object', // Embedded object
   'mc:AlternateContent', // Alternate content
+]);
+
+/**
+ * Tag names that are paragraph-level OOXML markers per ECMA-376 §17.13.5.
+ *
+ * These elements are valid as direct children of <w:p> (and revision wrappers
+ * like <w:ins>/<w:del>/<w:moveFrom>/<w:moveTo>) but never inside <w:r>. The
+ * rebuild reconstructor emits them as siblings of <w:r>, not leaves wrapped in
+ * a synthetic run.
+ *
+ * Scope: commentRange and bookmark only. moveFromRange / moveToRange and
+ * permStart / permEnd are deferred to follow-up issues — moveRange collides
+ * with the synthetic emission in wrapWithMoveFrom and wrapWithMoveTo, and
+ * permStart / permEnd needs fixture coverage.
+ */
+export const PARAGRAPH_LEVEL_TAGS = new Set([
+  'w:commentRangeStart',
+  'w:commentRangeEnd',
+  'w:bookmarkStart',
+  'w:bookmarkEnd',
 ]);
 
 /**
@@ -253,6 +272,18 @@ export interface AtomizeTreeOptions {
    * Default: true.
    */
   splitTextIntoWords?: boolean;
+  /**
+   * Atomize paragraph-level markers (commentRangeStart/End, bookmarkStart/End)
+   * so the rebuild reconstructor can re-emit them as siblings of <w:r>.
+   *
+   * MUST be false for inplace mode. Inplace handlers are run-anchored and
+   * silently no-op on atoms with no sourceRunElement, but inplace's bookmark
+   * reconciliation breaks if bookmarkStart/End atoms enter the stream
+   * (orphaned bookmark warnings, round-trip safety check fails).
+   *
+   * Default: false.
+   */
+  atomizeParagraphLevelMarkers?: boolean;
 }
 
 /**
@@ -265,6 +296,18 @@ export interface AtomizeTreeOptions {
  */
 export function isLeafNode(element: WmlElement): boolean {
   return LEAF_NODE_TAGS.has(element.tagName);
+}
+
+/**
+ * Check if an element is a paragraph-level OOXML marker.
+ *
+ * Paragraph-level markers (commentRangeStart/End, bookmarkStart/End) are
+ * atomized only when they sit inside a <w:p> ancestor — body/table-sibling
+ * placements stay out of the atom stream and are handled by the scaffold-strip
+ * block in the reconstructor.
+ */
+export function isParagraphLevelLeaf(element: WmlElement): boolean {
+  return PARAGRAPH_LEVEL_TAGS.has(element.tagName);
 }
 
 // =============================================================================
@@ -423,7 +466,7 @@ function atomizeTreeInternal(
   ancestors: WmlElement[],
   part: OpcPart,
   state: AtomizationState,
-  options: Required<Pick<AtomizeTreeOptions, 'cloneLeafNodes'>>
+  options: Required<Pick<AtomizeTreeOptions, 'cloneLeafNodes' | 'atomizeParagraphLevelMarkers'>>
 ): ComparisonUnitAtom[] {
   const atoms: ComparisonUnitAtom[] = [];
 
@@ -435,6 +478,24 @@ function atomizeTreeInternal(
     });
     atoms.push(atom);
     // Update last content hash for context-aware empty paragraph matching
+    state.lastContentHash = atom.sha1Hash;
+  } else if (
+    options.atomizeParagraphLevelMarkers &&
+    isParagraphLevelLeaf(node) &&
+    ancestors.some((a) => a.tagName === 'w:p')
+  ) {
+    // Paragraph-level markers (commentRange*, bookmark*) inside a <w:p> become
+    // atoms so the rebuild reconstructor can re-emit them as siblings of <w:r>.
+    // Body/table-sibling placements are intentionally skipped — they are
+    // already handled by the scaffold-strip block in the reconstructor and
+    // would otherwise misattach to the previous paragraph in
+    // assignParagraphIndices().
+    const atom = createComparisonUnitAtom({
+      contentElement: options.cloneLeafNodes ? (node.cloneNode(true) as Element) : node,
+      ancestors,
+      part,
+    });
+    atoms.push(atom);
     state.lastContentHash = atom.sha1Hash;
   } else if (isEmptyParagraph(node)) {
     // Create empty paragraph atom with context-aware hash
@@ -471,6 +532,7 @@ export function atomizeTree(
     mergeAcrossRuns: options.mergeAcrossRuns ?? true,
     mergePunctuationAcrossRuns: options.mergePunctuationAcrossRuns ?? true,
     splitTextIntoWords: options.splitTextIntoWords ?? true,
+    atomizeParagraphLevelMarkers: options.atomizeParagraphLevelMarkers ?? false,
   };
 
   const state: AtomizationState = {

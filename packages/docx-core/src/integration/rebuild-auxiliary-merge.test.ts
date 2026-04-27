@@ -16,6 +16,30 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { compareDocuments } from '../index.js';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
+import { parseXml } from '../primitives/xml.js';
+
+/**
+ * Find every element with the given local name and report its immediate-parent
+ * tag and the chain of ancestor tags. Used by the marker-position assertions
+ * below.
+ */
+function inspectElements(xml: string, localName: string): Array<{ parent: string; ancestors: string[]; idAttr: string | null }> {
+  const doc = parseXml(xml);
+  const found: Array<{ parent: string; ancestors: string[]; idAttr: string | null }> = [];
+  const all = doc.getElementsByTagName(localName);
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i]!;
+    const parent = (el.parentNode as Element | null)?.tagName ?? '';
+    const ancestors: string[] = [];
+    let cur: Element | null = el.parentNode as Element | null;
+    while (cur) {
+      ancestors.push(cur.tagName);
+      cur = cur.parentNode as Element | null;
+    }
+    found.push({ parent, ancestors, idAttr: el.getAttribute('w:id') });
+  }
+  return found;
+}
 
 const test = testAllure
   .epic('Document Comparison')
@@ -119,6 +143,19 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
         expect(parts.documentXml).not.toMatch(/<w:r\b[^>]*>\s*<w:commentRangeStart\b/);
         expect(parts.documentXml).not.toMatch(/<w:r\b[^>]*>\s*<w:commentRangeEnd\b/);
 
+        // Issue #106: range markers must be present and at paragraph-level
+        // position — direct children of w:p (consumerCompatibility hoists them
+        // out of revision wrappers so they survive accept/reject).
+        const starts = inspectElements(parts.documentXml, 'w:commentRangeStart');
+        const ends = inspectElements(parts.documentXml, 'w:commentRangeEnd');
+        expect(starts.length).toBeGreaterThan(0);
+        expect(ends.length).toBeGreaterThan(0);
+        const validParents = new Set(['w:p', 'w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
+        for (const m of [...starts, ...ends]) {
+          expect(m.ancestors).not.toContain('w:r');
+          expect(validParents.has(m.parent)).toBe(true);
+        }
+
         expect(parts.contentTypesXml!).toContain('word/comments.xml');
         expect(parts.contentTypesXml!).toContain(
           'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml'
@@ -216,6 +253,121 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
 
         const userFootnoteCount = (parts.footnotesXml!.match(/<w:footnote w:id="1"/g) ?? []).length;
         expect(userFootnoteCount).toBe(1);
+      });
+    });
+  });
+});
+
+describe('Paragraph-level marker reconstruction on rebuild (issue #106)', () => {
+  describe('Cross-paragraph comment span', () => {
+    test('rebuild keeps commentRangeStart and commentRangeEnd in their respective paragraphs', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has two plain paragraphs and revised adds a comment spanning both', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+          commentSpanParagraphs: { start: 0, end: 1 },
+          commentText: 'Spanning comment',
+          commentAuthor: 'Reviewer',
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('start and end markers survive rebuild at paragraph level with matching ids', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        const starts = inspectElements(parts.documentXml, 'w:commentRangeStart');
+        const ends = inspectElements(parts.documentXml, 'w:commentRangeEnd');
+        expect(starts.length).toBe(1);
+        expect(ends.length).toBe(1);
+        expect(starts[0]!.idAttr).toBe(ends[0]!.idAttr);
+
+        const validParents = new Set(['w:p', 'w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
+        for (const m of [...starts, ...ends]) {
+          expect(m.ancestors).not.toContain('w:r');
+          expect(validParents.has(m.parent)).toBe(true);
+        }
+      });
+    });
+  });
+
+  describe('Sibling-style scaffold markers', () => {
+    test('body-level bookmarks are stripped on rebuild and do not leak into reconstructed paragraphs', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has a sibling-style bookmark between two paragraphs', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['Para A', 'Para B'],
+          siblingBookmarkBefore: { index: 1, name: '_scaffold_bookmark', id: 999 },
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['Para A revised', 'Para B'],
+          siblingBookmarkBefore: { index: 1, name: '_scaffold_bookmark', id: 999 },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the body-level bookmark does not appear inside any reconstructed <w:p>', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        // Scaffold-strip removes body-level scaffold bookmarks. After
+        // strip+balance, any surviving start must not be inside a <w:p>.
+        const starts = inspectElements(parts.documentXml, 'w:bookmarkStart').filter(
+          (m) => m.idAttr === '999'
+        );
+        for (const m of starts) {
+          expect(m.ancestors).not.toContain('w:p');
+        }
+      });
+    });
+  });
+
+  describe('Inplace regression — comment span', () => {
+    test('inplace mode succeeds with a cross-paragraph comment span on the revised side', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has plain paragraphs and revised adds a spanning comment', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+          commentSpanParagraphs: { start: 0, end: 1 },
+          commentText: 'Spanning comment',
+          commentAuthor: 'Reviewer',
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in inplace mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+      });
+
+      await then('inplace mode is used (no fallback) and output is structurally valid', async () => {
+        expect(result.reconstructionModeUsed).toBe('inplace');
+        const parts = await getResultParts(result.document);
+        // inplace output must contain the comment anchor; the full span survives
+        // because the markers are already present in the revised archive.
+        expect(parts.documentXml).toContain('w:commentReference');
       });
     });
   });

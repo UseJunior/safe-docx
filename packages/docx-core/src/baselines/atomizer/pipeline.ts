@@ -752,14 +752,20 @@ export async function compareDocumentsAtomizer(
     if (selected) {
       comparisonResult = selected;
     } else {
-      comparisonResult = runComparisonPass(undefined, 'rebuild');
+      comparisonResult = runComparisonPass(
+        { atomizeParagraphLevelMarkers: true },
+        'rebuild'
+      );
       fallbackReason = 'round_trip_safety_check_failed';
       fallbackDiagnostics = {
         attempts: failedAttempts,
       };
     }
   } else {
-    comparisonResult = runComparisonPass(undefined, 'rebuild');
+    comparisonResult = runComparisonPass(
+      { atomizeParagraphLevelMarkers: true },
+      'rebuild'
+    );
   }
 
   const { mergedAtoms, newDocumentXml } = comparisonResult;

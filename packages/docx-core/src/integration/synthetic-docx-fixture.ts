@@ -11,13 +11,44 @@ export interface SyntheticDocxOptions {
   // When true, the comment scenario also emits commentsExtended.xml + people.xml
   // with matching paraId / author entries. Used to test ancillary-part bootstrap.
   commentAncillaryParts?: boolean;
+  /**
+   * Cross-paragraph comment span. The comment opens at the start of
+   * paragraphs[start] and closes at the end of paragraphs[end]. The
+   * commentReference run is appended to paragraphs[end].
+   *
+   * Mutually exclusive with commentOnParagraph.
+   */
+  commentSpanParagraphs?: { start: number; end: number };
+  /**
+   * Bookmark spanning a single paragraph (start and end inside the same w:p).
+   * Used to verify paragraph-internal bookmark preservation through rebuild.
+   */
+  bookmarkOnParagraph?: { paragraph: number; name: string; id?: number };
+  /**
+   * Body-level (sibling of <w:p>) bookmark inserted between
+   * paragraphs[index - 1] and paragraphs[index]. Used to verify scaffold
+   * markers do not leak into reconstructed paragraphs.
+   */
+  siblingBookmarkBefore?: { index: number; name: string; id?: number };
 }
 
 export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Buffer> {
   const hasFootnote = opts.footnoteOnParagraph != null;
   const hasComment = opts.commentOnParagraph != null;
+  const hasCommentSpan = opts.commentSpanParagraphs != null;
+  const hasBookmark = opts.bookmarkOnParagraph != null;
+  const hasSiblingBookmark = opts.siblingBookmarkBefore != null;
 
-  const paragraphsXml = opts.paragraphs.map((text, idx) => {
+  if (hasComment && hasCommentSpan) {
+    throw new Error('commentOnParagraph and commentSpanParagraphs are mutually exclusive');
+  }
+
+  const bookmarkId = opts.bookmarkOnParagraph?.id ?? 100;
+  const siblingBookmarkId = opts.siblingBookmarkBefore?.id ?? 200;
+  const spanStart = opts.commentSpanParagraphs?.start;
+  const spanEnd = opts.commentSpanParagraphs?.end;
+
+  const paragraphParts: string[] = opts.paragraphs.map((text, idx) => {
     const escaped = text
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
@@ -37,8 +68,41 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
       return `<w:p>${extra}</w:p>`;
     }
 
+    if (hasCommentSpan && (idx === spanStart || idx === spanEnd)) {
+      const before = idx === spanStart ? `<w:commentRangeStart w:id="1"/>` : '';
+      const after = idx === spanEnd
+        ? `<w:commentRangeEnd w:id="1"/>` +
+          `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r>`
+        : '';
+      return `<w:p>${before}<w:r><w:t>${escaped}</w:t></w:r>${after}${extra}</w:p>`;
+    }
+
+    if (hasBookmark && idx === opts.bookmarkOnParagraph!.paragraph) {
+      const name = opts.bookmarkOnParagraph!.name;
+      return (
+        `<w:p>` +
+        `<w:bookmarkStart w:id="${bookmarkId}" w:name="${name}"/>` +
+        `<w:r><w:t>${escaped}</w:t></w:r>` +
+        `<w:bookmarkEnd w:id="${bookmarkId}"/>` +
+        extra +
+        `</w:p>`
+      );
+    }
+
     return `<w:p><w:r><w:t>${escaped}</w:t></w:r>${extra}</w:p>`;
-  }).join('\n    ');
+  });
+
+  // Inject a body-level (sibling of <w:p>) bookmark before paragraphs[index].
+  // Bookmark*Start*/End placed as sibling of <w:p> per ECMA-376 §17.13.5.
+  if (hasSiblingBookmark) {
+    const { index, name } = opts.siblingBookmarkBefore!;
+    const sibling =
+      `<w:bookmarkStart w:id="${siblingBookmarkId}" w:name="${name}"/>` +
+      `<w:bookmarkEnd w:id="${siblingBookmarkId}"/>`;
+    paragraphParts.splice(index, 0, sibling);
+  }
+
+  const paragraphsXml = paragraphParts.join('\n    ');
 
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -74,7 +138,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     );
   }
 
-  if (hasComment) {
+  if (hasComment || hasCommentSpan) {
     const cText = opts.commentText ?? 'Test comment';
     const cAuthor = opts.commentAuthor ?? 'Author';
     const commentsXml =
