@@ -200,6 +200,9 @@ const LEAF_NODE_TAGS = new Set([
   'w:endnoteRef', // Endnote reference marker
   'w:footnoteReference', // Footnote reference
   'w:endnoteReference', // Endnote reference
+  'w:commentReference', // Comment reference anchor
+  'w:commentRangeStart', // Comment range start marker
+  'w:commentRangeEnd', // Comment range end marker
   'w:separator', // Separator
   'w:continuationSeparator', // Continuation separator
   'w:pgNum', // Page number

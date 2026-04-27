@@ -767,29 +767,31 @@ export async function compareDocumentsAtomizer(
   // Step 12: Clone appropriate archive and update document.xml.
   // Use the revised archive only for true inplace output.
   const baseArchive = comparisonResult.outputMode === 'inplace' ? revisedArchive : originalArchive;
+  // The merge source is the *opposite* archive from the base: inplace pulls
+  // deleted-but-still-referenced definitions from the original, rebuild pulls
+  // added-but-still-referenced definitions from the revised. Without this,
+  // rebuild output ships dangling references when the original lacks an
+  // auxiliary part that the revised side introduced (issue #94).
+  const mergeSourceArchive = comparisonResult.outputMode === 'inplace' ? originalArchive : revisedArchive;
   const resultArchive = await baseArchive.clone();
   resultArchive.setDocumentXml(newDocumentXml);
 
-  // Step 12b: For inplace mode, merge auxiliary part definitions (footnotes,
-  // endnotes, comments) from the original document. Inplace reconstruction
-  // inserts deleted content that may reference definitions not present in the
-  // revised archive.
-  if (comparisonResult.outputMode === 'inplace') {
-    const mergeResults = new Map<string, AuxiliaryMergeResult>();
-    for (const descriptor of AUXILIARY_PARTS) {
-      const result = await mergeAuxiliaryPartDefinitions(
-        originalArchive, resultArchive, newDocumentXml, descriptor
-      );
-      if (result.mergedIds.size > 0) {
-        mergeResults.set(descriptor.label, result);
-      }
+  // Step 12b: Merge auxiliary part definitions (footnotes, endnotes, comments).
+  // Reconstruction may insert content (deleted in inplace, added in rebuild)
+  // whose definitions are missing from the base archive.
+  const mergeResults = new Map<string, AuxiliaryMergeResult>();
+  for (const descriptor of AUXILIARY_PARTS) {
+    const result = await mergeAuxiliaryPartDefinitions(
+      mergeSourceArchive, resultArchive, newDocumentXml, descriptor
+    );
+    if (result.mergedIds.size > 0) {
+      mergeResults.set(descriptor.label, result);
     }
-    // Post-merge hook for comment ancillary parts
-    if (mergeResults.has('comment')) {
-      await mergeCommentAncillaryParts(
-        originalArchive, resultArchive, mergeResults.get('comment')!
-      );
-    }
+  }
+  if (mergeResults.has('comment')) {
+    await mergeCommentAncillaryParts(
+      mergeSourceArchive, resultArchive, mergeResults.get('comment')!
+    );
   }
 
   // Step 13: Save result and compute stats
@@ -937,16 +939,23 @@ async function mergeAuxiliaryPartDefinitions(
     const newDoc = parseXml(originalPartXml);
     const rootEl = newDoc.getElementsByTagName(descriptor.rootTag)[0] as Element;
     if (rootEl) {
-      // Remove all existing entries — we only want the missing ones
+      // Remove entries that are neither separators nor newly referenced.
+      // Footnotes/endnotes carry conventional separator entries at w:id="-1"
+      // (separator) and w:id="0" (continuationSeparator) that Word expects to
+      // exist; dropping them produces visibly broken output.
       const existingEntries = rootEl.getElementsByTagName(descriptor.entryTag);
       const toRemove: Element[] = [];
       for (let i = 0; i < existingEntries.length; i++) {
-        toRemove.push(existingEntries[i] as Element);
+        const el = existingEntries[i] as Element;
+        const id = el.getAttribute('w:id') ?? '';
+        if (id !== '-1' && id !== '0' && !referencedIds.has(id)) {
+          toRemove.push(el);
+        }
       }
       for (const el of toRemove) {
         rootEl.removeChild(el);
       }
-      // Add back only the missing entries
+      // Add back the missing entries (those referenced but not yet present)
       for (const el of missingElements) {
         const imported = newDoc.importNode(el, true);
         rootEl.appendChild(imported);
