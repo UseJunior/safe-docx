@@ -25,11 +25,11 @@ const existing = (process.env.SAFE_DOCX_ALLOWED_ROOTS ?? '')
   .map((entry) => entry.trim())
   .filter((entry) => entry.length > 0);
 
-// Realpath every candidate so symlinked roots (e.g. `/tmp` → `/private/tmp`
-// on macOS) match what `enforceReadPathPolicy` resolves at request time.
-// Without this, a worktree under `/tmp/foo` would add `/tmp/foo` to the
-// allowlist while the policy resolved fixture paths to `/private/tmp/foo`
-// and rejected them as PATH_NOT_ALLOWED.
+// Belt-and-suspenders: also realpath each candidate at setup time. The
+// runtime already canonicalizes every entry inside `resolveAllowedRoots`,
+// so this is hardening rather than the primary fix — but it makes
+// SAFE_DOCX_ALLOWED_ROOTS readable in test logs without having to
+// mentally re-resolve symlinks (e.g. `/tmp` → `/private/tmp` on macOS).
 function canonicalize(entry: string): string[] {
   if (!entry) return [];
   const resolved = path.resolve(entry);
