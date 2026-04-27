@@ -200,6 +200,13 @@ const LEAF_NODE_TAGS = new Set([
   'w:endnoteRef', // Endnote reference marker
   'w:footnoteReference', // Footnote reference
   'w:endnoteReference', // Endnote reference
+  'w:commentReference', // Comment reference anchor (run-level child).
+  // w:commentRangeStart / w:commentRangeEnd are paragraph-level markers, not
+  // run-level leaves; treating them as leaves makes the rebuild reconstructor
+  // wrap them in a synthetic <w:r>, which is non-conformant. Trade-off: comment
+  // ranges (the highlighted span) are lost on rebuild, but the comment itself
+  // still anchors at commentReference. Restoring ranges requires reconstructor
+  // changes to emit paragraph-level atoms outside <w:r> wrappers.
   'w:separator', // Separator
   'w:continuationSeparator', // Continuation separator
   'w:pgNum', // Page number
