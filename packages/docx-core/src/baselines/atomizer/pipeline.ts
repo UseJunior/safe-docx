@@ -935,27 +935,27 @@ async function mergeAuxiliaryPartDefinitions(
       resultArchive.setFile(descriptor.partPath, serializer.serializeToString(resultParsed.doc));
     }
   } else {
-    // Create part from scratch: clone root from original, insert missing entries
+    // Create part from scratch: clone root from merge source, drop every
+    // non-reserved entry, then append the missing referenced ones.
+    // Reserved entries are footnote/endnote separators identified by
+    // w:type="separator" / w:type="continuationSeparator" — Word expects
+    // them to exist and they don't carry user content. Filtering by w:type
+    // (not by magic w:id values) keeps this robust across authoring tools.
     const newDoc = parseXml(originalPartXml);
     const rootEl = newDoc.getElementsByTagName(descriptor.rootTag)[0] as Element;
     if (rootEl) {
-      // Remove entries that are neither separators nor newly referenced.
-      // Footnotes/endnotes carry conventional separator entries at w:id="-1"
-      // (separator) and w:id="0" (continuationSeparator) that Word expects to
-      // exist; dropping them produces visibly broken output.
       const existingEntries = rootEl.getElementsByTagName(descriptor.entryTag);
       const toRemove: Element[] = [];
       for (let i = 0; i < existingEntries.length; i++) {
         const el = existingEntries[i] as Element;
-        const id = el.getAttribute('w:id') ?? '';
-        if (id !== '-1' && id !== '0' && !referencedIds.has(id)) {
+        const type = el.getAttribute('w:type');
+        if (type !== 'separator' && type !== 'continuationSeparator') {
           toRemove.push(el);
         }
       }
       for (const el of toRemove) {
         rootEl.removeChild(el);
       }
-      // Add back the missing entries (those referenced but not yet present)
       for (const el of missingElements) {
         const imported = newDoc.importNode(el, true);
         rootEl.appendChild(imported);
@@ -963,7 +963,6 @@ async function mergeAuxiliaryPartDefinitions(
       resultArchive.setFile(descriptor.partPath, serializer.serializeToString(newDoc));
       result.createdPart = true;
 
-      // Bootstrap OPC metadata for the newly created part
       await ensureOpcMetadata(resultArchive, descriptor);
     }
   }
@@ -1114,13 +1113,12 @@ async function mergeCommentsExtended(
 
   if (entriesToMerge.length === 0) return;
 
-  let resultXml = await resultArchive.getFile('word/commentsExtended.xml');
+  const resultXml = await resultArchive.getFile('word/commentsExtended.xml');
 
   if (resultXml) {
     const resultDoc = parseXml(resultXml);
     const rootEl = resultDoc.documentElement;
 
-    // Check existing paraIds to avoid duplicates
     const existingParaIds = new Set<string>();
     const existing = rootEl.getElementsByTagName('w15:commentEx');
     for (let i = 0; i < existing.length; i++) {
@@ -1136,10 +1134,45 @@ async function mergeCommentsExtended(
     }
 
     resultArchive.setFile('word/commentsExtended.xml', serializer.serializeToString(resultDoc));
+    return;
   }
-  // If commentsExtended.xml doesn't exist in result, we don't create it —
-  // the file is optional and its absence won't cause crashes.
+
+  // Bootstrap: result lacks commentsExtended.xml but the merged comments
+  // depend on it for reply threading / done state. Clone the source's root
+  // (preserves namespaces), drop non-matching entries, then add OPC metadata.
+  const newDoc = parseXml(originalXml);
+  const newRoot = newDoc.documentElement;
+  const allEntries = newRoot.getElementsByTagName('w15:commentEx');
+  const toRemove: Element[] = [];
+  for (let i = 0; i < allEntries.length; i++) {
+    const el = allEntries[i] as Element;
+    const paraId = el.getAttribute('w15:paraId');
+    if (!paraId || !mergedParaIds.has(paraId)) toRemove.push(el);
+  }
+  for (const el of toRemove) newRoot.removeChild(el);
+  resultArchive.setFile('word/commentsExtended.xml', serializer.serializeToString(newDoc));
+  await ensureOpcMetadata(resultArchive, COMMENTS_EXTENDED_DESCRIPTOR);
 }
+
+const COMMENTS_EXTENDED_DESCRIPTOR: AuxiliaryPartDescriptor = {
+  label: 'commentsExtended',
+  partPath: 'word/commentsExtended.xml',
+  referenceTag: '',
+  entryTag: 'w15:commentEx',
+  rootTag: 'w15:commentsEx',
+  contentType: 'application/vnd.ms-word.commentsExtended+xml',
+  relationshipType: 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended',
+};
+
+const PEOPLE_DESCRIPTOR: AuxiliaryPartDescriptor = {
+  label: 'people',
+  partPath: 'word/people.xml',
+  referenceTag: '',
+  entryTag: 'w15:person',
+  rootTag: 'w15:people',
+  contentType: 'application/vnd.ms-word.people+xml',
+  relationshipType: 'http://schemas.microsoft.com/office/2011/relationships/people',
+};
 
 async function mergePeople(
   originalArchive: DocxArchive,
@@ -1165,13 +1198,12 @@ async function mergePeople(
 
   if (personsToMerge.length === 0) return;
 
-  let resultXml = await resultArchive.getFile('word/people.xml');
+  const resultXml = await resultArchive.getFile('word/people.xml');
 
   if (resultXml) {
     const resultDoc = parseXml(resultXml);
     const rootEl = resultDoc.documentElement;
 
-    // Check existing authors to avoid duplicates
     const existingAuthors = new Set<string>();
     const existing = rootEl.getElementsByTagName('w15:person');
     for (let i = 0; i < existing.length; i++) {
@@ -1187,9 +1219,23 @@ async function mergePeople(
     }
 
     resultArchive.setFile('word/people.xml', serializer.serializeToString(resultDoc));
+    return;
   }
-  // If people.xml doesn't exist in result, we don't create it —
-  // the file is optional and its absence won't cause crashes.
+
+  // Bootstrap: result lacks people.xml. Clone source root (preserves
+  // namespaces), remove non-matching authors, then add OPC metadata.
+  const newDoc = parseXml(originalXml);
+  const newRoot = newDoc.documentElement;
+  const allPersons = newRoot.getElementsByTagName('w15:person');
+  const toRemove: Element[] = [];
+  for (let i = 0; i < allPersons.length; i++) {
+    const el = allPersons[i] as Element;
+    const author = el.getAttribute('w15:author');
+    if (!author || !mergedAuthors.has(author)) toRemove.push(el);
+  }
+  for (const el of toRemove) newRoot.removeChild(el);
+  resultArchive.setFile('word/people.xml', serializer.serializeToString(newDoc));
+  await ensureOpcMetadata(resultArchive, PEOPLE_DESCRIPTOR);
 }
 
 /**

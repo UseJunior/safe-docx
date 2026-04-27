@@ -8,6 +8,9 @@ export interface SyntheticDocxOptions {
   commentOnParagraph?: number;
   commentText?: string;
   commentAuthor?: string;
+  // When true, the comment scenario also emits commentsExtended.xml + people.xml
+  // with matching paraId / author entries. Used to test ancillary-part bootstrap.
+  commentAncillaryParts?: boolean;
 }
 
 export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Buffer> {
@@ -89,6 +92,38 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     docRelEntries.push(
       `<Relationship Id="rId${rIdCounter}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/>`
     );
+
+    if (opts.commentAncillaryParts) {
+      const commentsExtendedXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">` +
+        `<w15:commentEx w15:paraId="00000001" w15:done="0"/>` +
+        `</w15:commentsEx>`;
+      zip.file('word/commentsExtended.xml', commentsExtendedXml);
+      contentTypeParts.push(
+        `<Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.ms-word.commentsExtended+xml"/>`
+      );
+      rIdCounter++;
+      docRelEntries.push(
+        `<Relationship Id="rId${rIdCounter}" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/>`
+      );
+
+      const peopleXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w15:people xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"` +
+        ` xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w15:person w15:author="${cAuthor}">` +
+        `<w15:presenceInfo w15:providerId="None" w15:userId="${cAuthor}@example.com"/>` +
+        `</w15:person></w15:people>`;
+      zip.file('word/people.xml', peopleXml);
+      contentTypeParts.push(
+        `<Override PartName="/word/people.xml" ContentType="application/vnd.ms-word.people+xml"/>`
+      );
+      rIdCounter++;
+      docRelEntries.push(
+        `<Relationship Id="rId${rIdCounter}" Type="http://schemas.microsoft.com/office/2011/relationships/people" Target="people.xml"/>`
+      );
+    }
   }
 
   const contentTypesXml =
@@ -124,6 +159,8 @@ export interface SyntheticResultParts {
   footnotesXml: string | null;
   endnotesXml: string | null;
   commentsXml: string | null;
+  commentsExtendedXml: string | null;
+  peopleXml: string | null;
   contentTypesXml: string | null;
   relsXml: string | null;
 }
@@ -135,6 +172,8 @@ export async function getResultParts(resultBuffer: Buffer): Promise<SyntheticRes
     footnotesXml: await archive.getFile('word/footnotes.xml'),
     endnotesXml: await archive.getFile('word/endnotes.xml'),
     commentsXml: await archive.getFile('word/comments.xml'),
+    commentsExtendedXml: await archive.getFile('word/commentsExtended.xml'),
+    peopleXml: await archive.getFile('word/people.xml'),
     contentTypesXml: await archive.getFile('[Content_Types].xml'),
     relsXml: await archive.getFile('word/_rels/document.xml.rels'),
   };

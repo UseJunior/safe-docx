@@ -56,10 +56,11 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
         expect(parts.footnotesXml!).toContain('w:id="1"');
         expect(parts.footnotesXml!).toContain('A new footnote');
 
-        expect(parts.footnotesXml!).toContain('w:id="-1"');
-        expect(parts.footnotesXml!).toContain('w:id="0"');
-        expect(parts.footnotesXml!).toContain('w:separator');
-        expect(parts.footnotesXml!).toContain('w:continuationSeparator');
+        const userFootnoteCount = (parts.footnotesXml!.match(/<w:footnote w:id="1"/g) ?? []).length;
+        expect(userFootnoteCount).toBe(1);
+
+        expect(parts.footnotesXml!).toContain('w:type="separator"');
+        expect(parts.footnotesXml!).toContain('w:type="continuationSeparator"');
 
         expect(parts.contentTypesXml!).toContain('word/footnotes.xml');
         expect(parts.contentTypesXml!).toContain(
@@ -110,6 +111,14 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
         expect(parts.commentsXml!).toContain('Review needed');
         expect(parts.commentsXml!).toContain('Reviewer');
 
+        const commentCount = (parts.commentsXml!.match(/<w:comment\b/g) ?? []).length;
+        expect(commentCount).toBe(1);
+
+        // Range markers are paragraph-level; ensure rebuild does NOT emit them
+        // wrapped in synthetic <w:r> elements (which would be non-conformant).
+        expect(parts.documentXml).not.toMatch(/<w:r\b[^>]*>\s*<w:commentRangeStart\b/);
+        expect(parts.documentXml).not.toMatch(/<w:r\b[^>]*>\s*<w:commentRangeEnd\b/);
+
         expect(parts.contentTypesXml!).toContain('word/comments.xml');
         expect(parts.contentTypesXml!).toContain(
           'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml'
@@ -118,6 +127,58 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
         expect(parts.relsXml!).toContain('comments.xml');
         expect(parts.relsXml!).toContain(
           'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
+        );
+      });
+    });
+  });
+
+  describe('Comment with commentsExtended/people added on revised side', () => {
+    test('rebuild bootstraps commentsExtended.xml + people.xml when original lacks them', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has no comments and revised adds one with ancillary parts', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Reply this',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('rebuild creates commentsExtended.xml and people.xml with OPC metadata', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        expect(parts.commentsExtendedXml).not.toBeNull();
+        expect(parts.commentsExtendedXml!).toContain('w15:paraId="00000001"');
+
+        expect(parts.peopleXml).not.toBeNull();
+        expect(parts.peopleXml!).toContain('w15:author="Alice"');
+
+        expect(parts.contentTypesXml!).toContain('commentsExtended.xml');
+        expect(parts.contentTypesXml!).toContain('application/vnd.ms-word.commentsExtended+xml');
+        expect(parts.contentTypesXml!).toContain('people.xml');
+        expect(parts.contentTypesXml!).toContain('application/vnd.ms-word.people+xml');
+
+        expect(parts.relsXml!).toContain('commentsExtended.xml');
+        expect(parts.relsXml!).toContain(
+          'http://schemas.microsoft.com/office/2011/relationships/commentsExtended'
+        );
+        expect(parts.relsXml!).toContain('people.xml');
+        expect(parts.relsXml!).toContain(
+          'http://schemas.microsoft.com/office/2011/relationships/people'
         );
       });
     });
