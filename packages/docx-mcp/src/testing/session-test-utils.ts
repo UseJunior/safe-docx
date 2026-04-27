@@ -109,8 +109,32 @@ export function assertSuccess<T extends { success: boolean }>(
   result: T,
   label = 'operation',
 ): asserts result is T & { success: true } {
+  if (!result.success) {
+    // Surface the structured error so failures don't reduce to
+    // "expected true received false". Tests hitting PATH_NOT_ALLOWED,
+    // FILE_NOT_FOUND, etc. now show the exact reason in both the
+    // assertion message and the thrown Error.
+    const detail = describeFailure(result);
+    expect.fail(`${label} failed: ${detail}`);
+  }
   expect(result.success).toBe(true);
-  if (!result.success) throw new Error(`${label} failed`);
+}
+
+function describeFailure(result: unknown): string {
+  if (!result || typeof result !== 'object') return String(result);
+  const error = (result as { error?: unknown }).error;
+  if (!error || typeof error !== 'object') {
+    try {
+      return JSON.stringify(result);
+    } catch {
+      return String(result);
+    }
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }
 
 export function assertFailure<T extends { success: boolean; error?: { code?: string } }>(

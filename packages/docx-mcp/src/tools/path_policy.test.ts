@@ -90,6 +90,32 @@ describe('enforceReadPathPolicy', () => {
       }
     }
   });
+
+  test('allows access when allowed root and file path differ only by symlink (e.g. /tmp vs /private/tmp)', async () => {
+    if (process.platform === 'win32') return;
+
+    // Create a real backing directory and a sibling symlink that points at it.
+    // This mirrors macOS's `/tmp` → `/private/tmp` topology in miniature so the
+    // assertion holds on Linux too.
+    const realDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-real-'));
+    tmpDirs.push(realDir);
+    const symlinkRoot = path.join(os.tmpdir(), `policy-symlink-${process.pid}-${Date.now()}`);
+    await fs.symlink(realDir, symlinkRoot);
+    tmpDirs.push(symlinkRoot);
+
+    const filePath = path.join(realDir, 'doc.docx');
+    await fs.writeFile(filePath, 'data');
+
+    // Allowed root = the symlink form. File access path = the real form.
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = symlinkRoot;
+    const viaReal = await enforceReadPathPolicy(filePath);
+    expect(viaReal.ok).toBe(true);
+
+    // And the inverse: allowed root = real form, access via symlink form.
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = realDir;
+    const viaSymlink = await enforceReadPathPolicy(path.join(symlinkRoot, 'doc.docx'));
+    expect(viaSymlink.ok).toBe(true);
+  });
 });
 
 describe('enforceWritePathPolicy', () => {

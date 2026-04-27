@@ -1,25 +1,60 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+// From packages/docx-mcp/src/testing → up 4 segments to the workspace root.
+// (The previous "..", "..", ".." landed on `packages/`, which made
+// `path.join(repoRoot, 'packages', 'docx-core')` resolve to the bogus
+// `packages/packages/docx-core` and meant fixtures under the workspace
+// root were not added to the allowlist.)
+const workspaceRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+);
+
 const cwd = process.cwd();
 const tmpDir = os.tmpdir();
+const home = process.env.HOME ?? '';
 
 const existing = (process.env.SAFE_DOCX_ALLOWED_ROOTS ?? '')
   .split(path.delimiter)
   .map((entry) => entry.trim())
   .filter((entry) => entry.length > 0);
 
+// Belt-and-suspenders: also realpath each candidate at setup time. The
+// runtime already canonicalizes every entry inside `resolveAllowedRoots`,
+// so this is hardening rather than the primary fix — but it makes
+// SAFE_DOCX_ALLOWED_ROOTS readable in test logs without having to
+// mentally re-resolve symlinks (e.g. `/tmp` → `/private/tmp` on macOS).
+function canonicalize(entry: string): string[] {
+  if (!entry) return [];
+  const resolved = path.resolve(entry);
+  const out = new Set<string>();
+  out.add(resolved);
+  try {
+    out.add(fs.realpathSync(resolved));
+  } catch {
+    // Path may not exist yet (e.g. a temp dir we'll create later); the
+    // resolved form is still useful.
+  }
+  return Array.from(out);
+}
+
+const candidates = [
+  ...existing,
+  home,
+  tmpDir,
+  cwd,
+  workspaceRoot,
+  path.join(workspaceRoot, 'packages', 'docx-core'),
+];
+
 const merged = Array.from(
-  new Set([
-    ...existing,
-    process.env.HOME ?? '',
-    tmpDir,
-    cwd,
-    repoRoot,
-    path.join(repoRoot, 'packages', 'docx-core'),
-  ].filter((entry) => entry.length > 0)),
+  new Set(candidates.flatMap(canonicalize)),
 );
 
 process.env.SAFE_DOCX_ALLOWED_ROOTS = merged.join(path.delimiter);
