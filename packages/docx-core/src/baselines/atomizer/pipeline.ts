@@ -810,7 +810,13 @@ export async function compareDocumentsAtomizer(
 }
 
 // =============================================================================
-// Auxiliary Part Merging for Inplace Mode (footnotes, endnotes, comments)
+// Auxiliary Part Merging (footnotes, endnotes, comments)
+//
+// Reconstruction may insert content whose auxiliary definitions are absent
+// from the base archive. The "source" archive is the one we pull definitions
+// from: in inplace mode that is `originalArchive` (deleted-but-referenced
+// definitions); in rebuild mode it is `revisedArchive` (added-but-referenced
+// definitions). Step 12 in the pipeline picks the correct source per mode.
 // =============================================================================
 
 interface AuxiliaryPartDescriptor {
@@ -891,11 +897,13 @@ const serializer = new XMLSerializer();
 
 /**
  * Merge auxiliary part definitions (footnotes, endnotes, comments) from the
- * original archive into the result archive. When inplace mode inserts deleted
- * content, the corresponding definitions must exist in the auxiliary part.
+ * source archive into the result archive. The source archive is whichever
+ * side reconstruction may have introduced references to: original in inplace
+ * mode (deleted-but-referenced definitions), revised in rebuild mode
+ * (added-but-referenced definitions).
  */
 async function mergeAuxiliaryPartDefinitions(
-  originalArchive: DocxArchive,
+  sourceArchive: DocxArchive,
   resultArchive: DocxArchive,
   documentXml: string,
   descriptor: AuxiliaryPartDescriptor,
@@ -905,19 +913,19 @@ async function mergeAuxiliaryPartDefinitions(
   const referencedIds = collectReferenceIds(documentXml, descriptor.referenceTag);
   if (referencedIds.size === 0) return result;
 
-  const originalPartXml = await originalArchive.getFile(descriptor.partPath);
-  if (!originalPartXml) return result;
+  const sourcePartXml = await sourceArchive.getFile(descriptor.partPath);
+  if (!sourcePartXml) return result;
 
   const resultPartXml = await resultArchive.getFile(descriptor.partPath);
 
-  const originalParsed = parseEntries(originalPartXml, descriptor.entryTag);
+  const sourceParsed = parseEntries(sourcePartXml, descriptor.entryTag);
   const resultParsed = resultPartXml ? parseEntries(resultPartXml, descriptor.entryTag) : null;
 
   // Find missing entries: referenced in document.xml but not in result
   const missingElements: Element[] = [];
   for (const id of referencedIds) {
-    if (!(resultParsed?.entries.has(id)) && originalParsed.entries.has(id)) {
-      missingElements.push(originalParsed.entries.get(id)!);
+    if (!(resultParsed?.entries.has(id)) && sourceParsed.entries.has(id)) {
+      missingElements.push(sourceParsed.entries.get(id)!);
       result.mergedIds.add(id);
     }
   }
@@ -941,7 +949,7 @@ async function mergeAuxiliaryPartDefinitions(
     // w:type="separator" / w:type="continuationSeparator" — Word expects
     // them to exist and they don't carry user content. Filtering by w:type
     // (not by magic w:id values) keeps this robust across authoring tools.
-    const newDoc = parseXml(originalPartXml);
+    const newDoc = parseXml(sourcePartXml);
     const rootEl = newDoc.getElementsByTagName(descriptor.rootTag)[0] as Element;
     if (rootEl) {
       const existingEntries = rootEl.getElementsByTagName(descriptor.entryTag);
@@ -1051,19 +1059,19 @@ async function ensureOpcMetadata(
  * commentsExtended.xml and people.xml for author fidelity and reply threading.
  */
 async function mergeCommentAncillaryParts(
-  originalArchive: DocxArchive,
+  sourceArchive: DocxArchive,
   resultArchive: DocxArchive,
   commentMergeResult: AuxiliaryMergeResult,
 ): Promise<void> {
   // Collect authors and paraIds from the merged comment entries
-  const originalCommentsXml = await originalArchive.getFile('word/comments.xml');
-  if (!originalCommentsXml) return;
+  const sourceCommentsXml = await sourceArchive.getFile('word/comments.xml');
+  if (!sourceCommentsXml) return;
 
-  const origDoc = parseXml(originalCommentsXml);
+  const sourceDoc = parseXml(sourceCommentsXml);
   const mergedAuthors = new Set<string>();
   const mergedParaIds = new Set<string>();
 
-  const commentEls = origDoc.getElementsByTagName('w:comment');
+  const commentEls = sourceDoc.getElementsByTagName('w:comment');
   for (let i = 0; i < commentEls.length; i++) {
     const el = commentEls[i] as Element;
     const id = el.getAttribute('w:id');
@@ -1082,29 +1090,29 @@ async function mergeCommentAncillaryParts(
   }
 
   // Merge commentsExtended.xml entries matching merged paraIds
-  await mergeCommentsExtended(originalArchive, resultArchive, mergedParaIds);
+  await mergeCommentsExtended(sourceArchive, resultArchive, mergedParaIds);
 
   // Merge people.xml entries matching merged authors
-  await mergePeople(originalArchive, resultArchive, mergedAuthors);
+  await mergePeople(sourceArchive, resultArchive, mergedAuthors);
 }
 
 async function mergeCommentsExtended(
-  originalArchive: DocxArchive,
+  sourceArchive: DocxArchive,
   resultArchive: DocxArchive,
   mergedParaIds: Set<string>,
 ): Promise<void> {
   if (mergedParaIds.size === 0) return;
 
-  const originalXml = await originalArchive.getFile('word/commentsExtended.xml');
-  if (!originalXml) return;
+  const sourceXml = await sourceArchive.getFile('word/commentsExtended.xml');
+  if (!sourceXml) return;
 
-  const origDoc = parseXml(originalXml);
-  const origEntries = origDoc.getElementsByTagName('w15:commentEx');
+  const sourceDoc = parseXml(sourceXml);
+  const sourceEntries = sourceDoc.getElementsByTagName('w15:commentEx');
 
   // Collect entries whose paraId matches a merged comment's paragraph
   const entriesToMerge: Element[] = [];
-  for (let i = 0; i < origEntries.length; i++) {
-    const el = origEntries[i] as Element;
+  for (let i = 0; i < sourceEntries.length; i++) {
+    const el = sourceEntries[i] as Element;
     const paraId = el.getAttribute('w15:paraId');
     if (paraId && mergedParaIds.has(paraId)) {
       entriesToMerge.push(el);
@@ -1140,7 +1148,7 @@ async function mergeCommentsExtended(
   // Bootstrap: result lacks commentsExtended.xml but the merged comments
   // depend on it for reply threading / done state. Clone the source's root
   // (preserves namespaces), drop non-matching entries, then add OPC metadata.
-  const newDoc = parseXml(originalXml);
+  const newDoc = parseXml(sourceXml);
   const newRoot = newDoc.documentElement;
   const allEntries = newRoot.getElementsByTagName('w15:commentEx');
   const toRemove: Element[] = [];
@@ -1175,21 +1183,21 @@ const PEOPLE_DESCRIPTOR: AuxiliaryPartDescriptor = {
 };
 
 async function mergePeople(
-  originalArchive: DocxArchive,
+  sourceArchive: DocxArchive,
   resultArchive: DocxArchive,
   mergedAuthors: Set<string>,
 ): Promise<void> {
   if (mergedAuthors.size === 0) return;
 
-  const originalXml = await originalArchive.getFile('word/people.xml');
-  if (!originalXml) return;
+  const sourceXml = await sourceArchive.getFile('word/people.xml');
+  if (!sourceXml) return;
 
-  const origDoc = parseXml(originalXml);
-  const origPersons = origDoc.getElementsByTagName('w15:person');
+  const sourceDoc = parseXml(sourceXml);
+  const sourcePersons = sourceDoc.getElementsByTagName('w15:person');
 
   const personsToMerge: Element[] = [];
-  for (let i = 0; i < origPersons.length; i++) {
-    const el = origPersons[i] as Element;
+  for (let i = 0; i < sourcePersons.length; i++) {
+    const el = sourcePersons[i] as Element;
     const author = el.getAttribute('w15:author');
     if (author && mergedAuthors.has(author)) {
       personsToMerge.push(el);
@@ -1224,7 +1232,7 @@ async function mergePeople(
 
   // Bootstrap: result lacks people.xml. Clone source root (preserves
   // namespaces), remove non-matching authors, then add OPC metadata.
-  const newDoc = parseXml(originalXml);
+  const newDoc = parseXml(sourceXml);
   const newRoot = newDoc.documentElement;
   const allPersons = newRoot.getElementsByTagName('w15:person');
   const toRemove: Element[] = [];
