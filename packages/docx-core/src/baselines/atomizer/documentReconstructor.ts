@@ -11,7 +11,8 @@ import type { ComparisonUnitAtom } from '../../core-types.js';
 import { CorrelationStatus } from '../../core-types.js';
 import { getLeafText, childElements, findChildByTagName } from '../../primitives/index.js';
 import { serializeToXml, cloneElement } from './xmlToWmlElement.js';
-import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
+import { EMPTY_PARAGRAPH_TAG, isParagraphLevelLeaf } from '../../atomizer.js';
+import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
 
@@ -128,7 +129,12 @@ export function reconstructDocument(
   debug('reconstructor', `Empty paragraphs: inserted=${emptyCounters.inserted}, deleted=${emptyCounters.deleted}, equal=${emptyCounters.equal}, other=${emptyCounters.other}`);
 
   // Reconstruct the document, preserving original body structure (tables, SDTs, etc.)
-  return buildDocumentPreservingStructure(originalXml, paragraphXmls, paragraphGroups);
+  return buildDocumentPreservingStructure(
+    originalXml,
+    paragraphXmls,
+    paragraphGroups,
+    () => allocateRevisionId(revState)
+  );
 }
 
 /**
@@ -816,6 +822,12 @@ function buildRunContentAsPlainRun(group: RunGroup): string {
   );
   if (contentAtoms.length === 0) return '';
 
+  // Paragraph-level markers must sit outside <w:r>; route through the
+  // marker-aware helper which buffers run atoms and flushes on each marker.
+  if (groupHasParagraphLevelAtoms(group)) {
+    return buildRunContentWithParagraphMarkers(group);
+  }
+
   // If group has explicit rPr, emit a single run
   if (group.rPr !== null) {
     return buildSingleRun(group.atoms, group.rPr);
@@ -937,6 +949,57 @@ function subGroupByRPr(atoms: ComparisonUnitAtom[]): { rPr: Element | null; atom
 }
 
 /**
+ * Returns true when any atom in the group is a paragraph-level marker
+ * (commentRange / bookmark) that must be emitted outside <w:r>.
+ */
+function groupHasParagraphLevelAtoms(group: RunGroup): boolean {
+  for (const atom of group.atoms) {
+    if (isParagraphLevelLeaf(atom.contentElement)) return true;
+  }
+  return false;
+}
+
+/**
+ * Marker-aware emission for run groups containing paragraph-level atoms.
+ *
+ * Walks atoms left-to-right. Run-level atoms accumulate in a buffer; on
+ * encountering a paragraph-level atom (or end of group) the buffer is flushed
+ * via subGroupByRPr + buildSingleRun (one <w:r> per contiguous rPr) and the
+ * marker is emitted as a bare element.
+ *
+ * group.rPr is intentionally ignored here — RunGroup.rPr is captured from the
+ * first atom in groupAtomsByParagraph(), and for moved groups
+ * shouldStartNewRunGroup() suppresses rPr-based splitting. Always re-deriving
+ * rPr per atom prevents formatting bleed and bogus rPr inheritance from
+ * illegally nested markers.
+ */
+function buildRunContentWithParagraphMarkers(group: RunGroup): string {
+  const parts: string[] = [];
+  let runBuffer: ComparisonUnitAtom[] = [];
+
+  const flush = () => {
+    if (runBuffer.length === 0) return;
+    for (const sg of subGroupByRPr(runBuffer)) {
+      const run = buildSingleRun(sg.atoms, sg.rPr);
+      if (run) parts.push(run);
+    }
+    runBuffer = [];
+  };
+
+  for (const atom of group.atoms) {
+    if (atom.contentElement.tagName === EMPTY_PARAGRAPH_TAG) continue;
+    if (isParagraphLevelLeaf(atom.contentElement)) {
+      flush();
+      parts.push(serializeAtomElement(atom.contentElement));
+    } else {
+      runBuffer.push(atom);
+    }
+  }
+  flush();
+  return parts.join('');
+}
+
+/**
  * Build a single <w:r> element from a set of atoms with the given rPr.
  * Preserves pendingText coalescing, collapsedFieldAtoms expansion,
  * and debug counter increments.
@@ -1038,6 +1101,12 @@ function buildRunContent(group: RunGroup): string {
   // If no content atoms, return empty string (don't generate empty run)
   if (contentAtoms.length === 0) {
     return '';
+  }
+
+  // Paragraph-level markers must sit outside <w:r>; route through the
+  // marker-aware helper which buffers run atoms and flushes on each marker.
+  if (groupHasParagraphLevelAtoms(group)) {
+    return buildRunContentWithParagraphMarkers(group);
   }
 
   // If group has explicit rPr, emit a single run
@@ -1264,7 +1333,8 @@ function isRootedGroup(group: ParagraphGroup): boolean {
 function buildDocumentPreservingStructure(
   originalXml: string,
   paragraphXmls: string[],
-  paragraphGroups: ParagraphGroup[]
+  paragraphGroups: ParagraphGroup[],
+  allocateRevisionId: () => number
 ): string {
   const { doc, body, slots } = parseOriginalBodyStructure(originalXml);
 
@@ -1372,6 +1442,13 @@ function buildDocumentPreservingStructure(
   for (const el of toRemove) {
     el.parentNode!.removeChild(el);
   }
+
+  // Balance bookmarks and enforce consumer-compatibility invariants on the
+  // rebuilt body. This dedupes bookmark Names/IDs, hoists bookmarkStart/End
+  // out of <w:ins>/<w:del> wrappers (so they survive accept/reject), and
+  // synthesizes recovery markers for orphaned starts/ends. Mirrors the
+  // post-processing applied in inplace mode (inPlaceModifier.ts).
+  enforceConsumerCompatibility(body, allocateRevisionId);
 
   // Serialize modified body and splice back into original envelope
   const serializer = new XMLSerializer();
