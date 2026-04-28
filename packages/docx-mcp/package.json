@@ -28,6 +28,7 @@
   "dependencies": {
     "@usejunior/docx-core": "^0.9.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@xmldom/xmldom": "^0.8.11",
     "zod": "^4.3.6"
   },
   "devDependencies": {
