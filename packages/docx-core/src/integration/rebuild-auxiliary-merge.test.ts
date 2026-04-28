@@ -221,6 +221,215 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Issue #108: Reply comments dropped in rebuild mode
+  //
+  // Root comments have a <w:commentReference> in document.xml; replies do not.
+  // Replies thread through commentsExtended.xml via w15:paraIdParent. Before
+  // the fix, the comment-merge post-pass only walked root comments referenced
+  // in document.xml, so replies, their commentEx linkage, and the reply
+  // author's people.xml entry were silently dropped from rebuild output.
+  // ---------------------------------------------------------------------------
+  describe('Reply comment added to existing root (issue #108, primary case)', () => {
+    test('rebuild preserves reply when root already exists in original', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has root comment + ancillary parts; revised adds a reply', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Root question',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Root question',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+          replyText: 'Reply text',
+          replyAuthor: 'Bob',
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('reply comment, paraIdParent linkage, and reply author all survive', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        // Both comments present
+        expect(parts.commentsXml).not.toBeNull();
+        expect(parts.commentsXml!).toContain('w:id="1"');
+        expect(parts.commentsXml!).toContain('w:id="2"');
+        expect(parts.commentsXml!).toContain('Root question');
+        expect(parts.commentsXml!).toContain('Reply text');
+        expect(parts.commentsXml!).toContain('w:author="Alice"');
+        expect(parts.commentsXml!).toContain('w:author="Bob"');
+
+        // Threading preserved in commentsExtended.xml
+        expect(parts.commentsExtendedXml).not.toBeNull();
+        expect(parts.commentsExtendedXml!).toContain('w15:paraId="00000001"');
+        expect(parts.commentsExtendedXml!).toContain('w15:paraId="00000002"');
+        expect(parts.commentsExtendedXml!).toContain('w15:paraIdParent="00000001"');
+
+        // Reply author present in people.xml
+        expect(parts.peopleXml).not.toBeNull();
+        expect(parts.peopleXml!).toContain('w15:author="Alice"');
+        expect(parts.peopleXml!).toContain('w15:author="Bob"');
+      });
+    });
+  });
+
+  describe('Reply comment added on revised side (bootstrap case)', () => {
+    test('rebuild bootstraps comments + ancillary parts including reply', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has no comments; revised adds root + reply with ancillary parts', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Root question',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+          replyText: 'Reply text',
+          replyAuthor: 'Bob',
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('both comments and the threaded commentEx + people entries are bootstrapped', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        expect(parts.commentsXml).not.toBeNull();
+        expect(parts.commentsXml!).toContain('w:id="1"');
+        expect(parts.commentsXml!).toContain('w:id="2"');
+        expect(parts.commentsXml!).toContain('Reply text');
+
+        expect(parts.commentsExtendedXml).not.toBeNull();
+        expect(parts.commentsExtendedXml!).toContain('w15:paraId="00000002"');
+        expect(parts.commentsExtendedXml!).toContain('w15:paraIdParent="00000001"');
+
+        expect(parts.peopleXml).not.toBeNull();
+        expect(parts.peopleXml!).toContain('w15:author="Alice"');
+        expect(parts.peopleXml!).toContain('w15:author="Bob"');
+      });
+    });
+  });
+
+  describe('Deep reply chain preserved in rebuild (issue #108)', () => {
+    test('rebuild preserves a 3-level reply chain (root -> reply -> grandchild)', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('revised carries a 3-level threaded chain via inline archive mutation', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+        });
+
+        // Build a single-comment fixture, then splice in two more sibling
+        // <w:comment> entries plus their commentEx and people entries.
+        // We avoid extending SyntheticDocxOptions into a chain DSL — this
+        // depth is an issue-#108 BFS regression check, not a recurring need.
+        const baseRevised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Root',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+
+        // Re-pack the archive with extra comment / commentEx / person entries.
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(baseRevised);
+
+        const commentsXml = await zip.file('word/comments.xml')!.async('string');
+        const replyAndGrandchild =
+          `<w:comment w:id="2" w:author="Bob" w:date="2025-01-02T00:00:00Z">` +
+          `<w:p w14:paraId="00000002"><w:r><w:t>Reply</w:t></w:r></w:p>` +
+          `</w:comment>` +
+          `<w:comment w:id="3" w:author="Carol" w:date="2025-01-03T00:00:00Z">` +
+          `<w:p w14:paraId="00000003"><w:r><w:t>Grandchild</w:t></w:r></w:p>` +
+          `</w:comment>`;
+        zip.file(
+          'word/comments.xml',
+          commentsXml.replace('</w:comments>', `${replyAndGrandchild}</w:comments>`)
+        );
+
+        const exXml = await zip.file('word/commentsExtended.xml')!.async('string');
+        const exExtra =
+          `<w15:commentEx w15:paraId="00000002" w15:paraIdParent="00000001" w15:done="0"/>` +
+          `<w15:commentEx w15:paraId="00000003" w15:paraIdParent="00000002" w15:done="0"/>`;
+        zip.file(
+          'word/commentsExtended.xml',
+          exXml.replace('</w15:commentsEx>', `${exExtra}</w15:commentsEx>`)
+        );
+
+        const peopleXml = await zip.file('word/people.xml')!.async('string');
+        const peopleExtra =
+          `<w15:person w15:author="Bob"><w15:presenceInfo w15:providerId="None" w15:userId="bob@example.com"/></w15:person>` +
+          `<w15:person w15:author="Carol"><w15:presenceInfo w15:providerId="None" w15:userId="carol@example.com"/></w15:person>`;
+        zip.file(
+          'word/people.xml',
+          peopleXml.replace('</w15:people>', `${peopleExtra}</w15:people>`)
+        );
+
+        revised = (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('all three comments + both linkages survive the BFS expansion', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        // All three comments present
+        expect(parts.commentsXml!).toContain('w:id="1"');
+        expect(parts.commentsXml!).toContain('w:id="2"');
+        expect(parts.commentsXml!).toContain('w:id="3"');
+        expect(parts.commentsXml!).toContain('Reply');
+        expect(parts.commentsXml!).toContain('Grandchild');
+
+        // Both linkages preserved
+        expect(parts.commentsExtendedXml!).toContain('w15:paraId="00000003"');
+        expect(parts.commentsExtendedXml!).toMatch(
+          /w15:paraId="00000002"\s+w15:paraIdParent="00000001"/
+        );
+        expect(parts.commentsExtendedXml!).toMatch(
+          /w15:paraId="00000003"\s+w15:paraIdParent="00000002"/
+        );
+
+        // All three authors in people.xml
+        expect(parts.peopleXml!).toContain('w15:author="Alice"');
+        expect(parts.peopleXml!).toContain('w15:author="Bob"');
+        expect(parts.peopleXml!).toContain('w15:author="Carol"');
+      });
+    });
+  });
+
   describe('Footnote present on both sides', () => {
     test('rebuild does not duplicate footnote definitions', async ({ given, when, then }: AllureBddContext) => {
       let original: Buffer, revised: Buffer;

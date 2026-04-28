@@ -12,6 +12,16 @@ export interface SyntheticDocxOptions {
   // with matching paraId / author entries. Used to test ancillary-part bootstrap.
   commentAncillaryParts?: boolean;
   /**
+   * Threaded reply to the root comment (w:id="1"). Emits a second
+   * <w:comment w:id="2"> with paraId 00000002 and, when commentAncillaryParts
+   * is also set, a <w15:commentEx w15:paraIdParent="00000001"> linkage and a
+   * second <w15:person> for the reply author. Reply comments deliberately
+   * have NO <w:commentReference> in document.xml — that's the issue #108
+   * shape: replies are discoverable only via paraIdParent threading.
+   */
+  replyText?: string;
+  replyAuthor?: string;
+  /**
    * Cross-paragraph comment span. The comment opens at the start of
    * paragraphs[start] and closes at the end of paragraphs[end]. The
    * commentReference run is appended to paragraphs[end].
@@ -141,13 +151,22 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   if (hasComment || hasCommentSpan) {
     const cText = opts.commentText ?? 'Test comment';
     const cAuthor = opts.commentAuthor ?? 'Author';
+    const hasReply = opts.replyText != null;
+    const replyAuthor = opts.replyAuthor ?? 'Replier';
+    const replyEntry = hasReply
+      ? `<w:comment w:id="2" w:author="${replyAuthor}" w:date="2025-01-02T00:00:00Z">` +
+        `<w:p w14:paraId="00000002"><w:r><w:t>${opts.replyText}</w:t></w:r></w:p>` +
+        `</w:comment>`
+      : '';
     const commentsXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
       ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
       `<w:comment w:id="1" w:author="${cAuthor}" w:date="2025-01-01T00:00:00Z">` +
       `<w:p w14:paraId="00000001"><w:r><w:t>${cText}</w:t></w:r></w:p>` +
-      `</w:comment></w:comments>`;
+      `</w:comment>` +
+      replyEntry +
+      `</w:comments>`;
     zip.file('word/comments.xml', commentsXml);
     contentTypeParts.push(
       `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>`
@@ -158,10 +177,14 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     );
 
     if (opts.commentAncillaryParts) {
+      const replyExEntry = hasReply
+        ? `<w15:commentEx w15:paraId="00000002" w15:paraIdParent="00000001" w15:done="0"/>`
+        : '';
       const commentsExtendedXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">` +
         `<w15:commentEx w15:paraId="00000001" w15:done="0"/>` +
+        replyExEntry +
         `</w15:commentsEx>`;
       zip.file('word/commentsExtended.xml', commentsExtendedXml);
       contentTypeParts.push(
@@ -172,13 +195,20 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
         `<Relationship Id="rId${rIdCounter}" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/>`
       );
 
+      const replyPersonEntry = hasReply
+        ? `<w15:person w15:author="${replyAuthor}">` +
+          `<w15:presenceInfo w15:providerId="None" w15:userId="${replyAuthor}@example.com"/>` +
+          `</w15:person>`
+        : '';
       const peopleXml =
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w15:people xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"` +
         ` xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
         `<w15:person w15:author="${cAuthor}">` +
         `<w15:presenceInfo w15:providerId="None" w15:userId="${cAuthor}@example.com"/>` +
-        `</w15:person></w15:people>`;
+        `</w15:person>` +
+        replyPersonEntry +
+        `</w15:people>`;
       zip.file('word/people.xml', peopleXml);
       contentTypeParts.push(
         `<Override PartName="/word/people.xml" ContentType="application/vnd.ms-word.people+xml"/>`
