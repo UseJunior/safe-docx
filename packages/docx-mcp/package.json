@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/docx-mcp",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "MCP server for reading, editing, and comparing Word documents with tracked changes. For Claude, Gemini CLI, Cursor, and any MCP client. MIT licensed.",
   "type": "module",
   "main": "dist/index.js",
@@ -26,8 +26,9 @@
     "lint": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@usejunior/docx-core": "^0.9.0",
+    "@usejunior/docx-core": "^0.9.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@xmldom/xmldom": "^0.8.11",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -53,7 +54,7 @@
     "dist"
   ],
   "peerDependencies": {
-    "@usejunior/google-docs-core": "^0.9.0"
+    "@usejunior/google-docs-core": "^0.9.1"
   },
   "peerDependenciesMeta": {
     "@usejunior/google-docs-core": {
