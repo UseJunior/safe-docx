@@ -19,7 +19,7 @@
     "cli": "node dist/cli/index.js"
   },
   "dependencies": {
-    "@xmldom/xmldom": "^0.9.9",
+    "@xmldom/xmldom": "^0.9.10",
     "jszip": "^3.10.1"
   },
   "devDependencies": {
