@@ -785,19 +785,18 @@ export async function compareDocumentsAtomizer(
   // Step 12b: Merge auxiliary part definitions (footnotes, endnotes, comments).
   // Reconstruction may insert content (deleted in inplace, added in rebuild)
   // whose definitions are missing from the base archive.
-  const mergeResults = new Map<string, AuxiliaryMergeResult>();
   for (const descriptor of AUXILIARY_PARTS) {
-    const result = await mergeAuxiliaryPartDefinitions(
+    await mergeAuxiliaryPartDefinitions(
       mergeSourceArchive, resultArchive, newDocumentXml, descriptor
     );
-    if (result.mergedIds.size > 0) {
-      mergeResults.set(descriptor.label, result);
-    }
   }
-  if (mergeResults.has('comment')) {
-    await mergeCommentAncillaryParts(
-      mergeSourceArchive, resultArchive, mergeResults.get('comment')!
-    );
+  // Comment-specific post-pass: walk reply threads via commentsExtended.xml.
+  // Gated on root comment IDs in the *result* document (not on what the
+  // generic merge appended), so the pass runs even when the original already
+  // contains the root and revised only adds replies under it (issue #108).
+  const rootCommentIds = collectReferenceIds(newDocumentXml, 'w:commentReference');
+  if (rootCommentIds.size > 0) {
+    await mergeCommentAncillaryParts(mergeSourceArchive, resultArchive, rootCommentIds);
   }
 
   // Step 13: Save result and compute stats
@@ -1061,45 +1060,143 @@ async function ensureOpcMetadata(
 // =============================================================================
 
 /**
- * After merging comment definitions, copy related entries from
- * commentsExtended.xml and people.xml for author fidelity and reply threading.
+ * Walk the comment reply graph from each root referenced in the result
+ * document, merging reply <w:comment> entries, their commentsExtended.xml
+ * threading entries, and people.xml authors. Replies have no
+ * <w:commentReference> in document.xml — they're discoverable only via
+ * w15:paraIdParent in commentsExtended.xml. Without this expansion, rebuild
+ * mode silently drops reply threads (issue #108).
  */
 async function mergeCommentAncillaryParts(
   sourceArchive: DocxArchive,
   resultArchive: DocxArchive,
-  commentMergeResult: AuxiliaryMergeResult,
+  rootCommentIds: Set<string>,
 ): Promise<void> {
-  // Collect authors and paraIds from the merged comment entries
   const sourceCommentsXml = await sourceArchive.getFile('word/comments.xml');
   if (!sourceCommentsXml) return;
 
   const sourceDoc = parseXml(sourceCommentsXml);
-  const mergedAuthors = new Set<string>();
-  const mergedParaIds = new Set<string>();
 
-  const commentEls = sourceDoc.getElementsByTagName('w:comment');
-  for (let i = 0; i < commentEls.length; i++) {
-    const el = commentEls[i] as Element;
+  // Build full source comment maps. Canonical paraId is the first <w:p>
+  // child's w14:paraId, matching getCommentElParaId() in primitives/comments.ts.
+  const commentById = new Map<string, Element>();
+  const paraIdByCommentId = new Map<string, string>();
+  const commentIdByParaId = new Map<string, string>();
+  const authorByCommentId = new Map<string, string>();
+  const allCommentEls = sourceDoc.getElementsByTagName('w:comment');
+  for (let i = 0; i < allCommentEls.length; i++) {
+    const el = allCommentEls[i] as Element;
     const id = el.getAttribute('w:id');
-    if (!id || !commentMergeResult.mergedIds.has(id)) continue;
-
+    if (!id) continue;
+    commentById.set(id, el);
     const author = el.getAttribute('w:author');
-    if (author) mergedAuthors.add(author);
-
-    // Collect paraIds from <w:p> children inside the comment
-    const paras = el.getElementsByTagName('w:p');
-    for (let j = 0; j < paras.length; j++) {
-      const p = paras[j] as Element;
-      const paraId = p.getAttribute('w14:paraId');
-      if (paraId) mergedParaIds.add(paraId);
+    if (author) authorByCommentId.set(id, author);
+    const firstP = el.getElementsByTagName('w:p')[0] as Element | undefined;
+    const paraId = firstP?.getAttribute('w14:paraId');
+    if (paraId) {
+      paraIdByCommentId.set(id, paraId);
+      commentIdByParaId.set(paraId, id);
     }
   }
 
-  // Merge commentsExtended.xml entries matching merged paraIds
-  await mergeCommentsExtended(sourceArchive, resultArchive, mergedParaIds);
+  // Seed inclusion sets from the root IDs that appear in the result document.
+  const includedCommentIds = new Set<string>();
+  const includedParaIds = new Set<string>();
+  const includedAuthors = new Set<string>();
+  for (const id of rootCommentIds) {
+    if (!commentById.has(id)) continue;
+    includedCommentIds.add(id);
+    const pid = paraIdByCommentId.get(id);
+    if (pid) includedParaIds.add(pid);
+    const author = authorByCommentId.get(id);
+    if (author) includedAuthors.add(author);
+  }
 
-  // Merge people.xml entries matching merged authors
-  await mergePeople(sourceArchive, resultArchive, mergedAuthors);
+  // BFS over commentsExtended.xml's paraIdParent graph from each included
+  // root paraId. Skip entries that don't resolve to a real source comment so
+  // we never pull in dangling commentEx/people without a backing definition.
+  const sourceExtendedXml = await sourceArchive.getFile('word/commentsExtended.xml');
+  if (sourceExtendedXml) {
+    const exDoc = parseXml(sourceExtendedXml);
+    const exEls = exDoc.getElementsByTagName('w15:commentEx');
+    const childrenOf = new Map<string, string[]>();
+    for (let i = 0; i < exEls.length; i++) {
+      const ex = exEls[i] as Element;
+      const childPid = ex.getAttribute('w15:paraId');
+      const parentPid = ex.getAttribute('w15:paraIdParent');
+      if (!childPid || !parentPid) continue;
+      const arr = childrenOf.get(parentPid);
+      if (arr) arr.push(childPid);
+      else childrenOf.set(parentPid, [childPid]);
+    }
+
+    const queue: string[] = [...includedParaIds];
+    while (queue.length > 0) {
+      const pid = queue.shift()!;
+      const children = childrenOf.get(pid);
+      if (!children) continue;
+      for (const childPid of children) {
+        if (includedParaIds.has(childPid)) continue;
+        const childCommentId = commentIdByParaId.get(childPid);
+        if (!childCommentId) continue;
+        includedParaIds.add(childPid);
+        includedCommentIds.add(childCommentId);
+        const author = authorByCommentId.get(childCommentId);
+        if (author) includedAuthors.add(author);
+        queue.push(childPid);
+      }
+    }
+  }
+
+  // Append any reply <w:comment> definitions still missing from result.
+  // The generic merge already added roots when needed; we add the replies
+  // (and any roots not yet present in the result, defensively).
+  await mergeMissingCommentDefinitions(resultArchive, commentById, includedCommentIds);
+
+  // Merge commentsExtended and people for the expanded set.
+  await mergeCommentsExtended(sourceArchive, resultArchive, includedParaIds);
+  await mergePeople(sourceArchive, resultArchive, includedAuthors);
+}
+
+/**
+ * Append any source <w:comment> definitions in `includedCommentIds` that
+ * aren't already in result/word/comments.xml. Mirrors the append-with-importNode
+ * pattern used by mergeCommentsExtended below.
+ */
+async function mergeMissingCommentDefinitions(
+  resultArchive: DocxArchive,
+  commentById: Map<string, Element>,
+  includedCommentIds: Set<string>,
+): Promise<void> {
+  if (includedCommentIds.size === 0) return;
+  const resultXml = await resultArchive.getFile('word/comments.xml');
+  if (!resultXml) {
+    // If result has no comments.xml at all, the generic merge would have
+    // bootstrapped it for any included root. Nothing to do here.
+    return;
+  }
+  const resultDoc = parseXml(resultXml);
+  const rootEl = resultDoc.documentElement;
+
+  const existingIds = new Set<string>();
+  const existing = rootEl.getElementsByTagName('w:comment');
+  for (let i = 0; i < existing.length; i++) {
+    const id = (existing[i] as Element).getAttribute('w:id');
+    if (id) existingIds.add(id);
+  }
+
+  let appended = false;
+  for (const id of includedCommentIds) {
+    if (existingIds.has(id)) continue;
+    const sourceEl = commentById.get(id);
+    if (!sourceEl) continue;
+    rootEl.appendChild(resultDoc.importNode(sourceEl, true));
+    appended = true;
+  }
+
+  if (appended) {
+    resultArchive.setFile('word/comments.xml', serializer.serializeToString(resultDoc));
+  }
 }
 
 async function mergeCommentsExtended(
