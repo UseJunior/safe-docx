@@ -171,6 +171,7 @@ The local Safe Docx runtime also intentionally rejects Word template files (`.do
 ## Reliability and Trust Surface
 
 - Tool schemas are generated from `packages/docx-mcp/src/tool_catalog.ts`.
+- For the contract surface of AI-attributable edits, see [SUPPORT.md](packages/docx-core/SUPPORT.md).
 - OpenSpec traceability matrix: `packages/docx-mcp/src/testing/SAFE_DOCX_OPENSPEC_TRACEABILITY.md`
 - Assumption matrix: `packages/docx-mcp/assumptions.md`
 - Conformance guide: `docs/safe-docx/sprint-3-conformance.md`
