@@ -1,7 +1,20 @@
 import { SessionManager } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
-import { OOXML, W, renderToon, formatToonDataLine, collectTableMarkerInfo, formatTableMarker, type DocumentViewNode } from '@usejunior/docx-core';
+import {
+  OOXML,
+  W,
+  renderToon,
+  renderToonWithCommentEndnotes,
+  formatToonDataLine,
+  formatToonCommentLines,
+  formatToonCommentsEndnotesBlock,
+  collectTableMarkerInfo,
+  formatTableMarker,
+  type Comment,
+  type DocumentViewComment,
+  type DocumentViewNode,
+} from '@usejunior/docx-core';
 import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { estimateTokens, DEFAULT_CONTENT_TOKEN_BUDGET, buildPaginationMeta } from './pagination.js';
@@ -28,9 +41,79 @@ function collectFootnoteMarkerSuffix(
   return markers.join('');
 }
 
+function escapeCommentSuffixText(text: string): string {
+  return text
+    .replaceAll('\r\n', '\\n')
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('|', '\\|');
+}
+
+function mapDocumentViewComment(comment: Comment): DocumentViewComment {
+  return {
+    id: comment.id,
+    author: comment.author,
+    date: comment.date || null,
+    initials: comment.initials,
+    text: comment.text,
+    replies: comment.replies.map((reply) => mapDocumentViewComment(reply)),
+  };
+}
+
+function attachParagraphComments(
+  nodes: readonly DocumentViewNode[],
+  comments: readonly Comment[],
+): DocumentViewNode[] {
+  const commentsByParagraph = new Map<string, DocumentViewComment[]>();
+  for (const comment of comments) {
+    if (!comment.anchoredParagraphId) continue;
+    const rootComments = commentsByParagraph.get(comment.anchoredParagraphId) ?? [];
+    rootComments.push(mapDocumentViewComment(comment));
+    commentsByParagraph.set(comment.anchoredParagraphId, rootComments);
+  }
+
+  return nodes.map((node) => {
+    const nodeComments = commentsByParagraph.get(node.id);
+    return nodeComments && nodeComments.length > 0
+      ? { ...node, comments: nodeComments }
+      : node;
+  });
+}
+
+function collectSimpleCommentSuffixes(
+  comments: readonly DocumentViewComment[],
+  parentId?: number,
+): string[] {
+  const suffixes: string[] = [];
+  for (const comment of comments) {
+    const text = escapeCommentSuffixText(comment.text);
+    suffixes.push(parentId == null
+      ? `[c${comment.id}: ${text}]`
+      : `[c${comment.id}->c${parentId}: ${text}]`);
+    suffixes.push(...collectSimpleCommentSuffixes(comment.replies, comment.id));
+  }
+  return suffixes;
+}
+
+function formatSimpleTextLine(node: DocumentViewNode): string {
+  const preview = previewText(node.clean_text, READ_SIMPLE_PREVIEW_CHARS);
+  const commentSuffixes = node.comments ? collectSimpleCommentSuffixes(node.comments) : [];
+  return commentSuffixes.length > 0
+    ? `${preview} ${commentSuffixes.join(' ')}`
+    : preview;
+}
+
 export async function readFile(
   manager: SessionManager,
-  params: { file_path?: string; offset?: number; limit?: number; node_ids?: string[]; format?: string; show_formatting?: boolean },
+  params: {
+    file_path?: string;
+    offset?: number;
+    limit?: number;
+    node_ids?: string[];
+    format?: string;
+    show_formatting?: boolean;
+    comment_rendering?: string;
+  },
 ): Promise<ToolResponse> {
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'read_file' });
@@ -40,6 +123,15 @@ export async function readFile(
     const format = (params.format ?? 'toon').toLowerCase();
     if (format !== 'toon' && format !== 'json' && format !== 'simple') {
       return err('INVALID_FORMAT', `Invalid format: ${params.format}`, "Use 'toon' (default), 'json', or 'simple'.");
+    }
+
+    const commentRendering = (params.comment_rendering ?? 'paragraph_notes').toLowerCase();
+    if (commentRendering !== 'none' && commentRendering !== 'paragraph_notes' && commentRendering !== 'endnotes') {
+      return err(
+        'INVALID_COMMENT_RENDERING',
+        `Invalid comment_rendering: ${params.comment_rendering}`,
+        "Use 'paragraph_notes' (default), 'endnotes', or 'none'.",
+      );
     }
 
     const showFormatting = params.show_formatting ?? true;
@@ -94,6 +186,14 @@ export async function readFile(
       enriched = filtered;
     }
 
+    if (commentRendering !== 'none') {
+      try {
+        enriched = attachParagraphComments(enriched, await session.doc.getComments());
+      } catch {
+        // Preserve existing read_file behavior if comment parts are unavailable or malformed.
+      }
+    }
+
     let content: string;
     let paragraphsReturned: number;
 
@@ -104,13 +204,15 @@ export async function readFile(
       } else if (format === 'simple') {
         content = renderSimpleWithTableMarkers(enriched);
       } else {
-        content = renderToon(enriched);
+        content = commentRendering === 'endnotes'
+          ? renderToonWithCommentEndnotes(enriched)
+          : renderToon(enriched);
       }
       paragraphsReturned = enriched.length;
     } else {
       // One-pass token-budget accumulation
       const budget = DEFAULT_CONTENT_TOKEN_BUDGET;
-      const result = renderWithBudget(enriched, format, budget);
+      const result = renderWithBudget(enriched, format, budget, commentRendering);
       content = result.content;
       paragraphsReturned = result.count;
     }
@@ -139,6 +241,7 @@ function renderWithBudget(
   enriched: readonly DocumentViewNode[],
   format: string,
   budget: number,
+  commentRendering: string,
 ): BudgetResult {
   if (format === 'json') {
     return renderJsonWithBudget(enriched, budget);
@@ -146,17 +249,19 @@ function renderWithBudget(
   if (format === 'simple') {
     return renderSimpleWithBudget(enriched, budget);
   }
-  return renderToonWithBudget(enriched, budget);
+  return renderToonWithBudget(enriched, budget, commentRendering);
 }
 
 function renderToonWithBudget(
   enriched: readonly DocumentViewNode[],
   budget: number,
+  commentRendering: string,
 ): BudgetResult {
   const headerLine = '#SCHEMA id | list_label | header | style | text';
   let accumulated = headerLine;
   let count = 0;
   let currentTableIndex: number | null = null;
+  const includedNodes: DocumentViewNode[] = [];
 
   // Pre-scan: collect table marker info for #TABLE lines
   const tableInfo = collectTableMarkerInfo(enriched);
@@ -186,7 +291,21 @@ function renderToonWithBudget(
     }
 
     const dataLine = formatToonDataLine(node);
-    const candidate = accumulated + '\n' + dataLine;
+    const commentLines = commentRendering === 'paragraph_notes'
+      ? formatToonCommentLines(node)
+      : [];
+    const nodeLines = [dataLine, ...commentLines].join('\n');
+    const candidateBase = accumulated + '\n' + nodeLines;
+    let candidate = candidateBase;
+    if (commentRendering === 'endnotes') {
+      if (nodeTableIndex !== null) {
+        candidate += '\n#END_TABLE';
+      }
+      const endnotesBlock = formatToonCommentsEndnotesBlock([...includedNodes, node]);
+      if (endnotesBlock.length > 0) {
+        candidate += '\n' + endnotesBlock.join('\n');
+      }
+    }
     if (count > 0 && estimateTokens(candidate) > budget) {
       // Close table before breaking
       if (currentTableIndex !== null) {
@@ -194,13 +313,21 @@ function renderToonWithBudget(
       }
       break;
     }
-    accumulated = candidate;
+    accumulated = candidateBase;
+    includedNodes.push(node);
     count++;
   }
 
   // Close any open table at end of loop
   if (currentTableIndex !== null) {
     accumulated += '\n#END_TABLE';
+  }
+
+  if (commentRendering === 'endnotes') {
+    const endnotesBlock = formatToonCommentsEndnotesBlock(includedNodes);
+    if (endnotesBlock.length > 0) {
+      accumulated += '\n' + endnotesBlock.join('\n');
+    }
   }
 
   return { content: accumulated, count };
@@ -227,8 +354,7 @@ function renderSimpleWithTableMarkers(
       currentTableIndex = nodeTableIndex;
     }
 
-    const text = previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS);
-    lines.push(`${n.id} | ${text}`);
+    lines.push(`${n.id} | ${formatSimpleTextLine(n)}`);
   }
 
   if (currentTableIndex !== null) {
@@ -268,8 +394,7 @@ function renderSimpleWithBudget(
       currentTableIndex = nodeTableIndex;
     }
 
-    const text = previewText(n.clean_text, READ_SIMPLE_PREVIEW_CHARS);
-    const dataLine = `${n.id} | ${text}`;
+    const dataLine = `${n.id} | ${formatSimpleTextLine(n)}`;
     const candidate = accumulated + '\n' + dataLine;
     if (count > 0 && estimateTokens(candidate) > budget) {
       if (currentTableIndex !== null) {
