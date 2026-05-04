@@ -101,6 +101,15 @@ export type TableContext = {
   cell_para_count: number;  // Total paragraphs in this cell
 };
 
+export type DocumentViewCommentRange = {
+  startParagraphId: string;
+  endParagraphId: string;
+  startRunIndex?: number;
+  startCharOffset?: number;
+  endRunIndex?: number;
+  endCharOffset?: number;
+};
+
 export type DocumentViewComment = {
   id: number;
   author: string;
@@ -108,7 +117,27 @@ export type DocumentViewComment = {
   initials: string;
   text: string;
   replies: DocumentViewComment[];
+  range?: DocumentViewCommentRange;
 };
+
+export const INLINE_COMMENT_MARKER_RUNTIME = Symbol('inline_comment_marker_runtime');
+
+type InlineCommentMarkerRuntime = {
+  startVisibleOffset: number;
+  endVisibleOffset: number;
+  suppressInlineMarkers: boolean;
+};
+
+type DocumentViewCommentWithRuntime = DocumentViewComment & {
+  [INLINE_COMMENT_MARKER_RUNTIME]?: InlineCommentMarkerRuntime;
+};
+
+export type ToonCommentMarker = {
+  offset: number;
+  marker: string;
+};
+
+export type ToonCommentMarkerMap = Map<string, ToonCommentMarker[]>;
 
 export type DocumentViewNode = {
   id: string; // _bk_*
@@ -338,17 +367,206 @@ function headerStripFromText(params: { header: string; text: string }): string {
   return text;
 }
 
+// Matches the exact set of TOON inline formatting tags that emitFormattingTags() can emit:
+//   <b>, </b>, <i>, </i>, <u>, </u>, <highlight>, </highlight>,
+//   <a href="...">, </a>, <font ...>, </font>
+// Anything else in the form `<...>` is literal document text (e.g., `<Borrower>` placeholders
+// in legal templates) and must be counted as visible characters, not skipped as markup.
+const TOON_INLINE_TAG_RE = /^(?:<\/?(?:b|i|u|highlight)>|<\/(?:a|font)>|<(?:a|font)(?:\s[^>]*)?>)/;
+
+function toonTagLengthAt(text: string, i: number): number {
+  if (text[i] !== '<') return 0;
+  const match = TOON_INLINE_TAG_RE.exec(text.slice(i));
+  return match ? match[0].length : 0;
+}
+
+function countVisibleTextCharacters(text: string): number {
+  let visibleCount = 0;
+  for (let i = 0; i < text.length; i++) {
+    const tagLen = toonTagLengthAt(text, i);
+    if (tagLen > 0) {
+      i += tagLen - 1;
+      continue;
+    }
+    visibleCount++;
+  }
+  return visibleCount;
+}
+
+function findTaggedTextInsertionIndex(text: string, visibleOffset: number): number {
+  if (visibleOffset <= 0) return 0;
+
+  let visibleCount = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (visibleCount === visibleOffset) return i;
+
+    const tagLen = toonTagLengthAt(text, i);
+    if (tagLen > 0) {
+      i += tagLen - 1;
+      continue;
+    }
+
+    visibleCount++;
+  }
+
+  return text.length;
+}
+
+function injectToonCommentMarkers(
+  text: string,
+  markers: readonly ToonCommentMarker[],
+): string {
+  if (markers.length === 0) return text;
+
+  let result = text;
+  for (const { offset, marker } of markers) {
+    const insertionIndex = findTaggedTextInsertionIndex(result, offset);
+    result = result.slice(0, insertionIndex) + marker + result.slice(insertionIndex);
+  }
+  return result;
+}
+
+type InlineCommentMarkerCandidate = {
+  id: number;
+  startParagraphId: string;
+  endParagraphId: string;
+  startParagraphIndex: number;
+  startOffset: number;
+  endOffset: number;
+};
+
+type InlineCommentMarkerGroup = {
+  closes: InlineCommentMarkerCandidate[];
+  opens: InlineCommentMarkerCandidate[];
+};
+
+function collectInlineCommentMarkerCandidates(
+  comments: readonly DocumentViewComment[],
+  paragraphIndexById: ReadonlyMap<string, number>,
+  candidates: InlineCommentMarkerCandidate[],
+): void {
+  for (const comment of comments) {
+    const runtime = (comment as DocumentViewCommentWithRuntime)[INLINE_COMMENT_MARKER_RUNTIME];
+    if (comment.range && runtime && !runtime.suppressInlineMarkers) {
+      candidates.push({
+        id: comment.id,
+        startParagraphId: comment.range.startParagraphId,
+        endParagraphId: comment.range.endParagraphId,
+        startParagraphIndex: paragraphIndexById.get(comment.range.startParagraphId) ?? Number.MAX_SAFE_INTEGER,
+        startOffset: runtime.startVisibleOffset,
+        endOffset: runtime.endVisibleOffset,
+      });
+    }
+
+    if (comment.replies.length > 0) {
+      collectInlineCommentMarkerCandidates(comment.replies, paragraphIndexById, candidates);
+    }
+  }
+}
+
+function compareInlineCommentCloseOrder(
+  left: InlineCommentMarkerCandidate,
+  right: InlineCommentMarkerCandidate,
+): number {
+  if (left.startParagraphIndex !== right.startParagraphIndex) {
+    return right.startParagraphIndex - left.startParagraphIndex;
+  }
+  if (left.startOffset !== right.startOffset) {
+    return right.startOffset - left.startOffset;
+  }
+  return right.id - left.id;
+}
+
+export function collectInlineCommentMarkers(
+  nodes: readonly DocumentViewNode[],
+): ToonCommentMarkerMap {
+  const paragraphIndexById = new Map<string, number>();
+  for (let index = 0; index < nodes.length; index++) {
+    paragraphIndexById.set(nodes[index]!.id, index);
+  }
+
+  const candidates: InlineCommentMarkerCandidate[] = [];
+  for (const node of nodes) {
+    if (node.comments && node.comments.length > 0) {
+      collectInlineCommentMarkerCandidates(node.comments, paragraphIndexById, candidates);
+    }
+  }
+
+  const groupedByParagraph = new Map<string, Map<number, InlineCommentMarkerGroup>>();
+  for (const candidate of candidates) {
+    const startOffsets = groupedByParagraph.get(candidate.startParagraphId) ?? new Map<number, InlineCommentMarkerGroup>();
+    const startGroup = startOffsets.get(candidate.startOffset) ?? { closes: [], opens: [] };
+    startGroup.opens.push(candidate);
+    startOffsets.set(candidate.startOffset, startGroup);
+    groupedByParagraph.set(candidate.startParagraphId, startOffsets);
+
+    const endOffsets = groupedByParagraph.get(candidate.endParagraphId) ?? new Map<number, InlineCommentMarkerGroup>();
+    const endGroup = endOffsets.get(candidate.endOffset) ?? { closes: [], opens: [] };
+    endGroup.closes.push(candidate);
+    endOffsets.set(candidate.endOffset, endGroup);
+    groupedByParagraph.set(candidate.endParagraphId, endOffsets);
+  }
+
+  const markersByParagraph = new Map<string, ToonCommentMarker[]>();
+  for (const [paragraphId, offsetGroups] of groupedByParagraph.entries()) {
+    const markers: ToonCommentMarker[] = [];
+    const sortedOffsets = Array.from(offsetGroups.keys()).sort((left, right) => right - left);
+    for (const offset of sortedOffsets) {
+      const group = offsetGroups.get(offset);
+      if (!group) continue;
+
+      const closes = [...group.closes].sort(compareInlineCommentCloseOrder);
+      const opens = [...group.opens].sort((left, right) => left.id - right.id);
+      const marker =
+        closes.map((comment) => `[cm-end:${comment.id}]`).join('') +
+        opens.map((comment) => `[cm-start:${comment.id}]`).join('');
+      if (!marker) continue;
+      markers.push({ offset, marker });
+    }
+
+    if (markers.length > 0) {
+      markersByParagraph.set(paragraphId, markers);
+    }
+  }
+
+  return markersByParagraph;
+}
+
 /**
  * Format a single toon data line for one DocumentViewNode.
  * Handles table-context-aware style (th/td) and header stripping.
  */
-export function formatToonDataLine(n: DocumentViewNode, options?: { compact?: boolean }): string {
+export function formatToonDataLine(
+  n: DocumentViewNode,
+  options?: { compact?: boolean; commentMarkers?: ToonCommentMarkerMap },
+): string {
   let text = n.tagged_text;
-  if (n.header) text = headerStripFromText({ header: n.header, text });
   let header = n.header;
+  let strippedPrefixVisibleLength = 0;
+
+  if (header) {
+    const strippedText = headerStripFromText({ header, text });
+    strippedPrefixVisibleLength = Math.max(
+      0,
+      countVisibleTextCharacters(text) - countVisibleTextCharacters(strippedText),
+    );
+    text = strippedText;
+  }
   if (header && !text) {
     text = header;
     header = '';
+    strippedPrefixVisibleLength = 0;
+  }
+
+  const commentMarkers = options?.commentMarkers?.get(n.id);
+  if (commentMarkers && commentMarkers.length > 0) {
+    text = injectToonCommentMarkers(
+      text,
+      commentMarkers.map(({ offset, marker }) => ({
+        offset: Math.max(0, offset - strippedPrefixVisibleLength),
+        marker,
+      })),
+    );
   }
 
   const tc = n.table_context;
@@ -462,6 +680,8 @@ export function formatToonCommentsEndnotesBlock(
 
 export function renderToon(nodes: DocumentViewNode[], options: { compact?: boolean } = {}): string {
   const lines: string[] = ['#SCHEMA id | list_label | header | style | text'];
+  const commentMarkers = collectInlineCommentMarkers(nodes);
+  const lineOptions = { ...options, commentMarkers };
 
   // Pre-scan: collect table marker info for #TABLE lines
   const tableInfo = collectTableMarkerInfo(nodes);
@@ -485,7 +705,7 @@ export function renderToon(nodes: DocumentViewNode[], options: { compact?: boole
       currentTableIndex = nodeTableIndex;
     }
 
-    lines.push(formatToonDataLine(n, options));
+    lines.push(formatToonDataLine(n, lineOptions));
     lines.push(...formatToonCommentLines(n));
   }
 

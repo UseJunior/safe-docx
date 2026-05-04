@@ -22,6 +22,81 @@ function commentBlockLines(lines: string[]): string[] {
   return start === -1 ? [] : lines.slice(start);
 }
 
+type CommentFixtureEntry = {
+  id: number;
+  author: string;
+  initials: string;
+  text: string;
+  paraId: string;
+  date?: string;
+};
+
+function makeDocumentXml(bodyXml: string): string {
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+    `<w:body>${bodyXml}</w:body>` +
+    `</w:document>`
+  );
+}
+
+function withParagraphBookmark(params: {
+  bookmarkId: number;
+  name: string;
+  paragraphInnerXml: string;
+}): string {
+  return `<w:bookmarkStart w:id="${params.bookmarkId}" w:name="${params.name}"/><w:p>${params.paragraphInnerXml}</w:p><w:bookmarkEnd w:id="${params.bookmarkId}"/>`;
+}
+
+function makeCommentReferenceRun(commentId: number): string {
+  return `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${commentId}"/></w:r>`;
+}
+
+function makeCommentsXml(entries: CommentFixtureEntry[]): string {
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+    entries
+      .map(
+        (entry) =>
+          `<w:comment w:id="${entry.id}" w:author="${entry.author}" w:date="${entry.date ?? '2025-01-01T00:00:00Z'}" w:initials="${entry.initials}">` +
+          `<w:p w14:paraId="${entry.paraId}"><w:r><w:annotationRef/></w:r><w:r><w:t>${entry.text}</w:t></w:r></w:p>` +
+          `</w:comment>`,
+      )
+      .join('') +
+    `</w:comments>`
+  );
+}
+
+async function openCommentFixture(params: {
+  bodyXml: string;
+  comments: CommentFixtureEntry[];
+}) {
+  return openSession([], {
+    xml: makeDocumentXml(params.bodyXml),
+    extraFiles: { 'word/comments.xml': makeCommentsXml(params.comments) },
+  });
+}
+
+async function renderCommentFixture(params: {
+  bodyXml: string;
+  comments: CommentFixtureEntry[];
+  readParams?: {
+    format?: 'toon' | 'json' | 'simple';
+    comment_rendering?: string;
+    offset?: number;
+    limit?: number;
+  };
+}) {
+  const opened = await openCommentFixture({ bodyXml: params.bodyXml, comments: params.comments });
+  const read = await readFile(opened.mgr, {
+    file_path: opened.inputPath,
+    ...params.readParams,
+  });
+  assertSuccess(read, 'read_file');
+  return { opened, read, content: String(read.content), lines: toonLines(read.content) };
+}
+
 describe('read_file comment rendering', () => {
   registerCleanup();
 
@@ -711,5 +786,316 @@ describe('read_file comment rendering', () => {
       expect(paragraphLines).toHaveLength(1);
       expect(paragraphLines[0]).toContain('Alpha\\nBeta\\nGamma');
     });
+  });
+
+  const inlineMarkerParagraphCases = [
+    {
+      name: 'inline_markers wraps a single commented span in one paragraph',
+      paragraphId: '_bk_inline_single',
+      expected: 'Alpha [cm-start:0]Beta[cm-end:0] Gamma',
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 310,
+        name: '_bk_inline_single',
+        paragraphInnerXml:
+          `<w:r><w:t>Alpha </w:t></w:r><w:commentRangeStart w:id="0"/>` +
+          `<w:r><w:t>Beta</w:t></w:r><w:commentRangeEnd w:id="0"/>${makeCommentReferenceRun(0)}` +
+          `<w:r><w:t> Gamma</w:t></w:r>`,
+      }),
+      comments: [{ id: 0, author: 'Alice', initials: 'A', text: 'Inline note.', paraId: '00000040' }],
+    },
+    {
+      name: 'inline_markers renders two non-overlapping ranges in one paragraph',
+      paragraphId: '_bk_inline_non_overlapping',
+      expected: '[cm-start:0]Alpha[cm-end:0] middle [cm-start:1]Gamma[cm-end:1]',
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 311,
+        name: '_bk_inline_non_overlapping',
+        paragraphInnerXml:
+          `<w:commentRangeStart w:id="0"/><w:r><w:t>Alpha</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="0"/>${makeCommentReferenceRun(0)}<w:r><w:t> middle </w:t></w:r>` +
+          `<w:commentRangeStart w:id="1"/><w:r><w:t>Gamma</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="1"/>${makeCommentReferenceRun(1)}`,
+      }),
+      comments: [
+        { id: 0, author: 'Alice', initials: 'A', text: 'Alpha note.', paraId: '00000041' },
+        { id: 1, author: 'Bob', initials: 'B', text: 'Gamma note.', paraId: '00000042' },
+      ],
+    },
+    {
+      name: 'inline_markers preserves nested close ordering',
+      paragraphId: '_bk_inline_nested',
+      expected: 'Lead [cm-start:0]Alpha [cm-start:1]Beta[cm-end:1][cm-end:0] tail',
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 312,
+        name: '_bk_inline_nested',
+        paragraphInnerXml:
+          `<w:r><w:t>Lead </w:t></w:r><w:commentRangeStart w:id="0"/><w:r><w:t>Alpha </w:t></w:r>` +
+          `<w:commentRangeStart w:id="1"/><w:r><w:t>Beta</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="1"/>${makeCommentReferenceRun(1)}` +
+          `<w:commentRangeEnd w:id="0"/>${makeCommentReferenceRun(0)}<w:r><w:t> tail</w:t></w:r>`,
+      }),
+      comments: [
+        { id: 0, author: 'Alice', initials: 'A', text: 'Outer note.', paraId: '00000043' },
+        { id: 1, author: 'Bob', initials: 'B', text: 'Inner note.', paraId: '00000044' },
+      ],
+    },
+    {
+      name: 'inline_markers preserves crossing ranges losslessly',
+      paragraphId: '_bk_inline_crossing',
+      expected: '[cm-start:0]A [cm-start:1]B[cm-end:0] C[cm-end:1]',
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 313,
+        name: '_bk_inline_crossing',
+        paragraphInnerXml:
+          `<w:commentRangeStart w:id="0"/><w:r><w:t>A </w:t></w:r><w:commentRangeStart w:id="1"/>` +
+          `<w:r><w:t>B</w:t></w:r><w:commentRangeEnd w:id="0"/>${makeCommentReferenceRun(0)}` +
+          `<w:r><w:t> C</w:t></w:r><w:commentRangeEnd w:id="1"/>${makeCommentReferenceRun(1)}`,
+      }),
+      comments: [
+        { id: 0, author: 'Alice', initials: 'A', text: 'First crossing note.', paraId: '00000045' },
+        { id: 1, author: 'Bob', initials: 'B', text: 'Second crossing note.', paraId: '00000046' },
+      ],
+    },
+  ] satisfies Array<{
+    name: string;
+    paragraphId: string;
+    expected: string;
+    bodyXml: string;
+    comments: CommentFixtureEntry[];
+  }>;
+
+  for (const scenario of inlineMarkerParagraphCases) {
+    test(scenario.name, async () => {
+      const { lines } = await renderCommentFixture({
+        bodyXml: scenario.bodyXml,
+        comments: scenario.comments,
+        readParams: { comment_rendering: 'inline_markers' },
+      });
+      expect(findParagraphLine(lines, scenario.paragraphId)).toContain(scenario.expected);
+    });
+  }
+
+  test('inline_markers suppresses whole-paragraph markers but keeps the thread block', async () => {
+    const opened = await openSession(['Whole paragraph comment']);
+    const result = await addComment(opened.mgr, {
+      file_path: opened.inputPath,
+      target_paragraph_id: opened.firstParaId,
+      author: 'Alice',
+      text: 'Whole-paragraph note.',
+    });
+    assertSuccess(result, 'add_comment');
+    const read = await readFile(opened.mgr, { file_path: opened.inputPath, comment_rendering: 'inline_markers' });
+    assertSuccess(read, 'read_file');
+    const content = String(read.content);
+    const line = findParagraphLine(toonLines(content), opened.firstParaId);
+    expect(line).not.toContain('[cm-start:');
+    expect(line).not.toContain('[cm-end:');
+    expect(content).toContain(`#COMMENT ${opened.firstParaId} c${result.comment_id} Alice `);
+  });
+
+  test('inline_markers renders multi-paragraph ranges only at the boundary paragraphs', async () => {
+    const { lines } = await renderCommentFixture({
+      bodyXml:
+        withParagraphBookmark({
+          bookmarkId: 301,
+          name: '_bk_multi_start',
+          paragraphInnerXml:
+            `<w:r><w:t>Lead </w:t></w:r><w:commentRangeStart w:id="11"/><w:r><w:t>First chunk</w:t></w:r>`,
+        }) +
+        withParagraphBookmark({
+          bookmarkId: 302,
+          name: '_bk_multi_middle',
+          paragraphInnerXml: `<w:r><w:t>Middle paragraph</w:t></w:r>`,
+        }) +
+        withParagraphBookmark({
+          bookmarkId: 303,
+          name: '_bk_multi_end',
+          paragraphInnerXml:
+            `<w:r><w:t>Second chunk</w:t></w:r><w:commentRangeEnd w:id="11"/>${makeCommentReferenceRun(11)}` +
+            `<w:r><w:t> tail</w:t></w:r>`,
+        }),
+      comments: [{ id: 11, author: 'Alice', initials: 'A', text: 'Across paragraphs.', paraId: '00000031' }],
+      readParams: { comment_rendering: 'inline_markers' },
+    });
+    expect(findParagraphLine(lines, '_bk_multi_start')).toContain('Lead [cm-start:11]First chunk');
+    expect(findParagraphLine(lines, '_bk_multi_middle')).not.toContain('[cm-');
+    expect(findParagraphLine(lines, '_bk_multi_end')).toContain('Second chunk[cm-end:11] tail');
+  });
+
+  test('inline_markers supports ranges that start in a table cell and end after the table', async () => {
+    const { lines } = await renderCommentFixture({
+      bodyXml:
+        `<w:tbl><w:tr><w:tc>` +
+        withParagraphBookmark({
+          bookmarkId: 304,
+          name: '_bk_table_start',
+          paragraphInnerXml:
+            `<w:r><w:t>Left </w:t></w:r><w:commentRangeStart w:id="12"/><w:r><w:t>cell</w:t></w:r>`,
+        }) +
+        `</w:tc></w:tr></w:tbl>` +
+        withParagraphBookmark({
+          bookmarkId: 305,
+          name: '_bk_after_table',
+          paragraphInnerXml: `<w:r><w:t>After table</w:t></w:r><w:commentRangeEnd w:id="12"/>${makeCommentReferenceRun(12)}`,
+        }),
+      comments: [{ id: 12, author: 'Bob', initials: 'B', text: 'Cross-boundary note.', paraId: '00000032' }],
+      readParams: { comment_rendering: 'inline_markers' },
+    });
+    const tableIndex = lines.indexOf('#TABLE _tbl_0 | 1 rows × 1 cols');
+    const startIndex = lines.indexOf(findParagraphLine(lines, '_bk_table_start'));
+    const endTableIndex = lines.indexOf('#END_TABLE');
+    const afterTableIndex = lines.indexOf(findParagraphLine(lines, '_bk_after_table'));
+    expect(tableIndex).toBeGreaterThan(-1);
+    expect(startIndex).toBeGreaterThan(tableIndex);
+    expect(findParagraphLine(lines, '_bk_table_start')).toContain('Left [cm-start:12]cell');
+    expect(afterTableIndex).toBeGreaterThan(endTableIndex);
+    expect(findParagraphLine(lines, '_bk_after_table')).toContain('After table[cm-end:12]');
+  });
+
+  test('inline_markers combined mode keeps #COMMENT and #REPLY lines', async () => {
+    const opened = await openCommentFixture({
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 314,
+        name: '_bk_inline_combined',
+        paragraphInnerXml:
+          `<w:commentRangeStart w:id="20"/><w:r><w:t>Clause</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="20"/>${makeCommentReferenceRun(20)}<w:r><w:t> text</w:t></w:r>`,
+      }),
+      comments: [{ id: 20, author: 'Alice', initials: 'A', text: 'Root inline note.', paraId: '00000047' }],
+    });
+    const reply = await addComment(opened.mgr, {
+      file_path: opened.inputPath,
+      parent_comment_id: 20,
+      author: 'Bob',
+      text: 'Reply inline note.',
+    });
+    assertSuccess(reply, 'add_comment(reply)');
+    const read = await readFile(opened.mgr, { file_path: opened.inputPath, comment_rendering: 'inline_markers' });
+    assertSuccess(read, 'read_file');
+    const content = String(read.content);
+    const lines = toonLines(content);
+    expect(findParagraphLine(lines, '_bk_inline_combined')).toContain('[cm-start:20]Clause[cm-end:20] text');
+    expect(content).toContain('#COMMENT _bk_inline_combined c20 Alice ');
+    expect(content).toContain(`#REPLY c${reply.comment_id} -> c20 Bob `);
+  });
+
+  test('pagination does not surface inline markers for out-of-window comment boundaries', async () => {
+    const { content, read } = await renderCommentFixture({
+      bodyXml:
+        withParagraphBookmark({
+          bookmarkId: 306,
+          name: '_bk_window_start',
+          paragraphInnerXml:
+            `<w:r><w:t>Lead </w:t></w:r><w:commentRangeStart w:id="13"/><w:r><w:t>First chunk</w:t></w:r>`,
+        }) +
+        withParagraphBookmark({
+          bookmarkId: 307,
+          name: '_bk_window_middle',
+          paragraphInnerXml: `<w:r><w:t>Middle paragraph</w:t></w:r>`,
+        }) +
+        withParagraphBookmark({
+          bookmarkId: 308,
+          name: '_bk_window_end',
+          paragraphInnerXml: `<w:r><w:t>Second chunk</w:t></w:r><w:commentRangeEnd w:id="13"/>${makeCommentReferenceRun(13)}`,
+        }),
+      comments: [{ id: 13, author: 'Cara', initials: 'C', text: 'Windowed note.', paraId: '00000033' }],
+      readParams: { offset: 3, limit: 1, comment_rendering: 'inline_markers' },
+    });
+    expect(findParagraphLine(toonLines(content), '_bk_window_end')).not.toContain('[cm-end:13]');
+    expect(content).not.toContain('#COMMENT _bk_window_start');
+    expect(Number(read.paragraphs_returned)).toBe(1);
+  });
+
+  test('inline_markers falls back to paragraph notes when range metadata is incomplete', async () => {
+    const { content, lines } = await renderCommentFixture({
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 309,
+        name: '_bk_missing_start',
+        paragraphInnerXml:
+          `<w:r><w:t>Legacy attachment</w:t></w:r><w:commentRangeEnd w:id="14"/>${makeCommentReferenceRun(14)}`,
+      }),
+      comments: [{ id: 14, author: 'Dana', initials: 'D', text: 'Legacy comment.', paraId: '00000034' }],
+      readParams: { comment_rendering: 'inline_markers' },
+    });
+    expect(findParagraphLine(lines, '_bk_missing_start')).not.toContain('[cm-');
+    expect(content).toContain('#COMMENT _bk_missing_start c14 Dana ');
+  });
+
+  test('json output includes comment range metadata only in inline_markers mode', async () => {
+    const fixture = {
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 315,
+        name: '_bk_json_range',
+        paragraphInnerXml:
+          `<w:r><w:t>Alpha </w:t></w:r><w:commentRangeStart w:id="30"/><w:r><w:t>Beta</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="30"/>${makeCommentReferenceRun(30)}<w:r><w:t> Gamma</w:t></w:r>`,
+      }),
+      comments: [{ id: 30, author: 'Alice', initials: 'A', text: 'JSON range note.', paraId: '00000048' }],
+    };
+    const inline = await renderCommentFixture({ ...fixture, readParams: { format: 'json', comment_rendering: 'inline_markers' } });
+    const paragraphNotes = await renderCommentFixture({ ...fixture, readParams: { format: 'json', comment_rendering: 'paragraph_notes' } });
+    const inlineNode = (JSON.parse(inline.content) as Array<{ id: string; comments?: Array<{ id: number; range?: unknown }> }>)
+      .find((candidate) => candidate.id === '_bk_json_range');
+    const paragraphNode = (JSON.parse(paragraphNotes.content) as Array<{ id: string; comments?: Array<{ range?: unknown }> }>)
+      .find((candidate) => candidate.id === '_bk_json_range');
+    expect(inlineNode?.comments?.[0]).toMatchObject({
+      id: 30,
+      range: {
+        startParagraphId: '_bk_json_range',
+        endParagraphId: '_bk_json_range',
+        startRunIndex: 1,
+        startCharOffset: 0,
+        endRunIndex: 1,
+        endCharOffset: 4,
+      },
+    });
+    expect(paragraphNode?.comments?.[0]?.range).toBeUndefined();
+  });
+
+  test('simple output in inline_markers mode keeps comment suffixes but does not inline the milestones', async () => {
+    const opened = await openSession(['Simple inline paragraph']);
+    const result = await addComment(opened.mgr, {
+      file_path: opened.inputPath,
+      target_paragraph_id: opened.firstParaId,
+      author: 'Alice',
+      text: 'Simple inline note.',
+      anchor_text: 'inline',
+    });
+    assertSuccess(result, 'add_comment');
+    const read = await readFile(opened.mgr, {
+      file_path: opened.inputPath,
+      format: 'simple',
+      comment_rendering: 'inline_markers',
+    });
+    assertSuccess(read, 'read_file');
+    const content = String(read.content);
+    expect(content).toContain(`[c${result.comment_id}: Simple inline note.]`);
+    expect(content).not.toContain('[cm-start:');
+    expect(content).not.toContain('[cm-end:');
+  });
+
+  test('inline_markers correctly positions markers around literal angle-bracket text like <Borrower>', async () => {
+    // Regression: the marker injector previously treated any `<...>` in tagged_text as a
+    // TOON formatting tag, so paragraphs containing literal angle-bracket placeholders
+    // (common in legal templates: `<Borrower>`, `<Effective Date>`) misplaced the markers.
+    // The fix recognizes only the known TOON tag set; literal `<...>` is counted as visible chars.
+    const fixture = {
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 320,
+        name: '_bk_literal_angles',
+        paragraphInnerXml:
+          `<w:r><w:t>Alpha &lt;Borrower&gt; </w:t></w:r>` +
+          `<w:commentRangeStart w:id="40"/>` +
+          `<w:r><w:t>Beta</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="40"/>${makeCommentReferenceRun(40)}`,
+      }),
+      comments: [{ id: 40, author: 'Alice', initials: 'A', text: 'Should this be a placeholder?', paraId: '00000049' }],
+      readParams: { comment_rendering: 'inline_markers' as const },
+    };
+    const rendered = await renderCommentFixture(fixture);
+    const lines = String(rendered.content).split('\n');
+    const paragraphLine = findParagraphLine(lines, '_bk_literal_angles');
+    // Markers must wrap "Beta" exactly, not anything else.
+    expect(paragraphLine).toContain('Alpha <Borrower> [cm-start:40]Beta[cm-end:40]');
   });
 });

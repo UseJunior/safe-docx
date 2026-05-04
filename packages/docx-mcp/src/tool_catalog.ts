@@ -41,10 +41,10 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       node_ids: z.array(z.string()).optional(),
       format: z.enum(['toon', 'json', 'simple']).optional(),
       comment_rendering: z
-        .enum(['none', 'paragraph_notes', 'endnotes'])
+        .enum(['none', 'paragraph_notes', 'endnotes', 'inline_markers'])
         .optional()
         .describe(
-          'How to render comments in read_file output. Use "paragraph_notes" (default) to emit paragraph-local comments and replies, "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering.',
+          'How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering.',
         ),
       show_formatting: z
         .boolean()

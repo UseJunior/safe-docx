@@ -4,11 +4,13 @@ import { err, ok, type ToolResponse } from './types.js';
 import {
   OOXML,
   W,
+  INLINE_COMMENT_MARKER_RUNTIME,
   renderToon,
   renderToonWithCommentEndnotes,
   formatToonDataLine,
   formatToonCommentLines,
   formatToonCommentsEndnotesBlock,
+  collectInlineCommentMarkers,
   collectTableMarkerInfo,
   formatTableMarker,
   type Comment,
@@ -49,27 +51,194 @@ function escapeCommentSuffixText(text: string): string {
     .replaceAll('|', '\\|');
 }
 
-function mapDocumentViewComment(comment: Comment): DocumentViewComment {
+type InlineCommentMarkerRuntime = {
+  startVisibleOffset: number;
+  endVisibleOffset: number;
+  suppressInlineMarkers: boolean;
+};
+
+function getCommentAnchorParagraphId(comment: Comment): string | null {
+  return comment.anchoredParagraphId ?? comment.endParagraphId ?? null;
+}
+
+function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
+  enum FieldState {
+    OUTSIDE_FIELD = 0,
+    IN_FIELD_CODE = 1,
+    IN_FIELD_RESULT = 2,
+  }
+
+  const runLengths: number[] = [];
+  const runElements = Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
+  let fieldState = FieldState.OUTSIDE_FIELD;
+
+  for (const runEl of runElements) {
+    let visibleLength = 0;
+
+    for (const child of Array.from(runEl.childNodes)) {
+      if (child.nodeType !== 1) continue;
+      const el = child as Element;
+      if (el.namespaceURI !== OOXML.W_NS) continue;
+
+      if (el.localName === W.fldChar) {
+        const type = getWAttr(el, 'fldCharType') ?? '';
+        if (type === 'begin') fieldState = FieldState.IN_FIELD_CODE;
+        else if (type === 'separate') fieldState = FieldState.IN_FIELD_RESULT;
+        else if (type === 'end') fieldState = FieldState.OUTSIDE_FIELD;
+        continue;
+      }
+
+      if (fieldState === FieldState.IN_FIELD_CODE) continue;
+
+      if (el.localName === W.t) {
+        visibleLength += (el.textContent ?? '').length;
+      } else if (el.localName === W.tab || el.localName === W.br) {
+        visibleLength += 1;
+      }
+    }
+
+    runLengths.push(visibleLength);
+  }
+
+  return runLengths;
+}
+
+function resolveCommentVisibleOffset(
+  runVisibleLengths: readonly number[],
+  runIndex: number | undefined,
+  charOffset: number | undefined,
+): number | undefined {
+  if (runIndex == null || charOffset == null) return undefined;
+  if (runIndex < 0 || runIndex >= runVisibleLengths.length) return undefined;
+
+  const runVisibleLength = runVisibleLengths[runIndex];
+  if (runVisibleLength == null || charOffset < 0 || charOffset > runVisibleLength) {
+    return undefined;
+  }
+
+  let offset = charOffset;
+  for (let index = 0; index < runIndex; index++) {
+    offset += runVisibleLengths[index] ?? 0;
+  }
+  return offset;
+}
+
+function buildInlineCommentMarkerRuntime(
+  comment: Comment,
+  paragraphElementsById: ReadonlyMap<string, Element>,
+  paragraphRunLengthsById: Map<string, number[]>,
+): InlineCommentMarkerRuntime | undefined {
+  if (
+    !comment.anchoredParagraphId ||
+    !comment.endParagraphId ||
+    comment.startRunIndex == null ||
+    comment.startCharOffset == null ||
+    comment.endRunIndex == null ||
+    comment.endCharOffset == null
+  ) {
+    return undefined;
+  }
+
+  const getRunLengths = (paragraphId: string): number[] | undefined => {
+    const cached = paragraphRunLengthsById.get(paragraphId);
+    if (cached) return cached;
+    const paragraphEl = paragraphElementsById.get(paragraphId);
+    if (!paragraphEl) return undefined;
+    const runLengths = getParagraphRunVisibleLengths(paragraphEl);
+    paragraphRunLengthsById.set(paragraphId, runLengths);
+    return runLengths;
+  };
+
+  const startRunLengths = getRunLengths(comment.anchoredParagraphId);
+  const endRunLengths = getRunLengths(comment.endParagraphId);
+  if (!startRunLengths || !endRunLengths) return undefined;
+
+  const startVisibleOffset = resolveCommentVisibleOffset(
+    startRunLengths,
+    comment.startRunIndex,
+    comment.startCharOffset,
+  );
+  const endVisibleOffset = resolveCommentVisibleOffset(
+    endRunLengths,
+    comment.endRunIndex,
+    comment.endCharOffset,
+  );
+  if (startVisibleOffset == null || endVisibleOffset == null) return undefined;
+
+  const endParagraphVisibleLength = endRunLengths.reduce((sum, length) => sum + length, 0);
   return {
+    startVisibleOffset,
+    endVisibleOffset,
+    suppressInlineMarkers:
+      comment.anchoredParagraphId === comment.endParagraphId &&
+      startVisibleOffset === 0 &&
+      endVisibleOffset === endParagraphVisibleLength,
+  };
+}
+
+function mapDocumentViewComment(
+  comment: Comment,
+  options?: {
+    includeRange?: boolean;
+    paragraphElementsById?: ReadonlyMap<string, Element>;
+    paragraphRunLengthsById?: Map<string, number[]>;
+  },
+): DocumentViewComment {
+  const mapped: DocumentViewComment = {
     id: comment.id,
     author: comment.author,
     date: comment.date || null,
     initials: comment.initials,
     text: comment.text,
-    replies: comment.replies.map((reply) => mapDocumentViewComment(reply)),
+    replies: comment.replies.map((reply) => mapDocumentViewComment(reply, options)),
   };
+
+  if (options?.includeRange && comment.anchoredParagraphId && comment.endParagraphId) {
+    mapped.range = {
+      startParagraphId: comment.anchoredParagraphId,
+      endParagraphId: comment.endParagraphId,
+      startRunIndex: comment.startRunIndex,
+      startCharOffset: comment.startCharOffset,
+      endRunIndex: comment.endRunIndex,
+      endCharOffset: comment.endCharOffset,
+    };
+
+    const runtime = options.paragraphElementsById && options.paragraphRunLengthsById
+      ? buildInlineCommentMarkerRuntime(
+          comment,
+          options.paragraphElementsById,
+          options.paragraphRunLengthsById,
+        )
+      : undefined;
+
+    if (runtime) {
+      Object.defineProperty(mapped, INLINE_COMMENT_MARKER_RUNTIME, {
+        value: runtime,
+        enumerable: false,
+      });
+    }
+  }
+
+  return mapped;
 }
 
 function attachParagraphComments(
   nodes: readonly DocumentViewNode[],
   comments: readonly Comment[],
+  options?: { includeInlineMarkers?: boolean; paragraphElementsById?: ReadonlyMap<string, Element> },
 ): DocumentViewNode[] {
   const commentsByParagraph = new Map<string, DocumentViewComment[]>();
+  const paragraphRunLengthsById = new Map<string, number[]>();
   for (const comment of comments) {
-    if (!comment.anchoredParagraphId) continue;
-    const rootComments = commentsByParagraph.get(comment.anchoredParagraphId) ?? [];
-    rootComments.push(mapDocumentViewComment(comment));
-    commentsByParagraph.set(comment.anchoredParagraphId, rootComments);
+    const paragraphId = getCommentAnchorParagraphId(comment);
+    if (!paragraphId) continue;
+    const rootComments = commentsByParagraph.get(paragraphId) ?? [];
+    rootComments.push(mapDocumentViewComment(comment, {
+      includeRange: options?.includeInlineMarkers,
+      paragraphElementsById: options?.paragraphElementsById,
+      paragraphRunLengthsById,
+    }));
+    commentsByParagraph.set(paragraphId, rootComments);
   }
 
   return nodes.map((node) => {
@@ -126,11 +295,16 @@ export async function readFile(
     }
 
     const commentRendering = (params.comment_rendering ?? 'paragraph_notes').toLowerCase();
-    if (commentRendering !== 'none' && commentRendering !== 'paragraph_notes' && commentRendering !== 'endnotes') {
+    if (
+      commentRendering !== 'none' &&
+      commentRendering !== 'paragraph_notes' &&
+      commentRendering !== 'endnotes' &&
+      commentRendering !== 'inline_markers'
+    ) {
       return err(
         'INVALID_COMMENT_RENDERING',
         `Invalid comment_rendering: ${params.comment_rendering}`,
-        "Use 'paragraph_notes' (default), 'endnotes', or 'none'.",
+        "Use 'paragraph_notes' (default), 'inline_markers', 'endnotes', or 'none'.",
       );
     }
 
@@ -188,7 +362,23 @@ export async function readFile(
 
     if (commentRendering !== 'none') {
       try {
-        enriched = attachParagraphComments(enriched, await session.doc.getComments());
+        const comments = await session.doc.getComments();
+        const paragraphElementsById = commentRendering === 'inline_markers'
+          ? new Map(
+              Array.from(new Set([
+                ...enriched.map((node) => node.id),
+                ...comments.map((comment) => comment.anchoredParagraphId).filter((paragraphId): paragraphId is string => paragraphId != null),
+                ...comments.map((comment) => comment.endParagraphId).filter((paragraphId): paragraphId is string => paragraphId != null),
+              ]))
+                .map((paragraphId) => [paragraphId, session.doc.getParagraphElementById(paragraphId)] as const)
+                .filter((entry): entry is readonly [string, Element] => entry[1] != null),
+            )
+          : undefined;
+
+        enriched = attachParagraphComments(enriched, comments, {
+          includeInlineMarkers: commentRendering === 'inline_markers',
+          paragraphElementsById,
+        });
       } catch {
         // Preserve existing read_file behavior if comment parts are unavailable or malformed.
       }
@@ -262,6 +452,8 @@ function renderToonWithBudget(
   let count = 0;
   let currentTableIndex: number | null = null;
   const includedNodes: DocumentViewNode[] = [];
+  const useInlineMarkers = commentRendering === 'inline_markers';
+  const commentMarkers = useInlineMarkers ? collectInlineCommentMarkers(enriched) : undefined;
 
   // Pre-scan: collect table marker info for #TABLE lines
   const tableInfo = collectTableMarkerInfo(enriched);
@@ -290,10 +482,13 @@ function renderToonWithBudget(
       currentTableIndex = nodeTableIndex;
     }
 
-    const dataLine = formatToonDataLine(node);
-    const commentLines = commentRendering === 'paragraph_notes'
-      ? formatToonCommentLines(node)
-      : [];
+    const dataLine = useInlineMarkers
+      ? formatToonDataLine(node, { commentMarkers })
+      : formatToonDataLine(node);
+    const commentLines =
+      commentRendering === 'paragraph_notes' || useInlineMarkers
+        ? formatToonCommentLines(node)
+        : [];
     const nodeLines = [dataLine, ...commentLines].join('\n');
     const candidateBase = accumulated + '\n' + nodeLines;
     let candidate = candidateBase;
