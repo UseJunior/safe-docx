@@ -396,7 +396,11 @@ export function formatTableMarker(info: { id: string; totalRows: number; totalCo
 }
 
 function escapeToonCommentField(value: string): string {
-  return value.replaceAll('|', '\\|');
+  return value
+    .replaceAll('\r\n', '\\n')
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('|', '\\|');
 }
 
 function formatCommentDate(date: string | null): string {

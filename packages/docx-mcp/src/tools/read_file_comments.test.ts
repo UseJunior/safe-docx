@@ -341,4 +341,58 @@ describe('read_file comment rendering', () => {
       expect(String(read.content)).toContain('Clause \\| note.');
     });
   });
+
+  test('multiline comment text is escaped to a single TOON line', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a document with one paragraph', async () => openSession(['Multiline paragraph.']));
+
+    const read = await when('a comment containing newlines is added', async () => {
+      const result = await addComment(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        author: 'Alice',
+        text: 'Line one.\nLine two.\r\nLine three.\rLine four.',
+      });
+      assertSuccess(result, 'add_comment');
+      const rendered = await readFile(opened.mgr, { file_path: opened.inputPath });
+      assertSuccess(rendered, 'read_file');
+      return rendered;
+    });
+
+    await then('the comment renders as exactly one #COMMENT line with literal escapes', async () => {
+      const lines = toonLines(read.content);
+      const commentLines = lines.filter((line) => line.startsWith('#COMMENT '));
+      expect(commentLines).toHaveLength(1);
+      expect(commentLines[0]).toContain('Line one.');
+      expect(commentLines[0]).toContain('Line two.');
+      expect(commentLines[0]).toContain('Line three.');
+      expect(commentLines[0]).toContain('Line four.');
+      expect(commentLines[0]).toMatch(/\\[nr]/);
+      expect(commentLines[0]).not.toContain('\n');
+      expect(commentLines[0]).not.toContain('\r');
+    });
+  });
+
+  test('multiline comment text is escaped to a single line in simple format', async ({ given, when, then }: AllureBddContext) => {
+    const opened = await given('a document with one paragraph', async () => openSession(['Multiline simple paragraph.']));
+
+    const read = await when('a comment containing newlines is added and read in simple format', async () => {
+      const result = await addComment(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        author: 'Alice',
+        text: 'Alpha\nBeta\r\nGamma',
+      });
+      assertSuccess(result, 'add_comment');
+      const rendered = await readFile(opened.mgr, { file_path: opened.inputPath, format: 'simple' });
+      assertSuccess(rendered, 'read_file');
+      return rendered;
+    });
+
+    await then('the simple-format suffix renders on a single line with literal escapes', async () => {
+      const lines = String(read.content).split('\n');
+      const paragraphLines = lines.filter((line) => line.includes(opened.firstParaId));
+      expect(paragraphLines).toHaveLength(1);
+      expect(paragraphLines[0]).toContain('Alpha\\nBeta\\nGamma');
+    });
+  });
 });

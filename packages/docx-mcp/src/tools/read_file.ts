@@ -40,7 +40,11 @@ function collectFootnoteMarkerSuffix(
 }
 
 function escapeCommentSuffixText(text: string): string {
-  return text.replaceAll('|', '\\|');
+  return text
+    .replaceAll('\r\n', '\\n')
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('|', '\\|');
 }
 
 function mapDocumentViewComment(comment: Comment): DocumentViewComment {
