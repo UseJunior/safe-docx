@@ -8,6 +8,7 @@ import {
   allocateRevisionId,
   buildPPrChangeElement,
   buildRPrChangeElement,
+  createRevisionContainer,
   createRevisionContext,
   createRevisionIdState,
   wrapElementWithDel,
@@ -92,6 +93,37 @@ describe('track-changes-emitter', () => {
       expect(serialized).toContain('<w:delInstrText>PAGE</w:delInstrText>');
       expect(serialized).not.toContain('<w:t');
       expect(serialized).not.toContain('<w:instrText');
+    });
+  });
+
+  test('createRevisionContainer allocates tracked-change metadata for caller-owned content', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let serialized: string;
+
+    await given('a document and a shared revision context', () => {
+      doc = parseXml(`<?xml version="1.0" encoding="UTF-8"?><root xmlns:w="${OOXML.W_NS}"/>`);
+    });
+
+    await when('a deletion container is created for multi-run ownership', () => {
+      serialized = serialize(
+        createRevisionContainer(
+          doc,
+          'del',
+          createRevisionContext({
+            author: 'Comparison',
+            date: '2026-05-03T14:15:16Z',
+            idState: createRevisionIdState(),
+          }),
+        ),
+      );
+    });
+
+    await then('the wrapper includes revision metadata and no placeholder children', () => {
+      expect(serialized).toContain('<w:del ');
+      expect(serialized).toContain('w:id="1"');
+      expect(serialized).toContain('w:author="Comparison"');
+      expect(serialized).toContain('w:date="2026-05-03T14:15:16Z"');
+      expect(serialized).not.toContain('<w:r');
     });
   });
 

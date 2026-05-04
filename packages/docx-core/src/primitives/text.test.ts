@@ -1,8 +1,10 @@
+import { XMLSerializer } from '@xmldom/xmldom';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { parseXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
+import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import {
   getParagraphRuns,
   getParagraphText,
@@ -29,6 +31,16 @@ function firstParagraph(doc: Document): Element {
   const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0);
   if (!p) throw new Error('missing paragraph');
   return p as Element;
+}
+
+function paragraphAt(doc: Document, index: number): Element {
+  const p = doc.getElementsByTagNameNS(W_NS, W.p).item(index);
+  if (!p) throw new Error(`missing paragraph at index ${index}`);
+  return p as Element;
+}
+
+function serialize(node: Node): string {
+  return new XMLSerializer().serializeToString(node);
 }
 
 // ── getParagraphRuns — field-code state machine ─────────────────────
@@ -666,6 +678,289 @@ describe('replaceParagraphTextRange', () => {
 
     await then('paragraph text reads "ABCXYZ"', () => {
       expect(getParagraphText(p)).toBe('ABCXYZ');
+    });
+  });
+});
+
+describe('replaceParagraphTextRange tracked-change emission', () => {
+  test('emits one insertion and one deletion wrapper for a tracked replacement', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let serialized: string;
+
+    await given('a paragraph and a shared revision context', () => {
+      const doc = makeDoc('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      p = firstParagraph(doc);
+    });
+
+    await when('the first word is replaced under tracked-change emission', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        5,
+        'NEW',
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+      serialized = serialize(p);
+    });
+
+    await then('exactly one insertion and one deletion wrapper are emitted with revision metadata', () => {
+      const insertions = Array.from(p.getElementsByTagNameNS(W_NS, 'ins'));
+      const deletions = Array.from(p.getElementsByTagNameNS(W_NS, 'del'));
+      expect(insertions).toHaveLength(1);
+      expect(deletions).toHaveLength(1);
+
+      const insertion = insertions[0]!;
+      const deletion = deletions[0]!;
+      expect(insertion.getAttribute('w:id')).toBeTruthy();
+      expect(insertion.getAttribute('w:author')).toBe('SafeDocX AI');
+      expect(insertion.getAttribute('w:date')).toBe('2026-05-03T14:15:16Z');
+      expect(deletion.getAttribute('w:id')).toBeTruthy();
+      expect(deletion.getAttribute('w:author')).toBe('SafeDocX AI');
+      expect(deletion.getAttribute('w:date')).toBe('2026-05-03T14:15:16Z');
+      expect(serialized).toContain('<w:ins ');
+      expect(serialized).toContain('<w:del ');
+      expect(serialized).toContain('<w:r><w:t>NEW</w:t></w:r>');
+      expect(deletion.getElementsByTagNameNS(W_NS, 'delText')).toHaveLength(1);
+      expect(deletion.getElementsByTagNameNS(W_NS, W.t)).toHaveLength(0);
+    });
+  });
+
+  test('emits only an insertion wrapper for pure tracked insertion', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph containing "HelloWorld"', () => {
+      const doc = makeDoc('<w:p><w:r><w:t>HelloWorld</w:t></w:r></w:p>');
+      p = firstParagraph(doc);
+    });
+
+    await when('text is inserted at a zero-length range under tracked changes', () => {
+      replaceParagraphTextRange(
+        p,
+        5,
+        5,
+        'NEW',
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('only one insertion wrapper is emitted', () => {
+      expect(getParagraphText(p)).toBe('HelloNEWWorld');
+      expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+    });
+  });
+
+  test('emits only a deletion wrapper for pure tracked deletion', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph containing "Hello world"', () => {
+      const doc = makeDoc('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      p = firstParagraph(doc);
+    });
+
+    await when('text is deleted with an empty replacement under tracked changes', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        5,
+        '',
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('only one deletion wrapper is emitted', () => {
+      expect(getParagraphText(p)).toBe(' world');
+      expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+      expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+    });
+  });
+
+  test('preserves per-run formatting inside tracked deletions spanning multiple runs', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let deletion: Element;
+
+    await given('a paragraph with bold, plain, and italic runs', () => {
+      const doc = makeDoc(
+        `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>Hello</w:t></w:r>` +
+          `<w:r><w:t> </w:t></w:r>` +
+          `<w:r><w:rPr><w:i/></w:rPr><w:t>world</w:t></w:r>` +
+        `</w:p>`,
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the full span is replaced under tracked changes', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        11,
+        'New text',
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+      deletion = p.getElementsByTagNameNS(W_NS, 'del').item(0) as Element;
+    });
+
+    await then('the deletion wrapper keeps the original three runs and their run properties', () => {
+      const deletedRuns = Array.from(deletion.getElementsByTagNameNS(W_NS, W.r));
+      expect(deletedRuns).toHaveLength(3);
+      expect(deletedRuns[0]!.getElementsByTagNameNS(W_NS, W.b)).toHaveLength(1);
+      expect(deletedRuns[1]!.getElementsByTagNameNS(W_NS, W.rPr)).toHaveLength(0);
+      expect(deletedRuns[2]!.getElementsByTagNameNS(W_NS, W.i)).toHaveLength(1);
+      expect(Array.from(deletion.getElementsByTagNameNS(W_NS, 'delText')).map((el) => el.textContent)).toEqual([
+        'Hello',
+        ' ',
+        'world',
+      ]);
+    });
+  });
+
+  test('preserves run formatting on partial-run tracked deletion (split path)', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let deletion: Element;
+
+    await given('a paragraph with a single bold run carrying "HelloWorld"', () => {
+      const doc = makeDoc(
+        `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>HelloWorld</w:t></w:r></w:p>`,
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('a tracked replacement targets the middle slice [2, 8) — splitting the run', () => {
+      replaceParagraphTextRange(
+        p,
+        2,
+        8,
+        'X',
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+      deletion = p.getElementsByTagNameNS(W_NS, 'del').item(0) as Element;
+    });
+
+    await then('the deletion fragment retains the bold rPr from the original run', () => {
+      const deletedRuns = Array.from(deletion.getElementsByTagNameNS(W_NS, W.r));
+      expect(deletedRuns).toHaveLength(1);
+      expect(deletedRuns[0]!.getElementsByTagNameNS(W_NS, W.b)).toHaveLength(1);
+      expect(Array.from(deletion.getElementsByTagNameNS(W_NS, 'delText')).map((el) => el.textContent)).toEqual([
+        'lloWor',
+      ]);
+      expect(getParagraphText(p)).toBe('HeXld');
+    });
+  });
+
+  test('preserves legacy untracked behavior when revision context is omitted', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let serialized: string;
+
+    await given('a paragraph containing "Hello world"', () => {
+      const doc = makeDoc('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      p = firstParagraph(doc);
+    });
+
+    await when('the first word is replaced without a revision context', () => {
+      replaceParagraphTextRange(p, 0, 5, 'NEW');
+      serialized = serialize(p);
+    });
+
+    await then('the edit stays untracked and the visible text still changes', () => {
+      expect(getParagraphText(p)).toBe('NEW world');
+      expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+      expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+      expect(serialized).not.toContain('<w:ins');
+      expect(serialized).not.toContain('<w:del');
+    });
+  });
+
+  test('allocates unique revision IDs across multiple tracked replacements in one document', async ({ given, when, then }: AllureBddContext) => {
+    let doc: Document;
+    let ids: number[];
+
+    await given('a document with two editable paragraphs and a shared revision state', () => {
+      doc = makeDoc(
+        `<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>` +
+          `<w:p><w:r><w:t>Second line</w:t></w:r></w:p>`,
+      );
+      ids = [];
+    });
+
+    await when('two tracked replacements are applied with the same revision context', () => {
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      replaceParagraphTextRange(paragraphAt(doc, 0), 0, 5, 'NEW', ctx);
+      replaceParagraphTextRange(paragraphAt(doc, 1), 0, 6, 'Other', ctx);
+
+      ids = [
+        ...Array.from(doc.getElementsByTagNameNS(W_NS, 'ins')),
+        ...Array.from(doc.getElementsByTagNameNS(W_NS, 'del')),
+      ].map((el) => Number(el.getAttribute('w:id')));
+    });
+
+    await then('all emitted insertion and deletion IDs are distinct', () => {
+      expect(ids).toHaveLength(4);
+      expect(new Set(ids).size).toBe(4);
+      expect(ids.slice().sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
+    });
+  });
+
+  test('preserves UNSAFE_CONTAINER_BOUNDARY refusal for tracked edits crossing a hyperlink boundary', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph whose visible range spans from a hyperlink into plain paragraph content', () => {
+      const doc = makeDoc(
+        `<w:p>` +
+          `<w:hyperlink r:id="rId5"><w:r><w:t>Hello</w:t></w:r></w:hyperlink>` +
+          `<w:r><w:t> world</w:t></w:r>` +
+        `</w:p>`,
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('a tracked replacement crosses the hyperlink boundary', () => {
+      // captured for assertion
+    });
+
+    await then('the primitive throws UNSAFE_CONTAINER_BOUNDARY', () => {
+      try {
+        replaceParagraphTextRange(
+          p,
+          0,
+          6,
+          'NEW',
+          createRevisionContext({
+            author: 'SafeDocX AI',
+            date: '2026-05-03T14:15:16Z',
+            idState: createRevisionIdState(),
+          }),
+        );
+        expect.unreachable('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(SafeDocxError);
+        expect((e as SafeDocxError).code).toBe('UNSAFE_CONTAINER_BOUNDARY');
+      }
     });
   });
 });
