@@ -429,6 +429,37 @@ export function formatToonCommentLines(node: Pick<DocumentViewNode, 'id' | 'comm
   return node.comments?.flatMap((comment) => collectToonCommentLines(comment, node.id)) ?? [];
 }
 
+function collectToonCommentEndnoteLines(
+  comment: DocumentViewComment,
+  paragraphId: string,
+  parentId?: number,
+): string[] {
+  const author = escapeToonCommentField(comment.author || '-');
+  const date = formatCommentDate(comment.date);
+  const text = escapeToonCommentField(comment.text);
+  const line = parentId == null
+    ? `c${comment.id} @ ${paragraphId} ${author} ${date} | ${text}`
+    : `c${comment.id} -> c${parentId} ${author} ${date} | ${text}`;
+
+  return [
+    line,
+    ...comment.replies.flatMap((reply) => collectToonCommentEndnoteLines(reply, paragraphId, comment.id)),
+  ];
+}
+
+export function formatToonCommentEndnoteLines(node: Pick<DocumentViewNode, 'id' | 'comments'>): string[] {
+  return node.comments?.flatMap((comment) => collectToonCommentEndnoteLines(comment, node.id)) ?? [];
+}
+
+export function formatToonCommentsEndnotesBlock(
+  nodes: readonly Pick<DocumentViewNode, 'id' | 'comments'>[],
+): string[] {
+  const commentLines = nodes.flatMap((node) => formatToonCommentEndnoteLines(node));
+  return commentLines.length > 0
+    ? ['#COMMENTS', ...commentLines]
+    : [];
+}
+
 export function renderToon(nodes: DocumentViewNode[], options: { compact?: boolean } = {}): string {
   const lines: string[] = ['#SCHEMA id | list_label | header | style | text'];
 
@@ -462,6 +493,42 @@ export function renderToon(nodes: DocumentViewNode[], options: { compact?: boole
   if (currentTableIndex !== null) {
     lines.push('#END_TABLE');
   }
+
+  return lines.join('\n');
+}
+
+export function renderToonWithCommentEndnotes(
+  nodes: DocumentViewNode[],
+  options: { compact?: boolean } = {},
+): string {
+  const lines: string[] = ['#SCHEMA id | list_label | header | style | text'];
+  const tableInfo = collectTableMarkerInfo(nodes);
+
+  let currentTableIndex: number | null = null;
+
+  for (const n of nodes) {
+    const tc = n.table_context;
+    const nodeTableIndex = tc ? tc.table_index : null;
+
+    if (currentTableIndex !== null && nodeTableIndex !== currentTableIndex) {
+      lines.push('#END_TABLE');
+      currentTableIndex = null;
+    }
+
+    if (nodeTableIndex !== null && currentTableIndex === null) {
+      const info = tableInfo.get(nodeTableIndex);
+      if (info) lines.push(formatTableMarker(info));
+      currentTableIndex = nodeTableIndex;
+    }
+
+    lines.push(formatToonDataLine(n, options));
+  }
+
+  if (currentTableIndex !== null) {
+    lines.push('#END_TABLE');
+  }
+
+  lines.push(...formatToonCommentsEndnotesBlock(nodes));
 
   return lines.join('\n');
 }

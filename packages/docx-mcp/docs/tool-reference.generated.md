@@ -20,7 +20,7 @@ Read document content (DOCX or Google Doc). Output is token-limited (~14k tokens
 | `limit` | `number` | no | Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination. |
 | `node_ids` | `array<string>` | no |  |
 | `format` | `enum("toon", "json", "simple")` | no |  |
-| `comment_rendering` | `enum("none", "paragraph_notes")` | no | How to render comments in read_file output. Use "paragraph_notes" (default) to emit paragraph-local comments and replies, or "none" for the legacy output with no comment rendering. |
+| `comment_rendering` | `enum("none", "paragraph_notes", "endnotes")` | no | How to render comments in read_file output. Use "paragraph_notes" (default) to emit paragraph-local comments and replies, "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. |
 | `show_formatting` | `boolean` | no | When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags. |
 
 ## `grep`

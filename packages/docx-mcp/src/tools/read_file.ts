@@ -5,8 +5,10 @@ import {
   OOXML,
   W,
   renderToon,
+  renderToonWithCommentEndnotes,
   formatToonDataLine,
   formatToonCommentLines,
+  formatToonCommentsEndnotesBlock,
   collectTableMarkerInfo,
   formatTableMarker,
   type Comment,
@@ -124,11 +126,11 @@ export async function readFile(
     }
 
     const commentRendering = (params.comment_rendering ?? 'paragraph_notes').toLowerCase();
-    if (commentRendering !== 'none' && commentRendering !== 'paragraph_notes') {
+    if (commentRendering !== 'none' && commentRendering !== 'paragraph_notes' && commentRendering !== 'endnotes') {
       return err(
         'INVALID_COMMENT_RENDERING',
         `Invalid comment_rendering: ${params.comment_rendering}`,
-        "Use 'paragraph_notes' (default) or 'none'.",
+        "Use 'paragraph_notes' (default), 'endnotes', or 'none'.",
       );
     }
 
@@ -184,7 +186,7 @@ export async function readFile(
       enriched = filtered;
     }
 
-    if (commentRendering === 'paragraph_notes') {
+    if (commentRendering !== 'none') {
       try {
         enriched = attachParagraphComments(enriched, await session.doc.getComments());
       } catch {
@@ -202,13 +204,15 @@ export async function readFile(
       } else if (format === 'simple') {
         content = renderSimpleWithTableMarkers(enriched);
       } else {
-        content = renderToon(enriched);
+        content = commentRendering === 'endnotes'
+          ? renderToonWithCommentEndnotes(enriched)
+          : renderToon(enriched);
       }
       paragraphsReturned = enriched.length;
     } else {
       // One-pass token-budget accumulation
       const budget = DEFAULT_CONTENT_TOKEN_BUDGET;
-      const result = renderWithBudget(enriched, format, budget);
+      const result = renderWithBudget(enriched, format, budget, commentRendering);
       content = result.content;
       paragraphsReturned = result.count;
     }
@@ -237,6 +241,7 @@ function renderWithBudget(
   enriched: readonly DocumentViewNode[],
   format: string,
   budget: number,
+  commentRendering: string,
 ): BudgetResult {
   if (format === 'json') {
     return renderJsonWithBudget(enriched, budget);
@@ -244,17 +249,19 @@ function renderWithBudget(
   if (format === 'simple') {
     return renderSimpleWithBudget(enriched, budget);
   }
-  return renderToonWithBudget(enriched, budget);
+  return renderToonWithBudget(enriched, budget, commentRendering);
 }
 
 function renderToonWithBudget(
   enriched: readonly DocumentViewNode[],
   budget: number,
+  commentRendering: string,
 ): BudgetResult {
   const headerLine = '#SCHEMA id | list_label | header | style | text';
   let accumulated = headerLine;
   let count = 0;
   let currentTableIndex: number | null = null;
+  const includedNodes: DocumentViewNode[] = [];
 
   // Pre-scan: collect table marker info for #TABLE lines
   const tableInfo = collectTableMarkerInfo(enriched);
@@ -284,9 +291,21 @@ function renderToonWithBudget(
     }
 
     const dataLine = formatToonDataLine(node);
-    const commentLines = formatToonCommentLines(node);
+    const commentLines = commentRendering === 'paragraph_notes'
+      ? formatToonCommentLines(node)
+      : [];
     const nodeLines = [dataLine, ...commentLines].join('\n');
-    const candidate = accumulated + '\n' + nodeLines;
+    const candidateBase = accumulated + '\n' + nodeLines;
+    let candidate = candidateBase;
+    if (commentRendering === 'endnotes') {
+      if (nodeTableIndex !== null) {
+        candidate += '\n#END_TABLE';
+      }
+      const endnotesBlock = formatToonCommentsEndnotesBlock([...includedNodes, node]);
+      if (endnotesBlock.length > 0) {
+        candidate += '\n' + endnotesBlock.join('\n');
+      }
+    }
     if (count > 0 && estimateTokens(candidate) > budget) {
       // Close table before breaking
       if (currentTableIndex !== null) {
@@ -294,13 +313,21 @@ function renderToonWithBudget(
       }
       break;
     }
-    accumulated = candidate;
+    accumulated = candidateBase;
+    includedNodes.push(node);
     count++;
   }
 
   // Close any open table at end of loop
   if (currentTableIndex !== null) {
     accumulated += '\n#END_TABLE';
+  }
+
+  if (commentRendering === 'endnotes') {
+    const endnotesBlock = formatToonCommentsEndnotesBlock(includedNodes);
+    if (endnotesBlock.length > 0) {
+      accumulated += '\n' + endnotesBlock.join('\n');
+    }
   }
 
   return { content: accumulated, count };
