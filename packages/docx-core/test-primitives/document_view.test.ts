@@ -116,4 +116,68 @@ describe('document_view renderToon', () => {
       expect(toon).toContain('_bk_000000000114 |  |  | body | plain body paragraph');
     });
   });
+
+  test('emits comment and reply lines after the paragraph row', async ({ given, when, then }: AllureBddContext) => {
+    let toon: string;
+
+    await given('a node with a comment thread', async () => {});
+
+    await when('renderToon is called', async () => {
+      toon = renderToon([
+        makeNode({
+          id: '_bk_000000000115',
+          tagged_text: 'commented paragraph',
+          comments: [{
+            id: 12,
+            author: 'Alice',
+            date: '2026-04-30',
+            initials: 'AL',
+            text: 'Root note',
+            replies: [{
+              id: 13,
+              author: 'Bob',
+              date: '2026-05-01',
+              initials: 'BO',
+              text: 'Reply note',
+              replies: [],
+            }],
+          }],
+        }),
+      ]);
+    });
+
+    await then('the paragraph row is followed by #COMMENT and #REPLY lines', async () => {
+      const lines = toon.split('\n');
+      expect(lines).toContain('_bk_000000000115 |  |  | body | commented paragraph');
+      expect(lines).toContain('#COMMENT _bk_000000000115 c12 Alice 2026-04-30 | Root note');
+      expect(lines).toContain('#REPLY c13 -> c12 Bob 2026-05-01 | Reply note');
+    });
+  });
+
+  test('escapes literal pipes in rendered comment fields', async ({ given, when, then }: AllureBddContext) => {
+    let toon: string;
+
+    await given('a node with comment content containing pipe characters', async () => {});
+
+    await when('renderToon is called', async () => {
+      toon = renderToon([
+        makeNode({
+          id: '_bk_000000000116',
+          tagged_text: 'pipe paragraph',
+          comments: [{
+            id: 21,
+            author: 'A|B',
+            date: null,
+            initials: 'AB',
+            text: 'Clause | note',
+            replies: [],
+          }],
+        }),
+      ]);
+    });
+
+    await then('pipe characters are escaped on the comment line', async () => {
+      expect(toon).toContain('#COMMENT _bk_000000000116 c21 A\\|B - | Clause \\| note');
+    });
+  });
 });

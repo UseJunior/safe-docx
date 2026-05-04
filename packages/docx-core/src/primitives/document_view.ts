@@ -101,6 +101,15 @@ export type TableContext = {
   cell_para_count: number;  // Total paragraphs in this cell
 };
 
+export type DocumentViewComment = {
+  id: number;
+  author: string;
+  date: string | null;
+  initials: string;
+  text: string;
+  replies: DocumentViewComment[];
+};
+
 export type DocumentViewNode = {
   id: string; // _bk_*
   list_label: string;
@@ -121,6 +130,7 @@ export type DocumentViewNode = {
   header_formatting: HeaderFormatting | null;
   body_run_formatting: RunFormatting | null;
   table_context?: TableContext;
+  comments?: DocumentViewComment[];
 };
 
 function fingerprintKey(fp: FormattingFingerprint): string {
@@ -385,6 +395,36 @@ export function formatTableMarker(info: { id: string; totalRows: number; totalCo
   return `#TABLE ${info.id} | ${info.totalRows} rows × ${info.totalCols} cols`;
 }
 
+function escapeToonCommentField(value: string): string {
+  return value.replaceAll('|', '\\|');
+}
+
+function formatCommentDate(date: string | null): string {
+  return date ?? '-';
+}
+
+function collectToonCommentLines(
+  comment: DocumentViewComment,
+  paragraphId: string,
+  parentId?: number,
+): string[] {
+  const author = escapeToonCommentField(comment.author || '-');
+  const date = formatCommentDate(comment.date);
+  const text = escapeToonCommentField(comment.text);
+  const line = parentId == null
+    ? `#COMMENT ${paragraphId} c${comment.id} ${author} ${date} | ${text}`
+    : `#REPLY c${comment.id} -> c${parentId} ${author} ${date} | ${text}`;
+
+  return [
+    line,
+    ...comment.replies.flatMap((reply) => collectToonCommentLines(reply, paragraphId, comment.id)),
+  ];
+}
+
+export function formatToonCommentLines(node: Pick<DocumentViewNode, 'id' | 'comments'>): string[] {
+  return node.comments?.flatMap((comment) => collectToonCommentLines(comment, node.id)) ?? [];
+}
+
 export function renderToon(nodes: DocumentViewNode[], options: { compact?: boolean } = {}): string {
   const lines: string[] = ['#SCHEMA id | list_label | header | style | text'];
 
@@ -411,6 +451,7 @@ export function renderToon(nodes: DocumentViewNode[], options: { compact?: boole
     }
 
     lines.push(formatToonDataLine(n, options));
+    lines.push(...formatToonCommentLines(n));
   }
 
   // Close any open table at end

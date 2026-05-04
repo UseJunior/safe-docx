@@ -40,6 +40,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       limit: z.number().optional().describe('Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination.'),
       node_ids: z.array(z.string()).optional(),
       format: z.enum(['toon', 'json', 'simple']).optional(),
+      comment_rendering: z
+        .enum(['none', 'paragraph_notes'])
+        .optional()
+        .describe(
+          'How to render comments in read_file output. Use "paragraph_notes" (default) to emit paragraph-local comments and replies, or "none" for the legacy output with no comment rendering.',
+        ),
       show_formatting: z
         .boolean()
         .optional()
