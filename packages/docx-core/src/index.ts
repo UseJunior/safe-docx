@@ -249,3 +249,19 @@ export * from './footnotes.js';
 
 // Re-export primitives (editing, DOM helpers, document operations)
 export * from './primitives/index.js';
+export {
+  allocateRevisionId,
+  buildPPrChangeElement,
+  buildRPrChangeElement,
+  createRevisionContext,
+  createRevisionIdState,
+  escapeXmlAttr,
+  formatDate,
+  wrapElementWithDel,
+  wrapElementWithIns,
+} from './primitives/track-changes-emitter.js';
+export type {
+  RevisionContext,
+  RevisionContextOptions,
+  RevisionIdState,
+} from './primitives/track-changes-emitter.js';

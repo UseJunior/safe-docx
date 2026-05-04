@@ -10,6 +10,18 @@ import { parseXml } from '../../primitives/xml.js';
 import type { ComparisonUnitAtom } from '../../core-types.js';
 import { CorrelationStatus } from '../../core-types.js';
 import { getLeafText, childElements, findChildByTagName } from '../../primitives/index.js';
+import {
+  type RevisionIdState,
+  allocateRevisionId,
+  buildPPrChangeElement,
+  convertSerializedDeletionContent,
+  createRevisionContext,
+  createRevisionIdState,
+  escapeXmlAttr,
+  formatDate,
+  wrapSerializedContentWithDel,
+  wrapSerializedContentWithIns,
+} from '../../primitives/track-changes-emitter.js';
 import { serializeToXml, cloneElement } from './xmlToWmlElement.js';
 import { EMPTY_PARAGRAPH_TAG, isParagraphLevelLeaf } from '../../atomizer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
@@ -36,31 +48,6 @@ export interface ReconstructorOptions {
 }
 
 /**
- * State for tracking revision IDs during reconstruction.
- */
-interface RevisionIdState {
-  nextId: number;
-  moveRangeIds: Map<string, { sourceRangeId: number; destRangeId: number }>;
-}
-
-/**
- * Create initial revision ID state.
- */
-function createRevisionIdState(): RevisionIdState {
-  return {
-    nextId: 1,
-    moveRangeIds: new Map(),
-  };
-}
-
-/**
- * Allocate a new revision ID.
- */
-function allocateRevisionId(state: RevisionIdState): number {
-  return state.nextId++;
-}
-
-/**
  * Get or allocate move range IDs for a move name.
  */
 function getMoveRangeIds(
@@ -76,13 +63,6 @@ function getMoveRangeIds(
     state.moveRangeIds.set(moveName, ids);
   }
   return ids;
-}
-
-/**
- * Format date for OOXML (ISO 8601).
- */
-function formatDate(date: Date): string {
-  return date.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 /**
@@ -570,6 +550,8 @@ function buildParagraphXml(
   dateStr: string,
   revState: RevisionIdState
 ): string {
+  const revisionCtx = createRevisionContext({ author, date: dateStr, idState: revState });
+
   // Track empty paragraph statuses for debugging
   if (isEmptyParagraphGroup(group)) {
     const status = group.runGroups[0]?.atoms[0]?.correlationStatus;
@@ -606,44 +588,32 @@ function buildParagraphXml(
   // entirely (instead of leaving behind a stub <w:p> break).
   if (isEntireParagraphWithStatus(group, CorrelationStatus.Inserted)) {
     const paraId = allocateRevisionId(revState);
-    const runId = allocateRevisionId(revState);
-    const pPrChangeEl = buildPPrChangeElement(group.pPr, author, dateStr, revState);
+    const insertedRunXml = wrapSerializedContentWithIns(
+      group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
+      revisionCtx,
+    );
+    const pPrChangeEl = buildPPrChangeElement(group.pPr, revisionCtx);
     const parts: string[] = [];
     parts.push('<w:p>');
     parts.push(serializePPrWithParaRevisionMarker(
       group.pPr, 'w:ins', paraId, author, dateStr, pPrChangeEl
     ));
-    parts.push(
-      `<w:ins w:id="${runId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`
-    );
-    for (const runGroup of group.runGroups) {
-      parts.push(buildRunContentAsPlainRun(runGroup));
-    }
-    parts.push('</w:ins>');
+    parts.push(insertedRunXml);
     parts.push('</w:p>');
     return parts.join('');
   }
 
   if (isEntireParagraphWithStatus(group, CorrelationStatus.Deleted)) {
     const paraId = allocateRevisionId(revState);
-    const runId = allocateRevisionId(revState);
     const parts: string[] = [];
     parts.push('<w:p>');
     parts.push(serializePPrWithParaRevisionMarker(
       group.pPr, 'w:del', paraId, author, dateStr
     ));
-    parts.push(
-      `<w:del w:id="${runId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`
-    );
-    for (const runGroup of group.runGroups) {
-      const plainRun = buildRunContentAsPlainRun(runGroup);
-      parts.push(
-        plainRun
-          .replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>')
-          .replace(/<w:instrText([^>]*)>([^<]*)<\/w:instrText>/g, '<w:delInstrText$1>$2</w:delInstrText>')
-      );
-    }
-    parts.push('</w:del>');
+    parts.push(wrapSerializedContentWithDel(
+      group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
+      revisionCtx,
+    ));
     parts.push('</w:p>');
     return parts.join('');
   }
@@ -653,7 +623,7 @@ function buildParagraphXml(
   // marker inside w:pPr > w:rPr.
   if (isEmptyParagraphWithStatus(group, CorrelationStatus.Inserted)) {
     const paraId = allocateRevisionId(revState);
-    const pPrChangeEl = buildPPrChangeElement(group.pPr, author, dateStr, revState);
+    const pPrChangeEl = buildPPrChangeElement(group.pPr, revisionCtx);
     const pPrXml = serializePPrWithParaRevisionMarker(
       group.pPr, 'w:ins', paraId, author, dateStr, pPrChangeEl
     );
@@ -734,35 +704,6 @@ function serializePPrWithParaRevisionMarker(
   }
 
   return serializeToXml(effectivePPr);
-}
-
-/**
- * Build a `<w:pPrChange>` Element from a pPr DOM element.
- *
- * The child `<w:pPr>` conforms to CT_PPrBase — it excludes w:rPr, w:sectPr,
- * w:rPrChange, and w:pPrChange.
- */
-function buildPPrChangeElement(
-  pPr: Element | null,
-  author: string,
-  dateStr: string,
-  revState: RevisionIdState
-): Element {
-  const id = allocateRevisionId(revState);
-  const EXCLUDED = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
-  const pPrChange = createEl('w:pPrChange', {
-    'w:id': String(id),
-    'w:author': author,
-    'w:date': dateStr,
-  });
-  const oldPPr = createEl('w:pPr');
-  if (pPr) {
-    for (const child of childElements(pPr)) {
-      if (!EXCLUDED.has(child.tagName)) oldPPr.appendChild(child.cloneNode(true) as Element);
-    }
-  }
-  pPrChange.appendChild(oldPPr);
-  return pPrChange;
 }
 
 /**
@@ -1128,8 +1069,10 @@ function wrapWithIns(
   dateStr: string,
   revState: RevisionIdState
 ): string {
-  const id = allocateRevisionId(revState);
-  return `<w:ins w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">${content}</w:ins>`;
+  return wrapSerializedContentWithIns(
+    content,
+    createRevisionContext({ author, date: dateStr, idState: revState }),
+  );
 }
 
 /**
@@ -1141,12 +1084,10 @@ function wrapWithDel(
   dateStr: string,
   revState: RevisionIdState
 ): string {
-  const id = allocateRevisionId(revState);
-  // For deletions, convert w:t to w:delText and w:instrText to w:delInstrText
-  const delContent = content
-    .replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>')
-    .replace(/<w:instrText([^>]*)>([^<]*)<\/w:instrText>/g, '<w:delInstrText$1>$2</w:delInstrText>');
-  return `<w:del w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">${delContent}</w:del>`;
+  return wrapSerializedContentWithDel(
+    content,
+    createRevisionContext({ author, date: dateStr, idState: revState }),
+  );
 }
 
 /**
@@ -1162,10 +1103,7 @@ function wrapWithMoveFrom(
   const ids = getMoveRangeIds(revState, moveName);
   const moveId = allocateRevisionId(revState);
 
-  // Convert w:t to w:delText and w:instrText to w:delInstrText for moved-from content
-  const delContent = content
-    .replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>')
-    .replace(/<w:instrText([^>]*)>([^<]*)<\/w:instrText>/g, '<w:delInstrText$1>$2</w:delInstrText>');
+  const delContent = convertSerializedDeletionContent(content);
 
   return (
     `<w:moveFromRangeStart w:id="${ids.sourceRangeId}" w:name="${moveName}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}"/>` +
@@ -1221,7 +1159,13 @@ function buildFormatChangeRun(
       }
     }
 
-    // Add rPrChange with old properties (wrapped in w:rPr per OOXML spec)
+    // Add rPrChange with old properties (wrapped in w:rPr per OOXML spec).
+    // Kept as the original per-child serialization (NOT delegated to
+    // buildRPrChangeElement) to preserve byte-identical output: xmldom emits
+    // inline `xmlns:w="..."` declarations when serializing detached children,
+    // and downstream consumers may pin on that exact serialized form. The
+    // DOM-aware buildRPrChangeElement helper exists for new primitive code
+    // paths (#136 onward).
     const formatChange = group.atoms[0]?.formatChange;
     if (formatChange?.oldRunProperties) {
       const id = allocateRevisionId(revState);
@@ -1229,7 +1173,7 @@ function buildFormatChangeRun(
         `<w:rPrChange w:id="${id}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">`
       );
       parts.push('<w:rPr>');
-      for (const child of childElements(formatChange.oldRunProperties!)) {
+      for (const child of childElements(formatChange.oldRunProperties)) {
         parts.push(serializeToXml(child));
       }
       parts.push('</w:rPr>');
@@ -1515,17 +1459,6 @@ function escapeXmlText(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-}
-
-/**
- * Escape XML attribute value.
- */
-function escapeXmlAttr(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 /**
