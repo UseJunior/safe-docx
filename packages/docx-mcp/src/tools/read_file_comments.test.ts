@@ -1098,4 +1098,77 @@ describe('read_file comment rendering', () => {
     // Markers must wrap "Beta" exactly, not anything else.
     expect(paragraphLine).toContain('Alpha <Borrower> [cm-start:40]Beta[cm-end:40]');
   });
+
+  test('inline_markers correctly positions markers when the paragraph has a manual list label', async () => {
+    // Regression: `buildDocumentView` strips manual list labels (e.g., `(a) `) from
+    // `tagged_text`, but comment range offsets are computed against the FULL raw paragraph
+    // text. Without compensation, markers would shift left by the label length.
+    // The fix: track stripped char count in `visible_offset_correction` on the node and
+    // subtract it during marker injection.
+    const fixture = {
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 321,
+        name: '_bk_manual_label',
+        // "(a) Alpha Beta" — visible run layout:
+        //   run 0: "(a) Alpha "  (10 chars)
+        //   run 1 (with markers around it): "Beta" (4 chars)
+        // After stripListLabel: "Alpha Beta" (label "(a)" + space stripped → 4 chars stripped)
+        // Comment range covers run 1 → raw offsets 10..14; tagged_text offsets 6..10 (after correction).
+        paragraphInnerXml:
+          `<w:r><w:t>(a) Alpha </w:t></w:r>` +
+          `<w:commentRangeStart w:id="50"/>` +
+          `<w:r><w:t>Beta</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="50"/>${makeCommentReferenceRun(50)}`,
+      }),
+      comments: [{ id: 50, author: 'Alice', initials: 'A', text: 'Manual label note.', paraId: '00000050' }],
+      readParams: { comment_rendering: 'inline_markers' as const },
+    };
+    const rendered = await renderCommentFixture(fixture);
+    const lines = String(rendered.content).split('\n');
+    const paragraphLine = findParagraphLine(lines, '_bk_manual_label');
+    // Markers must wrap "Beta" inside the post-label text.
+    expect(paragraphLine).toContain('Alpha [cm-start:50]Beta[cm-end:50]');
+    // Sanity: there must be no stray markers at the end of the line.
+    expect(paragraphLine).not.toMatch(/Beta\s*\[cm-start:50\]\[cm-end:50\]\s*$/);
+  });
+
+  test('inline_markers does not match bare <a> or <font> as TOON tags', async () => {
+    // Regression: the TOON_INLINE_TAG_RE previously allowed bare `<a>` and `<font>` (no
+    // attributes), but the formatter only emits `<a href="...">` and `<font ATTR=...>`.
+    // Literal `<a>` or `<font>` text in document content was being silently skipped as
+    // markup, shifting marker positions.
+    const fixtureA = {
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 322,
+        name: '_bk_literal_a',
+        paragraphInnerXml:
+          `<w:r><w:t>Alpha &lt;a&gt; </w:t></w:r>` +
+          `<w:commentRangeStart w:id="51"/>` +
+          `<w:r><w:t>Beta</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="51"/>${makeCommentReferenceRun(51)}`,
+      }),
+      comments: [{ id: 51, author: 'Alice', initials: 'A', text: 'Literal a tag.', paraId: '00000051' }],
+      readParams: { comment_rendering: 'inline_markers' as const },
+    };
+    const renderedA = await renderCommentFixture(fixtureA);
+    expect(findParagraphLine(String(renderedA.content).split('\n'), '_bk_literal_a'))
+      .toContain('Alpha <a> [cm-start:51]Beta[cm-end:51]');
+
+    const fixtureFont = {
+      bodyXml: withParagraphBookmark({
+        bookmarkId: 323,
+        name: '_bk_literal_font',
+        paragraphInnerXml:
+          `<w:r><w:t>Alpha &lt;font&gt; </w:t></w:r>` +
+          `<w:commentRangeStart w:id="52"/>` +
+          `<w:r><w:t>Beta</w:t></w:r>` +
+          `<w:commentRangeEnd w:id="52"/>${makeCommentReferenceRun(52)}`,
+      }),
+      comments: [{ id: 52, author: 'Alice', initials: 'A', text: 'Literal font tag.', paraId: '00000052' }],
+      readParams: { comment_rendering: 'inline_markers' as const },
+    };
+    const renderedFont = await renderCommentFixture(fixtureFont);
+    expect(findParagraphLine(String(renderedFont.content).split('\n'), '_bk_literal_font'))
+      .toContain('Alpha <font> [cm-start:52]Beta[cm-end:52]');
+  });
 });

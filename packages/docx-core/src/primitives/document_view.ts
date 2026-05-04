@@ -160,6 +160,18 @@ export type DocumentViewNode = {
   body_run_formatting: RunFormatting | null;
   table_context?: TableContext;
   comments?: DocumentViewComment[];
+  /**
+   * Number of visible characters stripped from the head of the raw paragraph text when
+   * extracting a manual list label (and trimming the trailing whitespace). Used by the
+   * inline-comment-marker injector to translate run/offset positions (which are computed
+   * against the FULL paragraph visible text by `getComments()`) into positions within
+   * `tagged_text` (which has the label stripped).
+   *
+   * Auto-numbered list paragraphs do NOT have their text stripped — their label lives in
+   * the `list_label` field separately — so this stays 0 for them. Run-in header stripping
+   * is handled separately at format time and is not included here.
+   */
+  visible_offset_correction?: number;
 };
 
 function fingerprintKey(fp: FormattingFingerprint): string {
@@ -369,10 +381,16 @@ function headerStripFromText(params: { header: string; text: string }): string {
 
 // Matches the exact set of TOON inline formatting tags that emitFormattingTags() can emit:
 //   <b>, </b>, <i>, </i>, <u>, </u>, <highlight>, </highlight>,
-//   <a href="...">, </a>, <font ...>, </font>
+//   <a href="...">, </a>, <font ATTR=...>, </font>
 // Anything else in the form `<...>` is literal document text (e.g., `<Borrower>` placeholders
-// in legal templates) and must be counted as visible characters, not skipped as markup.
-const TOON_INLINE_TAG_RE = /^(?:<\/?(?:b|i|u|highlight)>|<\/(?:a|font)>|<(?:a|font)(?:\s[^>]*)?>)/;
+// in legal templates, or stylesheet samples like `<font>`) and must be counted as visible
+// characters, not skipped as markup.
+//
+// Note the opening `a`/`font` alternative requires `\s[^>]*` (mandatory attributes), because
+// the formatter only emits `<a href="...">` and `<font ATTR=...>` — never bare `<a>` or
+// `<font>`. Allowing the bare forms would cause literal `<a>` / `<font>` in document text to
+// be silently skipped, shifting marker positions.
+const TOON_INLINE_TAG_RE = /^(?:<\/?(?:b|i|u|highlight)>|<\/(?:a|font)>|<(?:a|font)\s[^>]*>)/;
 
 function toonTagLengthAt(text: string, i: number): number {
   if (text[i] !== '<') return 0;
@@ -560,10 +578,18 @@ export function formatToonDataLine(
 
   const commentMarkers = options?.commentMarkers?.get(n.id);
   if (commentMarkers && commentMarkers.length > 0) {
+    // Comment marker offsets are computed against the FULL paragraph visible text (raw
+    // run/char counting in `getComments()`). To translate to `tagged_text` positions we
+    // subtract:
+    //  1. `visible_offset_correction` — chars stripped at build time when extracting the
+    //     manual list label and trimming following whitespace.
+    //  2. `strippedPrefixVisibleLength` — chars stripped at format time by the run-in-header
+    //     extraction above.
+    const totalCorrection = (n.visible_offset_correction ?? 0) + strippedPrefixVisibleLength;
     text = injectToonCommentMarkers(
       text,
       commentMarkers.map(({ offset, marker }) => ({
-        offset: Math.max(0, offset - strippedPrefixVisibleLength),
+        offset: Math.max(0, offset - totalCorrection),
         marker,
       })),
     );
@@ -1268,6 +1294,11 @@ export function buildNodesForDocumentView(params: {
       tagged = injectFootnoteMarkers(tagged, fnMarkers);
     }
 
+    // Visible characters stripped from the raw paragraph head when extracting a manual
+    // label (label text + trailing whitespace). Auto-numbered paragraphs leave fullText
+    // intact, so this is 0 for them.
+    const visibleOffsetCorrection = isAutoNumbered ? 0 : Math.max(0, fullText.length - cleanTextNoLabel.length);
+
     const node: DocumentViewNode = {
       id,
       list_label: labelString,
@@ -1277,6 +1308,7 @@ export function buildNodesForDocumentView(params: {
 
       clean_text: cleanTextNoLabel,
       tagged_text: tagged,
+      visible_offset_correction: visibleOffsetCorrection > 0 ? visibleOffsetCorrection : undefined,
       list_metadata: {
         list_level: listLevel,
         label_type: labelType,
