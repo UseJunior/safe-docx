@@ -87,12 +87,47 @@ export function createRevisionContext(options: RevisionContextOptions): Revision
 }
 
 /**
+ * Create a fresh tracked-change container (`<w:ins>` or `<w:del>`) into which
+ * the caller appends owned child nodes.
+ *
+ * Use this when wrapping multiple sibling elements under one revision marker.
+ * For single-element wrapping, prefer `wrapElementWithIns` / `wrapElementWithDel`.
+ */
+export function createRevisionContainer(
+  doc: Document,
+  kind: 'ins' | 'del',
+  ctx: RevisionContext,
+): Element {
+  return createRevisionWrapperElement(doc, kind, ctx);
+}
+
+/**
+ * Rewrite `<w:t>` → `<w:delText>` and `<w:instrText>` → `<w:delInstrText>`
+ * on the given element and all its descendants, for use inside a `<w:del>`
+ * container.
+ *
+ * **CALLERS MUST USE THE RETURN VALUE.** When the input element itself is a
+ * root `<w:t>` or `<w:instrText>`, this helper creates a renamed replacement
+ * node (you cannot rename a DOM element in place); the input element is
+ * detached from the tree and the new node is returned. Pattern:
+ *
+ *   const ready = prepareElementForDeletion(detachedElement);
+ *   wrapper.appendChild(ready);
+ *
+ * The element MUST already be detached from any parent. Calling on an
+ * attached element will leave the original tree in an inconsistent state.
+ */
+export function prepareElementForDeletion(element: Element): Element {
+  return normalizeDeletionElement(element);
+}
+
+/**
  * Wrap an xmldom element in `<w:ins>`.
  *
  * The source element is cloned; the original DOM node is left untouched.
  */
 export function wrapElementWithIns(element: Element, ctx: RevisionContext): Element {
-  const wrapper = createRevisionWrapperElement(getOwnerDocument(element), 'ins', ctx);
+  const wrapper = createRevisionContainer(getOwnerDocument(element), 'ins', ctx);
   wrapper.appendChild(element.cloneNode(true));
   return wrapper;
 }
@@ -104,8 +139,8 @@ export function wrapElementWithIns(element: Element, ctx: RevisionContext): Elem
  * deletion equivalents before the cloned element is appended.
  */
 export function wrapElementWithDel(element: Element, ctx: RevisionContext): Element {
-  const wrapper = createRevisionWrapperElement(getOwnerDocument(element), 'del', ctx);
-  const cloned = normalizeDeletionElement(element.cloneNode(true) as Element);
+  const wrapper = createRevisionContainer(getOwnerDocument(element), 'del', ctx);
+  const cloned = prepareElementForDeletion(element.cloneNode(true) as Element);
   wrapper.appendChild(cloned);
   return wrapper;
 }

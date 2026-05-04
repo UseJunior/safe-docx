@@ -253,10 +253,12 @@ export {
   allocateRevisionId,
   buildPPrChangeElement,
   buildRPrChangeElement,
+  createRevisionContainer,
   createRevisionContext,
   createRevisionIdState,
   escapeXmlAttr,
   formatDate,
+  prepareElementForDeletion,
   wrapElementWithDel,
   wrapElementWithIns,
 } from './primitives/track-changes-emitter.js';

@@ -1,5 +1,10 @@
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
+import {
+  createRevisionContainer,
+  prepareElementForDeletion,
+  type RevisionContext,
+} from './track-changes-emitter.js';
 
 export type TextRun = {
   r: Element; // w:r
@@ -265,6 +270,10 @@ function cleanupEmptyRuns(parent: Node): void {
   }
 }
 
+function getRunVisibleLength(run: Element): number {
+  return getDirectContentElements(run).reduce((sum, child) => sum + visibleLengthForEl(child), 0);
+}
+
 export type AddRunProps = {
   // Additive or subtractive formatting.
   // Set to true to enable, false to explicitly disable/remove.
@@ -397,6 +406,7 @@ export function replaceParagraphTextRange(
   start: number,
   end: number,
   replacement: string | ReplacementPart[],
+  ctx?: RevisionContext,
 ): void {
   // Replace visible text in [start, end) in paragraph by operating on w:t nodes.
   // Strategy:
@@ -490,23 +500,53 @@ export function replaceParagraphTextRange(
   const insertBeforeNode = rangeEndRunEl.nextSibling;
 
   // Remove runs in [rangeStartRunEl, rangeEndRunEl] inclusive (only w:r elements).
+  const removedRuns: Element[] = [];
   let cur: Node | null = rangeStartRunEl;
   while (cur) {
     const nextNode: Node | null = cur.nextSibling as Node | null;
     if (cur.nodeType === 1 && isW(cur as Element, W.r)) {
-      (cur as Element).parentNode?.removeChild(cur);
+      const runEl = cur as Element;
+      runEl.parentNode?.removeChild(runEl);
+      if (getRunVisibleLength(runEl) > 0) {
+        removedRuns.push(runEl);
+      }
     }
     if (cur === rangeEndRunEl) break;
     cur = nextNode;
   }
 
-  // Insert replacement runs.
+  // Build replacement runs using the same formatting/template logic as the legacy path.
+  const replacementRuns: Element[] = [];
   for (const part of parts) {
     const tmpl = part.templateRun ?? templateRun;
     const newRun = cloneRunFormattingOnly(doc, tmpl);
     applyRunProps(doc, newRun, part.addRunProps, part.clearHighlight);
     appendTextToRun(doc, newRun, part.text);
-    parent.insertBefore(newRun, insertBeforeNode);
+    if (getRunVisibleLength(newRun) > 0) {
+      replacementRuns.push(newRun);
+    }
+  }
+
+  if (ctx) {
+    if (removedRuns.length > 0) {
+      const deletion = createRevisionContainer(doc, 'del', ctx);
+      for (const removedRun of removedRuns) {
+        deletion.appendChild(prepareElementForDeletion(removedRun));
+      }
+      parent.insertBefore(deletion, insertBeforeNode);
+    }
+
+    if (replacementRuns.length > 0) {
+      const insertion = createRevisionContainer(doc, 'ins', ctx);
+      for (const replacementRun of replacementRuns) {
+        insertion.appendChild(replacementRun);
+      }
+      parent.insertBefore(insertion, insertBeforeNode);
+    }
+  } else {
+    for (const replacementRun of replacementRuns) {
+      parent.insertBefore(replacementRun, insertBeforeNode);
+    }
   }
 
   cleanupEmptyRuns(parent);
