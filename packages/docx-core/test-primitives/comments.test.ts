@@ -8,7 +8,6 @@ import { DocxDocument } from '../src/primitives/document.js';
 import { bootstrapCommentParts, addComment, addCommentReply, getComments, getComment } from '../src/primitives/comments.js';
 
 const W_NS = OOXML.W_NS;
-const W15_NS = OOXML.W15_NS;
 
 const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Comments' });
 
@@ -32,6 +31,54 @@ async function makeDocxBuffer(bodyXml: string, extraFiles?: Record<string, strin
 
 async function loadZip(buffer: Buffer): Promise<DocxZip> {
   return DocxZip.load(buffer);
+}
+
+type CommentFixtureEntry = {
+  id: number;
+  author: string;
+  initials: string;
+  text: string;
+  paraId: string;
+  date?: string;
+};
+
+function makeCommentsXml(entries: CommentFixtureEntry[]): string {
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:comments xmlns:w="${W_NS}" xmlns:w14="${OOXML.W14_NS}">` +
+    entries
+      .map(
+        (entry) =>
+          `<w:comment w:id="${entry.id}" w:author="${entry.author}" w:date="${entry.date ?? '2025-01-01T00:00:00Z'}" w:initials="${entry.initials}">` +
+          `<w:p w14:paraId="${entry.paraId}"><w:r><w:annotationRef/></w:r><w:r><w:t>${entry.text}</w:t></w:r></w:p>` +
+          `</w:comment>`,
+      )
+      .join('') +
+    `</w:comments>`
+  );
+}
+
+function withParagraphBookmark(params: {
+  bookmarkId: number;
+  name: string;
+  paragraphInnerXml: string;
+}): string {
+  return `<w:bookmarkStart w:id="${params.bookmarkId}" w:name="${params.name}"/><w:p>${params.paragraphInnerXml}</w:p><w:bookmarkEnd w:id="${params.bookmarkId}"/>`;
+}
+
+function makeCommentReferenceRun(commentId: number): string {
+  return `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${commentId}"/></w:r>`;
+}
+
+async function loadCommentFixture(params: {
+  bodyXml: string;
+  comments: CommentFixtureEntry[];
+}): Promise<Awaited<ReturnType<typeof getComments>>> {
+  const buf = await makeDocxBuffer(params.bodyXml, { 'word/comments.xml': makeCommentsXml(params.comments) });
+  const zip = await loadZip(buf);
+  const docXml = await zip.readText('word/document.xml');
+  const doc = parseXml(docXml);
+  return getComments(zip, doc);
 }
 
 describe('comments', () => {
@@ -714,6 +761,301 @@ describe('comments', () => {
       await and('reply is preserved with correct text', async () => {
         expect(comments[0]!.replies).toHaveLength(1);
         expect(comments[0]!.replies[0]!.text).toBe('Round trip reply');
+      });
+    });
+
+    test('resolves single-paragraph range metadata without changing existing fields', async ({ given, then }: AllureBddContext) => {
+      const commentText = 'Single paragraph note';
+      const rangeText = 'Beta';
+      let comments: Awaited<ReturnType<typeof getComments>>;
+
+      await given('a bookmarked paragraph whose comment markers wrap a middle run', async () => {
+        const bodyXml = withParagraphBookmark({
+          bookmarkId: 101,
+          name: '_bk_single_range',
+          paragraphInnerXml:
+            `<w:r><w:t>Alpha </w:t></w:r>` +
+            `<w:commentRangeStart w:id="10"/>` +
+            `<w:r><w:t>${rangeText}</w:t></w:r>` +
+            `<w:commentRangeEnd w:id="10"/>` +
+            makeCommentReferenceRun(10) +
+            `<w:r><w:t> Gamma</w:t></w:r>`,
+        });
+
+        comments = await loadCommentFixture({
+          bodyXml,
+          comments: [
+            { id: 10, author: 'Alice', initials: 'A', text: commentText, paraId: '00000010', date: '2025-02-01T00:00:00Z' },
+          ],
+        });
+      });
+
+      await then('existing fields and range metadata are both correct', async () => {
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.id).toBe(10);
+        expect(comments[0]!.author).toBe('Alice');
+        expect(comments[0]!.date).toBe('2025-02-01T00:00:00Z');
+        expect(comments[0]!.initials).toBe('A');
+        expect(comments[0]!.text).toBe(commentText);
+        expect(comments[0]!.paragraphId).toBe('00000010');
+        expect(comments[0]!.replies).toEqual([]);
+        expect(comments[0]!.anchoredParagraphId).toBe('_bk_single_range');
+        expect(comments[0]!.endParagraphId).toBe('_bk_single_range');
+        expect(comments[0]!.startRunIndex).toBe(1);
+        expect(comments[0]!.startCharOffset).toBe(0);
+        expect(comments[0]!.endRunIndex).toBe(1);
+        expect(comments[0]!.endCharOffset).toBe(rangeText.length);
+      });
+    });
+
+    test('resolves multi-paragraph range metadata', async ({ given, then }: AllureBddContext) => {
+      const firstRangeText = 'First chunk';
+      const secondRangeText = 'Second chunk';
+      let comments: Awaited<ReturnType<typeof getComments>>;
+
+      await given('a comment whose start and end markers are in different paragraphs', async () => {
+        const bodyXml =
+          withParagraphBookmark({
+            bookmarkId: 102,
+            name: '_bk_multi_start',
+            paragraphInnerXml:
+              `<w:r><w:t>Lead </w:t></w:r>` +
+              `<w:commentRangeStart w:id="11"/>` +
+              `<w:r><w:t>${firstRangeText}</w:t></w:r>`,
+          }) +
+          withParagraphBookmark({
+            bookmarkId: 103,
+            name: '_bk_multi_end',
+            paragraphInnerXml:
+              `<w:r><w:t>${secondRangeText}</w:t></w:r>` +
+              `<w:commentRangeEnd w:id="11"/>` +
+              makeCommentReferenceRun(11) +
+              `<w:r><w:t> tail</w:t></w:r>`,
+          });
+
+        comments = await loadCommentFixture({
+          bodyXml,
+          comments: [
+            { id: 11, author: 'Bob', initials: 'B', text: 'Across paragraphs', paraId: '00000011' },
+          ],
+        });
+      });
+
+      await then('the start and end paragraph bookmarks and offsets are resolved independently', async () => {
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.anchoredParagraphId).toBe('_bk_multi_start');
+        expect(comments[0]!.endParagraphId).toBe('_bk_multi_end');
+        expect(comments[0]!.startRunIndex).toBe(1);
+        expect(comments[0]!.startCharOffset).toBe(0);
+        expect(comments[0]!.endRunIndex).toBe(0);
+        expect(comments[0]!.endCharOffset).toBe(secondRangeText.length);
+      });
+    });
+
+    test('resolves comment ranges across table cell boundaries', async ({ given, then }: AllureBddContext) => {
+      const leftCellRange = 'cell';
+      const rightCellRange = 'Right cell';
+      let comments: Awaited<ReturnType<typeof getComments>>;
+
+      await given('a table with a comment that starts in one cell and ends in another', async () => {
+        const bodyXml =
+          `<w:tbl><w:tr>` +
+          `<w:tc>` +
+          withParagraphBookmark({
+            bookmarkId: 104,
+            name: '_bk_table_start',
+            paragraphInnerXml:
+              `<w:r><w:t>Left </w:t></w:r>` +
+              `<w:commentRangeStart w:id="12"/>` +
+              `<w:r><w:t>${leftCellRange}</w:t></w:r>`,
+          }) +
+          `</w:tc>` +
+          `<w:tc>` +
+          withParagraphBookmark({
+            bookmarkId: 105,
+            name: '_bk_table_end',
+            paragraphInnerXml:
+              `<w:r><w:t>${rightCellRange}</w:t></w:r>` +
+              `<w:commentRangeEnd w:id="12"/>` +
+              makeCommentReferenceRun(12),
+          }) +
+          `</w:tc>` +
+          `</w:tr></w:tbl>`;
+
+        comments = await loadCommentFixture({
+          bodyXml,
+          comments: [
+            { id: 12, author: 'Casey', initials: 'C', text: 'Cross-cell note', paraId: '00000012' },
+          ],
+        });
+      });
+
+      await then('the paragraph IDs and offsets span the table boundary correctly', async () => {
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.anchoredParagraphId).toBe('_bk_table_start');
+        expect(comments[0]!.endParagraphId).toBe('_bk_table_end');
+        expect(comments[0]!.startRunIndex).toBe(1);
+        expect(comments[0]!.startCharOffset).toBe(0);
+        expect(comments[0]!.endRunIndex).toBe(0);
+        expect(comments[0]!.endCharOffset).toBe(rightCellRange.length);
+      });
+    });
+
+    test('keeps comments when commentRangeStart is missing', async ({ given, then }: AllureBddContext) => {
+      const legacyText = 'Legacy attachment';
+      let comments: Awaited<ReturnType<typeof getComments>>;
+
+      await given('a comment with only an end marker in the document', async () => {
+        const bodyXml = withParagraphBookmark({
+          bookmarkId: 106,
+          name: '_bk_missing_start',
+          paragraphInnerXml:
+            `<w:r><w:t>${legacyText}</w:t></w:r>` +
+            `<w:commentRangeEnd w:id="13"/>` +
+            makeCommentReferenceRun(13),
+        });
+
+        comments = await loadCommentFixture({
+          bodyXml,
+          comments: [
+            { id: 13, author: 'Dana', initials: 'D', text: 'Legacy comment', paraId: '00000013' },
+          ],
+        });
+      });
+
+      await then('the comment survives and only the end position is resolved', async () => {
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.anchoredParagraphId).toBeNull();
+        expect(comments[0]!.startRunIndex).toBeUndefined();
+        expect(comments[0]!.startCharOffset).toBeUndefined();
+        expect(comments[0]!.endParagraphId).toBe('_bk_missing_start');
+        expect(comments[0]!.endRunIndex).toBe(0);
+        expect(comments[0]!.endCharOffset).toBe(legacyText.length);
+      });
+    });
+
+    test('falls back endParagraphId when commentRangeEnd is missing', async ({ given, then }: AllureBddContext) => {
+      let comments: Awaited<ReturnType<typeof getComments>>;
+
+      await given('a comment with a start marker but no end marker', async () => {
+        const bodyXml = withParagraphBookmark({
+          bookmarkId: 107,
+          name: '_bk_missing_end',
+          paragraphInnerXml:
+            `<w:r><w:t>Prefix </w:t></w:r>` +
+            `<w:commentRangeStart w:id="14"/>` +
+            `<w:r><w:t>Open range</w:t></w:r>`,
+        });
+
+        comments = await loadCommentFixture({
+          bodyXml,
+          comments: [
+            { id: 14, author: 'Evan', initials: 'E', text: 'Open-ended comment', paraId: '00000014' },
+          ],
+        });
+      });
+
+      await then('the start position is resolved while end data falls back cleanly', async () => {
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.anchoredParagraphId).toBe('_bk_missing_end');
+        expect(comments[0]!.endParagraphId).toBe('_bk_missing_end');
+        expect(comments[0]!.startRunIndex).toBe(1);
+        expect(comments[0]!.startCharOffset).toBe(0);
+        expect(comments[0]!.endRunIndex).toBeUndefined();
+        expect(comments[0]!.endCharOffset).toBeUndefined();
+      });
+    });
+
+    test('counts every <w:r> in document order — zero-width runs do not shift the index', async ({ given, then }: AllureBddContext) => {
+      let comments: Awaited<ReturnType<typeof getComments>>;
+
+      await given('a paragraph with a zero-width commentReference run before the range start marker', async () => {
+        // Layout: <r>A</r><r>(commentReference for c99 only)</r><commentRangeStart c1/><r>B</r>
+        // Raw <w:r> indices in document order: 0=A, 1=zero-width-ref, 2=B.
+        // The range start marker sits between run 1 and run 2 → start should be {runIndex: 2, charOffset: 0}.
+        const bodyXml = withParagraphBookmark({
+          bookmarkId: 200,
+          name: '_bk_run_index',
+          paragraphInnerXml:
+            `<w:r><w:t>A</w:t></w:r>` +
+            `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="99"/></w:r>` +
+            `<w:commentRangeStart w:id="1"/>` +
+            `<w:r><w:t>B</w:t></w:r>` +
+            `<w:commentRangeEnd w:id="1"/>` +
+            makeCommentReferenceRun(1),
+        });
+
+        comments = await loadCommentFixture({
+          bodyXml,
+          comments: [
+            { id: 1, author: 'Frank', initials: 'F', text: 'Range with empty run before it', paraId: '00000020' },
+          ],
+        });
+      });
+
+      await then('startRunIndex points at the actual <w:r> position, not the visible-run position', async () => {
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.anchoredParagraphId).toBe('_bk_run_index');
+        // Without the fix: would report startRunIndex=1 (off-by-one over the empty run).
+        // With the fix: reports startRunIndex=2 — the third <w:r> in DOM order.
+        expect(comments[0]!.startRunIndex).toBe(2);
+        expect(comments[0]!.startCharOffset).toBe(0);
+        expect(comments[0]!.endRunIndex).toBe(2);
+        expect(comments[0]!.endCharOffset).toBe(1);
+      });
+    });
+
+    test('resolves comments when OOXML uses a non-w namespace prefix', async ({ given, then }: AllureBddContext) => {
+      let comments: Awaited<ReturnType<typeof getComments>>;
+
+      await given('a document and comments part bound to the WordprocessingML namespace under a non-w prefix', async () => {
+        // Both document.xml and comments.xml use "x" for the WordprocessingML namespace.
+        // Paragraph discovery must be namespace-aware, not literal-tag-name based.
+        const bodyXml =
+          `<x:bookmarkStart x:id="201" x:name="_bk_alt_prefix"/>` +
+          `<x:p>` +
+          `<x:commentRangeStart x:id="1"/>` +
+          `<x:r><x:t>Hello</x:t></x:r>` +
+          `<x:commentRangeEnd x:id="1"/>` +
+          `<x:r><x:rPr><x:rStyle x:val="CommentReference"/></x:rPr><x:commentReference x:id="1"/></x:r>` +
+          `</x:p>` +
+          `<x:bookmarkEnd x:id="201"/>`;
+
+        const docXml =
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+          `<x:document xmlns:x="${W_NS}" xmlns:w14="${OOXML.W14_NS}">` +
+          `<x:body>${bodyXml}</x:body>` +
+          `</x:document>`;
+
+        const commentsXml =
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+          `<x:comments xmlns:x="${W_NS}" xmlns:w14="${OOXML.W14_NS}">` +
+          `<x:comment x:id="1" x:author="Gina" x:date="2025-01-01T00:00:00Z" x:initials="G">` +
+          `<x:p w14:paraId="00000021"><x:r><x:annotationRef/></x:r><x:r><x:t>Alt prefix comment</x:t></x:r></x:p>` +
+          `</x:comment>` +
+          `</x:comments>`;
+
+        const zip = new JSZip();
+        zip.file('word/document.xml', docXml);
+        zip.file('word/comments.xml', commentsXml);
+        const buf = (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+        const dz = await loadZip(buf);
+        const doc = parseXml(await dz.readText('word/document.xml'));
+        comments = await getComments(dz, doc);
+      });
+
+      await then('paragraph IDs and range metadata still resolve via namespace lookup', async () => {
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.id).toBe(1);
+        expect(comments[0]!.author).toBe('Gina');
+        expect(comments[0]!.text).toBe('Alt prefix comment');
+        expect(comments[0]!.paragraphId).toBe('00000021');
+        expect(comments[0]!.anchoredParagraphId).toBe('_bk_alt_prefix');
+        expect(comments[0]!.endParagraphId).toBe('_bk_alt_prefix');
+        expect(comments[0]!.startRunIndex).toBe(0);
+        expect(comments[0]!.startCharOffset).toBe(0);
+        expect(comments[0]!.endRunIndex).toBe(0);
+        expect(comments[0]!.endCharOffset).toBe(5);
       });
     });
   });

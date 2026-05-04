@@ -10,6 +10,7 @@ import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
 import { getParagraphRuns, getParagraphText } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
+import { childElements, getLeafText, isW } from './dom-helpers.js';
 
 // ── Relationship types ──────────────────────────────────────────────────
 
@@ -510,7 +511,51 @@ export type Comment = {
   text: string;
   paragraphId: string | null;
   anchoredParagraphId: string | null;
+  endParagraphId?: string | null;
+  startRunIndex?: number;
+  startCharOffset?: number;
+  endRunIndex?: number;
+  endCharOffset?: number;
   replies: Comment[];
+};
+
+type CommentRangePoint = {
+  paragraphId: string | null;
+  runIndex?: number;
+  charOffset?: number;
+};
+
+type RunBoundary = {
+  visibleLength: number;
+};
+
+// A marker is recorded with one of two shapes:
+// - `inside`: marker was seen INSIDE a `<w:r>`; runIndex is exact, charOffset is the
+//   visible-text offset within that run.
+// - `between`: marker was seen at paragraph level (between/around `<w:r>` elements);
+//   resolution depends on the boundary direction and the surrounding runs.
+type MarkerCharPosition = {
+  id: number;
+  inside?: { runIndex: number; charOffset: number };
+  between?: { afterRunIndex: number };
+};
+
+enum FieldState {
+  OUTSIDE_FIELD = 0,
+  IN_FIELD_CODE = 1,
+  IN_FIELD_RESULT = 2,
+}
+
+type ParagraphMarkerWalkState = {
+  charPos: number;
+  fieldState: FieldState;
+  // `allRuns` records every `<w:r>` in document order, including zero-length ones.
+  // This is the source of truth for `runIndex` per the issue contract.
+  allRuns: RunBoundary[];
+  // Number of `<w:r>` entered so far during the walk; equals allRuns.length once a run exits.
+  currentRunIndex: number;
+  startMarkers: MarkerCharPosition[];
+  endMarkers: MarkerCharPosition[];
 };
 
 /**
@@ -527,6 +572,7 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
   const commentsDoc = parseXml(commentsText);
   const commentEls = commentsDoc.getElementsByTagNameNS(OOXML.W_NS, W.comment);
   if (commentEls.length === 0) return [];
+  const rangeMetadata = resolveCommentRangeMetadata(documentXml);
 
   // Build a map of commentId → { paraId, Comment }
   const byParaId = new Map<string, Comment>();
@@ -545,13 +591,16 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
     // Extract text from <w:t> elements, skipping annotationRef runs
     const text = extractCommentText(el);
 
-    // Get paraId from first <w:p> child
+    // Get paraId from first <w:p> child (namespace-aware to handle non-`w` prefixes)
     const paras = el.getElementsByTagNameNS(OOXML.W_NS, W.p);
     let paragraphId: string | null = null;
     if (paras.length > 0) {
       const p = paras.item(0) as Element;
       paragraphId = p.getAttributeNS(OOXML.W14_NS, 'paraId') ?? p.getAttribute('w14:paraId') ?? null;
     }
+
+    const startPoint = rangeMetadata.startById.get(id);
+    const endPoint = rangeMetadata.endById.get(id);
 
     const comment: Comment = {
       id,
@@ -560,34 +609,17 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
       initials,
       text,
       paragraphId,
-      anchoredParagraphId: null,
+      anchoredParagraphId: startPoint?.paragraphId ?? null,
+      endParagraphId: endPoint?.paragraphId ?? startPoint?.paragraphId ?? null,
+      startRunIndex: startPoint?.runIndex,
+      startCharOffset: startPoint?.charOffset,
+      endRunIndex: endPoint?.runIndex,
+      endCharOffset: endPoint?.charOffset,
       replies: [],
     };
 
     byId.set(id, comment);
     if (paragraphId) byParaId.set(paragraphId, comment);
-  }
-
-  // Resolve anchoredParagraphId by scanning documentXml for commentRangeStart elements
-  const rangeStarts = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.commentRangeStart);
-  for (let i = 0; i < rangeStarts.length; i++) {
-    const rs = rangeStarts.item(i) as Element;
-    const cidStr = rs.getAttributeNS(OOXML.W_NS, 'id') ?? rs.getAttribute('w:id');
-    if (!cidStr) continue;
-    const cid = parseInt(cidStr, 10);
-    const comment = byId.get(cid);
-    if (!comment) continue;
-
-    // Walk up to find enclosing <w:p>
-    let parent = rs.parentNode;
-    while (parent && parent.nodeType === 1) {
-      const pel = parent as Element;
-      if (pel.localName === W.p && pel.namespaceURI === OOXML.W_NS) {
-        comment.anchoredParagraphId = getParagraphBookmarkId(pel);
-        break;
-      }
-      parent = parent.parentNode;
-    }
   }
 
   // Build thread tree from commentsExtended.xml
@@ -632,6 +664,188 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
   }
 
   return roots;
+}
+
+function resolveCommentRangeMetadata(documentXml: Document): {
+  startById: Map<number, CommentRangePoint>;
+  endById: Map<number, CommentRangePoint>;
+} {
+  const startById = new Map<number, CommentRangePoint>();
+  const endById = new Map<number, CommentRangePoint>();
+  const root = documentXml.documentElement;
+  if (!root) return { startById, endById };
+
+  const paragraphList = root.getElementsByTagNameNS(OOXML.W_NS, W.p);
+  for (let i = 0; i < paragraphList.length; i++) {
+    resolveCommentRangeMetadataInParagraph(paragraphList.item(i) as Element, startById, endById);
+  }
+
+  return { startById, endById };
+}
+
+function resolveCommentRangeMetadataInParagraph(
+  paragraph: Element,
+  startById: Map<number, CommentRangePoint>,
+  endById: Map<number, CommentRangePoint>,
+): void {
+  const walkState: ParagraphMarkerWalkState = {
+    charPos: 0,
+    fieldState: FieldState.OUTSIDE_FIELD,
+    allRuns: [],
+    currentRunIndex: 0,
+    startMarkers: [],
+    endMarkers: [],
+  };
+  walkParagraphForCommentMarkers(paragraph, paragraph, walkState);
+
+  const paragraphId = getParagraphBookmarkId(paragraph);
+  for (const marker of walkState.startMarkers) {
+    if (startById.has(marker.id)) continue;
+    startById.set(marker.id, {
+      paragraphId,
+      ...resolveMarkerToRunBoundary(walkState.allRuns, marker, 'start'),
+    });
+  }
+
+  for (const marker of walkState.endMarkers) {
+    if (endById.has(marker.id)) continue;
+    endById.set(marker.id, {
+      paragraphId,
+      ...resolveMarkerToRunBoundary(walkState.allRuns, marker, 'end'),
+    });
+  }
+}
+
+function walkParagraphForCommentMarkers(
+  rootParagraph: Element,
+  node: Element,
+  state: ParagraphMarkerWalkState,
+): void {
+  for (const child of childElements(node)) {
+    if (child !== rootParagraph && isW(child, W.p)) continue;
+
+    if (isW(child, W.commentRangeStart)) {
+      recordParagraphLevelMarker(child, state.startMarkers, state);
+      continue;
+    }
+    if (isW(child, W.commentRangeEnd)) {
+      recordParagraphLevelMarker(child, state.endMarkers, state);
+      continue;
+    }
+    if (isW(child, W.r)) {
+      walkRunForCommentMarkers(child, state);
+      continue;
+    }
+
+    walkParagraphForCommentMarkers(rootParagraph, child, state);
+  }
+}
+
+function walkRunForCommentMarkers(run: Element, state: ParagraphMarkerWalkState): void {
+  const runIndex = state.currentRunIndex;
+  state.currentRunIndex += 1;
+  const runVisibleStart = state.charPos;
+
+  for (const child of childElements(run)) {
+    if (isW(child, W.commentRangeStart)) {
+      recordInRunMarker(child, state.startMarkers, runIndex, state.charPos - runVisibleStart);
+      continue;
+    }
+    if (isW(child, W.commentRangeEnd)) {
+      recordInRunMarker(child, state.endMarkers, runIndex, state.charPos - runVisibleStart);
+      continue;
+    }
+    if (!child.namespaceURI || child.namespaceURI !== OOXML.W_NS) continue;
+
+    if (child.localName === W.fldChar) {
+      const type = getWordAttribute(child, 'fldCharType') ?? '';
+      if (type === 'begin') state.fieldState = FieldState.IN_FIELD_CODE;
+      else if (type === 'separate') state.fieldState = FieldState.IN_FIELD_RESULT;
+      else if (type === 'end') state.fieldState = FieldState.OUTSIDE_FIELD;
+      continue;
+    }
+
+    if (state.fieldState === FieldState.IN_FIELD_CODE) continue;
+
+    if (child.localName === W.t) {
+      state.charPos += (getLeafText(child) ?? '').length;
+      continue;
+    }
+    if (child.localName === W.tab || child.localName === W.br) {
+      state.charPos += 1;
+    }
+  }
+
+  state.allRuns.push({ visibleLength: state.charPos - runVisibleStart });
+}
+
+function recordInRunMarker(
+  markerEl: Element,
+  bucket: MarkerCharPosition[],
+  runIndex: number,
+  charOffset: number,
+): void {
+  const id = getCommentMarkerId(markerEl);
+  if (id == null) return;
+  bucket.push({ id, inside: { runIndex, charOffset } });
+}
+
+function recordParagraphLevelMarker(
+  markerEl: Element,
+  bucket: MarkerCharPosition[],
+  state: ParagraphMarkerWalkState,
+): void {
+  const id = getCommentMarkerId(markerEl);
+  if (id == null) return;
+  bucket.push({ id, between: { afterRunIndex: state.currentRunIndex - 1 } });
+}
+
+function getCommentMarkerId(markerEl: Element): number | null {
+  const idStr = markerEl.getAttributeNS(OOXML.W_NS, 'id') ?? markerEl.getAttribute('w:id');
+  if (!idStr) return null;
+  const id = parseInt(idStr, 10);
+  return Number.isNaN(id) ? null : id;
+}
+
+function getWordAttribute(el: Element, localName: string): string | null {
+  return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
+}
+
+function resolveMarkerToRunBoundary(
+  allRuns: RunBoundary[],
+  marker: MarkerCharPosition,
+  boundary: 'start' | 'end',
+): Pick<CommentRangePoint, 'runIndex' | 'charOffset'> {
+  // Marker seen INSIDE a run already carries the exact runIndex + charOffset.
+  if (marker.inside) {
+    return { runIndex: marker.inside.runIndex, charOffset: marker.inside.charOffset };
+  }
+  if (!marker.between) return {};
+  if (allRuns.length === 0) return {};
+
+  const { afterRunIndex } = marker.between;
+  const lastIndex = allRuns.length - 1;
+
+  if (boundary === 'start') {
+    // Marker sits between run `afterRunIndex` and run `afterRunIndex + 1`.
+    // For a `start` marker, the range opens at offset 0 of the next run if it exists.
+    const nextIdx = afterRunIndex + 1;
+    if (nextIdx <= lastIndex) {
+      return { runIndex: nextIdx, charOffset: 0 };
+    }
+    // Marker is past the last run — clamp to end of last run.
+    return { runIndex: lastIndex, charOffset: allRuns[lastIndex]!.visibleLength };
+  }
+
+  // boundary === 'end': range closes at the end of the previous run if one exists.
+  if (afterRunIndex < 0) {
+    // Marker is before the first run — empty range starting at run 0.
+    return { runIndex: 0, charOffset: 0 };
+  }
+  if (afterRunIndex <= lastIndex) {
+    return { runIndex: afterRunIndex, charOffset: allRuns[afterRunIndex]!.visibleLength };
+  }
+  return { runIndex: lastIndex, charOffset: allRuns[lastIndex]!.visibleLength };
 }
 
 /**
