@@ -720,35 +720,177 @@ describe('comments — edge cases and branch coverage', () => {
       });
     });
 
-    test('falls back to whole-paragraph wrap when offsets are out of range', async ({ given, when, then }: AllureBddContext) => {
-      // Defense-in-depth for direct callers of the docx-core primitive that pass
-      // offsets findOffsetInRuns cannot map (e.g., > visible length).
+    test('throws when offsets exceed paragraph visible length', async ({ given, when, then }: AllureBddContext) => {
+      // Anchoring on unrelated text would be worse than a clear error, so
+      // out-of-range offsets must fail loudly. Direct callers of the docx-core
+      // primitive should validate offsets against getParagraphText() themselves.
       let zip: DocxZip;
       let doc: Document;
+      let p: Element;
 
       await given('a document with a short paragraph', async () => {
-        ({ zip, doc } = await setupWithComment('<w:p><w:r><w:t>Short</w:t></w:r></w:p>'));
+        ({ zip, doc, p } = await setupWithComment('<w:p><w:r><w:t>Short</w:t></w:r></w:p>'));
       });
 
       await when('addComment is called with offsets beyond the paragraph length', async () => {
+        // assertion in then
+      });
+
+      await then('an error is thrown', async () => {
+        await expect(
+          addComment(doc, zip, {
+            paragraphEl: p,
+            start: 100,
+            end: 200,
+            author: 'Test',
+            text: 'Out-of-range',
+          }),
+        ).rejects.toThrow(/outside paragraph visible text/);
+      });
+    });
+
+    test('throws when start is negative', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let p: Element;
+
+      await given('a document with a paragraph', async () => {
+        ({ zip, doc, p } = await setupWithComment());
+      });
+
+      await when('addComment is called with a negative start', async () => {
+        // assertion in then
+      });
+
+      await then('an error is thrown', async () => {
+        await expect(
+          addComment(doc, zip, {
+            paragraphEl: p,
+            start: -1,
+            end: 5,
+            author: 'Test',
+            text: 'Negative start',
+          }),
+        ).rejects.toThrow(/outside paragraph visible text/);
+      });
+    });
+
+    test('handles a collapsed range (start === end) in the middle of a run', async ({ given, when, then, and }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a document with one run', async () => {
+        ({ zip, doc } = await setupWithComment('<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>'));
+      });
+
+      await when('addComment is called with a zero-width range mid-run', async () => {
         const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
         await addComment(doc, zip, {
           paragraphEl: p,
-          start: 100,
-          end: 200,
+          start: 5,
+          end: 5,
           author: 'Test',
-          text: 'Out-of-range fallback',
+          text: 'Insertion-point comment',
         });
       });
 
-      await then('markers are inserted at run boundaries without throwing', () => {
+      await then('the run is split once and the markers sit between the two halves', () => {
         const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
-        const childLocalNames = Array.from(p.childNodes)
-          .filter((c) => c.nodeType === 1)
-          .map((c) => (c as Element).localName);
-        expect(childLocalNames).toContain('commentRangeStart');
-        expect(childLocalNames).toContain('commentRangeEnd');
-        expect(childLocalNames).toContain('r');
+        const children = Array.from(p.childNodes).filter((n) => n.nodeType === 1) as Element[];
+        // Layout: [pre-run "Hello", commentRangeStart, commentRangeEnd, commentReference-run, post-run " World"]
+        expect(children.map((c) => c.localName)).toEqual([
+          'r',
+          'commentRangeStart',
+          'commentRangeEnd',
+          'r',
+          'r',
+        ]);
+        expect(children[0]!.textContent).toBe('Hello');
+        expect(children[4]!.textContent).toBe(' World');
+      });
+
+      await and('no empty <w:r> survived the split', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const visibleRuns = Array.from(p.getElementsByTagNameNS(W_NS, W.r)).filter((r) => {
+          return Array.from(r.childNodes).some((c) => {
+            if (c.nodeType !== 1) return false;
+            const local = (c as Element).localName;
+            return local === 't' || local === 'tab' || local === 'br' || local === 'commentReference';
+          });
+        });
+        // Pre-run, post-run, and commentReference run all have meaningful content; no empty <w:r>.
+        expect(visibleRuns).toHaveLength(3);
+      });
+    });
+
+    test('handles a collapsed range at the very start of a paragraph', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a document with one run', async () => {
+        ({ zip, doc } = await setupWithComment('<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>'));
+      });
+
+      await when('addComment is called with start === end === 0', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 0,
+          end: 0,
+          author: 'Test',
+          text: 'At paragraph start',
+        });
+      });
+
+      await then('markers go before the run, no split occurs', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const children = Array.from(p.childNodes).filter((n) => n.nodeType === 1) as Element[];
+        expect(children.map((c) => c.localName)).toEqual([
+          'commentRangeStart',
+          'commentRangeEnd',
+          'r',
+          'r',
+        ]);
+        // commentReference run is at index 2; original run with full text is at index 3.
+        expect(children[3]!.textContent).toBe('Hello World');
+      });
+    });
+
+    test('handles a collapsed range at an existing run boundary', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a document with two runs', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:r><w:t>Hello </w:t></w:r><w:r><w:t>World</w:t></w:r></w:p>',
+        ));
+      });
+
+      await when('addComment is called with start === end at the boundary between them', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        // Visible "Hello " is 6 chars; boundary at offset 6 sits between the two runs.
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 6,
+          end: 6,
+          author: 'Test',
+          text: 'At run boundary',
+        });
+      });
+
+      await then('markers go between the two existing runs, no split occurs', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const children = Array.from(p.childNodes).filter((n) => n.nodeType === 1) as Element[];
+        // Layout: ["Hello ", commentRangeStart, commentRangeEnd, commentReference-run, "World"]
+        expect(children.map((c) => c.localName)).toEqual([
+          'r',
+          'commentRangeStart',
+          'commentRangeEnd',
+          'r',
+          'r',
+        ]);
+        expect(children[0]!.textContent).toBe('Hello ');
+        expect(children[4]!.textContent).toBe('World');
       });
     });
   });

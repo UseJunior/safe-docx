@@ -74,7 +74,7 @@ export function getParagraphText(p: Element): string {
     .join('');
 }
 
-export function findOffsetInRuns(runs: TextRun[], start: number, end: number): {
+function findOffsetInRuns(runs: TextRun[], start: number, end: number): {
   startRunIdx: number;
   startOffset: number;
   endRunIdx: number;

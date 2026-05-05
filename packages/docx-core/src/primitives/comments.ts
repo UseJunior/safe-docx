@@ -8,7 +8,7 @@
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
-import { findOffsetInRuns, getParagraphRuns, getParagraphText, splitRunAtVisibleOffset, type TextRun } from './text.js';
+import { getParagraphRuns, getParagraphText, splitRunAtVisibleOffset, type TextRun } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { childElements, getLeafText, isW } from './dom-helpers.js';
 
@@ -208,10 +208,16 @@ export async function addComment(
   params: AddCommentParams,
 ): Promise<AddCommentResult> {
   const { paragraphEl, author, text, initials } = params;
+  const visibleLen = getParagraphText(paragraphEl).length;
   const start = params.start ?? 0;
-  const end = params.end ?? getParagraphText(paragraphEl).length;
+  const end = params.end ?? visibleLen;
   if (start > end) {
     throw new Error(`Invalid comment range: start (${start}) must be <= end (${end})`);
+  }
+  if (start < 0 || end > visibleLen) {
+    throw new Error(
+      `Invalid comment range: [${start}, ${end}) is outside paragraph visible text [0, ${visibleLen})`,
+    );
   }
 
   // Load comments.xml
@@ -403,19 +409,27 @@ function insertCommentMarkers(
     return;
   }
 
-  let mapping: ReturnType<typeof findOffsetInRuns>;
-  try {
-    mapping = findOffsetInRuns(runs, start, end);
-  } catch {
-    insertCommentMarkersAtRunBoundaries(runs, rangeStart, rangeEnd, refRun);
+  const mapping = mapOffsetsToRuns(runs, start, end);
+  const { startRunIdx, startOffset, endRunIdx, endOffset } = mapping;
+
+  // Collapsed range (start === end): insert both markers at the same boundary.
+  // Splitting again here would create an empty <w:r> inside the marker pair —
+  // replaceParagraphTextRange() avoids this by deleting the temporary run, which
+  // we can't do for comments. Handle the boundary directly.
+  if (startRunIdx === endRunIdx && startOffset === endOffset) {
+    insertCollapsedRangeMarkers(
+      runs[startRunIdx]!,
+      startOffset,
+      rangeStart,
+      rangeEnd,
+      refRun,
+    );
     return;
   }
 
-  const { startRunIdx, startOffset, endRunIdx, endOffset } = mapping;
-
   // Split boundary runs at the exact visible-text offsets so the markers can sit
   // on true sub-paragraph boundaries instead of being snapped to whole-run edges.
-  // Choreography mirrors replaceParagraphTextRange() in text.ts.
+  // Choreography mirrors replaceParagraphTextRange() in text.ts:404.
   let startRunEl: Element = runs[startRunIdx]!.r;
   let endRunEl: Element = runs[endRunIdx]!.r;
 
@@ -448,8 +462,7 @@ function insertCommentMarkers(
   const startParent = startRunEl.parentNode;
   const endParent = endRunEl.parentNode;
   if (!startParent || !endParent) {
-    insertCommentMarkersAtRunBoundaries(runs, rangeStart, rangeEnd, refRun);
-    return;
+    throw new Error('Split run has no parent');
   }
 
   startParent.insertBefore(rangeStart, startRunEl);
@@ -457,22 +470,70 @@ function insertCommentMarkers(
   endParent.insertBefore(refRun, rangeEnd.nextSibling);
 }
 
-function insertCommentMarkersAtRunBoundaries(
+function mapOffsetsToRuns(
   runs: TextRun[],
+  start: number,
+  end: number,
+): { startRunIdx: number; startOffset: number; endRunIdx: number; endOffset: number } {
+  // Map visible-text offsets to (runIndex, offsetInRun). Caller validates that
+  // 0 <= start <= end <= sum(runs[i].text.length).
+  let pos = 0;
+  let startRunIdx = -1;
+  let endRunIdx = -1;
+  let startOffset = 0;
+  let endOffset = 0;
+  for (let i = 0; i < runs.length; i++) {
+    const len = runs[i]!.text.length;
+    if (startRunIdx === -1 && start >= pos && start <= pos + len) {
+      startRunIdx = i;
+      startOffset = start - pos;
+    }
+    if (endRunIdx === -1 && end >= pos && end <= pos + len) {
+      endRunIdx = i;
+      endOffset = end - pos;
+      break;
+    }
+    pos += len;
+  }
+  if (startRunIdx === -1 || endRunIdx === -1) {
+    throw new Error(`Could not map offsets [${start}, ${end}) to runs`);
+  }
+  return { startRunIdx, startOffset, endRunIdx, endOffset };
+}
+
+function insertCollapsedRangeMarkers(
+  run: TextRun,
+  offsetInRun: number,
   rangeStart: Element,
   rangeEnd: Element,
   refRun: Element,
 ): void {
-  const firstRun = runs[0]!.r;
-  const lastRun = runs[runs.length - 1]!.r;
-  const firstParent = firstRun.parentNode;
-  const lastParent = lastRun.parentNode;
-  if (!firstParent || !lastParent) {
-    throw new Error('Run has no parent');
+  const runEl = run.r;
+  const parent = runEl.parentNode;
+  if (!parent) throw new Error('Run has no parent');
+  const runLen = run.text.length;
+
+  if (offsetInRun === 0) {
+    // Insert before the run.
+    parent.insertBefore(rangeStart, runEl);
+    parent.insertBefore(rangeEnd, runEl);
+    parent.insertBefore(refRun, runEl);
+    return;
   }
-  firstParent.insertBefore(rangeStart, firstRun);
-  lastParent.insertBefore(rangeEnd, lastRun.nextSibling);
-  lastParent.insertBefore(refRun, rangeEnd.nextSibling);
+  if (offsetInRun === runLen) {
+    // Insert after the run. Capture nextSibling once because insertBefore
+    // shifts it (rangeStart would otherwise land last instead of first).
+    const ref = runEl.nextSibling;
+    parent.insertBefore(rangeStart, ref);
+    parent.insertBefore(rangeEnd, ref);
+    parent.insertBefore(refRun, ref);
+    return;
+  }
+  // Mid-run: split once so the markers sit between the two halves.
+  const { right } = splitRunAtVisibleOffset(runEl, offsetInRun);
+  parent.insertBefore(rangeStart, right);
+  parent.insertBefore(rangeEnd, right);
+  parent.insertBefore(refRun, right);
 }
 
 async function linkReplyInCommentsExtended(
