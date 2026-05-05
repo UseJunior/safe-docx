@@ -8,7 +8,7 @@
 import { OOXML, W } from './namespaces.js';
 import { parseXml, serializeXml } from './xml.js';
 import { DocxZip } from './zip.js';
-import { getParagraphRuns, getParagraphText } from './text.js';
+import { findOffsetInRuns, getParagraphRuns, getParagraphText, splitRunAtVisibleOffset, type TextRun } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { childElements, getLeafText, isW } from './dom-helpers.js';
 
@@ -378,10 +378,8 @@ function insertCommentMarkers(
   start: number,
   end: number,
 ): void {
-  // Find the runs in the paragraph and map string offsets to DOM positions
   const runs = getParagraphRuns(paragraphEl);
 
-  // Create marker elements
   const rangeStart = documentXml.createElementNS(OOXML.W_NS, 'w:commentRangeStart');
   rangeStart.setAttribute('w:id', String(commentId));
 
@@ -398,39 +396,83 @@ function insertCommentMarkers(
   commentRef.setAttribute('w:id', String(commentId));
   refRun.appendChild(commentRef);
 
-  // Map string offsets to run positions
-  let pos = 0;
-  let startRunIdx = -1;
-  let endRunIdx = -1;
-
-  for (let i = 0; i < runs.length; i++) {
-    const runEnd = pos + runs[i]!.text.length;
-    if (startRunIdx < 0 && start < runEnd) startRunIdx = i;
-    if (endRunIdx < 0 && end <= runEnd) endRunIdx = i;
-    pos = runEnd;
-  }
-
-  // Fallback: if offsets don't map cleanly, wrap the whole paragraph
-  if (startRunIdx < 0) startRunIdx = 0;
-  if (endRunIdx < 0) endRunIdx = runs.length - 1;
-
-  // Insert commentRangeStart before the start run
-  if (runs.length > 0 && startRunIdx < runs.length) {
-    paragraphEl.insertBefore(rangeStart, runs[startRunIdx]!.r);
-  } else {
-    // No runs — insert at end of paragraph
+  if (runs.length === 0) {
     paragraphEl.appendChild(rangeStart);
-  }
-
-  // Insert commentRangeEnd and reference run after the end run
-  if (runs.length > 0 && endRunIdx < runs.length) {
-    const afterEndRun = runs[endRunIdx]!.r.nextSibling;
-    paragraphEl.insertBefore(rangeEnd, afterEndRun);
-    paragraphEl.insertBefore(refRun, afterEndRun);
-  } else {
     paragraphEl.appendChild(rangeEnd);
     paragraphEl.appendChild(refRun);
+    return;
   }
+
+  let mapping: ReturnType<typeof findOffsetInRuns>;
+  try {
+    mapping = findOffsetInRuns(runs, start, end);
+  } catch {
+    insertCommentMarkersAtRunBoundaries(runs, rangeStart, rangeEnd, refRun);
+    return;
+  }
+
+  const { startRunIdx, startOffset, endRunIdx, endOffset } = mapping;
+
+  // Split boundary runs at the exact visible-text offsets so the markers can sit
+  // on true sub-paragraph boundaries instead of being snapped to whole-run edges.
+  // Choreography mirrors replaceParagraphTextRange() in text.ts.
+  let startRunEl: Element = runs[startRunIdx]!.r;
+  let endRunEl: Element = runs[endRunIdx]!.r;
+
+  if (startRunIdx === endRunIdx) {
+    const runLen = runs[startRunIdx]!.text.length;
+    if (endOffset < runLen) {
+      const { left } = splitRunAtVisibleOffset(startRunEl, endOffset);
+      startRunEl = left;
+      endRunEl = left;
+    }
+    if (startOffset > 0) {
+      const { right } = splitRunAtVisibleOffset(startRunEl, startOffset);
+      startRunEl = right;
+      endRunEl = right;
+    }
+  } else {
+    if (startOffset > 0) {
+      const { right } = splitRunAtVisibleOffset(startRunEl, startOffset);
+      startRunEl = right;
+    }
+    const endLen = runs[endRunIdx]!.text.length;
+    if (endOffset < endLen) {
+      const { left } = splitRunAtVisibleOffset(endRunEl, endOffset);
+      endRunEl = left;
+    }
+  }
+
+  // Insert relative to each run's parent so anchors inside w:hyperlink, w:ins,
+  // w:del, w:sdtContent, etc. keep the markers inside the wrapper.
+  const startParent = startRunEl.parentNode;
+  const endParent = endRunEl.parentNode;
+  if (!startParent || !endParent) {
+    insertCommentMarkersAtRunBoundaries(runs, rangeStart, rangeEnd, refRun);
+    return;
+  }
+
+  startParent.insertBefore(rangeStart, startRunEl);
+  endParent.insertBefore(rangeEnd, endRunEl.nextSibling);
+  endParent.insertBefore(refRun, rangeEnd.nextSibling);
+}
+
+function insertCommentMarkersAtRunBoundaries(
+  runs: TextRun[],
+  rangeStart: Element,
+  rangeEnd: Element,
+  refRun: Element,
+): void {
+  const firstRun = runs[0]!.r;
+  const lastRun = runs[runs.length - 1]!.r;
+  const firstParent = firstRun.parentNode;
+  const lastParent = lastRun.parentNode;
+  if (!firstParent || !lastParent) {
+    throw new Error('Run has no parent');
+  }
+  firstParent.insertBefore(rangeStart, firstRun);
+  lastParent.insertBefore(rangeEnd, lastRun.nextSibling);
+  lastParent.insertBefore(refRun, rangeEnd.nextSibling);
 }
 
 async function linkReplyInCommentsExtended(
