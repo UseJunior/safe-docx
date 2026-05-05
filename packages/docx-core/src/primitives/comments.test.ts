@@ -409,6 +409,348 @@ describe('comments — edge cases and branch coverage', () => {
         ).rejects.toThrow('Invalid comment range');
       });
     });
+
+    test('splits a single run when anchor offsets fall mid-run', async ({ given, when, then, and }: AllureBddContext) => {
+      // Issue #151 reproducer: paragraph stores its visible text as one big <w:r>.
+      // The fix splits the run at exact offsets so markers wrap only the anchor span.
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a document whose paragraph has one run with full visible text', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:r><w:t>The terms below are incorporated into and form part of this agreement.</w:t></w:r></w:p>',
+        ));
+      });
+
+      await when('addComment is called with offsets that bracket "incorporated"', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const fullText = 'The terms below are incorporated into and form part of this agreement.';
+        const start = fullText.indexOf('incorporated');
+        const end = start + 'incorporated'.length;
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start,
+          end,
+          author: 'Test',
+          text: 'Range comment on "incorporated"',
+        });
+      });
+
+      await then('the original run is split into pre / span / post runs', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const children = Array.from(p.childNodes).filter((n) => n.nodeType === 1) as Element[];
+        // Expect: [pre-run, commentRangeStart, span-run, commentRangeEnd, commentReference-run, post-run]
+        // (commentReference is inserted between rangeEnd and the post-run, matching existing behavior.)
+        expect(children.map((c) => c.localName)).toEqual([
+          'r',
+          'commentRangeStart',
+          'r',
+          'commentRangeEnd',
+          'r',
+          'r',
+        ]);
+        expect(children[0]!.textContent).toBe('The terms below are ');
+        expect(children[2]!.textContent).toBe('incorporated');
+        expect(children[5]!.textContent).toBe(' into and form part of this agreement.');
+      });
+
+      await and('no empty <w:r> elements survived the split', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const runs = Array.from(p.getElementsByTagNameNS(W_NS, W.r));
+        for (const r of runs) {
+          // An empty run has no <w:t>, <w:tab>, <w:br>, or <w:commentReference> children.
+          const meaningful = Array.from(r.childNodes).filter((c) => {
+            if (c.nodeType !== 1) return false;
+            const local = (c as Element).localName;
+            return local !== 'rPr';
+          });
+          expect(meaningful.length).toBeGreaterThan(0);
+        }
+      });
+
+      await and('getComments reports range metadata bracketing the span only', async () => {
+        const comments = await getComments(zip, doc);
+        expect(comments).toHaveLength(1);
+        // <w:r> indices in document order: 0=pre, 1=span (markers around it), 2=commentRef, 3=post.
+        // The range markers bracket run 1; getComments returns 0-based run indices.
+        expect(comments[0]!.startRunIndex).toBe(1);
+        expect(comments[0]!.startCharOffset).toBe(0);
+        expect(comments[0]!.endRunIndex).toBe(1);
+        expect(comments[0]!.endCharOffset).toBe('incorporated'.length);
+      });
+    });
+
+    test('splits boundary runs when anchor crosses multiple runs', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a document with three runs', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:r><w:t>Hello </w:t></w:r><w:r><w:t>brave new </w:t></w:r><w:r><w:t>World!</w:t></w:r></w:p>',
+        ));
+      });
+
+      await when('addComment is called with offsets that span runs 0..2 mid-text', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        // Concat: "Hello brave new World!" — anchor "lo brave new Wor"
+        const start = 'Hel'.length;
+        const end = 'Hello brave new Wor'.length;
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start,
+          end,
+          author: 'Test',
+          text: 'Cross-run anchor',
+        });
+      });
+
+      await then('start run and end run are split, middle run is untouched', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const runs = Array.from(p.getElementsByTagNameNS(W_NS, W.r));
+        const texts = runs
+          .map((r) => r.getElementsByTagNameNS(W_NS, W.t).item(0))
+          .map((t) => (t ? t.textContent : ''));
+        // After split: [Hel, lo<spc>, brave<spc>new<spc>, Wor, commentRef, ld!]
+        // commentReference run is inserted between rangeEnd and the post-run.
+        expect(texts).toEqual(['Hel', 'lo ', 'brave new ', 'Wor', '', 'ld!']);
+
+        const comments = await getComments(zip, doc);
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.startRunIndex).toBe(1);
+        expect(comments[0]!.startCharOffset).toBe(0);
+        expect(comments[0]!.endRunIndex).toBe(3);
+        expect(comments[0]!.endCharOffset).toBe('Wor'.length);
+      });
+    });
+
+    test('does not split when anchor exactly equals the only run text', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a document with one run', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>',
+        ));
+      });
+
+      await when('addComment is called with offsets covering the whole run', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 0,
+          end: 'Hello World'.length,
+          author: 'Test',
+          text: 'Whole run',
+        });
+      });
+
+      await then('the run is not split (just one visible run + the commentReference run)', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const runs = Array.from(p.getElementsByTagNameNS(W_NS, W.r));
+        // Original run + commentReference run = 2.
+        expect(runs).toHaveLength(2);
+        expect(runs[0]!.getElementsByTagNameNS(W_NS, W.t).item(0)!.textContent).toBe('Hello World');
+      });
+    });
+
+    test('preserves run formatting (rPr) on both halves of a split', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a document with a single bold+italic run', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:r><w:rPr><w:b/><w:i/></w:rPr><w:t>Hello World</w:t></w:r></w:p>',
+        ));
+      });
+
+      await when('addComment is called with mid-run offsets', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 'Hello '.length,
+          end: 'Hello World'.length,
+          author: 'Test',
+          text: 'Bold split',
+        });
+      });
+
+      await then('both pre-run and span-run carry bold+italic', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const visibleRuns = Array.from(p.getElementsByTagNameNS(W_NS, W.r)).filter(
+          (r) => r.getElementsByTagNameNS(W_NS, W.t).length > 0,
+        );
+        expect(visibleRuns).toHaveLength(2);
+        for (const r of visibleRuns) {
+          const rPr = r.getElementsByTagNameNS(W_NS, W.rPr).item(0)!;
+          expect(rPr.getElementsByTagNameNS(W_NS, W.b).length).toBe(1);
+          expect(rPr.getElementsByTagNameNS(W_NS, W.i).length).toBe(1);
+        }
+      });
+    });
+
+    test('keeps markers inside w:hyperlink when anchor falls inside the wrapper', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a paragraph whose only visible text is inside a w:hyperlink', async () => {
+        // w:anchor avoids needing the r:id namespace; semantically still a hyperlink wrapper for our test.
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:hyperlink w:anchor="bk1"><w:r><w:t>Visit our website now</w:t></w:r></w:hyperlink></w:p>',
+        ));
+      });
+
+      await when('addComment is called with offsets that bracket "website"', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const start = 'Visit our '.length;
+        const end = start + 'website'.length;
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start,
+          end,
+          author: 'Test',
+          text: 'Hyperlink-internal anchor',
+        });
+      });
+
+      await then('the hyperlink wrapper still contains the split runs and the markers', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const hyperlink = p.getElementsByTagNameNS(W_NS, 'hyperlink').item(0) as Element;
+        expect(hyperlink).toBeTruthy();
+        const childLocalNames = Array.from(hyperlink.childNodes)
+          .filter((c) => c.nodeType === 1)
+          .map((c) => (c as Element).localName);
+        // [pre-run, commentRangeStart, span-run, commentRangeEnd, post-run, commentReference-run]
+        // [pre-run, commentRangeStart, span-run, commentRangeEnd, commentReference-run, post-run]
+        expect(childLocalNames).toEqual([
+          'r',
+          'commentRangeStart',
+          'r',
+          'commentRangeEnd',
+          'r',
+          'r',
+        ]);
+      });
+    });
+
+    test('keeps markers inside w:ins (tracked-change wrapper) when anchor falls inside it', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a paragraph whose only visible text is inside a w:ins', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:ins w:id="1" w:author="A" w:date="2025-01-01T00:00:00Z"><w:r><w:t>inserted clause text</w:t></w:r></w:ins></w:p>',
+        ));
+      });
+
+      await when('addComment is called with offsets bracketing "clause"', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const start = 'inserted '.length;
+        const end = start + 'clause'.length;
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start,
+          end,
+          author: 'Test',
+          text: 'Ins-internal anchor',
+        });
+      });
+
+      await then('the w:ins wrapper still contains the split runs and the markers', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const ins = p.getElementsByTagNameNS(W_NS, 'ins').item(0) as Element;
+        expect(ins).toBeTruthy();
+        const childLocalNames = Array.from(ins.childNodes)
+          .filter((c) => c.nodeType === 1)
+          .map((c) => (c as Element).localName);
+        // [pre-run, commentRangeStart, span-run, commentRangeEnd, commentReference-run, post-run]
+        expect(childLocalNames).toEqual([
+          'r',
+          'commentRangeStart',
+          'r',
+          'commentRangeEnd',
+          'r',
+          'r',
+        ]);
+      });
+    });
+
+    test('moves a w:tab to the span when the anchor starts exactly on it', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a paragraph with text-tab-text in one run', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:r><w:t>foo</w:t><w:tab/><w:t>bar</w:t></w:r></w:p>',
+        ));
+      });
+
+      await when('addComment anchors from the tab through the trailing text', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        // Visible text = "foo\tbar" (length 7). Anchor "\tbar" → start 3, end 7.
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 3,
+          end: 7,
+          author: 'Test',
+          text: 'Tab-spanning anchor',
+        });
+      });
+
+      await then('the tab lands in the span run, not the pre run', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const visibleRuns = Array.from(p.getElementsByTagNameNS(W_NS, W.r)).filter((r) => {
+          return Array.from(r.childNodes).some((c) => {
+            if (c.nodeType !== 1) return false;
+            const local = (c as Element).localName;
+            return local === 't' || local === 'tab' || local === 'br';
+          });
+        });
+        // Pre run has "foo" only; span run has tab+"bar"; commentReference run has nothing visible (filtered out).
+        expect(visibleRuns).toHaveLength(2);
+        const preChildren = Array.from(visibleRuns[0]!.childNodes)
+          .filter((c) => c.nodeType === 1)
+          .map((c) => (c as Element).localName);
+        expect(preChildren).toContain('t');
+        expect(preChildren).not.toContain('tab');
+        const spanChildren = Array.from(visibleRuns[1]!.childNodes)
+          .filter((c) => c.nodeType === 1)
+          .map((c) => (c as Element).localName);
+        expect(spanChildren).toContain('tab');
+        expect(spanChildren).toContain('t');
+      });
+    });
+
+    test('falls back to whole-paragraph wrap when offsets are out of range', async ({ given, when, then }: AllureBddContext) => {
+      // Defense-in-depth for direct callers of the docx-core primitive that pass
+      // offsets findOffsetInRuns cannot map (e.g., > visible length).
+      let zip: DocxZip;
+      let doc: Document;
+
+      await given('a document with a short paragraph', async () => {
+        ({ zip, doc } = await setupWithComment('<w:p><w:r><w:t>Short</w:t></w:r></w:p>'));
+      });
+
+      await when('addComment is called with offsets beyond the paragraph length', async () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 100,
+          end: 200,
+          author: 'Test',
+          text: 'Out-of-range fallback',
+        });
+      });
+
+      await then('markers are inserted at run boundaries without throwing', () => {
+        const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const childLocalNames = Array.from(p.childNodes)
+          .filter((c) => c.nodeType === 1)
+          .map((c) => (c as Element).localName);
+        expect(childLocalNames).toContain('commentRangeStart');
+        expect(childLocalNames).toContain('commentRangeEnd');
+        expect(childLocalNames).toContain('r');
+      });
+    });
   });
 
   describe('addCommentReply', () => {

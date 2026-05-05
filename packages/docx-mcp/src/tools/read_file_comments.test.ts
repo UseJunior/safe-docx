@@ -893,6 +893,34 @@ describe('read_file comment rendering', () => {
     expect(content).toContain(`#COMMENT ${opened.firstParaId} c${result.comment_id} Alice `);
   });
 
+  test('inline_markers renders the anchor span when add_comment(anchor_text) hits a single-run paragraph (#151)', async () => {
+    // Issue #151: paragraphs stored as one big <w:r> previously caused the writer to
+    // wrap the whole run, which inline_markers would then suppress. With run-splitting,
+    // the markers must bracket only the anchor span and inline_markers must render them.
+    const opened = await openSession([
+      'The terms below are incorporated into and form part of this agreement.',
+    ]);
+    const result = await addComment(opened.mgr, {
+      file_path: opened.inputPath,
+      target_paragraph_id: opened.firstParaId,
+      anchor_text: 'incorporated',
+      author: 'SmokeTest',
+      text: 'Range comment on "incorporated".',
+    });
+    assertSuccess(result, 'add_comment');
+
+    const read = await readFile(opened.mgr, {
+      file_path: opened.inputPath,
+      comment_rendering: 'inline_markers',
+    });
+    assertSuccess(read, 'read_file');
+    const content = String(read.content);
+    const line = findParagraphLine(toonLines(content), opened.firstParaId);
+    const id = result.comment_id as number;
+    expect(line).toContain(`[cm-start:${id}]incorporated[cm-end:${id}]`);
+    expect(content).toContain(`#COMMENT ${opened.firstParaId} c${id} SmokeTest `);
+  });
+
   test('inline_markers renders multi-paragraph ranges only at the boundary paragraphs', async () => {
     const { lines } = await renderCommentFixture({
       bodyXml:
