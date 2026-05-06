@@ -755,8 +755,11 @@ export class DocxDocument {
     return result;
   }
 
-  setParagraphSpacing(mutation: ParagraphSpacingMutation): ParagraphSpacingMutationResult {
-    const result = setParagraphSpacing(this.documentXml, mutation);
+  setParagraphSpacing(
+    mutation: ParagraphSpacingMutation,
+    ctx?: RevisionContext,
+  ): ParagraphSpacingMutationResult {
+    const result = setParagraphSpacing(this.documentXml, mutation, ctx);
     if (result.affectedParagraphs > 0) {
       this.dirty = true;
       this.documentViewCache = null;
@@ -764,8 +767,11 @@ export class DocxDocument {
     return result;
   }
 
-  setTableRowHeight(mutation: TableRowHeightMutation): TableRowHeightMutationResult {
-    const result = setTableRowHeight(this.documentXml, mutation);
+  setTableRowHeight(
+    mutation: TableRowHeightMutation,
+    ctx?: RevisionContext,
+  ): TableRowHeightMutationResult {
+    const result = setTableRowHeight(this.documentXml, mutation, ctx);
     if (result.affectedRows > 0) {
       this.dirty = true;
       this.documentViewCache = null;
@@ -773,8 +779,11 @@ export class DocxDocument {
     return result;
   }
 
-  setTableCellPadding(mutation: TableCellPaddingMutation): TableCellPaddingMutationResult {
-    const result = setTableCellPadding(this.documentXml, mutation);
+  setTableCellPadding(
+    mutation: TableCellPaddingMutation,
+    ctx?: RevisionContext,
+  ): TableCellPaddingMutationResult {
+    const result = setTableCellPadding(this.documentXml, mutation, ctx);
     if (result.affectedCells > 0) {
       this.dirty = true;
       this.documentViewCache = null;

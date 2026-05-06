@@ -8,6 +8,8 @@ import {
   allocateRevisionId,
   buildPPrChangeElement,
   buildRPrChangeElement,
+  buildTcPrChangeElement,
+  buildTrPrChangeElement,
   createRevisionContainer,
   createRevisionContext,
   createRevisionIdState,
@@ -173,6 +175,74 @@ describe('track-changes-emitter', () => {
       expect(serialized).toContain('<w:pPr><w:spacing w:before="120"/></w:pPr>');
       expect(serialized).not.toContain('<w:rPr>');
       expect(serialized).not.toContain('<w:sectPr');
+    });
+  });
+
+  test('buildTrPrChangeElement snapshots prior row properties without nested trPrChange or row revision markers', async ({ given, when, then }: AllureBddContext) => {
+    let trPr: Element;
+    let serialized: string;
+
+    await given('a row properties element that already contains tracked-change children', () => {
+      trPr = parseFragment(
+        '<w:trPr><w:trHeight w:val="360" w:hRule="atLeast"/><w:ins w:id="50"/><w:del w:id="51"/><w:trPrChange w:id="99"/></w:trPr>',
+      );
+    });
+
+    await when('buildTrPrChangeElement snapshots the previous state', () => {
+      serialized = serialize(
+        buildTrPrChangeElement(
+          trPr,
+          createRevisionContext({
+            author: 'Comparison',
+            date: '2026-05-03T14:15:16Z',
+            idState: createRevisionIdState(),
+          }),
+        ),
+      );
+    });
+
+    await then('the generated wrapper contains only CT_TrPrBase-compatible children', () => {
+      expect(serialized).toContain('<w:trPrChange ');
+      expect(serialized).toContain('<w:trPr><w:trHeight w:val="360" w:hRule="atLeast"/></w:trPr>');
+      expect(serialized).not.toContain('w:trPrChange w:id="99"');
+      expect(serialized).not.toContain('<w:ins ');
+      expect(serialized).not.toContain('<w:del ');
+    });
+  });
+
+  test('buildTcPrChangeElement snapshots prior cell properties preserving cell-topology revision children but stripping nested tcPrChange', async ({ given, when, then }: AllureBddContext) => {
+    let tcPr: Element;
+    let serialized: string;
+
+    await given('a cell properties element that already contains cell-topology revision markers and a stale tcPrChange', () => {
+      tcPr = parseFragment(
+        '<w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/></w:tcMar><w:cellIns w:id="40"/><w:cellDel w:id="41"/><w:cellMerge w:id="42"/><w:tcPrChange w:id="99"/></w:tcPr>',
+      );
+    });
+
+    await when('buildTcPrChangeElement snapshots the previous state', () => {
+      serialized = serialize(
+        buildTcPrChangeElement(
+          tcPr,
+          createRevisionContext({
+            author: 'Comparison',
+            date: '2026-05-03T14:15:16Z',
+            idState: createRevisionIdState(),
+          }),
+        ),
+      );
+    });
+
+    await then('CT_TcPrInner preserves cellIns/cellDel/cellMerge but excludes the stale tcPrChange', () => {
+      expect(serialized).toContain('<w:tcPrChange ');
+      // The stale change-of-a-change marker is dropped.
+      expect(serialized).not.toContain('w:tcPrChange w:id="99"');
+      // Cell-topology revisions are part of CT_TcPrInner and must be preserved.
+      expect(serialized).toContain('<w:cellIns w:id="40"/>');
+      expect(serialized).toContain('<w:cellDel w:id="41"/>');
+      expect(serialized).toContain('<w:cellMerge w:id="42"/>');
+      // tcMar is also part of CT_TcPrInner and must be preserved.
+      expect(serialized).toContain('<w:tcMar><w:top w:w="100" w:type="dxa"/></w:tcMar>');
     });
   });
 
