@@ -184,9 +184,34 @@ GOOD: old_string: "the Company shall indemnify"  → 1 match, succeeds
 
 `read_file` shows links as `<a href="...">text</a>`, but you **cannot create new hyperlinks** via `replace_text` or `insert_paragraph`. The `<a>` tag is stripped from new text. Existing hyperlinks are preserved when surrounding text is edited.
 
-### Paragraph IDs are session-scoped
+### Paragraph identity contract
 
-The `_bk_*` bookmark IDs are generated when a document is opened and are **tied to that session**. Do not store or reuse IDs across sessions. Always re-read the document to get fresh IDs.
+`_bk_*` paragraph IDs are **deterministic and stable**, not session-scoped. For **identical stored DOCX/OOXML bytes** (the same `.docx` file on disk), each paragraph receives byte-identical `_bk_*` IDs across re-opens, machines, and processes. You MAY persist these IDs in indexes, citation databases, and other external stores keyed off the same source document.
+
+How they're derived:
+
+- If the paragraph has Word's intrinsic `w14:paraId` attribute (Word 2010+), the ID is derived from that paraId. Editing the paragraph's text does NOT change its ID.
+- Otherwise, the ID is derived from a deterministic hash of the paragraph's normalized visible text together with its previous and next neighbors and ancestor chain. Editing the paragraph's text — or sometimes its neighbor text — WILL change its ID. This is intentional: stale references break loudly rather than silently retargeting the wrong paragraph.
+
+Inserting a paragraph does not renumber unrelated paragraphs. Duplicate paragraphs remain uniquely addressable via deterministic salt resolution.
+
+Edit tools (`replace_text`, `insert_paragraph`, `apply_plan`, etc.) accept ONLY `_bk_*` IDs as anchors.
+
+### Optional content_fingerprint for citation systems
+
+For citation, archival, or reconciliation pipelines that want a portable hash of paragraph text — independent of safe-docx's internal seed format — pass `include_fingerprint: true` to `read_file` with `format: "json"`:
+
+```json
+{
+  "id": "_bk_a3f29c10b8e4",
+  "content_fingerprint": "sha256:nfkc:5d2e8f1a4c5b7d2e8f1a4c5b7d2e8f1a",
+  "clean_text": "The Company shall indemnify the Customer."
+}
+```
+
+Algorithm: `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(visibleText)).replace(/\s+/g, " ").trim() )` truncated to 32 hex chars. Case is preserved (so "Section 5" and "section 5" hash differently); curly quotes and dashes are NOT folded to ASCII. Cf-category invisibles (soft hyphen, ZWJ/ZWNJ, LRM/RLM, bidi controls, variation selectors, BOM) are stripped so byte-level round-trip noise does not change the hash.
+
+`content_fingerprint` is a content hash, not a paragraph key. Paragraphs with identical normalized visible text produce identical fingerprints by design — use `_bk_*` IDs whenever you need per-paragraph identity. The fingerprint is **read-only metadata, not an edit anchor** — edit tools continue to accept only `_bk_*` IDs. The flag has no effect on TOON or simple output, and is silently ignored for Google Docs. The `sha256:nfkc:` prefix is intentional version reservation; future algorithm bumps will emit a different prefix, so store and compare the full prefixed string.
 
 ### Smart text matching
 

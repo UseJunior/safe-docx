@@ -157,6 +157,31 @@ No native binaries and no .NET prerequisite for supported runtime usage. Safe Do
 
 If you need direct library imports in app code, use `@usejunior/docx-core`.
 
+## Paragraph Identity
+
+`read_file` returns paragraphs with `id` fields like `_bk_a3f29c10b8e4`. These identifiers are **deterministic and stable**, not session-scoped.
+
+| Field | Role | Editable anchor? | Stability |
+|-------|------|------------------|-----------|
+| `id` (`_bk_<12hex>`) | Canonical edit anchor — only thing edit tools accept | ✅ | Byte-identical across reopens, machines, and processes for **identical stored DOCX/OOXML bytes**. Intrinsic branch (Word 2010+ `w14:paraId`) is robust to text edits; fallback branch changes when paragraph or neighbor text changes. |
+| `content_fingerprint` (opt-in) | Portable normalized-text hash for citation/reconciliation systems | ❌ — read-only metadata | Same normalized text → same hash on any machine. Changes when normalized text changes. **Not unique per paragraph** — two paragraphs with identical normalized text fingerprint identically. |
+
+Consumers MAY persist `_bk_*` identifiers in indexes, citation databases, and other external stores keyed off the same source document.
+
+For citation systems that want a portable hash whose canonicalization is documented and recomputable independent of safe-docx internals, pass `include_fingerprint: true` to `read_file` with `format: "json"`:
+
+```jsonc
+{
+  "id": "_bk_a3f29c10b8e4",
+  "content_fingerprint": "sha256:nfkc:5d2e8f1a4c5b7d2e8f1a4c5b7d2e8f1a",
+  "clean_text": "The Company shall indemnify the Customer."
+}
+```
+
+The fingerprint is computed as `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(visibleText)).replace(/\s+/g, " ").trim() )`, truncated to 32 hex chars. Case is preserved; curly quotes and dashes are NOT folded to ASCII. Cf-category invisibles (soft hyphen, ZWJ/ZWNJ, LRM/RLM, bidi controls, variation selectors, BOM) are stripped so byte-level round-trip noise does not change the hash. The flag has no effect on `format: "toon"` or `format: "simple"`, and is silently ignored for Google Docs sessions.
+
+`content_fingerprint` is a content hash, not a paragraph key. Paragraphs with identical normalized visible text produce identical fingerprints by design; use `_bk_*` IDs whenever you need per-paragraph identity. Edit tools (`replace_text`, `insert_paragraph`, `apply_plan`, etc.) accept ONLY `_bk_*` IDs as anchors — `content_fingerprint` is never an edit anchor. The `sha256:nfkc:` prefix is intentional version reservation; future algorithm bumps will emit a different prefix (e.g. `sha256:nfkc-strip:`), so consumers should store and compare the full prefixed string.
+
 ## Reliability and Evidence
 
 - Tool catalog source: `packages/docx-mcp/src/tool_catalog.ts`

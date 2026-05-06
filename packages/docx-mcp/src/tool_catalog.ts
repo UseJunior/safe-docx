@@ -52,6 +52,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .describe(
           'When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags.',
         ),
+      include_fingerprint: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs.',
+        ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },

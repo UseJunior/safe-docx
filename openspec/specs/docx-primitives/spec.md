@@ -147,14 +147,14 @@ The XML engine SHALL parse and serialize OOXML without data loss, preserving ele
 - **THEN** the result SHALL be an empty string
 
 ### Requirement: Paragraph Bookmark Identity
-The bookmark engine SHALL mint and persist stable `jr_para_*` identifiers for paragraphs, ensuring unique addressability and idempotent allocation.
+The bookmark engine SHALL mint and persist stable `_bk_*` identifiers for paragraphs, ensuring unique addressability and idempotent allocation.
 
 #### Scenario: insertParagraphBookmarks mints IDs matching expected pattern
 - **WHEN** `insertParagraphBookmarks` is called on a document with paragraphs lacking bookmarks
-- **THEN** each paragraph SHALL receive a `jr_para_*` identifier matching the pattern `jr_para_[0-9a-f]{12}`
+- **THEN** each paragraph SHALL receive a `_bk_*` identifier matching the pattern `_bk_[0-9a-f]{12}`
 
 #### Scenario: getParagraphBookmarkId retrieves minted ID
-- **GIVEN** a paragraph with a previously minted `jr_para_*` bookmark
+- **GIVEN** a paragraph with a previously minted `_bk_*` bookmark
 - **WHEN** `getParagraphBookmarkId` is called
 - **THEN** the result SHALL return the stable identifier
 
