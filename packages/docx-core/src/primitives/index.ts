@@ -24,3 +24,4 @@ export * from './relationships.js';
 export * from './formatting_tags.js';
 export * from './prevent_double_elevation.js';
 export * from './tables.js';
+export * from './content_fingerprint.js';

@@ -13,6 +13,8 @@ import {
   collectInlineCommentMarkers,
   collectTableMarkerInfo,
   formatTableMarker,
+  computeContentFingerprint,
+  getParagraphText,
   type Comment,
   type DocumentViewComment,
   type DocumentViewNode,
@@ -282,6 +284,7 @@ export async function readFile(
     format?: string;
     show_formatting?: boolean;
     comment_rendering?: string;
+    include_fingerprint?: boolean;
   },
 ): Promise<ToolResponse> {
   try {
@@ -384,13 +387,26 @@ export async function readFile(
       }
     }
 
+    // Optional content_fingerprint for JSON output. Computed from raw visible text
+    // (the same surface used by the _bk_* fallback seed), NOT from node.clean_text
+    // which has list labels stripped and footnote markers appended above.
+    let jsonNodes: readonly Record<string, unknown>[] = enriched;
+    if (params.include_fingerprint && format === 'json') {
+      jsonNodes = enriched.map((node) => {
+        const paragraphEl = session.doc.getParagraphElementById(node.id);
+        if (!paragraphEl) return node;
+        const fingerprint = computeContentFingerprint(getParagraphText(paragraphEl));
+        return { ...node, content_fingerprint: fingerprint };
+      });
+    }
+
     let content: string;
     let paragraphsReturned: number;
 
     if (!budgetActive) {
       // Explicit limit/offset/node_ids — render everything, no budget
       if (format === 'json') {
-        content = JSON.stringify(enriched, null, 2);
+        content = JSON.stringify(jsonNodes, null, 2);
       } else if (format === 'simple') {
         content = renderSimpleWithTableMarkers(enriched);
       } else {
@@ -402,7 +418,10 @@ export async function readFile(
     } else {
       // One-pass token-budget accumulation
       const budget = DEFAULT_CONTENT_TOKEN_BUDGET;
-      const result = renderWithBudget(enriched, format, budget, commentRendering);
+      const result =
+        format === 'json'
+          ? renderJsonWithBudget(jsonNodes, DEFAULT_CONTENT_TOKEN_BUDGET)
+          : renderWithBudget(enriched, format, budget, commentRendering);
       content = result.content;
       paragraphsReturned = result.count;
     }
