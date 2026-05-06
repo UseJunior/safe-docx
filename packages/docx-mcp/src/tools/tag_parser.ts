@@ -6,6 +6,7 @@
  */
 
 import { DOMParser } from '@xmldom/xmldom';
+import type { Element as XmlDomElement, Node as XmlDomNode } from '@xmldom/xmldom';
 import { stripAllInlineTags } from '@usejunior/docx-core';
 import type { ReplacementPart } from '@usejunior/docx-core';
 
@@ -174,6 +175,16 @@ interface TagMatch {
   end: number;
 }
 
+interface OpenTag {
+  name: string;
+  raw: string;
+}
+
+function getTagName(tagText: string): string | null {
+  const match = /^<\/?([A-Za-z]+)/.exec(tagText);
+  return match?.[1] ?? null;
+}
+
 function tryMatchKnownTag(text: string, start: number): TagMatch | null {
   // Must start with '<'
   if (text[start] !== '<') return null;
@@ -257,6 +268,70 @@ function tryMatchKnownTag(text: string, start: number): TagMatch | null {
   return { tagText: attrParts.join(''), end: j };
 }
 
+function repairKnownTagNesting(text: string): string {
+  const parts: string[] = [];
+  const stack: OpenTag[] = [];
+  let i = 0;
+
+  while (i < text.length) {
+    if (text[i] !== '<') {
+      parts.push(text[i]!);
+      i++;
+      continue;
+    }
+
+    const tagResult = tryMatchKnownTag(text, i);
+    if (!tagResult) {
+      parts.push(text[i]!);
+      i++;
+      continue;
+    }
+
+    const { tagText, end } = tagResult;
+    const tagName = getTagName(tagText);
+    if (!tagName) {
+      parts.push(tagText);
+      i = end;
+      continue;
+    }
+
+    if (!tagText.startsWith('</')) {
+      stack.push({ name: tagName, raw: tagText });
+      parts.push(tagText);
+      i = end;
+      continue;
+    }
+
+    const stackIndex = stack.map((tag) => tag.name).lastIndexOf(tagName);
+    if (stackIndex === -1) {
+      parts.push(tagText);
+      i = end;
+      continue;
+    }
+
+    if (stackIndex === stack.length - 1) {
+      stack.pop();
+      parts.push(tagText);
+      i = end;
+      continue;
+    }
+
+    const toReopen = stack.slice(stackIndex + 1);
+    for (let j = stack.length - 1; j > stackIndex; j--) {
+      parts.push(`</${stack[j]!.name}>`);
+    }
+    parts.push(tagText);
+    stack.splice(stackIndex);
+    for (const tag of toReopen) {
+      parts.push(tag.raw);
+      stack.push(tag);
+    }
+    i = end;
+  }
+
+  return parts.join('');
+}
+
 // ── DOM walker ──────────────────────────────────────────────────────
 
 const EMPTY_STATE: ParsedSegmentState = {
@@ -305,7 +380,7 @@ const TAG_NAME_TO_STATE_KEY: Record<string, keyof ParsedSegmentState | 'font'> =
 };
 
 function walkNode(
-  node: Node,
+  node: XmlDomNode,
   state: ParsedSegmentState,
   out: ParsedReplacementSegment[],
 ): void {
@@ -313,7 +388,7 @@ function walkNode(
     if (child.nodeType === 3 /* TEXT_NODE */) {
       pushSegment(out, child.nodeValue ?? '', state);
     } else if (child.nodeType === 1 /* ELEMENT_NODE */) {
-      const el = child as Element;
+      const el = child as XmlDomElement;
       const tagName = el.localName ?? el.nodeName;
 
       if (tagName === 'root') {
@@ -357,10 +432,21 @@ export function splitTaggedText(text: string): ParsedReplacementSegment[] {
 
   // Step 2: Prepare XML-safe string for DOM parsing
   const xmlText = prepareForDomParsing(text);
+  const parser = new DOMParser({ onError: () => {} });
 
-  // Step 3: Parse with xmldom
-  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+  // Step 3: Parse with xmldom, retrying once with repaired tag nesting for
+  // counter-balanced but cross-nested markup such as <b><i>x</b></i>.
+  let doc;
+  try {
+    doc = parser.parseFromString(xmlText, 'text/xml');
+  } catch {
+    const repairedText = repairKnownTagNesting(text);
+    doc = parser.parseFromString(prepareForDomParsing(repairedText), 'text/xml');
+  }
   const root = doc.documentElement;
+  if (!root) {
+    throw new Error('TAG_PARSE_ERROR');
+  }
 
   // Step 4: Walk DOM and build segments
   const out: ParsedReplacementSegment[] = [];
