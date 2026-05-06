@@ -1,4 +1,4 @@
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import JSZip from 'jszip';
 import { parseXml, serializeXml } from './xml.js';
@@ -12,6 +12,7 @@ import {
   getComment,
   deleteComment,
 } from './comments.js';
+import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Comments' });
 
@@ -47,6 +48,46 @@ async function setupWithComment(bodyXml: string = '<w:p><w:r><w:t>Hello World</w
   const doc = parseXml(docXml);
   const p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
   return { zip, doc, p };
+}
+
+async function withDeterministicMetadata<T>(
+  randomValues: number[],
+  run: () => Promise<T> | T,
+): Promise<T> {
+  const RealDate = Date;
+  const fixedTime = new RealDate('2026-05-03T14:15:16Z').valueOf();
+
+  class FixedDate extends RealDate {
+    constructor(value?: string | number | Date) {
+      super(value ?? fixedTime);
+    }
+
+    static now(): number {
+      return fixedTime;
+    }
+  }
+
+  let index = 0;
+  vi.stubGlobal('Date', FixedDate);
+  const randomSpy = vi.spyOn(Math, 'random').mockImplementation(() => {
+    const explicit = randomValues[index];
+    index += 1;
+    if (explicit != null) return explicit;
+    return ((index % 900) + 1) / 1000;
+  });
+
+  try {
+    return await run();
+  } finally {
+    randomSpy.mockRestore();
+    vi.unstubAllGlobals();
+  }
+}
+
+function directChildElementNames(element: Element): string[] {
+  return Array.from(element.childNodes)
+    .filter((node) => node.nodeType === 1)
+    .map((node) => (node as Element).localName);
 }
 
 describe('comments — edge cases and branch coverage', () => {
@@ -1155,6 +1196,504 @@ describe('comments — edge cases and branch coverage', () => {
 
       await then('an error is thrown', async () => {
         await expect(deleteComment(doc, zip, { commentId: 0 })).rejects.toThrow(/not found/);
+      });
+    });
+  });
+
+  describe('tracked-change emission', () => {
+    test('addComment wraps the commentReference run in w:ins and leaves side-part writes byte-identical', async ({ given, when, then }: AllureBddContext) => {
+      let trackedZip: DocxZip;
+      let trackedDoc: Document;
+      let trackedParagraph: Element;
+      let controlZip: DocxZip;
+      let controlDoc: Document;
+      let controlParagraph: Element;
+      let trackedCommentsXml: string;
+      let trackedPeopleXml: string;
+      let controlCommentsXml: string;
+      let controlPeopleXml: string;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('two identical bootstrapped documents and a tracked revision context', async () => {
+        ({ zip: trackedZip, doc: trackedDoc, p: trackedParagraph } = await setupWithComment());
+        ({ zip: controlZip, doc: controlDoc, p: controlParagraph } = await setupWithComment());
+      });
+
+      await when('the same root comment is added with and without revision context under deterministic metadata', async () => {
+        await withDeterministicMetadata([0.111111111], async () => {
+          await addComment(controlDoc, controlZip, {
+            paragraphEl: controlParagraph,
+            start: 0,
+            end: 5,
+            author: 'Reviewer',
+            text: 'Tracked root comment',
+          });
+        });
+
+        await withDeterministicMetadata([0.111111111], async () => {
+          await addComment(trackedDoc, trackedZip, {
+            paragraphEl: trackedParagraph,
+            start: 0,
+            end: 5,
+            author: 'Reviewer',
+            text: 'Tracked root comment',
+          }, ctx);
+        });
+
+        trackedCommentsXml = await trackedZip.readText('word/comments.xml');
+        trackedPeopleXml = await trackedZip.readText('word/people.xml');
+        controlCommentsXml = await controlZip.readText('word/comments.xml');
+        controlPeopleXml = await controlZip.readText('word/people.xml');
+      });
+
+      await then('only the reference run is wrapped in w:ins while comments.xml and people.xml stay identical', () => {
+        expect(directChildElementNames(trackedParagraph)).toEqual([
+          'commentRangeStart',
+          'r',
+          'commentRangeEnd',
+          'ins',
+          'r',
+        ]);
+
+        const insertion = trackedParagraph.getElementsByTagNameNS(W_NS, 'ins').item(0) as Element;
+        expect(insertion).toBeTruthy();
+        expect(insertion.parentNode).toBe(trackedParagraph);
+        expect(insertion.getAttribute('w:id')).toBe('1');
+        expect(insertion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(insertion.getAttribute('w:date')).toBe('2026-05-03T14:15:16Z');
+        expect(insertion.getElementsByTagNameNS(W_NS, W.r)).toHaveLength(1);
+        expect(insertion.getElementsByTagNameNS(W_NS, W.commentReference)).toHaveLength(1);
+
+        const rangeStart = trackedParagraph.getElementsByTagNameNS(W_NS, W.commentRangeStart).item(0) as Element;
+        const rangeEnd = trackedParagraph.getElementsByTagNameNS(W_NS, W.commentRangeEnd).item(0) as Element;
+        expect(rangeStart.parentNode).toBe(trackedParagraph);
+        expect(rangeEnd.parentNode).toBe(trackedParagraph);
+        expect(insertion.contains(rangeStart)).toBe(false);
+        expect(insertion.contains(rangeEnd)).toBe(false);
+
+        expect(trackedCommentsXml).toBe(controlCommentsXml);
+        expect(trackedPeopleXml).toBe(controlPeopleXml);
+      });
+    });
+
+    test('deleteComment wraps the removed commentReference run in w:del while range markers are still removed', async ({ given, when, then }: AllureBddContext) => {
+      let trackedZip: DocxZip;
+      let trackedDoc: Document;
+      let trackedParagraph: Element;
+      let controlZip: DocxZip;
+      let controlDoc: Document;
+      let controlParagraph: Element;
+      let trackedCommentsXml: string;
+      let trackedCommentsExtendedXml: string;
+      let trackedPeopleXml: string;
+      let controlCommentsXml: string;
+      let controlCommentsExtendedXml: string;
+      let controlPeopleXml: string;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('two identical documents with the same root comment already inserted', async () => {
+        ({ zip: trackedZip, doc: trackedDoc, p: trackedParagraph } = await setupWithComment());
+        ({ zip: controlZip, doc: controlDoc, p: controlParagraph } = await setupWithComment());
+
+        await withDeterministicMetadata([0.222222222], async () => {
+          await addComment(controlDoc, controlZip, {
+            paragraphEl: controlParagraph,
+            start: 0,
+            end: 5,
+            author: 'Reviewer',
+            text: 'Delete me',
+          });
+        });
+
+        await withDeterministicMetadata([0.222222222], async () => {
+          await addComment(trackedDoc, trackedZip, {
+            paragraphEl: trackedParagraph,
+            start: 0,
+            end: 5,
+            author: 'Reviewer',
+            text: 'Delete me',
+          });
+        });
+      });
+
+      await when('the comment is deleted with and without tracked-change context', async () => {
+        await deleteComment(controlDoc, controlZip, { commentId: 0 });
+        await deleteComment(trackedDoc, trackedZip, { commentId: 0 }, ctx);
+
+        trackedCommentsXml = await trackedZip.readText('word/comments.xml');
+        trackedCommentsExtendedXml = await trackedZip.readText('word/commentsExtended.xml');
+        trackedPeopleXml = await trackedZip.readText('word/people.xml');
+        controlCommentsXml = await controlZip.readText('word/comments.xml');
+        controlCommentsExtendedXml = await controlZip.readText('word/commentsExtended.xml');
+        controlPeopleXml = await controlZip.readText('word/people.xml');
+      });
+
+      await then('the tracked body keeps the reference run under w:del and the side-part writes match the legacy path', () => {
+        expect(trackedParagraph.getElementsByTagNameNS(W_NS, W.commentRangeStart)).toHaveLength(0);
+        expect(trackedParagraph.getElementsByTagNameNS(W_NS, W.commentRangeEnd)).toHaveLength(0);
+        expect(directChildElementNames(trackedParagraph)).toEqual(['r', 'del', 'r']);
+
+        const deletion = trackedParagraph.getElementsByTagNameNS(W_NS, 'del').item(0) as Element;
+        expect(deletion).toBeTruthy();
+        expect(deletion.parentNode).toBe(trackedParagraph);
+        expect(deletion.getAttribute('w:id')).toBe('1');
+        expect(deletion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(deletion.getAttribute('w:date')).toBe('2026-05-03T14:15:16Z');
+        expect(deletion.getElementsByTagNameNS(W_NS, W.r)).toHaveLength(1);
+        expect(deletion.getElementsByTagNameNS(W_NS, W.commentReference)).toHaveLength(1);
+        expect(deletion.getElementsByTagNameNS(W_NS, 'delText')).toHaveLength(0);
+
+        expect(trackedCommentsXml).toBe(controlCommentsXml);
+        expect(trackedCommentsExtendedXml).toBe(controlCommentsExtendedXml);
+        expect(trackedPeopleXml).toBe(controlPeopleXml);
+      });
+    });
+
+    test('addCommentReply accepts ctx but leaves the document body untouched while side-part writes stay identical', async ({ given, when, then }: AllureBddContext) => {
+      let trackedZip: DocxZip;
+      let trackedDoc: Document;
+      let trackedParagraph: Element;
+      let controlZip: DocxZip;
+      let controlDoc: Document;
+      let controlParagraph: Element;
+      let trackedBodyBeforeReply: string;
+      let trackedBodyAfterReply: string;
+      let controlBodyAfterReply: string;
+      let trackedCommentsXml: string;
+      let trackedCommentsExtendedXml: string;
+      let trackedPeopleXml: string;
+      let controlCommentsXml: string;
+      let controlCommentsExtendedXml: string;
+      let controlPeopleXml: string;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('two identical documents with the same root comment already added', async () => {
+        ({ zip: trackedZip, doc: trackedDoc, p: trackedParagraph } = await setupWithComment());
+        ({ zip: controlZip, doc: controlDoc, p: controlParagraph } = await setupWithComment());
+
+        await withDeterministicMetadata([0.333333333], async () => {
+          await addComment(controlDoc, controlZip, {
+            paragraphEl: controlParagraph,
+            start: 0,
+            end: 5,
+            author: 'Root',
+            text: 'Root comment',
+          });
+        });
+
+        await withDeterministicMetadata([0.333333333], async () => {
+          await addComment(trackedDoc, trackedZip, {
+            paragraphEl: trackedParagraph,
+            start: 0,
+            end: 5,
+            author: 'Root',
+            text: 'Root comment',
+          });
+        });
+
+        trackedBodyBeforeReply = serializeXml(trackedDoc);
+      });
+
+      await when('a threaded reply is added with and without ctx under deterministic metadata', async () => {
+        await withDeterministicMetadata([0.444444444], async () => {
+          await addCommentReply(controlDoc, controlZip, {
+            parentCommentId: 0,
+            author: 'Replier',
+            text: 'Reply body',
+          });
+        });
+
+        await withDeterministicMetadata([0.444444444], async () => {
+          await addCommentReply(trackedDoc, trackedZip, {
+            parentCommentId: 0,
+            author: 'Replier',
+            text: 'Reply body',
+          }, ctx);
+        });
+
+        trackedBodyAfterReply = serializeXml(trackedDoc);
+        controlBodyAfterReply = serializeXml(controlDoc);
+        trackedCommentsXml = await trackedZip.readText('word/comments.xml');
+        trackedCommentsExtendedXml = await trackedZip.readText('word/commentsExtended.xml');
+        trackedPeopleXml = await trackedZip.readText('word/people.xml');
+        controlCommentsXml = await controlZip.readText('word/comments.xml');
+        controlCommentsExtendedXml = await controlZip.readText('word/commentsExtended.xml');
+        controlPeopleXml = await controlZip.readText('word/people.xml');
+      });
+
+      await then('the body remains unchanged with no insertion or deletion wrappers, and side-part writes match', () => {
+        expect(trackedBodyAfterReply).toBe(trackedBodyBeforeReply);
+        expect(trackedBodyAfterReply).toBe(controlBodyAfterReply);
+        expect(trackedDoc.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+        expect(trackedDoc.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+
+        expect(trackedCommentsXml).toBe(controlCommentsXml);
+        expect(trackedCommentsExtendedXml).toBe(controlCommentsExtendedXml);
+        expect(trackedPeopleXml).toBe(controlPeopleXml);
+      });
+    });
+
+    test('preserves the legacy untracked body behavior when ctx is omitted for addComment, addCommentReply, and deleteComment', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let paragraph: Element;
+      let bodyAfterAdd: string;
+      let bodyAfterReply: string;
+      let commentId: number;
+
+      await given('a bootstrapped document with a single paragraph', async () => {
+        ({ zip, doc, p: paragraph } = await setupWithComment());
+      });
+
+      await when('the comment lifecycle runs without a revision context', async () => {
+        await withDeterministicMetadata([0.555555555], async () => {
+          const result = await addComment(doc, zip, {
+            paragraphEl: paragraph,
+            start: 0,
+            end: 5,
+            author: 'Reviewer',
+            text: 'Legacy root comment',
+          });
+          commentId = result.commentId;
+        });
+
+        bodyAfterAdd = serializeXml(doc);
+
+        await withDeterministicMetadata([0.666666666], async () => {
+          await addCommentReply(doc, zip, {
+            parentCommentId: commentId,
+            author: 'Replier',
+            text: 'Legacy reply',
+          });
+        });
+
+        bodyAfterReply = serializeXml(doc);
+        await deleteComment(doc, zip, { commentId });
+      });
+
+      await then('the body follows the historical untracked path with no w:ins or w:del markup', () => {
+        expect(bodyAfterAdd).toContain('<w:commentRangeStart');
+        expect(bodyAfterAdd).toContain('<w:commentRangeEnd');
+        expect(bodyAfterAdd).toContain('<w:commentReference');
+        expect(bodyAfterAdd).not.toContain('<w:ins');
+        expect(bodyAfterAdd).not.toContain('<w:del');
+        expect(bodyAfterReply).toBe(bodyAfterAdd);
+        expect(directChildElementNames(paragraph)).toEqual(['r', 'r']);
+        expect(paragraph.getElementsByTagNameNS(W_NS, W.commentRangeStart)).toHaveLength(0);
+        expect(paragraph.getElementsByTagNameNS(W_NS, W.commentRangeEnd)).toHaveLength(0);
+        expect(paragraph.getElementsByTagNameNS(W_NS, W.commentReference)).toHaveLength(0);
+        const remainingRuns = Array.from(paragraph.childNodes).filter((node) => node.nodeType === 1) as Element[];
+        expect(remainingRuns.map((run) => run.textContent)).toEqual(['Hello', ' World']);
+        expect(doc.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
+        expect(doc.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(0);
+      });
+    });
+
+    test('allocates distinct revision IDs across tracked addComment and deleteComment operations sharing one context', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let firstParagraph: Element;
+      let secondParagraph: Element;
+      let emittedIds: number[];
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a two-paragraph document with one existing untracked comment', async () => {
+        ({ zip, doc } = await setupWithComment(
+          '<w:p><w:r><w:t>Alpha</w:t></w:r></w:p><w:p><w:r><w:t>Beta</w:t></w:r></w:p>',
+        ));
+        firstParagraph = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        secondParagraph = doc.getElementsByTagNameNS(W_NS, W.p).item(1) as Element;
+
+        await withDeterministicMetadata([0.777777777], async () => {
+          await addComment(doc, zip, {
+            paragraphEl: firstParagraph,
+            start: 0,
+            end: 5,
+            author: 'Root',
+            text: 'Delete this one',
+          });
+        });
+      });
+
+      await when('a tracked add and tracked delete share the same revision context', async () => {
+        await withDeterministicMetadata([0.888888888], async () => {
+          await addComment(doc, zip, {
+            paragraphEl: secondParagraph,
+            start: 0,
+            end: 4,
+            author: 'Reviewer',
+            text: 'Keep this tracked comment',
+          }, ctx);
+        });
+
+        await deleteComment(doc, zip, { commentId: 0 }, ctx);
+
+        emittedIds = [
+          ...Array.from(doc.getElementsByTagNameNS(W_NS, 'ins')),
+          ...Array.from(doc.getElementsByTagNameNS(W_NS, 'del')),
+        ].map((element) => Number((element as Element).getAttribute('w:id')));
+      });
+
+      await then('the insertion and deletion wrappers use distinct revision IDs from the shared allocator', () => {
+        expect(emittedIds.slice().sort((left, right) => left - right)).toEqual([1, 2]);
+        expect(new Set(emittedIds).size).toBe(2);
+      });
+    });
+
+    test('tracked deleteComment of a tracked addComment yields nested w:ins > w:del around the reference run', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let p: Element;
+      let nestedDeletion: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a bootstrapped document with a tracked-added comment whose reference is wrapped in w:ins', async () => {
+        ({ zip, doc, p } = await setupWithComment());
+
+        await withDeterministicMetadata([0.222222222], async () => {
+          await addComment(doc, zip, {
+            paragraphEl: p,
+            start: 0,
+            end: 5,
+            author: 'Reviewer',
+            text: 'Comment that will be deleted',
+          }, ctx);
+        });
+
+        // Confirm precondition: reference run is currently inside <w:ins>
+        const insertion = p.getElementsByTagNameNS(W_NS, 'ins').item(0) as Element | null;
+        expect(insertion).toBeTruthy();
+        expect(insertion!.getElementsByTagNameNS(W_NS, W.commentReference)).toHaveLength(1);
+      });
+
+      await when('the comment is deleted under the same tracked revision context', async () => {
+        await deleteComment(doc, zip, { commentId: 0 }, ctx);
+
+        const deletions = p.getElementsByTagNameNS(W_NS, 'del');
+        expect(deletions).toHaveLength(1);
+        nestedDeletion = deletions.item(0) as Element;
+      });
+
+      await then('the deletion wrapper sits inside the original insertion wrapper', () => {
+        const parentIns = nestedDeletion.parentNode as Element;
+        expect(parentIns).toBeTruthy();
+        expect(parentIns.namespaceURI).toBe(W_NS);
+        expect(parentIns.localName).toBe('ins');
+
+        // The reference run is preserved inside <w:del> (not removed).
+        const runs = nestedDeletion.getElementsByTagNameNS(W_NS, W.r);
+        expect(runs).toHaveLength(1);
+        expect(runs.item(0)!.getElementsByTagNameNS(W_NS, W.commentReference)).toHaveLength(1);
+
+        // commentRangeStart / commentRangeEnd are still removed entirely.
+        expect(p.getElementsByTagNameNS(W_NS, W.commentRangeStart)).toHaveLength(0);
+        expect(p.getElementsByTagNameNS(W_NS, W.commentRangeEnd)).toHaveLength(0);
+      });
+    });
+
+    test('addComment with ctx wraps the reference run on an empty paragraph (no-runs branch)', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let p: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a bootstrapped document whose paragraph has no runs', async () => {
+        ({ zip, doc, p } = await setupWithComment('<w:p></w:p>'));
+      });
+
+      await when('addComment is called with ctx on the empty paragraph', async () => {
+        await withDeterministicMetadata([0.333333333], async () => {
+          await addComment(doc, zip, {
+            paragraphEl: p,
+            author: 'Reviewer',
+            text: 'Empty paragraph comment',
+          }, ctx);
+        });
+      });
+
+      await then('the reference run is wrapped in w:ins; rangeStart/End are bare children of the paragraph', () => {
+        expect(directChildElementNames(p)).toEqual([
+          'commentRangeStart',
+          'commentRangeEnd',
+          'ins',
+        ]);
+        const insertion = p.getElementsByTagNameNS(W_NS, 'ins').item(0) as Element;
+        expect(insertion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(insertion.getElementsByTagNameNS(W_NS, W.commentReference)).toHaveLength(1);
+      });
+    });
+
+    test('addComment with ctx wraps the reference run in the collapsed-range branch (start === end)', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let doc: Document;
+      let p: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a bootstrapped document with a single-run paragraph', async () => {
+        ({ zip, doc, p } = await setupWithComment());
+      });
+
+      await when('addComment is called with a collapsed range (caret) and ctx', async () => {
+        await withDeterministicMetadata([0.444444444], async () => {
+          await addComment(doc, zip, {
+            paragraphEl: p,
+            start: 5,
+            end: 5,
+            author: 'Reviewer',
+            text: 'Collapsed-range comment',
+          }, ctx);
+        });
+      });
+
+      await then('the reference run sits inside w:ins between the collapsed rangeStart/End markers', () => {
+        const insertion = p.getElementsByTagNameNS(W_NS, 'ins').item(0) as Element;
+        expect(insertion).toBeTruthy();
+        expect(insertion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(insertion.getElementsByTagNameNS(W_NS, W.r)).toHaveLength(1);
+        expect(insertion.getElementsByTagNameNS(W_NS, W.commentReference)).toHaveLength(1);
+
+        const rangeStart = p.getElementsByTagNameNS(W_NS, W.commentRangeStart).item(0) as Element;
+        const rangeEnd = p.getElementsByTagNameNS(W_NS, W.commentRangeEnd).item(0) as Element;
+        expect(rangeStart).toBeTruthy();
+        expect(rangeEnd).toBeTruthy();
+        // rangeStart/End are NOT inside the insertion wrapper (markers stay metadata).
+        expect(insertion.contains(rangeStart)).toBe(false);
+        expect(insertion.contains(rangeEnd)).toBe(false);
       });
     });
   });

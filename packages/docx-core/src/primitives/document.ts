@@ -816,7 +816,7 @@ export class DocxDocument {
     author: string;
     text: string;
     initials?: string;
-  }): Promise<AddCommentResult> {
+  }, ctx?: RevisionContext): Promise<AddCommentResult> {
     const p = findParagraphByBookmarkId(this.documentXml, params.paragraphId);
     if (!p) throw new Error(`Paragraph not found: ${params.paragraphId}`);
 
@@ -828,7 +828,7 @@ export class DocxDocument {
       author: params.author,
       text: params.text,
       initials: params.initials,
-    });
+    }, ctx);
 
     this.dirty = true;
     this.documentViewCache = null;
@@ -846,14 +846,14 @@ export class DocxDocument {
     author: string;
     text: string;
     initials?: string;
-  }): Promise<AddCommentReplyResult> {
+  }, ctx?: RevisionContext): Promise<AddCommentReplyResult> {
     await bootstrapCommentParts(this.zip);
     const result = await addCommentReplyImpl(this.documentXml, this.zip, {
       parentCommentId: params.parentCommentId,
       author: params.author,
       text: params.text,
       initials: params.initials,
-    });
+    }, ctx);
 
     this.dirty = true;
     this.documentViewCache = null;
@@ -868,8 +868,8 @@ export class DocxDocument {
     return getCommentImpl(this.zip, this.documentXml, commentId);
   }
 
-  async deleteComment(params: { commentId: number }): Promise<void> {
-    await deleteCommentImpl(this.documentXml, this.zip, params);
+  async deleteComment(params: { commentId: number }, ctx?: RevisionContext): Promise<void> {
+    await deleteCommentImpl(this.documentXml, this.zip, params, ctx);
     this.dirty = true;
     this.documentViewCache = null;
   }

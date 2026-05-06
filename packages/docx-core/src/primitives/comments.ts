@@ -11,6 +11,11 @@ import { DocxZip } from './zip.js';
 import { getParagraphRuns, getParagraphText, splitRunAtVisibleOffset, type TextRun } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { childElements, getLeafText, isW } from './dom-helpers.js';
+import {
+  createRevisionContainer,
+  prepareElementForDeletion,
+  type RevisionContext,
+} from './track-changes-emitter.js';
 
 // ── Relationship types ──────────────────────────────────────────────────
 
@@ -206,6 +211,7 @@ export async function addComment(
   documentXml: Document,
   zip: DocxZip,
   params: AddCommentParams,
+  ctx?: RevisionContext,
 ): Promise<AddCommentResult> {
   const { paragraphEl, author, text, initials } = params;
   const visibleLen = getParagraphText(paragraphEl).length;
@@ -228,7 +234,7 @@ export async function addComment(
   const commentId = allocateNextCommentId(commentsDoc);
 
   // Insert range markers and reference in document body
-  insertCommentMarkers(documentXml, paragraphEl, commentId, start, end);
+  insertCommentMarkers(documentXml, paragraphEl, commentId, start, end, ctx);
 
   // Add comment element to comments.xml
   const paraId = generateParaId();
@@ -266,11 +272,15 @@ export type AddCommentReplyResult = {
  *
  * Replies don't have range markers in the document body.
  * Thread linkage is stored in commentsExtended.xml via paraIdParent.
+ * `ctx` is accepted for API consistency with other comment mutations, but this
+ * primitive only updates comment side parts for replies, so no body revision
+ * markup is emitted here.
  */
 export async function addCommentReply(
   _documentXml: Document,
   zip: DocxZip,
   params: AddCommentReplyParams,
+  _ctx?: RevisionContext,
 ): Promise<AddCommentReplyResult> {
   const { parentCommentId, author, text, initials } = params;
 
@@ -383,6 +393,7 @@ function insertCommentMarkers(
   commentId: number,
   start: number,
   end: number,
+  ctx?: RevisionContext,
 ): void {
   const runs = getParagraphRuns(paragraphEl);
 
@@ -401,11 +412,15 @@ function insertCommentMarkers(
   const commentRef = documentXml.createElementNS(OOXML.W_NS, 'w:commentReference');
   commentRef.setAttribute('w:id', String(commentId));
   refRun.appendChild(commentRef);
+  const refAnchor = ctx ? createRevisionContainer(documentXml, 'ins', ctx) : refRun;
+  if (ctx) {
+    refAnchor.appendChild(refRun);
+  }
 
   if (runs.length === 0) {
     paragraphEl.appendChild(rangeStart);
     paragraphEl.appendChild(rangeEnd);
-    paragraphEl.appendChild(refRun);
+    paragraphEl.appendChild(refAnchor);
     return;
   }
 
@@ -422,7 +437,7 @@ function insertCommentMarkers(
       startOffset,
       rangeStart,
       rangeEnd,
-      refRun,
+      refAnchor,
     );
     return;
   }
@@ -467,7 +482,7 @@ function insertCommentMarkers(
 
   startParent.insertBefore(rangeStart, startRunEl);
   endParent.insertBefore(rangeEnd, endRunEl.nextSibling);
-  endParent.insertBefore(refRun, rangeEnd.nextSibling);
+  endParent.insertBefore(refAnchor, rangeEnd.nextSibling);
 }
 
 function mapOffsetsToRuns(
@@ -506,7 +521,7 @@ function insertCollapsedRangeMarkers(
   offsetInRun: number,
   rangeStart: Element,
   rangeEnd: Element,
-  refRun: Element,
+  refAnchor: Element,
 ): void {
   const runEl = run.r;
   const parent = runEl.parentNode;
@@ -517,7 +532,7 @@ function insertCollapsedRangeMarkers(
     // Insert before the run.
     parent.insertBefore(rangeStart, runEl);
     parent.insertBefore(rangeEnd, runEl);
-    parent.insertBefore(refRun, runEl);
+    parent.insertBefore(refAnchor, runEl);
     return;
   }
   if (offsetInRun === runLen) {
@@ -526,14 +541,14 @@ function insertCollapsedRangeMarkers(
     const ref = runEl.nextSibling;
     parent.insertBefore(rangeStart, ref);
     parent.insertBefore(rangeEnd, ref);
-    parent.insertBefore(refRun, ref);
+    parent.insertBefore(refAnchor, ref);
     return;
   }
   // Mid-run: split once so the markers sit between the two halves.
   const { right } = splitRunAtVisibleOffset(runEl, offsetInRun);
   parent.insertBefore(rangeStart, right);
   parent.insertBefore(rangeEnd, right);
-  parent.insertBefore(refRun, right);
+  parent.insertBefore(refAnchor, right);
 }
 
 async function linkReplyInCommentsExtended(
@@ -983,6 +998,7 @@ export async function deleteComment(
   documentXml: Document,
   zip: DocxZip,
   params: { commentId: number },
+  ctx?: RevisionContext,
 ): Promise<void> {
   const { commentId } = params;
 
@@ -1081,7 +1097,7 @@ export async function deleteComment(
 
   // 3. Remove range markers and commentReference from document.xml (for root comments)
   for (const cid of idsToDelete) {
-    removeCommentMarkersFromDocument(documentXml, cid);
+    removeCommentMarkersFromDocument(documentXml, cid, ctx);
   }
 }
 
@@ -1102,7 +1118,11 @@ function getCommentElParaId(commentEl: Element): string | null {
   return p.getAttributeNS(OOXML.W14_NS, 'paraId') ?? p.getAttribute('w14:paraId') ?? null;
 }
 
-function removeCommentMarkersFromDocument(documentXml: Document, commentId: number): void {
+function removeCommentMarkersFromDocument(
+  documentXml: Document,
+  commentId: number,
+  ctx?: RevisionContext,
+): void {
   const cidStr = String(commentId);
 
   // Remove commentRangeStart elements
@@ -1125,7 +1145,8 @@ function removeCommentMarkersFromDocument(documentXml: Document, commentId: numb
   }
   for (const el of endsToRemove) el.parentNode?.removeChild(el);
 
-  // Remove commentReference elements (safe: remove element, then run only if empty)
+  // Remove commentReference elements, or preserve their containing run under
+  // a deletion wrapper when tracked changes are requested.
   const refs = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.commentReference);
   const refsToRemove: Element[] = [];
   for (let i = 0; i < refs.length; i++) {
@@ -1136,10 +1157,28 @@ function removeCommentMarkersFromDocument(documentXml: Document, commentId: numb
   for (const ref of refsToRemove) {
     const run = ref.parentNode as Element | null;
     if (!run) continue;
+    if (ctx) {
+      const parent = run.parentNode;
+      if (!parent) continue;
+
+      const deletion = createRevisionContainer(documentXml, 'del', ctx);
+      parent.replaceChild(deletion, run);
+      deletion.appendChild(prepareElementForDeletion(run));
+      continue;
+    }
     run.removeChild(ref);
     // Remove run only if it has no visible content after removing the reference
     if (!hasVisibleRunContent(run)) {
-      run.parentNode?.removeChild(run);
+      const runParent = run.parentNode as Element | null;
+      runParent?.removeChild(run);
+      // If the run lived inside a tracked-change wrapper (e.g., the comment
+      // was added with ctx earlier and is now being deleted without ctx),
+      // the wrapper is left orphaned with no content. Clean it up.
+      if (runParent && isW(runParent, 'ins')) {
+        runParent.parentNode?.removeChild(runParent);
+      } else if (runParent && isW(runParent, 'del')) {
+        runParent.parentNode?.removeChild(runParent);
+      }
     }
   }
 }
