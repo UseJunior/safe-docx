@@ -14,6 +14,7 @@ import {
   collectTableMarkerInfo,
   formatTableMarker,
   computeContentFingerprint,
+  getParagraphBookmarkId,
   getParagraphText,
   type Comment,
   type DocumentViewComment,
@@ -338,6 +339,19 @@ export async function readFile(
       filtered = nodes.slice(startIdx, endIdx);
     }
 
+    // Build a single paragraph-element index up front. All downstream enrichment
+    // passes (footnote markers, comment inline markers, content_fingerprint) consult
+    // this map instead of calling getParagraphElementById() per node, which would be
+    // a linear scan and turn the read into O(N^2) on large documents.
+    const paragraphElementsById = (() => {
+      const map = new Map<string, Element>();
+      for (const p of session.doc.getParagraphs()) {
+        const id = getParagraphBookmarkId(p);
+        if (id) map.set(id, p);
+      }
+      return map;
+    })();
+
     let enriched = filtered;
     try {
       const footnotes = await session.doc.getFootnotes();
@@ -347,7 +361,7 @@ export async function readFile(
           displayById.set(note.id, note.displayNumber > 0 ? note.displayNumber : note.id);
         }
         enriched = filtered.map((node) => {
-          const paragraphEl = session.doc.getParagraphElementById(node.id);
+          const paragraphEl = paragraphElementsById.get(node.id);
           if (!paragraphEl) return node;
           const markerSuffix = collectFootnoteMarkerSuffix(paragraphEl, displayById);
           if (!markerSuffix) return node;
@@ -366,21 +380,14 @@ export async function readFile(
     if (commentRendering !== 'none') {
       try {
         const comments = await session.doc.getComments();
-        const paragraphElementsById = commentRendering === 'inline_markers'
-          ? new Map(
-              Array.from(new Set([
-                ...enriched.map((node) => node.id),
-                ...comments.map((comment) => comment.anchoredParagraphId).filter((paragraphId): paragraphId is string => paragraphId != null),
-                ...comments.map((comment) => comment.endParagraphId).filter((paragraphId): paragraphId is string => paragraphId != null),
-              ]))
-                .map((paragraphId) => [paragraphId, session.doc.getParagraphElementById(paragraphId)] as const)
-                .filter((entry): entry is readonly [string, Element] => entry[1] != null),
-            )
-          : undefined;
-
+        // Inline-marker rendering also needs paragraph elements for comment anchor
+        // paragraphs that may not appear in `enriched` (e.g., when a comment range
+        // spans into a paragraph outside the visible window). The shared index covers
+        // those because we built it from the full document above.
         enriched = attachParagraphComments(enriched, comments, {
           includeInlineMarkers: commentRendering === 'inline_markers',
-          paragraphElementsById,
+          paragraphElementsById:
+            commentRendering === 'inline_markers' ? paragraphElementsById : undefined,
         });
       } catch {
         // Preserve existing read_file behavior if comment parts are unavailable or malformed.
@@ -393,7 +400,7 @@ export async function readFile(
     let jsonNodes: readonly Record<string, unknown>[] = enriched;
     if (params.include_fingerprint && format === 'json') {
       jsonNodes = enriched.map((node) => {
-        const paragraphEl = session.doc.getParagraphElementById(node.id);
+        const paragraphEl = paragraphElementsById.get(node.id);
         if (!paragraphEl) return node;
         const fingerprint = computeContentFingerprint(getParagraphText(paragraphEl));
         return { ...node, content_fingerprint: fingerprint };

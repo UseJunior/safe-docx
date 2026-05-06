@@ -25,3 +25,11 @@ export * from './formatting_tags.js';
 export * from './prevent_double_elevation.js';
 export * from './tables.js';
 export * from './content_fingerprint.js';
+export {
+  getParagraphBookmarkId,
+  findParagraphByBookmarkId,
+  cleanupInternalBookmarks,
+  insertParagraphBookmarks,
+  insertSingleParagraphBookmark,
+} from './bookmarks.js';
+export type { ParagraphBookmark } from './bookmarks.js';
