@@ -63,14 +63,17 @@ User: Edit the NDA at ~/docs/NDA.docx — change the governing law
 Agent calls:
 
   1. read_file(file_path="~/docs/NDA.docx", format="toon")
-     → Returns paragraphs with stable IDs: _bk_1, _bk_2, ...
+     → Returns paragraphs with stable IDs:
+       _bk_a3f29c10b8e4, _bk_7d2e8f1a4c5b, ...
+       (12-char hex hashes derived from intrinsic w14:paraId
+        or normalized text — byte-identical across reopens)
 
   2. grep(file_path="~/docs/NDA.docx", pattern="State of New York")
-     → Match in paragraph _bk_47
+     → Match in paragraph _bk_e4c8a91f2d36
 
   3. replace_text(
        file_path="~/docs/NDA.docx",
-       target_paragraph_id="_bk_47",
+       target_paragraph_id="_bk_e4c8a91f2d36",
        old_string="State of New York",
        new_string="State of Delaware",
        instruction="Change governing law to Delaware"
