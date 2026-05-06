@@ -2,9 +2,9 @@
 
 This directory contains an experimental Lean 4 project for verifying a narrow part of the `safe-docx` comparison engine without turning Lean into an npm workspace package.
 
-Stage 2 adds a Lean model of the atom-level LCS computation from `packages/docx-core/src/baselines/atomizer/atomLcs.ts:45-104` and proves a value-level soundness invariant about the produced matches.
+This spike now includes a Lean model of the atom-level LCS computation from `packages/docx-core/src/baselines/atomizer/atomLcs.ts:45-104` and a full proof of the four planned LCS invariants on that model.
 
-**Important framing:** the Lean implementation is an *alternate executable specification* of the same LCS, not a line-for-line port of the TypeScript. The TS uses an explicit DP table with backtracking; the Lean uses recursive direct computation over reversed inputs. They produce the same `matches` (verified by exhaustive brute-force testing on all sequence pairs of length ≤ 6 over a 3-symbol alphabet — 1.19M cases, zero divergence — see Stage 2 peer review), but the proof obligation here is "soundness of the Lean model," not "soundness of the TypeScript implementation." Extensional equivalence between the Lean model and the TS code is a deferred Stage 3+ obligation.
+**Important framing:** the Lean implementation is an *alternate executable specification* of the same LCS, not a line-for-line port of the TypeScript. The TS uses an explicit DP table with backtracking; the Lean uses recursive direct computation over reversed inputs. They produce the same `matches` (verified by exhaustive brute-force testing on all sequence pairs of length ≤ 6 over a 3-symbol alphabet — 1.19M cases, zero divergence — see Stage 2 peer review), but the proof obligation here is "soundness of the Lean model," not "soundness of the TypeScript implementation." Extensional equivalence between the Lean model and the TS code remains deferred future work.
 
 ## Files
 
@@ -18,18 +18,19 @@ Stage 2 adds a Lean model of the atom-level LCS computation from `packages/docx-
 Currently proved in this stage:
 
 - `INV-ATOMSEQ-001` in `LeanSpike/AtomsEqual.lean`: if `atomsEqual` returns `true`, then `textContent` and `tagName` are equal. This captures the intended hash-collision safety property: matching `sha1Hash` values are never treated as sufficient on their own.
-- `INV-LCS-001` in `LeanSpike/Lcs.lean`: **value-level subsequence soundness.** The dereferenced atom values from the matches (i.e. `matchedOriginalAtoms` and `matchedRevisedAtoms`) form a sublist of `original` and `revised` respectively, and every reported match pair `(i, j)` references in-bounds atoms `original[i]` and `revised[j]` with `atomsEqual = true`. **This does NOT yet prove that the match index pairs are strictly monotone** — with duplicate atoms in the input, in principle a crossing or repeated-index pair list could still produce equal value-level sublists. Index-level monotonicity is captured by `INV-LCS-003` in Stage 3. The Lean recursion's structure makes monotonicity true by construction, but the formal guarantee awaits Stage 3.
+- `INV-LCS-001` in `LeanSpike/Lcs.lean`: **value-level subsequence soundness.** The dereferenced atom values from the matches (i.e. `matchedOriginalAtoms` and `matchedRevisedAtoms`) form a sublist of `original` and `revised` respectively, and every reported match pair `(i, j)` references in-bounds atoms `original[i]` and `revised[j]` with `atomsEqual = true`.
+- `INV-LCS-002` in `LeanSpike/Lcs.lean`: **optimality.** Any common subsequence of the two input atom lists is no longer than the matched subsequence returned by `computeAtomLcs`.
+- `INV-LCS-003` in `LeanSpike/Lcs.lean`: **strict index monotonicity.** The reported match pairs are pairwise strictly increasing in both original and revised indices.
+- `INV-LCS-004` in `LeanSpike/Lcs.lean`: **partition completeness.** Matched and deleted original indices partition `range original.length`, and matched and inserted revised indices partition `range revised.length`.
 
-## Not yet proved (deferred to Stage 3)
+## Still out of scope
 
-This stage deliberately does not cover:
+This spike still does not cover:
 
-- `INV-LCS-002`: optimality of the computed atom LCS
-- `INV-LCS-003`: strict monotonicity of matched original/revised indices
-- `INV-LCS-004`: partition completeness for matched, deleted, and inserted indices
 - reconstruction invariants
 - round-trip text equality
 - field-structure / document-shape preservation
+- extensional equivalence between the Lean model and the production TypeScript implementation
 
 ## Lean model
 

@@ -1,4 +1,5 @@
 import Mathlib.Data.List.Basic
+import Mathlib.Data.List.Pairwise
 import Mathlib.Tactic
 import LeanSpike.Atom
 import LeanSpike.AtomsEqual
@@ -9,6 +10,8 @@ structure LcsResult where
   «matches» : List Match
   deletedIndices : List Nat
   insertedIndices : List Nat
+def isCommonSubseq (s orig rev : List Atom) : Prop :=
+  s <+ orig ∧ s <+ rev
 def matchedOriginalAtoms (orig : List Atom) (ms : List Match) : List Atom :=
   ms.filterMap (fun p => orig[p.1]?)
 def matchedRevisedAtoms (rev : List Atom) (ms : List Match) : List Atom :=
@@ -88,6 +91,31 @@ theorem atomsEqual_implies_eq {a b : Atom} (hEq : atomsEqual a b = true) : a = b
   simp [atomsEqual] at hEq
   rcases hEq with ⟨hHash, hText, hTag⟩
   simp [hHash, hText, hTag]
+lemma atomsEqual_self (a : Atom) : atomsEqual a a = true := by
+  simp [atomsEqual]
+lemma tail_sublist_of_cons_sublist {α : Type} {a : α} {l₁ l₂ : List α}
+    (h : a :: l₁ <+ l₂) : l₁ <+ l₂ := by
+  exact (List.sublist_cons_of_sublist a (List.Sublist.refl _)).trans h
+lemma commonSubseq_drop_equal_heads {a : Atom} {os rs s : List Atom}
+    (hOrig : s <+ a :: os) (hRev : s <+ a :: rs) :
+    ∃ t, isCommonSubseq t os rs ∧ s.length ≤ t.length + 1 := by
+  cases s with
+  | nil =>
+      refine ⟨[], by simp [isCommonSubseq], by simp⟩
+  | cons x xs =>
+      rcases List.cons_sublist_cons'.1 hOrig with hOrigTail | ⟨hxOrig, hXsOrig⟩
+      · rcases List.cons_sublist_cons'.1 hRev with hRevTail | ⟨hxRev, hXsRev⟩
+        · refine ⟨x :: xs, ⟨hOrigTail, hRevTail⟩, by simp⟩
+        · refine ⟨xs, ?_, by simp⟩
+          constructor
+          · exact tail_sublist_of_cons_sublist hOrigTail
+          · exact hXsRev
+      · rcases List.cons_sublist_cons'.1 hRev with hRevTail | ⟨hxRev, hXsRev⟩
+        · refine ⟨xs, ?_, by simp⟩
+          constructor
+          · exact hXsOrig
+          · exact tail_sublist_of_cons_sublist hRevTail
+        · refine ⟨xs, ⟨hXsOrig, hXsRev⟩, by simp⟩
 theorem rawMatches_subsequence (orig rev : List Atom) :
     matchedOriginalAtoms orig (rawMatches orig rev) <+ orig ∧
     matchedRevisedAtoms rev (rawMatches orig rev) <+ rev ∧
@@ -187,6 +215,153 @@ theorem rawMatches_pair_sound (orig rev : List Atom) :
               rcases q with ⟨qi, qj⟩
               cases hpEq
               exact ⟨a, b, hOrig, by simp [hRev], hAtoms⟩
+lemma pairwise_shiftBoth {ms : List Match}
+    (h : ms.Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2)) :
+    (ms.map (fun p => (p.1 + 1, p.2 + 1))).Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2) := by
+  exact List.Pairwise.map _ (fun _ _ hRel => by simpa using hRel) h
+lemma pairwise_shiftOrig {ms : List Match}
+    (h : ms.Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2)) :
+    (ms.map (fun p => (p.1 + 1, p.2))).Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2) := by
+  exact List.Pairwise.map _ (fun _ _ hRel => by simpa using hRel) h
+lemma pairwise_shiftRev {ms : List Match}
+    (h : ms.Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2)) :
+    (ms.map (fun p => (p.1, p.2 + 1))).Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2) := by
+  exact List.Pairwise.map _ (fun _ _ hRel => by simpa using hRel) h
+theorem rawMatches_strictly_increasing (orig rev : List Atom) :
+    (rawMatches orig rev).Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2) := by
+  refine Nat.strong_induction_on
+    (p := fun n => ∀ orig rev, orig.length + rev.length = n →
+      (rawMatches orig rev).Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2))
+    (orig.length + rev.length) ?_ orig rev rfl
+  intro n ih orig rev hLen
+  cases orig with
+  | nil => simp [rawMatches]
+  | cons o os =>
+      cases rev with
+      | nil => simp [rawMatches]
+      | cons r rs =>
+          by_cases hEq : atomsEqual o r = true
+          · have hSmall : os.length + rs.length < n := by
+              rw [← hLen]
+              simp [Nat.add_left_comm, Nat.add_comm]
+            have hRec := ih (os.length + rs.length) hSmall os rs rfl
+            have hPair :
+                ((0, 0) :: (rawMatches os rs).map (fun p => (p.1 + 1, p.2 + 1))).Pairwise
+                  (fun p q => p.1 < q.1 ∧ p.2 < q.2) := by
+              rw [List.pairwise_cons]
+              constructor
+              · intro q hq
+                rcases List.mem_map.1 hq with ⟨p, hp, rfl⟩
+                omega
+              · simpa using pairwise_shiftBoth hRec
+            simpa [rawMatches, hEq] using hPair
+          · have hSmallLeft : os.length + (r :: rs).length < n := by
+              rw [← hLen]
+              simp [Nat.add_left_comm, Nat.add_comm]
+            have hSmallRight : (o :: os).length + rs.length < n := by
+              rw [← hLen]
+              simp [Nat.add_left_comm, Nat.add_comm]
+            have hLeft := ih (os.length + (r :: rs).length) hSmallLeft os (r :: rs) rfl
+            have hRight := ih ((o :: os).length + rs.length) hSmallRight (o :: os) rs rfl
+            by_cases hChoose : (rawMatches (o :: os) rs).length < (rawMatches os (r :: rs)).length
+            · simpa [rawMatches, hEq, hChoose] using pairwise_shiftOrig hLeft
+            · simpa [rawMatches, hEq, hChoose] using pairwise_shiftRev hRight
+lemma rawMatches_indices_bounded (orig rev : List Atom) :
+    ∀ p ∈ rawMatches orig rev, p.1 < orig.length ∧ p.2 < rev.length := by
+  intro p hp
+  rcases rawMatches_pair_sound orig rev p hp with ⟨a, b, hOrig, hRev, hAtoms⟩
+  exact ⟨index_lt_of_getElem?_eq_some hOrig, index_lt_of_getElem?_eq_some hRev⟩
+lemma matchedOriginalAtoms_length_of_allSome (orig : List Atom) (ms : List Match)
+    (hSome : ∀ p ∈ ms, ∃ a, orig[p.1]? = some a) :
+    (matchedOriginalAtoms orig ms).length = ms.length := by
+  induction ms with
+  | nil => simp [matchedOriginalAtoms]
+  | cons p ps ih =>
+      rcases p with ⟨i, j⟩
+      rcases hSome (i, j) (by simp) with ⟨a, ha⟩
+      have hTail : ∀ q ∈ ps, ∃ a, orig[q.1]? = some a := by
+        intro q hq
+        exact hSome q (by simp [hq])
+      simpa [matchedOriginalAtoms, ha] using congrArg Nat.succ (ih hTail)
+theorem rawMatches_are_longest (orig rev s : List Atom) :
+    isCommonSubseq s orig rev →
+    s.length ≤ (rawMatches orig rev).length := by
+  refine Nat.strong_induction_on
+    (p := fun n => ∀ orig rev, orig.length + rev.length = n →
+      ∀ s, isCommonSubseq s orig rev →
+        s.length ≤ (rawMatches orig rev).length)
+    (orig.length + rev.length) ?_ orig rev rfl s
+  intro n ih orig rev hLen s hCommon
+  rcases hCommon with ⟨hOrig, hRev⟩
+  cases orig with
+  | nil =>
+      cases s with
+      | nil => simp [rawMatches]
+      | cons x xs =>
+          have hFalse : False := by
+            simp at hOrig
+          exact hFalse.elim
+  | cons o os =>
+      cases rev with
+      | nil =>
+          cases s with
+          | nil => simp [rawMatches]
+          | cons x xs =>
+              have hFalse : False := by
+                simp at hRev
+              exact hFalse.elim
+      | cons r rs =>
+          by_cases hEq : atomsEqual o r = true
+          · have hSmall : os.length + rs.length < n := by
+              rw [← hLen]
+              simp [Nat.add_left_comm, Nat.add_comm]
+            have hAtom : o = r := atomsEqual_implies_eq hEq
+            subst r
+            rcases commonSubseq_drop_equal_heads hOrig hRev with ⟨t, ht, hDrop⟩
+            have hRec := ih (os.length + rs.length) hSmall os rs rfl t ht
+            have hBound : s.length ≤ (rawMatches os rs).length + 1 := by
+              exact le_trans hDrop (Nat.succ_le_succ hRec)
+            simpa [rawMatches, atomsEqual_self] using hBound
+          · have hSmallLeft : os.length + (r :: rs).length < n := by
+              rw [← hLen]
+              simp [Nat.add_left_comm, Nat.add_comm]
+            have hSmallRight : (o :: os).length + rs.length < n := by
+              rw [← hLen]
+              simp [Nat.add_left_comm, Nat.add_comm]
+            have hNe : o ≠ r := by
+              intro hAtom
+              subst r
+              simp [atomsEqual_self] at hEq
+            cases s with
+            | nil => simp [rawMatches, hEq]
+            | cons x xs =>
+                rcases List.cons_sublist_cons'.1 hOrig with hOrigTail | ⟨hx, hXsOrig⟩
+                · have hRec := ih (os.length + (r :: rs).length) hSmallLeft os (r :: rs) rfl
+                    (x :: xs) ⟨hOrigTail, hRev⟩
+                  have hChooseLeft :
+                      (rawMatches os (r :: rs)).length ≤ (rawMatches (o :: os) (r :: rs)).length := by
+                    by_cases hChoose : (rawMatches (o :: os) rs).length <
+                        (rawMatches os (r :: rs)).length
+                    · simp [rawMatches, hEq, hChoose]
+                    · have hLe :
+                          (rawMatches os (r :: rs)).length ≤ (rawMatches (o :: os) rs).length :=
+                        Nat.le_of_not_gt hChoose
+                      simp [rawMatches, hEq, hChoose, hLe]
+                  exact le_trans hRec hChooseLeft
+                · subst x
+                  have hRevTail : o :: xs <+ rs := List.Sublist.of_cons_of_ne hNe hRev
+                  have hRec := ih ((o :: os).length + rs.length) hSmallRight (o :: os) rs rfl
+                    (o :: xs) ⟨hOrig, hRevTail⟩
+                  have hChooseRight :
+                      (rawMatches (o :: os) rs).length ≤ (rawMatches (o :: os) (r :: rs)).length := by
+                    by_cases hChoose : (rawMatches (o :: os) rs).length <
+                        (rawMatches os (r :: rs)).length
+                    · have hLe :
+                          (rawMatches (o :: os) rs).length ≤ (rawMatches os (r :: rs)).length :=
+                        Nat.le_of_lt hChoose
+                      simp [rawMatches, hEq, hChoose, hLe]
+                    · simp [rawMatches, hEq, hChoose]
+                  exact le_trans hRec hChooseRight
 lemma matchedOriginalAtoms_mapBack (orig : List Atom) (m : Nat) (ms : List Match)
     (hSome : ∀ p ∈ ms, ∃ a, orig.reverse[p.1]? = some a) :
     matchedOriginalAtoms orig ((ms.map (mapBack orig.length m)).reverse) =
@@ -286,4 +461,131 @@ theorem lcs_match_pairs_are_sound (orig rev : List Atom) :
   rcases q with ⟨qi, qj⟩
   cases hpEq
   exact ⟨a, b, hOrig, hRev, hAtoms⟩
+lemma pairwise_mapBack_reverse {ms : List Match} {n m : Nat}
+    (hPair : ms.Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2))
+    (hBound : ∀ p ∈ ms, p.1 < n ∧ p.2 < m) :
+    ((ms.map (mapBack n m)).reverse).Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2) := by
+  have hMapped :
+      (ms.map (mapBack n m)).Pairwise (fun p q => q.1 < p.1 ∧ q.2 < p.2) := by
+    revert hPair hBound
+    induction ms with
+    | nil =>
+        intro hPair hBound
+        simp
+    | cons p ps ih =>
+        intro hPair hBound
+        have hStep :
+            (mapBack n m p :: ps.map (mapBack n m)).Pairwise (fun p q => q.1 < p.1 ∧ q.2 < p.2) := by
+          rw [List.pairwise_cons] at hPair ⊢
+          rcases hPair with ⟨hHead, hTail⟩
+          constructor
+          · intro q hq
+            rcases List.mem_map.1 hq with ⟨q', hq', rfl⟩
+            have hpBound := hBound p (by simp)
+            have hqBound := hBound q' (by simp [hq'])
+            have hRel := hHead q' hq'
+            dsimp [mapBack]
+            omega
+          · apply ih hTail
+            intro q hq
+            exact hBound q (by simp [hq])
+        simpa using hStep
+  exact List.Pairwise.reverse hMapped
+theorem lcs_matches_are_longest :
+    ∀ (orig rev s : List Atom),
+      isCommonSubseq s orig rev →
+      s.length ≤ (matchedOriginalAtoms orig (computeAtomLcs orig rev).matches).length := by
+  intro orig rev s hCommon
+  let raw := rawMatches orig.reverse rev.reverse
+  have hRawLongest : s.reverse.length ≤ raw.length := by
+    apply rawMatches_are_longest (orig := orig.reverse) (rev := rev.reverse) (s := s.reverse)
+    exact ⟨List.Sublist.reverse hCommon.1, List.Sublist.reverse hCommon.2⟩
+  have hRawSome : ∀ p ∈ raw, ∃ a, orig.reverse[p.1]? = some a := by
+    intro p hp
+    rcases rawMatches_pair_sound orig.reverse rev.reverse p (by simpa [raw] using hp) with
+      ⟨a, b, hOrig, hRev, hAtoms⟩
+    exact ⟨a, hOrig⟩
+  have hOrigMap :
+      matchedOriginalAtoms orig ((raw.map (mapBack orig.length rev.length)).reverse) =
+        (matchedOriginalAtoms orig.reverse raw).reverse := by
+    apply matchedOriginalAtoms_mapBack orig rev.length
+    intro p hp
+    exact hRawSome p hp
+  have hMatchLength :
+      (matchedOriginalAtoms orig (computeAtomLcs orig rev).matches).length = raw.length := by
+    calc
+      (matchedOriginalAtoms orig (computeAtomLcs orig rev).matches).length
+          = ((matchedOriginalAtoms orig.reverse raw).reverse).length := by
+              simpa [computeAtomLcs, computeMatches, raw] using congrArg List.length hOrigMap
+      _ = (matchedOriginalAtoms orig.reverse raw).length := by simp
+      _ = raw.length := matchedOriginalAtoms_length_of_allSome _ _ hRawSome
+  simpa [List.length_reverse, hMatchLength] using hRawLongest
+theorem lcs_match_indices_strictly_increasing :
+    ∀ (orig rev : List Atom),
+      (computeAtomLcs orig rev).matches.Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2) := by
+  intro orig rev
+  let raw := rawMatches orig.reverse rev.reverse
+  have hPair :
+      raw.Pairwise (fun p q => p.1 < q.1 ∧ p.2 < q.2) := by
+    simpa [raw] using rawMatches_strictly_increasing orig.reverse rev.reverse
+  have hBound : ∀ p ∈ raw, p.1 < orig.length ∧ p.2 < rev.length := by
+    intro p hp
+    simpa [raw] using rawMatches_indices_bounded orig.reverse rev.reverse p hp
+  simpa [computeAtomLcs, computeMatches, raw] using pairwise_mapBack_reverse hPair hBound
+lemma matched_original_index_lt {orig rev : List Atom} {i : Nat}
+    (hMem : i ∈ (computeAtomLcs orig rev).matches.map Prod.fst) : i < orig.length := by
+  rcases List.mem_map.1 hMem with ⟨p, hp, rfl⟩
+  rcases lcs_match_pairs_are_sound orig rev p hp with ⟨a, b, hOrig, hRev, hAtoms⟩
+  exact index_lt_of_getElem?_eq_some hOrig
+lemma matched_revised_index_lt {orig rev : List Atom} {i : Nat}
+    (hMem : i ∈ (computeAtomLcs orig rev).matches.map Prod.snd) : i < rev.length := by
+  rcases List.mem_map.1 hMem with ⟨p, hp, rfl⟩
+  rcases lcs_match_pairs_are_sound orig rev p hp with ⟨a, b, hOrig, hRev, hAtoms⟩
+  exact index_lt_of_getElem?_eq_some hRev
+lemma mem_deletedIndices_iff {orig rev : List Atom} {i : Nat} :
+    i ∈ (computeAtomLcs orig rev).deletedIndices ↔
+      i < orig.length ∧ i ∉ (computeAtomLcs orig rev).matches.map Prod.fst := by
+  simp [computeAtomLcs]
+lemma mem_insertedIndices_iff {orig rev : List Atom} {i : Nat} :
+    i ∈ (computeAtomLcs orig rev).insertedIndices ↔
+      i < rev.length ∧ i ∉ (computeAtomLcs orig rev).matches.map Prod.snd := by
+  simp [computeAtomLcs]
+theorem lcs_partitions_inputs :
+    ∀ (orig rev : List Atom),
+      let r := computeAtomLcs orig rev
+      (r.matches.map Prod.fst).toFinset ∪ r.deletedIndices.toFinset = Finset.range orig.length ∧
+      (r.matches.map Prod.fst).toFinset ∩ r.deletedIndices.toFinset = ∅ ∧
+      (r.matches.map Prod.snd).toFinset ∪ r.insertedIndices.toFinset = Finset.range rev.length ∧
+      (r.matches.map Prod.snd).toFinset ∩ r.insertedIndices.toFinset = ∅ := by
+  intro orig rev
+  dsimp
+  constructor
+  · apply Finset.ext
+    intro i
+    by_cases hMatch : i ∈ (computeAtomLcs orig rev).matches.map Prod.fst
+    · have hBound : i < orig.length := matched_original_index_lt hMatch
+      simp [mem_deletedIndices_iff, hMatch, hBound]
+    · by_cases hRange : i < orig.length
+      · simp [mem_deletedIndices_iff, hMatch, hRange]
+      · simp [mem_deletedIndices_iff, hMatch, hRange]
+  constructor
+  · apply Finset.ext
+    intro i
+    by_cases hMatch : i ∈ (computeAtomLcs orig rev).matches.map Prod.fst
+    · simp [mem_deletedIndices_iff, hMatch]
+    · simp [mem_deletedIndices_iff, hMatch]
+  constructor
+  · apply Finset.ext
+    intro i
+    by_cases hMatch : i ∈ (computeAtomLcs orig rev).matches.map Prod.snd
+    · have hBound : i < rev.length := matched_revised_index_lt hMatch
+      simp [mem_insertedIndices_iff, hMatch, hBound]
+    · by_cases hRange : i < rev.length
+      · simp [mem_insertedIndices_iff, hMatch, hRange]
+      · simp [mem_insertedIndices_iff, hMatch, hRange]
+  · apply Finset.ext
+    intro i
+    by_cases hMatch : i ∈ (computeAtomLcs orig rev).matches.map Prod.snd
+    · simp [mem_insertedIndices_iff, hMatch]
+    · simp [mem_insertedIndices_iff, hMatch]
 end LeanSpike
