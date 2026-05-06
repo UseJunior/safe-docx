@@ -5,32 +5,32 @@ Define behavior guarantees for the Safe-Docx MCP server: stable paragraph identi
 ## Requirements
 ### Requirement: Persisted Intrinsic Node IDs
 
-The MCP server SHALL use persisted intrinsic paragraph/node identifiers (`jr_para_*`) as canonical anchor identity.
+The MCP server SHALL use persisted intrinsic paragraph/node identifiers (`_bk_*`) as canonical anchor identity.
 
 The identifier strategy SHALL NOT use absolute sequential indexes as anchor identity.
 
 #### Scenario: Re-opening unchanged document yields same IDs
 - **GIVEN** a document opened in two independent MCP sessions with no content changes
 - **WHEN** `read_file` is called in both sessions
-- **THEN** equivalent paragraphs receive the same `jr_para_*` identifiers
+- **THEN** equivalent paragraphs receive the same `_bk_*` identifiers
 
 #### Scenario: Inserting new paragraph does not renumber unrelated IDs
-- **GIVEN** an existing session with stable `jr_para_*` IDs
+- **GIVEN** an existing session with stable `_bk_*` IDs
 - **WHEN** a new paragraph is inserted
-- **THEN** existing untouched paragraphs retain their prior `jr_para_*` IDs
+- **THEN** existing untouched paragraphs retain their prior `_bk_*` IDs
 - **AND** only new/edited paragraphs receive newly minted intrinsic IDs as needed
 
 #### Scenario: Two identical signature-block paragraphs remain uniquely addressable
 - **GIVEN** a document containing duplicate text blocks such as:
 - **AND** `Supplier / By: / Name: / Title:` and `Customer / By: / Name: / Title:`
 - **WHEN** IDs are assigned and `read_file` is called
-- **THEN** each paragraph instance has a distinct `jr_para_*` identifier
+- **THEN** each paragraph instance has a distinct `_bk_*` identifier
 - **AND** those identifiers remain stable for subsequent edits and downloads
 
 #### Scenario: Missing intrinsic IDs are backfilled once
-- **GIVEN** a document paragraph without a `jr_para_*` identifier
+- **GIVEN** a document paragraph without a `_bk_*` identifier
 - **WHEN** the document is opened
-- **THEN** the server mints and persists a new `jr_para_*` identifier for that paragraph
+- **THEN** the server mints and persists a new `_bk_*` identifier for that paragraph
 - **AND** future reads use that same identifier
 
 ### Requirement: Dual-Variant Download by Default
@@ -156,7 +156,7 @@ The TypeScript Safe-Docx MCP server SHALL match the Python editing pipeline’s 
 - **THEN** the server SHALL return TOON output using the schema:
   - `#SCHEMA id | list_label | header | style | text`
 - **AND** each row SHALL include:
-  - `id` as `jr_para_*`
+  - `id` as `_bk_*`
   - `list_label` derived programmatically (empty for non-list paragraphs)
   - `header` derived programmatically for run-in headers (empty otherwise)
   - `style` as a stable, fingerprint-derived style ID (e.g., `body_1`, `section`)
@@ -298,15 +298,15 @@ The Safe-Docx MCP server SHALL automatically normalize documents on open by runn
 - **WHEN** `get_session_status` is called
 - **THEN** the response SHALL include `runs_merged`, `redlines_simplified`, and `normalization_skipped` fields
 
-#### Scenario: jr_para_* IDs stable across normalization
+#### Scenario: _bk_* IDs stable across normalization
 - **GIVEN** a document opened with normalization enabled
 - **AND** the same document opened with normalization disabled
 - **WHEN** `read_file` is called in both sessions
-- **THEN** unchanged paragraphs SHALL receive the same `jr_para_*` identifiers regardless of normalization
+- **THEN** unchanged paragraphs SHALL receive the same `_bk_*` identifiers regardless of normalization
 
 ### Requirement: Revision Extraction Returns Structured Per-Paragraph Diffs
 
-The `extract_revisions` tool SHALL walk tracked-change markup in a session document and return a JSON array of per-paragraph revision records, each containing before text, after text, individual revision details, and associated comments. Paragraph matching uses `jr_para_*` bookmark IDs as primary keys across accepted/rejected clones, not positional traversal.
+The `extract_revisions` tool SHALL walk tracked-change markup in a session document and return a JSON array of per-paragraph revision records, each containing before text, after text, individual revision details, and associated comments. Paragraph matching uses `_bk_*` bookmark IDs as primary keys across accepted/rejected clones, not positional traversal.
 
 #### Scenario: [SDX-ER-001] extracting revisions from a document with insertions and deletions
 - **GIVEN** a session containing a document with `w:ins` and `w:del` tracked changes
@@ -435,7 +435,7 @@ The `extract_revisions` tool SHALL require a session (via `session_id` or `file_
 The Safe-Docx MCP server SHALL support formatting-preserving text replacement via `smart_edit`, with an optional `normalize_first` flag to merge fragmented runs before searching.
 
 #### Scenario: replace_text performs formatting-preserving replacement
-- **GIVEN** a document paragraph targeted by stable `jr_para_*` identity
+- **GIVEN** a document paragraph targeted by stable `_bk_*` identity
 - **WHEN** `smart_edit` is called with a unique `old_string` and `new_string`
 - **THEN** the server SHALL apply the replacement deterministically
 - **AND** SHALL preserve surrounding run formatting as closely as possible
@@ -510,7 +510,7 @@ The Safe-Docx MCP server SHALL apply document validation as an internal primitiv
 The Safe-Docx MCP server SHALL provide a deterministic `format_layout` tool to mutate document layout geometry without changing paragraph text content.
 
 #### Scenario: format paragraph spacing by paragraph ID
-- **GIVEN** an active Safe-Docx session with known `jr_para_*` IDs
+- **GIVEN** an active Safe-Docx session with known `_bk_*` IDs
 - **WHEN** `format_layout` is called with `paragraph_spacing` targeting one or more paragraph IDs
 - **THEN** the server SHALL set OOXML paragraph spacing values on those paragraphs
 - **AND** SHALL return the count of affected paragraphs
@@ -536,7 +536,7 @@ Layout formatting operations SHALL preserve paragraph identity and text structur
 - **AND** no empty spacer paragraph SHALL be inserted as a layout workaround
 
 #### Scenario: paragraph IDs remain stable after layout formatting
-- **GIVEN** a document with existing `jr_para_*` identifiers
+- **GIVEN** a document with existing `_bk_*` identifiers
 - **WHEN** `format_layout` mutates paragraph spacing or table geometry
 - **THEN** existing paragraph IDs SHALL remain addressable and unchanged for untouched paragraphs
 

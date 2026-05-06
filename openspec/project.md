@@ -37,7 +37,7 @@ The core product goal is local-first legal-document editing with deterministic b
   - `safe-docx` depends on `docx-primitives` + `docx-comparison`
   - `safedocx` re-exports `safe-docx`
   - `safedocx-mcpb` bundles the server for MCP desktop distribution
-- Paragraph identity is bookmark-based (`jr_para_*`) and treated as canonical anchor identity.
+- Paragraph identity is bookmark-based (`_bk_*`) and treated as canonical anchor identity. IDs are deterministic and byte-identical across reopens/machines for unchanged paragraphs.
 - Session-first editing model with file-first entry support (`session_id` or `file_path`).
 - Deterministic tool contracts with structured success/error payloads.
 - OpenSpec scenarios are mapped to tests with traceability validation.
@@ -68,7 +68,7 @@ The core product goal is local-first legal-document editing with deterministic b
 ## Domain Context
 - `.docx` is OOXML in ZIP containers; Word commonly splits visible text across many runs.
 - Legal documents require high formatting fidelity and stable references across edits.
-- Safe-Docx exposes stable paragraph anchors (`jr_para_*`) to avoid fragile index-based targeting.
+- Safe-Docx exposes stable paragraph anchors (`_bk_*`) to avoid fragile index-based targeting.
 - Download workflows support both clean and tracked-change artifacts for legal review.
 - This package is local execution oriented for editing trust boundaries (stdio/local MCP runtime), not a hosted remote editor endpoint.
 
