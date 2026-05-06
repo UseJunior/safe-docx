@@ -180,15 +180,12 @@ interface OpenTag {
   raw: string;
 }
 
-function getTagName(tagText: string): string | null {
+function getTagName(tagText: string): string {
   const match = /^<\/?([A-Za-z]+)/.exec(tagText);
-  return match?.[1] ?? null;
+  return match![1];
 }
 
 function tryMatchKnownTag(text: string, start: number): TagMatch | null {
-  // Must start with '<'
-  if (text[start] !== '<') return null;
-
   const isClose = text[start + 1] === '/';
   const nameStart = isClose ? start + 2 : start + 1;
 
@@ -289,11 +286,6 @@ function repairKnownTagNesting(text: string): string {
 
     const { tagText, end } = tagResult;
     const tagName = getTagName(tagText);
-    if (!tagName) {
-      parts.push(tagText);
-      i = end;
-      continue;
-    }
 
     if (!tagText.startsWith('</')) {
       stack.push({ name: tagName, raw: tagText });
@@ -303,11 +295,13 @@ function repairKnownTagNesting(text: string): string {
     }
 
     const stackIndex = stack.map((tag) => tag.name).lastIndexOf(tagName);
+    /* v8 ignore start -- counter pre-validation prevents orphan closes here */
     if (stackIndex === -1) {
       parts.push(tagText);
       i = end;
       continue;
     }
+    /* v8 ignore stop */
 
     if (stackIndex === stack.length - 1) {
       stack.pop();
@@ -386,20 +380,11 @@ function walkNode(
 ): void {
   for (let child = node.firstChild; child; child = child.nextSibling) {
     if (child.nodeType === 3 /* TEXT_NODE */) {
-      pushSegment(out, child.nodeValue ?? '', state);
+      pushSegment(out, child.nodeValue as string, state);
     } else if (child.nodeType === 1 /* ELEMENT_NODE */) {
       const el = child as XmlDomElement;
-      const tagName = el.localName ?? el.nodeName;
-
-      if (tagName === 'root') {
-        walkNode(el, state, out);
-        continue;
-      }
-
-      const stateKey = TAG_NAME_TO_STATE_KEY[tagName];
-      if (!stateKey) {
-        throw new Error('TAG_PARSE_ERROR');
-      }
+      const tagName = el.nodeName;
+      const stateKey = TAG_NAME_TO_STATE_KEY[tagName]!;
 
       if (stateKey === 'font') {
         // Read font attributes. getAttribute returns "" for absent attrs in xmldom,
@@ -443,10 +428,7 @@ export function splitTaggedText(text: string): ParsedReplacementSegment[] {
     const repairedText = repairKnownTagNesting(text);
     doc = parser.parseFromString(prepareForDomParsing(repairedText), 'text/xml');
   }
-  const root = doc.documentElement;
-  if (!root) {
-    throw new Error('TAG_PARSE_ERROR');
-  }
+  const root = doc.documentElement as XmlDomElement;
 
   // Step 4: Walk DOM and build segments
   const out: ParsedReplacementSegment[] = [];

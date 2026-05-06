@@ -171,6 +171,20 @@ describe('tag_parser', () => {
       expect(result[0]!.fontName).toBe('A>B');
       expect(result[0]!.text).toBe('text');
     });
+
+    test('double-quoted font face attribute preserves literal & and < characters', () => {
+      const result = splitTaggedText('<font face="A&B<C">text</font>');
+      expect(result).toHaveLength(1);
+      expect(result[0]!.fontName).toBe('A&B<C');
+      expect(result[0]!.text).toBe('text');
+    });
+
+    test('single-quoted font face attribute preserves literal & and < characters', () => {
+      const result = splitTaggedText("<font face='A&B<C'>text</font>");
+      expect(result).toHaveLength(1);
+      expect(result[0]!.fontName).toBe('A&B<C');
+      expect(result[0]!.text).toBe('text');
+    });
   });
 
   // ─── splitTaggedText: cross-nesting ────────────────────────────
@@ -179,6 +193,14 @@ describe('tag_parser', () => {
     test('cross-nested tags do not throw', () => {
       // <b><i>text</b></i> — counters: b 0→1→0, i 0→1→0, all end at 0
       expect(() => splitTaggedText('<b><i>text</b></i>')).not.toThrow();
+    });
+
+    test('cross-nested tags still repair when literal < appears inside the text', () => {
+      const result = splitTaggedText('<b>2 < 3 <i>x</b></i>');
+      expect(result).toEqual([
+        seg('2 < 3 ', { bold: true }),
+        seg('x', { bold: true, italic: true }),
+      ]);
     });
   });
 
@@ -319,6 +341,21 @@ describe('tag_parser', () => {
       // and the text appears literally
       expect(result).toHaveLength(1);
       expect(result[0]!.text).toContain('<xyz>');
+    });
+
+    test('broken opening tags without a closing > are preserved as literal text', () => {
+      const result = splitTaggedText('literal <b broken');
+      expect(result).toEqual([seg('literal <b broken')]);
+    });
+
+    test('broken closing tags without a closing > are preserved as literal text', () => {
+      const result = splitTaggedText('literal </b broken');
+      expect(result).toEqual([seg('literal </b broken')]);
+    });
+
+    test('known tags followed by invalid syntax are preserved as literal text', () => {
+      const result = splitTaggedText('literal <b/ broken');
+      expect(result).toEqual([seg('literal <b/ broken')]);
     });
   });
 
