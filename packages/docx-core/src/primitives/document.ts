@@ -1,7 +1,7 @@
 import { DocxZip } from './zip.js';
 import { parseXml, serializeXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
-import { isW, getDirectChildrenByName } from './dom-helpers.js';
+import { createWmlElement, isW, getDirectChildrenByName } from './dom-helpers.js';
 import {
   findParagraphByBookmarkId,
   insertParagraphBookmarks,
@@ -10,6 +10,11 @@ import {
   insertSingleParagraphBookmark,
 } from './bookmarks.js';
 import { getParagraphRuns, getParagraphText, replaceParagraphTextRange, type ReplacementPart } from './text.js';
+import {
+  allocateRevisionId,
+  createRevisionContainer,
+  type RevisionContext,
+} from './track-changes-emitter.js';
 import { buildNodesForDocumentView, type DocumentStyles, type DocumentViewNode, type TableContext } from './document_view.js';
 import type { FormattingMode } from './formatting_tags.js';
 import { findUniqueSubstringMatch } from './matching.js';
@@ -521,7 +526,7 @@ export class DocxDocument {
     newText: string;
     newParagraphId?: string;
     styleSourceId?: string;
-  }): { newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean } {
+  }, ctx?: RevisionContext): { newParagraphId: string; newParagraphIds: string[]; styleSourceFallback?: boolean } {
     const { positionalAnchorNodeId, relativePosition, newText, newParagraphId: _newParagraphId, styleSourceId } = params;
     const anchor = findParagraphByBookmarkId(this.documentXml, positionalAnchorNodeId);
     if (!anchor) throw new Error(`Anchor paragraph not found: ${positionalAnchorNodeId}`);
@@ -606,6 +611,82 @@ export class DocxDocument {
       return newP;
     }
 
+    function ensureParagraphProperties(paragraph: Element): Element {
+      const existing = getDirectChildrenByName(paragraph, W.pPr)[0];
+      if (existing) return existing;
+
+      const pPr = createWmlElement(doc, W.pPr);
+      paragraph.insertBefore(pPr, paragraph.firstChild);
+      return pPr;
+    }
+
+    function ensureParagraphRunProperties(pPr: Element): Element {
+      const existing = getDirectChildrenByName(pPr, W.rPr)[0];
+      if (existing) return existing;
+
+      const rPr = createWmlElement(doc, W.rPr);
+      const sectPr = getDirectChildrenByName(pPr, 'sectPr')[0];
+      const pPrChange = getDirectChildrenByName(pPr, 'pPrChange')[0];
+      const insertBefore = sectPr ?? pPrChange ?? null;
+      if (insertBefore) {
+        pPr.insertBefore(rPr, insertBefore);
+      } else {
+        pPr.appendChild(rPr);
+      }
+      return rPr;
+    }
+
+    function addParagraphInsertionMarker(paragraph: Element, revisionCtx: RevisionContext): void {
+      const pPr = ensureParagraphProperties(paragraph);
+      const rPr = ensureParagraphRunProperties(pPr);
+      const marker = createWmlElement(doc, 'ins', {
+        'w:id': String(allocateRevisionId(revisionCtx.idState)),
+        'w:author': revisionCtx.author,
+        'w:date': revisionCtx.date,
+      });
+      rPr.insertBefore(marker, rPr.firstChild);
+    }
+
+    function clearRunPropertyRevisionMarkup(run: Element): void {
+      const rPr = getDirectChildrenByName(run, W.rPr)[0];
+      if (!rPr) return;
+
+      for (const child of Array.from(rPr.childNodes)) {
+        if (child.nodeType !== 1) continue;
+        const element = child as Element;
+        if (isW(element, 'rPrChange')) {
+          rPr.removeChild(element);
+        }
+      }
+    }
+
+    function clearParagraphPropertyRevisionMarkup(paragraph: Element): void {
+      const pPr = getDirectChildrenByName(paragraph, W.pPr)[0];
+      if (!pPr) return;
+
+      for (const pPrChange of getDirectChildrenByName(pPr, 'pPrChange')) {
+        pPr.removeChild(pPrChange);
+      }
+
+      const rPr = getDirectChildrenByName(pPr, W.rPr)[0];
+      if (!rPr) return;
+
+      for (const child of Array.from(rPr.childNodes)) {
+        if (child.nodeType !== 1) continue;
+        const element = child as Element;
+        // CT_ParaRPr revision children: w:ins, w:del, w:moveFrom, w:moveTo, w:rPrChange.
+        if (
+          isW(element, 'ins') ||
+          isW(element, 'del') ||
+          isW(element, 'moveFrom') ||
+          isW(element, 'moveTo') ||
+          isW(element, 'rPrChange')
+        ) {
+          rPr.removeChild(element);
+        }
+      }
+    }
+
     function getInsertionRefNode(): Node | null {
       if (relativePosition === 'BEFORE') {
         const prev = prevElementSibling(anchorP);
@@ -641,7 +722,17 @@ export class DocxDocument {
       const newP = cloneParagraphShell(formattingSource);
       const newRun = cloneRunFormattingOnly(templateRun);
       appendTextToRun(newRun, paraText);
-      newP.appendChild(newRun);
+
+      if (ctx) {
+        clearRunPropertyRevisionMarkup(newRun);
+        clearParagraphPropertyRevisionMarkup(newP);
+        addParagraphInsertionMarker(newP, ctx);
+        const insertion = createRevisionContainer(doc, 'ins', ctx);
+        insertion.appendChild(newRun);
+        newP.appendChild(insertion);
+      } else {
+        newP.appendChild(newRun);
+      }
 
       parent.insertBefore(newP, cursor);
 
