@@ -37,7 +37,7 @@ The core product goal is local-first legal-document editing with deterministic b
   - `safe-docx` depends on `docx-primitives` + `docx-comparison`
   - `safedocx` re-exports `safe-docx`
   - `safedocx-mcpb` bundles the server for MCP desktop distribution
-- Paragraph identity is bookmark-based (`_bk_*`) and treated as canonical anchor identity. IDs are deterministic and byte-identical across reopens/machines for unchanged paragraphs.
+- Paragraph identity is bookmark-based (`_bk_*`) and treated as canonical anchor identity. IDs are deterministic and byte-identical across reopens/machines for identical stored DOCX/OOXML bytes.
 - Session-first editing model with file-first entry support (`session_id` or `file_path`).
 - Deterministic tool contracts with structured success/error payloads.
 - OpenSpec scenarios are mapped to tests with traceability validation.

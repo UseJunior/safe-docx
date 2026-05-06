@@ -8,7 +8,7 @@ The MCP server SHALL use persisted intrinsic paragraph/node identifiers (`_bk_*`
 
 The identifier strategy SHALL NOT use absolute sequential indexes as anchor identity.
 
-`_bk_*` identifiers are deterministic. For a given paragraph in a given document, the identifier SHALL be byte-identical across re-opens, machines, and processes. Identifiers prefer the document's intrinsic Word `w14:paraId` when present; otherwise they are derived from a deterministic hash of the paragraph's normalized visible text together with neighbor and ancestor context. Consumers MAY persist `_bk_*` identifiers in indexes, citation databases, and other external stores keyed off the same source document.
+`_bk_*` identifiers are deterministic. For a given paragraph, the identifier SHALL be byte-identical across re-opens, machines, and processes for **identical stored DOCX/OOXML bytes** — i.e., the same `.docx` file on disk produces the same IDs everywhere it is opened, regardless of host platform or Node/V8 version. Identifiers prefer the document's intrinsic Word `w14:paraId` when present; otherwise they are derived from a deterministic hash of the paragraph's normalized visible text together with neighbor and ancestor context. Consumers MAY persist `_bk_*` identifiers in indexes, citation databases, and other external stores keyed off the same source document.
 
 #### Scenario: Re-opening unchanged document yields same IDs
 - **GIVEN** a document opened in two independent MCP sessions with no content changes
@@ -34,8 +34,8 @@ The identifier strategy SHALL NOT use absolute sequential indexes as anchor iden
 - **THEN** the server mints and persists a new `_bk_*` identifier for that paragraph
 - **AND** future reads use that same identifier
 
-#### Scenario: Identifiers are byte-identical across machines for unchanged documents
-- **GIVEN** the same DOCX file opened on two different machines
+#### Scenario: Identifiers are byte-identical across machines for identical stored bytes
+- **GIVEN** identical stored DOCX/OOXML bytes (the same `.docx` file on disk) opened on two different machines
 - **WHEN** `read_file` is called on each
 - **THEN** every paragraph receives the same `_bk_*` identifier on both machines
 - **AND** consumers MAY persist these identifiers in external stores without invalidating them on machine change
@@ -46,9 +46,13 @@ The identifier strategy SHALL NOT use absolute sequential indexes as anchor iden
 
 The `read_file` tool SHALL accept an optional `include_fingerprint` boolean parameter. When `include_fingerprint=true` and `format="json"` for a DOCX session, the server SHALL emit a `content_fingerprint` field on each paragraph node.
 
-The fingerprint SHALL be computed as `"sha256:nfkc:" + sha256( NFKC(rawVisibleText).replace(/\s+/g, " ").trim() )` truncated to the first 32 hex characters of the SHA-256 digest. The input `rawVisibleText` is the paragraph's raw visible text (the same surface used by the `_bk_*` fallback seed via `getParagraphText`), NOT the post-processed `clean_text` that has list labels stripped or footnote display markers appended.
+The fingerprint SHALL be computed as `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(rawVisibleText)).replace(/\s+/g, " ").trim() )` truncated to the first 32 hex characters of the SHA-256 digest. The `stripCfInvisibles` step removes Cf-category invisibles that change bytes without changing rendering (soft hyphen U+00AD; ZWSP/ZWNJ/ZWJ U+200B–U+200D; LRM/RLM U+200E/U+200F; bidi controls U+202A–U+202E; variation selectors U+FE00–U+FE0F; BOM U+FEFF). The input `rawVisibleText` is the paragraph's raw visible text (the same surface used by the `_bk_*` fallback seed via `getParagraphText`), NOT the post-processed `clean_text` that has list labels stripped or footnote display markers appended.
+
+The fingerprint is a content hash, not a paragraph key. Two paragraphs with identical normalized visible text SHALL produce identical fingerprints by design — for example, two list items both reading "Reserved." in different sections of the same contract. Consumers needing per-paragraph identity MUST use `_bk_*` IDs.
 
 The fingerprint is read-only metadata. Edit tools (`replace_text`, `insert_paragraph`, `apply_plan`, etc.) SHALL continue to accept ONLY `_bk_*` identifiers as anchors. `content_fingerprint` SHALL NEVER be accepted as an edit anchor.
+
+The `sha256:nfkc:` prefix is intentional version reservation. Future algorithm bumps SHALL emit a different prefix (e.g. `sha256:nfkc-strip:`). Consumers SHALL store and compare the full prefixed string so an algorithm bump cleanly invalidates old hashes. On algorithm bumps, downstream indexes either reindex against the new prefix or rely on a documented dual-emit migration window — no `fingerprint_version` parameter is exposed on the tool schema.
 
 When `include_fingerprint=true` is passed with `format="toon"` or `format="simple"`, the flag SHALL have no effect (TOON and simple outputs are unchanged).
 

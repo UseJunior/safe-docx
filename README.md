@@ -66,7 +66,8 @@ Agent calls:
      → Returns paragraphs with stable IDs:
        _bk_a3f29c10b8e4, _bk_7d2e8f1a4c5b, ...
        (12-char hex hashes derived from intrinsic w14:paraId
-        or normalized text — byte-identical across reopens)
+        or normalized text — byte-identical across reopens
+        for identical stored DOCX bytes)
 
   2. grep(file_path="~/docs/NDA.docx", pattern="State of New York")
      → Match in paragraph _bk_e4c8a91f2d36

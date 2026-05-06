@@ -186,7 +186,7 @@ GOOD: old_string: "the Company shall indemnify"  → 1 match, succeeds
 
 ### Paragraph identity contract
 
-`_bk_*` paragraph IDs are **deterministic and stable**, not session-scoped. For an unchanged document, the same paragraph receives byte-identical `_bk_*` IDs across re-opens, machines, and processes. You MAY persist these IDs in indexes, citation databases, and other external stores keyed off the same source document.
+`_bk_*` paragraph IDs are **deterministic and stable**, not session-scoped. For **identical stored DOCX/OOXML bytes** (the same `.docx` file on disk), each paragraph receives byte-identical `_bk_*` IDs across re-opens, machines, and processes. You MAY persist these IDs in indexes, citation databases, and other external stores keyed off the same source document.
 
 How they're derived:
 
@@ -209,7 +209,9 @@ For citation, archival, or reconciliation pipelines that want a portable hash of
 }
 ```
 
-Algorithm: `"sha256:nfkc:" + sha256( NFKC(visibleText).replace(/\s+/g, " ").trim() )` truncated to 32 hex chars. Case is preserved (so "Section 5" and "section 5" hash differently). The fingerprint is **read-only metadata, not an edit anchor** — edit tools continue to accept only `_bk_*` IDs. The flag has no effect on TOON or simple output, and is silently ignored for Google Docs.
+Algorithm: `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(visibleText)).replace(/\s+/g, " ").trim() )` truncated to 32 hex chars. Case is preserved (so "Section 5" and "section 5" hash differently); curly quotes and dashes are NOT folded to ASCII. Cf-category invisibles (soft hyphen, ZWJ/ZWNJ, LRM/RLM, bidi controls, variation selectors, BOM) are stripped so byte-level round-trip noise does not change the hash.
+
+`content_fingerprint` is a content hash, not a paragraph key. Paragraphs with identical normalized visible text produce identical fingerprints by design — use `_bk_*` IDs whenever you need per-paragraph identity. The fingerprint is **read-only metadata, not an edit anchor** — edit tools continue to accept only `_bk_*` IDs. The flag has no effect on TOON or simple output, and is silently ignored for Google Docs. The `sha256:nfkc:` prefix is intentional version reservation; future algorithm bumps will emit a different prefix, so store and compare the full prefixed string.
 
 ### Smart text matching
 

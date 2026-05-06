@@ -95,8 +95,8 @@ describe('Traceability: Persisted Intrinsic Node IDs (under document-paragraph-i
     },
   );
 
-  test.openspec('Identifiers are byte-identical across machines for unchanged documents')(
-    'Identifiers are byte-identical across machines for unchanged documents',
+  test.openspec('Identifiers are byte-identical across machines for identical stored bytes')(
+    'Identifiers are byte-identical across machines for identical stored bytes',
     async () => {
       // Determinism check: opening the same byte content twice in two independent
       // SessionManagers (proxy for "different machines") yields identical IDs.
