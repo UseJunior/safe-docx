@@ -899,7 +899,7 @@ export class DocxDocument {
     paragraphId: string;
     afterText?: string;
     text: string;
-  }): Promise<AddFootnoteResult> {
+  }, ctx?: RevisionContext): Promise<AddFootnoteResult> {
     const p = findParagraphByBookmarkId(this.documentXml, params.paragraphId);
     if (!p) throw new Error(`Paragraph not found: ${params.paragraphId}`);
 
@@ -908,7 +908,7 @@ export class DocxDocument {
       paragraphEl: p,
       afterText: params.afterText,
       text: params.text,
-    });
+    }, ctx);
 
     await this.refreshFootnotesXml();
     this.dirty = true;
@@ -919,8 +919,8 @@ export class DocxDocument {
   /**
    * Update the text content of an existing footnote.
    */
-  async updateFootnoteText(params: { noteId: number; newText: string }): Promise<void> {
-    await updateFootnoteTextImpl(this.zip, params);
+  async updateFootnoteText(params: { noteId: number; newText: string }, ctx?: RevisionContext): Promise<void> {
+    await updateFootnoteTextImpl(this.zip, params, ctx);
     await this.refreshFootnotesXml();
     this.dirty = true;
     this.documentViewCache = null;
@@ -929,8 +929,8 @@ export class DocxDocument {
   /**
    * Delete a footnote and its references from the document.
    */
-  async deleteFootnote(params: { noteId: number }): Promise<void> {
-    await deleteFootnoteImpl(this.documentXml, this.zip, params);
+  async deleteFootnote(params: { noteId: number }, ctx?: RevisionContext): Promise<void> {
+    await deleteFootnoteImpl(this.documentXml, this.zip, params, ctx);
     await this.refreshFootnotesXml();
     this.dirty = true;
     this.documentViewCache = null;

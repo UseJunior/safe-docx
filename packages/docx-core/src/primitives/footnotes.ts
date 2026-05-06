@@ -11,6 +11,12 @@ import { DocxZip } from './zip.js';
 import { getParagraphRuns } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { findUniqueSubstringMatch } from './matching.js';
+import { childElements, isW } from './dom-helpers.js';
+import {
+  createRevisionContainer,
+  prepareElementForDeletion,
+  type RevisionContext,
+} from './track-changes-emitter.js';
 
 // ── Relationship & content types ────────────────────────────────────────
 
@@ -309,6 +315,7 @@ export async function addFootnote(
   documentXml: Document,
   zip: DocxZip,
   params: AddFootnoteParams,
+  ctx?: RevisionContext,
 ): Promise<AddFootnoteResult> {
   const { paragraphEl, afterText, text } = params;
 
@@ -320,10 +327,13 @@ export async function addFootnote(
   const noteId = allocateNextFootnoteId(footnotesDoc);
 
   // Insert footnoteReference run in document body
-  insertFootnoteReference(documentXml, paragraphEl, noteId, afterText);
+  insertFootnoteReference(documentXml, paragraphEl, noteId, afterText, ctx);
 
   // Add footnote body to footnotes.xml
-  addFootnoteElement(footnotesDoc, noteId, text);
+  const footnoteEl = addFootnoteElement(footnotesDoc, noteId, text);
+  if (ctx) {
+    wrapFootnoteParagraphTextRuns(getFirstFootnoteParagraph(footnoteEl), 'ins', ctx);
+  }
   zip.writeText('word/footnotes.xml', serializeXml(footnotesDoc));
 
   return { noteId };
@@ -334,6 +344,7 @@ function insertFootnoteReference(
   paragraphEl: Element,
   noteId: number,
   afterText?: string,
+  ctx?: RevisionContext,
 ): void {
   // Create the reference run
   const refRun = documentXml.createElementNS(OOXML.W_NS, 'w:r');
@@ -345,10 +356,14 @@ function insertFootnoteReference(
   const fnRef = documentXml.createElementNS(OOXML.W_NS, 'w:footnoteReference');
   fnRef.setAttributeNS(OOXML.W_NS, 'w:id', String(noteId));
   refRun.appendChild(fnRef);
+  const refAnchor = ctx ? createRevisionContainer(documentXml, 'ins', ctx) : refRun;
+  if (ctx) {
+    refAnchor.appendChild(refRun);
+  }
 
   if (!afterText) {
     // Default: append at end of paragraph
-    paragraphEl.appendChild(refRun);
+    paragraphEl.appendChild(refAnchor);
     return;
   }
 
@@ -376,21 +391,21 @@ function insertFootnoteReference(
     if (insertOffset <= pos) {
       // Insert before this run
       const parent = run.r.parentNode!;
-      parent.insertBefore(refRun, run.r);
+      parent.insertBefore(refAnchor, run.r);
       return;
     }
 
     if (insertOffset > pos && insertOffset < runEnd) {
       // Need to split this run at the offset
       const splitOffset = insertOffset - pos;
-      splitRunAndInsertReference(run.r, splitOffset, refRun);
+      splitRunAndInsertReference(run.r, splitOffset, refAnchor);
       return;
     }
 
     if (insertOffset === runEnd) {
       // Insert after this run
       const parent = run.r.parentNode!;
-      parent.insertBefore(refRun, run.r.nextSibling);
+      parent.insertBefore(refAnchor, run.r.nextSibling);
       return;
     }
 
@@ -398,13 +413,13 @@ function insertFootnoteReference(
   }
 
   // Fallback: append at end
-  paragraphEl.appendChild(refRun);
+  paragraphEl.appendChild(refAnchor);
 }
 
 function splitRunAndInsertReference(
   run: Element,
   visibleOffset: number,
-  refRun: Element,
+  referenceNode: Element,
 ): void {
   const doc = run.ownerDocument;
   if (!doc) throw new Error('Run has no ownerDocument');
@@ -473,7 +488,7 @@ function splitRunAndInsertReference(
   }
 
   // Insert the reference run between left and right
-  parent.insertBefore(refRun, rightRun);
+  parent.insertBefore(referenceNode, rightRun);
 
   // Clean up empty runs
   if (!hasVisibleContent(run)) run.parentNode?.removeChild(run);
@@ -507,7 +522,7 @@ function setXmlSpacePreserve(t: Element, text: string): void {
   }
 }
 
-function addFootnoteElement(footnotesDoc: Document, noteId: number, text: string): void {
+function addFootnoteElement(footnotesDoc: Document, noteId: number, text: string): Element {
   const root = footnotesDoc.documentElement;
 
   const footnoteEl = footnotesDoc.createElementNS(OOXML.W_NS, 'w:footnote');
@@ -554,6 +569,7 @@ function addFootnoteElement(footnotesDoc: Document, noteId: number, text: string
 
   footnoteEl.appendChild(p);
   root.appendChild(footnoteEl);
+  return footnoteEl;
 }
 
 // ── Update ──────────────────────────────────────────────────────────────
@@ -561,6 +577,7 @@ function addFootnoteElement(footnotesDoc: Document, noteId: number, text: string
 export async function updateFootnoteText(
   zip: DocxZip,
   params: { noteId: number; newText: string },
+  ctx?: RevisionContext,
 ): Promise<void> {
   const { noteId, newText } = params;
 
@@ -577,39 +594,24 @@ export async function updateFootnoteText(
 
   const firstP = paragraphs.item(0) as Element;
 
-  // Replace text runs in first paragraph (preserve footnoteRef run)
-  const runs = firstP.getElementsByTagNameNS(OOXML.W_NS, W.r);
-  const runsToRemove: Element[] = [];
-
-  for (let i = 0; i < runs.length; i++) {
-    const run = runs.item(i) as Element;
-    // Keep runs that contain footnoteRef
-    const fnRefs = run.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef);
-    if (fnRefs.length > 0) continue;
-    runsToRemove.push(run);
+  if (ctx) {
+    // The deletion wrapper may land inside an existing revision container if
+    // the prior text already carried a tracked-change wrapper (e.g., another
+    // author had inserted that text). Always hoist the AI's replacement
+    // insertion to the paragraph level so its w:author attribution is not
+    // nested inside the prior author's wrapper.
+    wrapFootnoteParagraphTextRuns(firstP, 'del', ctx);
+    const insertion = createRevisionContainer(footnotesDoc, 'ins', ctx);
+    const [spaceRun, textRun] = buildFootnoteTextRuns(footnotesDoc, newText);
+    insertion.appendChild(spaceRun);
+    insertion.appendChild(textRun);
+    firstP.appendChild(insertion);
+  } else {
+    removeFootnoteParagraphTextRuns(firstP);
+    const [spaceRun, textRun] = buildFootnoteTextRuns(footnotesDoc, newText);
+    firstP.appendChild(spaceRun);
+    firstP.appendChild(textRun);
   }
-
-  for (const run of runsToRemove) {
-    run.parentNode?.removeChild(run);
-  }
-
-  // Add space separator run after footnoteRef
-  const spaceRun = footnotesDoc.createElementNS(OOXML.W_NS, 'w:r');
-  const spaceT = footnotesDoc.createElementNS(OOXML.W_NS, 'w:t');
-  spaceT.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-  spaceT.appendChild(footnotesDoc.createTextNode(' '));
-  spaceRun.appendChild(spaceT);
-  firstP.appendChild(spaceRun);
-
-  // Add new text run
-  const textRun = footnotesDoc.createElementNS(OOXML.W_NS, 'w:r');
-  const t = footnotesDoc.createElementNS(OOXML.W_NS, 'w:t');
-  if (newText.startsWith(' ') || newText.endsWith(' ')) {
-    t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
-  }
-  t.appendChild(footnotesDoc.createTextNode(newText));
-  textRun.appendChild(t);
-  firstP.appendChild(textRun);
 
   zip.writeText('word/footnotes.xml', serializeXml(footnotesDoc));
 }
@@ -620,6 +622,7 @@ export async function deleteFootnote(
   documentXml: Document,
   zip: DocxZip,
   params: { noteId: number },
+  ctx?: RevisionContext,
 ): Promise<void> {
   const { noteId } = params;
 
@@ -630,11 +633,21 @@ export async function deleteFootnote(
   if (!fnEl) throw new Error(`Footnote ID ${noteId} not found`);
   if (isReservedFootnote(fnEl)) throw new Error(`Cannot delete reserved footnote ID ${noteId}`);
 
-  // Remove from footnotes.xml
-  fnEl.parentNode?.removeChild(fnEl);
+  if (ctx) {
+    // Wrap text runs across ALL paragraphs in the footnote, not just the first.
+    // A multi-paragraph footnote with only the first paragraph wrapped would
+    // leave a "zombie" footnote where paragraphs 2+ still appear active under
+    // accept-all. Iterate every paragraph in the footnote element.
+    const paragraphs = fnEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
+    for (let i = 0; i < paragraphs.length; i++) {
+      wrapFootnoteParagraphTextRuns(paragraphs.item(i) as Element, 'del', ctx);
+    }
+  } else {
+    fnEl.parentNode?.removeChild(fnEl);
+  }
   zip.writeText('word/footnotes.xml', serializeXml(footnotesDoc));
 
-  // Remove footnoteReference elements from document.xml
+  // Remove or track-delete footnoteReference elements from document.xml
   const refs = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference);
   const refsToRemove: Element[] = [];
 
@@ -649,6 +662,17 @@ export async function deleteFootnote(
   for (const ref of refsToRemove) {
     const run = ref.parentNode as Element | null;
     if (!run) continue;
+
+    if (ctx) {
+      const isolatedRun = isolateReferenceRun(run, ref);
+      const parent = isolatedRun.parentNode;
+      if (!parent) continue;
+
+      const deletion = createRevisionContainer(documentXml, 'del', ctx);
+      parent.replaceChild(deletion, isolatedRun);
+      deletion.appendChild(prepareElementForDeletion(isolatedRun));
+      continue;
+    }
 
     // Remove only the footnoteReference element, not the entire run
     run.removeChild(ref);
@@ -670,4 +694,203 @@ function findFootnoteById(footnotesDoc: Document, noteId: number): Element | nul
     if (idStr && parseInt(idStr, 10) === noteId) return el;
   }
   return null;
+}
+
+function getFirstFootnoteParagraph(footnoteEl: Element): Element {
+  const paragraphs = footnoteEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
+  if (paragraphs.length === 0) {
+    throw new Error(`Footnote ID ${getWAttr(footnoteEl, 'id') ?? '(unknown)'} has no paragraphs`);
+  }
+  return paragraphs.item(0) as Element;
+}
+
+function buildFootnoteTextRuns(doc: Document, text: string): [Element, Element] {
+  const spaceRun = doc.createElementNS(OOXML.W_NS, 'w:r');
+  const spaceT = doc.createElementNS(OOXML.W_NS, 'w:t');
+  spaceT.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+  spaceT.appendChild(doc.createTextNode(' '));
+  spaceRun.appendChild(spaceT);
+
+  const textRun = doc.createElementNS(OOXML.W_NS, 'w:r');
+  const t = doc.createElementNS(OOXML.W_NS, 'w:t');
+  if (text.startsWith(' ') || text.endsWith(' ')) {
+    t.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+  }
+  t.appendChild(doc.createTextNode(text));
+  textRun.appendChild(t);
+
+  return [spaceRun, textRun];
+}
+
+function removeFootnoteParagraphTextRuns(paragraph: Element): void {
+  const collected = collectFootnoteTextRuns(paragraph);
+  if (!collected) return;
+
+  for (const run of collected.runs) {
+    run.parentNode?.removeChild(run);
+  }
+
+  cleanupEmptyRevisionWrappers(paragraph);
+}
+
+function wrapFootnoteParagraphTextRuns(
+  paragraph: Element,
+  kind: 'ins' | 'del',
+  ctx: RevisionContext,
+): Element | null {
+  const collected = collectFootnoteTextRuns(paragraph);
+  if (!collected) return null;
+
+  const doc = paragraph.ownerDocument;
+  if (!doc) throw new Error('Paragraph has no ownerDocument');
+
+  const { parent: anchorParent, before: anchorBefore } = collected.insertionAnchor;
+  const wrapper = createRevisionContainer(doc, kind, ctx);
+  anchorParent.insertBefore(wrapper, anchorBefore);
+
+  for (const run of collected.runs) {
+    run.parentNode?.removeChild(run);
+    wrapper.appendChild(kind === 'del' ? prepareElementForDeletion(run) : run);
+  }
+
+  cleanupEmptyRevisionWrappers(paragraph);
+
+  return wrapper;
+}
+
+/**
+ * Collect every `<w:r>` descendant of the paragraph that does NOT contain a
+ * `footnoteRef` marker. This intentionally crosses into `<w:ins>` / `<w:del>`
+ * wrappers so that footnote text already carrying revision history (e.g.,
+ * third-party documents or prior tracked edits in the same session) is still
+ * captured by `updateFootnoteText` and `deleteFootnote`. The first-found
+ * insertion-anchor (the parent of the first match) is returned so callers
+ * can place a new wrapper at the same structural position.
+ */
+function collectFootnoteTextRuns(paragraph: Element): {
+  insertionAnchor: { parent: Element; before: Node | null };
+  runs: Element[];
+} | null {
+  const collected: Array<{ parent: Element; run: Element }> = [];
+
+  function visit(parent: Element): void {
+    for (const child of childElements(parent)) {
+      if (isW(child, W.r)) {
+        if (!runContainsFootnoteRef(child)) {
+          collected.push({ parent, run: child });
+        }
+        continue;
+      }
+      if (isW(child, 'ins') || isW(child, 'del')) {
+        visit(child);
+      }
+    }
+  }
+
+  visit(paragraph);
+
+  if (collected.length === 0) return null;
+
+  const first = collected[0]!;
+  return {
+    insertionAnchor: { parent: first.parent, before: first.run },
+    runs: collected.map((entry) => entry.run),
+  };
+}
+
+function runContainsFootnoteRef(run: Element): boolean {
+  return run.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef).length > 0;
+}
+
+/**
+ * After detaching runs from their parents, sweep up any now-empty
+ * `<w:ins>`/`<w:del>` siblings of the paragraph so we do not leave orphan
+ * revision wrappers behind. This pairs with `collectFootnoteTextRuns`'s
+ * cross-wrapper traversal.
+ */
+function cleanupEmptyRevisionWrappers(paragraph: Element): void {
+  for (const child of Array.from(childElements(paragraph))) {
+    if ((isW(child, 'ins') || isW(child, 'del')) && childElements(child).length === 0) {
+      paragraph.removeChild(child);
+    }
+  }
+}
+
+function isolateReferenceRun(run: Element, ref: Element): Element {
+  if (canWrapRunAsIs(run, ref)) {
+    return run;
+  }
+
+  const parent = run.parentNode;
+  const doc = run.ownerDocument;
+  if (!parent || !doc) {
+    throw new Error('Footnote reference run is detached');
+  }
+
+  const beforeNodes: Node[] = [];
+  const afterNodes: Node[] = [];
+  let seenRef = false;
+
+  for (const child of Array.from(run.childNodes)) {
+    if (child === ref) {
+      seenRef = true;
+      continue;
+    }
+    if (child.nodeType === 1 && isW(child as Element, W.rPr)) {
+      continue;
+    }
+    if (seenRef) {
+      afterNodes.push(child);
+    } else {
+      beforeNodes.push(child);
+    }
+  }
+
+  const beforeRun = beforeNodes.length > 0 ? cloneRunShell(run) : null;
+  const referenceRun = cloneRunShell(run);
+  const afterRun = afterNodes.length > 0 ? cloneRunShell(run) : null;
+
+  if (beforeRun) {
+    parent.insertBefore(beforeRun, run);
+    for (const child of beforeNodes) {
+      beforeRun.appendChild(child);
+    }
+  }
+
+  parent.insertBefore(referenceRun, run);
+  run.removeChild(ref);
+  referenceRun.appendChild(ref);
+
+  if (afterRun) {
+    parent.insertBefore(afterRun, run);
+    for (const child of afterNodes) {
+      afterRun.appendChild(child);
+    }
+  }
+
+  parent.removeChild(run);
+  return referenceRun;
+}
+
+function canWrapRunAsIs(run: Element, ref: Element): boolean {
+  for (const child of childElements(run)) {
+    if (child === ref) continue;
+    if (isW(child, W.rPr)) continue;
+    return false;
+  }
+  return true;
+}
+
+function cloneRunShell(run: Element): Element {
+  const doc = run.ownerDocument;
+  if (!doc) throw new Error('Run has no ownerDocument');
+
+  const clone = doc.createElementNS(OOXML.W_NS, 'w:r');
+  for (const child of childElements(run)) {
+    if (isW(child, W.rPr)) {
+      clone.appendChild(child.cloneNode(true));
+      break;
+    }
+  }
+  return clone;
 }

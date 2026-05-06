@@ -14,6 +14,7 @@ import {
 import { DocxZip } from '../src/primitives/zip.js';
 import { getParagraphBookmarkId, insertParagraphBookmarks } from '../src/primitives/bookmarks.js';
 import { getParagraphText } from '../src/primitives/text.js';
+import { createRevisionContext, createRevisionIdState } from '../src/primitives/track-changes-emitter.js';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 
 const TEST_FEATURE = 'add-footnote-support';
@@ -112,6 +113,39 @@ function findFootnoteById(doc: Document, id: number): Element | null {
     if (raw && Number.parseInt(raw, 10) === id) return node;
   }
   return null;
+}
+
+function getFirstParagraph(footnoteEl: Element): Element {
+  const paragraphs = footnoteEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
+  if (paragraphs.length === 0) throw new Error('Expected footnote paragraph');
+  return paragraphs.item(0) as Element;
+}
+
+function directChildLocalNames(parent: Element): string[] {
+  return Array.from(parent.childNodes)
+    .filter((node) => node.nodeType === 1)
+    .map((node) => (node as Element).localName);
+}
+
+function getDirectChildByLocalName(parent: Element, localName: string): Element | null {
+  for (const child of Array.from(parent.childNodes)) {
+    if (child.nodeType !== 1) continue;
+    const element = child as Element;
+    if (element.namespaceURI === OOXML.W_NS && element.localName === localName) {
+      return element;
+    }
+  }
+  return null;
+}
+
+function revisionId(element: Element): number {
+  const raw = element.getAttributeNS(OOXML.W_NS, 'id') ?? element.getAttribute('w:id');
+  if (!raw) throw new Error('Expected revision ID');
+  return Number(raw);
+}
+
+function normalizeXml(xml: string): string {
+  return serializeXml(parseXml(xml));
 }
 
 describe('footnotes', () => {
@@ -891,6 +925,554 @@ describe('footnotes', () => {
         await expect(deleteFootnote(doc, zip, { noteId: 1000 })).rejects.toThrow(
           'Footnote ID 1000 not found',
         );
+      });
+    });
+  });
+
+  describe('tracked-change emission', () => {
+    test('addFootnote with ctx wraps the body reference and note text in distinct w:ins containers', async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let zip: DocxZip;
+      let paragraph: Element;
+      let noteId: number;
+      let bodyInsertion: Element;
+      let noteParagraph: Element;
+      let noteInsertion: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-06T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a document with one paragraph and bootstrapped footnotes', async () => {
+        doc = makeDocument('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+        zip = await makeZipFromDocument(doc, { 'word/footnotes.xml': RESERVED_FOOTNOTES_XML });
+        paragraph = getParagraphs(doc)[0]!;
+      });
+
+      await when('addFootnote is called with a revision context', async () => {
+        const result = await addFootnote(doc, zip, {
+          paragraphEl: paragraph,
+          text: 'Tracked footnote',
+        }, ctx);
+        noteId = result.noteId;
+
+        bodyInsertion = paragraph.getElementsByTagNameNS(OOXML.W_NS, 'ins').item(0) as Element;
+        const footnotesDoc = await readFootnotesXml(zip);
+        const footnoteEl = findFootnoteById(footnotesDoc, noteId);
+        if (!footnoteEl) throw new Error('Expected tracked footnote entry');
+        noteParagraph = getFirstParagraph(footnoteEl);
+        noteInsertion = getDirectChildByLocalName(noteParagraph, 'ins')!;
+      });
+
+      await then('document.xml and footnotes.xml each receive one insertion wrapper with distinct revision IDs', async () => {
+        expect(directChildLocalNames(paragraph)).toEqual(['r', 'ins']);
+        expect(bodyInsertion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(bodyInsertion.getAttribute('w:date')).toBe('2026-05-06T14:15:16Z');
+        expect(bodyInsertion.getElementsByTagNameNS(OOXML.W_NS, W.r)).toHaveLength(1);
+        expect(bodyInsertion.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference)).toHaveLength(1);
+
+        expect(directChildLocalNames(noteParagraph)).toEqual(['pPr', 'r', 'ins']);
+        expect(noteInsertion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(noteInsertion.getAttribute('w:date')).toBe('2026-05-06T14:15:16Z');
+        expect(noteInsertion.getElementsByTagNameNS(OOXML.W_NS, W.r)).toHaveLength(2);
+        expect(noteInsertion.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef)).toHaveLength(0);
+        expect(noteInsertion.contains(getDirectChildByLocalName(noteParagraph, W.r)!)).toBe(false);
+        expect(revisionId(bodyInsertion)).not.toBe(revisionId(noteInsertion));
+      });
+    });
+
+    test('updateFootnoteText with ctx keeps the body untouched and emits w:delText plus one replacement w:ins in footnotes.xml', async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let zip: DocxZip;
+      let documentBefore: string;
+      let noteParagraph: Element;
+      let deletion: Element;
+      let insertion: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-06T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a document whose body already references the target footnote', async () => {
+        doc = makeDocument('<w:p><w:r><w:footnoteReference w:id="3"/></w:r><w:r><w:t>Body</w:t></w:r></w:p>');
+        documentBefore = serializeXml(doc);
+        zip = await makeZipFromDocument(doc, {
+          'word/footnotes.xml': makeFootnotesXml([
+            { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            {
+              id: 3,
+              paragraphXml:
+                '<w:p>' +
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                '<w:r><w:t xml:space="preserve"> old</w:t></w:r>' +
+                '<w:r><w:t> text</w:t></w:r>' +
+                '</w:p>',
+            },
+          ]),
+        });
+      });
+
+      await when('the footnote text is updated with tracked changes enabled', async () => {
+        await updateFootnoteText(zip, { noteId: 3, newText: ' new text ' }, ctx);
+
+        const footnotesDoc = await readFootnotesXml(zip);
+        const footnoteEl = findFootnoteById(footnotesDoc, 3);
+        if (!footnoteEl) throw new Error('Expected updated footnote');
+        noteParagraph = getFirstParagraph(footnoteEl);
+        deletion = getDirectChildByLocalName(noteParagraph, 'del')!;
+        insertion = getDirectChildByLocalName(noteParagraph, 'ins')!;
+      });
+
+      await then('the previous runs stay in place under w:del and the replacement space-plus-text is emitted under one w:ins', async () => {
+        expect(serializeXml(doc)).toBe(documentBefore);
+        expect(directChildLocalNames(noteParagraph)).toEqual(['r', 'del', 'ins']);
+        expect(getDirectChildByLocalName(noteParagraph, W.r)!.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef)).toHaveLength(1);
+
+        expect(deletion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(deletion.getAttribute('w:date')).toBe('2026-05-06T14:15:16Z');
+        expect(deletion.getElementsByTagNameNS(OOXML.W_NS, 'delText')).toHaveLength(2);
+        expect(deletion.getElementsByTagNameNS(OOXML.W_NS, W.t)).toHaveLength(0);
+
+        expect(insertion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(insertion.getAttribute('w:date')).toBe('2026-05-06T14:15:16Z');
+        expect(insertion.getElementsByTagNameNS(OOXML.W_NS, W.r)).toHaveLength(2);
+        expect(insertion.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef)).toHaveLength(0);
+        expect(revisionId(deletion)).not.toBe(revisionId(insertion));
+      });
+    });
+
+    test('deleteFootnote with ctx wraps the body reference and note text in w:del while preserving the footnote entry', async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let zip: DocxZip;
+      let paragraph: Element;
+      let bodyDeletion: Element;
+      let noteParagraph: Element;
+      let noteDeletion: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-06T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a document with a dedicated footnote reference run and a matching footnote entry', async () => {
+        doc = makeDocument(
+          '<w:p>' +
+            '<w:r><w:t>Lead</w:t></w:r>' +
+            '<w:r><w:footnoteReference w:id="12"/></w:r>' +
+            '<w:r><w:t>Tail</w:t></w:r>' +
+            '</w:p>',
+        );
+        paragraph = getParagraphs(doc)[0]!;
+        zip = await makeZipFromDocument(doc, {
+          'word/footnotes.xml': makeFootnotesXml([
+            { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            {
+              id: 12,
+              paragraphXml:
+                '<w:p>' +
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                '<w:r><w:t xml:space="preserve"> </w:t></w:r>' +
+                '<w:r><w:t>Delete me</w:t></w:r>' +
+                '</w:p>',
+            },
+          ]),
+        });
+      });
+
+      await when('the footnote is deleted with a revision context', async () => {
+        await deleteFootnote(doc, zip, { noteId: 12 }, ctx);
+
+        bodyDeletion = getDirectChildByLocalName(paragraph, 'del')!;
+        const footnotesDoc = await readFootnotesXml(zip);
+        const footnoteEl = findFootnoteById(footnotesDoc, 12);
+        if (!footnoteEl) throw new Error('Expected deleted footnote entry to remain');
+        noteParagraph = getFirstParagraph(footnoteEl);
+        noteDeletion = getDirectChildByLocalName(noteParagraph, 'del')!;
+      });
+
+      await then('the body keeps the reference under w:del and footnotes.xml keeps the note with deleted text content', async () => {
+        expect(directChildLocalNames(paragraph)).toEqual(['r', 'del', 'r']);
+        expect(getParagraphText(paragraph)).toBe('LeadTail');
+        expect(bodyDeletion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(bodyDeletion.getAttribute('w:date')).toBe('2026-05-06T14:15:16Z');
+        expect(bodyDeletion.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference)).toHaveLength(1);
+
+        expect(directChildLocalNames(noteParagraph)).toEqual(['r', 'del']);
+        expect(noteDeletion.getAttribute('w:author')).toBe('SafeDocX AI');
+        expect(noteDeletion.getAttribute('w:date')).toBe('2026-05-06T14:15:16Z');
+        expect(noteDeletion.getElementsByTagNameNS(OOXML.W_NS, 'delText')).toHaveLength(2);
+        expect(noteDeletion.getElementsByTagNameNS(OOXML.W_NS, W.t)).toHaveLength(0);
+        expect(noteDeletion.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef)).toHaveLength(0);
+        expect(revisionId(bodyDeletion)).not.toBe(revisionId(noteDeletion));
+      });
+    });
+
+    test('preserves byte-identical legacy output when ctx is omitted for addFootnote, updateFootnoteText, and deleteFootnote', async ({ given, when, then }: AllureBddContext) => {
+      let addDoc: Document;
+      let addZip: DocxZip;
+      let addDocumentXml: string;
+      let addFootnotesXml: string;
+
+      let updateZip: DocxZip;
+      let updateFootnotesXml: string;
+
+      let deleteDoc: Document;
+      let deleteZip: DocxZip;
+      let deleteDocumentXml: string;
+      let deleteFootnotesXml: string;
+
+      await given('three legacy footnote mutation scenarios with no revision context', async () => {
+        addDoc = makeDocument('<w:p><w:r><w:t>Hello</w:t></w:r></w:p>');
+        addZip = await makeZipFromDocument(addDoc, { 'word/footnotes.xml': RESERVED_FOOTNOTES_XML });
+
+        const updateDoc = makeDocument('<w:p><w:r><w:t>Body</w:t></w:r></w:p>');
+        updateZip = await makeZipFromDocument(updateDoc, {
+          'word/footnotes.xml': makeFootnotesXml([
+            { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            {
+              id: 3,
+              paragraphXml:
+                '<w:p>' +
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                '<w:r><w:t>old text</w:t></w:r>' +
+                '</w:p>',
+            },
+          ]),
+        });
+
+        deleteDoc = makeDocument(
+          '<w:p>' +
+            '<w:r><w:footnoteReference w:id="12"/></w:r>' +
+            '<w:r><w:t>Tail</w:t></w:r>' +
+            '</w:p>',
+        );
+        deleteZip = await makeZipFromDocument(deleteDoc, {
+          'word/footnotes.xml': makeFootnotesXml([
+            { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            { id: 12, text: 'Delete dedicated run' },
+          ]),
+        });
+      });
+
+      await when('the legacy add, update, and delete flows run without ctx', async () => {
+        await addFootnote(addDoc, addZip, {
+          paragraphEl: getParagraphs(addDoc)[0]!,
+          text: 'Legacy note',
+        });
+        addDocumentXml = serializeXml(addDoc);
+        addFootnotesXml = await addZip.readText('word/footnotes.xml');
+
+        await updateFootnoteText(updateZip, { noteId: 3, newText: ' new text ' });
+        updateFootnotesXml = await updateZip.readText('word/footnotes.xml');
+
+        await deleteFootnote(deleteDoc, deleteZip, { noteId: 12 });
+        deleteDocumentXml = serializeXml(deleteDoc);
+        deleteFootnotesXml = await deleteZip.readText('word/footnotes.xml');
+      });
+
+      await then('all three outputs remain byte-identical to the pre-tracked-change behavior', async () => {
+        expect(addDocumentXml).toBe(
+          serializeXml(
+            makeDocument(
+              '<w:p>' +
+                '<w:r><w:t>Hello</w:t></w:r>' +
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>' +
+                '</w:p>',
+            ),
+          ),
+        );
+        expect(addFootnotesXml).toBe(
+          normalizeXml(
+            makeFootnotesXml([
+              { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+              { id: 0, type: 'continuationSeparator', paragraphXml: '<w:p><w:r><w:continuationSeparator/></w:r></w:p>' },
+              {
+                id: 1,
+                paragraphXml:
+                  '<w:p>' +
+                  '<w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>' +
+                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                  '<w:r><w:t xml:space="preserve"> </w:t></w:r>' +
+                  '<w:r><w:t>Legacy note</w:t></w:r>' +
+                  '</w:p>',
+              },
+            ]),
+          ),
+        );
+
+        expect(updateFootnotesXml).toBe(
+          normalizeXml(
+            makeFootnotesXml([
+              { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+              {
+                id: 3,
+                paragraphXml:
+                  '<w:p>' +
+                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                  '<w:r><w:t xml:space="preserve"> </w:t></w:r>' +
+                  '<w:r><w:t xml:space="preserve"> new text </w:t></w:r>' +
+                  '</w:p>',
+              },
+            ]),
+          ),
+        );
+
+        expect(deleteDocumentXml).toBe(
+          serializeXml(
+            makeDocument(
+              '<w:p><w:r><w:t>Tail</w:t></w:r></w:p>',
+            ),
+          ),
+        );
+        expect(deleteFootnotesXml).toBe(
+          normalizeXml(
+            makeFootnotesXml([
+              { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            ]),
+          ),
+        );
+      });
+    });
+
+    test('allocates unique revision IDs across tracked addFootnote and deleteFootnote operations sharing one context', async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let zip: DocxZip;
+      let emittedIds: number[];
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-06T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a document with one existing footnote to delete and one paragraph for a new footnote', async () => {
+        doc = makeDocument(
+          '<w:p><w:r><w:footnoteReference w:id="7"/></w:r></w:p>' +
+          '<w:p><w:r><w:t>Insert here</w:t></w:r></w:p>',
+        );
+        zip = await makeZipFromDocument(doc, {
+          'word/footnotes.xml': makeFootnotesXml([
+            { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            {
+              id: 7,
+              paragraphXml:
+                '<w:p>' +
+                '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                '<w:r><w:t xml:space="preserve"> </w:t></w:r>' +
+                '<w:r><w:t>Existing note</w:t></w:r>' +
+                '</w:p>',
+            },
+          ]),
+        });
+      });
+
+      await when('tracked addFootnote and tracked deleteFootnote share the same revision context', async () => {
+        await addFootnote(doc, zip, {
+          paragraphEl: getParagraphs(doc)[1]!,
+          text: 'Fresh note',
+        }, ctx);
+        await deleteFootnote(doc, zip, { noteId: 7 }, ctx);
+
+        const footnotesDoc = await readFootnotesXml(zip);
+        emittedIds = [
+          ...Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, 'ins')),
+          ...Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, 'del')),
+          ...Array.from(footnotesDoc.getElementsByTagNameNS(OOXML.W_NS, 'ins')),
+          ...Array.from(footnotesDoc.getElementsByTagNameNS(OOXML.W_NS, 'del')),
+        ].map((element) => revisionId(element as Element));
+      });
+
+      await then('the shared allocator produces one distinct ID for each body-side and footnote-side wrapper', async () => {
+        expect(new Set(emittedIds).size).toBe(4);
+        expect(emittedIds.slice().sort((left, right) => left - right)).toEqual([1, 2, 3, 4]);
+      });
+    });
+
+    test('deleteFootnote with ctx isolates the reference run when it shares a run with sibling text', async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let zip: DocxZip;
+      let bodyParagraph: Element;
+      let deletion: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-06T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a document whose footnoteReference shares a run with leading and trailing text under <w:rPr>', async () => {
+        doc = makeDocument(
+          '<w:p>' +
+            '<w:r>' +
+              '<w:rPr><w:b/></w:rPr>' +
+              '<w:t>before</w:t>' +
+              '<w:footnoteReference w:id="11"/>' +
+              '<w:t>after</w:t>' +
+            '</w:r>' +
+          '</w:p>',
+        );
+        zip = await makeZipFromDocument(doc, {
+          'word/footnotes.xml': makeFootnotesXml([
+            { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            { id: 11, text: 'Shared-run note' },
+          ]),
+        });
+        bodyParagraph = getParagraphs(doc)[0]!;
+      });
+
+      await when('the footnote is deleted under tracked changes', async () => {
+        await deleteFootnote(doc, zip, { noteId: 11 }, ctx);
+        deletion = bodyParagraph.getElementsByTagNameNS(OOXML.W_NS, 'del').item(0) as Element;
+      });
+
+      await then('the reference is isolated into its own run inside w:del while the surrounding text remains as plain runs with rPr preserved', async () => {
+        expect(deletion).toBeTruthy();
+        const deletedRuns = Array.from(deletion.getElementsByTagNameNS(OOXML.W_NS, W.r));
+        expect(deletedRuns).toHaveLength(1);
+        expect(deletedRuns[0]!.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference)).toHaveLength(1);
+        expect(deletedRuns[0]!.getElementsByTagNameNS(OOXML.W_NS, W.b)).toHaveLength(1);
+
+        // The "before" and "after" text survives outside the deletion wrapper, with rPr preserved.
+        const directRuns = Array.from(bodyParagraph.childNodes)
+          .filter((n) => n.nodeType === 1)
+          .filter((n) => (n as Element).localName === W.r) as Element[];
+        const directTexts = directRuns
+          .flatMap((r) => Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t)))
+          .map((t) => t.textContent ?? '');
+        expect(directTexts).toEqual(['before', 'after']);
+        for (const run of directRuns) {
+          expect(run.getElementsByTagNameNS(OOXML.W_NS, W.b)).toHaveLength(1);
+        }
+      });
+    });
+
+    test('deleteFootnote with ctx wraps text runs across every paragraph of a multi-paragraph footnote', async ({ given, when, then }: AllureBddContext) => {
+      let doc: Document;
+      let zip: DocxZip;
+      let footnoteEl: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-06T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a document referencing a multi-paragraph footnote', async () => {
+        doc = makeDocument('<w:p><w:r><w:footnoteReference w:id="9"/></w:r></w:p>');
+        zip = await makeZipFromDocument(doc, {
+          'word/footnotes.xml': makeFootnotesXml([
+            { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            {
+              id: 9,
+              paragraphXml:
+                '<w:p>' +
+                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                  '<w:r><w:t xml:space="preserve"> first paragraph</w:t></w:r>' +
+                '</w:p>' +
+                '<w:p><w:r><w:t>second paragraph</w:t></w:r></w:p>' +
+                '<w:p><w:r><w:t>third paragraph</w:t></w:r></w:p>',
+            },
+          ]),
+        });
+      });
+
+      await when('the footnote is deleted under tracked changes', async () => {
+        await deleteFootnote(doc, zip, { noteId: 9 }, ctx);
+        const footnotesDoc = await readFootnotesXml(zip);
+        footnoteEl = findFootnoteById(footnotesDoc, 9)!;
+      });
+
+      await then('every paragraph in the footnote has its text runs wrapped in w:del while footnoteRef stays untouched', async () => {
+        const paragraphs = Array.from(footnoteEl.getElementsByTagNameNS(OOXML.W_NS, W.p));
+        expect(paragraphs).toHaveLength(3);
+
+        const firstP = paragraphs[0]!;
+        const firstDel = getDirectChildByLocalName(firstP, 'del');
+        expect(firstDel).toBeTruthy();
+        // footnoteRef run is preserved as a direct child, not wrapped.
+        const firstRefRuns = Array.from(firstP.childNodes)
+          .filter((n) => n.nodeType === 1)
+          .filter((n) => (n as Element).localName === W.r);
+        expect(firstRefRuns).toHaveLength(1);
+        expect(firstRefRuns[0]!.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef)).toHaveLength(1);
+        // The text " first paragraph" is wrapped as <w:delText> inside the deletion.
+        expect(firstDel!.getElementsByTagNameNS(OOXML.W_NS, 'delText')).toHaveLength(1);
+
+        const secondDel = getDirectChildByLocalName(paragraphs[1]!, 'del');
+        expect(secondDel).toBeTruthy();
+        expect(secondDel!.getElementsByTagNameNS(OOXML.W_NS, 'delText')).toHaveLength(1);
+
+        const thirdDel = getDirectChildByLocalName(paragraphs[2]!, 'del');
+        expect(thirdDel).toBeTruthy();
+        expect(thirdDel!.getElementsByTagNameNS(OOXML.W_NS, 'delText')).toHaveLength(1);
+      });
+    });
+
+    test('updateFootnoteText with ctx captures both direct and pre-existing-w:ins-wrapped text runs in the deletion', async ({ given, when, then }: AllureBddContext) => {
+      let zip: DocxZip;
+      let noteParagraph: Element;
+      let deletion: Element;
+
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-06T14:15:16Z',
+        idState: createRevisionIdState(),
+      });
+
+      await given('a footnote whose text already mixes direct runs and a pre-existing tracked w:ins wrapper', async () => {
+        const doc = makeDocument('<w:p><w:r><w:footnoteReference w:id="5"/></w:r></w:p>');
+        zip = await makeZipFromDocument(doc, {
+          'word/footnotes.xml': makeFootnotesXml([
+            { id: -1, type: 'separator', paragraphXml: '<w:p><w:r><w:separator/></w:r></w:p>' },
+            {
+              id: 5,
+              paragraphXml:
+                '<w:p>' +
+                  '<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r>' +
+                  '<w:ins w:id="500" w:author="OldAuthor" w:date="2020-01-01T00:00:00Z"><w:r><w:t>wrapped</w:t></w:r></w:ins>' +
+                  '<w:r><w:t xml:space="preserve"> direct</w:t></w:r>' +
+                '</w:p>',
+            },
+          ]),
+        });
+      });
+
+      await when('the footnote text is updated under tracked changes', async () => {
+        await updateFootnoteText(zip, { noteId: 5, newText: 'new text' }, ctx);
+        const footnotesDoc = await readFootnotesXml(zip);
+        const footnoteEl = findFootnoteById(footnotesDoc, 5)!;
+        noteParagraph = getFirstParagraph(footnoteEl);
+        deletion = noteParagraph.getElementsByTagNameNS(OOXML.W_NS, 'del').item(0) as Element;
+      });
+
+      await then('the deletion captures both wrapped and direct text content; the new replacement w:ins is hoisted to the paragraph level under SafeDocX AI authorship', async () => {
+        expect(deletion).toBeTruthy();
+        const delTexts = Array.from(deletion.getElementsByTagNameNS(OOXML.W_NS, 'delText')).map(
+          (t) => t.textContent ?? '',
+        );
+        // Both "wrapped" and " direct" text appear inside the new <w:del>.
+        expect(delTexts).toEqual(expect.arrayContaining(['wrapped', ' direct']));
+
+        // The new replacement <w:ins> is hoisted to the paragraph level so its
+        // SafeDocX AI authorship is not nested inside the prior author's wrapper.
+        const directIns = Array.from(noteParagraph.childNodes)
+          .filter((n) => n.nodeType === 1)
+          .filter((n) => (n as Element).localName === 'ins') as Element[];
+        // There may be multiple ins wrappers at the paragraph level (the old
+        // OldAuthor wrapper which now hosts the deletion, plus the new SafeDocX
+        // AI replacement). Verify the SafeDocX AI one is the new replacement.
+        const safeDocxAiIns = directIns.filter((el) => el.getAttribute('w:author') === 'SafeDocX AI');
+        expect(safeDocxAiIns).toHaveLength(1);
+        // And confirm the new wrapper actually contains the new text (not the old).
+        const newTextRuns = Array.from(safeDocxAiIns[0]!.getElementsByTagNameNS(OOXML.W_NS, W.t)).map(
+          (t) => t.textContent ?? '',
+        );
+        expect(newTextRuns).toEqual([' ', 'new text']);
       });
     });
   });
