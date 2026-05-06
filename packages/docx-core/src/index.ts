@@ -252,6 +252,8 @@ export * from './primitives/index.js';
 export {
   allocateRevisionId,
   buildPPrChangeElement,
+  buildTcPrChangeElement,
+  buildTrPrChangeElement,
   buildRPrChangeElement,
   createRevisionContainer,
   createRevisionContext,

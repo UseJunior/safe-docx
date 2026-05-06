@@ -6,6 +6,12 @@ const SYNTHETIC_DOC = parseXml(
 );
 
 const EXCLUDED_PPR_CHANGE_CHILDREN = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
+const EXCLUDED_TRPR_CHANGE_CHILDREN = new Set(['w:trPrChange', 'w:ins', 'w:del']);
+// CT_TcPrInner (the inner pPr under <w:tcPrChange>) preserves cell-topology
+// revision children (w:cellIns, w:cellDel, w:cellMerge). Only the
+// change-of-a-change marker w:tcPrChange itself is excluded. See:
+// https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.previoustablecellproperties
+const EXCLUDED_TCPR_CHANGE_CHILDREN = new Set(['w:tcPrChange']);
 const EXCLUDED_RPR_CHANGE_CHILDREN = new Set(['w:rPrChange']);
 
 /**
@@ -168,6 +174,56 @@ export function buildPPrChangeElement(oldPPr: Element | null, ctx: RevisionConte
 
   pPrChange.appendChild(previousPPr);
   return pPrChange;
+}
+
+/**
+ * Build a `<w:trPrChange>` wrapper containing the previous row properties.
+ *
+ * The nested snapshot excludes children that are not valid in `CT_TrPrBase`.
+ */
+export function buildTrPrChangeElement(oldTrPr: Element | null, ctx: RevisionContext): Element {
+  const trPrChange = createWmlElement(
+    getOwnerDocument(oldTrPr),
+    'trPrChange',
+    revisionAttributes(ctx),
+  );
+  const previousTrPr = createWmlElement(getOwnerDocument(oldTrPr), 'trPr');
+
+  if (oldTrPr) {
+    for (const child of childElements(oldTrPr)) {
+      if (!EXCLUDED_TRPR_CHANGE_CHILDREN.has(child.tagName)) {
+        previousTrPr.appendChild(child.cloneNode(true));
+      }
+    }
+  }
+
+  trPrChange.appendChild(previousTrPr);
+  return trPrChange;
+}
+
+/**
+ * Build a `<w:tcPrChange>` wrapper containing the previous cell properties.
+ *
+ * The nested snapshot excludes children that are not valid in `CT_TcPrBase`.
+ */
+export function buildTcPrChangeElement(oldTcPr: Element | null, ctx: RevisionContext): Element {
+  const tcPrChange = createWmlElement(
+    getOwnerDocument(oldTcPr),
+    'tcPrChange',
+    revisionAttributes(ctx),
+  );
+  const previousTcPr = createWmlElement(getOwnerDocument(oldTcPr), 'tcPr');
+
+  if (oldTcPr) {
+    for (const child of childElements(oldTcPr)) {
+      if (!EXCLUDED_TCPR_CHANGE_CHILDREN.has(child.tagName)) {
+        previousTcPr.appendChild(child.cloneNode(true));
+      }
+    }
+  }
+
+  tcPrChange.appendChild(previousTcPr);
+  return tcPrChange;
 }
 
 /**

@@ -1,5 +1,11 @@
 import { findParagraphByBookmarkId } from './bookmarks.js';
 import { OOXML, W } from './namespaces.js';
+import {
+  buildPPrChangeElement,
+  buildTcPrChangeElement,
+  buildTrPrChangeElement,
+  type RevisionContext,
+} from './track-changes-emitter.js';
 
 export type SpacingLineRule = 'auto' | 'exact' | 'atLeast';
 export type RowHeightRule = 'auto' | 'exact' | 'atLeast';
@@ -127,6 +133,7 @@ function getTables(doc: Document): Element[] {
 export function setParagraphSpacing(
   doc: Document,
   mutation: ParagraphSpacingMutation,
+  ctx?: RevisionContext,
 ): ParagraphSpacingMutationResult {
   const paragraphIds = [...new Set(mutation.paragraphIds)];
   const missingParagraphIds: string[] = [];
@@ -139,6 +146,8 @@ export function setParagraphSpacing(
       continue;
     }
 
+    const currentPPr = getDirectChildrenByName(paragraph, W.pPr)[0] ?? null;
+    const oldPPr = currentPPr ? (currentPPr.cloneNode(true) as Element) : null;
     const pPr = ensureFirstChild(paragraph, W.pPr);
     const spacing = ensureChild(pPr, W.spacing);
 
@@ -146,6 +155,14 @@ export function setParagraphSpacing(
     if (typeof mutation.afterTwips === 'number') setWAttr(spacing, W.after, String(mutation.afterTwips));
     if (typeof mutation.lineTwips === 'number') setWAttr(spacing, W.line, String(mutation.lineTwips));
     if (typeof mutation.lineRule === 'string') setWAttr(spacing, W.lineRule, mutation.lineRule);
+    if (ctx) {
+      // CT_PPr permits at most one <w:pPrChange> child. Strip any stale
+      // wrapper from prior history before appending the new one.
+      for (const stale of getDirectChildrenByName(pPr, 'pPrChange')) {
+        pPr.removeChild(stale);
+      }
+      pPr.appendChild(buildPPrChangeElement(oldPPr, ctx));
+    }
 
     affectedParagraphs += 1;
   }
@@ -156,6 +173,7 @@ export function setParagraphSpacing(
 export function setTableRowHeight(
   doc: Document,
   mutation: TableRowHeightMutation,
+  ctx?: RevisionContext,
 ): TableRowHeightMutationResult {
   const tables = getTables(doc);
   const missingTableIndexes: number[] = [];
@@ -177,10 +195,19 @@ export function setTableRowHeight(
 
     for (const rowIndex of rowSelection.indexes) {
       const row = rows[rowIndex]!;
+      const currentTrPr = getDirectChildrenByName(row, W.trPr)[0] ?? null;
+      const oldTrPr = currentTrPr ? (currentTrPr.cloneNode(true) as Element) : null;
       const trPr = ensureFirstChild(row, W.trPr);
       const trHeight = ensureChild(trPr, W.trHeight);
       setWAttr(trHeight, W.val, String(mutation.valueTwips));
       setWAttr(trHeight, W.hRule, mutation.rule);
+      if (ctx) {
+        // CT_TrPr permits at most one <w:trPrChange> child.
+        for (const stale of getDirectChildrenByName(trPr, 'trPrChange')) {
+          trPr.removeChild(stale);
+        }
+        trPr.appendChild(buildTrPrChangeElement(oldTrPr, ctx));
+      }
       affectedRows += 1;
     }
   }
@@ -191,6 +218,7 @@ export function setTableRowHeight(
 export function setTableCellPadding(
   doc: Document,
   mutation: TableCellPaddingMutation,
+  ctx?: RevisionContext,
 ): TableCellPaddingMutationResult {
   const tables = getTables(doc);
   const missingTableIndexes: number[] = [];
@@ -221,6 +249,8 @@ export function setTableCellPadding(
 
       for (const cellIndex of cellSelection.indexes) {
         const cell = cells[cellIndex]!;
+        const currentTcPr = getDirectChildrenByName(cell, W.tcPr)[0] ?? null;
+        const oldTcPr = currentTcPr ? (currentTcPr.cloneNode(true) as Element) : null;
         const tcPr = ensureFirstChild(cell, W.tcPr);
         const tcMar = ensureChild(tcPr, W.tcMar);
 
@@ -243,6 +273,13 @@ export function setTableCellPadding(
           const right = ensureChild(tcMar, W.right);
           setWAttr(right, W.w, String(mutation.rightDxa));
           setWAttr(right, W.type, 'dxa');
+        }
+        if (ctx) {
+          // CT_TcPr permits at most one <w:tcPrChange> child.
+          for (const stale of getDirectChildrenByName(tcPr, 'tcPrChange')) {
+            tcPr.removeChild(stale);
+          }
+          tcPr.appendChild(buildTcPrChangeElement(oldTcPr, ctx));
         }
 
         affectedCells += 1;
