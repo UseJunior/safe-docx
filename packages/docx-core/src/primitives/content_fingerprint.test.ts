@@ -79,4 +79,91 @@ describe('computeContentFingerprint', () => {
     const b = computeContentFingerprint('Section 6: Termination');
     expect(a).not.toBe(b);
   });
+
+  describe('Cf-category invisibles are stripped', () => {
+    test('soft hyphen U+00AD: cooperate == co­operate', ({}) => {
+      expect(computeContentFingerprint('cooperate')).toBe(
+        computeContentFingerprint('co­operate'),
+      );
+    });
+
+    test('zero-width space U+200B is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A​B'));
+    });
+
+    test('zero-width non-joiner U+200C is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A‌B'));
+    });
+
+    test('zero-width joiner U+200D is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A‍B'));
+    });
+
+    test('LRM U+200E is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A‎B'));
+    });
+
+    test('RLM U+200F is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A‏B'));
+    });
+
+    test('bidi embedding U+202A (LRE) is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A‪B'));
+    });
+
+    test('bidi PDF U+202C is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A‬B'));
+    });
+
+    test('variation selector U+FE0F is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A️B'));
+    });
+
+    test('BOM U+FEFF is stripped', ({}) => {
+      expect(computeContentFingerprint('AB')).toBe(computeContentFingerprint('A﻿B'));
+      expect(computeContentFingerprint('Hello')).toBe(
+        computeContentFingerprint('﻿Hello'),
+      );
+    });
+
+    test('multiple invisibles in one paragraph all collapse', ({}) => {
+      const baseline = computeContentFingerprint('Hello world');
+      expect(
+        computeContentFingerprint('He​llo­ wor‍ld﻿'),
+      ).toBe(baseline);
+    });
+  });
+
+  describe('legitimate text variants are NOT folded (regression guard)', () => {
+    // These tests exist so a future maintainer doesn't expand the strip regex
+    // to "be helpful" — citation pipelines downstream legitimately distinguish
+    // these glyphs and rely on the fingerprint to surface the difference.
+    test('curly quotes differ from ASCII quotes', ({}) => {
+      // U+201C/U+201D = curly double quotes; ASCII " = U+0022.
+      expect(computeContentFingerprint('"Section 5"')).not.toBe(
+        computeContentFingerprint('“Section 5”'),
+      );
+    });
+
+    test('curly apostrophes differ from ASCII apostrophe', ({}) => {
+      // U+2019 = right single quotation mark; ASCII ' = U+0027.
+      expect(computeContentFingerprint("Company's")).not.toBe(
+        computeContentFingerprint('Company’s'),
+      );
+    });
+
+    test('en-dash differs from hyphen-minus', ({}) => {
+      // U+2013 EN DASH vs ASCII hyphen-minus U+002D.
+      expect(computeContentFingerprint('A-B')).not.toBe(
+        computeContentFingerprint('A–B'),
+      );
+    });
+
+    test('em-dash differs from hyphen-minus', ({}) => {
+      // U+2014 EM DASH vs ASCII hyphen-minus U+002D.
+      expect(computeContentFingerprint('A-B')).not.toBe(
+        computeContentFingerprint('A—B'),
+      );
+    });
+  });
 });
