@@ -3,12 +3,16 @@ import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
-import { compareDocuments, type CompareOptions, type CompareResult } from '@usejunior/docx-core';
+import { DocxZip, compareDocuments, parseXml, type CompareOptions, type CompareResult } from '@usejunior/docx-core';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { enforceWritePathPolicy } from './path_policy.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
 type SaveFormat = 'clean' | 'tracked' | 'both';
+type SaveRevisionSummary = { count: number; author: string; ids?: number[] };
+
+const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const REVISION_ELEMENT_NAMES = new Set(['ins', 'del', 'pPrChange', 'rPrChange', 'trPrChange', 'tcPrChange']);
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
@@ -44,6 +48,56 @@ async function runWithoutConsoleLog<T>(fn: () => Promise<T>): Promise<T> {
   } finally {
     console.log = originalLog;
   }
+}
+
+function getWordAttr(element: Element, localName: string): string | null {
+  return (
+    element.getAttributeNS(WORDPROCESSING_ML_NS, localName)
+    ?? element.getAttribute(`w:${localName}`)
+    ?? element.getAttribute(localName)
+  );
+}
+
+async function collectAiRevisionSummary(
+  buffer: Buffer,
+  author: string | null,
+): Promise<SaveRevisionSummary | undefined> {
+  if (!author) return undefined;
+
+  const zip = await DocxZip.load(buffer);
+  const revisionIds = new Set<number>();
+  let count = 0;
+
+  for (const fileName of zip.listFiles()) {
+    if (!fileName.startsWith('word/') || !fileName.endsWith('.xml')) continue;
+    const xml = await zip.readTextOrNull(fileName);
+    if (!xml) continue;
+
+    const doc = parseXml(xml);
+    for (const node of Array.from(doc.getElementsByTagName('*'))) {
+      if (node.namespaceURI !== WORDPROCESSING_ML_NS || !REVISION_ELEMENT_NAMES.has(node.localName)) {
+        continue;
+      }
+      if (getWordAttr(node, 'author') !== author) continue;
+
+      count += 1;
+      const id = getWordAttr(node, 'id');
+      if (!id) continue;
+
+      const parsed = Number.parseInt(id, 10);
+      if (Number.isFinite(parsed)) {
+        revisionIds.add(parsed);
+      }
+    }
+  }
+
+  if (count === 0) return undefined;
+
+  return {
+    count,
+    author,
+    ...(revisionIds.size > 0 ? { ids: [...revisionIds].sort((a, b) => a - b) } : {}),
+  };
 }
 
 export async function save(
@@ -110,7 +164,7 @@ export async function save(
     const trackedEngine: CompareOptions['engine'] = engine;
 
     const clean = params.clean_bookmarks ?? true;
-    const author = params.tracked_changes_author ?? params.author ?? 'Safe-Docx';
+    const author = params.tracked_changes_author ?? params.author ?? 'SafeDocX';
     const allowOverwrite = params.allow_overwrite ?? false;
     const cacheKey = JSON.stringify({
       revision: session.editRevision,
@@ -243,6 +297,10 @@ export async function save(
       await fs.writeFile(trackedPath, new Uint8Array(trackedBuffer));
     }
 
+    const revisions = format === 'tracked'
+      ? undefined
+      : await collectAiRevisionSummary(revisedBuffer, session.aiAuthor);
+
     const returnedVariants =
       format === 'clean'
         ? ['clean']
@@ -270,6 +328,7 @@ export async function save(
       tracked_rebuild_warning: trackedReconstructionMode === 'rebuild'
         ? 'Rebuild mode was used which may alter document structure (tables, fonts, etc.)'
         : undefined,
+      revisions,
       exported_at_utc: exportTimestamp,
       bookmarks_removed: clean ? bookmarksRemoved : 0,
       returned_variants: returnedVariants,

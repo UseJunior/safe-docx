@@ -1,4 +1,4 @@
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -13,13 +13,14 @@ export async function deleteComment(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'delete_comment' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
+  const ctx = getRevisionContextForSession(session);
 
   if (params.comment_id == null) {
     return err('MISSING_PARAMETER', 'comment_id is required.', 'Provide the comment ID to delete.');
   }
 
   try {
-    await session.doc.deleteComment({ commentId: params.comment_id });
+    await session.doc.deleteComment({ commentId: params.comment_id }, ctx);
 
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({

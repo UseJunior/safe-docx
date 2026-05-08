@@ -1,4 +1,4 @@
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -255,6 +255,7 @@ export async function formatLayout(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'format_layout' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
+    const ctx = getRevisionContextForSession(session);
 
     const strict = params.strict ?? true;
     if (typeof strict !== 'boolean') {
@@ -354,9 +355,9 @@ export async function formatLayout(
     const paragraphCountBefore = session.doc.getParagraphs().length;
     const warnings: string[] = [];
 
-    const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing) : null;
-    const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight) : null;
-    const cellPaddingResult = cellPadding ? session.doc.setTableCellPadding(cellPadding) : null;
+    const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
+    const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight, ctx) : null;
+    const cellPaddingResult = cellPadding ? session.doc.setTableCellPadding(cellPadding, ctx) : null;
 
     const paragraphCountAfter = session.doc.getParagraphs().length;
     if (paragraphCountAfter !== paragraphCountBefore) {

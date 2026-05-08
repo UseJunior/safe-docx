@@ -1,4 +1,4 @@
-import { SessionManager, type DocxSession } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { ERROR_PREVIEW_CHARS, RESULT_PREVIEW_CHARS, previewText } from './preview.js';
@@ -11,9 +11,11 @@ import {
   getParagraphRuns,
   hasHighlightTags,
   hasHyperlinkTags,
+  replaceParagraphTextRange,
   stripHyperlinkTags,
   stripAllInlineTags,
   type ReplacementPart,
+  type RevisionContext,
 } from '@usejunior/docx-core';
 import {
   splitTaggedText,
@@ -141,6 +143,12 @@ function isLikelyFieldPlaceholder(text: string): boolean {
   return (t.startsWith('[') && t.endsWith(']')) || (t.startsWith('«') && t.endsWith('»'));
 }
 
+function invalidateDocumentCaches(doc: unknown): void {
+  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
+  mutableDoc.dirty = true;
+  mutableDoc.documentViewCache = null;
+}
+
 export async function replaceText(
   manager: SessionManager,
   params: {
@@ -160,11 +168,13 @@ export async function replaceText(
     font_name?: string;
     color?: string;
   },
+  ctx?: RevisionContext,
 ): Promise<ToolResponse> {
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'replace_text' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
+    const revisionCtx = ctx ?? getRevisionContextForSession(session);
 
     if (params.normalize_first) {
       session.doc.mergeRunsOnly();
@@ -233,7 +243,12 @@ export async function replaceText(
         parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
       }
       replaceText = parts;
-      session.doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText });
+      if (revisionCtx) {
+        replaceParagraphTextRange(pEl, matchStart, matchEnd, replaceText, revisionCtx);
+        invalidateDocumentCaches(session.doc);
+      } else {
+        session.doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText });
+      }
     } else {
       // Fix 2: Transfer document quote style to new_string for non-exact matches.
       if (textMatch.mode !== 'exact' && textMatch.mode !== 'clean') {
@@ -260,7 +275,12 @@ export async function replaceText(
           trimmedReplace = trimmedNewStr;
         }
 
-        session.doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
+        if (revisionCtx) {
+          replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, revisionCtx);
+          invalidateDocumentCaches(session.doc);
+        } else {
+          session.doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
+        }
         // Range trimming splits the original run at prefix/suffix boundaries, producing
         // adjacent runs with identical formatting. Merge them back to keep output clean.
         session.doc.mergeRunsOnly();

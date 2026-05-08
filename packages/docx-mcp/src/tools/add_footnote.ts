@@ -1,4 +1,4 @@
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -15,6 +15,7 @@ export async function addFootnote(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'add_footnote' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
+  const ctx = getRevisionContextForSession(session);
 
   if (!params.target_paragraph_id) {
     return err('MISSING_PARAMETER', 'target_paragraph_id is required.', 'Provide the _bk_* ID of the paragraph to anchor the footnote to.');
@@ -34,7 +35,7 @@ export async function addFootnote(
       paragraphId: pid,
       afterText: params.after_text,
       text: params.text,
-    });
+    }, ctx);
 
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({

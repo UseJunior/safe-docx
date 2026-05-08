@@ -164,7 +164,13 @@ export async function runServer(): Promise<void> {
     },
   );
 
-  const sessions = new SessionManager();
+  // Default AI author for tracked-change emission at primitive write time.
+  // Configurable via SAFE_DOCX_AI_AUTHOR env var; defaults to "SafeDocX".
+  // Set to empty string explicitly to disable tracked emission and fall back
+  // to legacy untracked behavior.
+  const aiAuthorEnv = process.env.SAFE_DOCX_AI_AUTHOR;
+  const defaultAiAuthor = aiAuthorEnv === '' ? null : (aiAuthorEnv ?? 'SafeDocX');
+  const sessions = new SessionManager({ defaultAiAuthor });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return { tools: MCP_TOOLS };

@@ -1,4 +1,4 @@
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -14,6 +14,7 @@ export async function updateFootnote(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'update_footnote' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
+  const ctx = getRevisionContextForSession(session);
 
   if (params.note_id == null) {
     return err('MISSING_PARAMETER', 'note_id is required.', 'Provide the footnote ID to update.');
@@ -32,7 +33,7 @@ export async function updateFootnote(
     await session.doc.updateFootnoteText({
       noteId: params.note_id,
       newText: params.new_text,
-    });
+    }, ctx);
 
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({

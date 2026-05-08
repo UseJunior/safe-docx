@@ -4,11 +4,15 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import {
   DocxDocument,
+  createRevisionContext,
+  createRevisionIdState,
   type NormalizationResult,
   type ParagraphRevision,
   type ReconstructionMode,
   type ReconstructionFallbackReason,
   type ReconstructionFallbackDiagnostics,
+  type RevisionContext,
+  type RevisionIdState,
 } from '@usejunior/docx-core';
 
 export type SaveFormat = 'clean' | 'tracked' | 'both';
@@ -62,6 +66,8 @@ export type DocxSession = {
    */
   comparisonBaselineWithBookmarks: Buffer | null;
   doc: DocxDocument;
+  aiAuthor: string | null;
+  revisionIdState: RevisionIdState | null;
   editCount: number;
   editRevision: number;
   saveCache: Map<string, SaveCacheEntry>;
@@ -86,6 +92,70 @@ export type GDocsSession = {
 
 export type Session = DocxSession | GDocsSession;
 
+const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function normalizeAiAuthor(author: string | null | undefined): string | null {
+  if (typeof author !== 'string') return null;
+  const trimmed = author.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getWordIdValue(element: Element): number | null {
+  const raw =
+    element.getAttributeNS(WORDPROCESSING_ML_NS, 'id')
+    ?? element.getAttribute('w:id')
+    ?? element.getAttribute('id');
+  if (raw === null) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Compute a starting `RevisionIdState` whose first allocated `w:id` is
+ * higher than any existing revision id found in the supplied documents.
+ *
+ * **Known limitation (see follow-up to #165):** this scans only the
+ * documents passed in. Today's caller passes `documentXml` only, so any
+ * pre-existing revision in side parts (`comments.xml`, `footnotesXml`,
+ * `endnotes.xml`) is invisible to the seed scan. For typical sessions
+ * with <100 AI edits this never collides in practice; for long-running
+ * sessions on heavily-reviewed third-party documents the AI counter
+ * could eventually cross a pre-existing side-part revision id.
+ *
+ * To close the gap, future work should pre-load side parts via
+ * `zip.readText('word/comments.xml')` etc. and pass them all here.
+ * That cascade requires `getRevisionContextForSession` to become async,
+ * which is deferred to follow-up.
+ */
+export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdState {
+  let maxId = 0;
+
+  for (const doc of docs) {
+    for (const node of Array.from(doc.getElementsByTagName('*'))) {
+      const value = getWordIdValue(node);
+      if (value !== null && value > maxId) {
+        maxId = value;
+      }
+    }
+  }
+
+  return createRevisionIdState(maxId + 1);
+}
+
+export function getRevisionContextForSession(session: DocxSession): RevisionContext | undefined {
+  if (!session.aiAuthor) return undefined;
+
+  if (!session.revisionIdState) {
+    session.revisionIdState = inferStartingRevisionIdState(session.doc.getDocumentXmlClone());
+  }
+
+  return createRevisionContext({
+    author: session.aiAuthor,
+    date: new Date(),
+    idState: session.revisionIdState,
+  });
+}
+
 export function isDocxSession(s: Session): s is DocxSession {
   return s.provider === 'docx';
 }
@@ -98,12 +168,14 @@ export class SessionManager {
   /** Sessions keyed by canonical file path (realpath). */
   private sessions = new Map<string, Session>();
   private ttlMs: number;
+  private defaultAiAuthor: string | null;
 
   /** Concurrency guard: prevents double-generation of baselines for the same session. */
   private baselinePromises = new WeakMap<DocxSession, Promise<void>>();
 
-  constructor(opts?: { ttlMs?: number }) {
+  constructor(opts?: { ttlMs?: number; defaultAiAuthor?: string | null }) {
     this.ttlMs = opts?.ttlMs ?? 60 * 60 * 1000;
+    this.defaultAiAuthor = normalizeAiAuthor(opts?.defaultAiAuthor);
   }
 
   private expandPath(inputPath: string): string {
@@ -165,6 +237,8 @@ export class SessionManager {
       comparisonBaseline: null,
       comparisonBaselineWithBookmarks: null,
       doc,
+      aiAuthor: this.defaultAiAuthor,
+      revisionIdState: null,
       editCount: 0,
       editRevision: 0,
       saveCache: new Map<string, SaveCacheEntry>(),

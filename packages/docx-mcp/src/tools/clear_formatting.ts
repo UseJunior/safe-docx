@@ -1,4 +1,4 @@
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { ok, err, type ToolResponse } from './types.js';
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import {
@@ -47,6 +47,12 @@ function removeDirectChildrenByName(parent: Element, localNames: readonly string
   return matches.length > 0;
 }
 
+function invalidateDocumentCaches(doc: unknown): void {
+  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
+  mutableDoc.dirty = true;
+  mutableDoc.documentViewCache = null;
+}
+
 export async function clearFormatting(
   manager: SessionManager,
   params: {
@@ -65,6 +71,7 @@ export async function clearFormatting(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'clear_formatting' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
+    const revisionCtx = ctx ?? getRevisionContextForSession(session);
 
     const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
     const pids = params.paragraph_ids ?? nodes.map((n) => n.id);
@@ -81,8 +88,8 @@ export async function clearFormatting(
         const rPr = r.getElementsByTagNameNS(OOXML.W_NS, W.rPr).item(0);
         if (!rPr) continue;
 
-        const oldRPrClone = ctx ? (rPr.cloneNode(true) as Element) : null;
-        const removeRunProps = ctx ? removeDirectChildrenByName : removeDescendantsByName;
+        const oldRPrClone = revisionCtx ? (rPr.cloneNode(true) as Element) : null;
+        const removeRunProps = revisionCtx ? removeDirectChildrenByName : removeDescendantsByName;
         let rModified = false;
 
         if (params.clear_highlight && removeRunProps(rPr, [W.highlight])) {
@@ -109,11 +116,11 @@ export async function clearFormatting(
           rModified = true;
         }
 
-        if (ctx && rModified) {
+        if (revisionCtx && rModified) {
           for (const stale of getDirectChildrenByName(rPr, 'rPrChange')) {
             rPr.removeChild(stale);
           }
-          rPr.appendChild(buildRPrChangeElement(oldRPrClone, ctx));
+          rPr.appendChild(buildRPrChangeElement(oldRPrClone, revisionCtx));
         }
 
         if (rModified) {
@@ -124,6 +131,7 @@ export async function clearFormatting(
     }
 
     if (modifiedCount > 0) {
+      invalidateDocumentCaches(session.doc);
       manager.markEdited(session);
     }
 
