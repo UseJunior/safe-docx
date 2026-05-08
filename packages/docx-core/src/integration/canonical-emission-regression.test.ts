@@ -3,7 +3,6 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   DocxDocument,
   OOXML,
-  W,
   compareDocuments,
   createRevisionContext,
   createRevisionIdState,
@@ -14,13 +13,12 @@ import {
 } from '../index.js';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 
-const test = testAllure.epic('Document Editing').withLabels({
+const test = testAllure.epic('Document Comparison').withLabels({
   feature: 'Canonical Emission Regression',
 });
 
 const AI_AUTHOR = 'SafeDocX';
 const FIXED_DATE = '2026-05-07T12:00:00Z';
-const ISO_Z_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const W_NS = OOXML.W_NS;
 
 const MINIMAL_CONTENT_TYPES_XML = [
@@ -71,10 +69,10 @@ async function loadIndexedDoc(buffer: Buffer): Promise<{ doc: DocxDocument; para
   };
 }
 
-async function toPartMap(
+async function toPartMap<K extends string>(
   doc: DocxDocument,
-  partPaths: string[],
-): Promise<{ buffer: Buffer; parts: Record<string, string> }> {
+  partPaths: readonly K[],
+): Promise<{ buffer: Buffer; parts: Record<K, string> }> {
   const { buffer } = await doc.toBuffer({ cleanBookmarks: false });
   const entries = await Promise.all(
     partPaths.map(async (partPath) => {
@@ -85,7 +83,7 @@ async function toPartMap(
       return [partPath, text] as const;
     }),
   );
-  return { buffer, parts: Object.fromEntries(entries) };
+  return { buffer, parts: Object.fromEntries(entries) as Record<K, string> };
 }
 
 function wordAttr(element: Element, localName: string): string | null {
