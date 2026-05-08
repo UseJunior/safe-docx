@@ -219,7 +219,10 @@ function extractHeaderInfo(cleanText: string): { header_text: string | null; hea
 
   if (terminator === '.') return { header_text: headerText, header_style: 'title_with_period' };
   if (terminator === ':') return { header_text: headerText, header_style: 'title_with_colon' };
-  return { header_text: headerText, header_style: 'title_bare' };
+  // Long-paragraph regex matches without an explicit terminator are body prose
+  // (e.g. "Termination of Section 2.2(d)(i) shall not affect ..."), not headers.
+  // Bare titles only fire from the short-paragraph branch above.
+  return { header_text: null, header_style: null };
 }
 
 function detectRunInHeader(params: {
@@ -243,6 +246,16 @@ function detectRunInHeader(params: {
       seen.add(tr.r);
       orderedUniqueRuns.push(tr.r);
     }
+  }
+
+  // Compute total visible character count across all runs first so we can
+  // verify the header is a true prefix, not the whole paragraph (signature
+  // labels, defined-term lead-ins, and table-header cells are often entirely
+  // bold/underlined and would otherwise be mis-classified as run-in headers).
+  let totalVisibleChars = 0;
+  for (const r of orderedUniqueRuns) {
+    const ts = Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t));
+    for (const t of ts) totalVisibleChars += (t.textContent ?? '').length;
   }
 
   let headerText = '';
@@ -269,8 +282,72 @@ function detectRunInHeader(params: {
   if (!trimmed) return null;
   if (!punct.has(trimmed[trimmed.length - 1]!)) return null;
   if (!formatting) return null;
+  // Require a real header-prefix / body transition: the bold/underline prefix
+  // must be followed by non-header body text. Without this guard, fully bold
+  // paragraphs (e.g. "Email:", "Title:", or all-bold defined-term sentences)
+  // surface as run-in headers.
+  if (headerCharCount >= totalVisibleChars) return null;
 
   return { raw_text: trimmed, formatting, headerCharCount };
+}
+
+/**
+ * Detect a centered, ALL-CAPS, bold standalone title (e.g. an NVCA SPA's
+ * `SERIES […] PREFERRED STOCK PURCHASE AGREEMENT` title).
+ *
+ * Strict gates only — this fires only when the other detectors returned null
+ * and the paragraph cannot be confused with body prose:
+ *   - paragraph alignment is CENTER
+ *   - clean text contains no lowercase letters
+ *   - clean text is non-empty and short (≤ MAX_HEADER_TEXT_LENGTH)
+ *   - all visible runs are bold (a single non-bold char disqualifies)
+ */
+function detectTitleCapsCentered(params: {
+  paragraph: Element;
+  paragraphPPr: Element | null;
+  paragraphStyleId: string | null;
+  alignment: ParagraphAlignment;
+  cleanTextNoLabel: string;
+  styles: StylesModel;
+}): { raw_text: string; formatting: HeaderFormatting } | null {
+  const { paragraph, paragraphPPr, paragraphStyleId, alignment, cleanTextNoLabel, styles } = params;
+  if (alignment !== 'CENTER') return null;
+  const trimmed = cleanTextNoLabel.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > MAX_HEADER_TEXT_LENGTH) return null;
+  if (/[a-z]/.test(trimmed)) return null;
+
+  const runs = getParagraphRuns(paragraph);
+  if (runs.length === 0) return null;
+  const orderedUniqueRuns: Element[] = [];
+  const seen = new Set<Element>();
+  for (const tr of runs) {
+    if (!seen.has(tr.r)) {
+      seen.add(tr.r);
+      orderedUniqueRuns.push(tr.r);
+    }
+  }
+
+  let formatting: HeaderFormatting | null = null;
+  let sawAnyText = false;
+  for (const r of orderedUniqueRuns) {
+    const ts = Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t));
+    let runHasText = false;
+    for (const t of ts) {
+      if ((t.textContent ?? '').length > 0) {
+        runHasText = true;
+        break;
+      }
+    }
+    if (!runHasText) continue;
+    const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles });
+    if (!fmt.bold) return null;
+    sawAnyText = true;
+    if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };
+  }
+  if (!sawAnyText || !formatting) return null;
+
+  return { raw_text: trimmed, formatting };
 }
 
 function inferSemanticName(params: {
@@ -1175,6 +1252,30 @@ export function buildNodesForDocumentView(params: {
       const fallback = extractHeaderInfo(cleanTextNoLabel);
       headerText = fallback.header_text;
       headerStyle = fallback.header_style;
+    }
+
+    // Final fallback: centered ALL-CAPS bold standalone titles (e.g. an NVCA
+    // SPA's `SERIES […] PREFERRED STOCK PURCHASE AGREEMENT`). Only fires when
+    // the previous detectors returned null AND the paragraph has no list label
+    // AND it is not in a table cell.
+    if (!headerText && !labelString && !tableContext) {
+      try {
+        const titleHdr = detectTitleCapsCentered({
+          paragraph: p,
+          paragraphPPr: paraPPr ?? null,
+          paragraphStyleId: paraFmt.styleId,
+          alignment: paraFmt.alignment,
+          cleanTextNoLabel,
+          styles: stylesModel,
+        });
+        if (titleHdr) {
+          headerText = titleHdr.raw_text;
+          headerStyle = 'title_caps_centered';
+          headerFormatting = titleHdr.formatting;
+        }
+      } catch {
+        // ignore
+      }
     }
 
     // ── Tag emission ──
