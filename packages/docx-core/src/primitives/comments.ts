@@ -351,10 +351,24 @@ function findCommentParaId(commentsDoc: Document, commentId: number): string | n
   return null;
 }
 
+/**
+ * Ensure the comments document root declares xmlns:w14 (and xmlns:w15) before any
+ * w14:paraId / w15:* attribute is written into it. Real-world docx files often ship a
+ * pre-existing comments.xml that omits these declarations; xmldom would otherwise reject
+ * the round-tripped XML with `NamespaceError: prefix is non-null and namespace is null`.
+ * Idempotent — leaves existing declarations alone.
+ */
+function ensureCommentsRootNamespaces(commentsDoc: Document): void {
+  const root = commentsDoc.documentElement;
+  if (!root.getAttribute('xmlns:w14')) root.setAttribute('xmlns:w14', OOXML.W14_NS);
+  if (!root.getAttribute('xmlns:w15')) root.setAttribute('xmlns:w15', OOXML.W15_NS);
+}
+
 function addCommentElement(
   commentsDoc: Document,
   params: { id: number; author: string; initials: string; text: string; paraId: string },
 ): void {
+  ensureCommentsRootNamespaces(commentsDoc);
   const root = commentsDoc.documentElement;
 
   const commentEl = commentsDoc.createElementNS(OOXML.W_NS, 'w:comment');
@@ -558,6 +572,7 @@ async function linkReplyInCommentsExtended(
 ): Promise<void> {
   const extXml = await zip.readText('word/commentsExtended.xml');
   const extDoc = parseXml(extXml);
+  ensureCommentsRootNamespaces(extDoc);
   const root = extDoc.documentElement;
 
   const exEl = extDoc.createElementNS(OOXML.W15_NS, 'w15:commentEx');
@@ -575,6 +590,7 @@ async function ensureCommentExEntry(
 ): Promise<void> {
   const extXml = await zip.readText('word/commentsExtended.xml');
   const extDoc = parseXml(extXml);
+  ensureCommentsRootNamespaces(extDoc);
   const root = extDoc.documentElement;
 
   // Check if entry already exists
@@ -596,6 +612,7 @@ async function ensureCommentExEntry(
 async function ensureAuthorInPeople(zip: DocxZip, author: string): Promise<void> {
   const peopleXml = await zip.readText('word/people.xml');
   const peopleDoc = parseXml(peopleXml);
+  ensureCommentsRootNamespaces(peopleDoc);
   const root = peopleDoc.documentElement;
 
   // Check if author already exists

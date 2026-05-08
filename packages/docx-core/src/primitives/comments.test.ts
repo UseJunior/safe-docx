@@ -934,6 +934,60 @@ describe('comments — edge cases and branch coverage', () => {
         expect(children[4]!.textContent).toBe('World');
       });
     });
+
+    test('produces parseable comments.xml even when pre-existing comments.xml lacks xmlns:w14 (#154)', async ({ given, when, then }: AllureBddContext) => {
+      // Regression for #154: a real-world docx (Balanced_Employee_IP_Agreement.docx) ships a
+      // pre-existing word/comments.xml whose root <w:comments> element declares xmlns:w but
+      // omits xmlns:w14. addComment then writes `<w:p w14:paraId="...">` into that document,
+      // producing serialized XML with a w14: prefix that has no bound namespace. xmldom rejects
+      // it on the next read with "NamespaceError: prefix is non-null and namespace is null",
+      // and the MCP read_file path silently swallowed that error — so inline_markers and the
+      // #COMMENT block both disappeared. The fix ensures addCommentElement declares
+      // xmlns:w14 (and xmlns:w15) on the root before writing w14:paraId / w15:* attributes.
+      let zip: DocxZip;
+      let doc: Document;
+      let p: Element;
+
+      await given('a document whose pre-existing comments.xml lacks xmlns:w14', async () => {
+        const commentsXmlNoW14 =
+          `<?xml version="1.0" encoding="UTF-8"?>` +
+          // Note: many namespaces declared, but xmlns:w14 deliberately absent.
+          `<w:comments xmlns:w="${OOXML.W_NS}"` +
+          ` xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"` +
+          ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`;
+        const buf = await makeDocxBuffer('<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>', {
+          'word/comments.xml': commentsXmlNoW14,
+        });
+        zip = await loadZip(buf);
+        // bootstrap creates the missing commentsExtended.xml + people.xml but leaves our
+        // custom (no-w14) comments.xml in place, since hasFile guards the write.
+        await bootstrapCommentParts(zip);
+        const docXml = await zip.readText('word/document.xml');
+        doc = parseXml(docXml);
+        p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+      });
+
+      await when('addComment is called and the resulting comments.xml is re-parsed', async () => {
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 0,
+          end: 5,
+          author: 'Tester',
+          text: 'Anchor smoke for #154.',
+        });
+      });
+
+      await then('the resulting comments.xml round-trips through parseXml without a NamespaceError', async () => {
+        const commentsXml = await zip.readText('word/comments.xml');
+        // Direct parse must not throw.
+        expect(() => parseXml(commentsXml)).not.toThrow();
+        // And getComments() — the path that read_file.ts:380 calls — must surface the comment.
+        const comments = await getComments(zip, doc);
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.author).toBe('Tester');
+        expect(comments[0]!.text).toBe('Anchor smoke for #154.');
+      });
+    });
   });
 
   describe('addCommentReply', () => {

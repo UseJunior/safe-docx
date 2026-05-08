@@ -921,6 +921,51 @@ describe('read_file comment rendering', () => {
     expect(content).toContain(`#COMMENT ${opened.firstParaId} c${id} SmokeTest `);
   });
 
+  test('inline_markers survives a pre-existing comments.xml that lacks xmlns:w14 (#154)', async () => {
+    // Issue #154: real-world docx files (e.g., Balanced_Employee_IP_Agreement.docx) ship a
+    // pre-existing comments.xml whose root <w:comments> element omits xmlns:w14. The writer
+    // then writes <w:p w14:paraId="..."> into that document, and on the next read xmldom
+    // rejects with "NamespaceError: prefix is non-null and namespace is null" — which
+    // read_file silently swallowed, hiding both the markers AND the #COMMENT block.
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>` +
+      `<w:p><w:r><w:t>The terms below are incorporated into and form part of this agreement.</w:t></w:r></w:p>` +
+      `</w:body></w:document>`;
+    // comments.xml lacking xmlns:w14 — mirrors the third-party file shape that triggers #154.
+    const commentsXmlNoW14 =
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
+      ` xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"` +
+      ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`;
+    const opened = await openSession([], {
+      xml: documentXml,
+      extraFiles: { 'word/comments.xml': commentsXmlNoW14 },
+    });
+    const result = await addComment(opened.mgr, {
+      file_path: opened.inputPath,
+      target_paragraph_id: opened.firstParaId,
+      anchor_text: 'incorporated',
+      author: 'SmokeTest',
+      text: 'Range comment on "incorporated".',
+    });
+    assertSuccess(result, 'add_comment');
+
+    const read = await readFile(opened.mgr, {
+      file_path: opened.inputPath,
+      comment_rendering: 'inline_markers',
+    });
+    assertSuccess(read, 'read_file');
+    // No silent comment-load failure should leak through anymore.
+    expect(read.comment_load_error).toBeUndefined();
+    const content = String(read.content);
+    const id = result.comment_id as number;
+    const line = findParagraphLine(toonLines(content), opened.firstParaId);
+    expect(line).toContain(`[cm-start:${id}]incorporated[cm-end:${id}]`);
+    expect(content).toContain(`#COMMENT ${opened.firstParaId} c${id} SmokeTest `);
+  });
+
   test('inline_markers renders multi-paragraph ranges only at the boundary paragraphs', async () => {
     const { lines } = await renderCommentFixture({
       bodyXml:
