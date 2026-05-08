@@ -1,7 +1,51 @@
 import { SessionManager } from '../session/manager.js';
 import { ok, err, type ToolResponse } from './types.js';
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
-import { OOXML, W } from '@usejunior/docx-core';
+import {
+  OOXML,
+  W,
+  buildRPrChangeElement,
+  getDirectChildrenByName,
+  type RevisionContext,
+} from '@usejunior/docx-core';
+
+function removeDescendantsByName(parent: Element, localNames: readonly string[]): boolean {
+  let removed = false;
+
+  for (const localName of localNames) {
+    const matches = Array.from(parent.getElementsByTagNameNS(OOXML.W_NS, localName));
+    if (matches.length === 0) continue;
+
+    for (const match of matches) {
+      match.parentNode?.removeChild(match);
+    }
+    removed = true;
+  }
+
+  return removed;
+}
+
+function removeDirectChildrenByName(parent: Element, localNames: readonly string[]): boolean {
+  const names = new Set(localNames);
+  const matches: Element[] = [];
+
+  for (let i = 0; i < parent.childNodes.length; i++) {
+    const child = parent.childNodes.item(i);
+    if (
+      child?.nodeType === 1
+      && (child as Element).namespaceURI === OOXML.W_NS
+      && names.has((child as Element).localName)
+    ) {
+      matches.push(child as Element);
+    }
+  }
+
+  for (const match of matches) {
+    parent.removeChild(match);
+  }
+
+  return matches.length > 0;
+}
 
 export async function clearFormatting(
   manager: SessionManager,
@@ -15,6 +59,7 @@ export async function clearFormatting(
     clear_color?: boolean;
     clear_font?: boolean;
   },
+  ctx?: RevisionContext,
 ): Promise<ToolResponse> {
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'clear_formatting' });
@@ -36,56 +81,43 @@ export async function clearFormatting(
         const rPr = r.getElementsByTagNameNS(OOXML.W_NS, W.rPr).item(0);
         if (!rPr) continue;
 
-        if (params.clear_highlight) {
-          const highlights = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.highlight));
-          if (highlights.length > 0) {
-            for (const h of highlights) h.parentNode?.removeChild(h);
-            pModified = true;
-          }
+        const oldRPrClone = ctx ? (rPr.cloneNode(true) as Element) : null;
+        const removeRunProps = ctx ? removeDirectChildrenByName : removeDescendantsByName;
+        let rModified = false;
+
+        if (params.clear_highlight && removeRunProps(rPr, [W.highlight])) {
+          rModified = true;
         }
 
-        if (params.clear_bold) {
-          const bolds = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.b));
-          if (bolds.length > 0) {
-            for (const b of bolds) b.parentNode?.removeChild(b);
-            pModified = true;
-          }
+        if (params.clear_bold && removeRunProps(rPr, [W.b])) {
+          rModified = true;
         }
 
-        if (params.clear_italic) {
-          const italics = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.i));
-          if (italics.length > 0) {
-            for (const i of italics) i.parentNode?.removeChild(i);
-            pModified = true;
-          }
+        if (params.clear_italic && removeRunProps(rPr, [W.i])) {
+          rModified = true;
         }
 
-        if (params.clear_underline) {
-          const underlines = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.u));
-          if (underlines.length > 0) {
-            for (const u of underlines) u.parentNode?.removeChild(u);
-            pModified = true;
-          }
+        if (params.clear_underline && removeRunProps(rPr, [W.u])) {
+          rModified = true;
         }
 
-        if (params.clear_color) {
-          const colors = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.color));
-          if (colors.length > 0) {
-            for (const c of colors) c.parentNode?.removeChild(c);
-            pModified = true;
-          }
+        if (params.clear_color && removeRunProps(rPr, [W.color])) {
+          rModified = true;
         }
 
-        if (params.clear_font) {
-          const fonts = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.rFonts));
-          const sizes = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.sz));
-          const csSizes = Array.from(rPr.getElementsByTagNameNS(OOXML.W_NS, W.szCs));
-          if (fonts.length > 0 || sizes.length > 0 || csSizes.length > 0) {
-            for (const f of fonts) f.parentNode?.removeChild(f);
-            for (const s of sizes) s.parentNode?.removeChild(s);
-            for (const s of csSizes) s.parentNode?.removeChild(s);
-            pModified = true;
+        if (params.clear_font && removeRunProps(rPr, [W.rFonts, W.sz, W.szCs])) {
+          rModified = true;
+        }
+
+        if (ctx && rModified) {
+          for (const stale of getDirectChildrenByName(rPr, 'rPrChange')) {
+            rPr.removeChild(stale);
           }
+          rPr.appendChild(buildRPrChangeElement(oldRPrClone, ctx));
+        }
+
+        if (rModified) {
+          pModified = true;
         }
       }
       if (pModified) modifiedCount++;
