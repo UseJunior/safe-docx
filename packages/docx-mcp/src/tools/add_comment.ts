@@ -1,4 +1,4 @@
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -19,6 +19,7 @@ export async function addComment(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'add_comment' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
+  const ctx = getRevisionContextForSession(session);
 
   try {
     // Reply mode: parent_comment_id provided
@@ -28,7 +29,7 @@ export async function addComment(
         author: params.author,
         text: params.text,
         initials: params.initials,
-      });
+      }, ctx);
       manager.markEdited(session);
       return ok(mergeSessionResolutionMetadata({
         comment_id: result.commentId,
@@ -95,7 +96,7 @@ export async function addComment(
       author: params.author,
       text: params.text,
       initials: params.initials,
-    });
+    }, ctx);
 
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({

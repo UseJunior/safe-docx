@@ -1,4 +1,4 @@
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -13,13 +13,14 @@ export async function deleteFootnote(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'delete_footnote' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
+  const ctx = getRevisionContextForSession(session);
 
   if (params.note_id == null) {
     return err('MISSING_PARAMETER', 'note_id is required.', 'Provide the footnote ID to delete.');
   }
 
   try {
-    await session.doc.deleteFootnote({ noteId: params.note_id });
+    await session.doc.deleteFootnote({ noteId: params.note_id }, ctx);
 
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({

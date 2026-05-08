@@ -1,11 +1,12 @@
 import {
   getParagraphRuns,
   hasHyperlinkTags,
+  type RevisionContext,
   stripHyperlinkTags,
   stripAllInlineTags,
   type ReplacementPart,
 } from '@usejunior/docx-core';
-import { SessionManager, type DocxSession } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { RESULT_PREVIEW_CHARS, previewText } from './preview.js';
@@ -120,11 +121,13 @@ export async function insertParagraph(
     style_source_id?: string;
     target_style?: string;
   },
+  ctx?: RevisionContext,
 ): Promise<ToolResponse> {
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'insert_paragraph' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
+    const revisionCtx = ctx ?? getRevisionContextForSession(session);
 
     const positionUpper = (params.position ?? 'AFTER').toUpperCase();
     if (positionUpper !== 'BEFORE' && positionUpper !== 'AFTER') {
@@ -173,7 +176,7 @@ export async function insertParagraph(
       relativePosition: positionUpper as 'BEFORE' | 'AFTER',
       newText: plainParagraphs.join('\n\n'),
       styleSourceId: styleSourceId,
-    });
+    }, revisionCtx);
 
     const needsHeaderRoleModel = parsedParagraphs.some((segs) => segs.some((s) => s.header));
     const headerAddProps = needsHeaderRoleModel

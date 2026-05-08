@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
-import { findUniqueSubstringMatch } from '@usejunior/docx-core';
-import { SessionManager } from '../session/manager.js';
+import { findUniqueSubstringMatch, type RevisionContext } from '@usejunior/docx-core';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorMessage } from '../error_utils.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
@@ -277,6 +277,7 @@ async function executeSteps(
   manager: SessionManager,
   filePath: string,
   steps: NormalizedStep[],
+  ctx?: RevisionContext,
 ): Promise<{
   completed_step_ids: string[];
   failed_step_id?: string;
@@ -299,7 +300,7 @@ async function executeSteps(
         new_string: step.fields.new_string as string,
         instruction: step.fields.instruction as string,
         normalize_first: step.fields.normalize_first as boolean | undefined,
-      });
+      }, ctx);
     } else {
       result = await insertParagraph(manager, {
         file_path: filePath,
@@ -308,7 +309,7 @@ async function executeSteps(
         instruction: step.fields.instruction as string,
         position: step.fields.position as string | undefined,
         style_source_id: step.fields.style_source_id as string | undefined,
-      });
+      }, ctx);
     }
 
     if (!result.success) {
@@ -406,7 +407,8 @@ export async function applyPlan(
     const allWarnings = validations.flatMap((v) => v.warnings.map((w) => ({ step_id: v.step_id, warning: w })));
 
     // Apply phase — execute steps sequentially
-    const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps);
+    const ctx = getRevisionContextForSession(session);
+    const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
 
     if (result.failed_step_id !== undefined) {
       return {

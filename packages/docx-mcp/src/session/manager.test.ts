@@ -1,7 +1,7 @@
 import { describe, expect, afterEach } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { SessionManager } from './manager.js';
-import { makeMinimalDocx } from '../testing/docx_test_utils.js';
+import { SessionManager, getRevisionContextForSession } from './manager.js';
+import { makeDocxWithDocumentXml, makeMinimalDocx } from '../testing/docx_test_utils.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -71,6 +71,17 @@ describe('SessionManager.createSession', () => {
     tmpDirs.push(path.dirname(session.tmpPath));
   });
 
+  test('seeds aiAuthor from the manager default and leaves revisionIdState unset', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const filePath = await createTestFile();
+    const buf = await fs.readFile(filePath);
+    const session = await mgr.createSession(Buffer.from(buf), 'test.docx', filePath);
+
+    expect(session.aiAuthor).toBe('SafeDocX');
+    expect(session.revisionIdState).toBeNull();
+    tmpDirs.push(path.dirname(session.tmpPath));
+  });
+
   test('replaces existing session for same file path', async () => {
     const mgr = new SessionManager();
     const filePath = await createTestFile();
@@ -86,6 +97,30 @@ describe('SessionManager.createSession', () => {
     expect(exists).toBe(false);
 
     tmpDirs.push(path.dirname(s2.tmpPath));
+  });
+});
+
+describe('revision context helpers', () => {
+  test('initializes revision ids above the highest pre-existing w:id value', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-revision-test-'));
+    tmpDirs.push(dir);
+    const filePath = path.join(dir, 'tracked.docx');
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>` +
+      `<w:p><w:r><w:t>Alpha</w:t></w:r></w:p>` +
+      `<w:p><w:ins w:id="42" w:author="Existing" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Prior</w:t></w:r></w:ins></w:p>` +
+      `</w:body></w:document>`;
+    const buf = await makeDocxWithDocumentXml(documentXml);
+    await fs.writeFile(filePath, new Uint8Array(buf));
+
+    const session = await mgr.createSession(buf, 'tracked.docx', filePath);
+    const ctx = getRevisionContextForSession(session);
+
+    expect(ctx).toBeDefined();
+    expect(session.revisionIdState?.nextId).toBe(43);
   });
 });
 
