@@ -9,12 +9,22 @@ export interface ToolRunnerIO {
   writeError: (line: string) => void;
 }
 
+/**
+ * Resolve the AI author for tracked-change emission from SAFE_DOCX_AI_AUTHOR.
+ * Empty string disables tracked emission (legacy behavior); unset defaults to 'SafeDocX'.
+ * Symmetric with the resolution in server.ts.
+ */
+export function resolveCliAiAuthor(): string | null {
+  const env = process.env.SAFE_DOCX_AI_AUTHOR;
+  return env === '' ? null : (env ?? 'SafeDocX');
+}
+
 export async function runToolCommand(
   toolName: string,
   args: Record<string, unknown>,
   opts: ToolRunnerIO,
 ): Promise<void> {
-  const mgr = new SessionManager();
+  const mgr = new SessionManager({ defaultAiAuthor: resolveCliAiAuthor() });
   const result = await dispatchToolCall(mgr, toolName, args);
 
   const json = JSON.stringify(result, null, 2);

@@ -4,6 +4,7 @@
  */
 import { SessionManager } from '../../session/manager.js';
 import { dispatchToolCall } from '../../server.js';
+import { resolveCliAiAuthor } from '../tool_runner.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -128,7 +129,7 @@ export interface EditCommandIO {
 }
 
 export async function runEditCommand(args: EditCommandArgs, opts: EditCommandIO): Promise<void> {
-  const mgr = new SessionManager();
+  const mgr = new SessionManager({ defaultAiAuthor: resolveCliAiAuthor() });
   const defaultInstruction = args.instruction ?? 'CLI batch edit';
 
   // Build apply_plan steps

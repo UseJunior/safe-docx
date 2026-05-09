@@ -9,6 +9,7 @@
  */
 import { SessionManager } from '../../session/manager.js';
 import { dispatchToolCall } from '../../server.js';
+import { resolveCliAiAuthor } from '../tool_runner.js';
 
 export interface GrepCommandArgs {
   pattern: string;
@@ -136,7 +137,7 @@ export async function runGrepCommand(
   args: GrepCommandArgs,
   opts: { write: (line: string) => void; writeError: (line: string) => void },
 ): Promise<void> {
-  const mgr = new SessionManager();
+  const mgr = new SessionManager({ defaultAiAuthor: resolveCliAiAuthor() });
 
   const toolArgs: Record<string, unknown> = {
     pattern: args.pattern,
