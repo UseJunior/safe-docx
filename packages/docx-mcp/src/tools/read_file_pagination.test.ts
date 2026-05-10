@@ -485,6 +485,42 @@ describe('read_file pagination', () => {
     });
   });
 
+  test('count=1 + has_more table truncation does not falsely emit first-node warning', async ({ when, then }: AllureBddContext) => {
+    // Regression for a false-positive in the warning logic: when a multi-row
+    // table breaks at row N>1, the loop emits row 1 and then appends
+    // `#END_TABLE`, which can push the final accumulated content over the
+    // budget even though row 1 itself fit. The warning must reflect node 1's
+    // own size at admission time, not the post-loop closed-out content.
+    const cellLen = 55_864; // tuned to put row 1 just under, row 2 over (Codex repro)
+    const cellText = 'X'.repeat(cellLen);
+    const tableXml =
+      `<w:tbl>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+
+    const read = await when('a two-row table is read where row 1 fits but row 2 forces truncation', async () => {
+      const mgr = createTestSessionManager();
+      const { filePath } = await openSession([], { mgr, xml, trackOpenStep: false });
+      const result = await readFile(mgr, { file_path: filePath, format: 'toon' });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('exactly one row is returned, has_more=true, and no first-node warning fires', async () => {
+      expect(Number(read.paragraphs_returned)).toBe(1);
+      expect(read.has_more).toBe(true);
+      // Final content (with #END_TABLE) may exceed budget; that's the bug we're guarding against.
+      expect(estimateTokens(String(read.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      // Node 1's admission size was UNDER budget, so the warning must not fire.
+      expect(read.warnings).toBeUndefined();
+    });
+  });
+
   // ── Table coverage: renderToonWithBudget with body text after table ───
 
   test('renderToonWithBudget handles transition from table to body text within budget', async ({ given, when, then }: AllureBddContext) => {

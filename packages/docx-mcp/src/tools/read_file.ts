@@ -467,14 +467,8 @@ interface BudgetResult {
 
 const BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING = 'budget_exceeded_by_first_node';
 
-function getBudgetWarnings(
-  content: string,
-  count: number,
-  budget: number,
-): string[] | undefined {
-  if (count !== 1) return undefined;
-  if (estimateTokens(content) <= budget) return undefined;
-  return [BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING];
+function firstNodeOverflowWarnings(firstNodeOverflow: boolean): string[] | undefined {
+  return firstNodeOverflow ? [BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING] : undefined;
 }
 
 function renderWithBudget(
@@ -504,6 +498,12 @@ function renderToonWithBudget(
   const includedNodes: DocumentViewNode[] = [];
   const useInlineMarkers = commentRendering === 'inline_markers';
   const commentMarkers = useInlineMarkers ? collectInlineCommentMarkers(enriched) : undefined;
+  // Captured the moment node 0 is admitted, BEFORE post-loop closures
+  // (#END_TABLE, endnotes block) inflate `accumulated`. Computing this
+  // after the loop produces false positives when row 1 of a table fits but
+  // we break at row 2 — the closing #END_TABLE bumps the final size over
+  // budget, but node 1 itself was fine.
+  let firstNodeOverflow = false;
 
   // Pre-scan: collect table marker info for #TABLE lines
   const tableInfo = collectTableMarkerInfo(enriched);
@@ -559,6 +559,9 @@ function renderToonWithBudget(
       break;
     }
     accumulated = candidateBase;
+    if (count === 0 && estimateTokens(accumulated) > budget) {
+      firstNodeOverflow = true;
+    }
     includedNodes.push(node);
     count++;
   }
@@ -578,7 +581,7 @@ function renderToonWithBudget(
   return {
     content: accumulated,
     count,
-    warnings: getBudgetWarnings(accumulated, count, budget),
+    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
   };
 }
 
@@ -621,6 +624,8 @@ function renderSimpleWithBudget(
   let accumulated = headerLine;
   let count = 0;
   let currentTableIndex: number | null = null;
+  // Captured at admission of node 0; see comment in renderToonWithBudget.
+  let firstNodeOverflow = false;
 
   const tableInfo = collectTableMarkerInfo(enriched);
 
@@ -652,6 +657,9 @@ function renderSimpleWithBudget(
       break;
     }
     accumulated = candidate;
+    if (count === 0 && estimateTokens(accumulated) > budget) {
+      firstNodeOverflow = true;
+    }
     count++;
   }
 
@@ -662,7 +670,7 @@ function renderSimpleWithBudget(
   return {
     content: accumulated,
     count,
-    warnings: getBudgetWarnings(accumulated, count, budget),
+    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
   };
 }
 
@@ -673,6 +681,8 @@ function renderJsonWithBudget(
   const items: string[] = [];
   let totalChars = 2; // for "[\n" and "]"
   let count = 0;
+  // Captured at admission of node 0; see comment in renderToonWithBudget.
+  let firstNodeOverflow = false;
 
   for (const node of enriched) {
     const serialized = JSON.stringify(node, null, 2);
@@ -681,6 +691,9 @@ function renderJsonWithBudget(
     if (count > 0 && Math.ceil(candidateChars / 4) > budget) break;
     items.push(serialized);
     totalChars = candidateChars;
+    if (count === 0 && Math.ceil(candidateChars / 4) > budget) {
+      firstNodeOverflow = true;
+    }
     count++;
   }
 
@@ -688,6 +701,6 @@ function renderJsonWithBudget(
   return {
     content,
     count,
-    warnings: getBudgetWarnings(content, count, budget),
+    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
   };
 }
