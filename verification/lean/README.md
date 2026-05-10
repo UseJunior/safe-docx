@@ -12,6 +12,7 @@ This spike now includes a Lean model of the atom-level LCS computation from `pac
 - `LeanSpike/Atom.lean`
 - `LeanSpike/AtomsEqual.lean`
 - `LeanSpike/Lcs.lean`
+- `LeanSpike/Spec.lean`
 
 ## Current proof scope
 
@@ -23,13 +24,24 @@ Currently proved in this stage:
 - `INV-LCS-003` in `LeanSpike/Lcs.lean`: **strict index monotonicity.** The reported match pairs are pairwise strictly increasing in both original and revised indices.
 - `INV-LCS-004` in `LeanSpike/Lcs.lean`: **partition completeness.** Matched and deleted original indices partition `range original.length`, and matched and inserted revised indices partition `range revised.length`.
 
+## Specification targets (sorry'd, uninterpreted signature)
+
+This stage also adds named specification targets over an uninterpreted Lean signature, intended for later empirical bridge/proof work. The motivating TypeScript checks and tests justify these statements, but the current Lean file keeps every document-level operation abstract via `axiom`, so `LeanSpike/Spec.lean` is a target surface for later stages rather than a closed proof artifact.
+
+- `INV-FIELD-001` in `LeanSpike/Spec.lean`: scope `validateFieldStructure` to the comparison output `compareDocumentXml a b`, then require both `acceptAllChanges` and `rejectAllChanges` to preserve field structure. This mirrors the syntactic scan in `packages/docx-core/src/baselines/atomizer/pipeline.ts:352-401`, the call site in `pipeline.ts:404-430` that applies the check only to the freshly-produced comparison candidate, and the comparison pipeline surface abstracted from `pipeline.ts:608`.
+- `INV-RT-001` in `LeanSpike/Spec.lean`: paired round-trip text recovery, with `acceptAllChanges` matching the revised document and `rejectAllChanges` matching the original document after `normalizeText ∘ extractTextWithParagraphs`. This mirrors the helper functions in `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660` and `trackChangesAcceptorAst.ts:701`, plus the gold-standard tests in `packages/docx-core/src/integration/round-trip-inplace.test.ts:4` and `packages/docx-core/src/integration/nvca-coi-regression.test.ts:77-103`.
+
+`Spec.lean` must remain isolated from `AtomsEqual.lean` and `Lcs.lean`. The zero-sorry property of Stage 1-3 modules is preserved; `Spec.lean` is the only `sorry`-bearing file.
+
+For interactive auditing, inspect `#print sorries`, `#print axioms inv_field_001`, and `#print axioms inv_rt_001`.
+
 ## Still out of scope
 
 This spike still does not cover:
 
-- reconstruction invariants
-- round-trip text equality
-- field-structure / document-shape preservation
+- closed proofs of reconstruction invariants
+- closed proofs of round-trip text equality
+- closed proofs of field-structure / document-shape preservation
 - extensional equivalence between the Lean model and the production TypeScript implementation
 
 ## Lean model
@@ -82,8 +94,10 @@ lake update
 lake build
 ```
 
-To confirm the stage remains `sorry`-free:
+To confirm the Stage 1-3 proof modules remain `sorry`-free, and that `Spec.lean`
+contains only the two intentional placeholders:
 
 ```bash
-grep -rn "sorry" LeanSpike/
+rg -n "sorry" LeanSpike/AtomsEqual.lean LeanSpike/Lcs.lean   # must be empty
+rg -n "sorry" LeanSpike/Spec.lean                            # exactly 2 hits
 ```
