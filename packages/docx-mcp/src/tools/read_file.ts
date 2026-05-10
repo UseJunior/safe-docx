@@ -377,6 +377,11 @@ export async function readFile(
       enriched = filtered;
     }
 
+    // When comment loading fails after add_comment ran (e.g., a third-party docx ships a
+    // comments.xml lacking xmlns:w14 and our writer wrote w14:paraId into it — see #154),
+    // surface the cause via metadata. We still don't fail the read so the body content
+    // remains consumable, but the caller (and our smoke tests) can detect the silent drop.
+    let commentLoadError: string | null = null;
     if (commentRendering !== 'none') {
       try {
         const comments = await session.doc.getComments();
@@ -389,8 +394,8 @@ export async function readFile(
           paragraphElementsById:
             commentRendering === 'inline_markers' ? paragraphElementsById : undefined,
         });
-      } catch {
-        // Preserve existing read_file behavior if comment parts are unavailable or malformed.
+      } catch (e: unknown) {
+        commentLoadError = errorMessage(e);
       }
     }
 
@@ -452,6 +457,7 @@ export async function readFile(
       total_paragraphs: totalParagraphs,
       paragraphs_returned: paragraphsReturned,
       ...paginationMeta,
+      ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);

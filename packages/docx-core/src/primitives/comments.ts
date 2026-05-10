@@ -29,6 +29,9 @@ const CT_COMMENTS = 'application/vnd.openxmlformats-officedocument.wordprocessin
 const CT_COMMENTS_EXTENDED = 'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml';
 const CT_PEOPLE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.people+xml';
 
+// XML Namespaces namespace — used when binding/declaring prefixes via setAttributeNS.
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+
 // ── Minimal XML templates ───────────────────────────────────────────────
 
 const COMMENTS_XML_TEMPLATE =
@@ -351,10 +354,34 @@ function findCommentParaId(commentsDoc: Document, commentId: number): string | n
   return null;
 }
 
+/**
+ * Ensure a comment-related document root binds the w14 and w15 prefixes before any
+ * w14:* / w15:* attribute is written into it. Real-world docx files often ship a
+ * pre-existing comments.xml (or commentsExtended.xml / people.xml) that omits one or
+ * both declarations; without a real namespace binding, xmldom would reject the
+ * round-tripped XML with `NamespaceError: prefix is non-null and namespace is null`.
+ *
+ * Uses `setAttributeNS(XMLNS_NS, …)` so the prefix is actually bound on the live DOM
+ * (not just serialized as a literal attribute) — that means subsequent `createElementNS`
+ * / `setAttributeNS` / `lookupNamespaceURI` calls on the same Document resolve correctly
+ * without depending on a serialize/reparse round trip. Idempotent — guards on the real
+ * binding via `lookupNamespaceURI`, not on a same-named plain attribute.
+ */
+function ensureCommentPartNamespaceAliases(commentsDoc: Document): void {
+  const root = commentsDoc.documentElement;
+  if (root.lookupNamespaceURI('w14') !== OOXML.W14_NS) {
+    root.setAttributeNS(XMLNS_NS, 'xmlns:w14', OOXML.W14_NS);
+  }
+  if (root.lookupNamespaceURI('w15') !== OOXML.W15_NS) {
+    root.setAttributeNS(XMLNS_NS, 'xmlns:w15', OOXML.W15_NS);
+  }
+}
+
 function addCommentElement(
   commentsDoc: Document,
   params: { id: number; author: string; initials: string; text: string; paraId: string },
 ): void {
+  ensureCommentPartNamespaceAliases(commentsDoc);
   const root = commentsDoc.documentElement;
 
   const commentEl = commentsDoc.createElementNS(OOXML.W_NS, 'w:comment');
@@ -365,7 +392,9 @@ function addCommentElement(
 
   // Comment body: <w:p w14:paraId="..."><w:pPr><w:pStyle w:val="CommentText"/></w:pPr><w:r><w:annotationRef/></w:r><w:r><w:t>text</w:t></w:r></w:p>
   const p = commentsDoc.createElementNS(OOXML.W_NS, 'w:p');
-  p.setAttribute('w14:paraId', params.paraId);
+  // Use setAttributeNS so the attribute carries a real namespace URI — otherwise xmldom
+  // serializes a prefix it cannot resolve and reparse throws NamespaceError (#154).
+  p.setAttributeNS(OOXML.W14_NS, 'w14:paraId', params.paraId);
 
   // Annotation reference run
   const refRun = commentsDoc.createElementNS(OOXML.W_NS, 'w:r');
@@ -558,12 +587,13 @@ async function linkReplyInCommentsExtended(
 ): Promise<void> {
   const extXml = await zip.readText('word/commentsExtended.xml');
   const extDoc = parseXml(extXml);
+  ensureCommentPartNamespaceAliases(extDoc);
   const root = extDoc.documentElement;
 
   const exEl = extDoc.createElementNS(OOXML.W15_NS, 'w15:commentEx');
-  exEl.setAttribute('w15:paraId', replyParaId);
-  exEl.setAttribute('w15:paraIdParent', parentParaId);
-  exEl.setAttribute('w15:done', '0');
+  exEl.setAttributeNS(OOXML.W15_NS, 'w15:paraId', replyParaId);
+  exEl.setAttributeNS(OOXML.W15_NS, 'w15:paraIdParent', parentParaId);
+  exEl.setAttributeNS(OOXML.W15_NS, 'w15:done', '0');
   root.appendChild(exEl);
 
   zip.writeText('word/commentsExtended.xml', serializeXml(extDoc));
@@ -575,6 +605,7 @@ async function ensureCommentExEntry(
 ): Promise<void> {
   const extXml = await zip.readText('word/commentsExtended.xml');
   const extDoc = parseXml(extXml);
+  ensureCommentPartNamespaceAliases(extDoc);
   const root = extDoc.documentElement;
 
   // Check if entry already exists
@@ -586,8 +617,8 @@ async function ensureCommentExEntry(
   }
 
   const exEl = extDoc.createElementNS(OOXML.W15_NS, 'w15:commentEx');
-  exEl.setAttribute('w15:paraId', paraId);
-  exEl.setAttribute('w15:done', '0');
+  exEl.setAttributeNS(OOXML.W15_NS, 'w15:paraId', paraId);
+  exEl.setAttributeNS(OOXML.W15_NS, 'w15:done', '0');
   root.appendChild(exEl);
 
   zip.writeText('word/commentsExtended.xml', serializeXml(extDoc));
@@ -596,6 +627,7 @@ async function ensureCommentExEntry(
 async function ensureAuthorInPeople(zip: DocxZip, author: string): Promise<void> {
   const peopleXml = await zip.readText('word/people.xml');
   const peopleDoc = parseXml(peopleXml);
+  ensureCommentPartNamespaceAliases(peopleDoc);
   const root = peopleDoc.documentElement;
 
   // Check if author already exists
@@ -607,12 +639,12 @@ async function ensureAuthorInPeople(zip: DocxZip, author: string): Promise<void>
   }
 
   const personEl = peopleDoc.createElementNS(OOXML.W15_NS, 'w15:person');
-  personEl.setAttribute('w15:author', author);
+  personEl.setAttributeNS(OOXML.W15_NS, 'w15:author', author);
 
   // Add a presenceInfo child (required by Word)
   const presenceInfo = peopleDoc.createElementNS(OOXML.W15_NS, 'w15:presenceInfo');
-  presenceInfo.setAttribute('w15:providerId', 'None');
-  presenceInfo.setAttribute('w15:userId', author);
+  presenceInfo.setAttributeNS(OOXML.W15_NS, 'w15:providerId', 'None');
+  presenceInfo.setAttributeNS(OOXML.W15_NS, 'w15:userId', author);
   personEl.appendChild(presenceInfo);
 
   root.appendChild(personEl);
