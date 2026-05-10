@@ -46,6 +46,35 @@ function buildTestNodes(bodyXml: string, stylesXml: Document | null = null): Doc
   }).nodes;
 }
 
+function makeCellTableContext(paraIndex: number) {
+  return {
+    table_id: '_tbl_0',
+    table_index: 0,
+    row_index: 0,
+    col_index: paraIndex,
+    col_header: '',
+    total_rows: 1,
+    total_cols: 1,
+    is_header_row: false,
+    para_in_cell: 0,
+    cell_para_count: 1,
+  };
+}
+
+function buildTestNodesInCells(bodyXml: string, stylesXml: Document | null = null): DocumentViewNode[] {
+  const paragraphs = makeParagraphs(bodyXml).map((entry, idx) => ({
+    ...entry,
+    tableContext: makeCellTableContext(idx),
+  }));
+  return buildNodesForDocumentView({
+    paragraphs,
+    stylesXml,
+    numberingXml: null,
+    include_semantic_tags: false,
+    show_formatting: false,
+  }).nodes;
+}
+
 function makeNode(overrides: Partial<DocumentViewNode>): DocumentViewNode {
   return {
     id: '_bk_1',
@@ -785,6 +814,103 @@ describe('document_view branch coverage', () => {
     await and('the heuristic signal remains explanatory only', async () => {
       expect(nodes[0]!.list_metadata.header_style).toBe('title_with_colon');
       expect(nodes[0]!.list_metadata.header_text).toBe('Governing Law');
+    });
+  });
+
+  test('derives heuristic heading objects for title_with_period and title_bare body paragraphs', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: DocumentViewNode[];
+
+    await given('a short bare-title paragraph and a short title-with-period paragraph', async () => {
+      bodyXml =
+        `<w:p><w:r><w:t>Governing Law</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Definitions.</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      nodes = buildTestNodes(bodyXml!);
+    });
+
+    await then('the bare-title paragraph emits a title_bare heading', async () => {
+      expect(nodes[0]!.heading).toEqual({
+        text: 'Governing Law',
+        source: 'title_bare',
+        level: null,
+      });
+    });
+
+    await and('the title-with-period paragraph emits a title_with_period heading', async () => {
+      expect(nodes[1]!.heading).toEqual({
+        text: 'Definitions',
+        source: 'title_with_period',
+        level: null,
+      });
+    });
+  });
+
+  test('suppresses heuristic heading promotion for paragraphs inside table cells (peer review #190)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: DocumentViewNode[];
+
+    await given('table cell paragraphs that match each heuristic detector', async () => {
+      bodyXml =
+        // title_bare candidate (short ALL-CAPS-leading title, no terminator)
+        `<w:p><w:r><w:t>Purchase Price</w:t></w:r></w:p>` +
+        // title_with_colon candidate (short paragraph ending in ":")
+        `<w:p><w:r><w:t>Notice Address:</w:t></w:r></w:p>` +
+        // title_with_period candidate (short paragraph ending in ".")
+        `<w:p><w:r><w:t>Closing.</w:t></w:r></w:p>` +
+        // run_in_header candidate (bold prefix + non-bold body)
+        `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>Indemnification.</w:t></w:r>` +
+          `<w:r><w:t xml:space="preserve"> The Company shall indemnify each Investor.</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called with tableContext on every paragraph', async () => {
+      nodes = buildTestNodesInCells(bodyXml!);
+    });
+
+    await then('none of the table-cell paragraphs emit a top-level heading', async () => {
+      expect(nodes).toHaveLength(4);
+      for (const node of nodes) {
+        expect(node.heading).toBeUndefined();
+        expect(Object.prototype.hasOwnProperty.call(node, 'heading')).toBe(false);
+      }
+    });
+
+    await and('the explanatory list_metadata.header_style remains populated for debugging', async () => {
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_bare');
+      expect(nodes[1]!.list_metadata.header_style).toBe('title_with_colon');
+      expect(nodes[1]!.list_metadata.header_text).toBe('Notice Address');
+      expect(nodes[2]!.list_metadata.header_style).toBe('title_with_period');
+      expect(nodes[3]!.list_metadata.header_style).toBe('run_in_header');
+    });
+  });
+
+  test('still promotes word_style headings inside table cells (Heading1..6 wins over the cell gate)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let stylesXml: Document;
+    let nodes: DocumentViewNode[];
+
+    await given('a Heading3-styled paragraph injected as a table cell', async () => {
+      stylesXml = makeStylesXml(
+        `<w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/></w:style>`,
+      );
+      bodyXml = `<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>Schedule A</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called with tableContext', async () => {
+      nodes = buildTestNodesInCells(bodyXml!, stylesXml!);
+    });
+
+    await then('the word_style heading still fires inside the cell', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.heading).toEqual({
+        text: 'Schedule A',
+        source: 'word_style',
+        level: 3,
+      });
     });
   });
 

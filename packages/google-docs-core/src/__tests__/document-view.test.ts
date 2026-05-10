@@ -130,4 +130,112 @@ describe('Document View Builder', () => {
     const nodes = buildDocumentViewNodes(paragraphs);
     expect(nodes[0].id).toBe('para_100'); // Fallback ID
   });
+
+  describe('heading derivation', () => {
+    it('normalizes HEADING_1..6 namedStyleTypes to Heading1..6 and emits a word_style heading', () => {
+      const paragraphs: CachedParagraph[] = [
+        {
+          paragraphId: 'HEADING_1',
+          anchorName: '_bk_h1',
+          anchorId: 'tab1:_bk_h1',
+          startIndex: 1,
+          endIndex: 10,
+          tabId: 'tab1',
+          text: 'Section One',
+          inTable: false,
+        },
+        {
+          paragraphId: 'HEADING_6',
+          anchorName: '_bk_h6',
+          anchorId: 'tab1:_bk_h6',
+          startIndex: 20,
+          endIndex: 30,
+          tabId: 'tab1',
+          text: 'Nested Item',
+          inTable: false,
+        },
+      ];
+
+      const nodes = buildDocumentViewNodes(paragraphs);
+      expect(nodes[0].paragraph_style_id).toBe('Heading1');
+      expect(nodes[0].paragraph_style_name).toBe('Heading1');
+      expect(nodes[0].heading).toEqual({ text: 'Section One', source: 'word_style', level: 1 });
+      expect(nodes[1].paragraph_style_id).toBe('Heading6');
+      expect(nodes[1].heading).toEqual({ text: 'Nested Item', source: 'word_style', level: 6 });
+    });
+
+    it('treats NORMAL_TEXT and other non-heading namedStyleTypes as body (no heading field)', () => {
+      const paragraphs: CachedParagraph[] = [
+        {
+          paragraphId: 'NORMAL_TEXT',
+          anchorName: '_bk_body',
+          anchorId: 'tab1:_bk_body',
+          startIndex: 1,
+          endIndex: 10,
+          tabId: 'tab1',
+          text: 'Ordinary body text',
+          inTable: false,
+        },
+        {
+          paragraphId: 'TITLE',
+          anchorName: '_bk_title',
+          anchorId: 'tab1:_bk_title',
+          startIndex: 20,
+          endIndex: 30,
+          tabId: 'tab1',
+          text: 'Document Title',
+          inTable: false,
+        },
+        {
+          paragraphId: 'SUBTITLE',
+          anchorName: '_bk_sub',
+          anchorId: 'tab1:_bk_sub',
+          startIndex: 40,
+          endIndex: 50,
+          tabId: 'tab1',
+          text: 'Document Subtitle',
+          inTable: false,
+        },
+      ];
+
+      const nodes = buildDocumentViewNodes(paragraphs);
+      for (const node of nodes) {
+        expect(node.heading).toBeUndefined();
+        expect(Object.prototype.hasOwnProperty.call(node, 'heading')).toBe(false);
+        expect(node.paragraph_style_id).toBeNull();
+        expect(node.paragraph_style_name).toBe('body');
+      }
+    });
+
+    it('emits a word_style heading even for paragraphs inside table cells', () => {
+      const paragraphs: CachedParagraph[] = [
+        {
+          paragraphId: 'HEADING_2',
+          anchorName: '_bk_cellh',
+          anchorId: 'tab1:_bk_cellh',
+          startIndex: 5,
+          endIndex: 15,
+          tabId: 'tab1',
+          text: 'Cell Heading',
+          inTable: true,
+          tableMetadata: {
+            tableStartIndex: 0,
+            tableIndex: 0,
+            tableId: '_tbl_0',
+            rowIndex: 0,
+            colIndex: 0,
+            totalRows: 1,
+            totalCols: 1,
+            isHeaderRow: false,
+            paraInCell: 0,
+            cellParaCount: 1,
+            colHeader: '',
+          },
+        },
+      ];
+
+      const nodes = buildDocumentViewNodes(paragraphs);
+      expect(nodes[0].heading).toEqual({ text: 'Cell Heading', source: 'word_style', level: 2 });
+    });
+  });
 });

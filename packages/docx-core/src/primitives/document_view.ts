@@ -69,9 +69,17 @@ export type HeadingSource =
   | 'title_caps_centered'
   | 'title_bare';
 
-type HeuristicHeadingSource = Exclude<HeadingSource, 'word_style'>;
+export type HeuristicHeadingSource = Exclude<HeadingSource, 'word_style'>;
 
 export type HeadingValue = {
+  /**
+   * Heading label text. Semantics depend on `source`:
+   * - `word_style`: the full paragraph text (the entire paragraph IS the heading).
+   * - All heuristic sources (`run_in_header`, `title_with_period`, `title_with_colon`,
+   *   `title_caps_centered`, `title_bare`): only the extracted heading prefix.
+   *   For example, on `"Indemnification. The Company shall …"` the value is
+   *   `"Indemnification"`, not the whole paragraph.
+   */
   text: string;
   source: HeadingSource;
   level: number | null;
@@ -253,6 +261,7 @@ function deriveHeading(
   cleanText: string,
   headerText: string | null,
   headerStyle: HeuristicHeadingSource | null,
+  isInTableCell: boolean,
 ): HeadingValue | undefined {
   const styleMatch = paragraphStyleId ? /^Heading([1-6])$/.exec(paragraphStyleId) : null;
   if (styleMatch) {
@@ -262,6 +271,14 @@ function deriveHeading(
       level: Number.parseInt(styleMatch[1]!, 10),
     };
   }
+
+  // Inside table cells, heuristic detectors (run_in_header, title_with_period,
+  // title_with_colon, title_bare) routinely fire on ordinary label/value content
+  // — "Name", "Purchase Price:", "Name: Acme" — which are not structural document
+  // headings. We keep the per-detector explanation on list_metadata.header_style
+  // for debugging, but suppress heuristic promotion into the canonical heading
+  // predicate. Word built-in heading styles inside cells remain real headings.
+  if (isInTableCell) return undefined;
 
   if (headerText && headerStyle) {
     return {
@@ -1338,7 +1355,7 @@ export function buildNodesForDocumentView(params: {
       headerStyle = fallback.header_style;
     }
 
-    const heading = deriveHeading(paraFmt.styleId, cleanTextNoLabel, headerText, headerStyle);
+    const heading = deriveHeading(paraFmt.styleId, cleanTextNoLabel, headerText, headerStyle, tableContext != null);
 
     // ── Tag emission ──
     let tagged = cleanTextNoLabel;
