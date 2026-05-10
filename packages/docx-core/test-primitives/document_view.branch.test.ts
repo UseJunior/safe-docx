@@ -29,6 +29,23 @@ function makeParagraphs(bodyXml: string): Array<{ id: string; p: Element }> {
   return ps.map((p, idx) => ({ id: `_bk_${idx + 1}`, p }));
 }
 
+function makeStylesXml(styles: string): Document {
+  return parseXml(
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:styles xmlns:w="${W_NS}">${styles}</w:styles>`,
+  );
+}
+
+function buildTestNodes(bodyXml: string, stylesXml: Document | null = null): DocumentViewNode[] {
+  return buildNodesForDocumentView({
+    paragraphs: makeParagraphs(bodyXml),
+    stylesXml,
+    numberingXml: null,
+    include_semantic_tags: false,
+    show_formatting: false,
+  }).nodes;
+}
+
 function makeNode(overrides: Partial<DocumentViewNode>): DocumentViewNode {
   return {
     id: '_bk_1',
@@ -654,6 +671,120 @@ describe('document_view branch coverage', () => {
     await then('the title is classified as title_caps_centered, not title_bare', async () => {
       expect(nodes).toHaveLength(1);
       expect(nodes[0]!.list_metadata.header_style).toBe('title_caps_centered');
+    });
+  });
+
+  test('derives word_style headings only from exact Heading1-Heading6 paragraph style IDs', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let stylesXml: Document;
+    let nodes: DocumentViewNode[];
+
+    await given('built-in heading styles, an inheriting HeadingPara1 style, and a normal body paragraph', async () => {
+      stylesXml = makeStylesXml(
+        `<w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
+        `<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>` +
+        `<w:style w:type="paragraph" w:styleId="Heading6"><w:name w:val="heading 6"/></w:style>` +
+        `<w:style w:type="paragraph" w:styleId="HeadingPara1">` +
+          `<w:name w:val="Heading Para 1"/>` +
+          `<w:basedOn w:val="Heading1"/>` +
+          `<w:next w:val="Normal"/>` +
+        `</w:style>`,
+      );
+      bodyXml =
+        `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Board Approval</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Heading6"/></w:pPr><w:r><w:t>Minor Conditions</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="HeadingPara1"/></w:pPr><w:r><w:t>this inherited style stays body prose.</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>this is ordinary body text.</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      nodes = buildTestNodes(bodyXml!, stylesXml!);
+    });
+
+    await then('Heading1 and Heading6 paragraphs emit word_style headings with exact levels', async () => {
+      expect(nodes).toHaveLength(4);
+      expect(nodes[0]!.heading).toEqual({ text: 'Board Approval', source: 'word_style', level: 1 });
+      expect(nodes[1]!.heading).toEqual({ text: 'Minor Conditions', source: 'word_style', level: 6 });
+    });
+
+    await and('HeadingPara1 inheritance does not produce a heading object', async () => {
+      expect(nodes[2]!.heading).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(nodes[2]!, 'heading')).toBe(false);
+    });
+
+    await and('body paragraphs omit the heading field entirely', async () => {
+      expect(nodes[3]!.heading).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(nodes[3]!, 'heading')).toBe(false);
+    });
+  });
+
+  test('derives heuristic heading objects for title_caps_centered and run_in_header paragraphs', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: DocumentViewNode[];
+
+    await given('a centered standalone title and a bold-prefix run-in header paragraph', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>SERIES A PREFERRED STOCK PURCHASE AGREEMENT</w:t></w:r>` +
+        `</w:p>` +
+        `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>Indemnification.</w:t></w:r>` +
+          `<w:r><w:t> The Company shall indemnify each Investor as set forth herein.</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      nodes = buildTestNodes(bodyXml!);
+    });
+
+    await then('the centered title emits a null-level heading object', async () => {
+      expect(nodes).toHaveLength(2);
+      expect(nodes[0]!.heading).toEqual({
+        text: 'SERIES A PREFERRED STOCK PURCHASE AGREEMENT',
+        source: 'title_caps_centered',
+        level: null,
+      });
+    });
+
+    await and('the run-in header emits a null-level heading object', async () => {
+      expect(nodes[1]!.heading).toEqual({
+        text: 'Indemnification',
+        source: 'run_in_header',
+        level: null,
+      });
+    });
+  });
+
+  test('prefers word_style heading derivation over heuristic header detectors when both match', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let stylesXml: Document;
+    let nodes: DocumentViewNode[];
+
+    await given('a Heading2-styled paragraph that also matches the title_with_colon heuristic', async () => {
+      stylesXml = makeStylesXml(
+        `<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/></w:style>`,
+      );
+      bodyXml =
+        `<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Governing Law: this agreement is governed as stated.</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      nodes = buildTestNodes(bodyXml!, stylesXml!);
+    });
+
+    await then('the heading object uses word_style with level 2 and clean_text', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.heading).toEqual({
+        text: 'Governing Law: this agreement is governed as stated.',
+        source: 'word_style',
+        level: 2,
+      });
+    });
+
+    await and('the heuristic signal remains explanatory only', async () => {
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_with_colon');
+      expect(nodes[0]!.list_metadata.header_text).toBe('Governing Law');
     });
   });
 

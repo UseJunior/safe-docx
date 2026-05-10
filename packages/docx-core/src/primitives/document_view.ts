@@ -61,12 +61,28 @@ export type HeaderFormatting = {
   underline: boolean;
 };
 
+export type HeadingSource =
+  | 'word_style'
+  | 'run_in_header'
+  | 'title_with_period'
+  | 'title_with_colon'
+  | 'title_caps_centered'
+  | 'title_bare';
+
+type HeuristicHeadingSource = Exclude<HeadingSource, 'word_style'>;
+
+export type HeadingValue = {
+  text: string;
+  source: HeadingSource;
+  level: number | null;
+};
+
 export type ListMetadata = {
   list_level: number; // -1 for non-list
   label_type: LabelType | null;
   label_string: string;
   header_text: string | null;
-  header_style: string | null;
+  header_style: HeuristicHeadingSource | null;
   header_formatting: HeaderFormatting | null;
   is_auto_numbered: boolean;
 };
@@ -162,6 +178,7 @@ export type DocumentViewNode = {
   paragraph_alignment: ParagraphAlignment;
   paragraph_indents_pt: { left: number; first_line: number };
   numbering: { num_id: string | null; ilvl: number | null; is_auto_numbered: boolean };
+  heading?: HeadingValue;
   header_formatting: HeaderFormatting | null;
   body_run_formatting: RunFormatting | null;
   table_context?: TableContext;
@@ -202,7 +219,7 @@ function computeFingerprintToken(fp: FormattingFingerprint, styleId?: string): s
 // Pattern-based header detection fallback (ported from Python ingestor._extract_header_info).
 const HEADER_PATTERN = /^([A-Z][^.!?:]*(?:\s+[A-Z][^.!?:]*)*)([.:]?)(?:\s|$)/;
 
-function extractHeaderInfo(cleanText: string): { header_text: string | null; header_style: string | null } {
+function extractHeaderInfo(cleanText: string): { header_text: string | null; header_style: HeuristicHeadingSource | null } {
   if (!cleanText || cleanText.length < 2) return { header_text: null, header_style: null };
   if (!/^[A-Z]/.test(cleanText)) return { header_text: null, header_style: null };
 
@@ -229,6 +246,32 @@ function extractHeaderInfo(cleanText: string): { header_text: string | null; hea
   // (e.g. "Termination of Section 2.2(d)(i) shall not affect ..."), not headers.
   // Bare titles only fire from the short-paragraph branch above.
   return { header_text: null, header_style: null };
+}
+
+function deriveHeading(
+  paragraphStyleId: string | null,
+  cleanText: string,
+  headerText: string | null,
+  headerStyle: HeuristicHeadingSource | null,
+): HeadingValue | undefined {
+  const styleMatch = paragraphStyleId ? /^Heading([1-6])$/.exec(paragraphStyleId) : null;
+  if (styleMatch) {
+    return {
+      text: cleanText,
+      source: 'word_style',
+      level: Number.parseInt(styleMatch[1]!, 10),
+    };
+  }
+
+  if (headerText && headerStyle) {
+    return {
+      text: headerText,
+      source: headerStyle,
+      level: null,
+    };
+  }
+
+  return undefined;
 }
 
 function detectRunInHeader(params: {
@@ -1246,7 +1289,7 @@ export function buildNodesForDocumentView(params: {
 
     // Run-in header detection (formatting-based) first.
     let headerText: string | null = null;
-    let headerStyle: string | null = null;
+    let headerStyle: HeuristicHeadingSource | null = null;
     let headerFormatting: HeaderFormatting | null = null;
     let headerCharCount = 0;
 
@@ -1294,6 +1337,8 @@ export function buildNodesForDocumentView(params: {
       headerText = fallback.header_text;
       headerStyle = fallback.header_style;
     }
+
+    const heading = deriveHeading(paraFmt.styleId, cleanTextNoLabel, headerText, headerStyle);
 
     // ── Tag emission ──
     let tagged = cleanTextNoLabel;
@@ -1445,6 +1490,7 @@ export function buildNodesForDocumentView(params: {
       header_formatting: headerFormatting,
       body_run_formatting: bodyFmt,
     };
+    if (heading) node.heading = heading;
     if (tableContext) node.table_context = tableContext;
     nodes.push(node);
   }

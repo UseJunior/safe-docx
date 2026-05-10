@@ -449,13 +449,19 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
   });
 });
 
-describe('NVCA SPA regression: heading detection (#157)', () => {
-  test('read_file(format=json) surfaces SPA title with title_caps_centered header_style', async ({ given, when, then, and }: AllureBddContext) => {
+describe('NVCA SPA regression: heading detection (#179)', () => {
+  test('read_file(format=json) surfaces the SPA title via node.heading and omits heading on body paragraphs', async ({ given, when, then, and }: AllureBddContext) => {
     let mgr: ReturnType<typeof createMgr>;
     let filePath: string;
-    let parsed: Array<{
+    let titleNode: {
       id: string;
+      heading?: { text: string; source: string; level: number | null };
       list_metadata: { header_text: string | null; header_style: string | null };
+    };
+    let allNodes: Array<{
+      id: string;
+      clean_text: string;
+      heading?: { text: string; source: string; level: number | null };
     }>;
     const titlePid = '_bk_8c71639f1440';
 
@@ -463,24 +469,43 @@ describe('NVCA SPA regression: heading detection (#157)', () => {
       ({ mgr, filePath } = await openSPA());
     });
 
-    await when('read_file is called with format=json for the title paragraph', async () => {
-      const res = await readFile(mgr, {
+    await when('read_file is called with format=json for the title paragraph and the broader document', async () => {
+      const titleRes = await readFile(mgr, {
         file_path: filePath,
         node_ids: [titlePid],
         format: 'json',
       });
-      assertSuccess(res, 'read_file json');
-      parsed = JSON.parse(res.content as string);
+      assertSuccess(titleRes, 'read_file json title');
+      titleNode = JSON.parse(titleRes.content as string)[0]!;
+
+      const allRes = await readFile(mgr, {
+        file_path: filePath,
+        format: 'json',
+        limit: 100000,
+        offset: 1,
+      });
+      assertSuccess(allRes, 'read_file json full');
+      allNodes = JSON.parse(allRes.content as string);
     });
 
     await then('the title paragraph is returned', async () => {
-      expect(parsed).toHaveLength(1);
-      expect(parsed[0]!.id).toBe(titlePid);
+      expect(titleNode.id).toBe(titlePid);
     });
 
-    await and('list_metadata.header_style is title_caps_centered', async () => {
-      expect(parsed[0]!.list_metadata.header_style).toBe('title_caps_centered');
-      expect(parsed[0]!.list_metadata.header_text).toContain('PREFERRED STOCK PURCHASE AGREEMENT');
+    await and('the title paragraph exposes node.heading with title_caps_centered and null level', async () => {
+      expect(titleNode.heading).toEqual({
+        text: 'SERIES [___] PREFERRED STOCK PURCHASE AGREEMENT',
+        source: 'title_caps_centered',
+        level: null,
+      });
+      expect(titleNode.list_metadata.header_style).toBe('title_caps_centered');
+      expect(titleNode.list_metadata.header_text).toContain('PREFERRED STOCK PURCHASE AGREEMENT');
+    });
+
+    await and('a body paragraph omits the heading key entirely', async () => {
+      const bodyNode = allNodes.find((node) => !Object.prototype.hasOwnProperty.call(node, 'heading'));
+      expect(bodyNode).toBeDefined();
+      expect(bodyNode!.heading).toBeUndefined();
     });
   });
 });
