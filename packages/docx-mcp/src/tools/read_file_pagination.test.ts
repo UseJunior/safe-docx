@@ -433,6 +433,58 @@ describe('read_file pagination', () => {
     });
   });
 
+  test('multi-node toon overflow does not emit the first-node budget warning', async ({ when, then }: AllureBddContext) => {
+    const readTwoRowTable = async (cellTextLength: number) => {
+      const cellText = 'X'.repeat(cellTextLength);
+      const tableXml =
+        `<w:tbl>` +
+        `<w:tr><w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr>` +
+        `<w:tr><w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr>` +
+        `</w:tbl>`;
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:body>${tableXml}</w:body></w:document>`;
+      const mgr = createTestSessionManager();
+      const { filePath } = await openSession([], { mgr, xml, trackOpenStep: false });
+      const result = await readFile(mgr, { file_path: filePath, format: 'toon' });
+      assertSuccess(result, 'read');
+      return result;
+    };
+
+    const read = await when('the largest two-row table that still emits both rows is read under the budgeted toon path', async () => {
+      let low = 25_000;
+      let high = 30_000;
+      let bestLength: number | undefined;
+      let bestRead: Awaited<ReturnType<typeof readTwoRowTable>> | undefined;
+
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const current = await readTwoRowTable(mid);
+        if (Number(current.paragraphs_returned) === 2) {
+          bestLength = mid;
+          bestRead = current;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      if (!bestRead || bestLength == null) {
+        throw new Error('Failed to find a two-row table budget boundary for read_file.');
+      }
+
+      return { bestLength, bestRead };
+    });
+
+    await then('the multi-node overflow stays unlabeled even when the final content ends slightly above budget', async () => {
+      expect(Number(read.bestRead.paragraphs_returned)).toBe(2);
+      expect(estimateTokens(String(read.bestRead.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      expect(read.bestRead.warnings).toBeUndefined();
+      expect(read.bestLength).toBeGreaterThan(25_000);
+    });
+  });
+
   // ── Table coverage: renderToonWithBudget with body text after table ───
 
   test('renderToonWithBudget handles transition from table to body text within budget', async ({ given, when, then }: AllureBddContext) => {

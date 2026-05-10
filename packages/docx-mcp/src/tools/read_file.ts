@@ -427,10 +427,21 @@ export async function readFile(
       const budget = DEFAULT_CONTENT_TOKEN_BUDGET;
       const result =
         format === 'json'
-          ? renderJsonWithBudget(jsonNodes, DEFAULT_CONTENT_TOKEN_BUDGET)
+          ? renderJsonWithBudget(jsonNodes, budget)
           : renderWithBudget(enriched, format, budget, commentRendering);
       content = result.content;
       paragraphsReturned = result.count;
+
+      const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
+
+      return ok(mergeSessionResolutionMetadata({
+        file_path: manager.normalizePath(session.originalPath),
+        content,
+        total_paragraphs: totalParagraphs,
+        paragraphs_returned: paragraphsReturned,
+        ...(result.warnings ? { warnings: result.warnings } : {}),
+        ...paginationMeta,
+      }, metadata));
     }
 
     const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
@@ -451,6 +462,19 @@ export async function readFile(
 interface BudgetResult {
   content: string;
   count: number;
+  warnings?: string[];
+}
+
+const BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING = 'budget_exceeded_by_first_node';
+
+function getBudgetWarnings(
+  content: string,
+  count: number,
+  budget: number,
+): string[] | undefined {
+  if (count !== 1) return undefined;
+  if (estimateTokens(content) <= budget) return undefined;
+  return [BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING];
 }
 
 function renderWithBudget(
@@ -551,7 +575,11 @@ function renderToonWithBudget(
     }
   }
 
-  return { content: accumulated, count };
+  return {
+    content: accumulated,
+    count,
+    warnings: getBudgetWarnings(accumulated, count, budget),
+  };
 }
 
 function renderSimpleWithTableMarkers(
@@ -631,7 +659,11 @@ function renderSimpleWithBudget(
     accumulated += '\n#END_TABLE';
   }
 
-  return { content: accumulated, count };
+  return {
+    content: accumulated,
+    count,
+    warnings: getBudgetWarnings(accumulated, count, budget),
+  };
 }
 
 function renderJsonWithBudget(
@@ -653,5 +685,9 @@ function renderJsonWithBudget(
   }
 
   const content = '[\n' + items.join(',\n') + '\n]';
-  return { content, count };
+  return {
+    content,
+    count,
+    warnings: getBudgetWarnings(content, count, budget),
+  };
 }
