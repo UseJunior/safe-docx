@@ -49,6 +49,17 @@ Add to your MCP client:
 - Comments/Footnotes: `add_comment`, `get_comments`, `delete_comment`, `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote`
 - Session/Safety: `clear_session`, path-policy + archive guardrails
 
+## Heading detection in `read_file(format="json")`
+
+Each paragraph node in the JSON output exposes heading signals via `paragraph_style_id` and the `list_metadata.header_text` / `header_style` / `header_formatting` fields. The supported `header_style` values are:
+
+- `run_in_header` — bold/underline prefix followed by non-header body in the same paragraph (e.g. `**Indemnification.** The Company shall …`). Whole-paragraph bold/underline blocks are intentionally excluded.
+- `title_with_period` / `title_with_colon` — inline section header with explicit terminator (e.g. `Governing Law and Venue: this agreement is governed as stated.`).
+- `title_caps_centered` — centered, ALL-CAPS, bold standalone title (e.g. `SERIES A PREFERRED STOCK PURCHASE AGREEMENT`). Strict gates: no lowercase letters, ≥ 3 ASCII letters, ≥ 2 word-tokens (rejects placeholders like `[COMPANY]` and underscore signature lines), no list label, not in a table cell, ≤ 120 chars.
+- `title_with_period` / `title_with_colon` / `title_bare` — short standalone paragraphs (≤ 50 chars) only.
+
+To classify a paragraph as a heading, consumers should combine these signals with `paragraph_style_id` (`/^Heading[1-6]$/` is authoritative for depth). See [`skills/docx-editing/SKILL.md`](../../skills/docx-editing/SKILL.md) for the canonical precedence rule. Derived `is_heading` / `heading_level` fields are tracked in a follow-up issue.
+
 ## Document Families
 
 ### Automated fixture coverage in this repo

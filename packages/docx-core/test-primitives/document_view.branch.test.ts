@@ -379,4 +379,311 @@ describe('document_view branch coverage', () => {
       expect(toon).toContain('Hello');
     });
   });
+
+  test('long-paragraph regex no longer truncates body prose into a bare-title header (#157)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('paragraphs that begin with a capitalized word followed by body prose', async () => {
+      // Real false positives observed against tests/test_documents/nvca-regression/source.docx.
+      const termination = 'Termination of Section 2.2(d)(i) shall not affect any other provision of this Agreement.';
+      const exceptAs = 'Except as described in Section 2.2(d)(i), the Company has no obligation to repurchase the shares.';
+      bodyXml =
+        `<w:p><w:r><w:t>${termination}</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>${exceptAs}</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('"Termination of Section ..." is not classified as a header', async () => {
+      expect(nodes).toHaveLength(2);
+      expect(nodes[0]!.list_metadata.header_text).toBeNull();
+      expect(nodes[0]!.list_metadata.header_style).toBeNull();
+    });
+
+    await and('"Except as described ..." is not classified as a header', async () => {
+      expect(nodes[1]!.list_metadata.header_text).toBeNull();
+      expect(nodes[1]!.list_metadata.header_style).toBeNull();
+    });
+  });
+
+  test('detectRunInHeader rejects whole-paragraph bold blocks (#157)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a long fully-bold paragraph that ends with a colon', async () => {
+      // Mirrors all-bold defined-term lead-ins in the NVCA fixture. The
+      // paragraph is over SHORT_HEADER_MAX_LENGTH (50 chars) so the
+      // short-paragraph inline-style fallback does not fire — the only path
+      // that could classify it as a header is detectRunInHeader, which now
+      // requires a real header-prefix / body transition.
+      const text = 'This entire paragraph is bold and ends with a colon to mimic an all-bold defined term lead-in:';
+      bodyXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>${text}</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the whole-paragraph bold block is not a run-in header', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('run_in_header');
+    });
+
+    await and('the rendered header field stays empty (no toon stripping)', async () => {
+      expect(nodes[0]!.header).toBe('');
+    });
+  });
+
+  test('detectRunInHeader still fires on a real bold-prefix + body transition (no regression)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a paragraph with a bold "Indemnification." prefix followed by non-bold body', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>Indemnification.</w:t></w:r>` +
+          `<w:r><w:t> The Company shall indemnify each Investor as set forth herein.</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the bold prefix is classified as a run_in_header', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).toBe('run_in_header');
+      expect(nodes[0]!.list_metadata.header_text).toBe('Indemnification');
+    });
+  });
+
+  test('detects centered ALL-CAPS bold standalone title as title_caps_centered (#157)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a center-aligned, fully bold, ALL-CAPS standalone title', async () => {
+      // Mirrors the NVCA SPA's primary title.
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>SERIES A PREFERRED STOCK PURCHASE AGREEMENT</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the title is surfaced with header_style title_caps_centered', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_caps_centered');
+      expect(nodes[0]!.list_metadata.header_text).toBe('SERIES A PREFERRED STOCK PURCHASE AGREEMENT');
+    });
+
+    await and('header_formatting reflects the bold run', async () => {
+      expect(nodes[0]!.list_metadata.header_formatting?.bold).toBe(true);
+    });
+  });
+
+  test('title_caps_centered does not fire on centered text containing lowercase (#157)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a centered, bold, mixed-case standalone paragraph', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>Series A Preferred Stock Purchase Agreement</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the title_caps_centered rule does not fire', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('title_caps_centered');
+    });
+  });
+
+  test('title_caps_centered rejects bracketed single-token placeholders like [COMPANY] (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a centered, bold, single-token bracketed placeholder', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>[COMPANY]</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the placeholder is not classified as title_caps_centered', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('title_caps_centered');
+    });
+  });
+
+  test('title_caps_centered rejects punctuation/underscore-only signature lines (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a centered, bold underscore signature line (real ILPA fixture pattern)', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>____________________________________________</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the underscore line is not classified as title_caps_centered', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('title_caps_centered');
+      expect(nodes[0]!.list_metadata.header_text).toBeNull();
+    });
+  });
+
+  test('title_caps_centered admits long ALL-CAPS corporate titles up to 120 chars (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a centered, bold ALL-CAPS title between 60 and 120 chars (NVCA COI fixture pattern)', async () => {
+      // 87 chars — exceeds the old MAX_HEADER_TEXT_LENGTH of 60 but fits the
+      // new MAX_CENTERED_TITLE_LENGTH of 120.
+      const text = 'AMENDED AND RESTATED CERTIFICATE OF INCORPORATION OF FOO HOLDINGS INC.';
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>${text}</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the title is classified as title_caps_centered', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_caps_centered');
+      expect(nodes[0]!.list_metadata.header_text).toContain('AMENDED AND RESTATED');
+    });
+  });
+
+  test('title_caps_centered outranks short title_bare for short ALL-CAPS centered titles (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a short centered, bold ALL-CAPS title that would also match the short-paragraph fallback', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>SCHEDULE OF PURCHASERS</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the title is classified as title_caps_centered, not title_bare', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_caps_centered');
+    });
+  });
+
+  test('detectRunInHeader rejects whole-paragraph bold blocks even with trailing whitespace (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a fully-bold short paragraph with a trailing space in a separate non-bold run', async () => {
+      // Real false positive observed against ~/Downloads Co-Founder Agreement.docx:
+      // a wholly-bold "Compensation & Benefits." with a trailing space-only run.
+      bodyXml =
+        `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Compensation &amp; Benefits.</w:t></w:r>` +
+          `<w:r><w:t xml:space="preserve"> </w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the trailing-whitespace-only "body" does not satisfy the header→body transition', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('run_in_header');
+    });
+  });
 });

@@ -10,6 +10,12 @@ import { isReservedFootnote } from './footnotes.js';
 
 const SHORT_HEADER_MAX_LENGTH = 50;
 const MAX_HEADER_TEXT_LENGTH = 60;
+// Centered ALL-CAPS titles (e.g. NVCA COI's `AMENDED AND RESTATED CERTIFICATE
+// OF INCORPORATION OF FOO INC.`) routinely exceed 60 chars in real corporate
+// documents. The 60-char cap on `extractHeaderInfo` exists to avoid emitting a
+// "leading words = header" guess from long body prose, which doesn't apply to
+// the standalone-title detector.
+const MAX_CENTERED_TITLE_LENGTH = 120;
 const STYLE_EXAMPLE_TEXT_PREVIEW_LENGTH = 50;
 
 function getWAttr(el: Element, localName: string): string | null {
@@ -219,7 +225,10 @@ function extractHeaderInfo(cleanText: string): { header_text: string | null; hea
 
   if (terminator === '.') return { header_text: headerText, header_style: 'title_with_period' };
   if (terminator === ':') return { header_text: headerText, header_style: 'title_with_colon' };
-  return { header_text: headerText, header_style: 'title_bare' };
+  // Long-paragraph regex matches without an explicit terminator are body prose
+  // (e.g. "Termination of Section 2.2(d)(i) shall not affect ..."), not headers.
+  // Bare titles only fire from the short-paragraph branch above.
+  return { header_text: null, header_style: null };
 }
 
 function detectRunInHeader(params: {
@@ -245,32 +254,114 @@ function detectRunInHeader(params: {
     }
   }
 
+  // Walk runs once, splitting into bold/underline header-prefix text and
+  // everything-after body text. The header → body transition is what
+  // distinguishes a run-in header (bold prefix + body) from a fully-bold
+  // signature label or defined-term lead-in.
   let headerText = '';
+  let bodyText = '';
   let formatting: HeaderFormatting | null = null;
   let headerCharCount = 0;
+  let inHeader = true;
 
   for (const r of orderedUniqueRuns) {
     const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles });
     const isHeaderStyle = fmt.bold || fmt.underline;
-    if (!isHeaderStyle) break;
-
-    // Accumulate run text.
     const ts = Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t));
-    for (const t of ts) {
-      const tc = t.textContent ?? '';
-      headerText += tc;
-      headerCharCount += tc.length;
-    }
+    let runText = '';
+    for (const t of ts) runText += t.textContent ?? '';
 
-    if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };
+    if (inHeader && isHeaderStyle) {
+      headerText += runText;
+      headerCharCount += runText.length;
+      if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };
+    } else {
+      inHeader = false;
+      bodyText += runText;
+    }
   }
 
   const trimmed = headerText.trim();
   if (!trimmed) return null;
   if (!punct.has(trimmed[trimmed.length - 1]!)) return null;
   if (!formatting) return null;
+  // Require a real header-prefix → body transition: there must be non-whitespace
+  // body text after the bold/underline prefix. Trailing-whitespace-only "body"
+  // (e.g. a single bold run followed by a non-bold run that holds just `" "`)
+  // is not a transition — those are still whole-paragraph bold blocks
+  // (signature labels, all-bold short titles, etc.) and must be rejected.
+  if (!bodyText.trim()) return null;
 
   return { raw_text: trimmed, formatting, headerCharCount };
+}
+
+/**
+ * Detect a centered, ALL-CAPS, bold standalone title (e.g. an NVCA SPA's
+ * `SERIES […] PREFERRED STOCK PURCHASE AGREEMENT` title).
+ *
+ * Strict gates only — fires only when the paragraph cannot be confused with
+ * body prose, a placeholder, or a signature line:
+ *   - paragraph alignment is CENTER
+ *   - clean text contains no lowercase letters
+ *   - clean text contains ≥ 3 ASCII letters AND ≥ 2 whitespace-separated
+ *     word-tokens (so single-token bracketed placeholders like `[COMPANY]`
+ *     and underscore-only signature lines like `____________` are rejected)
+ *   - clean text is non-empty and ≤ MAX_CENTERED_TITLE_LENGTH
+ *   - all visible runs are bold (a single non-bold char disqualifies)
+ */
+function detectTitleCapsCentered(params: {
+  paragraph: Element;
+  paragraphPPr: Element | null;
+  paragraphStyleId: string | null;
+  alignment: ParagraphAlignment;
+  cleanTextNoLabel: string;
+  styles: StylesModel;
+}): { raw_text: string; formatting: HeaderFormatting } | null {
+  const { paragraph, paragraphPPr, paragraphStyleId, alignment, cleanTextNoLabel, styles } = params;
+  if (alignment !== 'CENTER') return null;
+  const trimmed = cleanTextNoLabel.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > MAX_CENTERED_TITLE_LENGTH) return null;
+  if (/[a-z]/.test(trimmed)) return null;
+  // Content gate: punctuation/underscore-only signature lines and bracketed
+  // single-token placeholders (`[COMPANY]`, `[___]`, `<NAME>`) must not
+  // classify as titles. Real titles are multi-word ALL-CAPS phrases.
+  const letterCount = (trimmed.match(/[A-Z]/g) ?? []).length;
+  if (letterCount < 3) return null;
+  const wordTokens = trimmed.split(/\s+/).filter((w) => /[A-Z]/.test(w));
+  if (wordTokens.length < 2) return null;
+
+  const runs = getParagraphRuns(paragraph);
+  if (runs.length === 0) return null;
+  const orderedUniqueRuns: Element[] = [];
+  const seen = new Set<Element>();
+  for (const tr of runs) {
+    if (!seen.has(tr.r)) {
+      seen.add(tr.r);
+      orderedUniqueRuns.push(tr.r);
+    }
+  }
+
+  let formatting: HeaderFormatting | null = null;
+  let sawAnyText = false;
+  for (const r of orderedUniqueRuns) {
+    const ts = Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t));
+    let runHasText = false;
+    for (const t of ts) {
+      if ((t.textContent ?? '').length > 0) {
+        runHasText = true;
+        break;
+      }
+    }
+    if (!runHasText) continue;
+    const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles });
+    if (!fmt.bold) return null;
+    sawAnyText = true;
+    if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };
+  }
+  if (!sawAnyText || !formatting) return null;
+
+  return { raw_text: trimmed, formatting };
 }
 
 function inferSemanticName(params: {
@@ -1169,6 +1260,33 @@ export function buildNodesForDocumentView(params: {
       }
     } catch {
       // ignore
+    }
+
+    // Centered ALL-CAPS bold standalone titles (e.g. an NVCA SPA's
+    // `SERIES […] PREFERRED STOCK PURCHASE AGREEMENT`). Runs before
+    // extractHeaderInfo so the documented precedence (title_caps_centered
+    // outranks short standalone title_bare/title_with_period/title_with_colon)
+    // matches the implementation. Only fires when run_in_header did not match
+    // AND the paragraph has no list label AND is not in a table cell. The
+    // try/catch is defensive against malformed XML in user documents.
+    if (!headerText && !labelString && !tableContext) {
+      try {
+        const titleHdr = detectTitleCapsCentered({
+          paragraph: p,
+          paragraphPPr: paraPPr ?? null,
+          paragraphStyleId: paraFmt.styleId,
+          alignment: paraFmt.alignment,
+          cleanTextNoLabel,
+          styles: stylesModel,
+        });
+        if (titleHdr) {
+          headerText = titleHdr.raw_text;
+          headerStyle = 'title_caps_centered';
+          headerFormatting = titleHdr.formatting;
+        }
+      } catch {
+        // ignore: malformed run/style data falls through to extractHeaderInfo.
+      }
     }
 
     if (!headerText) {
