@@ -23,7 +23,7 @@ axiom compareDocumentXml : OoxmlDoc → OoxmlDoc → OoxmlDoc
 axiom acceptAllChanges : OoxmlDoc → OoxmlDoc
 
 /-- Abstract Lean symbol mirroring `rejectAllChanges` in
-    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:519-625`. -/
+    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:519-626`. -/
 axiom rejectAllChanges : OoxmlDoc → OoxmlDoc
 
 /-- Abstract Lean symbol mirroring `validateFieldStructure` in
