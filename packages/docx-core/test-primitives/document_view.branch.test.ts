@@ -461,6 +461,341 @@ describe('document_view branch coverage', () => {
     });
   });
 
+  test('short standalone table-cell paragraphs do not classify as bare headers (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let paragraphs: Array<{ id: string; p: Element; tableContext?: {
+      table_id: string;
+      table_index: number;
+      row_index: number;
+      col_index: number;
+      col_header: string;
+      total_rows: number;
+      total_cols: number;
+      is_header_row: boolean;
+      para_in_cell: number;
+      cell_para_count: number;
+    } }>;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a short standalone paragraph in a table cell context', async () => {
+      bodyXml = `<w:p><w:r><w:t>Purpose</w:t></w:r></w:p>`;
+      const [paragraph] = makeParagraphs(bodyXml!);
+      paragraphs = [{
+        ...paragraph!,
+        tableContext: {
+          table_id: '_tbl_0',
+          table_index: 0,
+          row_index: 1,
+          col_index: 0,
+          col_header: 'Section',
+          total_rows: 2,
+          total_cols: 1,
+          is_header_row: false,
+          para_in_cell: 0,
+          cell_para_count: 1,
+        },
+      }];
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: paragraphs!,
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the table-cell paragraph does not emit header metadata', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_text).toBeNull();
+      expect(nodes[0]!.list_metadata.header_style).toBeNull();
+    });
+
+    await and('table_context is preserved on the node', async () => {
+      expect(nodes[0]!.table_context?.table_id).toBe('_tbl_0');
+    });
+  });
+
+  test('signature-label clusters are suppressed in a post-pass (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('five consecutive signature-label paragraphs', async () => {
+      const labels = ['By:', 'Name:', 'Title:', 'Address:', 'Email:'];
+      bodyXml = labels.map((label) => `<w:p><w:r><w:t>${label}</w:t></w:r></w:p>`).join('');
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('every paragraph in the cluster has null header metadata', async () => {
+      expect(nodes).toHaveLength(5);
+      for (const node of nodes) {
+        expect(node.list_metadata.header_text).toBeNull();
+        expect(node.list_metadata.header_style).toBeNull();
+        expect(node.list_metadata.header_formatting).toBeNull();
+      }
+    });
+
+    await and('the duplicated header fields are cleared for rendering consistency', async () => {
+      for (const node of nodes) {
+        expect(node.header).toBe('');
+        expect(node.header_formatting).toBeNull();
+      }
+    });
+  });
+
+  test('all-caps signature-label cluster (COMPANY: / PURCHASER:) is suppressed (#187)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('an NVCA-style all-caps signature cluster', async () => {
+      // Mirrors the NVCA SPA paragraphs 312-321 shape: alternating
+      // PARTY-name lines with COMPANY:/PURCHASER: prefix and By:/Name:/Title: rows.
+      const labels = [
+        'COMPANY: [Insert Company Name]',
+        'By:',
+        'Name:',
+        'Title:',
+        'Address:',
+        'PURCHASER: [Insert Investor Name]',
+        'By:',
+        'Name:',
+        'Title:',
+      ];
+      bodyXml = labels.map((label) => `<w:p><w:r><w:t>${label}</w:t></w:r></w:p>`).join('');
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('every paragraph in the all-caps cluster has null header metadata', async () => {
+      expect(nodes).toHaveLength(9);
+      for (const node of nodes) {
+        expect(node.list_metadata.header_style).toBeNull();
+        expect(node.list_metadata.header_text).toBeNull();
+      }
+    });
+  });
+
+  test('signature cluster does not erase a non-label company-name lead-in (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a non-label company-name paragraph followed by signature-label paragraphs', async () => {
+      // `ACME CORP` does not match either signature-label regex (no trailing
+      // colon, multi-word all-caps). The density gate fires for the
+      // window, but suppression must NOT mutate non-label paragraphs.
+      // The real NVCA shape `COMPANY: [Insert Company Name]` matches the
+      // prefix regex and is exercised by the test above.
+      bodyXml =
+        `<w:p><w:r><w:t>ACME CORP</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Name:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Title:</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the three label paragraphs are suppressed', async () => {
+      expect(nodes).toHaveLength(4);
+      for (let i = 1; i < 4; i++) {
+        expect(nodes[i]!.list_metadata.header_style).toBeNull();
+        expect(nodes[i]!.list_metadata.header_text).toBeNull();
+      }
+    });
+
+    await and('the non-label lead-in keeps its heuristic classification', async () => {
+      expect(nodes[0]!.clean_text).toBe('ACME CORP');
+      expect(nodes[0]!.list_metadata.header_text).not.toBeNull();
+    });
+  });
+
+  test('signature cluster preserves a non-label body neighbor (#187, regression for over-suppression)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('four signature labels followed by an unstyled short paragraph', async () => {
+      // `Product` would independently classify as title_bare via the
+      // short-paragraph fallback. Earlier revisions of suppressSignatureClusters
+      // erased every paragraph inside a qualifying window, which would have
+      // cleared `Product` here. The fix narrows suppression to label
+      // paragraphs only.
+      bodyXml =
+        `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Name:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Title:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Address:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Product</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the four signature labels are suppressed', async () => {
+      expect(nodes).toHaveLength(5);
+      for (let i = 0; i < 4; i++) {
+        expect(nodes[i]!.list_metadata.header_style).toBeNull();
+      }
+    });
+
+    await and('the non-label neighbor keeps its heuristic header_text', async () => {
+      expect(nodes[4]!.clean_text).toBe('Product');
+      expect(nodes[4]!.list_metadata.header_text).not.toBeNull();
+    });
+  });
+
+  test('signature cluster preserves custom-style headings (Heading7 / Title / Subtitle / Article5L1) (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('four signature labels followed by four non-Heading1-6 styled headings', async () => {
+      // The fixture corpus uses heading-ish styles beyond Heading1-6
+      // (Heading7-9, Title, Subtitle, Article5L1-8). They are not signature
+      // labels, so they must survive suppression even though they sit
+      // adjacent to a label-dense window.
+      bodyXml =
+        `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Name:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Title:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Address:</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Heading7"/></w:pPr><w:r><w:t>Execution</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Schedule A</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Subtitle"/></w:pPr><w:r><w:t>Preliminary</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Article5L1"/></w:pPr><w:r><w:t>Definitions</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the four signature labels are suppressed', async () => {
+      expect(nodes).toHaveLength(8);
+      for (let i = 0; i < 4; i++) {
+        expect(nodes[i]!.list_metadata.header_style).toBeNull();
+      }
+    });
+
+    await and('each custom-styled heading keeps its detected header_text', async () => {
+      for (let i = 4; i < 8; i++) {
+        expect(nodes[i]!.list_metadata.header_text).not.toBeNull();
+      }
+    });
+  });
+
+  test('consecutive WHEREAS recitals are not classified as signature-cluster labels (#187 regression)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('four consecutive WHEREAS recital paragraphs', async () => {
+      // WHEREAS clauses use a comma after the lead-in word, not a colon,
+      // so they do not match SIGNATURE_LABEL_PREFIX_RE. They are also
+      // long, so they do not pick up title_bare/title_with_colon. Lock
+      // in that suppression does not touch them.
+      bodyXml =
+        `<w:p><w:r><w:t>WHEREAS, the parties desire to enter into this Agreement on the terms set forth herein.</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>WHEREAS, each party has the requisite authority to execute and deliver this Agreement.</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>WHEREAS, the parties acknowledge the mutual covenants and agreements stated below.</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>WHEREAS, this Agreement is intended to be legally binding and enforceable.</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('no WHEREAS recital is mutated by signature-cluster suppression', async () => {
+      expect(nodes).toHaveLength(4);
+      for (const node of nodes) {
+        expect(node.list_metadata.header_style).toBeNull();
+        expect(node.list_metadata.header_text).toBeNull();
+      }
+    });
+  });
+
+  test('real heading immediately after a signature cluster is preserved (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('four signature labels followed by a Heading1-styled section title', async () => {
+      // Boundary case: signature page followed by the next section heading.
+      // The cluster window covering all 5 paragraphs has 4/5 = 80% match,
+      // which would have erased the Heading1 paragraph under the original
+      // "any covering window" semantics.
+      bodyXml =
+        `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Name:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Title:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Address:</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Product</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the four signature labels are suppressed', async () => {
+      expect(nodes).toHaveLength(5);
+      for (let i = 0; i < 4; i++) {
+        expect(nodes[i]!.list_metadata.header_style).toBeNull();
+      }
+    });
+
+    await and('the adjacent Heading1 paragraph still emits a header_text', async () => {
+      const heading = nodes[4]!;
+      expect(heading.clean_text).toBe('Product');
+      expect(heading.list_metadata.header_text).not.toBeNull();
+    });
+  });
+
   test('detectRunInHeader rejects whole-paragraph bold blocks (#157)', async ({ given, when, then, and }: AllureBddContext) => {
     let bodyXml: string;
     let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
@@ -879,12 +1214,16 @@ describe('document_view branch coverage', () => {
       }
     });
 
-    await and('the explanatory list_metadata.header_style remains populated for debugging', async () => {
-      expect(nodes[0]!.list_metadata.header_style).toBe('title_bare');
-      expect(nodes[1]!.list_metadata.header_style).toBe('title_with_colon');
-      expect(nodes[1]!.list_metadata.header_text).toBe('Notice Address');
-      expect(nodes[2]!.list_metadata.header_style).toBe('title_with_period');
-      expect(nodes[3]!.list_metadata.header_style).toBe('run_in_header');
+    await and('list_metadata.header_style is null inside table cells (upstream !tableContext gates from #188)', async () => {
+      // #188 added !tableContext gates at all three heuristic call sites
+      // (detectRunInHeader, detectTitleCapsCentered, extractHeaderInfo). The
+      // deriveHeading() isInTableCell gate added in #190 is defense-in-depth:
+      // even if a future change drops one of those upstream gates, the
+      // canonical `node.heading` predicate still won't promote a heuristic
+      // match inside a cell.
+      for (const node of nodes) {
+        expect(node.list_metadata.header_style).toBeNull();
+      }
     });
   });
 

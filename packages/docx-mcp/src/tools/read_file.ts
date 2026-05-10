@@ -446,6 +446,7 @@ export async function readFile(
         paragraphs_returned: paragraphsReturned,
         ...(result.warnings ? { warnings: result.warnings } : {}),
         ...paginationMeta,
+        ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
       }, metadata));
     }
 

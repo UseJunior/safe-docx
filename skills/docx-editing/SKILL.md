@@ -257,6 +257,7 @@ Use `node.heading != null` as the canonical "is this a heading" check.
 - Style inheritance does not count. Custom styles like `HeadingPara1` / `HeadingPara2` may be based on Word heading styles but still omit `heading` unless their own `paragraph_style_id` is exactly `Heading1`…`Heading6`.
 - If `heading` is present with any heuristic source, `level` is always `null`.
 - If `heading` is absent, the paragraph is not a heading. The key is omitted entirely in JSON output; it is not set to `null`.
+- Heuristic-sourced headings are suppressed inside table cells (`table_context != null`) — ordinary label/value cell text like `"Notice Address:"` or `"Closing."` will NOT surface as a heading. Built-in `word_style` headings still fire inside cells. Consecutive label-style cluster paragraphs (e.g. signature blocks) are also suppressed in a post-pass.
 
 Precedence is fixed: exact Word built-in heading styles win over every heuristic detector. This means a paragraph can still expose `list_metadata.header_style` for explanation while `heading.source` is `word_style`.
 
