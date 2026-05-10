@@ -364,6 +364,54 @@ function detectTitleCapsCentered(params: {
   return { raw_text: trimmed, formatting };
 }
 
+const SIGNATURE_LABEL_LINE_RE = /^[A-Z][a-zA-Z ]{0,28}:\s*$/;
+const SIGNATURE_LABEL_PREFIX_RE = /^[A-Z]+(?::\s|$)/;
+
+function isSignatureClusterLabel(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return SIGNATURE_LABEL_LINE_RE.test(trimmed) || SIGNATURE_LABEL_PREFIX_RE.test(trimmed);
+}
+
+function suppressSignatureClusters(nodes: DocumentViewNode[]): void {
+  if (nodes.length < 4) return;
+
+  const prefixMatches = new Array<number>(nodes.length + 1).fill(0);
+  for (let idx = 0; idx < nodes.length; idx++) {
+    prefixMatches[idx + 1] = prefixMatches[idx]! + (isSignatureClusterLabel(nodes[idx]!.clean_text) ? 1 : 0);
+  }
+
+  const coverage = new Array<number>(nodes.length + 1).fill(0);
+  for (let start = 0; start <= nodes.length - 4; start++) {
+    for (let end = start + 3; end < nodes.length; end++) {
+      const runLength = end - start + 1;
+      const matchCount = prefixMatches[end + 1]! - prefixMatches[start]!;
+      if ((matchCount * 4) < (runLength * 3)) continue;
+      coverage[start]! += 1;
+      coverage[end + 1]! -= 1;
+    }
+  }
+
+  let activeClusters = 0;
+  for (let idx = 0; idx < nodes.length; idx++) {
+    activeClusters += coverage[idx]!;
+    if (activeClusters <= 0) continue;
+
+    const node = nodes[idx]!;
+    // The density gate authorizes us to clear *labels* inside the window;
+    // non-label neighbors (real headings, body text) keep their detected
+    // heading metadata regardless of paragraph style. This avoids erasing
+    // an adjacent section heading or body line that happens to fall inside
+    // a window meeting the density threshold.
+    if (!isSignatureClusterLabel(node.clean_text)) continue;
+    node.header = '';
+    node.header_formatting = null;
+    node.list_metadata.header_text = null;
+    node.list_metadata.header_style = null;
+    node.list_metadata.header_formatting = null;
+  }
+}
+
 function inferSemanticName(params: {
   fp: FormattingFingerprint;
   nodes: DocumentViewNode[];
@@ -1251,7 +1299,13 @@ export function buildNodesForDocumentView(params: {
     let headerCharCount = 0;
 
     try {
-      const hdr = detectRunInHeader({ paragraph: p, paragraphPPr: paraPPr ?? null, paragraphStyleId: paraFmt.styleId, styles: stylesModel });
+      // Skip in-table run-in header detection — table cells are key/value
+      // layout and a bold prefix is a label, not a section heading.
+      // Mirrors the !tableContext gates on detectTitleCapsCentered and
+      // extractHeaderInfo below.
+      const hdr = tableContext
+        ? null
+        : detectRunInHeader({ paragraph: p, paragraphPPr: paraPPr ?? null, paragraphStyleId: paraFmt.styleId, styles: stylesModel });
       if (hdr) {
         headerText = hdr.raw_text.replace(/[.:\-]+$/g, '');
         headerStyle = 'run_in_header';
@@ -1289,7 +1343,7 @@ export function buildNodesForDocumentView(params: {
       }
     }
 
-    if (!headerText) {
+    if (!headerText && !tableContext) {
       const fallback = extractHeaderInfo(cleanTextNoLabel);
       headerText = fallback.header_text;
       headerStyle = fallback.header_style;
@@ -1448,6 +1502,8 @@ export function buildNodesForDocumentView(params: {
     if (tableContext) node.table_context = tableContext;
     nodes.push(node);
   }
+
+  suppressSignatureClusters(nodes);
 
   const styles = discoverStyles(nodes);
   for (const n of nodes) {

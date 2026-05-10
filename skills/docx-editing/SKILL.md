@@ -249,6 +249,8 @@ Tags can be nested: `<b><i>bold italic</i></b>`. Formatting from the original ma
 
 Across all rules, the actual heading text is in `list_metadata.header_text`, and the formatting (bold/italic/underline) of the title runs is in `list_metadata.header_formatting`.
 
+Detection is suppressed inside table cells; use `table_context` when you need cell context instead of heading metadata. Consecutive label-style cluster paragraphs (for example signature blocks) are also suppressed in a post-pass.
+
 Derived `is_heading` / `heading_level` fields are tracked separately in a follow-up issue and are NOT in the current schema.
 
 The Google Docs renderer (`packages/google-docs-core`) mirrors this schema structurally; it does not currently emit `title_caps_centered` (Google Docs has different heading semantics).

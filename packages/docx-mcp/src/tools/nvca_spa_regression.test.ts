@@ -30,6 +30,7 @@ import { parseOutputXml } from '../testing/session-test-utils.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const SOURCE = path.resolve(__dirname, '../../../../tests/test_documents/nvca-regression/source.docx');
+const BONTERMS_NDA_SOURCE = path.resolve(__dirname, '../../../../tests/test_documents/open-agreements/bonterms-mutual-nda.docx');
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -51,12 +52,16 @@ async function makeTempDir(prefix = 'nvca-spa-'): Promise<string> {
   return dir;
 }
 
-async function openSPA(): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
+async function openFixture(source: string): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
   const mgr = createMgr();
-  const openRes = await openDocument(mgr, { file_path: SOURCE });
+  const openRes = await openDocument(mgr, { file_path: source });
   expect(openRes.success).toBe(true);
-  const filePath = (openRes.file_path as string) ?? SOURCE;
+  const filePath = (openRes.file_path as string) ?? source;
   return { mgr, sid: filePath, filePath };
+}
+
+async function openSPA(): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
+  return openFixture(SOURCE);
 }
 
 function assertSuccess(result: { success: boolean }, label: string): void {
@@ -481,6 +486,70 @@ describe('NVCA SPA regression: heading detection (#157)', () => {
     await and('list_metadata.header_style is title_caps_centered', async () => {
       expect(parsed[0]!.list_metadata.header_style).toBe('title_caps_centered');
       expect(parsed[0]!.list_metadata.header_text).toContain('PREFERRED STOCK PURCHASE AGREEMENT');
+    });
+  });
+
+  test('Bonterms NDA table-cell paragraphs do not emit heading styles (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createMgr>;
+    let filePath: string;
+    let parsed: Array<{
+      id: string;
+      table_context?: Record<string, unknown>;
+      list_metadata: { header_style: string | null };
+    }>;
+
+    await given('the Bonterms NDA fixture is open in a new session', async () => {
+      ({ mgr, filePath } = await openFixture(BONTERMS_NDA_SOURCE));
+    });
+
+    await when('read_file is called with format=json for the full document', async () => {
+      const res = await readFile(mgr, {
+        file_path: filePath,
+        format: 'json',
+      });
+      assertSuccess(res, 'read_file bonterms json');
+      parsed = JSON.parse(res.content as string);
+    });
+
+    await then('the fixture includes table-context paragraphs', async () => {
+      expect(parsed.some((node) => Boolean(node.table_context))).toBe(true);
+    });
+
+    await and('every table-context paragraph has a null header style', async () => {
+      const tableNodes = parsed.filter((node) => Boolean(node.table_context));
+      expect(tableNodes.every((node) => node.list_metadata.header_style === null)).toBe(true);
+    });
+  });
+
+  test('NVCA SPA signature-block paragraphs 312-321 have null header styles (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createMgr>;
+    let filePath: string;
+    let parsed: Array<{
+      clean_text: string;
+      list_metadata: { header_style: string | null };
+    }>;
+
+    await given('the NVCA SPA source document is open in a new session', async () => {
+      ({ mgr, filePath } = await openSPA());
+    });
+
+    await when('read_file is called for paragraphs 312 through 321', async () => {
+      const res = await readFile(mgr, {
+        file_path: filePath,
+        format: 'json',
+        offset: 312,
+        limit: 10,
+      });
+      assertSuccess(res, 'read_file spa signature block');
+      parsed = JSON.parse(res.content as string);
+    });
+
+    await then('the signature-block window is returned', async () => {
+      expect(parsed).toHaveLength(10);
+    });
+
+    await and('every paragraph in the window has a null header style', async () => {
+      expect(parsed.every((node) => node.list_metadata.header_style === null)).toBe(true);
     });
   });
 });
