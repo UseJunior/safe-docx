@@ -966,6 +966,41 @@ describe('read_file comment rendering', () => {
     expect(content).toContain(`#COMMENT ${opened.firstParaId} c${id} SmokeTest `);
   });
 
+  test('surfaces comment_load_error when comments.xml is unparseable (#154 peer-review follow-up)', async () => {
+    // Negative-path companion to the #154 regression: read_file used to `catch {}` malformed
+    // comments.xml silently — making the original bug invisible. The new behavior is to
+    // continue serving body content but surface the underlying error via metadata.
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body><w:p><w:r><w:t>Body content stays readable.</w:t></w:r></w:p></w:body>` +
+      `</w:document>`;
+    // Genuinely malformed: a w14: attribute on a root that doesn't declare xmlns:w14,
+    // which triggers xmldom's NamespaceError on parse.
+    const malformedComments =
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:comment w:id="0" w:author="X" w:initials="X" w:date="2026-01-01T00:00:00Z">` +
+      `<w:p w14:paraId="DEADBEEF"><w:r><w:t>boom</w:t></w:r></w:p>` +
+      `</w:comment></w:comments>`;
+    const opened = await openSession([], {
+      xml: documentXml,
+      extraFiles: { 'word/comments.xml': malformedComments },
+    });
+
+    const read = await readFile(opened.mgr, {
+      file_path: opened.inputPath,
+      comment_rendering: 'inline_markers',
+    });
+    assertSuccess(read, 'read_file');
+    // Body content still reaches the caller — the comment-load failure must not abort read_file.
+    const content = String(read.content);
+    expect(content).toContain('Body content stays readable');
+    // And the cause is surfaced rather than swallowed.
+    expect(typeof read.comment_load_error).toBe('string');
+    expect(String(read.comment_load_error)).toMatch(/NamespaceError|prefix/i);
+  });
+
   test('inline_markers renders multi-paragraph ranges only at the boundary paragraphs', async () => {
     const { lines } = await renderCommentFixture({
       bodyXml:

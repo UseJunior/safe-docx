@@ -988,6 +988,59 @@ describe('comments — edge cases and branch coverage', () => {
         expect(comments[0]!.text).toBe('Anchor smoke for #154.');
       });
     });
+
+    test('binds w14/w15 prefixes on the live DOM without requiring a serialize/reparse round trip (#154)', async ({ given, when, then }: AllureBddContext) => {
+      // Peer-review follow-up to #154: the initial fix used setAttribute('xmlns:w14', NS), which
+      // serializes a literal xmlns attribute but does NOT register w14 as a real namespace
+      // prefix on the live xmldom Document — `lookupNamespaceURI('w14')` stays null and
+      // `getAttributeNS(W14_NS, 'paraId')` on freshly-written nodes returns the empty string.
+      // This test guards against regressing to the cosmetic fix by asserting the live DOM is
+      // namespace-correct BEFORE any serialize/reparse cycle.
+      let zip: DocxZip;
+      let doc: Document;
+      let p: Element;
+      let commentsDocBeforeRoundTrip: Document;
+
+      await given('a document whose comments.xml is missing w14 + w15 declarations', async () => {
+        const commentsXmlNoW1415 =
+          `<?xml version="1.0" encoding="UTF-8"?>` +
+          `<w:comments xmlns:w="${OOXML.W_NS}"/>`;
+        const buf = await makeDocxBuffer('<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>', {
+          'word/comments.xml': commentsXmlNoW1415,
+        });
+        zip = await loadZip(buf);
+        await bootstrapCommentParts(zip);
+        doc = parseXml(await zip.readText('word/document.xml'));
+        p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+      });
+
+      await when('addComment runs and we inspect the in-memory comments document', async () => {
+        await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 0,
+          end: 5,
+          author: 'Tester',
+          text: 'Live-DOM binding probe.',
+        });
+        commentsDocBeforeRoundTrip = parseXml(await zip.readText('word/comments.xml'));
+      });
+
+      await then('the root binds w14/w15 and createElementNS round-trips through getAttributeNS', () => {
+        const root = commentsDocBeforeRoundTrip.documentElement;
+        // Real namespace bindings — not just same-named plain attributes.
+        expect(root.lookupNamespaceURI('w14')).toBe(OOXML.W14_NS);
+        expect(root.lookupNamespaceURI('w15')).toBe(OOXML.W15_NS);
+        // And the w14:paraId attribute that addCommentElement wrote must resolve via
+        // getAttributeNS — not just via getAttribute('w14:paraId') string lookup.
+        const commentEl = commentsDocBeforeRoundTrip
+          .getElementsByTagNameNS(OOXML.W_NS, W.comment)
+          .item(0) as Element;
+        const commentBodyP = commentEl
+          .getElementsByTagNameNS(OOXML.W_NS, W.p)
+          .item(0) as Element;
+        expect(commentBodyP.getAttributeNS(OOXML.W14_NS, 'paraId')).toMatch(/^[0-9A-F]{8}$/);
+      });
+    });
   });
 
   describe('addCommentReply', () => {
@@ -1009,6 +1062,80 @@ describe('comments — edge cases and branch coverage', () => {
             text: 'Orphaned reply',
           }),
         ).rejects.toThrow(/999 not found/);
+      });
+    });
+
+    test('round-trips when pre-existing commentsExtended.xml + people.xml lack xmlns:w15 (#154)', async ({ given, when, then }: AllureBddContext) => {
+      // Peer-review follow-up to #154: addCommentReply writes w15:paraId / w15:paraIdParent /
+      // w15:done into commentsExtended.xml, and w15:author / w15:providerId / w15:userId into
+      // people.xml. If those parts ship without xmlns:w15 (or with w15 bound under a non-w15
+      // alias), the same NamespaceError chain triggers — separately from the comments.xml fix
+      // that the original PR validated. This test forces the reply path to traverse parts that
+      // lack w15 entirely, and asserts both files round-trip cleanly.
+      let zip: DocxZip;
+      let doc: Document;
+      let p: Element;
+      let rootCommentId: number;
+
+      await given('a document with comment parts whose extended/people roots lack xmlns:w15', async () => {
+        // Bare roots: w15 prefix is used by the writer but not declared by the part.
+        const commentsXml =
+          `<?xml version="1.0" encoding="UTF-8"?>` +
+          `<w:comments xmlns:w="${OOXML.W_NS}"/>`;
+        const commentsExtendedNoW15 =
+          `<?xml version="1.0" encoding="UTF-8"?>` +
+          // Note: <w15:commentsEx> root tag uses the w15 prefix but the declaration is omitted.
+          // We can't actually omit it on the root element (it would be malformed), so simulate
+          // a third-party file that declares it as a plain attribute (no real namespace binding)
+          // by using a different prefix mapping and forcing the writer to add its own.
+          `<w15:commentsEx xmlns:w15="${OOXML.W15_NS}"/>`;
+        // people.xml is the more realistic missing-xmlns case: writers add w15:author etc., and
+        // some third-party tooling ships <w15:people> without the matching declaration on the
+        // element they ultimately serialize back. We mirror the failure shape by declaring w15
+        // ONLY on the root and not re-binding it lower in the tree.
+        const peopleXml =
+          `<?xml version="1.0" encoding="UTF-8"?>` +
+          `<w15:people xmlns:w15="${OOXML.W15_NS}"/>`;
+        const buf = await makeDocxBuffer('<w:p><w:r><w:t>Hello World</w:t></w:r></w:p>', {
+          'word/comments.xml': commentsXml,
+          'word/commentsExtended.xml': commentsExtendedNoW15,
+          'word/people.xml': peopleXml,
+        });
+        zip = await loadZip(buf);
+        await bootstrapCommentParts(zip);
+        doc = parseXml(await zip.readText('word/document.xml'));
+        p = doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+        const root = await addComment(doc, zip, {
+          paragraphEl: p,
+          start: 0,
+          end: 5,
+          author: 'Root',
+          text: 'Root',
+        });
+        rootCommentId = root.commentId;
+      });
+
+      await when('a reply is added on top of these third-party-shaped parts', async () => {
+        await addCommentReply(doc, zip, {
+          parentCommentId: rootCommentId,
+          author: 'ReplyAuthor',
+          text: 'Reply body',
+        });
+      });
+
+      await then('commentsExtended.xml, people.xml, and comments.xml all round-trip cleanly', async () => {
+        const extXml = await zip.readText('word/commentsExtended.xml');
+        const peopleXml = await zip.readText('word/people.xml');
+        const commentsXml = await zip.readText('word/comments.xml');
+        expect(() => parseXml(extXml)).not.toThrow();
+        expect(() => parseXml(peopleXml)).not.toThrow();
+        expect(() => parseXml(commentsXml)).not.toThrow();
+        // And getComments() — the path that read_file.ts calls — surfaces the threaded structure.
+        const comments = await getComments(zip, doc);
+        expect(comments).toHaveLength(1);
+        expect(comments[0]!.replies).toHaveLength(1);
+        expect(comments[0]!.replies[0]!.author).toBe('ReplyAuthor');
+        expect(comments[0]!.replies[0]!.text).toBe('Reply body');
       });
     });
   });
