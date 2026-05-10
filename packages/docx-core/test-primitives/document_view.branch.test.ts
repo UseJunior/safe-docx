@@ -548,6 +548,41 @@ describe('document_view branch coverage', () => {
     });
   });
 
+  test('dense signature block with company-name lead-in is fully suppressed (#187)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a company-name paragraph followed by signature-label paragraphs', async () => {
+      // Common shape in NVCA-style fixtures: `ACME CORP` (no Word heading
+      // style — only the heuristic title_bare from the short-paragraph
+      // fallback) leads a signature block. Everything in the window without
+      // a real Heading1-6 style should be suppressed.
+      bodyXml =
+        `<w:p><w:r><w:t>ACME CORP</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Name:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Title:</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('every paragraph in the block has null header metadata', async () => {
+      expect(nodes).toHaveLength(4);
+      for (const node of nodes) {
+        expect(node.list_metadata.header_style).toBeNull();
+        expect(node.list_metadata.header_text).toBeNull();
+      }
+    });
+  });
+
   test('real heading immediately after a signature cluster is preserved (#187)', async ({ given, when, then, and }: AllureBddContext) => {
     let bodyXml: string;
     let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
