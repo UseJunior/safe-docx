@@ -10,6 +10,12 @@ import { isReservedFootnote } from './footnotes.js';
 
 const SHORT_HEADER_MAX_LENGTH = 50;
 const MAX_HEADER_TEXT_LENGTH = 60;
+// Centered ALL-CAPS titles (e.g. NVCA COI's `AMENDED AND RESTATED CERTIFICATE
+// OF INCORPORATION OF FOO INC.`) routinely exceed 60 chars in real corporate
+// documents. The 60-char cap on `extractHeaderInfo` exists to avoid emitting a
+// "leading words = header" guess from long body prose, which doesn't apply to
+// the standalone-title detector.
+const MAX_CENTERED_TITLE_LENGTH = 120;
 const STYLE_EXAMPLE_TEXT_PREVIEW_LENGTH = 50;
 
 function getWAttr(el: Element, localName: string): string | null {
@@ -248,45 +254,43 @@ function detectRunInHeader(params: {
     }
   }
 
-  // Compute total visible character count across all runs first so we can
-  // verify the header is a true prefix, not the whole paragraph (signature
-  // labels, defined-term lead-ins, and table-header cells are often entirely
-  // bold/underlined and would otherwise be mis-classified as run-in headers).
-  let totalVisibleChars = 0;
-  for (const r of orderedUniqueRuns) {
-    const ts = Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t));
-    for (const t of ts) totalVisibleChars += (t.textContent ?? '').length;
-  }
-
+  // Walk runs once, splitting into bold/underline header-prefix text and
+  // everything-after body text. The header → body transition is what
+  // distinguishes a run-in header (bold prefix + body) from a fully-bold
+  // signature label or defined-term lead-in.
   let headerText = '';
+  let bodyText = '';
   let formatting: HeaderFormatting | null = null;
   let headerCharCount = 0;
+  let inHeader = true;
 
   for (const r of orderedUniqueRuns) {
     const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles });
     const isHeaderStyle = fmt.bold || fmt.underline;
-    if (!isHeaderStyle) break;
-
-    // Accumulate run text.
     const ts = Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t));
-    for (const t of ts) {
-      const tc = t.textContent ?? '';
-      headerText += tc;
-      headerCharCount += tc.length;
-    }
+    let runText = '';
+    for (const t of ts) runText += t.textContent ?? '';
 
-    if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };
+    if (inHeader && isHeaderStyle) {
+      headerText += runText;
+      headerCharCount += runText.length;
+      if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };
+    } else {
+      inHeader = false;
+      bodyText += runText;
+    }
   }
 
   const trimmed = headerText.trim();
   if (!trimmed) return null;
   if (!punct.has(trimmed[trimmed.length - 1]!)) return null;
   if (!formatting) return null;
-  // Require a real header-prefix / body transition: the bold/underline prefix
-  // must be followed by non-header body text. Without this guard, fully bold
-  // paragraphs (e.g. "Email:", "Title:", or all-bold defined-term sentences)
-  // surface as run-in headers.
-  if (headerCharCount >= totalVisibleChars) return null;
+  // Require a real header-prefix → body transition: there must be non-whitespace
+  // body text after the bold/underline prefix. Trailing-whitespace-only "body"
+  // (e.g. a single bold run followed by a non-bold run that holds just `" "`)
+  // is not a transition — those are still whole-paragraph bold blocks
+  // (signature labels, all-bold short titles, etc.) and must be rejected.
+  if (!bodyText.trim()) return null;
 
   return { raw_text: trimmed, formatting, headerCharCount };
 }
@@ -295,11 +299,14 @@ function detectRunInHeader(params: {
  * Detect a centered, ALL-CAPS, bold standalone title (e.g. an NVCA SPA's
  * `SERIES […] PREFERRED STOCK PURCHASE AGREEMENT` title).
  *
- * Strict gates only — this fires only when the other detectors returned null
- * and the paragraph cannot be confused with body prose:
+ * Strict gates only — fires only when the paragraph cannot be confused with
+ * body prose, a placeholder, or a signature line:
  *   - paragraph alignment is CENTER
  *   - clean text contains no lowercase letters
- *   - clean text is non-empty and short (≤ MAX_HEADER_TEXT_LENGTH)
+ *   - clean text contains ≥ 3 ASCII letters AND ≥ 2 whitespace-separated
+ *     word-tokens (so single-token bracketed placeholders like `[COMPANY]`
+ *     and underscore-only signature lines like `____________` are rejected)
+ *   - clean text is non-empty and ≤ MAX_CENTERED_TITLE_LENGTH
  *   - all visible runs are bold (a single non-bold char disqualifies)
  */
 function detectTitleCapsCentered(params: {
@@ -314,8 +321,15 @@ function detectTitleCapsCentered(params: {
   if (alignment !== 'CENTER') return null;
   const trimmed = cleanTextNoLabel.trim();
   if (!trimmed) return null;
-  if (trimmed.length > MAX_HEADER_TEXT_LENGTH) return null;
+  if (trimmed.length > MAX_CENTERED_TITLE_LENGTH) return null;
   if (/[a-z]/.test(trimmed)) return null;
+  // Content gate: punctuation/underscore-only signature lines and bracketed
+  // single-token placeholders (`[COMPANY]`, `[___]`, `<NAME>`) must not
+  // classify as titles. Real titles are multi-word ALL-CAPS phrases.
+  const letterCount = (trimmed.match(/[A-Z]/g) ?? []).length;
+  if (letterCount < 3) return null;
+  const wordTokens = trimmed.split(/\s+/).filter((w) => /[A-Z]/.test(w));
+  if (wordTokens.length < 2) return null;
 
   const runs = getParagraphRuns(paragraph);
   if (runs.length === 0) return null;
@@ -1248,16 +1262,13 @@ export function buildNodesForDocumentView(params: {
       // ignore
     }
 
-    if (!headerText) {
-      const fallback = extractHeaderInfo(cleanTextNoLabel);
-      headerText = fallback.header_text;
-      headerStyle = fallback.header_style;
-    }
-
-    // Final fallback: centered ALL-CAPS bold standalone titles (e.g. an NVCA
-    // SPA's `SERIES […] PREFERRED STOCK PURCHASE AGREEMENT`). Only fires when
-    // the previous detectors returned null AND the paragraph has no list label
-    // AND it is not in a table cell.
+    // Centered ALL-CAPS bold standalone titles (e.g. an NVCA SPA's
+    // `SERIES […] PREFERRED STOCK PURCHASE AGREEMENT`). Runs before
+    // extractHeaderInfo so the documented precedence (title_caps_centered
+    // outranks short standalone title_bare/title_with_period/title_with_colon)
+    // matches the implementation. Only fires when run_in_header did not match
+    // AND the paragraph has no list label AND is not in a table cell. The
+    // try/catch is defensive against malformed XML in user documents.
     if (!headerText && !labelString && !tableContext) {
       try {
         const titleHdr = detectTitleCapsCentered({
@@ -1274,8 +1285,14 @@ export function buildNodesForDocumentView(params: {
           headerFormatting = titleHdr.formatting;
         }
       } catch {
-        // ignore
+        // ignore: malformed run/style data falls through to extractHeaderInfo.
       }
+    }
+
+    if (!headerText) {
+      const fallback = extractHeaderInfo(cleanTextNoLabel);
+      headerText = fallback.header_text;
+      headerStyle = fallback.header_style;
     }
 
     // ── Tag emission ──

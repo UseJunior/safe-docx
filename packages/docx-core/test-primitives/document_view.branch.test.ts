@@ -539,4 +539,151 @@ describe('document_view branch coverage', () => {
       expect(nodes[0]!.list_metadata.header_style).not.toBe('title_caps_centered');
     });
   });
+
+  test('title_caps_centered rejects bracketed single-token placeholders like [COMPANY] (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a centered, bold, single-token bracketed placeholder', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>[COMPANY]</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the placeholder is not classified as title_caps_centered', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('title_caps_centered');
+    });
+  });
+
+  test('title_caps_centered rejects punctuation/underscore-only signature lines (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a centered, bold underscore signature line (real ILPA fixture pattern)', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>____________________________________________</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the underscore line is not classified as title_caps_centered', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('title_caps_centered');
+      expect(nodes[0]!.list_metadata.header_text).toBeNull();
+    });
+  });
+
+  test('title_caps_centered admits long ALL-CAPS corporate titles up to 120 chars (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a centered, bold ALL-CAPS title between 60 and 120 chars (NVCA COI fixture pattern)', async () => {
+      // 87 chars — exceeds the old MAX_HEADER_TEXT_LENGTH of 60 but fits the
+      // new MAX_CENTERED_TITLE_LENGTH of 120.
+      const text = 'AMENDED AND RESTATED CERTIFICATE OF INCORPORATION OF FOO HOLDINGS INC.';
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>${text}</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the title is classified as title_caps_centered', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_caps_centered');
+      expect(nodes[0]!.list_metadata.header_text).toContain('AMENDED AND RESTATED');
+    });
+  });
+
+  test('title_caps_centered outranks short title_bare for short ALL-CAPS centered titles (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a short centered, bold ALL-CAPS title that would also match the short-paragraph fallback', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>SCHEDULE OF PURCHASERS</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the title is classified as title_caps_centered, not title_bare', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_caps_centered');
+    });
+  });
+
+  test('detectRunInHeader rejects whole-paragraph bold blocks even with trailing whitespace (#178 review)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a fully-bold short paragraph with a trailing space in a separate non-bold run', async () => {
+      // Real false positive observed against ~/Downloads Co-Founder Agreement.docx:
+      // a wholly-bold "Compensation & Benefits." with a trailing space-only run.
+      bodyXml =
+        `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Compensation &amp; Benefits.</w:t></w:r>` +
+          `<w:r><w:t xml:space="preserve"> </w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the trailing-whitespace-only "body" does not satisfy the header→body transition', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_style).not.toBe('run_in_header');
+    });
+  });
 });

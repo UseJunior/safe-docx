@@ -55,7 +55,7 @@ Each paragraph node in the JSON output exposes heading signals via `paragraph_st
 
 - `run_in_header` — bold/underline prefix followed by non-header body in the same paragraph (e.g. `**Indemnification.** The Company shall …`). Whole-paragraph bold/underline blocks are intentionally excluded.
 - `title_with_period` / `title_with_colon` — inline section header with explicit terminator (e.g. `Governing Law and Venue: this agreement is governed as stated.`).
-- `title_caps_centered` — centered, ALL-CAPS, bold standalone title (e.g. `SERIES A PREFERRED STOCK PURCHASE AGREEMENT`). Strict gates: no lowercase letters, no list label, not in a table cell, ≤ 60 chars.
+- `title_caps_centered` — centered, ALL-CAPS, bold standalone title (e.g. `SERIES A PREFERRED STOCK PURCHASE AGREEMENT`). Strict gates: no lowercase letters, ≥ 3 ASCII letters, ≥ 2 word-tokens (rejects placeholders like `[COMPANY]` and underscore signature lines), no list label, not in a table cell, ≤ 120 chars.
 - `title_with_period` / `title_with_colon` / `title_bare` — short standalone paragraphs (≤ 50 chars) only.
 
 To classify a paragraph as a heading, consumers should combine these signals with `paragraph_style_id` (`/^Heading[1-6]$/` is authoritative for depth). See [`skills/docx-editing/SKILL.md`](../../skills/docx-editing/SKILL.md) for the canonical precedence rule. Derived `is_heading` / `heading_level` fields are tracked in a follow-up issue.
