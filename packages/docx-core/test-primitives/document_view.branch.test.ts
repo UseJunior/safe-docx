@@ -508,6 +508,87 @@ describe('document_view branch coverage', () => {
     });
   });
 
+  test('all-caps signature-label cluster (COMPANY: / PURCHASER:) is suppressed (#187)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('an NVCA-style all-caps signature cluster', async () => {
+      // Mirrors the NVCA SPA paragraphs 312-321 shape: alternating
+      // PARTY-name lines with COMPANY:/PURCHASER: prefix and By:/Name:/Title: rows.
+      const labels = [
+        'COMPANY: [Insert Company Name]',
+        'By:',
+        'Name:',
+        'Title:',
+        'Address:',
+        'PURCHASER: [Insert Investor Name]',
+        'By:',
+        'Name:',
+        'Title:',
+      ];
+      bodyXml = labels.map((label) => `<w:p><w:r><w:t>${label}</w:t></w:r></w:p>`).join('');
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('every paragraph in the all-caps cluster has null header metadata', async () => {
+      expect(nodes).toHaveLength(9);
+      for (const node of nodes) {
+        expect(node.list_metadata.header_style).toBeNull();
+        expect(node.list_metadata.header_text).toBeNull();
+      }
+    });
+  });
+
+  test('real heading immediately after a signature cluster is preserved (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('four signature labels followed by a Heading1-styled section title', async () => {
+      // Boundary case: signature page followed by the next section heading.
+      // The cluster window covering all 5 paragraphs has 4/5 = 80% match,
+      // which would have erased the Heading1 paragraph under the original
+      // "any covering window" semantics.
+      bodyXml =
+        `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Name:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Title:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Address:</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Product</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the four signature labels are suppressed', async () => {
+      expect(nodes).toHaveLength(5);
+      for (let i = 0; i < 4; i++) {
+        expect(nodes[i]!.list_metadata.header_style).toBeNull();
+      }
+    });
+
+    await and('the adjacent Heading1 paragraph still emits a header_text', async () => {
+      const heading = nodes[4]!;
+      expect(heading.clean_text).toBe('Product');
+      expect(heading.list_metadata.header_text).not.toBeNull();
+    });
+  });
+
   test('detectRunInHeader rejects whole-paragraph bold blocks (#157)', async ({ given, when, then, and }: AllureBddContext) => {
     let bodyXml: string;
     let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];

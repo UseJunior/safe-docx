@@ -398,6 +398,11 @@ function suppressSignatureClusters(nodes: DocumentViewNode[]): void {
     if (activeClusters <= 0) continue;
 
     const node = nodes[idx]!;
+    // Only suppress nodes that themselves match a signature-label regex.
+    // The cluster window is the density signal that authorizes suppression;
+    // a real Heading1 paragraph immediately adjacent to a signature block
+    // (covered by the same window) must not be erased.
+    if (!isSignatureClusterLabel(node.clean_text)) continue;
     node.header = '';
     node.header_formatting = null;
     node.list_metadata.header_text = null;
@@ -1293,7 +1298,13 @@ export function buildNodesForDocumentView(params: {
     let headerCharCount = 0;
 
     try {
-      const hdr = detectRunInHeader({ paragraph: p, paragraphPPr: paraPPr ?? null, paragraphStyleId: paraFmt.styleId, styles: stylesModel });
+      // Skip in-table run-in header detection — table cells are key/value
+      // layout and a bold prefix is a label, not a section heading.
+      // Mirrors the !tableContext gates on detectTitleCapsCentered and
+      // extractHeaderInfo below.
+      const hdr = tableContext
+        ? null
+        : detectRunInHeader({ paragraph: p, paragraphPPr: paraPPr ?? null, paragraphStyleId: paraFmt.styleId, styles: stylesModel });
       if (hdr) {
         headerText = hdr.raw_text.replace(/[.:\-]+$/g, '');
         headerStyle = 'run_in_header';
