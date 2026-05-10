@@ -415,6 +415,99 @@ describe('document_view branch coverage', () => {
     });
   });
 
+  test('short standalone table-cell paragraphs do not classify as bare headers (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let paragraphs: Array<{ id: string; p: Element; tableContext?: {
+      table_id: string;
+      table_index: number;
+      row_index: number;
+      col_index: number;
+      col_header: string;
+      total_rows: number;
+      total_cols: number;
+      is_header_row: boolean;
+      para_in_cell: number;
+      cell_para_count: number;
+    } }>;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('a short standalone paragraph in a table cell context', async () => {
+      bodyXml = `<w:p><w:r><w:t>Purpose</w:t></w:r></w:p>`;
+      const [paragraph] = makeParagraphs(bodyXml!);
+      paragraphs = [{
+        ...paragraph!,
+        tableContext: {
+          table_id: '_tbl_0',
+          table_index: 0,
+          row_index: 1,
+          col_index: 0,
+          col_header: 'Section',
+          total_rows: 2,
+          total_cols: 1,
+          is_header_row: false,
+          para_in_cell: 0,
+          cell_para_count: 1,
+        },
+      }];
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: paragraphs!,
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the table-cell paragraph does not emit header metadata', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.list_metadata.header_text).toBeNull();
+      expect(nodes[0]!.list_metadata.header_style).toBeNull();
+    });
+
+    await and('table_context is preserved on the node', async () => {
+      expect(nodes[0]!.table_context?.table_id).toBe('_tbl_0');
+    });
+  });
+
+  test('signature-label clusters are suppressed in a post-pass (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('five consecutive signature-label paragraphs', async () => {
+      const labels = ['By:', 'Name:', 'Title:', 'Address:', 'Email:'];
+      bodyXml = labels.map((label) => `<w:p><w:r><w:t>${label}</w:t></w:r></w:p>`).join('');
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('every paragraph in the cluster has null header metadata', async () => {
+      expect(nodes).toHaveLength(5);
+      for (const node of nodes) {
+        expect(node.list_metadata.header_text).toBeNull();
+        expect(node.list_metadata.header_style).toBeNull();
+        expect(node.list_metadata.header_formatting).toBeNull();
+      }
+    });
+
+    await and('the duplicated header fields are cleared for rendering consistency', async () => {
+      for (const node of nodes) {
+        expect(node.header).toBe('');
+        expect(node.header_formatting).toBeNull();
+      }
+    });
+  });
+
   test('detectRunInHeader rejects whole-paragraph bold blocks (#157)', async ({ given, when, then, and }: AllureBddContext) => {
     let bodyXml: string;
     let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
