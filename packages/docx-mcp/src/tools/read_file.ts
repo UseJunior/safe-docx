@@ -427,10 +427,21 @@ export async function readFile(
       const budget = DEFAULT_CONTENT_TOKEN_BUDGET;
       const result =
         format === 'json'
-          ? renderJsonWithBudget(jsonNodes, DEFAULT_CONTENT_TOKEN_BUDGET)
+          ? renderJsonWithBudget(jsonNodes, budget)
           : renderWithBudget(enriched, format, budget, commentRendering);
       content = result.content;
       paragraphsReturned = result.count;
+
+      const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
+
+      return ok(mergeSessionResolutionMetadata({
+        file_path: manager.normalizePath(session.originalPath),
+        content,
+        total_paragraphs: totalParagraphs,
+        paragraphs_returned: paragraphsReturned,
+        ...(result.warnings ? { warnings: result.warnings } : {}),
+        ...paginationMeta,
+      }, metadata));
     }
 
     const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
@@ -451,6 +462,13 @@ export async function readFile(
 interface BudgetResult {
   content: string;
   count: number;
+  warnings?: string[];
+}
+
+const BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING = 'budget_exceeded_by_first_node';
+
+function firstNodeOverflowWarnings(firstNodeOverflow: boolean): string[] | undefined {
+  return firstNodeOverflow ? [BUDGET_EXCEEDED_BY_FIRST_NODE_WARNING] : undefined;
 }
 
 function renderWithBudget(
@@ -480,6 +498,12 @@ function renderToonWithBudget(
   const includedNodes: DocumentViewNode[] = [];
   const useInlineMarkers = commentRendering === 'inline_markers';
   const commentMarkers = useInlineMarkers ? collectInlineCommentMarkers(enriched) : undefined;
+  // Captured the moment node 0 is admitted, BEFORE post-loop closures
+  // (#END_TABLE, endnotes block) inflate `accumulated`. Computing this
+  // after the loop produces false positives when row 1 of a table fits but
+  // we break at row 2 — the closing #END_TABLE bumps the final size over
+  // budget, but node 1 itself was fine.
+  let firstNodeOverflow = false;
 
   // Pre-scan: collect table marker info for #TABLE lines
   const tableInfo = collectTableMarkerInfo(enriched);
@@ -535,6 +559,13 @@ function renderToonWithBudget(
       break;
     }
     accumulated = candidateBase;
+    if (count === 0 && estimateTokens(candidate) > budget) {
+      // Use `candidate` (not `accumulated`) so endnotes-mode counts the
+      // endnotes block that's already part of node 1's first-page payload.
+      // This is substantive content, unlike the post-loop `#END_TABLE`
+      // structural closure that we deliberately exclude.
+      firstNodeOverflow = true;
+    }
     includedNodes.push(node);
     count++;
   }
@@ -551,7 +582,11 @@ function renderToonWithBudget(
     }
   }
 
-  return { content: accumulated, count };
+  return {
+    content: accumulated,
+    count,
+    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
+  };
 }
 
 function renderSimpleWithTableMarkers(
@@ -593,6 +628,8 @@ function renderSimpleWithBudget(
   let accumulated = headerLine;
   let count = 0;
   let currentTableIndex: number | null = null;
+  // Captured at admission of node 0; see comment in renderToonWithBudget.
+  let firstNodeOverflow = false;
 
   const tableInfo = collectTableMarkerInfo(enriched);
 
@@ -624,6 +661,9 @@ function renderSimpleWithBudget(
       break;
     }
     accumulated = candidate;
+    if (count === 0 && estimateTokens(accumulated) > budget) {
+      firstNodeOverflow = true;
+    }
     count++;
   }
 
@@ -631,7 +671,11 @@ function renderSimpleWithBudget(
     accumulated += '\n#END_TABLE';
   }
 
-  return { content: accumulated, count };
+  return {
+    content: accumulated,
+    count,
+    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
+  };
 }
 
 function renderJsonWithBudget(
@@ -641,6 +685,8 @@ function renderJsonWithBudget(
   const items: string[] = [];
   let totalChars = 2; // for "[\n" and "]"
   let count = 0;
+  // Captured at admission of node 0; see comment in renderToonWithBudget.
+  let firstNodeOverflow = false;
 
   for (const node of enriched) {
     const serialized = JSON.stringify(node, null, 2);
@@ -649,9 +695,22 @@ function renderJsonWithBudget(
     if (count > 0 && Math.ceil(candidateChars / 4) > budget) break;
     items.push(serialized);
     totalChars = candidateChars;
+    if (count === 0) {
+      // Final render is `[\n${items.join(',\n')}\n]` — 4 chars of framing,
+      // not 2. The pagination break check uses the same approximation as
+      // the loop, but the warning needs to reflect the true final length.
+      const finalChars = candidateChars + 2; // closing `\n]`
+      if (Math.ceil(finalChars / 4) > budget) {
+        firstNodeOverflow = true;
+      }
+    }
     count++;
   }
 
   const content = '[\n' + items.join(',\n') + '\n]';
-  return { content, count };
+  return {
+    content,
+    count,
+    warnings: firstNodeOverflowWarnings(firstNodeOverflow),
+  };
 }

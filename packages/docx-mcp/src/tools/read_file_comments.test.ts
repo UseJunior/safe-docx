@@ -3,6 +3,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { assertSuccess, openSession, registerCleanup } from '../testing/session-test-utils.js';
 import { addComment } from './add_comment.js';
 import { addFootnote } from './add_footnote.js';
+import { DEFAULT_CONTENT_TOKEN_BUDGET, estimateTokens } from './pagination.js';
 import { readFile } from './read_file.js';
 
 const test = testAllure.epic('Document Reading');
@@ -269,6 +270,33 @@ describe('read_file comment rendering', () => {
       const lines = toonLines(read.content);
       expect(findParagraphLine(lines, opened.firstParaId)).toContain('[^1]');
       expect(lines.some((line) => line.startsWith(`#COMMENT ${opened.firstParaId} `) && line.includes('Comment body.'))).toBe(true);
+    });
+  });
+
+  test('simple format warns when a single commented paragraph exceeds the budget', async ({ given, when, then }: AllureBddContext) => {
+    const oversizedComment = 'Comment payload '.repeat(6_000);
+    const opened = await given('a document with one paragraph', async () => openSession(['Clause text.']));
+
+    const read = await when('a very large comment is added and read_file renders simple format', async () => {
+      const comment = await addComment(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        author: 'Alice',
+        text: oversizedComment,
+      });
+      assertSuccess(comment, 'add_comment');
+      const result = await readFile(opened.mgr, {
+        file_path: opened.inputPath,
+        format: 'simple',
+      });
+      assertSuccess(result, 'read_file');
+      return result;
+    });
+
+    await then('the response keeps the full comment payload and surfaces the first-node overflow warning', async () => {
+      expect(Number(read.paragraphs_returned)).toBe(1);
+      expect(estimateTokens(String(read.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      expect(read.warnings).toEqual(['budget_exceeded_by_first_node']);
     });
   });
 

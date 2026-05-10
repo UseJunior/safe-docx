@@ -433,6 +433,150 @@ describe('read_file pagination', () => {
     });
   });
 
+  test('multi-node toon overflow does not emit the first-node budget warning', async ({ when, then }: AllureBddContext) => {
+    const readTwoRowTable = async (cellTextLength: number) => {
+      const cellText = 'X'.repeat(cellTextLength);
+      const tableXml =
+        `<w:tbl>` +
+        `<w:tr><w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr>` +
+        `<w:tr><w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr>` +
+        `</w:tbl>`;
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:body>${tableXml}</w:body></w:document>`;
+      const mgr = createTestSessionManager();
+      const { filePath } = await openSession([], { mgr, xml, trackOpenStep: false });
+      const result = await readFile(mgr, { file_path: filePath, format: 'toon' });
+      assertSuccess(result, 'read');
+      return result;
+    };
+
+    const read = await when('the largest two-row table that still emits both rows is read under the budgeted toon path', async () => {
+      let low = 25_000;
+      let high = 30_000;
+      let bestLength: number | undefined;
+      let bestRead: Awaited<ReturnType<typeof readTwoRowTable>> | undefined;
+
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const current = await readTwoRowTable(mid);
+        if (Number(current.paragraphs_returned) === 2) {
+          bestLength = mid;
+          bestRead = current;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      if (!bestRead || bestLength == null) {
+        throw new Error('Failed to find a two-row table budget boundary for read_file.');
+      }
+
+      return { bestLength, bestRead };
+    });
+
+    await then('the multi-node overflow stays unlabeled even when the final content ends slightly above budget', async () => {
+      expect(Number(read.bestRead.paragraphs_returned)).toBe(2);
+      expect(estimateTokens(String(read.bestRead.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      expect(read.bestRead.warnings).toBeUndefined();
+      expect(read.bestLength).toBeGreaterThan(25_000);
+    });
+  });
+
+  test('count=1 + has_more table truncation does not falsely emit first-node warning', async ({ when, then }: AllureBddContext) => {
+    // Regression for a false-positive in the warning logic: when a multi-row
+    // table breaks at row N>1, the loop emits row 1 and then appends
+    // `#END_TABLE`, which can push the final accumulated content over the
+    // budget even though row 1 itself fit. The warning must reflect node 1's
+    // own size at admission time, not the post-loop closed-out content.
+    const cellLen = 55_864; // tuned to put row 1 just under, row 2 over (Codex repro)
+    const cellText = 'X'.repeat(cellLen);
+    const tableXml =
+      `<w:tbl>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>${cellText}</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>`;
+    const xml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>${tableXml}</w:body></w:document>`;
+
+    const read = await when('a two-row table is read where row 1 fits but row 2 forces truncation', async () => {
+      const mgr = createTestSessionManager();
+      const { filePath } = await openSession([], { mgr, xml, trackOpenStep: false });
+      const result = await readFile(mgr, { file_path: filePath, format: 'toon' });
+      assertSuccess(result, 'read');
+      return result;
+    });
+
+    await then('exactly one row is returned, has_more=true, and no first-node warning fires', async () => {
+      expect(Number(read.paragraphs_returned)).toBe(1);
+      expect(read.has_more).toBe(true);
+      // Final content (with #END_TABLE) may exceed budget; that's the bug we're guarding against.
+      expect(estimateTokens(String(read.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      // Node 1's admission size was UNDER budget, so the warning must not fire.
+      expect(read.warnings).toBeUndefined();
+    });
+  });
+
+  test('endnotes-mode overflow on the first node fires the warning (substantive payload)', async ({ given, when, then }: AllureBddContext) => {
+    // Companion to the table false-positive guard: the endnotes block IS
+    // substantive payload (unlike the post-loop `#END_TABLE` structural
+    // closure), so when the first node's own comments push the page over
+    // budget, the warning must fire.
+    const opened = await given('a session with one short anchor paragraph', async () => {
+      const mgr = createTestSessionManager();
+      const result = await openSession(['Anchor.'], { mgr });
+      return result;
+    });
+
+    const read = await when('a huge comment is added and read in endnotes mode', async () => {
+      const { addComment } = await import('./add_comment.js');
+      const huge = 'Comment payload '.repeat(6000);
+      const c = await addComment(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        author: 'Reviewer',
+        text: huge,
+      });
+      assertSuccess(c, 'add_comment');
+      const r = await readFile(opened.mgr, {
+        file_path: opened.inputPath,
+        comment_rendering: 'endnotes',
+      });
+      assertSuccess(r, 'read');
+      return r;
+    });
+
+    await then('the warning fires because endnotes content blew the budget', async () => {
+      expect(Number(read.paragraphs_returned)).toBe(1);
+      expect(estimateTokens(String(read.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      expect(read.warnings).toEqual(['budget_exceeded_by_first_node']);
+    });
+  });
+
+  test('json single-paragraph at exact budget cutoff fires the warning (framing accounted for)', async ({ when, then }: AllureBddContext) => {
+    // The JSON budget check undercounted final framing by the closing `\n]`
+    // (2 chars). At an exact-boundary input the warning could be missed.
+    // Codex repro: paragraph length 18344 → 14001 tokens, no warning under
+    // the old check. Final fix accounts for the 4 chars of framing.
+    const read = await when('a single paragraph sized to land exactly at the budget cutoff is JSON-read', async () => {
+      const mgr = createTestSessionManager();
+      const { filePath } = await openSession(['P'.repeat(18344)], { mgr });
+      const r = await readFile(mgr, { file_path: filePath, format: 'json' });
+      assertSuccess(r, 'read');
+      return r;
+    });
+
+    await then('the warning fires because the rendered JSON exceeds the budget', async () => {
+      expect(Number(read.paragraphs_returned)).toBe(1);
+      expect(estimateTokens(String(read.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      expect(read.warnings).toEqual(['budget_exceeded_by_first_node']);
+    });
+  });
+
   // ── Table coverage: renderToonWithBudget with body text after table ───
 
   test('renderToonWithBudget handles transition from table to body text within budget', async ({ given, when, then }: AllureBddContext) => {
