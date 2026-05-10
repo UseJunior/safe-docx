@@ -521,6 +521,62 @@ describe('read_file pagination', () => {
     });
   });
 
+  test('endnotes-mode overflow on the first node fires the warning (substantive payload)', async ({ given, when, then }: AllureBddContext) => {
+    // Companion to the table false-positive guard: the endnotes block IS
+    // substantive payload (unlike the post-loop `#END_TABLE` structural
+    // closure), so when the first node's own comments push the page over
+    // budget, the warning must fire.
+    const opened = await given('a session with one short anchor paragraph', async () => {
+      const mgr = createTestSessionManager();
+      const result = await openSession(['Anchor.'], { mgr });
+      return result;
+    });
+
+    const read = await when('a huge comment is added and read in endnotes mode', async () => {
+      const { addComment } = await import('./add_comment.js');
+      const huge = 'Comment payload '.repeat(6000);
+      const c = await addComment(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        author: 'Reviewer',
+        text: huge,
+      });
+      assertSuccess(c, 'add_comment');
+      const r = await readFile(opened.mgr, {
+        file_path: opened.inputPath,
+        comment_rendering: 'endnotes',
+      });
+      assertSuccess(r, 'read');
+      return r;
+    });
+
+    await then('the warning fires because endnotes content blew the budget', async () => {
+      expect(Number(read.paragraphs_returned)).toBe(1);
+      expect(estimateTokens(String(read.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      expect(read.warnings).toEqual(['budget_exceeded_by_first_node']);
+    });
+  });
+
+  test('json single-paragraph at exact budget cutoff fires the warning (framing accounted for)', async ({ when, then }: AllureBddContext) => {
+    // The JSON budget check undercounted final framing by the closing `\n]`
+    // (2 chars). At an exact-boundary input the warning could be missed.
+    // Codex repro: paragraph length 18344 → 14001 tokens, no warning under
+    // the old check. Final fix accounts for the 4 chars of framing.
+    const read = await when('a single paragraph sized to land exactly at the budget cutoff is JSON-read', async () => {
+      const mgr = createTestSessionManager();
+      const { filePath } = await openSession(['P'.repeat(18344)], { mgr });
+      const r = await readFile(mgr, { file_path: filePath, format: 'json' });
+      assertSuccess(r, 'read');
+      return r;
+    });
+
+    await then('the warning fires because the rendered JSON exceeds the budget', async () => {
+      expect(Number(read.paragraphs_returned)).toBe(1);
+      expect(estimateTokens(String(read.content))).toBeGreaterThan(DEFAULT_CONTENT_TOKEN_BUDGET);
+      expect(read.warnings).toEqual(['budget_exceeded_by_first_node']);
+    });
+  });
+
   // ── Table coverage: renderToonWithBudget with body text after table ───
 
   test('renderToonWithBudget handles transition from table to body text within budget', async ({ given, when, then }: AllureBddContext) => {

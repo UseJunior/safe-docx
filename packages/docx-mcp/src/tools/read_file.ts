@@ -559,7 +559,11 @@ function renderToonWithBudget(
       break;
     }
     accumulated = candidateBase;
-    if (count === 0 && estimateTokens(accumulated) > budget) {
+    if (count === 0 && estimateTokens(candidate) > budget) {
+      // Use `candidate` (not `accumulated`) so endnotes-mode counts the
+      // endnotes block that's already part of node 1's first-page payload.
+      // This is substantive content, unlike the post-loop `#END_TABLE`
+      // structural closure that we deliberately exclude.
       firstNodeOverflow = true;
     }
     includedNodes.push(node);
@@ -691,8 +695,14 @@ function renderJsonWithBudget(
     if (count > 0 && Math.ceil(candidateChars / 4) > budget) break;
     items.push(serialized);
     totalChars = candidateChars;
-    if (count === 0 && Math.ceil(candidateChars / 4) > budget) {
-      firstNodeOverflow = true;
+    if (count === 0) {
+      // Final render is `[\n${items.join(',\n')}\n]` — 4 chars of framing,
+      // not 2. The pagination break check uses the same approximation as
+      // the loop, but the warning needs to reflect the true final length.
+      const finalChars = candidateChars + 2; // closing `\n]`
+      if (Math.ceil(finalChars / 4) > budget) {
+        firstNodeOverflow = true;
+      }
     }
     count++;
   }
