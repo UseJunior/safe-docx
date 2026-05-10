@@ -398,16 +398,12 @@ function suppressSignatureClusters(nodes: DocumentViewNode[]): void {
     if (activeClusters <= 0) continue;
 
     const node = nodes[idx]!;
-    // Inside a cluster window, suppress every node EXCEPT real Word-styled
-    // headings (Heading1-6). The density signal authorizes suppression of
-    // everything in the window; only an explicit Heading style is strong
-    // enough to overrule it. This handles both:
-    //   - Adjacent real heading: `By:`/`Name:`/`Title:`/`Address:`/`Product[Heading1]`
-    //     → labels suppressed, Heading1 preserved.
-    //   - Dense signature block: `ACME CORP`/`By:`/`Name:`/`Title:`
-    //     → ACME CORP suppressed (only heuristic title_bare, no Word style).
-    const styleId = node.paragraph_style_id ?? '';
-    if (/^Heading[1-6]$/.test(styleId)) continue;
+    // The density gate authorizes us to clear *labels* inside the window;
+    // non-label neighbors (real headings, body text) keep their detected
+    // heading metadata regardless of paragraph style. This avoids erasing
+    // an adjacent section heading or body line that happens to fall inside
+    // a window meeting the density threshold.
+    if (!isSignatureClusterLabel(node.clean_text)) continue;
     node.header = '';
     node.header_formatting = null;
     node.list_metadata.header_text = null;

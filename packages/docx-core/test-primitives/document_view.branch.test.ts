@@ -548,15 +548,16 @@ describe('document_view branch coverage', () => {
     });
   });
 
-  test('dense signature block with company-name lead-in is fully suppressed (#187)', async ({ given, when, then }: AllureBddContext) => {
+  test('signature cluster does not erase a non-label company-name lead-in (#187)', async ({ given, when, then, and }: AllureBddContext) => {
     let bodyXml: string;
     let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
 
-    await given('a company-name paragraph followed by signature-label paragraphs', async () => {
-      // Common shape in NVCA-style fixtures: `ACME CORP` (no Word heading
-      // style — only the heuristic title_bare from the short-paragraph
-      // fallback) leads a signature block. Everything in the window without
-      // a real Heading1-6 style should be suppressed.
+    await given('a non-label company-name paragraph followed by signature-label paragraphs', async () => {
+      // `ACME CORP` does not match either signature-label regex (no trailing
+      // colon, multi-word all-caps). The density gate fires for the
+      // window, but suppression must NOT mutate non-label paragraphs.
+      // The real NVCA shape `COMPANY: [Insert Company Name]` matches the
+      // prefix regex and is exercised by the test above.
       bodyXml =
         `<w:p><w:r><w:t>ACME CORP</w:t></w:r></w:p>` +
         `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
@@ -574,7 +575,132 @@ describe('document_view branch coverage', () => {
       }));
     });
 
-    await then('every paragraph in the block has null header metadata', async () => {
+    await then('the three label paragraphs are suppressed', async () => {
+      expect(nodes).toHaveLength(4);
+      for (let i = 1; i < 4; i++) {
+        expect(nodes[i]!.list_metadata.header_style).toBeNull();
+        expect(nodes[i]!.list_metadata.header_text).toBeNull();
+      }
+    });
+
+    await and('the non-label lead-in keeps its heuristic classification', async () => {
+      expect(nodes[0]!.clean_text).toBe('ACME CORP');
+      expect(nodes[0]!.list_metadata.header_text).not.toBeNull();
+    });
+  });
+
+  test('signature cluster preserves a non-label body neighbor (#187, regression for over-suppression)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('four signature labels followed by an unstyled short paragraph', async () => {
+      // `Product` would independently classify as title_bare via the
+      // short-paragraph fallback. Earlier revisions of suppressSignatureClusters
+      // erased every paragraph inside a qualifying window, which would have
+      // cleared `Product` here. The fix narrows suppression to label
+      // paragraphs only.
+      bodyXml =
+        `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Name:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Title:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Address:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Product</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the four signature labels are suppressed', async () => {
+      expect(nodes).toHaveLength(5);
+      for (let i = 0; i < 4; i++) {
+        expect(nodes[i]!.list_metadata.header_style).toBeNull();
+      }
+    });
+
+    await and('the non-label neighbor keeps its heuristic header_text', async () => {
+      expect(nodes[4]!.clean_text).toBe('Product');
+      expect(nodes[4]!.list_metadata.header_text).not.toBeNull();
+    });
+  });
+
+  test('signature cluster preserves custom-style headings (Heading7 / Title / Subtitle / Article5L1) (#187)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('four signature labels followed by four non-Heading1-6 styled headings', async () => {
+      // The fixture corpus uses heading-ish styles beyond Heading1-6
+      // (Heading7-9, Title, Subtitle, Article5L1-8). They are not signature
+      // labels, so they must survive suppression even though they sit
+      // adjacent to a label-dense window.
+      bodyXml =
+        `<w:p><w:r><w:t>By:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Name:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Title:</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Address:</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Heading7"/></w:pPr><w:r><w:t>Execution</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Schedule A</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Subtitle"/></w:pPr><w:r><w:t>Preliminary</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Article5L1"/></w:pPr><w:r><w:t>Definitions</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('the four signature labels are suppressed', async () => {
+      expect(nodes).toHaveLength(8);
+      for (let i = 0; i < 4; i++) {
+        expect(nodes[i]!.list_metadata.header_style).toBeNull();
+      }
+    });
+
+    await and('each custom-styled heading keeps its detected header_text', async () => {
+      for (let i = 4; i < 8; i++) {
+        expect(nodes[i]!.list_metadata.header_text).not.toBeNull();
+      }
+    });
+  });
+
+  test('consecutive WHEREAS recitals are not classified as signature-cluster labels (#187 regression)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await given('four consecutive WHEREAS recital paragraphs', async () => {
+      // WHEREAS clauses use a comma after the lead-in word, not a colon,
+      // so they do not match SIGNATURE_LABEL_PREFIX_RE. They are also
+      // long, so they do not pick up title_bare/title_with_colon. Lock
+      // in that suppression does not touch them.
+      bodyXml =
+        `<w:p><w:r><w:t>WHEREAS, the parties desire to enter into this Agreement on the terms set forth herein.</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>WHEREAS, each party has the requisite authority to execute and deliver this Agreement.</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>WHEREAS, the parties acknowledge the mutual covenants and agreements stated below.</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>WHEREAS, this Agreement is intended to be legally binding and enforceable.</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      ({ nodes } = buildNodesForDocumentView({
+        paragraphs: makeParagraphs(bodyXml!),
+        stylesXml: null,
+        numberingXml: null,
+        include_semantic_tags: false,
+        show_formatting: false,
+      }));
+    });
+
+    await then('no WHEREAS recital is mutated by signature-cluster suppression', async () => {
       expect(nodes).toHaveLength(4);
       for (const node of nodes) {
         expect(node.list_metadata.header_style).toBeNull();
