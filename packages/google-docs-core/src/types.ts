@@ -34,7 +34,7 @@ export type GoogleDocsSaveResult = {
 
 /** Cached paragraph info from Google Docs structure */
 export type CachedParagraph = {
-  paragraphId: string; // Google's native paragraph ID (not used as anchor)
+  paragraphId: string; // Google Docs namedStyleType (e.g. 'HEADING_1', 'NORMAL_TEXT'). Historically misnamed; consumed by document-view.ts to derive heading metadata.
   anchorName: string | null; // Our injected _bk_ name (named range)
   anchorId: AnchorId; // Full anchor ID (tabId:anchorName)
   startIndex: number; // UTF-16 code unit offset

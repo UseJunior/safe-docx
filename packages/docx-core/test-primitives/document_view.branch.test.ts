@@ -29,6 +29,52 @@ function makeParagraphs(bodyXml: string): Array<{ id: string; p: Element }> {
   return ps.map((p, idx) => ({ id: `_bk_${idx + 1}`, p }));
 }
 
+function makeStylesXml(styles: string): Document {
+  return parseXml(
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:styles xmlns:w="${W_NS}">${styles}</w:styles>`,
+  );
+}
+
+function buildTestNodes(bodyXml: string, stylesXml: Document | null = null): DocumentViewNode[] {
+  return buildNodesForDocumentView({
+    paragraphs: makeParagraphs(bodyXml),
+    stylesXml,
+    numberingXml: null,
+    include_semantic_tags: false,
+    show_formatting: false,
+  }).nodes;
+}
+
+function makeCellTableContext(paraIndex: number) {
+  return {
+    table_id: '_tbl_0',
+    table_index: 0,
+    row_index: 0,
+    col_index: paraIndex,
+    col_header: '',
+    total_rows: 1,
+    total_cols: 1,
+    is_header_row: false,
+    para_in_cell: 0,
+    cell_para_count: 1,
+  };
+}
+
+function buildTestNodesInCells(bodyXml: string, stylesXml: Document | null = null): DocumentViewNode[] {
+  const paragraphs = makeParagraphs(bodyXml).map((entry, idx) => ({
+    ...entry,
+    tableContext: makeCellTableContext(idx),
+  }));
+  return buildNodesForDocumentView({
+    paragraphs,
+    stylesXml,
+    numberingXml: null,
+    include_semantic_tags: false,
+    show_formatting: false,
+  }).nodes;
+}
+
 function makeNode(overrides: Partial<DocumentViewNode>): DocumentViewNode {
   return {
     id: '_bk_1',
@@ -989,6 +1035,221 @@ describe('document_view branch coverage', () => {
     await then('the title is classified as title_caps_centered, not title_bare', async () => {
       expect(nodes).toHaveLength(1);
       expect(nodes[0]!.list_metadata.header_style).toBe('title_caps_centered');
+    });
+  });
+
+  test('derives word_style headings only from exact Heading1-Heading6 paragraph style IDs', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let stylesXml: Document;
+    let nodes: DocumentViewNode[];
+
+    await given('built-in heading styles, an inheriting HeadingPara1 style, and a normal body paragraph', async () => {
+      stylesXml = makeStylesXml(
+        `<w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
+        `<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>` +
+        `<w:style w:type="paragraph" w:styleId="Heading6"><w:name w:val="heading 6"/></w:style>` +
+        `<w:style w:type="paragraph" w:styleId="HeadingPara1">` +
+          `<w:name w:val="Heading Para 1"/>` +
+          `<w:basedOn w:val="Heading1"/>` +
+          `<w:next w:val="Normal"/>` +
+        `</w:style>`,
+      );
+      bodyXml =
+        `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Board Approval</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Heading6"/></w:pPr><w:r><w:t>Minor Conditions</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="HeadingPara1"/></w:pPr><w:r><w:t>this inherited style stays body prose.</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>this is ordinary body text.</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      nodes = buildTestNodes(bodyXml!, stylesXml!);
+    });
+
+    await then('Heading1 and Heading6 paragraphs emit word_style headings with exact levels', async () => {
+      expect(nodes).toHaveLength(4);
+      expect(nodes[0]!.heading).toEqual({ text: 'Board Approval', source: 'word_style', level: 1 });
+      expect(nodes[1]!.heading).toEqual({ text: 'Minor Conditions', source: 'word_style', level: 6 });
+    });
+
+    await and('HeadingPara1 inheritance does not produce a heading object', async () => {
+      expect(nodes[2]!.heading).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(nodes[2]!, 'heading')).toBe(false);
+    });
+
+    await and('body paragraphs omit the heading field entirely', async () => {
+      expect(nodes[3]!.heading).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(nodes[3]!, 'heading')).toBe(false);
+    });
+  });
+
+  test('derives heuristic heading objects for title_caps_centered and run_in_header paragraphs', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: DocumentViewNode[];
+
+    await given('a centered standalone title and a bold-prefix run-in header paragraph', async () => {
+      bodyXml =
+        `<w:p>` +
+          `<w:pPr><w:jc w:val="center"/></w:pPr>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>SERIES A PREFERRED STOCK PURCHASE AGREEMENT</w:t></w:r>` +
+        `</w:p>` +
+        `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>Indemnification.</w:t></w:r>` +
+          `<w:r><w:t> The Company shall indemnify each Investor as set forth herein.</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      nodes = buildTestNodes(bodyXml!);
+    });
+
+    await then('the centered title emits a null-level heading object', async () => {
+      expect(nodes).toHaveLength(2);
+      expect(nodes[0]!.heading).toEqual({
+        text: 'SERIES A PREFERRED STOCK PURCHASE AGREEMENT',
+        source: 'title_caps_centered',
+        level: null,
+      });
+    });
+
+    await and('the run-in header emits a null-level heading object', async () => {
+      expect(nodes[1]!.heading).toEqual({
+        text: 'Indemnification',
+        source: 'run_in_header',
+        level: null,
+      });
+    });
+  });
+
+  test('prefers word_style heading derivation over heuristic header detectors when both match', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let stylesXml: Document;
+    let nodes: DocumentViewNode[];
+
+    await given('a Heading2-styled paragraph that also matches the title_with_colon heuristic', async () => {
+      stylesXml = makeStylesXml(
+        `<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/></w:style>`,
+      );
+      bodyXml =
+        `<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Governing Law: this agreement is governed as stated.</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      nodes = buildTestNodes(bodyXml!, stylesXml!);
+    });
+
+    await then('the heading object uses word_style with level 2 and clean_text', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.heading).toEqual({
+        text: 'Governing Law: this agreement is governed as stated.',
+        source: 'word_style',
+        level: 2,
+      });
+    });
+
+    await and('the heuristic signal remains explanatory only', async () => {
+      expect(nodes[0]!.list_metadata.header_style).toBe('title_with_colon');
+      expect(nodes[0]!.list_metadata.header_text).toBe('Governing Law');
+    });
+  });
+
+  test('derives heuristic heading objects for title_with_period and title_bare body paragraphs', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: DocumentViewNode[];
+
+    await given('a short bare-title paragraph and a short title-with-period paragraph', async () => {
+      bodyXml =
+        `<w:p><w:r><w:t>Governing Law</w:t></w:r></w:p>` +
+        `<w:p><w:r><w:t>Definitions.</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called', async () => {
+      nodes = buildTestNodes(bodyXml!);
+    });
+
+    await then('the bare-title paragraph emits a title_bare heading', async () => {
+      expect(nodes[0]!.heading).toEqual({
+        text: 'Governing Law',
+        source: 'title_bare',
+        level: null,
+      });
+    });
+
+    await and('the title-with-period paragraph emits a title_with_period heading', async () => {
+      expect(nodes[1]!.heading).toEqual({
+        text: 'Definitions',
+        source: 'title_with_period',
+        level: null,
+      });
+    });
+  });
+
+  test('suppresses heuristic heading promotion for paragraphs inside table cells (peer review #190)', async ({ given, when, then, and }: AllureBddContext) => {
+    let bodyXml: string;
+    let nodes: DocumentViewNode[];
+
+    await given('table cell paragraphs that match each heuristic detector', async () => {
+      bodyXml =
+        // title_bare candidate (short ALL-CAPS-leading title, no terminator)
+        `<w:p><w:r><w:t>Purchase Price</w:t></w:r></w:p>` +
+        // title_with_colon candidate (short paragraph ending in ":")
+        `<w:p><w:r><w:t>Notice Address:</w:t></w:r></w:p>` +
+        // title_with_period candidate (short paragraph ending in ".")
+        `<w:p><w:r><w:t>Closing.</w:t></w:r></w:p>` +
+        // run_in_header candidate (bold prefix + non-bold body)
+        `<w:p>` +
+          `<w:r><w:rPr><w:b/></w:rPr><w:t>Indemnification.</w:t></w:r>` +
+          `<w:r><w:t xml:space="preserve"> The Company shall indemnify each Investor.</w:t></w:r>` +
+        `</w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called with tableContext on every paragraph', async () => {
+      nodes = buildTestNodesInCells(bodyXml!);
+    });
+
+    await then('none of the table-cell paragraphs emit a top-level heading', async () => {
+      expect(nodes).toHaveLength(4);
+      for (const node of nodes) {
+        expect(node.heading).toBeUndefined();
+        expect(Object.prototype.hasOwnProperty.call(node, 'heading')).toBe(false);
+      }
+    });
+
+    await and('list_metadata.header_style is null inside table cells (upstream !tableContext gates from #188)', async () => {
+      // #188 added !tableContext gates at all three heuristic call sites
+      // (detectRunInHeader, detectTitleCapsCentered, extractHeaderInfo). The
+      // deriveHeading() isInTableCell gate added in #190 is defense-in-depth:
+      // even if a future change drops one of those upstream gates, the
+      // canonical `node.heading` predicate still won't promote a heuristic
+      // match inside a cell.
+      for (const node of nodes) {
+        expect(node.list_metadata.header_style).toBeNull();
+      }
+    });
+  });
+
+  test('still promotes word_style headings inside table cells (Heading1..6 wins over the cell gate)', async ({ given, when, then }: AllureBddContext) => {
+    let bodyXml: string;
+    let stylesXml: Document;
+    let nodes: DocumentViewNode[];
+
+    await given('a Heading3-styled paragraph injected as a table cell', async () => {
+      stylesXml = makeStylesXml(
+        `<w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/></w:style>`,
+      );
+      bodyXml = `<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t>Schedule A</w:t></w:r></w:p>`;
+    });
+
+    await when('buildNodesForDocumentView is called with tableContext', async () => {
+      nodes = buildTestNodesInCells(bodyXml!, stylesXml!);
+    });
+
+    await then('the word_style heading still fires inside the cell', async () => {
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0]!.heading).toEqual({
+        text: 'Schedule A',
+        source: 'word_style',
+        level: 3,
+      });
     });
   });
 

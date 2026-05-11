@@ -236,24 +236,39 @@ Tags can be nested: `<b><i>bold italic</i></b>`. Formatting from the original ma
 
 ## Heading Detection (read_file JSON output)
 
-`read_file(format="json")` returns a `DocumentViewNode` per paragraph. To classify a paragraph as a section heading, combine these fields in the order below — the **first match wins**:
+`read_file(format="json")` returns an optional top-level `heading` object per paragraph:
 
-| Precedence | Signal | Field | Notes |
-|------------|--------|-------|-------|
-| 1 | Word built-in heading style | `paragraph_style_id` matches `/^Heading[1-6]$/` | Authoritative depth (1–6). |
-| 2 | Run-in header (bold/underline prefix + body) | `list_metadata.header_style === 'run_in_header'` | Only fires when the bold/underline prefix is followed by non-header body in the same paragraph (a true header → body transition). Whole-paragraph bold/underline blocks are intentionally NOT classified here. |
-| 3 | Inline section header (long paragraph) | `list_metadata.header_style === 'title_with_period'` or `'title_with_colon'` | E.g. `Governing Law and Venue: this agreement is governed as stated.` |
-| 4 | Centered ALL-CAPS bold standalone title | `list_metadata.header_style === 'title_caps_centered'` | Centered alignment, all visible runs bold, no lowercase letters, ≥ 3 ASCII letters and ≥ 2 word-tokens (so single-token bracketed placeholders like `[COMPANY]` and underscore signature lines like `__________` are excluded), no list label, not in a table cell, ≤ 120 chars. Catches document titles that are not styled with a Word heading style. |
-| 5 | Bare manual heading (short standalone paragraph) | `list_metadata.header_style === 'title_with_period'`, `'title_with_colon'`, or `'title_bare'` on a paragraph ≤ 50 chars | Last-resort heuristic for short headings. Body prose never reaches this branch. |
-| — | Otherwise | none of the above | Not a heading. |
+```ts
+heading?: {
+  text: string;
+  source: 'word_style'
+        | 'run_in_header'
+        | 'title_with_period'
+        | 'title_with_colon'
+        | 'title_caps_centered'
+        | 'title_bare';
+  level: number | null;
+};
+```
 
-Across all rules, the actual heading text is in `list_metadata.header_text`, and the formatting (bold/italic/underline) of the title runs is in `list_metadata.header_formatting`.
+Use `node.heading != null` as the canonical "is this a heading" check.
 
-Detection is suppressed inside table cells; use `table_context` when you need cell context instead of heading metadata. Consecutive label-style cluster paragraphs (for example signature blocks) are also suppressed in a post-pass.
+- If `heading` is present with `source: 'word_style'`, `level` is `1..6` and comes only from an exact `paragraph_style_id` match on `/^Heading([1-6])$/`.
+- Style inheritance does not count. Custom styles like `HeadingPara1` / `HeadingPara2` may be based on Word heading styles but still omit `heading` unless their own `paragraph_style_id` is exactly `Heading1`…`Heading6`.
+- If `heading` is present with any heuristic source, `level` is always `null`.
+- If `heading` is absent, the paragraph is not a heading. The key is omitted entirely in JSON output; it is not set to `null`.
+- Heuristic-sourced headings are suppressed inside table cells (`table_context != null`) — ordinary label/value cell text like `"Notice Address:"` or `"Closing."` will NOT surface as a heading. Built-in `word_style` headings still fire inside cells. Consecutive label-style cluster paragraphs (e.g. signature blocks) are also suppressed in a post-pass.
 
-Derived `is_heading` / `heading_level` fields are tracked separately in a follow-up issue and are NOT in the current schema.
+Precedence is fixed: exact Word built-in heading styles win over every heuristic detector. This means a paragraph can still expose `list_metadata.header_style` for explanation while `heading.source` is `word_style`.
 
-The Google Docs renderer (`packages/google-docs-core`) mirrors this schema structurally; it does not currently emit `title_caps_centered` (Google Docs has different heading semantics).
+`list_metadata.header_style` and `list_metadata.header_text` remain useful, but they are now the per-detector explanation layer rather than the canonical heading predicate:
+
+- `run_in_header` — bold/underline prefix followed by non-header body in the same paragraph (e.g. `**Indemnification.** The Company shall …`). Whole-paragraph bold/underline blocks are intentionally excluded.
+- `title_with_period` / `title_with_colon` — inline section header with explicit terminator (e.g. `Governing Law and Venue: this agreement is governed as stated.`).
+- `title_caps_centered` — centered, ALL-CAPS, bold standalone title (e.g. `SERIES A PREFERRED STOCK PURCHASE AGREEMENT`). Strict gates: no lowercase letters, ≥ 3 ASCII letters, ≥ 2 word-tokens, no list label, not in a table cell, ≤ 120 chars.
+- `title_bare` — short standalone manual title fallback.
+
+Google Docs is intentionally asymmetric: the `packages/google-docs-core` path emits `heading` only for built-in heading styles that normalize to `Heading1`…`Heading6`. The heuristic detectors do not run on the Google Docs renderer, so sources like `title_caps_centered` and `run_in_header` are Word-only today.
 
 ## Batch Edits with apply_plan
 

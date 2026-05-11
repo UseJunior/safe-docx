@@ -51,14 +51,23 @@ Add to your MCP client:
 
 ## Heading detection in `read_file(format="json")`
 
-Each paragraph node in the JSON output exposes heading signals via `paragraph_style_id` and the `list_metadata.header_text` / `header_style` / `header_formatting` fields. The supported `header_style` values are:
+Each paragraph node in the JSON output may expose a top-level `heading` object:
 
-- `run_in_header` — bold/underline prefix followed by non-header body in the same paragraph (e.g. `**Indemnification.** The Company shall …`). Whole-paragraph bold/underline blocks are intentionally excluded.
-- `title_with_period` / `title_with_colon` — inline section header with explicit terminator (e.g. `Governing Law and Venue: this agreement is governed as stated.`).
-- `title_caps_centered` — centered, ALL-CAPS, bold standalone title (e.g. `SERIES A PREFERRED STOCK PURCHASE AGREEMENT`). Strict gates: no lowercase letters, ≥ 3 ASCII letters, ≥ 2 word-tokens (rejects placeholders like `[COMPANY]` and underscore signature lines), no list label, not in a table cell, ≤ 120 chars.
-- `title_with_period` / `title_with_colon` / `title_bare` — short standalone paragraphs (≤ 50 chars) only.
+```ts
+heading?: {
+  text: string;
+  source: 'word_style' | 'run_in_header' | 'title_with_period' | 'title_with_colon' | 'title_caps_centered' | 'title_bare';
+  level: number | null;
+}
+```
 
-To classify a paragraph as a heading, consumers should combine these signals with `paragraph_style_id` (`/^Heading[1-6]$/` is authoritative for depth). See [`skills/docx-editing/SKILL.md`](../../skills/docx-editing/SKILL.md) for the canonical precedence rule. Derived `is_heading` / `heading_level` fields are tracked in a follow-up issue.
+Use `node.heading != null` as the canonical heading check.
+
+- `source: 'word_style'` wins whenever `paragraph_style_id` matches `/^Heading([1-6])$/` exactly, and only then. Inherited styles like `HeadingPara1` do not count.
+- Heuristic sources (`run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, `title_bare`) always emit `level: null`.
+- Body paragraphs omit the `heading` key entirely.
+
+`list_metadata.header_style` remains the per-detector explanation layer, not the canonical "is heading" predicate. See [`skills/docx-editing/SKILL.md`](../../skills/docx-editing/SKILL.md) for the full precedence rule and the Google Docs asymmetry: the GDocs path only emits `heading` for built-in heading styles and does not run the Word heuristics.
 
 ## Document Families
 
