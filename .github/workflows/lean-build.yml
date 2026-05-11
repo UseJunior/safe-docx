@@ -54,19 +54,33 @@ jobs:
           fi
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - name: Fetch mathlib pre-built oleans
+      # Best-effort optimization. The committed lake-manifest.json is the
+      # source of truth, so we deliberately do NOT run `lake update` here:
+      # it would mutate lake-manifest.json and (without --keep-toolchain)
+      # potentially lean-toolchain too, both of which feed the cache key
+      # above. A mutated manifest after the key was evaluated would poison
+      # subsequent cache restores. `lake build` below resolves and fetches
+      # any packages the committed manifest declares.
+      #
+      # `lake exe cache get` downloads mathlib pre-built .olean files from
+      # the leanprover-community CDN (cold mathlib compile is ~30 min from
+      # source; with cache get it's ~30 s). If the CDN is unreachable we
+      # still want the build to attempt and succeed via compilation, so
+      # this step is marked continue-on-error.
+      - name: Fetch mathlib pre-built oleans (best-effort)
         working-directory: verification/lean
+        continue-on-error: true
         run: |
           for attempt in 1 2 3; do
-            echo "lake update + cache get attempt ${attempt}/3"
-            if lake update && lake exe cache get; then
+            echo "lake exe cache get attempt ${attempt}/3"
+            if lake exe cache get; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then
-              sleep $((attempt * 20))
+              sleep $((attempt * 10))
             fi
           done
-          echo "lake update / lake exe cache get failed after 3 attempts"
+          echo "lake exe cache get failed after 3 attempts; lake build will compile from source"
           exit 1
 
       - name: Build LeanSpike
