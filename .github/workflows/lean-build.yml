@@ -93,9 +93,11 @@ jobs:
         run: |
           # All LeanSpike modules except Spec.lean (which intentionally holds
           # exactly two sorries — the deferred specification targets).
-          files=$(find LeanSpike -name '*.lean' ! -name 'Spec.lean')
-          files="LeanSpike.lean $files"
-          if grep -nw "sorry" $files; then
+          # `find -print0 | xargs -0 grep` avoids the SC2086 word-splitting
+          # foot-gun on an unquoted variable while still letting future modules
+          # under LeanSpike/ get picked up automatically.
+          if find LeanSpike.lean LeanSpike -name '*.lean' ! -name 'Spec.lean' -print0 \
+               | xargs -0 grep -nwH "sorry"; then
             echo "ERROR: sorry found in non-Spec Lean modules. They must remain zero-sorry."
             exit 1
           fi
