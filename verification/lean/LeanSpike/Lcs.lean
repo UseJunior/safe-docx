@@ -85,6 +85,19 @@ lemma index_lt_of_getElem?_eq_some {α : Type} {l : List α} {i : Nat} {a : α}
   by_contra hge
   have hNone : l[i]? = none := List.getElem?_eq_none (Nat.le_of_not_lt hge)
   simp [hNone] at h
+/-- CAVEAT — overfits the 3-field `Atom` projection.
+    This lemma concludes *full structural equality* `a = b` from `atomsEqual a b`,
+    which is only sound because `Atom` is currently projected to exactly three
+    fields (`sha1Hash`, `textContent`, `tagName`) — the same three fields
+    `atomsEqual` inspects. It would NOT hold under a broader projection toward
+    the real `ComparisonUnitAtom` (~20 fields including DOM references,
+    paragraph indices, format-change metadata, etc.). The lemma is load-bearing
+    in the LCS soundness proof's equality branch; broadening `Atom` requires
+    replacing it with a weaker `atomsEqual_implies_relevant_fields_eq` and
+    rewiring the LCS proof accordingly. See `verification/lean/README.md`
+    ("Caveat: `atomsEqual_implies_eq` overfits the 3-field projection") and
+    `INV-ATOMSEQ-001` in `AtomsEqual.lean` for the weaker companion lemma
+    that survives projection broadening. -/
 theorem atomsEqual_implies_eq {a b : Atom} (hEq : atomsEqual a b = true) : a = b := by
   cases a
   cases b

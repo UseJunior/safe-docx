@@ -1,6 +1,6 @@
 # safe-docx Verification — Roadmap
 
-**Status (2026-05-10)**: Stages 1-5 of the Lean 4 verification spike are shipped on draft PR #164; Stage 6 (`lean-build` CI) is the remaining in-flight spike stage.
+**Status (2026-05-11)**: Stages 1-6 of the Lean 4 verification spike are shipped on draft PR #164. Tiers 1, 1.5, and 1.6 are complete; Tier 2+ remains not started.
 
 ## How to use this document
 
@@ -62,11 +62,11 @@ Coverage limits:
 
 Tier 1.5 is useful because it gives future Tier 2 work precise named targets. It should not be described as more than that.
 
-## Tier 1.6 — CI gate (IN FLIGHT)
+## Tier 1.6 — CI gate (COMPLETE)
 
 `lean-build` GitHub Actions job invoking `lake build` in `verification/lean/`. Purpose: prevent silent rot on Lean toolchain or mathlib bumps.
 
-Status: Stage 6 of the spike. Single workflow file under `.github/workflows/`, mathlib build-cache via `actions/cache`, and initially informational rather than blocking. Flip to blocking once the first green run lands.
+Status: Stage 6 of the spike shipped on PR #164. Single workflow file at `.github/workflows/lean-build.yml`, mathlib build-cache via `actions/cache` keyed on `lean-toolchain` + `lake-manifest.json` (no OS-only prefix fallback — see workflow comment for the rationale), `lake exe cache get` is treated as authoritative rather than best-effort. First green run on the GitHub runner: 5m14s cold cache. Currently informational; flip to required via Settings → Branches → main after merge.
 
 This tier is operational, not mathematical. It does not expand proof scope; it preserves the value of Tier 1 and Tier 1.5 by making toolchain regressions visible in normal PR flow.
 

@@ -23,6 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
+      # No `restore-keys` fallback: a partial match on `.lake` / `~/.elan`
+      # across toolchain or manifest changes can silently restore artifacts
+      # compiled against the wrong Lean/mathlib version. Better to take a
+      # cold-cache hit (and depend on `lake exe cache get` below) than to
+      # poison the build with stale oleans on key changes.
       - name: Cache elan toolchain and lake build artifacts
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
@@ -30,8 +35,6 @@ jobs:
             ~/.elan
             verification/lean/.lake
           key: lean-${{ runner.os }}-${{ hashFiles('verification/lean/lean-toolchain', 'verification/lean/lake-manifest.json') }}
-          restore-keys: |
-            lean-${{ runner.os }}-
 
       - name: Install elan
         run: |
@@ -54,22 +57,16 @@ jobs:
           fi
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      # Best-effort optimization. The committed lake-manifest.json is the
-      # source of truth, so we deliberately do NOT run `lake update` here:
-      # it would mutate lake-manifest.json and (without --keep-toolchain)
-      # potentially lean-toolchain too, both of which feed the cache key
-      # above. A mutated manifest after the key was evaluated would poison
-      # subsequent cache restores. `lake build` below resolves and fetches
-      # any packages the committed manifest declares.
-      #
       # `lake exe cache get` downloads mathlib pre-built .olean files from
-      # the leanprover-community CDN (cold mathlib compile is ~30 min from
-      # source; with cache get it's ~30 s). If the CDN is unreachable we
-      # still want the build to attempt and succeed via compilation, so
-      # this step is marked continue-on-error.
-      - name: Fetch mathlib pre-built oleans (best-effort)
+      # the leanprover-community CDN. Cold-from-source compilation of
+      # mathlib takes ~30 minutes — i.e. it would consume the entire job
+      # timeout below — so we treat CDN unreachability as a job failure
+      # rather than silently falling back to a multi-hour source compile.
+      # The committed lake-manifest.json is the source of truth; we
+      # deliberately do NOT run `lake update` here (it would mutate the
+      # manifest and the cache key would no longer match).
+      - name: Fetch mathlib pre-built oleans
         working-directory: verification/lean
-        continue-on-error: true
         run: |
           for attempt in 1 2 3; do
             echo "lake exe cache get attempt ${attempt}/3"
@@ -80,7 +77,7 @@ jobs:
               sleep $((attempt * 10))
             fi
           done
-          echo "lake exe cache get failed after 3 attempts; lake build will compile from source"
+          echo "lake exe cache get failed after 3 attempts; aborting rather than attempting a ~30min source compile under a 30min job timeout"
           exit 1
 
       - name: Build LeanSpike
@@ -88,23 +85,27 @@ jobs:
         run: lake build
 
       # Audits use grep (POSIX-guaranteed on ubuntu-latest) rather than ripgrep
-      # — rg is NOT pre-installed on the default runner image, and the prior
-      # `if rg ...` form silently passed when rg was missing (exit 127 made
-      # the `if` branch false, causing a false-negative audit).
-      - name: Audit Stage 1-3 modules are zero-sorry
+      # — rg is NOT pre-installed on the default runner image. `-w` matches the
+      # whole word `sorry` so prose containing the substring (e.g. an English
+      # apology in a future docstring) doesn't trip the audit.
+      - name: Audit non-Spec modules are zero-sorry
         working-directory: verification/lean
         run: |
-          if grep -n "sorry" LeanSpike/AtomsEqual.lean LeanSpike/Lcs.lean; then
-            echo "ERROR: sorry found in Stage 1-3 proof modules. They must remain zero-sorry."
+          # All LeanSpike modules except Spec.lean (which intentionally holds
+          # exactly two sorries — the deferred specification targets).
+          files=$(find LeanSpike -name '*.lean' ! -name 'Spec.lean')
+          files="LeanSpike.lean $files"
+          if grep -nw "sorry" $files; then
+            echo "ERROR: sorry found in non-Spec Lean modules. They must remain zero-sorry."
             exit 1
           fi
 
       - name: Audit Spec.lean has exactly 2 sorries
         working-directory: verification/lean
         run: |
-          count=$(grep -c "sorry" LeanSpike/Spec.lean || true)
+          count=$(grep -cw "sorry" LeanSpike/Spec.lean || true)
           if [ "$count" != "2" ]; then
             echo "ERROR: Spec.lean expected exactly 2 sorries, found $count."
-            grep -n "sorry" LeanSpike/Spec.lean || true
+            grep -nw "sorry" LeanSpike/Spec.lean || true
             exit 1
           fi
