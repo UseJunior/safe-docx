@@ -1,0 +1,111 @@
+name: Lean Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'verification/lean/**'
+      - '.github/workflows/lean-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'verification/lean/**'
+      - '.github/workflows/lean-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lean-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+      # No `restore-keys` fallback: a partial match on `.lake` / `~/.elan`
+      # across toolchain or manifest changes can silently restore artifacts
+      # compiled against the wrong Lean/mathlib version. Better to take a
+      # cold-cache hit (and depend on `lake exe cache get` below) than to
+      # poison the build with stale oleans on key changes.
+      - name: Cache elan toolchain and lake build artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: |
+            ~/.elan
+            verification/lean/.lake
+          key: lean-${{ runner.os }}-${{ hashFiles('verification/lean/lean-toolchain', 'verification/lean/lake-manifest.json') }}
+
+      - name: Install elan
+        run: |
+          if [ ! -x "$HOME/.elan/bin/lake" ]; then
+            for attempt in 1 2 3; do
+              echo "elan install attempt ${attempt}/3"
+              if curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o elan-init.sh && \
+                sh elan-init.sh -y --default-toolchain none; then
+                rm -f elan-init.sh
+                break
+              fi
+              rm -f elan-init.sh
+              if [ "$attempt" -lt 3 ]; then
+                sleep $((attempt * 20))
+              else
+                echo "elan install failed after 3 attempts"
+                exit 1
+              fi
+            done
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      # `lake exe cache get` downloads mathlib pre-built .olean files from
+      # the leanprover-community CDN. Cold-from-source compilation of
+      # mathlib takes ~30 minutes — i.e. it would consume the entire job
+      # timeout below — so we treat CDN unreachability as a job failure
+      # rather than silently falling back to a multi-hour source compile.
+      # The committed lake-manifest.json is the source of truth; we
+      # deliberately do NOT run `lake update` here (it would mutate the
+      # manifest and the cache key would no longer match).
+      - name: Fetch mathlib pre-built oleans
+        working-directory: verification/lean
+        run: |
+          for attempt in 1 2 3; do
+            echo "lake exe cache get attempt ${attempt}/3"
+            if lake exe cache get; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "lake exe cache get failed after 3 attempts; aborting rather than attempting a ~30min source compile under a 30min job timeout"
+          exit 1
+
+      - name: Build LeanSpike
+        working-directory: verification/lean
+        run: lake build
+
+      # Audits use grep (POSIX-guaranteed on ubuntu-latest) rather than ripgrep
+      # — rg is NOT pre-installed on the default runner image. `-w` matches the
+      # whole word `sorry` so prose containing the substring (e.g. an English
+      # apology in a future docstring) doesn't trip the audit.
+      - name: Audit non-Spec modules are zero-sorry
+        working-directory: verification/lean
+        run: |
+          # All LeanSpike modules except Spec.lean (which intentionally holds
+          # exactly two sorries — the deferred specification targets).
+          files=$(find LeanSpike -name '*.lean' ! -name 'Spec.lean')
+          files="LeanSpike.lean $files"
+          if grep -nw "sorry" $files; then
+            echo "ERROR: sorry found in non-Spec Lean modules. They must remain zero-sorry."
+            exit 1
+          fi
+
+      - name: Audit Spec.lean has exactly 2 sorries
+        working-directory: verification/lean
+        run: |
+          count=$(grep -cw "sorry" LeanSpike/Spec.lean || true)
+          if [ "$count" != "2" ]; then
+            echo "ERROR: Spec.lean expected exactly 2 sorries, found $count."
+            grep -nw "sorry" LeanSpike/Spec.lean || true
+            exit 1
+          fi

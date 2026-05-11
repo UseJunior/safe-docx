@@ -349,7 +349,7 @@ function buildFailureSummary(
  * appears inside a proper field sequence (between begin and separate).
  * Orphaned instrText elements render as visible text in Word.
  */
-function validateFieldStructure(documentXml: string): boolean {
+export function validateFieldStructure(documentXml: string): boolean {
   const root = parseDocumentXml(documentXml);
 
   // Walk the document in order, tracking field nesting
