@@ -87,10 +87,14 @@ jobs:
         working-directory: verification/lean
         run: lake build
 
+      # Audits use grep (POSIX-guaranteed on ubuntu-latest) rather than ripgrep
+      # — rg is NOT pre-installed on the default runner image, and the prior
+      # `if rg ...` form silently passed when rg was missing (exit 127 made
+      # the `if` branch false, causing a false-negative audit).
       - name: Audit Stage 1-3 modules are zero-sorry
         working-directory: verification/lean
         run: |
-          if rg -n "sorry" LeanSpike/AtomsEqual.lean LeanSpike/Lcs.lean; then
+          if grep -n "sorry" LeanSpike/AtomsEqual.lean LeanSpike/Lcs.lean; then
             echo "ERROR: sorry found in Stage 1-3 proof modules. They must remain zero-sorry."
             exit 1
           fi
@@ -98,9 +102,9 @@ jobs:
       - name: Audit Spec.lean has exactly 2 sorries
         working-directory: verification/lean
         run: |
-          count=$(rg -c "sorry" LeanSpike/Spec.lean || echo 0)
+          count=$(grep -c "sorry" LeanSpike/Spec.lean || true)
           if [ "$count" != "2" ]; then
             echo "ERROR: Spec.lean expected exactly 2 sorries, found $count."
-            rg -n "sorry" LeanSpike/Spec.lean
+            grep -n "sorry" LeanSpike/Spec.lean || true
             exit 1
           fi
