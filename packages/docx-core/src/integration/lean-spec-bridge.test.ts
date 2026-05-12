@@ -445,21 +445,39 @@ function assertTrackedScenarioMarkup(
       if (
         !documentXml.includes('<w:commentRangeStart') ||
         !documentXml.includes('<w:commentRangeEnd') ||
-        !documentXml.includes('<w:commentReference')
+        !documentXml.includes('<w:commentReference') ||
+        !insWrapperContains(documentXml, '<w:commentReference')
       ) {
         throw new Error(
-          `comment-anchor scenario failed to emit comment anchor markup: ${JSON.stringify(scenario)}`,
+          `comment-anchor scenario failed to emit a w:ins-wrapped commentReference run (tracked emission missing): ${JSON.stringify(scenario)}`,
         );
       }
       return;
     case 'footnote-anchor':
-      if (!documentXml.includes('<w:footnoteReference')) {
+      if (
+        !documentXml.includes('<w:footnoteReference') ||
+        !insWrapperContains(documentXml, '<w:footnoteReference')
+      ) {
         throw new Error(
-          `footnote-anchor scenario failed to emit footnote anchor markup: ${JSON.stringify(scenario)}`,
+          `footnote-anchor scenario failed to emit a w:ins-wrapped footnoteReference run (tracked emission missing): ${JSON.stringify(scenario)}`,
         );
       }
       return;
   }
+}
+
+// Returns true iff documentXml contains a `<w:ins ...>...</w:ins>` block whose
+// inner content includes `needle`. Used to assert that tracked-emission
+// primitives (addComment, addFootnote) actually wrap their reference run in a
+// w:ins envelope, not just emit the anchor element on its own.
+function insWrapperContains(documentXml: string, needle: string): boolean {
+  const insBlockPattern = /<w:ins\b[^>]*>([\s\S]*?)<\/w:ins>/g;
+  for (const match of documentXml.matchAll(insBlockPattern)) {
+    if (match[1]!.includes(needle)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function materializeTrackedScenario(
@@ -711,26 +729,28 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
       await when('the live inplace comparison output is accepted and rejected across tracked inputs', async () => {});
 
       await then('field structure remains valid and every tracked scenario family is exercised', async () => {
-        await fc.assert(
-          fc.asyncProperty(trackedPairArb, async ({ originalScenario, revisedScenario }) => {
-            const [original, revised] = await Promise.all([
-              materializeTrackedScenario(originalScenario),
-              materializeTrackedScenario(revisedScenario),
-            ]);
+        try {
+          await fc.assert(
+            fc.asyncProperty(trackedPairArb, async ({ originalScenario, revisedScenario }) => {
+              const [original, revised] = await Promise.all([
+                materializeTrackedScenario(originalScenario),
+                materializeTrackedScenario(revisedScenario),
+              ]);
 
-            recordTrackedScenarioHit(coverage, original.scenario);
-            recordTrackedScenarioHit(coverage, revised.scenario);
+              recordTrackedScenarioHit(coverage, original.scenario);
+              recordTrackedScenarioHit(coverage, revised.scenario);
 
-            const result = await compareDocumentBuffers(original.document, revised.document);
-            const context = { originalScenario, revisedScenario };
+              const result = await compareDocumentBuffers(original.document, revised.document);
+              const context = { originalScenario, revisedScenario };
 
-            assertInplaceResult('INV-FIELD-001 tracked', context, result);
-            assertFieldInvariant('INV-FIELD-001 tracked', context, result.combined);
-          }),
-          { numRuns: NUM_RUNS },
-        );
-
-        await allureJsonAttachment('tracked-input-family-hits-inv-field-001', coverage);
+              assertInplaceResult('INV-FIELD-001 tracked', context, result);
+              assertFieldInvariant('INV-FIELD-001 tracked', context, result.combined);
+            }),
+            { numRuns: NUM_RUNS },
+          );
+        } finally {
+          await allureJsonAttachment('tracked-input-family-hits-inv-field-001', coverage);
+        }
         assertTrackedScenarioCoverage('INV-FIELD-001 tracked', coverage);
       });
     },
@@ -746,26 +766,28 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
       await when('the live inplace comparison output is projected through accept-all and reject-all across tracked inputs', async () => {});
 
       await then('normalized text round-trips and every tracked scenario family is exercised', async () => {
-        await fc.assert(
-          fc.asyncProperty(trackedPairArb, async ({ originalScenario, revisedScenario }) => {
-            const [original, revised] = await Promise.all([
-              materializeTrackedScenario(originalScenario),
-              materializeTrackedScenario(revisedScenario),
-            ]);
+        try {
+          await fc.assert(
+            fc.asyncProperty(trackedPairArb, async ({ originalScenario, revisedScenario }) => {
+              const [original, revised] = await Promise.all([
+                materializeTrackedScenario(originalScenario),
+                materializeTrackedScenario(revisedScenario),
+              ]);
 
-            recordTrackedScenarioHit(coverage, original.scenario);
-            recordTrackedScenarioHit(coverage, revised.scenario);
+              recordTrackedScenarioHit(coverage, original.scenario);
+              recordTrackedScenarioHit(coverage, revised.scenario);
 
-            const result = await compareDocumentBuffers(original.document, revised.document);
-            const context = { originalScenario, revisedScenario };
+              const result = await compareDocumentBuffers(original.document, revised.document);
+              const context = { originalScenario, revisedScenario };
 
-            assertInplaceResult('INV-RT-001 tracked', context, result);
-            await assertRoundTripInvariant('INV-RT-001 tracked', context, result);
-          }),
-          { numRuns: NUM_RUNS },
-        );
-
-        await allureJsonAttachment('tracked-input-family-hits-inv-rt-001', coverage);
+              assertInplaceResult('INV-RT-001 tracked', context, result);
+              await assertRoundTripInvariant('INV-RT-001 tracked', context, result);
+            }),
+            { numRuns: NUM_RUNS },
+          );
+        } finally {
+          await allureJsonAttachment('tracked-input-family-hits-inv-rt-001', coverage);
+        }
         assertTrackedScenarioCoverage('INV-RT-001 tracked', coverage);
       });
     },
