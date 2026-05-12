@@ -1,6 +1,6 @@
 # safe-docx Verification — Roadmap
 
-**Status (2026-05-11)**: Stages 1-6 of the Lean 4 verification spike are shipped on draft PR #164. Tiers 1, 1.5, and 1.6 are complete; Tier 2+ remains not started.
+**Status (2026-05-12)**: Stages 1-6 of the Lean 4 verification spike shipped via PR #164 (merged 2026-05-11). Tiers 1, 1.5, and 1.6 are complete; Tier 2 kickoff is in progress via OpenSpec change `add-ooxml-doc-subset-and-inv-field-001-proof` (issue #201); Tier 2.5 / 3 / 3+ remain not started.
 
 ## How to use this document
 
