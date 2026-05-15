@@ -410,7 +410,7 @@ function assertTrackedScenarioMarkup(
     case 'w:ins':
       if (
         !documentXml.includes('<w:ins') ||
-        !normalizeDocumentXmlText(documentXml).includes(scenario.insertedText)
+        !normalizeDocumentXmlText(documentXml).includes(normalizeText(scenario.insertedText))
       ) {
         throw new Error(
           `w:ins scenario failed to emit tracked insertion markup: ${JSON.stringify(scenario)}`,
@@ -427,7 +427,7 @@ function assertTrackedScenarioMarkup(
     case 'paragraph-insert':
       if (
         countTagMatches(documentXml, 'w:ins') < 2 ||
-        !normalizeDocumentXmlText(documentXml).includes(scenario.newParagraphText)
+        !normalizeDocumentXmlText(documentXml).includes(normalizeText(scenario.newParagraphText))
       ) {
         throw new Error(
           `paragraph-insert scenario failed to emit paragraph-mark + run-level insertion markup: ${JSON.stringify(scenario)}`,
