@@ -47,6 +47,8 @@
  */
 
 import fc from 'fast-check';
+import JSZip from 'jszip';
+import { DOMParser } from '@xmldom/xmldom';
 import { describe } from 'vitest';
 import { compareDocuments, type ReconstructionMode } from '../index.js';
 import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
@@ -674,6 +676,109 @@ async function assertRoundTripInvariant(
   }
 }
 
+// =============================================================================
+// Field-bearing falsifiability layer for `compareDocumentXml_output_recursivelyWellformed`
+//
+// The new Tier 2 axiom in `verification/lean/LeanSpike/Spec.lean` asserts that
+// inplace comparison output satisfies `recursivelyWellformed`: the whole
+// document passes `validateFieldStructure`, AND every `w:ins` / `w:del` /
+// `w:moveFrom` / `w:moveTo` wrapper subtree is `fieldContextNeutral`.
+//
+// The fast-check generators above are field-free and only check the *consequence*
+// of the axiom (validateFieldStructure post-accept/reject). The single fixture
+// case below exercises a TS-side analogue of the *precondition* itself against
+// the live engine — a falsifiability layer, NOT empirical grounding for a
+// universal claim.
+// =============================================================================
+
+async function buildFieldDocx(bodyXml: string): Promise<Buffer> {
+  const documentXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+    `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
+  const contentTypesXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+    `<Default Extension="xml" ContentType="application/xml"/>` +
+    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+    `</Types>`;
+  const rootRelsXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+    `</Relationships>`;
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', contentTypesXml);
+  zip.file('_rels/.rels', rootRelsXml);
+  zip.file('word/document.xml', documentXml);
+  return await zip.generateAsync({ type: 'nodebuffer' });
+}
+
+/**
+ * TS-side analogue of `Tier2.FieldStructure.fieldContextNeutral` for one wrapper
+ * subtree. Walks every descendant `w:fldChar` / `w:instrText` / `w:delInstrText`
+ * atom in document order over a depth-indexed `pastSeparatorAtDepth` stack —
+ * the exact model the Lean walk and `pipeline.ts:374-389` use.
+ *
+ * Pop-on-empty and separate-on-empty are treated as FAILURE (not the no-op the
+ * whole-document walk uses): an inner subtree that pops or flips a separator bit
+ * on the empty local stack would disturb an outer field context, so it is not
+ * context-neutral under the universal quantifier `∀ ctx`.
+ */
+function isFieldContextNeutral(wrapper: Element): boolean {
+  const descendants = wrapper.getElementsByTagName('*');
+  const stack: boolean[] = [];
+  for (let i = 0; i < descendants.length; i++) {
+    const el = descendants[i];
+    if (!el) continue;
+    const tag = el.nodeName;
+    if (tag === 'w:fldChar') {
+      const kind = el.getAttribute('w:fldCharType');
+      if (kind === 'begin') {
+        stack.push(false);
+      } else if (kind === 'separate') {
+        if (stack.length === 0) return false;
+        stack[stack.length - 1] = true;
+      } else if (kind === 'end') {
+        if (stack.length === 0) return false;
+        stack.pop();
+      }
+    } else if (tag === 'w:instrText' || tag === 'w:delInstrText') {
+      if (stack.length === 0 || stack[stack.length - 1] === true) return false;
+    }
+  }
+  return stack.length === 0;
+}
+
+function assertRecursivelyWellformed(
+  invariant: string,
+  context: Record<string, unknown>,
+  combinedXml: string,
+): void {
+  if (!validateFieldStructure(combinedXml)) {
+    throw new Error(
+      `${invariant}: triage=engine-bug whole-document validateFieldStructure failed on ` +
+        `inplace comparison output. context=${JSON.stringify(context)}`,
+    );
+  }
+  const doc = new DOMParser().parseFromString(combinedXml, 'application/xml');
+  for (const tag of ['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']) {
+    const wrappers = doc.getElementsByTagName(tag);
+    for (let i = 0; i < wrappers.length; i++) {
+      const wrapper = wrappers[i];
+      if (!wrapper) continue;
+      if (!isFieldContextNeutral(wrapper as unknown as Element)) {
+        throw new Error(
+          `${invariant}: triage=engine-bug wrapper subtree <${tag}>[${i}] is not ` +
+            `field-context-neutral — recursivelyWellformed precondition violated. ` +
+            `context=${JSON.stringify(context)}`,
+        );
+      }
+    }
+  }
+}
+
 describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () => {
   test(
     'INV-FIELD-001: field structure preserved after accept-all and reject-all on inplace comparison output',
@@ -790,6 +895,42 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
         }
         assertTrackedScenarioCoverage('INV-RT-001 tracked', coverage);
       });
+    },
+  );
+
+  test(
+    'INV-FIELD-001: field-bearing inplace comparison output is recursivelyWellformed (axiom falsifiability layer)',
+    async ({ given, when, then }: AllureBddContext) => {
+      await given('a field-free original and a revised document with a complete NUMPAGES field inserted', async () => {});
+
+      await when('the live inplace comparison output is computed', async () => {});
+
+      await then(
+        'the combined document validates and every wrapper subtree is field-context-neutral',
+        async () => {
+          const field =
+            `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+            `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
+            `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+            `<w:r><w:t>3</w:t></w:r>` +
+            `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+          const original = await buildFieldDocx(
+            `<w:p><w:r><w:t>Total pages here.</w:t></w:r></w:p>`,
+          );
+          const revised = await buildFieldDocx(
+            `<w:p><w:r><w:t>Total pages </w:t></w:r>${field}<w:r><w:t> here.</w:t></w:r></w:p>`,
+          );
+
+          const result = await compareDocumentBuffers(original, revised);
+          const context = { fixture: 'numpages-field-insert' };
+
+          assertInplaceResult('INV-FIELD-001 field-bearing', context, result);
+          // The new axiom's precondition: recursivelyWellformed on inplace output.
+          assertRecursivelyWellformed('INV-FIELD-001 field-bearing', context, result.combined);
+          // The axiom's consequence: field structure survives accept/reject.
+          assertFieldInvariant('INV-FIELD-001 field-bearing', context, result.combined);
+        },
+      );
     },
   );
 });

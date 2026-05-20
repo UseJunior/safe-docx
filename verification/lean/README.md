@@ -13,6 +13,8 @@ This spike now includes a Lean model of the atom-level LCS computation from `pac
 - `LeanSpike/AtomsEqual.lean`
 - `LeanSpike/Lcs.lean`
 - `LeanSpike/Spec.lean`
+- `Tier2.lean` and `Tier2/` — the Tier 2 definitional `OoxmlDoc` subset and the
+  closed `inv_field_001` proof. See `Tier2/README.md`.
 
 ## Current proof scope
 
@@ -24,14 +26,38 @@ Currently proved in this stage:
 - `INV-LCS-003` in `LeanSpike/Lcs.lean`: **strict index monotonicity.** The reported match pairs are pairwise strictly increasing in both original and revised indices.
 - `INV-LCS-004` in `LeanSpike/Lcs.lean`: **partition completeness.** Matched and deleted original indices partition `range original.length`, and matched and inserted revised indices partition `range revised.length`.
 
-## Specification targets (sorry'd, uninterpreted signature)
+## Specification targets
 
-This stage also adds named specification targets over an uninterpreted Lean signature, intended for later empirical bridge/proof work. The motivating TypeScript checks and tests motivate these targets; with a fully uninterpreted `axiom` surface and two `sorry`s, the TS evidence does not justify a universal Lean claim on its own. The current Lean file keeps every document-level operation abstract via `axiom`, so `LeanSpike/Spec.lean` is a target surface for later stages rather than a closed proof artifact.
+`LeanSpike/Spec.lean` carries two named specification targets. As of Tier 2,
+`INV-FIELD-001` is **closed**; `INV-RT-001` remains a `sorry`.
 
-- `INV-FIELD-001` in `LeanSpike/Spec.lean`: scope `validateFieldStructure` to the inplace-mode comparison output `compareDocumentXml a b`, then require both `acceptAllChanges` and `rejectAllChanges` to preserve field structure. This mirrors the syntactic scan in `packages/docx-core/src/baselines/atomizer/pipeline.ts:352-402`, the actual field-structure call site at `pipeline.ts:439-440` inside `evaluateSafetyChecks` (`pipeline.ts:404-440`, gated on the inplace branch at `pipeline.ts:669`), and the inplace-mode comparison-output surface assigned at `pipeline.ts:635-650`.
-- `INV-RT-001` in `LeanSpike/Spec.lean`: paired round-trip text recovery, with `acceptAllChanges` matching the revised document and `rejectAllChanges` matching the original document after `normalizeText ∘ extractTextWithParagraphs`. This mirrors the helper functions in `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-688` (`extractTextWithParagraphs`) and `trackChangesAcceptorAst.ts:701-711` (`normalizeText`), plus the gold-standard paired assertions in `packages/docx-core/src/integration/round-trip-inplace.test.ts:56-63` and `:87-94`, with a second paired fixture at `packages/docx-core/src/integration/nvca-coi-regression.test.ts:77-103`.
+- `INV-FIELD-001` in `LeanSpike/Spec.lean`: **closed.** `validateFieldStructure`,
+  scoped to the inplace-mode comparison output `compareDocumentXml a b`, is
+  preserved by both `acceptAllChanges` and `rejectAllChanges`. This mirrors the
+  syntactic scan in `packages/docx-core/src/baselines/atomizer/pipeline.ts:352-402`,
+  the actual field-structure call site at `pipeline.ts:439-440` inside
+  `evaluateSafetyChecks` (`pipeline.ts:404-440`, gated on the inplace branch at
+  `pipeline.ts:669`), and the inplace-mode comparison-output surface assigned at
+  `pipeline.ts:635-650`. The closure rewires the `OoxmlDoc` / `acceptAllChanges` /
+  `rejectAllChanges` / `validateFieldStructure` axioms to the definitional Tier 2
+  model (`Tier2/`) and composes the machine-checked preservation lemma
+  `Tier2.InvFieldOne.field_structure_preserved` with a single named residual
+  axiom — see the Specification Gap section below.
+- `INV-RT-001` in `LeanSpike/Spec.lean`: **still `sorry`'d.** Paired round-trip
+  text recovery, with `acceptAllChanges` matching the revised document and
+  `rejectAllChanges` matching the original document after
+  `normalizeText ∘ extractTextWithParagraphs`. This mirrors the helper functions
+  in `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-688`
+  (`extractTextWithParagraphs`) and `trackChangesAcceptorAst.ts:701-711`
+  (`normalizeText`), plus the gold-standard paired assertions in
+  `packages/docx-core/src/integration/round-trip-inplace.test.ts:56-63` and
+  `:87-94`, with a second paired fixture at
+  `packages/docx-core/src/integration/nvca-coi-regression.test.ts:77-103`. It is
+  deferred to the `add-inv-rt-001-proof` successor change.
 
-`Spec.lean` must remain isolated from `AtomsEqual.lean` and `Lcs.lean`. The zero-sorry property of Stage 1-3 modules is preserved; `Spec.lean` is the only `sorry`-bearing file.
+The zero-sorry property of every non-`Spec.lean` module (Stage 1-3 modules and
+all of `Tier2/`) is preserved; `Spec.lean` is the only `sorry`-bearing file, and
+it now carries exactly one `sorry` (`inv_rt_001`).
 
 For interactive auditing, inspect `#print sorries`, `#print axioms inv_field_001`, and `#print axioms inv_rt_001`.
 
@@ -40,8 +66,9 @@ For interactive auditing, inspect `#print sorries`, `#print axioms inv_field_001
 This spike still does not cover:
 
 - closed proofs of reconstruction invariants
-- closed proofs of round-trip text equality
-- closed proofs of field-structure / document-shape preservation
+- closed proofs of round-trip text equality (`inv_rt_001` is still `sorry`'d)
+- a discharged proof of `compareDocumentXml_output_recursivelyWellformed` — the
+  `inv_field_001` closure carries it as a named residual axiom (Tier 3 work)
 - extensional equivalence between the Lean model and the production TypeScript implementation
 
 ## Lean model
@@ -55,6 +82,27 @@ This spike still does not cover:
 The projection intentionally flattens `contentElement.textContent ?? ""` into a total `textContent : String`. Any `null` handling is assumed to happen before an atom is translated into the Lean model.
 
 ## Specification Gap
+
+### Tier 2 residual axiom (`inv_field_001`)
+
+The closed `inv_field_001` proof carries exactly one named residual axiom:
+`compareDocumentXml_output_recursivelyWellformed` in `LeanSpike/Spec.lean`. It
+asserts that this repo's inplace atomizer output satisfies
+`Tier2.FieldStructure.recursivelyWellformed` — scoped to this repo's inplace
+atomizer, NOT to OOXML comparison engines in general. Discharging it by modeling
+`compareDocumentXml` definitionally is **Tier 3** work. Extensional equivalence
+between the Lean `accept` / `reject` and the production TS
+`acceptAllChanges` / `rejectAllChanges` is **Tier 2.5** work and is not
+established here. The production engine's runtime `validateFieldStructure` check
+is not made redundant by this proof. The model also deliberately narrows the TS
+paragraph-removal logic (`trackChangesAcceptorAst.ts:411,456,564`) by treating
+only wrapper blocks as substantive. Full detail is in `Tier2/README.md`.
+
+A TS-side falsifiability layer for the residual axiom — one field-bearing fixture
+case checking a TS analogue of `recursivelyWellformed` against the live engine —
+lives in `packages/docx-core/src/integration/lean-spec-bridge.test.ts`.
+
+### Tier 1 `Atom` projection gap
 
 The Lean `Atom` is intentionally narrower than the TypeScript `ComparisonUnitAtom` in `packages/docx-core/src/core-types.ts`.
 
@@ -94,10 +142,14 @@ lake update
 lake build
 ```
 
-To confirm the Stage 1-3 proof modules remain `sorry`-free, and that `Spec.lean`
-contains only the two intentional placeholders:
+To confirm every non-`Spec.lean` module remains `sorry`-free, and that `Spec.lean`
+contains only the single intentional placeholder (`inv_rt_001`):
 
 ```bash
-rg -n "sorry" LeanSpike/AtomsEqual.lean LeanSpike/Lcs.lean   # must be empty
-rg -n "sorry" LeanSpike/Spec.lean                            # exactly 2 hits
+grep -rnw "sorry" LeanSpike/AtomsEqual.lean LeanSpike/Lcs.lean Tier2/   # must be empty
+grep -cw  "sorry" LeanSpike/Spec.lean                                  # exactly 1 hit
 ```
+
+For interactive auditing, inspect `#print axioms LeanSpike.inv_field_001` — it
+depends only on `propext`, `Quot.sound`, `compareDocumentXml`, and the single
+residual axiom `compareDocumentXml_output_recursivelyWellformed` (no `sorryAx`).
