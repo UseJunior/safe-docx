@@ -677,18 +677,24 @@ async function assertRoundTripInvariant(
 }
 
 // =============================================================================
-// Field-bearing falsifiability layer for `compareDocumentXml_output_recursivelyWellformed`
+// Field-bearing falsifiability layer for the Tier 2 residual axiom
 //
-// The new Tier 2 axiom in `verification/lean/LeanSpike/Spec.lean` asserts that
-// inplace comparison output satisfies `recursivelyWellformed`: the whole
-// document passes `validateFieldStructure`, AND every `w:ins` / `w:del` /
-// `w:moveFrom` / `w:moveTo` wrapper subtree is `fieldContextNeutral`.
+// The current (post-PR-B) axiom in `verification/lean/LeanSpike/Spec.lean` is
+// `compareDocumentXml_output_preservation_friendly`: it asserts only that the
+// inplace combined output is *preservation-friendly* — its document-level walk
+// and begin/end balance are unchanged by accept/reject. That weaker shape is
+// what `assertFieldInvariant` already checks (via `validateFieldStructure` on
+// the accepted and rejected outputs).
 //
-// The fast-check generators above are field-free and only check the *consequence*
-// of the axiom (validateFieldStructure post-accept/reject). The single fixture
-// case below exercises a TS-side analogue of the *precondition* itself against
-// the live engine — a falsifiability layer, NOT empirical grounding for a
-// universal claim.
+// `assertRecursivelyWellformed` (below) additionally checks the STRICTER
+// `fieldContextNeutral ∀ ctx` property per wrapper subtree. The current engine
+// satisfies this stronger property because it emits whole field sequences as
+// single track-change wrappers (`inPlaceModifier.ts:717, 938, 1505, 1671,
+// 1957, 2300`). When ECMA-376 fragmentation conformance lands (#217),
+// fragmented wrapper subtrees will NOT satisfy `∀ ctx` neutrality and this
+// over-check will need to be removed or relaxed. Until then it serves as an
+// audit gate that the engine has not regressed into emitting partial-wrapper
+// fragments unexpectedly.
 // =============================================================================
 
 async function buildFieldDocx(bodyXml: string): Promise<Buffer> {
