@@ -345,18 +345,27 @@ function buildFailureSummary(
 /**
  * Validate field structure integrity in document XML.
  *
- * Checks that fldChar begin/end are balanced and that w:instrText only
- * appears inside a proper field sequence (between begin and separate).
- * Orphaned instrText elements render as visible text in Word.
+ * Enforces three ECMA-376 Part 4 constraints on complex fields:
+ *   1. Global `w:fldChar` begin/end count balance.
+ *   2. Every `w:instrText` AND `w:delInstrText` sits inside an open field body
+ *      (between `begin` and `separate`). Orphaned instruction text renders as
+ *      literal text in Word.
+ *   3. `w:delInstrText` is nested inside a `<w:del>` ancestor (DeletedFieldCode
+ *      schema constraint), and conversely `w:fldChar` is NEVER inside `<w:del>`
+ *      (Word treats this as fatal and discards the field state machine).
+ *
+ * Called on both pre-accept/reject combined XML (with track-change wrappers)
+ * and on post-accept/reject XML (wrappers removed). Both cases must satisfy the
+ * field placement check; constraint (3) is vacuous post-accept/reject.
  */
 export function validateFieldStructure(documentXml: string): boolean {
   const root = parseDocumentXml(documentXml);
 
-  // Walk the document in order, tracking field nesting
   const allFldChars = findAllByTagName(root, 'w:fldChar');
   const allInstrTexts = findAllByTagName(root, 'w:instrText');
+  const allDelInstrTexts = findAllByTagName(root, 'w:delInstrText');
 
-  // Quick balance check
+  // Constraint (1): global fldChar begin/end balance.
   let begins = 0;
   let ends = 0;
   for (const fc of allFldChars) {
@@ -366,19 +375,36 @@ export function validateFieldStructure(documentXml: string): boolean {
   }
   if (begins !== ends) return false;
 
-  // Check that instrText elements are inside a field (between begin and separate).
-  // Walk all elements in document order using a recursive scan.
-  if (allInstrTexts.length === 0) return true; // No instrText, nothing to validate
+  if (
+    allFldChars.length === 0 &&
+    allInstrTexts.length === 0 &&
+    allDelInstrTexts.length === 0
+  ) {
+    return true;
+  }
 
-  // Depth-first scan to check instrText placement
+  // Depth-first scan tracking field nesting (for constraint 2) and <w:del>
+  // ancestor nesting (for constraint 3).
   let depth = 0;
-  const pastSeparatorAtDepth: number[] = []; // track separator state per depth
+  const pastSeparatorAtDepth: number[] = [];
+  let insideDelDepth = 0;
+
   function scan(node: Element): boolean {
     for (let child = node.firstChild; child; child = child.nextSibling) {
-      if (child.nodeType !== 1) continue; // skip non-elements
+      if (child.nodeType !== 1) continue;
       const el = child as Element;
+      const tag = el.tagName;
 
-      if (el.tagName === 'w:fldChar') {
+      if (tag === 'w:del') {
+        insideDelDepth++;
+        const ok = scan(el);
+        insideDelDepth--;
+        if (!ok) return false;
+        continue;
+      }
+
+      if (tag === 'w:fldChar') {
+        if (insideDelDepth > 0) return false;
         const type = el.getAttribute('w:fldCharType');
         if (type === 'begin') {
           depth++;
@@ -388,8 +414,10 @@ export function validateFieldStructure(documentXml: string): boolean {
         } else if (type === 'end') {
           if (depth > 0) depth--;
         }
-      } else if (el.tagName === 'w:instrText') {
-        // instrText must be inside a field (depth > 0) and before the separator
+      } else if (tag === 'w:instrText') {
+        if (depth === 0 || pastSeparatorAtDepth[depth]) return false;
+      } else if (tag === 'w:delInstrText') {
+        if (insideDelDepth === 0) return false;
         if (depth === 0 || pastSeparatorAtDepth[depth]) return false;
       }
 
