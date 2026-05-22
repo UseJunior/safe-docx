@@ -787,6 +787,89 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
     });
   });
 
+  test('does not emit rPrChange when explicit replacement formatting leaves run properties unchanged', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph whose source run is already bold', () => {
+      const doc = makeDoc(
+        '<w:p><w:r><w:rPr><w:b w:val="1"/></w:rPr><w:t>Hello</w:t></w:r></w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the replacement explicitly asks for the same bold formatting', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        5,
+        [{ text: 'New', addRunProps: { bold: true } }],
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('tracked insertion and deletion are emitted without a property-change record', () => {
+      expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(0);
+    });
+  });
+
+  test('emits rPrChange with the prior run properties when replacement formatting changes', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let p: Element;
+    let rPrChange: Element;
+
+    await given('a paragraph whose source run is italic', () => {
+      const doc = makeDoc(
+        '<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>Hello</w:t></w:r></w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the replacement adds bold formatting under tracked changes', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        5,
+        [{ text: 'New', addRunProps: { bold: true } }],
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+      rPrChange = p.getElementsByTagNameNS(W_NS, 'rPrChange').item(0) as Element;
+    });
+
+    await then('the inserted run records the previous italic rPr inside w:rPrChange', () => {
+      expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(1);
+      expect(rPrChange.getAttribute('w:id')).toBeTruthy();
+      expect(rPrChange.getAttribute('w:author')).toBe('SafeDocX AI');
+      expect(rPrChange.getAttribute('w:date')).toBe('2026-05-03T14:15:16Z');
+
+      const previousRPr = rPrChange.getElementsByTagNameNS(W_NS, W.rPr).item(0) as Element;
+      expect(previousRPr).toBeTruthy();
+      expect(previousRPr.getElementsByTagNameNS(W_NS, W.i)).toHaveLength(1);
+      expect(previousRPr.getElementsByTagNameNS(W_NS, W.b)).toHaveLength(0);
+
+      const insertedRun = p.getElementsByTagNameNS(W_NS, 'ins').item(0)!.getElementsByTagNameNS(W_NS, W.r).item(0)!;
+      expect(insertedRun.getElementsByTagNameNS(W_NS, W.b)).toHaveLength(1);
+    });
+  });
+
   test('preserves per-run formatting inside tracked deletions spanning multiple runs', async ({ given, when, then }: AllureBddContext) => {
     let p: Element;
     let deletion: Element;

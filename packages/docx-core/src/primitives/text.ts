@@ -1,6 +1,7 @@
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
 import {
+  buildRPrChangeElement,
   createRevisionContainer,
   prepareElementForDeletion,
   type RevisionContext,
@@ -126,11 +127,22 @@ function cloneRunFormattingOnly(doc: Document, sourceRun: Element): Element {
     if (child.nodeType !== 1) continue;
     const el = child as Element;
     if (isW(el, W.rPr)) {
-      r.appendChild(el.cloneNode(true));
+      r.appendChild(cloneRPrWithoutChangeRecords(doc, el));
       break;
     }
   }
   return r;
+}
+
+function cloneRPrWithoutChangeRecords(doc: Document, rPr: Element): Element {
+  const clone = doc.createElementNS(OOXML.W_NS, `w:${W.rPr}`);
+  for (const child of Array.from(rPr.childNodes)) {
+    if (child.nodeType !== 1) continue;
+    const el = child as Element;
+    if (isW(el, 'rPrChange')) continue;
+    clone.appendChild(el.cloneNode(true));
+  }
+  return clone;
 }
 
 function appendTextToRun(doc: Document, run: Element, text: string): void {
@@ -300,6 +312,36 @@ function getDirectChild(parent: Element, localName: string): Element | null {
     if (isW(el, localName)) return el;
   }
   return null;
+}
+
+function rPrComparableSignature(rPr: Element | null): string {
+  if (!rPr) return '';
+
+  const nodeSignature = (node: Node): string => {
+    if (node.nodeType === 3) return node.textContent ?? '';
+    if (node.nodeType !== 1) return '';
+
+    const el = node as Element;
+    if (isW(el, 'rPrChange')) return '';
+
+    const attrs = Array.from(el.attributes)
+      .map((attr) => {
+        const attrNs = attr.namespaceURI ?? (attr.name.startsWith('w:') ? OOXML.W_NS : '');
+        const attrName = attr.name.includes(':') ? attr.name.slice(attr.name.indexOf(':') + 1) : attr.localName;
+        return [attrNs, attrName, attr.value] as const;
+      })
+      .sort(([aNs, aName], [bNs, bName]) => aNs.localeCompare(bNs) || aName.localeCompare(bName))
+      .map(([ns, name, value]) => `${ns}:${name}=${value}`)
+      .join('|');
+    const children = Array.from(el.childNodes).map(nodeSignature).join('');
+    return `<${el.namespaceURI ?? ''}:${el.localName} ${attrs}>${children}</${el.namespaceURI ?? ''}:${el.localName}>`;
+  };
+
+  return Array.from(rPr.childNodes).map(nodeSignature).join('');
+}
+
+function getSnapshotRPr(doc: Document, sourceRPr: Element | null): Element {
+  return sourceRPr ? cloneRPrWithoutChangeRecords(doc, sourceRPr) : doc.createElementNS(OOXML.W_NS, `w:${W.rPr}`);
 }
 
 function ensureRPr(doc: Document, run: Element): Element {
@@ -519,8 +561,15 @@ export function replaceParagraphTextRange(
   const replacementRuns: Element[] = [];
   for (const part of parts) {
     const tmpl = part.templateRun ?? templateRun;
+    const sourceRPr = getDirectChild(tmpl, W.rPr);
+    const sourceRPrSignature = rPrComparableSignature(sourceRPr);
     const newRun = cloneRunFormattingOnly(doc, tmpl);
     applyRunProps(doc, newRun, part.addRunProps, part.clearHighlight);
+    const newRPr = getDirectChild(newRun, W.rPr);
+    const hasExplicitFormattingMutation = !!part.addRunProps || !!part.clearHighlight;
+    if (ctx && hasExplicitFormattingMutation && rPrComparableSignature(newRPr) !== sourceRPrSignature) {
+      ensureRPr(doc, newRun).appendChild(buildRPrChangeElement(getSnapshotRPr(doc, sourceRPr), ctx));
+    }
     appendTextToRun(doc, newRun, part.text);
     if (getRunVisibleLength(newRun) > 0) {
       replacementRuns.push(newRun);
