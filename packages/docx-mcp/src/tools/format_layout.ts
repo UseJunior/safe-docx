@@ -255,7 +255,7 @@ export async function formatLayout(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'format_layout' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const ctx = getRevisionContextForSession(session);
+    const ctx = await getRevisionContextForSession(session);
 
     const strict = params.strict ?? true;
     if (typeof strict !== 'boolean') {

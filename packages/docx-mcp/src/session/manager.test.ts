@@ -117,10 +117,38 @@ describe('revision context helpers', () => {
     await fs.writeFile(filePath, new Uint8Array(buf));
 
     const session = await mgr.createSession(buf, 'tracked.docx', filePath);
-    const ctx = getRevisionContextForSession(session);
+    const ctx = await getRevisionContextForSession(session);
 
     expect(ctx).toBeDefined();
     expect(session.revisionIdState?.nextId).toBe(43);
+  });
+
+  test('initializes revision ids above pre-existing side-part w:id values', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-revision-sidepart-test-'));
+    tmpDirs.push(dir);
+    const filePath = path.join(dir, 'tracked-sidepart.docx');
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body>` +
+      `<w:p><w:ins w:id="42" w:author="Existing" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Prior</w:t></w:r></w:ins></w:p>` +
+      `</w:body></w:document>`;
+    const commentsXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:comment w:id="0" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">` +
+      `<w:p><w:ins w:id="500" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Side part</w:t></w:r></w:ins></w:p>` +
+      `</w:comment>` +
+      `</w:comments>`;
+    const buf = await makeDocxWithDocumentXml(documentXml, { 'word/comments.xml': commentsXml });
+    await fs.writeFile(filePath, new Uint8Array(buf));
+
+    const session = await mgr.createSession(buf, 'tracked-sidepart.docx', filePath);
+    const ctx = await getRevisionContextForSession(session);
+
+    expect(ctx).toBeDefined();
+    expect(session.revisionIdState?.nextId).toBe(501);
   });
 });
 

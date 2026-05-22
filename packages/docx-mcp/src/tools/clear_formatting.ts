@@ -71,7 +71,7 @@ export async function clearFormatting(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'clear_formatting' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const revisionCtx = ctx ?? getRevisionContextForSession(session);
+    const revisionCtx = ctx ?? await getRevisionContextForSession(session);
 
     const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
     const pids = params.paragraph_ids ?? nodes.map((n) => n.id);

@@ -13,7 +13,7 @@ export async function deleteComment(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'delete_comment' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
-  const ctx = getRevisionContextForSession(session);
+  const ctx = await getRevisionContextForSession(session);
 
   if (params.comment_id == null) {
     return err('MISSING_PARAMETER', 'comment_id is required.', 'Provide the comment ID to delete.');

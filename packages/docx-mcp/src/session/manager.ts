@@ -6,6 +6,8 @@ import {
   DocxDocument,
   createRevisionContext,
   createRevisionIdState,
+  parseXml,
+  readZipText,
   type NormalizationResult,
   type ParagraphRevision,
   type ReconstructionMode,
@@ -93,6 +95,13 @@ export type GDocsSession = {
 export type Session = DocxSession | GDocsSession;
 
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const REVISION_ID_SEED_SIDE_PARTS = [
+  'word/comments.xml',
+  'word/footnotes.xml',
+  'word/endnotes.xml',
+  'word/commentsExtended.xml',
+  'word/people.xml',
+] as const;
 
 function normalizeAiAuthor(author: string | null | undefined): string | null {
   if (typeof author !== 'string') return null;
@@ -114,18 +123,8 @@ function getWordIdValue(element: Element): number | null {
  * Compute a starting `RevisionIdState` whose first allocated `w:id` is
  * higher than any existing revision id found in the supplied documents.
  *
- * **Known limitation (see follow-up to #165):** this scans only the
- * documents passed in. Today's caller passes `documentXml` only, so any
- * pre-existing revision in side parts (`comments.xml`, `footnotesXml`,
- * `endnotes.xml`) is invisible to the seed scan. For typical sessions
- * with <100 AI edits this never collides in practice; for long-running
- * sessions on heavily-reviewed third-party documents the AI counter
- * could eventually cross a pre-existing side-part revision id.
- *
- * To close the gap, future work should pre-load side parts via
- * `zip.readText('word/comments.xml')` etc. and pass them all here.
- * That cascade requires `getRevisionContextForSession` to become async,
- * which is deferred to follow-up.
+ * Callers should pass every available story/metadata part that can contain
+ * package-wide `w:id` revision attributes, not just `document.xml`.
  */
 export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdState {
   let maxId = 0;
@@ -142,11 +141,25 @@ export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdSta
   return createRevisionIdState(maxId + 1);
 }
 
-export function getRevisionContextForSession(session: DocxSession): RevisionContext | undefined {
+async function getSidePartRevisionSeedDocs(session: DocxSession): Promise<Document[]> {
+  const docs: Document[] = [];
+
+  for (const partPath of REVISION_ID_SEED_SIDE_PARTS) {
+    const xml = await readZipText(session.originalBuffer, partPath);
+    if (xml) docs.push(parseXml(xml));
+  }
+
+  return docs;
+}
+
+export async function getRevisionContextForSession(session: DocxSession): Promise<RevisionContext | undefined> {
   if (!session.aiAuthor) return undefined;
 
   if (!session.revisionIdState) {
-    session.revisionIdState = inferStartingRevisionIdState(session.doc.getDocumentXmlClone());
+    session.revisionIdState = inferStartingRevisionIdState(
+      session.doc.getDocumentXmlClone(),
+      ...(await getSidePartRevisionSeedDocs(session)),
+    );
   }
 
   return createRevisionContext({
