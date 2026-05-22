@@ -314,22 +314,53 @@ function getDirectChild(parent: Element, localName: string): Element | null {
   return null;
 }
 
+// OOXML on/off toggle properties (ECMA-376 ST_OnOff). Absence of w:val means
+// "1", and the values "1"/"true"/"on" are equivalent (likewise for the falsy
+// triple). We normalize so semantically-identical inputs hash the same.
+const W_BOOL_TOGGLES = new Set<string>([
+  'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps', 'strike', 'dstrike',
+  'outline', 'shadow', 'emboss', 'imprint', 'vanish', 'specVanish',
+  'webHidden', 'noProof', 'snapToGrid', 'rtl', 'cs',
+]);
+
+function normalizedBoolValAttr(raw: string | null): string {
+  const s = raw === null ? '' : raw.trim().toLowerCase();
+  if (s === '' || s === '1' || s === 'true' || s === 'on') return '1';
+  if (s === '0' || s === 'false' || s === 'off') return '0';
+  return s;
+}
+
 function rPrComparableSignature(rPr: Element | null): string {
   if (!rPr) return '';
 
   const nodeSignature = (node: Node): string => {
-    if (node.nodeType === 3) return node.textContent ?? '';
+    // Text nodes inside w:rPr are insignificant whitespace from pretty-printing;
+    // the schema only permits element children, so dropping them matches
+    // semantics and avoids false positives against re-emitted (whitespace-free)
+    // run-property blocks.
     if (node.nodeType !== 1) return '';
 
     const el = node as Element;
     if (isW(el, 'rPrChange')) return '';
 
-    const attrs = Array.from(el.attributes)
-      .map((attr) => {
-        const attrNs = attr.namespaceURI ?? (attr.name.startsWith('w:') ? OOXML.W_NS : '');
-        const attrName = attr.name.includes(':') ? attr.name.slice(attr.name.indexOf(':') + 1) : attr.localName;
-        return [attrNs, attrName, attr.value] as const;
-      })
+    const isWBoolToggle =
+      el.namespaceURI === OOXML.W_NS && W_BOOL_TOGGLES.has(el.localName ?? '');
+
+    const tuples = Array.from(el.attributes).map((attr) => {
+      const attrNs = attr.namespaceURI ?? (attr.name.startsWith('w:') ? OOXML.W_NS : '');
+      const attrName = attr.name.includes(':') ? attr.name.slice(attr.name.indexOf(':') + 1) : attr.localName;
+      let value = attr.value;
+      if (isWBoolToggle && attrNs === OOXML.W_NS && attrName === 'val') {
+        value = normalizedBoolValAttr(value);
+      }
+      return [attrNs, attrName, value] as const;
+    });
+
+    if (isWBoolToggle && !tuples.some(([ns, name]) => ns === OOXML.W_NS && name === 'val')) {
+      tuples.push([OOXML.W_NS, 'val', '1']);
+    }
+
+    const attrs = tuples
       .sort(([aNs, aName], [bNs, bName]) => aNs.localeCompare(bNs) || aName.localeCompare(bName))
       .map(([ns, name, value]) => `${ns}:${name}=${value}`)
       .join('|');

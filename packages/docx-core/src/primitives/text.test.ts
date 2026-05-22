@@ -870,6 +870,159 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
     });
   });
 
+  test('does not emit rPrChange when source rPr only differs by pretty-printing whitespace', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph whose source rPr is pretty-printed with whitespace text nodes', () => {
+      const doc = makeDoc(
+        '<w:p><w:r><w:rPr>\n  <w:b w:val="1"/>\n</w:rPr><w:t>Hello</w:t></w:r></w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the replacement re-asserts the existing bold formatting', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        5,
+        [{ text: 'New', addRunProps: { bold: true } }],
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('insignificant whitespace is ignored and no rPrChange is emitted', () => {
+      expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(0);
+    });
+  });
+
+  test('does not emit rPrChange when toggle properties differ only by ST_OnOff canonical form', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a paragraph whose source bold toggle has no explicit w:val', () => {
+      const doc = makeDoc('<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Hello</w:t></w:r></w:p>');
+      p = firstParagraph(doc);
+    });
+
+    await when('the replacement asks for the same bold formatting (which normalizes to w:val="1")', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        5,
+        [{ text: 'New', addRunProps: { bold: true } }],
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('absent w:val and w:val="1" are treated as equal and no rPrChange is emitted', () => {
+      expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+      expect(p.getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(0);
+    });
+  });
+
+  test('emits rPrChange when clearHighlight removes a highlight from the source rPr', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let p: Element;
+    let rPrChange: Element;
+
+    await given('a paragraph whose source run carries a yellow highlight', () => {
+      const doc = makeDoc(
+        '<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>Hello</w:t></w:r></w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the replacement clears the highlight under tracked changes', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        5,
+        [{ text: 'New', clearHighlight: true }],
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+      rPrChange = p.getElementsByTagNameNS(W_NS, 'rPrChange').item(0) as Element;
+    });
+
+    await then('the inserted run records the previous highlight inside w:rPrChange', () => {
+      expect(p.getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(1);
+      const previousRPr = rPrChange.getElementsByTagNameNS(W_NS, W.rPr).item(0) as Element;
+      expect(previousRPr).toBeTruthy();
+      expect(previousRPr.getElementsByTagNameNS(W_NS, W.highlight)).toHaveLength(1);
+    });
+  });
+
+  test('multi-run deletion snapshots the chosen template run rPr in rPrChange', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let p: Element;
+    let rPrChange: Element;
+
+    await given('a paragraph that spans an italic run followed by a bold run', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:r><w:rPr><w:i/></w:rPr><w:t>Hello </w:t></w:r>' +
+          '<w:r><w:rPr><w:b/></w:rPr><w:t>World</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('a single replacement part covers the full span and requests bold', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        11,
+        [{ text: 'New', addRunProps: { bold: true } }],
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+      rPrChange = p.getElementsByTagNameNS(W_NS, 'rPrChange').item(0) as Element;
+    });
+
+    await then('the rPrChange records the predominant-template prior rPr (italic) and the deleted runs preserve full per-run formatting', () => {
+      expect(p.getElementsByTagNameNS(W_NS, 'rPrChange')).toHaveLength(1);
+      const previousRPr = rPrChange.getElementsByTagNameNS(W_NS, W.rPr).item(0) as Element;
+      expect(previousRPr.getElementsByTagNameNS(W_NS, W.i)).toHaveLength(1);
+      expect(previousRPr.getElementsByTagNameNS(W_NS, W.b)).toHaveLength(0);
+
+      const deletion = p.getElementsByTagNameNS(W_NS, 'del').item(0)!;
+      const deletedRuns = deletion.getElementsByTagNameNS(W_NS, W.r);
+      expect(deletedRuns).toHaveLength(2);
+      expect(deletedRuns.item(0)!.getElementsByTagNameNS(W_NS, W.i)).toHaveLength(1);
+      expect(deletedRuns.item(1)!.getElementsByTagNameNS(W_NS, W.b)).toHaveLength(1);
+    });
+  });
+
   test('preserves per-run formatting inside tracked deletions spanning multiple runs', async ({ given, when, then }: AllureBddContext) => {
     let p: Element;
     let deletion: Element;
