@@ -51,15 +51,23 @@ structure Run where
   content : List Atom
   deriving DecidableEq, Repr, Inhabited
 
-/-- A block-level element inside a paragraph body. Only the track-change wrapper
-    types are modeled; non-wrapper descendants are a deliberate narrowing (see
-    `design.md > Accept / reject semantics`, scenario `[LEAN-T2-04]` clause (e)). -/
+/-- A block-level element inside a paragraph body.
+
+    Track-change wrapper types (`ins` / `del` / `moveFrom` / `moveTo`) are the
+    only kinds the accept/reject semantics act on. `other` is a transparent
+    container that models every other OOXML structural element that can hold
+    block-level content but does NOT alter the field-context walk semantically
+    (`w:tbl`, `w:tr`, `w:tc`, `w:sdt`, `w:sdtContent`, `w:hyperlink`,
+    `w:bookmarkStart`/`End`, etc.). The walk, accept, reject, and rename
+    operations all descend transparently through `other`; `wrapperSubtreesBlocks`
+    skips `other` because it is not a track-change wrapper. -/
 inductive Block
   | run (r : Run)
   | ins (children : List Block)
   | del (children : List Block)
   | moveFrom (children : List Block)
   | moveTo (children : List Block)
+  | other (tag : String) (children : List Block)
   deriving Repr, Inhabited
 
 /-- Opaque paragraph-properties marker. -/

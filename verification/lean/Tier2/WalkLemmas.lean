@@ -56,6 +56,10 @@ theorem walkBlocks_invalid (bs : List Block) :
       intro h; subst h
       simp only [walkBlocks]
       exact ih2 (ih1 rfl)
+    | case7 r _ bs rest ih1 ih2 =>
+      intro h; subst h
+      simp only [walkBlocks]
+      exact ih2 (ih1 rfl)
   exact key .invalid bs rfl
 
 /-! ### L1 — the walk distributes over append -/
@@ -71,6 +75,7 @@ theorem walkBlocks_append (r : WalkResult) (l m : List Block) :
     | del bs => simp only [List.cons_append, walkBlocks]; exact ih _
     | moveFrom bs => simp only [List.cons_append, walkBlocks]; exact ih _
     | moveTo bs => simp only [List.cons_append, walkBlocks]; exact ih _
+    | other tag bs => simp only [List.cons_append, walkBlocks]; exact ih _
 
 /-! ### L2 core — a context-neutral segment is a walk no-op -/
 
@@ -94,6 +99,7 @@ theorem countBlocks_append (p : Atom → Bool) (l m : List Block) :
     | del bs => simp only [List.cons_append, countBlocks]; omega
     | moveFrom bs => simp only [List.cons_append, countBlocks]; omega
     | moveTo bs => simp only [List.cons_append, countBlocks]; omega
+    | other tag bs => simp only [List.cons_append, countBlocks]; omega
 
 /-! ### L3 — `stepAtom` does not distinguish `instrText` from `delInstrText` -/
 
@@ -238,6 +244,15 @@ theorem walkBlocks_tall (bs : List Block) (ctx : FieldCtx)
         · exact Or.inl hinv2
         · exact Or.inr ⟨ctx', hok2, by omega⟩
     | case6 r bs rest ih1 ih2 =>
+      intro ctx hr hb; subst hr
+      simp only [walkBlocks]
+      simp only [countBlocks] at hb ⊢
+      rcases ih1 ctx rfl (by omega) with hinv | ⟨ctx₁, hok1, hlenA⟩
+      · rw [hinv, walkBlocks_invalid]; exact Or.inl rfl
+      · rcases ih2 ctx₁ hok1 (by omega) with hinv2 | ⟨ctx', hok2, hlenB⟩
+        · exact Or.inl hinv2
+        · exact Or.inr ⟨ctx', hok2, by omega⟩
+    | case7 r _ bs rest ih1 ih2 =>
       intro ctx hr hb; subst hr
       simp only [walkBlocks]
       simp only [countBlocks] at hb ⊢

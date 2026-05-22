@@ -75,9 +75,10 @@ def stepAtoms (r : WalkResult) (as : List Atom) : WalkResult :=
   as.foldl stepAtom r
 
 /-- Walk the field context across a block sequence in document order. Wrappers
-    (`ins` / `del` / `moveFrom` / `moveTo`) are transparent: the walk simply
-    descends into their children, because the TS `validateFieldStructure` scans
-    every element regardless of tag (`pipeline.ts:396`). -/
+    (`ins` / `del` / `moveFrom` / `moveTo`) and transparent containers (`other`)
+    are all transparent for the walk: the walk simply descends into their
+    children, because the TS `validateFieldStructure` scans every element
+    regardless of tag (`pipeline.ts:396`). -/
 def walkBlocks : WalkResult → List Block → WalkResult
   | r, [] => r
   | r, .run run :: rest => walkBlocks (stepAtoms r run.content) rest
@@ -85,6 +86,7 @@ def walkBlocks : WalkResult → List Block → WalkResult
   | r, .del bs :: rest => walkBlocks (walkBlocks r bs) rest
   | r, .moveFrom bs :: rest => walkBlocks (walkBlocks r bs) rest
   | r, .moveTo bs :: rest => walkBlocks (walkBlocks r bs) rest
+  | r, .other _ bs :: rest => walkBlocks (walkBlocks r bs) rest
 termination_by _ bs => sizeOf bs
 
 /-- Walk a single block. Provided for parity with `design.md`'s stated API; the
@@ -102,7 +104,8 @@ def Atom.isEnd : Atom → Bool
   | .fldChar .endf => true
   | _ => false
 
-/-- Count atoms satisfying `p` across a block sequence, descending into wrappers. -/
+/-- Count atoms satisfying `p` across a block sequence, descending into wrappers
+    and transparent containers. -/
 def countBlocks (p : Atom → Bool) : List Block → Nat
   | [] => 0
   | .run run :: rest => run.content.countP p + countBlocks p rest
@@ -110,6 +113,7 @@ def countBlocks (p : Atom → Bool) : List Block → Nat
   | .del bs :: rest => countBlocks p bs + countBlocks p rest
   | .moveFrom bs :: rest => countBlocks p bs + countBlocks p rest
   | .moveTo bs :: rest => countBlocks p bs + countBlocks p rest
+  | .other _ bs :: rest => countBlocks p bs + countBlocks p rest
 termination_by bs => sizeOf bs
 
 /-- Check (1): global `w:fldChar` begin/end counts are equal. -/
@@ -128,7 +132,10 @@ def validateFieldStructure (d : Doc) : Bool :=
 def fieldContextNeutral (bs : List Block) : Prop :=
   ∀ ctx, walkBlocks (.ok ctx) bs = .ok ctx
 
-/-- Every track-change wrapper child block list in a block sequence, transitively. -/
+/-- Every track-change wrapper child block list in a block sequence, transitively.
+    `other` containers are NOT track-change wrappers — they are traversed but
+    their own children are not emitted as a wrapper subtree (only any wrappers
+    nested inside them are). -/
 def wrapperSubtreesBlocks : List Block → List (List Block)
   | [] => []
   | .run _ :: rest => wrapperSubtreesBlocks rest
@@ -136,6 +143,7 @@ def wrapperSubtreesBlocks : List Block → List (List Block)
   | .del bs :: rest => (bs :: wrapperSubtreesBlocks bs) ++ wrapperSubtreesBlocks rest
   | .moveFrom bs :: rest => (bs :: wrapperSubtreesBlocks bs) ++ wrapperSubtreesBlocks rest
   | .moveTo bs :: rest => (bs :: wrapperSubtreesBlocks bs) ++ wrapperSubtreesBlocks rest
+  | .other _ bs :: rest => wrapperSubtreesBlocks bs ++ wrapperSubtreesBlocks rest
 termination_by bs => sizeOf bs
 
 /-- Every wrapper subtree of `d` (transitively). -/

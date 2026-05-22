@@ -69,13 +69,42 @@ axiom normalizeText : String → String
     closure. Tier 3 will discharge it by modeling `compareDocumentXml`
     definitionally.
 
-    Evidence as of this change is limited to the existing field-free fast-check
-    bridge cases (`packages/docx-core/src/integration/lean-spec-bridge.test.ts`
+    **Why `fieldContextNeutral` (the `∀ ctx` strength) holds for THIS engine.**
+    safe-docx's current inplace atomizer emits whole field sequences as a single
+    track-change wrapper (`<w:ins>` or `<w:del>` around a complete
+    begin/instrText/separate/result/end run sequence), never splitting a field
+    across wrapper boundaries. See:
+      * `inPlaceModifier.ts:717` — `getAtomRuns` returns all field runs as one unit.
+      * `inPlaceModifier.ts:938` — deleted field replay wraps cloned field runs in a
+        single `<w:del>`.
+      * `inPlaceModifier.ts:1505, 1671` — split logic explicitly skips collapsed
+        fields and field characters.
+      * `inPlaceModifier.ts:1957, 2300` — insert/move-destination handlers wrap
+        the whole atom-run set in a single wrapper.
+      * `collapsed-field-inplace.test.ts:211` — tests assert multi-run complete
+        field wrappers, not partial wrappers.
+
+    **Why this is engine-specific, not spec-conformant.** Under ECMA-376 Part 4
+    (DeletedFieldCode and fldChar topics), a fully conformant track-change
+    emitter MUST fragment fields across wrapper boundaries when a field is
+    modified: `w:fldChar` is strictly barred from `<w:del>`, so a modified field
+    has its `w:fldChar begin/separate/end` markers unwrapped at the run-sibling
+    level while `<w:ins>`/`<w:del>` wrap only the changed `w:instrText` /
+    `w:delInstrText` payloads. Such fragmented wrapper subtrees are NOT
+    `fieldContextNeutral` under `∀ ctx`. If/when the safe-docx engine becomes
+    ECMA-376-conformant for field modifications (see follow-up issue), this
+    axiom and the per-subtree neutrality predicate will need to be replaced
+    with a document-level preservation property; the Lean proof in
+    `Tier2.InvFieldOne` will be refactored accordingly.
+
+    Evidence as of this change is the existing field-free fast-check bridge
+    cases (`packages/docx-core/src/integration/lean-spec-bridge.test.ts`
     explicitly excludes field-bearing inputs and only checks the *consequence* —
     `validateFieldStructure` post-accept/reject — not the recursive precondition
-    itself) plus one dedicated field-bearing fixture added by this change as a
-    falsifiability layer. The axiom is engine-specific to this repo's inplace
-    atomizer, universal in `(a, b)`, and load-bearing — NOT empirically grounded. -/
+    itself) plus dedicated field-bearing fixtures added by this change as a
+    falsifiability layer (NUMPAGES insertion, NUMPAGES deletion). The axiom is
+    engine-specific to this repo's inplace atomizer, universal in `(a, b)`, and
+    load-bearing — NOT empirically grounded across the full ECMA-376 surface. -/
 axiom compareDocumentXml_output_recursivelyWellformed :
   ∀ a b combined, compareDocumentXml a b = some combined →
     Tier2.FieldStructure.recursivelyWellformed combined

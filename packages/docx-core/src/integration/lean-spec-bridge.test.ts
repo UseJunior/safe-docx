@@ -933,4 +933,134 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
       );
     },
   );
+
+  test(
+    'INV-FIELD-001: deleting a complete field produces recursivelyWellformed inplace output (delInstrText axiom coverage)',
+    async ({ given, when, then }: AllureBddContext) => {
+      await given(
+        'an original document containing a complete NUMPAGES field and a revised document with the field deleted',
+        async () => {},
+      );
+
+      await when('the live inplace comparison output is computed', async () => {});
+
+      await then(
+        'the combined document validates and every wrapper subtree (including the <w:del> containing w:delInstrText) is field-context-neutral',
+        async () => {
+          // safe-docx's inplace atomizer emits deleted complete fields as a single
+          // <w:del> containing the full begin/instrText/separate/result/end run
+          // sequence (inPlaceModifier.ts:938). After conversion, the instrText
+          // becomes delInstrText. This fixture exercises the w:delInstrText atom
+          // case in `isFieldContextNeutral` (which the NUMPAGES insertion fixture
+          // never reaches).
+          const field =
+            `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+            `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
+            `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+            `<w:r><w:t>3</w:t></w:r>` +
+            `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+          const original = await buildFieldDocx(
+            `<w:p><w:r><w:t>Total pages </w:t></w:r>${field}<w:r><w:t> here.</w:t></w:r></w:p>`,
+          );
+          const revised = await buildFieldDocx(
+            `<w:p><w:r><w:t>Total pages here.</w:t></w:r></w:p>`,
+          );
+
+          const result = await compareDocumentBuffers(original, revised);
+          const context = { fixture: 'numpages-field-delete' };
+
+          assertInplaceResult('INV-FIELD-001 field-bearing delete', context, result);
+          assertRecursivelyWellformed('INV-FIELD-001 field-bearing delete', context, result.combined);
+          assertFieldInvariant('INV-FIELD-001 field-bearing delete', context, result.combined);
+        },
+      );
+    },
+  );
+
+  test(
+    'isFieldContextNeutral rejects standalone separator, end, and begin+separate fragments (regression guard)',
+    async ({ given, when, then }: AllureBddContext) => {
+      const cases: { name: string; xml: string }[] = [];
+
+      await given(
+        'three crafted wrapper XML fragments that each disturb the outer field context (standalone separate, standalone end, begin+separate)',
+        () => {
+          cases.push(
+            {
+              name: 'standalone separate',
+              xml:
+                `<w:ins xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+                `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+                `</w:ins>`,
+            },
+            {
+              name: 'standalone end',
+              xml:
+                `<w:del xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+                `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+                `</w:del>`,
+            },
+            {
+              name: 'begin without matching end',
+              xml:
+                `<w:ins xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+                `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+                `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+                `</w:ins>`,
+            },
+          );
+        },
+      );
+
+      await when('isFieldContextNeutral is applied to each', () => {});
+
+      await then('every fragment is rejected as not context-neutral', () => {
+        for (const c of cases) {
+          const doc = new DOMParser().parseFromString(c.xml, 'application/xml');
+          const wrapper = doc.documentElement as unknown as Element;
+          if (!wrapper) throw new Error(`${c.name}: failed to parse wrapper`);
+          if (isFieldContextNeutral(wrapper)) {
+            throw new Error(
+              `isFieldContextNeutral regression: case "${c.name}" should be non-neutral but returned true`,
+            );
+          }
+        }
+      });
+    },
+  );
+
+  test(
+    'isFieldContextNeutral accepts a wrapper containing a complete self-contained field (regression guard)',
+    async ({ given, when, then }: AllureBddContext) => {
+      let wrapper: Element | null = null;
+      let result = false;
+
+      await given(
+        'a <w:ins> wrapping a complete NUMPAGES begin/instrText/separate/result/end sequence',
+        () => {
+          const xml =
+            `<w:ins xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+            `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+            `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
+            `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+            `<w:r><w:t>3</w:t></w:r>` +
+            `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+            `</w:ins>`;
+          wrapper = new DOMParser().parseFromString(xml, 'application/xml')
+            .documentElement as unknown as Element;
+        },
+      );
+
+      await when('isFieldContextNeutral is applied', () => {
+        if (!wrapper) throw new Error('wrapper failed to parse');
+        result = isFieldContextNeutral(wrapper);
+      });
+
+      await then('the wrapper is accepted as context-neutral', () => {
+        if (!result) {
+          throw new Error('isFieldContextNeutral regression: complete-field wrapper should be neutral');
+        }
+      });
+    },
+  );
 });

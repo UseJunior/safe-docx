@@ -64,6 +64,19 @@ theorem allNeutral_moveTo {bs rest : List Block}
   · intro sub hsub; exact h sub (Or.inl (Or.inr hsub))
   · intro sub hsub; exact h sub (Or.inr hsub)
 
+/-- `.other` is NOT a track-change wrapper: its child block list is not added
+    as a wrapper subtree (only wrappers nested inside it are). So `allNeutral`
+    decomposes into `allNeutral` on children and on rest, with no extra
+    `fieldContextNeutral` obligation on the container's children. -/
+theorem allNeutral_other {tag : String} {bs rest : List Block}
+    (h : allNeutral (.other tag bs :: rest)) :
+    allNeutral bs ∧ allNeutral rest := by
+  unfold allNeutral at h
+  simp only [wrapperSubtreesBlocks, List.mem_append] at h
+  refine ⟨?_, ?_⟩
+  · intro sub hsub; exact h sub (Or.inl hsub)
+  · intro sub hsub; exact h sub (Or.inr hsub)
+
 /-! ### Operations distribute over append -/
 
 theorem acceptBlocks_append (l m : List Block) :
@@ -163,6 +176,11 @@ theorem walkBlocks_renameBlocks (r : WalkResult) (bs : List Block) :
       simp only [renameBlocks, walkBlocks]
       rw [ih1]
       exact ih2 _
+    | case7 _ bs rest ih1 ih2 =>
+      intro r
+      simp only [renameBlocks, walkBlocks]
+      rw [ih1]
+      exact ih2 _
   exact key bs r
 
 theorem countBlocks_renameBlocks (p : Atom → Bool)
@@ -182,6 +200,8 @@ theorem countBlocks_renameBlocks (p : Atom → Bool)
   | case5 bs rest ih1 ih2 =>
     simp only [renameBlocks, countBlocks]; rw [ih1, ih2]
   | case6 bs rest ih1 ih2 =>
+    simp only [renameBlocks, countBlocks]; rw [ih1, ih2]
+  | case7 _ bs rest ih1 ih2 =>
     simp only [renameBlocks, countBlocks]; rw [ih1, ih2]
 
 theorem isBegin_renameAtom (a : Atom) : Atom.isBegin (renameAtom a) = Atom.isBegin a := by
@@ -222,6 +242,11 @@ theorem walkBlocks_acceptBlocks :
     obtain ⟨hcn, _, hnrest⟩ := allNeutral_moveFrom hn
     simp only [acceptBlocks, walkBlocks]
     rw [ih hnrest, walkBlocks_neutral_ok hcn r]
+  | case7 _ bs rest ih1 ih2 =>
+    intro hn r
+    obtain ⟨hnbs, hnrest⟩ := allNeutral_other hn
+    simp only [acceptBlocks, walkBlocks]
+    rw [ih1 hnbs, ih2 hnrest]
 
 theorem walkBlocks_rejectBlocks :
     ∀ (bs : List Block), allNeutral bs →
@@ -253,6 +278,11 @@ theorem walkBlocks_rejectBlocks :
     obtain ⟨_, hnbs, hnrest⟩ := allNeutral_moveFrom hn
     simp only [rejectBlocks, walkBlocks]
     rw [walkBlocks_append, ih1 hnbs, ih2 hnrest]
+  | case7 _ bs rest ih1 ih2 =>
+    intro hn r
+    obtain ⟨hnbs, hnrest⟩ := allNeutral_other hn
+    simp only [rejectBlocks, walkBlocks]
+    rw [ih1 hnbs, ih2 hnrest]
 
 /-! ### Count rebalancing for `acceptBlocks` / `rejectBlocks` -/
 
@@ -298,6 +328,13 @@ theorem countBlocks_acceptBlocks_balance :
     have hbal := neutral_balanced hcn
     have := ih hnrest
     omega
+  | case7 _ bs rest ih1 ih2 =>
+    intro hn
+    obtain ⟨hnbs, hnrest⟩ := allNeutral_other hn
+    simp only [acceptBlocks, countBlocks]
+    have h1 := ih1 hnbs
+    have h2 := ih2 hnrest
+    omega
 
 theorem countBlocks_rejectBlocks_balance :
     ∀ (bs : List Block), allNeutral bs →
@@ -338,6 +375,13 @@ theorem countBlocks_rejectBlocks_balance :
     obtain ⟨_, hnbs, hnrest⟩ := allNeutral_moveFrom hn
     simp only [rejectBlocks, countBlocks]
     rw [countBlocks_append, countBlocks_append]
+    have h1 := ih1 hnbs
+    have h2 := ih2 hnrest
+    omega
+  | case7 _ bs rest ih1 ih2 =>
+    intro hn
+    obtain ⟨hnbs, hnrest⟩ := allNeutral_other hn
+    simp only [rejectBlocks, countBlocks]
     have h1 := ih1 hnbs
     have h2 := ih2 hnrest
     omega
