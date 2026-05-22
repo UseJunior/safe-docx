@@ -1,11 +1,18 @@
 import Mathlib.Data.List.Basic
+import Tier2.OoxmlModel
+import Tier2.FieldStructure
+import Tier2.AcceptReject
+import Tier2.InvFieldOne
 
 namespace LeanSpike
 
-/-- Abstract Lean document type for the `document.xml` surface threaded through the
+/-- The Lean document type for the `document.xml` surface threaded through the
     atomizer comparison and safety-check pipeline in
-    `packages/docx-core/src/baselines/atomizer/pipeline.ts:352-817`. -/
-axiom OoxmlDoc : Type
+    `packages/docx-core/src/baselines/atomizer/pipeline.ts:352-817`.
+
+    As of Tier 2 this is no longer an opaque `axiom`: it is the definitional
+    tree-structured OOXML subset `Tier2.OoxmlModel.Doc`. -/
+abbrev OoxmlDoc : Type := Tier2.OoxmlModel.Doc
 
 /-- Abstract Lean symbol for the **inplace-mode** comparison-output XML produced by
     `compareDocumentsAtomizer` as `newDocumentXml` in
@@ -20,32 +27,87 @@ axiom OoxmlDoc : Type
     falls back to rebuild mode and the inplace candidate that the Stage 4 specs
     would have constrained is never emitted.
 
-    The rebuild-mode output (`modifyRevisedDocument` branch at `pipeline.ts:638`
-    vs `reconstructDocument` branch at `pipeline.ts:647`) bypasses
-    `evaluateSafetyChecks`, so the Stage 4 specifications below only target the
-    inplace surface — not arbitrary comparison output, and not the rebuild
-    fallback. -/
+    This **remains axiomatic**: modeling `compareDocumentXml` definitionally is
+    Tier 3 work. The residual obligation about its output well-formedness is
+    captured by the named axiom `compareDocumentXml_output_recursivelyWellformed`
+    below. -/
 axiom compareDocumentXml : OoxmlDoc → OoxmlDoc → Option OoxmlDoc
 
-/-- Abstract Lean symbol mirroring `acceptAllChanges` in
-    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:368-506`. -/
-axiom acceptAllChanges : OoxmlDoc → OoxmlDoc
+/-- `acceptAllChanges`, mirroring
+    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:368-506`.
+    As of Tier 2 this is the definitional `Tier2.AcceptReject.accept`. -/
+def acceptAllChanges : OoxmlDoc → OoxmlDoc := Tier2.AcceptReject.accept
 
-/-- Abstract Lean symbol mirroring `rejectAllChanges` in
-    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:519-626`. -/
-axiom rejectAllChanges : OoxmlDoc → OoxmlDoc
+/-- `rejectAllChanges`, mirroring
+    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:509-659`.
+    As of Tier 2 this is the definitional `Tier2.AcceptReject.reject`. -/
+def rejectAllChanges : OoxmlDoc → OoxmlDoc := Tier2.AcceptReject.reject
 
-/-- Abstract Lean symbol mirroring `validateFieldStructure` in
-    `packages/docx-core/src/baselines/atomizer/pipeline.ts:352-402`. -/
-axiom validateFieldStructure : OoxmlDoc → Bool
+/-- `validateFieldStructure`, mirroring
+    `packages/docx-core/src/baselines/atomizer/pipeline.ts:352-402`.
+    As of Tier 2 this is the definitional `Tier2.FieldStructure.validateFieldStructure`. -/
+def validateFieldStructure : OoxmlDoc → Bool := Tier2.FieldStructure.validateFieldStructure
 
 /-- Abstract Lean symbol mirroring `extractTextWithParagraphs` in
-    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-688`. -/
+    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-688`.
+    Remains axiomatic — owned by the `inv_rt_001` successor change. -/
 axiom extractTextWithParagraphs : OoxmlDoc → String
 
 /-- Abstract Lean symbol mirroring `normalizeText` in
-    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:701-711`. -/
+    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:701-711`.
+    Remains axiomatic — owned by the `inv_rt_001` successor change. -/
 axiom normalizeText : String → String
+
+/-- **Residual obligation.** This repo's inplace atomizer output (`compareDocumentXml`
+    in inplace mode, `pipeline.ts:635-650` then the inplace path at `pipeline.ts:669`)
+    is recursively well-formed under the stack-valued field context — i.e. it
+    satisfies `Tier2.FieldStructure.recursivelyWellformed`: the whole document
+    passes `validateFieldStructure`, and every `w:ins` / `w:del` / `w:moveFrom` /
+    `w:moveTo` wrapper subtree (transitively) is `fieldContextNeutral`.
+
+    This axiom is the single load-bearing assumption behind the `inv_field_001`
+    closure. Tier 3 will discharge it by modeling `compareDocumentXml`
+    definitionally.
+
+    **Why `fieldContextNeutral` (the `∀ ctx` strength) holds for THIS engine.**
+    safe-docx's current inplace atomizer emits whole field sequences as a single
+    track-change wrapper (`<w:ins>` or `<w:del>` around a complete
+    begin/instrText/separate/result/end run sequence), never splitting a field
+    across wrapper boundaries. See:
+      * `inPlaceModifier.ts:717` — `getAtomRuns` returns all field runs as one unit.
+      * `inPlaceModifier.ts:938` — deleted field replay wraps cloned field runs in a
+        single `<w:del>`.
+      * `inPlaceModifier.ts:1505, 1671` — split logic explicitly skips collapsed
+        fields and field characters.
+      * `inPlaceModifier.ts:1957, 2300` — insert/move-destination handlers wrap
+        the whole atom-run set in a single wrapper.
+      * `collapsed-field-inplace.test.ts:211` — tests assert multi-run complete
+        field wrappers, not partial wrappers.
+
+    **Why this is engine-specific, not spec-conformant.** Under ECMA-376 Part 4
+    (DeletedFieldCode and fldChar topics), a fully conformant track-change
+    emitter MUST fragment fields across wrapper boundaries when a field is
+    modified: `w:fldChar` is strictly barred from `<w:del>`, so a modified field
+    has its `w:fldChar begin/separate/end` markers unwrapped at the run-sibling
+    level while `<w:ins>`/`<w:del>` wrap only the changed `w:instrText` /
+    `w:delInstrText` payloads. Such fragmented wrapper subtrees are NOT
+    `fieldContextNeutral` under `∀ ctx`. If/when the safe-docx engine becomes
+    ECMA-376-conformant for field modifications (tracked in #217), this axiom
+    and the per-subtree neutrality predicate will need to be replaced with a
+    document-level preservation property; the Lean proof in
+    `Tier2.InvFieldOne` will be refactored accordingly.
+
+    Evidence as of this change is the existing field-free fast-check bridge
+    cases (`packages/docx-core/src/integration/lean-spec-bridge.test.ts`
+    explicitly excludes field-bearing inputs and only checks the *consequence* —
+    `validateFieldStructure` post-accept/reject — not the recursive precondition
+    itself) plus dedicated field-bearing fixtures added by this change as a
+    falsifiability layer (NUMPAGES insertion, NUMPAGES deletion). The axiom is
+    engine-specific to this repo's inplace atomizer, universal in `(a, b)`, and
+    load-bearing — NOT empirically grounded across the full ECMA-376 surface. -/
+axiom compareDocumentXml_output_recursivelyWellformed :
+  ∀ a b combined, compareDocumentXml a b = some combined →
+    Tier2.FieldStructure.recursivelyWellformed combined
 
 /-- INV-FIELD-001: field-structure preservation across accept-all and reject-all,
     scoped to the successful inplace-mode comparison output
@@ -59,16 +121,19 @@ axiom normalizeText : String → String
     (`evaluateSafetyChecks`), whose actual field-structure call site at
     `pipeline.ts:439-440` is
     `validateFieldStructure(acceptedXml) && validateFieldStructure(rejectedXml)`.
-    The check is gated on `reconstructionMode === 'inplace'` at `pipeline.ts:669`;
-    rebuild-mode candidates bypass it entirely. The TypeScript does not claim that
-    accept/reject repairs malformed arbitrary input, so the Lean statement is
-    intentionally scoped to a *successful* inplace comparison candidate. -/
+
+    As of Tier 2 this theorem is **closed** with a complete machine-checked
+    proof: it composes the named residual axiom
+    `compareDocumentXml_output_recursivelyWellformed` with the preservation
+    lemma `Tier2.InvFieldOne.field_structure_preserved`. -/
 theorem inv_field_001 :
   ∀ (a b combined : OoxmlDoc),
     compareDocumentXml a b = some combined →
     validateFieldStructure (acceptAllChanges combined) = true ∧
     validateFieldStructure (rejectAllChanges combined) = true := by
-  sorry
+  intro a b combined h
+  have hRW := compareDocumentXml_output_recursivelyWellformed a b combined h
+  exact Tier2.InvFieldOne.field_structure_preserved combined hRW
 
 /-- INV-RT-001: paired round-trip text equality under normalization, with
     accept-all recovering `b` and reject-all recovering `a`. Scoped to the
@@ -83,8 +148,10 @@ theorem inv_field_001 :
     `packages/docx-core/src/integration/nvca-coi-regression.test.ts:77-103`,
     together with the text helpers at
     `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-711`.
-    The statement is intentionally paired, not one-sided, because the test suite
-    checks both directions modulo `normalizeText`. -/
+
+    This theorem **remains unproved** — it is explicitly deferred to the
+    `add-inv-rt-001-proof` successor change, which owns `extractTextWithParagraphs`
+    and `normalizeText`. -/
 theorem inv_rt_001 :
   ∀ (a b combined : OoxmlDoc),
     compareDocumentXml a b = some combined →
