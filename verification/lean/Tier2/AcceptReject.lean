@@ -20,7 +20,7 @@ import Tier2.FieldStructure
 
 namespace Tier2.AcceptReject
 
-open Tier2.OoxmlModel
+open Tier2.OoxmlModel Tier2.FieldStructure
 
 /-! ### accept -/
 
@@ -83,5 +83,34 @@ termination_by bs => sizeOf bs
 def reject : Doc → Doc
   | [] => []
   | p :: ps => ⟨p.pPr, renameBlocks (rejectBlocks p.body)⟩ :: reject ps
+
+/-! ### Document-level preservation predicate
+
+`preservationFriendly` is the precondition needed to prove that `accept` and
+`reject` both produce output that satisfies `validateFieldStructure`. It is
+**strictly weaker** than the per-subtree `Tier2.FieldStructure.recursivelyWellformed`
+(which required `∀ ctx` neutrality of every wrapper subtree): we only require
+that the *composed walk* over `acceptBlocks`/`renameBlocks ∘ rejectBlocks` ends
+in the same state as the walk over the original block sequence, and that
+begin/end counts balance in the outputs.
+
+This shape is future-compatible with ECMA-376-conformant field fragmentation
+(see #217): a `<w:ins>` wrapping only `[w:instrText]` is not neutral under
+`∀ ctx`, but a document containing such a wrapper can still be
+`preservationFriendly` if its overall walk is preserved by accept/reject. -/
+
+/-- A document is *preservation-friendly* if accept and reject leave the
+    document-level field walk and begin/end balance unchanged. Replaces
+    `Tier2.FieldStructure.recursivelyWellformed`. -/
+def preservationFriendly (d : Doc) : Prop :=
+  validateFieldStructure d = true ∧
+  walkBlocks (.ok []) (acceptBlocks d.blocks)
+    = walkBlocks (.ok []) d.blocks ∧
+  walkBlocks (.ok []) (renameBlocks (rejectBlocks d.blocks))
+    = walkBlocks (.ok []) d.blocks ∧
+  countBlocks Atom.isBegin (acceptBlocks d.blocks)
+    = countBlocks Atom.isEnd (acceptBlocks d.blocks) ∧
+  countBlocks Atom.isBegin (renameBlocks (rejectBlocks d.blocks))
+    = countBlocks Atom.isEnd (renameBlocks (rejectBlocks d.blocks))
 
 end Tier2.AcceptReject

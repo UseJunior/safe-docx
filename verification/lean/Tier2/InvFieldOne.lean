@@ -420,4 +420,36 @@ theorem field_structure_preserved (d : Doc) (h : recursivelyWellformed d) :
           walkBlocks_rejectBlocks d.blocks hn]
       exact hvwalk
 
+/-! ### Document-level preservation lemma (load-bearing as of PR-B) -/
+
+/-- **`field_structure_preserved_doc`.** Document-level variant of the
+    preservation lemma: consumes the weaker `preservationFriendly` precondition
+    (which only asserts the *composed* walk and balance equalities, not
+    per-subtree `∀ ctx` neutrality) and concludes `validateFieldStructure` on
+    both `accept` and `reject` outputs.
+
+    This is now the theorem that closes `inv_field_001` (composed with the
+    weakened residual axiom `compareDocumentXml_output_preservation_friendly`
+    in `Spec.lean`). The legacy `field_structure_preserved` above is retained as
+    a stronger lemma — `recursivelyWellformed d → preservationFriendly d`
+    follows from the lemmas above, so any caller able to discharge the stronger
+    precondition can also use the legacy theorem. We keep the legacy theorem
+    for audit traceability (`#217` engine conformance work would let us
+    re-establish it). -/
+theorem field_structure_preserved_doc (d : Doc) (h : preservationFriendly d) :
+    validateFieldStructure (accept d) = true ∧
+    validateFieldStructure (reject d) = true := by
+  obtain ⟨hv, hAcceptWalk, hRejectWalk, hAcceptBal, hRejectBal⟩ := h
+  rw [validateFieldStructure, Bool.and_eq_true] at hv
+  obtain ⟨_, hvwalk⟩ := hv
+  refine ⟨?_, ?_⟩
+  · rw [validateFieldStructure, Bool.and_eq_true]
+    refine ⟨?_, ?_⟩
+    · rw [fldCharBalanced, accept_blocks, beq_iff_eq]; exact hAcceptBal
+    · rw [accept_blocks, hAcceptWalk]; exact hvwalk
+  · rw [validateFieldStructure, Bool.and_eq_true]
+    refine ⟨?_, ?_⟩
+    · rw [fldCharBalanced, reject_blocks, beq_iff_eq]; exact hRejectBal
+    · rw [reject_blocks, hRejectWalk]; exact hvwalk
+
 end Tier2.InvFieldOne

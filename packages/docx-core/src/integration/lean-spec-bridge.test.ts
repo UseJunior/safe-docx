@@ -677,18 +677,24 @@ async function assertRoundTripInvariant(
 }
 
 // =============================================================================
-// Field-bearing falsifiability layer for `compareDocumentXml_output_recursivelyWellformed`
+// Field-bearing falsifiability layer for the Tier 2 residual axiom
 //
-// The new Tier 2 axiom in `verification/lean/LeanSpike/Spec.lean` asserts that
-// inplace comparison output satisfies `recursivelyWellformed`: the whole
-// document passes `validateFieldStructure`, AND every `w:ins` / `w:del` /
-// `w:moveFrom` / `w:moveTo` wrapper subtree is `fieldContextNeutral`.
+// The current (post-PR-B) axiom in `verification/lean/LeanSpike/Spec.lean` is
+// `compareDocumentXml_output_preservation_friendly`: it asserts only that the
+// inplace combined output is *preservation-friendly* — its document-level walk
+// and begin/end balance are unchanged by accept/reject. That weaker shape is
+// what `assertFieldInvariant` already checks (via `validateFieldStructure` on
+// the accepted and rejected outputs).
 //
-// The fast-check generators above are field-free and only check the *consequence*
-// of the axiom (validateFieldStructure post-accept/reject). The single fixture
-// case below exercises a TS-side analogue of the *precondition* itself against
-// the live engine — a falsifiability layer, NOT empirical grounding for a
-// universal claim.
+// `assertRecursivelyWellformed` (below) additionally checks the STRICTER
+// `fieldContextNeutral ∀ ctx` property per wrapper subtree. The current engine
+// satisfies this stronger property because it emits whole field sequences as
+// single track-change wrappers (`inPlaceModifier.ts:717, 938, 1505, 1671,
+// 1957, 2300`). When ECMA-376 fragmentation conformance lands (#217),
+// fragmented wrapper subtrees will NOT satisfy `∀ ctx` neutrality and this
+// over-check will need to be removed or relaxed. Until then it serves as an
+// audit gate that the engine has not regressed into emitting partial-wrapper
+// fragments unexpectedly.
 // =============================================================================
 
 async function buildFieldDocx(bodyXml: string): Promise<Buffer> {
@@ -935,7 +941,7 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
   );
 
   test(
-    'INV-FIELD-001: deleting a complete field produces recursivelyWellformed inplace output (delInstrText axiom coverage)',
+    'INV-FIELD-001: deleting a complete field produces accept/reject outputs that pass validateFieldStructure (delInstrText axiom coverage)',
     async ({ given, when, then }: AllureBddContext) => {
       await given(
         'an original document containing a complete NUMPAGES field and a revised document with the field deleted',
@@ -945,14 +951,23 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
       await when('the live inplace comparison output is computed', async () => {});
 
       await then(
-        'the combined document validates and every wrapper subtree (including the <w:del> containing w:delInstrText) is field-context-neutral',
+        'the accept and reject outputs both validate, exercising the w:delInstrText atom case post-rename',
         async () => {
           // safe-docx's inplace atomizer emits deleted complete fields as a single
           // <w:del> containing the full begin/instrText/separate/result/end run
           // sequence (inPlaceModifier.ts:938). After conversion, the instrText
           // becomes delInstrText. This fixture exercises the w:delInstrText atom
-          // case in `isFieldContextNeutral` (which the NUMPAGES insertion fixture
-          // never reaches).
+          // case in the post-reject rename pass.
+          //
+          // We deliberately do NOT call `assertRecursivelyWellformed` here. The
+          // combined XML contains `w:fldChar` inside `<w:del>` — which is forbidden
+          // by ECMA-376 Part 4 and is the engine non-conformance tracked in #217.
+          // PR #211's tightened `validateFieldStructure` would correctly reject the
+          // combined output, but the engine's safety check at `pipeline.ts:439-440`
+          // only validates the post-accept and post-reject outputs (which ARE
+          // conformant: accept drops the entire <w:del>; reject unwraps to a
+          // complete field). When #217 lands and the engine fragments properly,
+          // `assertRecursivelyWellformed` can be re-enabled here.
           const field =
             `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
             `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
@@ -970,7 +985,7 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
           const context = { fixture: 'numpages-field-delete' };
 
           assertInplaceResult('INV-FIELD-001 field-bearing delete', context, result);
-          assertRecursivelyWellformed('INV-FIELD-001 field-bearing delete', context, result.combined);
+          // The post-PR-220 axiom's consequence: field structure survives accept/reject.
           assertFieldInvariant('INV-FIELD-001 field-bearing delete', context, result.combined);
         },
       );

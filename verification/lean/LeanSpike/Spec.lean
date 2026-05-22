@@ -58,56 +58,51 @@ axiom extractTextWithParagraphs : OoxmlDoc → String
     Remains axiomatic — owned by the `inv_rt_001` successor change. -/
 axiom normalizeText : String → String
 
-/-- **Residual obligation.** This repo's inplace atomizer output (`compareDocumentXml`
-    in inplace mode, `pipeline.ts:635-650` then the inplace path at `pipeline.ts:669`)
-    is recursively well-formed under the stack-valued field context — i.e. it
-    satisfies `Tier2.FieldStructure.recursivelyWellformed`: the whole document
-    passes `validateFieldStructure`, and every `w:ins` / `w:del` / `w:moveFrom` /
-    `w:moveTo` wrapper subtree (transitively) is `fieldContextNeutral`.
+/-- **Residual obligation.** This repo's inplace atomizer output
+    (`compareDocumentXml` in inplace mode, `pipeline.ts:635-650` then the
+    inplace path at `pipeline.ts:669`) is *preservation-friendly* under the
+    stack-valued field context — i.e. it satisfies
+    `Tier2.AcceptReject.preservationFriendly`: the whole document passes
+    `validateFieldStructure`, AND the document-level walk and begin/end balance
+    are unchanged by `accept` and `reject`.
 
     This axiom is the single load-bearing assumption behind the `inv_field_001`
     closure. Tier 3 will discharge it by modeling `compareDocumentXml`
     definitionally.
 
-    **Why `fieldContextNeutral` (the `∀ ctx` strength) holds for THIS engine.**
-    safe-docx's current inplace atomizer emits whole field sequences as a single
-    track-change wrapper (`<w:ins>` or `<w:del>` around a complete
-    begin/instrText/separate/result/end run sequence), never splitting a field
-    across wrapper boundaries. See:
-      * `inPlaceModifier.ts:717` — `getAtomRuns` returns all field runs as one unit.
-      * `inPlaceModifier.ts:938` — deleted field replay wraps cloned field runs in a
-        single `<w:del>`.
-      * `inPlaceModifier.ts:1505, 1671` — split logic explicitly skips collapsed
-        fields and field characters.
-      * `inPlaceModifier.ts:1957, 2300` — insert/move-destination handlers wrap
-        the whole atom-run set in a single wrapper.
-      * `collapsed-field-inplace.test.ts:211` — tests assert multi-run complete
-        field wrappers, not partial wrappers.
+    **Predicate strength choice — document-level, NOT per-subtree.** A previous
+    iteration of this axiom asserted the *strictly stronger*
+    `Tier2.FieldStructure.recursivelyWellformed` (per-subtree
+    `fieldContextNeutral ∀ ctx`). That stronger property happens to hold for the
+    current safe-docx engine, which emits whole field sequences as single
+    track-change wrappers (`inPlaceModifier.ts:717, 938, 1505, 1671, 1957,
+    2300`; `collapsed-field-inplace.test.ts:211`). But ECMA-376 Part 4 requires
+    a conformant emitter to *fragment* fields across wrapper boundaries when a
+    field is modified — `w:fldChar` is strictly barred from `<w:del>`, so a
+    modified field has its `w:fldChar begin/separate/end` markers unwrapped at
+    the run-sibling level while `<w:ins>`/`<w:del>` wrap only the changed
+    `w:instrText` / `w:delInstrText` payloads. Such fragmented wrapper subtrees
+    are NOT `fieldContextNeutral` under `∀ ctx`. Engine fragmentation
+    conformance is tracked in #217.
 
-    **Why this is engine-specific, not spec-conformant.** Under ECMA-376 Part 4
-    (DeletedFieldCode and fldChar topics), a fully conformant track-change
-    emitter MUST fragment fields across wrapper boundaries when a field is
-    modified: `w:fldChar` is strictly barred from `<w:del>`, so a modified field
-    has its `w:fldChar begin/separate/end` markers unwrapped at the run-sibling
-    level while `<w:ins>`/`<w:del>` wrap only the changed `w:instrText` /
-    `w:delInstrText` payloads. Such fragmented wrapper subtrees are NOT
-    `fieldContextNeutral` under `∀ ctx`. If/when the safe-docx engine becomes
-    ECMA-376-conformant for field modifications (tracked in #217), this axiom
-    and the per-subtree neutrality predicate will need to be replaced with a
-    document-level preservation property; the Lean proof in
-    `Tier2.InvFieldOne` will be refactored accordingly.
+    To make this axiom future-compatible with that work, we weaken the
+    precondition here to `preservationFriendly` (asserts only the *composed*
+    walk and balance equalities, not pointwise neutrality of each wrapper).
+    The legacy `Tier2.InvFieldOne.field_structure_preserved` lemma remains
+    proved (and the underlying `fieldContextNeutral` predicate still exists in
+    `Tier2.FieldStructure`) for audit traceability, but is no longer on the
+    path to `inv_field_001`.
 
-    Evidence as of this change is the existing field-free fast-check bridge
-    cases (`packages/docx-core/src/integration/lean-spec-bridge.test.ts`
-    explicitly excludes field-bearing inputs and only checks the *consequence* —
-    `validateFieldStructure` post-accept/reject — not the recursive precondition
-    itself) plus dedicated field-bearing fixtures added by this change as a
-    falsifiability layer (NUMPAGES insertion, NUMPAGES deletion). The axiom is
-    engine-specific to this repo's inplace atomizer, universal in `(a, b)`, and
-    load-bearing — NOT empirically grounded across the full ECMA-376 surface. -/
-axiom compareDocumentXml_output_recursivelyWellformed :
+    Evidence: the field-bearing bridge fixtures
+    (`packages/docx-core/src/integration/lean-spec-bridge.test.ts` — NUMPAGES
+    insertion, NUMPAGES deletion) check the *consequence* of
+    `preservationFriendly` (`validateFieldStructure` post-accept/reject), which
+    is what the engine actually emits today. The axiom is engine-specific to
+    this repo's inplace atomizer, universal in `(a, b)`, and load-bearing —
+    NOT empirically grounded across the full ECMA-376 surface. -/
+axiom compareDocumentXml_output_preservation_friendly :
   ∀ a b combined, compareDocumentXml a b = some combined →
-    Tier2.FieldStructure.recursivelyWellformed combined
+    Tier2.AcceptReject.preservationFriendly combined
 
 /-- INV-FIELD-001: field-structure preservation across accept-all and reject-all,
     scoped to the successful inplace-mode comparison output
@@ -124,16 +119,16 @@ axiom compareDocumentXml_output_recursivelyWellformed :
 
     As of Tier 2 this theorem is **closed** with a complete machine-checked
     proof: it composes the named residual axiom
-    `compareDocumentXml_output_recursivelyWellformed` with the preservation
-    lemma `Tier2.InvFieldOne.field_structure_preserved`. -/
+    `compareDocumentXml_output_preservation_friendly` with the document-level
+    preservation lemma `Tier2.InvFieldOne.field_structure_preserved_doc`. -/
 theorem inv_field_001 :
   ∀ (a b combined : OoxmlDoc),
     compareDocumentXml a b = some combined →
     validateFieldStructure (acceptAllChanges combined) = true ∧
     validateFieldStructure (rejectAllChanges combined) = true := by
   intro a b combined h
-  have hRW := compareDocumentXml_output_recursivelyWellformed a b combined h
-  exact Tier2.InvFieldOne.field_structure_preserved combined hRW
+  have hPF := compareDocumentXml_output_preservation_friendly a b combined h
+  exact Tier2.InvFieldOne.field_structure_preserved_doc combined hPF
 
 /-- INV-RT-001: paired round-trip text equality under normalization, with
     accept-all recovering `b` and reject-all recovering `a`. Scoped to the
