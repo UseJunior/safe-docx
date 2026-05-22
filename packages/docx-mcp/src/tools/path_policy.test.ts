@@ -1,6 +1,10 @@
 import { describe, expect, afterEach } from 'vitest';
 import { testAllure } from '../testing/allure-test.js';
-import { enforceReadPathPolicy, enforceWritePathPolicy } from './path_policy.js';
+import {
+  enforceReadPathPolicy,
+  enforceWritePathPolicy,
+  getPlatformTempDefaults,
+} from './path_policy.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -110,6 +114,28 @@ describe('enforceReadPathPolicy', () => {
       expect(result.response.success).toBe(false);
       if (!result.response.success) {
         expect(result.response.error.code).toBe('PATH_NOT_ALLOWED');
+      }
+    }
+  });
+
+  test('PATH_NOT_ALLOWED hint omits the $VAR prefix when SAFE_DOCX_ALLOWED_ROOTS is unset', async () => {
+    delete process.env.SAFE_DOCX_ALLOWED_ROOTS;
+
+    // Reject by pointing at a path under the root which is outside every default
+    // root (HOME, os.tmpdir(), platform temp). On macOS '/private/etc' is real
+    // but not a default; on Linux '/etc' suffices. realpath must succeed for
+    // the read path policy to reach the policy-error branch.
+    const candidate = process.platform === 'darwin' ? '/private/etc/hosts' : '/etc/hosts';
+
+    const result = await enforceReadPathPolicy(candidate);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.success).toBe(false);
+      if (!result.response.success) {
+        expect(result.response.error.code).toBe('PATH_NOT_ALLOWED');
+        const hint = result.response.error.hint ?? '';
+        expect(hint).toContain('SAFE_DOCX_ALLOWED_ROOTS=');
+        expect(hint).not.toContain('$SAFE_DOCX_ALLOWED_ROOTS');
       }
     }
   });
@@ -238,5 +264,19 @@ describe('enforceWritePathPolicy', () => {
 
     const result = await enforceWritePathPolicy(filePath);
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('getPlatformTempDefaults', () => {
+  test('darwin includes /tmp and /private/tmp (canonical form of /tmp on macOS)', () => {
+    expect(getPlatformTempDefaults('darwin')).toEqual(['/tmp', '/private/tmp']);
+  });
+
+  test('linux includes /tmp only — /private/tmp is not a real Linux path and would leave a ghost root', () => {
+    expect(getPlatformTempDefaults('linux')).toEqual(['/tmp']);
+  });
+
+  test('win32 is empty — os.tmpdir() already covers %TEMP%/%TMP%', () => {
+    expect(getPlatformTempDefaults('win32')).toEqual([]);
   });
 });

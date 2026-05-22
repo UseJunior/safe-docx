@@ -33,6 +33,18 @@ async function canonicalizePath(inputPath: string): Promise<string> {
   }
 }
 
+// On Linux `/private/tmp` does not exist by default. If we listed it as a root,
+// `canonicalizePath`'s realpath-fallback would leave it as a ghost entry whose
+// subpaths `resolveWritePathWithExistingAncestor` would still match (walking up
+// to `/` as the existing ancestor), silently allowing writes the user never
+// opted into. Restrict `/private/tmp` to darwin where it is the canonical form
+// of `/tmp`. Windows already covers `%TEMP%/%TMP%` via `os.tmpdir()`.
+export function getPlatformTempDefaults(platform: NodeJS.Platform = process.platform): string[] {
+  if (platform === 'darwin') return ['/tmp', '/private/tmp'];
+  if (platform === 'win32') return [];
+  return ['/tmp'];
+}
+
 async function resolveAllowedRoots(): Promise<string[]> {
   const configured = process.env.SAFE_DOCX_ALLOWED_ROOTS;
   const fromEnv = configured
@@ -41,10 +53,9 @@ async function resolveAllowedRoots(): Promise<string[]> {
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
     : [];
-  const platformTempDefaults = process.platform === 'win32' ? [] : ['/tmp', '/private/tmp'];
   const defaults = fromEnv.length > 0
     ? fromEnv
-    : [process.env.HOME ?? '', os.tmpdir(), ...platformTempDefaults].filter((entry) => entry.length > 0);
+    : [process.env.HOME ?? '', os.tmpdir(), ...getPlatformTempDefaults()].filter((entry) => entry.length > 0);
 
   const out: string[] = [];
   const seen = new Set<string>();
@@ -70,12 +81,15 @@ function policyError(
   allowedRoots: string[],
 ): ToolResponse {
   const suggestedRoot = path.dirname(resolvedPath);
+  const exampleEnv = process.env.SAFE_DOCX_ALLOWED_ROOTS
+    ? `SAFE_DOCX_ALLOWED_ROOTS="$SAFE_DOCX_ALLOWED_ROOTS${path.delimiter}${suggestedRoot}"`
+    : `SAFE_DOCX_ALLOWED_ROOTS="${suggestedRoot}"`;
   return err(
     'PATH_NOT_ALLOWED',
     `Refusing to ${type} path outside allowed roots: ${inputPath} -> ${resolvedPath}`,
     [
       `Allowed roots: ${allowedRoots.join(', ')}.`,
-      `To allow this path, restart the MCP server with SAFE_DOCX_ALLOWED_ROOTS="$SAFE_DOCX_ALLOWED_ROOTS${path.delimiter}${suggestedRoot}".`,
+      `To allow this path, restart the MCP server with ${exampleEnv}.`,
     ].join(' '),
   );
 }
