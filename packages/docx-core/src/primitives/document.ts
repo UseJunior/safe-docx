@@ -116,6 +116,43 @@ function addRejectChangesResult(total: RejectChangesResult, result: RejectChange
   total.propertyChangesReverted += result.propertyChangesReverted;
 }
 
+function parseWId(el: Element): number | null {
+  const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+  if (!idStr) return null;
+  const n = parseInt(idStr, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+function collectLiveFootnoteRefIds(doc: Document): Set<number> {
+  const ids = new Set<number>();
+  const refs = doc.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference);
+  for (let i = 0; i < refs.length; i++) {
+    const id = parseWId(refs.item(i) as Element);
+    if (id !== null) ids.add(id);
+  }
+  return ids;
+}
+
+// Side-effect of accept/reject on document.xml: a body w:footnoteReference that
+// lived inside a removed w:del (accept) or w:ins (reject) is gone afterwards.
+// The corresponding <w:footnote w:id=N> in footnotes.xml is then unreachable —
+// remove it so the side part matches the post-sweep body. Reserved separator /
+// continuationSeparator entries are preserved unconditionally.
+function pruneOrphanedFootnotes(footnotesDoc: Document, liveRefIds: Set<number>): number {
+  const entries = Array.from(footnotesDoc.getElementsByTagNameNS(OOXML.W_NS, W.footnote));
+  let pruned = 0;
+  for (const fn of entries) {
+    const typ = fn.getAttributeNS(OOXML.W_NS, 'type') ?? fn.getAttribute('w:type');
+    if (typ === W.separator || typ === W.continuationSeparator) continue;
+    const id = parseWId(fn);
+    if (id === null) continue;
+    if (liveRefIds.has(id)) continue;
+    fn.parentNode?.removeChild(fn);
+    pruned++;
+  }
+  return pruned;
+}
+
 export type ParagraphRef = {
   id: string; // _bk_###
   text: string;
@@ -449,6 +486,13 @@ export class DocxDocument {
     const bodyResult = acceptChangesImpl(this.documentXml);
     addAcceptChangesResult(total, bodyResult);
 
+    // After accepting, footnotes whose body reference lived inside a removed
+    // w:del are orphaned. Only worth checking when the body sweep removed
+    // deletions (the only operation that can drop a footnoteReference).
+    const liveFootnoteRefIds = bodyResult.deletionsAccepted > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
     for (const partPath of REVISION_STORY_PART_PATHS) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
@@ -457,7 +501,12 @@ export class DocxDocument {
       const partResult = acceptChangesImpl(partDoc);
       addAcceptChangesResult(total, partResult);
 
-      if (hasAcceptedChanges(partResult)) {
+      let footnotesPruned = 0;
+      if (partPath === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(partDoc, liveFootnoteRefIds);
+      }
+
+      if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(partPath, serializeXml(partDoc));
         if (partPath === 'word/footnotes.xml') {
           this.footnotesXml = partDoc;
@@ -481,6 +530,13 @@ export class DocxDocument {
     const bodyResult = rejectChangesImpl(this.documentXml);
     addRejectChangesResult(total, bodyResult);
 
+    // After rejecting, footnotes whose body reference lived inside a removed
+    // w:ins are orphaned. Only worth checking when the body sweep removed
+    // insertions (the only operation that can drop a footnoteReference).
+    const liveFootnoteRefIds = bodyResult.insertionsRemoved > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
     for (const partPath of REVISION_STORY_PART_PATHS) {
       const xml = await this.zip.readTextOrNull(partPath);
       if (!xml) continue;
@@ -489,7 +545,12 @@ export class DocxDocument {
       const partResult = rejectChangesImpl(partDoc);
       addRejectChangesResult(total, partResult);
 
-      if (hasRejectedChanges(partResult)) {
+      let footnotesPruned = 0;
+      if (partPath === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(partDoc, liveFootnoteRefIds);
+      }
+
+      if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(partPath, serializeXml(partDoc));
         if (partPath === 'word/footnotes.xml') {
           this.footnotesXml = partDoc;

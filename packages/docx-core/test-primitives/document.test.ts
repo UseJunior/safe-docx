@@ -369,4 +369,178 @@ describe('DocxDocument', () => {
       expect(footnotesXml).not.toContain('Replacement footnote');
     });
   });
+
+  test('rejectChanges prunes the orphan footnote entry when an inserted footnote is rejected', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let doc!: DocxDocument;
+    let documentXml!: string;
+    let footnotesXml!: string;
+    let noteId!: number;
+
+    await given('a document with a tracked-inserted footnote', async () => {
+      const buffer = await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      doc = await DocxDocument.load(buffer);
+      doc.insertParagraphBookmarks('mcp_reject_added_footnote');
+      const paragraphId = doc.readParagraphs().paragraphs[0]!.id;
+      const added = await doc.addFootnote(
+        { paragraphId, text: 'Tracked footnote' },
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-06T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+      noteId = added.noteId;
+    });
+
+    await when('rejectChanges is called', async () => {
+      await doc.rejectChanges();
+      const { buffer } = await doc.toBuffer({ cleanBookmarks: false });
+      documentXml = await getPartXmlFromBuffer(buffer, 'word/document.xml');
+      footnotesXml = await getPartXmlFromBuffer(buffer, 'word/footnotes.xml');
+    });
+
+    await then('the body reference and the orphan footnote entry are both gone', () => {
+      expect(documentXml).not.toContain('<w:footnoteReference');
+      expect(documentXml).not.toContain('<w:ins');
+      expect(footnotesXml).not.toContain(`w:id="${noteId}"`);
+      expect(footnotesXml).not.toContain('Tracked footnote');
+      // Reserved entries (separator / continuationSeparator) survive.
+      expect(footnotesXml).toContain('w:type="separator"');
+      expect(footnotesXml).toContain('w:type="continuationSeparator"');
+    });
+  });
+
+  test('acceptChanges prunes the footnote entry when a tracked-deleted footnote is accepted', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let doc!: DocxDocument;
+    let documentXml!: string;
+    let footnotesXml!: string;
+    let noteId!: number;
+
+    await given('a document with an existing footnote marked for deletion under tracked changes', async () => {
+      const buffer = await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      doc = await DocxDocument.load(buffer);
+      doc.insertParagraphBookmarks('mcp_accept_deleted_footnote');
+      const paragraphId = doc.readParagraphs().paragraphs[0]!.id;
+      const added = await doc.addFootnote({ paragraphId, text: 'Doomed footnote' });
+      noteId = added.noteId;
+      await doc.deleteFootnote(
+        { noteId },
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-06T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await when('acceptChanges is called', async () => {
+      await doc.acceptChanges();
+      const { buffer } = await doc.toBuffer({ cleanBookmarks: false });
+      documentXml = await getPartXmlFromBuffer(buffer, 'word/document.xml');
+      footnotesXml = await getPartXmlFromBuffer(buffer, 'word/footnotes.xml');
+    });
+
+    await then('the body reference and the now-orphaned footnote entry are both gone', () => {
+      expect(documentXml).not.toContain('<w:footnoteReference');
+      expect(documentXml).not.toContain('<w:del');
+      expect(footnotesXml).not.toContain(`w:id="${noteId}"`);
+      expect(footnotesXml).not.toContain('Doomed footnote');
+      expect(footnotesXml).toContain('w:type="separator"');
+      expect(footnotesXml).toContain('w:type="continuationSeparator"');
+    });
+  });
+
+  test('rejectChanges restores a tracked-deleted footnote and its body reference', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let doc!: DocxDocument;
+    let documentXml!: string;
+    let footnotesXml!: string;
+    let noteId!: number;
+
+    await given('a document with an existing footnote marked for deletion under tracked changes', async () => {
+      const buffer = await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      doc = await DocxDocument.load(buffer);
+      doc.insertParagraphBookmarks('mcp_reject_deleted_footnote');
+      const paragraphId = doc.readParagraphs().paragraphs[0]!.id;
+      const added = await doc.addFootnote({ paragraphId, text: 'Surviving footnote' });
+      noteId = added.noteId;
+      await doc.deleteFootnote(
+        { noteId },
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-06T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await when('rejectChanges is called', async () => {
+      await doc.rejectChanges();
+      const { buffer } = await doc.toBuffer({ cleanBookmarks: false });
+      documentXml = await getPartXmlFromBuffer(buffer, 'word/document.xml');
+      footnotesXml = await getPartXmlFromBuffer(buffer, 'word/footnotes.xml');
+    });
+
+    await then('the body reference and the original footnote text are restored', () => {
+      expect(documentXml).toContain(`<w:footnoteReference w:id="${noteId}"`);
+      expect(documentXml).not.toContain('<w:del');
+      expect(footnotesXml).toContain(`w:id="${noteId}"`);
+      expect(footnotesXml).toContain('Surviving footnote');
+      expect(footnotesXml).not.toContain('<w:del');
+      expect(footnotesXml).not.toContain('<w:delText');
+    });
+  });
+
+  test('acceptChanges accepts a tracked footnote text replacement and leaves clean text', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let doc!: DocxDocument;
+    let footnotesXml!: string;
+    let noteId!: number;
+
+    await given('a document with a footnote whose text has been replaced under tracked changes', async () => {
+      const buffer = await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      doc = await DocxDocument.load(buffer);
+      doc.insertParagraphBookmarks('mcp_accept_updated_footnote');
+      const paragraphId = doc.readParagraphs().paragraphs[0]!.id;
+      const added = await doc.addFootnote({ paragraphId, text: 'Original footnote' });
+      noteId = added.noteId;
+      await doc.updateFootnoteText(
+        { noteId, newText: 'Replacement footnote' },
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-06T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await when('acceptChanges is called', async () => {
+      await doc.acceptChanges();
+      const { buffer } = await doc.toBuffer({ cleanBookmarks: false });
+      footnotesXml = await getPartXmlFromBuffer(buffer, 'word/footnotes.xml');
+    });
+
+    await then('the replacement text wins and no revision markup remains', () => {
+      expect(footnotesXml).toContain(`w:id="${noteId}"`);
+      expect(footnotesXml).toContain('Replacement footnote');
+      expect(footnotesXml).not.toContain('Original footnote');
+      expect(footnotesXml).not.toContain('<w:ins');
+      expect(footnotesXml).not.toContain('<w:del');
+      expect(footnotesXml).not.toContain('<w:delText');
+    });
+  });
 });
