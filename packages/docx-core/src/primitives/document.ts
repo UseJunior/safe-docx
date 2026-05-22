@@ -40,6 +40,7 @@ import { simplifyRedlines } from './simplify_redlines.js';
 import { preventDoubleElevation } from './prevent_double_elevation.js';
 import { validateDocument, type ValidateDocumentResult } from './validate_document.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
+import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
 import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
@@ -68,6 +69,52 @@ export type NormalizationResult = {
   wrappersConsolidated: number;
   doubleElevationsFixed: number;
 };
+
+const REVISION_STORY_PART_PATHS = [
+  'word/footnotes.xml',
+  'word/endnotes.xml',
+  'word/comments.xml',
+] as const;
+
+function emptyAcceptChangesResult(): AcceptChangesResult {
+  return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
+}
+
+function hasAcceptedChanges(result: AcceptChangesResult): boolean {
+  return (
+    result.insertionsAccepted > 0 ||
+    result.deletionsAccepted > 0 ||
+    result.movesResolved > 0 ||
+    result.propertyChangesResolved > 0
+  );
+}
+
+function addAcceptChangesResult(total: AcceptChangesResult, result: AcceptChangesResult): void {
+  total.insertionsAccepted += result.insertionsAccepted;
+  total.deletionsAccepted += result.deletionsAccepted;
+  total.movesResolved += result.movesResolved;
+  total.propertyChangesResolved += result.propertyChangesResolved;
+}
+
+function emptyRejectChangesResult(): RejectChangesResult {
+  return { insertionsRemoved: 0, deletionsRestored: 0, movesReverted: 0, propertyChangesReverted: 0 };
+}
+
+function hasRejectedChanges(result: RejectChangesResult): boolean {
+  return (
+    result.insertionsRemoved > 0 ||
+    result.deletionsRestored > 0 ||
+    result.movesReverted > 0 ||
+    result.propertyChangesReverted > 0
+  );
+}
+
+function addRejectChangesResult(total: RejectChangesResult, result: RejectChangesResult): void {
+  total.insertionsRemoved += result.insertionsRemoved;
+  total.deletionsRestored += result.deletionsRestored;
+  total.movesReverted += result.movesReverted;
+  total.propertyChangesReverted += result.propertyChangesReverted;
+}
 
 export type ParagraphRef = {
   id: string; // _bk_###
@@ -394,21 +441,67 @@ export class DocxDocument {
   }
 
   /**
-   * Accept all tracked changes in the document body, producing a clean
-   * document with no revision markup.
+   * Accept all tracked changes in document.xml plus supported revisionable
+   * side-story parts, producing clean XML with no revision markup.
    */
-  acceptChanges(): AcceptChangesResult {
-    const result = acceptChangesImpl(this.documentXml);
-    if (
-      result.insertionsAccepted > 0 ||
-      result.deletionsAccepted > 0 ||
-      result.movesResolved > 0 ||
-      result.propertyChangesResolved > 0
-    ) {
+  async acceptChanges(): Promise<AcceptChangesResult> {
+    const total = emptyAcceptChangesResult();
+    const bodyResult = acceptChangesImpl(this.documentXml);
+    addAcceptChangesResult(total, bodyResult);
+
+    for (const partPath of REVISION_STORY_PART_PATHS) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (!xml) continue;
+
+      const partDoc = parseXml(xml);
+      const partResult = acceptChangesImpl(partDoc);
+      addAcceptChangesResult(total, partResult);
+
+      if (hasAcceptedChanges(partResult)) {
+        this.zip.writeText(partPath, serializeXml(partDoc));
+        if (partPath === 'word/footnotes.xml') {
+          this.footnotesXml = partDoc;
+        }
+      }
+    }
+
+    if (hasAcceptedChanges(total)) {
       this.dirty = true;
       this.documentViewCache = null;
     }
-    return result;
+    return total;
+  }
+
+  /**
+   * Reject all tracked changes in document.xml plus supported revisionable
+   * side-story parts, restoring their pre-edit state where possible.
+   */
+  async rejectChanges(): Promise<RejectChangesResult> {
+    const total = emptyRejectChangesResult();
+    const bodyResult = rejectChangesImpl(this.documentXml);
+    addRejectChangesResult(total, bodyResult);
+
+    for (const partPath of REVISION_STORY_PART_PATHS) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (!xml) continue;
+
+      const partDoc = parseXml(xml);
+      const partResult = rejectChangesImpl(partDoc);
+      addRejectChangesResult(total, partResult);
+
+      if (hasRejectedChanges(partResult)) {
+        this.zip.writeText(partPath, serializeXml(partDoc));
+        if (partPath === 'word/footnotes.xml') {
+          this.footnotesXml = partDoc;
+        }
+      }
+    }
+
+    if (hasRejectedChanges(total)) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return total;
   }
 
   removeJuniorBookmarks(): number {

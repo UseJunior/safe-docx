@@ -12,7 +12,7 @@ export async function acceptChanges(
   const { session, metadata } = resolved;
 
   try {
-    const stats = session.doc.acceptChanges();
+    const stats = await session.doc.acceptChanges();
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({
       ...stats,

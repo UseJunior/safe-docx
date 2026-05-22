@@ -3,6 +3,7 @@ import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import JSZip from 'jszip';
 import { DocxDocument } from '../src/primitives/document.js';
 import { DocxZip } from '../src/primitives/zip.js';
+import { createRevisionContext, createRevisionIdState } from '../src/primitives/track-changes-emitter.js';
 
 const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Document' });
 
@@ -31,6 +32,11 @@ async function makeDocxBuffer(bodyXml: string, extraFiles?: Record<string, strin
 async function getDocumentXmlFromBuffer(buffer: Buffer): Promise<string> {
   const zip = await DocxZip.load(buffer);
   return zip.readText('word/document.xml');
+}
+
+async function getPartXmlFromBuffer(buffer: Buffer, partPath: string): Promise<string> {
+  const zip = await DocxZip.load(buffer);
+  return zip.readText(partPath);
 }
 
 describe('DocxDocument', () => {
@@ -269,14 +275,98 @@ describe('DocxDocument', () => {
       expect(merge.runsMerged).toBeGreaterThanOrEqual(1);
     });
 
-    await when('acceptChanges is called', () => {
-      const accepted = doc.acceptChanges();
+    await when('acceptChanges is called', async () => {
+      const accepted = await doc.acceptChanges();
       expect(accepted.insertionsAccepted).toBeGreaterThanOrEqual(1);
     });
 
     await then('document text contains the accepted insertion', () => {
       const text = doc.readParagraphs().paragraphs[0]!.text;
       expect(text).toContain('Hello New');
+    });
+  });
+
+  test('acceptChanges cleans tracked insertions from document.xml and footnotes.xml', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let doc!: DocxDocument;
+    let result!: Awaited<ReturnType<DocxDocument['acceptChanges']>>;
+    let documentXml!: string;
+    let footnotesXml!: string;
+
+    await given('a document with an AI-authored tracked footnote insertion', async () => {
+      const buffer = await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      doc = await DocxDocument.load(buffer);
+      doc.insertParagraphBookmarks('mcp_accept_footnote');
+      const paragraphId = doc.readParagraphs().paragraphs[0]!.id;
+      await doc.addFootnote(
+        { paragraphId, text: 'Tracked footnote' },
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-06T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await when('acceptChanges is called', async () => {
+      result = await doc.acceptChanges();
+      const { buffer } = await doc.toBuffer({ cleanBookmarks: false });
+      documentXml = await getPartXmlFromBuffer(buffer, 'word/document.xml');
+      footnotesXml = await getPartXmlFromBuffer(buffer, 'word/footnotes.xml');
+    });
+
+    await then('both the body story and footnote story are clean', () => {
+      expect(result.insertionsAccepted).toBeGreaterThanOrEqual(2);
+      expect(documentXml).not.toContain('<w:ins');
+      expect(documentXml).not.toContain('<w:del');
+      expect(footnotesXml).not.toContain('<w:ins');
+      expect(footnotesXml).not.toContain('<w:del');
+      expect(footnotesXml).toContain('Tracked footnote');
+    });
+  });
+
+  test('rejectChanges restores tracked footnote text replacements in footnotes.xml', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let doc!: DocxDocument;
+    let result!: Awaited<ReturnType<DocxDocument['rejectChanges']>>;
+    let footnotesXml!: string;
+
+    await given('a document with an existing footnote updated under tracked changes', async () => {
+      const buffer = await makeDocxBuffer('<w:p><w:r><w:t>Hello world</w:t></w:r></w:p>');
+      doc = await DocxDocument.load(buffer);
+      doc.insertParagraphBookmarks('mcp_reject_footnote');
+      const paragraphId = doc.readParagraphs().paragraphs[0]!.id;
+      const added = await doc.addFootnote({ paragraphId, text: 'Original footnote' });
+      await doc.updateFootnoteText(
+        { noteId: added.noteId, newText: 'Replacement footnote' },
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-05-06T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await when('rejectChanges is called', async () => {
+      result = await doc.rejectChanges();
+      const { buffer } = await doc.toBuffer({ cleanBookmarks: false });
+      footnotesXml = await getPartXmlFromBuffer(buffer, 'word/footnotes.xml');
+    });
+
+    await then('the footnote story is clean and contains the original note text', () => {
+      expect(result.insertionsRemoved).toBeGreaterThanOrEqual(1);
+      expect(result.deletionsRestored).toBeGreaterThanOrEqual(1);
+      expect(footnotesXml).not.toContain('<w:ins');
+      expect(footnotesXml).not.toContain('<w:del');
+      expect(footnotesXml).not.toContain('<w:delText');
+      expect(footnotesXml).toContain('Original footnote');
+      expect(footnotesXml).not.toContain('Replacement footnote');
     });
   });
 });

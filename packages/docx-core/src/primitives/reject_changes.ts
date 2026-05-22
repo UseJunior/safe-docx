@@ -243,20 +243,20 @@ function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
 // ── Public API ──────────────────────────────────────────────────────
 
 /**
- * Reject all tracked changes in the document body, restoring the
- * document to its pre-edit state.
+ * Reject all tracked changes in the document body or story root, restoring
+ * the document to its pre-edit state.
  *
  * Mutates the Document in place (same convention as acceptChanges).
  */
 export function rejectChanges(doc: Document): RejectChangesResult {
-  const body = doc.getElementsByTagNameNS(W_NS, 'body').item(0);
-  if (!body) {
+  const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
+  if (!root) {
     return { insertionsRemoved: 0, deletionsRestored: 0, movesReverted: 0, propertyChangesReverted: 0 };
   }
 
   // Phase A — Identify paragraphs to remove (entirely inserted paragraphs)
   const paragraphsToRemove = new Set<Element>();
-  const allParagraphs = collectByLocalName(body, 'p');
+  const allParagraphs = collectByLocalName(root, 'p');
 
   for (const p of allParagraphs) {
     // Paragraph-level insertion marker: w:p > w:pPr > w:rPr > w:ins
@@ -276,18 +276,18 @@ export function rejectChanges(doc: Document): RejectChangesResult {
   }
 
   // Phase C — Remove insertions and move destinations
-  const insertionsRemoved = removeAllByLocalName(body, 'ins');
-  const moveToRemoved = removeAllByLocalName(body, 'moveTo');
-  removeAllByLocalName(body, 'moveToRangeStart');
-  removeAllByLocalName(body, 'moveToRangeEnd');
-  removeAllByLocalName(body, 'moveFromRangeStart');
-  removeAllByLocalName(body, 'moveFromRangeEnd');
+  const insertionsRemoved = removeAllByLocalName(root, 'ins');
+  const moveToRemoved = removeAllByLocalName(root, 'moveTo');
+  removeAllByLocalName(root, 'moveToRangeStart');
+  removeAllByLocalName(root, 'moveToRangeEnd');
+  removeAllByLocalName(root, 'moveFromRangeStart');
+  removeAllByLocalName(root, 'moveFromRangeEnd');
 
   // Phase D — Unwrap deletions and convert w:delText → w:t
-  const deletionsRestored = unwrapAllByLocalName(body, 'del');
+  const deletionsRestored = unwrapAllByLocalName(root, 'del');
 
   // Rename all w:delText elements to w:t so getParagraphText() sees them
-  const delTexts = collectByLocalName(body, 'delText');
+  const delTexts = collectByLocalName(root, 'delText');
   for (const dt of delTexts) {
     const parent = dt.parentNode;
     if (!parent) continue;
@@ -306,12 +306,12 @@ export function rejectChanges(doc: Document): RejectChangesResult {
   }
 
   // Phase E — Unwrap move sources (keep content at original position)
-  const moveFromUnwrapped = unwrapAllByLocalName(body, 'moveFrom');
+  const moveFromUnwrapped = unwrapAllByLocalName(root, 'moveFrom');
 
   // Phase F — Restore original properties from *PrChange records
   let propertyChangesReverted = 0;
   for (const localName of PR_CHANGE_LOCALS) {
-    const changes = collectByLocalName(body, localName);
+    const changes = collectByLocalName(root, localName);
     // Sort deepest-first
     changes.sort((a, b) => getDepth(b) - getDepth(a));
     for (const change of changes) {
@@ -350,7 +350,7 @@ export function rejectChanges(doc: Document): RejectChangesResult {
 
   // Phase G — Cleanup
   // Strip paragraph-level revision markers from w:pPr/w:rPr
-  for (const p of collectByLocalName(body, 'p')) {
+  for (const p of collectByLocalName(root, 'p')) {
     for (let i = 0; i < p.childNodes.length; i++) {
       const child = p.childNodes[i]!;
       if (!isW(child, 'pPr')) continue;
@@ -379,7 +379,7 @@ export function rejectChanges(doc: Document): RejectChangesResult {
   }
 
   // Strip w:rsidDel attributes on remaining elements
-  const allElements = body.getElementsByTagNameNS(W_NS, '*');
+  const allElements = root.getElementsByTagNameNS(W_NS, '*');
   for (let i = 0; i < allElements.length; i++) {
     const el = allElements[i]!;
     if (el.hasAttributeNS(W_NS, 'rsidDel')) {

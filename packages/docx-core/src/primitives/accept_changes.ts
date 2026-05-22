@@ -166,21 +166,21 @@ const PR_CHANGE_LOCALS = [
 // ── Public API ──────────────────────────────────────────────────────
 
 /**
- * Accept all tracked changes in the document body, producing a clean
- * document with no revision markup.
+ * Accept all tracked changes in the document body or story root, producing a
+ * clean document with no revision markup.
  *
  * Mutates the Document in place (same convention as simplifyRedlines
  * and mergeRuns).
  */
 export function acceptChanges(doc: Document): AcceptChangesResult {
-  const body = doc.getElementsByTagNameNS(W_NS, 'body').item(0);
-  if (!body) {
+  const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
+  if (!root) {
     return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
   }
 
   // Phase A — Identify paragraphs to remove
   const paragraphsToRemove = new Set<Element>();
-  const allParagraphs = collectByLocalName(body, 'p');
+  const allParagraphs = collectByLocalName(root, 'p');
 
   for (const p of allParagraphs) {
     // Paragraph-level deletion marker: w:p > w:pPr > w:rPr > w:del
@@ -195,26 +195,26 @@ export function acceptChanges(doc: Document): AcceptChangesResult {
   }
 
   // Phase B — Remove deletions and move sources
-  const deletionsAccepted = removeAllByLocalName(body, 'del');
-  const moveFromRemoved = removeAllByLocalName(body, 'moveFrom');
-  removeAllByLocalName(body, 'moveFromRangeStart');
-  removeAllByLocalName(body, 'moveFromRangeEnd');
-  removeAllByLocalName(body, 'moveToRangeStart');
-  removeAllByLocalName(body, 'moveToRangeEnd');
+  const deletionsAccepted = removeAllByLocalName(root, 'del');
+  const moveFromRemoved = removeAllByLocalName(root, 'moveFrom');
+  removeAllByLocalName(root, 'moveFromRangeStart');
+  removeAllByLocalName(root, 'moveFromRangeEnd');
+  removeAllByLocalName(root, 'moveToRangeStart');
+  removeAllByLocalName(root, 'moveToRangeEnd');
 
   // Phase C — Unwrap insertions and move destinations (depth-sorted)
-  const insertionsAccepted = unwrapAllByLocalName(body, 'ins');
-  const moveToUnwrapped = unwrapAllByLocalName(body, 'moveTo');
+  const insertionsAccepted = unwrapAllByLocalName(root, 'ins');
+  const moveToUnwrapped = unwrapAllByLocalName(root, 'moveTo');
 
   // Phase D — Remove property change records
   let propertyChangesResolved = 0;
   for (const localName of PR_CHANGE_LOCALS) {
-    propertyChangesResolved += removeAllByLocalName(body, localName);
+    propertyChangesResolved += removeAllByLocalName(root, localName);
   }
 
   // Phase E — Cleanup
   // Strip paragraph-level revision markers from w:pPr/w:rPr
-  for (const p of collectByLocalName(body, 'p')) {
+  for (const p of collectByLocalName(root, 'p')) {
     for (let i = 0; i < p.childNodes.length; i++) {
       const child = p.childNodes[i]!;
       if (!isW(child, 'pPr')) continue;
@@ -244,7 +244,7 @@ export function acceptChanges(doc: Document): AcceptChangesResult {
   }
 
   // Strip w:rsidDel attributes on remaining elements
-  const allElements = body.getElementsByTagNameNS(W_NS, '*');
+  const allElements = root.getElementsByTagNameNS(W_NS, '*');
   for (let i = 0; i < allElements.length; i++) {
     const el = allElements[i]!;
     if (el.hasAttributeNS(W_NS, 'rsidDel')) {
