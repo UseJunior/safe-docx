@@ -92,9 +92,9 @@ axiom normalizeText : String → String
     level while `<w:ins>`/`<w:del>` wrap only the changed `w:instrText` /
     `w:delInstrText` payloads. Such fragmented wrapper subtrees are NOT
     `fieldContextNeutral` under `∀ ctx`. If/when the safe-docx engine becomes
-    ECMA-376-conformant for field modifications (see follow-up issue), this
-    axiom and the per-subtree neutrality predicate will need to be replaced
-    with a document-level preservation property; the Lean proof in
+    ECMA-376-conformant for field modifications (tracked in #217), this axiom
+    and the per-subtree neutrality predicate will need to be replaced with a
+    document-level preservation property; the Lean proof in
     `Tier2.InvFieldOne` will be refactored accordingly.
 
     Evidence as of this change is the existing field-free fast-check bridge
