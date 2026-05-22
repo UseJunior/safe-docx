@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { errorCode, errorMessage } from "../error_utils.js";
+import { errorMessage } from "../error_utils.js";
 import os from 'node:os';
 import path from 'node:path';
 import { err, type ToolResponse } from './types.js';
@@ -41,9 +41,10 @@ async function resolveAllowedRoots(): Promise<string[]> {
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0)
     : [];
+  const platformTempDefaults = process.platform === 'win32' ? [] : ['/tmp', '/private/tmp'];
   const defaults = fromEnv.length > 0
     ? fromEnv
-    : [process.env.HOME ?? '', os.tmpdir()].filter((entry) => entry.length > 0);
+    : [process.env.HOME ?? '', os.tmpdir(), ...platformTempDefaults].filter((entry) => entry.length > 0);
 
   const out: string[] = [];
   const seen = new Set<string>();
@@ -68,10 +69,14 @@ function policyError(
   resolvedPath: string,
   allowedRoots: string[],
 ): ToolResponse {
+  const suggestedRoot = path.dirname(resolvedPath);
   return err(
     'PATH_NOT_ALLOWED',
     `Refusing to ${type} path outside allowed roots: ${inputPath} -> ${resolvedPath}`,
-    `Allowed roots: ${allowedRoots.join(', ')}. Configure SAFE_DOCX_ALLOWED_ROOTS if needed.`,
+    [
+      `Allowed roots: ${allowedRoots.join(', ')}.`,
+      `To allow this path, restart the MCP server with SAFE_DOCX_ALLOWED_ROOTS="$SAFE_DOCX_ALLOWED_ROOTS${path.delimiter}${suggestedRoot}".`,
+    ].join(' '),
   );
 }
 
