@@ -4,10 +4,10 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import {
   DocxDocument,
+  DocxZip,
   createRevisionContext,
   createRevisionIdState,
   parseXml,
-  readZipText,
   type NormalizationResult,
   type ParagraphRevision,
   type ReconstructionMode,
@@ -95,13 +95,55 @@ export type GDocsSession = {
 export type Session = DocxSession | GDocsSession;
 
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-const REVISION_ID_SEED_SIDE_PARTS = [
+
+/**
+ * WordprocessingML elements that carry package-wide revision `w:id` attributes.
+ * Limiting the seed scan to these elements prevents non-revision IDs (e.g.,
+ * `<w:comment w:id>`, `<w:footnote w:id>`, `<w:bookmarkStart w:id>`) from
+ * spuriously inflating the starting revision-id counter.
+ */
+const REVISION_ID_ELEMENT_LOCAL_NAMES = new Set<string>([
+  'ins',
+  'del',
+  'moveFrom',
+  'moveTo',
+  'moveFromRangeStart',
+  'moveFromRangeEnd',
+  'moveToRangeStart',
+  'moveToRangeEnd',
+  'pPrChange',
+  'rPrChange',
+  'tblPrChange',
+  'trPrChange',
+  'tcPrChange',
+  'sectPrChange',
+  'cellIns',
+  'cellDel',
+  'cellMerge',
+  'customXmlInsRangeStart',
+  'customXmlInsRangeEnd',
+  'customXmlDelRangeStart',
+  'customXmlDelRangeEnd',
+  'customXmlMoveFromRangeStart',
+  'customXmlMoveFromRangeEnd',
+  'customXmlMoveToRangeStart',
+  'customXmlMoveToRangeEnd',
+]);
+
+/**
+ * Fixed package paths that can carry package-wide revision attributes.
+ * `commentsExtended.xml` and `people.xml` are intentionally excluded — they
+ * use `w15:paraId` / `w15:author` identifiers, not revision `w:id` values.
+ */
+const FIXED_REVISION_ID_SEED_PARTS = [
   'word/comments.xml',
   'word/footnotes.xml',
   'word/endnotes.xml',
-  'word/commentsExtended.xml',
-  'word/people.xml',
+  'word/glossary/document.xml',
 ] as const;
+
+/** Matches numbered header/footer parts such as `word/header1.xml`. */
+const NUMBERED_HEADER_FOOTER_RE = /^word\/(header|footer)\d*\.xml$/;
 
 function normalizeAiAuthor(author: string | null | undefined): string | null {
   if (typeof author !== 'string') return null;
@@ -123,14 +165,22 @@ function getWordIdValue(element: Element): number | null {
  * Compute a starting `RevisionIdState` whose first allocated `w:id` is
  * higher than any existing revision id found in the supplied documents.
  *
+ * Only `w:id` attributes on revision-bearing elements
+ * (`REVISION_ID_ELEMENT_LOCAL_NAMES`) are considered. Non-revision IDs such
+ * as `<w:comment w:id>` or `<w:footnote w:id>` share the attribute name but
+ * occupy a different ID space and must not influence the counter.
+ *
  * Callers should pass every available story/metadata part that can contain
- * package-wide `w:id` revision attributes, not just `document.xml`.
+ * package-wide revision attributes, not just `document.xml`.
  */
 export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdState {
   let maxId = 0;
 
   for (const doc of docs) {
     for (const node of Array.from(doc.getElementsByTagName('*'))) {
+      const localName = node.localName ?? '';
+      if (!REVISION_ID_ELEMENT_LOCAL_NAMES.has(localName)) continue;
+      if (node.namespaceURI && node.namespaceURI !== WORDPROCESSING_ML_NS) continue;
       const value = getWordIdValue(node);
       if (value !== null && value > maxId) {
         maxId = value;
@@ -141,25 +191,69 @@ export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdSta
   return createRevisionIdState(maxId + 1);
 }
 
-async function getSidePartRevisionSeedDocs(session: DocxSession): Promise<Document[]> {
+async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> {
   const docs: Document[] = [];
 
-  for (const partPath of REVISION_ID_SEED_SIDE_PARTS) {
-    const xml = await readZipText(session.originalBuffer, partPath);
-    if (xml) docs.push(parseXml(xml));
+  let zip: DocxZip;
+  try {
+    zip = await DocxZip.load(buffer);
+  } catch {
+    return docs;
+  }
+
+  const seedPaths = new Set<string>(FIXED_REVISION_ID_SEED_PARTS);
+  for (const entry of zip.listFiles()) {
+    if (NUMBERED_HEADER_FOOTER_RE.test(entry)) seedPaths.add(entry);
+  }
+
+  for (const partPath of seedPaths) {
+    if (!zip.hasFile(partPath)) continue;
+    let xml: string | null;
+    try {
+      xml = await zip.readTextOrNull(partPath);
+    } catch {
+      continue;
+    }
+    if (!xml) continue;
+    try {
+      docs.push(parseXml(xml));
+    } catch {
+      // Malformed optional side part — skip so an unrelated parse failure
+      // does not block every tracked edit on the session.
+    }
   }
 
   return docs;
 }
 
+/**
+ * Single-flight guard around the first revision-id seed scan per session.
+ * Concurrent first callers await the same in-flight scan and assign the same
+ * result, preventing a slower scan from clobbering a counter that a faster
+ * caller has already advanced via emitted revisions.
+ */
+const revisionIdSeedPromises = new WeakMap<DocxSession, Promise<RevisionIdState>>();
+
 export async function getRevisionContextForSession(session: DocxSession): Promise<RevisionContext | undefined> {
   if (!session.aiAuthor) return undefined;
 
   if (!session.revisionIdState) {
-    session.revisionIdState = inferStartingRevisionIdState(
-      session.doc.getDocumentXmlClone(),
-      ...(await getSidePartRevisionSeedDocs(session)),
-    );
+    let pending = revisionIdSeedPromises.get(session);
+    if (!pending) {
+      pending = (async () => {
+        const sideDocs = await getSidePartRevisionSeedDocs(session.originalBuffer);
+        return inferStartingRevisionIdState(session.doc.getDocumentXmlClone(), ...sideDocs);
+      })();
+      revisionIdSeedPromises.set(session, pending);
+    }
+    try {
+      const seeded = await pending;
+      if (!session.revisionIdState) {
+        session.revisionIdState = seeded;
+      }
+    } finally {
+      revisionIdSeedPromises.delete(session);
+    }
   }
 
   return createRevisionContext({

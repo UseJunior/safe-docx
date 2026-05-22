@@ -150,6 +150,129 @@ describe('revision context helpers', () => {
     expect(ctx).toBeDefined();
     expect(session.revisionIdState?.nextId).toBe(501);
   });
+
+  test('ignores non-revision w:id attributes (e.g., <w:comment w:id>) in side parts', async () => {
+    // Comment IDs and revision IDs share an attribute name but occupy
+    // separate ID spaces — only revision-bearing elements should seed.
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-revision-nonrevid-test-'));
+    tmpDirs.push(dir);
+    const filePath = path.join(dir, 'nonrev.docx');
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body><w:p><w:r><w:t>Plain</w:t></w:r></w:p></w:body></w:document>`;
+    const commentsXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:comment w:id="500" w:author="Reviewer" w:date="2026-01-01T00:00:00Z">` +
+      `<w:p><w:r><w:t>Comment body</w:t></w:r></w:p>` +
+      `</w:comment></w:comments>`;
+    const buf = await makeDocxWithDocumentXml(documentXml, { 'word/comments.xml': commentsXml });
+    await fs.writeFile(filePath, new Uint8Array(buf));
+
+    const session = await mgr.createSession(buf, 'nonrev.docx', filePath);
+    const ctx = await getRevisionContextForSession(session);
+
+    expect(ctx).toBeDefined();
+    expect(session.revisionIdState?.nextId).toBe(1);
+  });
+
+  test('initializes revision ids above pre-existing header w:id values', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-revision-header-test-'));
+    tmpDirs.push(dir);
+    const filePath = path.join(dir, 'tracked-header.docx');
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>`;
+    const headerXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:p><w:ins w:id="900" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Header</w:t></w:r></w:ins></w:p>` +
+      `</w:hdr>`;
+    const buf = await makeDocxWithDocumentXml(documentXml, { 'word/header1.xml': headerXml });
+    await fs.writeFile(filePath, new Uint8Array(buf));
+
+    const session = await mgr.createSession(buf, 'tracked-header.docx', filePath);
+    const ctx = await getRevisionContextForSession(session);
+
+    expect(ctx).toBeDefined();
+    expect(session.revisionIdState?.nextId).toBe(901);
+  });
+
+  test('initializes revision ids above pre-existing footer w:id values', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-revision-footer-test-'));
+    tmpDirs.push(dir);
+    const filePath = path.join(dir, 'tracked-footer.docx');
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>`;
+    const footerXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:p><w:ins w:id="1234" w:author="Reviewer" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Footer</w:t></w:r></w:ins></w:p>` +
+      `</w:ftr>`;
+    const buf = await makeDocxWithDocumentXml(documentXml, { 'word/footer2.xml': footerXml });
+    await fs.writeFile(filePath, new Uint8Array(buf));
+
+    const session = await mgr.createSession(buf, 'tracked-footer.docx', filePath);
+    const ctx = await getRevisionContextForSession(session);
+
+    expect(ctx).toBeDefined();
+    expect(session.revisionIdState?.nextId).toBe(1235);
+  });
+
+  test('skips malformed optional side parts and continues seeding from document.xml', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-revision-malformed-test-'));
+    tmpDirs.push(dir);
+    const filePath = path.join(dir, 'malformed.docx');
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body><w:p><w:ins w:id="77" w:author="Existing" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Body</w:t></w:r></w:ins></w:p></w:body></w:document>`;
+    // Truncated/unterminated comments.xml — parseXml must throw, but the
+    // session must remain editable rather than crashing the first tool call.
+    const commentsXml =
+      `<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment`;
+    const buf = await makeDocxWithDocumentXml(documentXml, { 'word/comments.xml': commentsXml });
+    await fs.writeFile(filePath, new Uint8Array(buf));
+
+    const session = await mgr.createSession(buf, 'malformed.docx', filePath);
+    const ctx = await getRevisionContextForSession(session);
+
+    expect(ctx).toBeDefined();
+    expect(session.revisionIdState?.nextId).toBe(78);
+  });
+
+  test('concurrent first callers resolve to a single seeded RevisionIdState', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'SafeDocX' });
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mgr-revision-race-test-'));
+    tmpDirs.push(dir);
+    const filePath = path.join(dir, 'race.docx');
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:body><w:p><w:ins w:id="10" w:author="x" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Hi</w:t></w:r></w:ins></w:p></w:body></w:document>`;
+    const buf = await makeDocxWithDocumentXml(documentXml);
+    await fs.writeFile(filePath, new Uint8Array(buf));
+
+    const session = await mgr.createSession(buf, 'race.docx', filePath);
+    const [a, b, c] = await Promise.all([
+      getRevisionContextForSession(session),
+      getRevisionContextForSession(session),
+      getRevisionContextForSession(session),
+    ]);
+
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    expect(c).toBeDefined();
+    expect(session.revisionIdState?.nextId).toBe(11);
+  });
 });
 
 // ── getSessionByPath ────────────────────────────────────────────────
