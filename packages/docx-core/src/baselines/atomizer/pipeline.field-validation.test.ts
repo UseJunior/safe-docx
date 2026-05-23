@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { splitStories, validateFieldStructure } from './pipeline.js';
+import { hasFldCharInsideDel, splitStories, validateFieldStructure } from './pipeline.js';
 
 const test = testAllure
   .epic('Document Comparison')
@@ -465,6 +465,65 @@ describe('validateFieldStructure: per-story (issue #212)', () => {
       });
       await and('validation still succeeds via the array path', () => {
         expect(validateFieldStructure(stories)).toBe(true);
+      });
+    },
+  );
+});
+
+// Targeted #217 combined-output gate. See `pipeline.ts` `hasFldCharInsideDel`.
+describe('hasFldCharInsideDel (issue #217 combined-output gate)', () => {
+  test(
+    'returns true when w:fldChar appears inside w:del',
+    async ({ given, when, then }: AllureBddContext) => {
+      let xml = '';
+      let result = false;
+
+      await given('a document with the canonical non-conformant pattern', () => {
+        xml = buildDoc(
+          `<w:p><w:del><w:r><w:fldChar w:fldCharType="begin"/></w:r></w:del></w:p>`,
+        );
+      });
+      await when('the targeted gate runs', () => {
+        result = hasFldCharInsideDel(xml);
+      });
+      await then('the violation is reported', () => {
+        expect(result).toBe(true);
+      });
+    },
+  );
+
+  test(
+    'returns false on the fragmented modification fixture',
+    async ({ given, when, then }: AllureBddContext) => {
+      let xml = '';
+      let result = false;
+
+      await given('the canonical MODIFIED_FIELD_FRAGMENTED layout', () => {
+        xml = buildDoc(`<w:p>${MODIFIED_FIELD_FRAGMENTED}</w:p>`);
+      });
+      await when('the targeted gate runs', () => {
+        result = hasFldCharInsideDel(xml);
+      });
+      await then('no violation is reported', () => {
+        expect(result).toBe(false);
+      });
+    },
+  );
+
+  test(
+    'returns false when w:fldChar appears inside w:ins (insertion of a complete field is conformant)',
+    async ({ given, when, then }: AllureBddContext) => {
+      let xml = '';
+      let result = false;
+
+      await given('an insertion wrapping a complete NUMPAGES field', () => {
+        xml = buildDoc(`<w:p><w:ins>${COMPLETE_FIELD}</w:ins></w:p>`);
+      });
+      await when('the targeted gate runs', () => {
+        result = hasFldCharInsideDel(xml);
+      });
+      await then('no violation is reported', () => {
+        expect(result).toBe(false);
       });
     },
   );

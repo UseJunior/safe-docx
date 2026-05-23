@@ -953,21 +953,21 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
       await then(
         'the accept and reject outputs both validate, exercising the w:delInstrText atom case post-rename',
         async () => {
-          // safe-docx's inplace atomizer emits deleted complete fields as a single
-          // <w:del> containing the full begin/instrText/separate/result/end run
-          // sequence (inPlaceModifier.ts:938). After conversion, the instrText
-          // becomes delInstrText. This fixture exercises the w:delInstrText atom
-          // case in the post-reject rename pass.
+          // Post-#217 the inplace atomizer fragments deleted fields per
+          // ECMA-376 Part 4: w:fldChar runs are emitted at sibling level
+          // (unwrapped) and <w:del> wraps only the w:delInstrText / w:delText
+          // payloads. The combined output now satisfies the no-fldChar-in-del
+          // rule (gated by `hasFldCharInsideDel` in pipeline.ts).
           //
-          // We deliberately do NOT call `assertRecursivelyWellformed` here. The
-          // combined XML contains `w:fldChar` inside `<w:del>` — which is forbidden
-          // by ECMA-376 Part 4 and is the engine non-conformance tracked in #217.
-          // PR #211's tightened `validateFieldStructure` would correctly reject the
-          // combined output, but the engine's safety check at `pipeline.ts:439-440`
-          // only validates the post-accept and post-reject outputs (which ARE
-          // conformant: accept drops the entire <w:del>; reject unwraps to a
-          // complete field). When #217 lands and the engine fragments properly,
-          // `assertRecursivelyWellformed` can be re-enabled here.
+          // We still do NOT call `assertRecursivelyWellformed` here. The
+          // fragmented `<w:del>` subtrees contain w:delInstrText with an empty
+          // *local* field stack (the surrounding [begin]/[separate]/[end] are
+          // at sibling level, outside the wrapper), so they are not
+          // field-context-neutral under ∀ ctx. That is the predicate-strength
+          // gap PR #220 weakened the residual axiom to accommodate: the
+          // engine output satisfies the document-level `preservationFriendly`
+          // property but not per-subtree `recursivelyWellformed`.
+          // `assertFieldInvariant` is the right document-level check.
           const field =
             `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
             `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +

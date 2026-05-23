@@ -2,20 +2,21 @@
  * Integration Tests — ECMA-376 Field-Fragmentation Conformance (issue #217)
  *
  * Asserts the expected fragmented shape of the combined inplace comparison
- * output for field-modification scenarios:
+ * output for field-deletion and field-modification scenarios:
  *
  *   - `w:fldChar` runs MUST NOT appear inside `<w:del>`. (ECMA-376 Part 4 —
  *     Word treats this as fatal and discards the field state machine.)
- *   - For instr-modification scenarios, `<w:ins>` / `<w:del>` MUST wrap only
- *     `w:instrText` / `w:delInstrText` payloads; `w:fldChar` markers MUST be
- *     emitted at run-sibling level.
+ *   - On the `<w:del>` side, fragmentation wraps only the `w:instrText`
+ *     (renamed to `w:delInstrText`) and result-text (renamed to `w:delText`)
+ *     payloads; `w:fldChar` markers are emitted at run-sibling level.
  *   - `validateFieldStructure` MUST return true on the combined output AND on
  *     both the post-accept and post-reject projections.
  *
- * Whole-field INSERTION is NOT fragmented (a complete `<w:ins>` containing
- * `[begin..end]` is well-formed under ECMA-376). The existing insertion
- * coverage in `lean-spec-bridge.test.ts:907–941` continues to assert that
- * stronger shape.
+ * Whole-field INSERTION (and move-destination) is NOT fragmented. ECMA-376
+ * permits `w:fldChar` inside `<w:ins>` and `<w:moveTo>`; only `<w:del>` bars
+ * it. The existing insertion coverage in `lean-spec-bridge.test.ts:907–941`
+ * continues to assert the stronger wrapper-neutrality shape for inserted
+ * fields.
  *
  * These tests are red against the pre-#217 engine. They go green after the
  * fragmentation work in `inPlaceModifier.ts` lands (Phase 2 / Phase 3 of the
@@ -167,9 +168,8 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del> or <w:ins>; field structure validates', () => {
+      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
         assertNoFldCharInside(combined, 'w:del');
-        assertNoFldCharInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },
@@ -195,9 +195,8 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del> or <w:ins>; field structure validates', () => {
+      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
         assertNoFldCharInside(combined, 'w:del');
-        assertNoFldCharInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },
@@ -223,9 +222,8 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del> or <w:ins>; field structure validates', () => {
+      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
         assertNoFldCharInside(combined, 'w:del');
-        assertNoFldCharInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },
@@ -253,9 +251,8 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del> or <w:ins>; field structure validates', () => {
+      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
         assertNoFldCharInside(combined, 'w:del');
-        assertNoFldCharInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },
@@ -281,9 +278,8 @@ describe('Field fragmentation — modification scenarios', () => {
 
       await when('the inplace combined output is produced', async () => {});
 
-      await then('no w:fldChar appears inside <w:del> or <w:ins>; field structure validates', () => {
+      await then('no w:fldChar appears inside <w:del>; field structure validates', () => {
         assertNoFldCharInside(combined, 'w:del');
-        assertNoFldCharInside(combined, 'w:ins');
         assertFieldStructureSurvives(combined);
       });
     },

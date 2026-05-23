@@ -4,15 +4,15 @@
 
 ## 2. Phase 0 — Red fixtures
 
-- [ ] 2.1 Create `packages/docx-core/src/integration/field-fragmentation.test.ts`.
-- [ ] 2.2 Add fixture: FORMCHECKBOX → FORMTEXT instr-text rewrite. Assert `w:fldChar` runs are unwrapped siblings; `w:instrText`/`w:delInstrText` runs are inside `<w:ins>`/`<w:del>`; `validateFieldStructure(combined) === true`.
-- [ ] 2.3 Add fixture: HYPERLINK target rewrite.
-- [ ] 2.4 Add fixture: PAGEREF instr-text rewrite.
-- [ ] 2.5 Add fixture: bookmarked field instr modification.
-- [ ] 2.6 Add fixture: result-text-only change (field structure preserved).
-- [ ] 2.7 Add fixture: nested field modification.
-- [ ] 2.8 Add fixture: field-without-separator edge case.
-- [ ] 2.9 Verify all fixtures FAIL against current main (red baseline).
+- [x] 2.1 Create `packages/docx-core/src/integration/field-fragmentation.test.ts`.
+- [x] 2.2 Add fixture: FORMCHECKBOX → FORMTEXT (with result change). Assert no `w:fldChar` inside `<w:del>`; `validateFieldStructure(combined/accept/reject) === true`.
+- [x] 2.3 Add fixture: HYPERLINK target rewrite (with link-text change).
+- [x] 2.4 Add fixture: PAGEREF rewrite (with result-page change).
+- [x] 2.5 Add fixture: bookmarked field modification (with result change).
+- [x] 2.6 Add fixture: result-text-only NUMPAGES 3 → 4 change.
+- [x] 2.7 Add `.skip` placeholder: nested field modification.
+- [x] 2.8 Add `.skip` placeholder: field-without-separator edge case.
+- [x] 2.9 Verify all enabled fixtures FAIL against pre-Phase-2 main (red baseline confirmed — see commit message of test fixture commit).
 
 ## 3. Phase 1 — Research whole-field deletion representation
 
@@ -20,34 +20,28 @@
 - [x] 3.2 Decision recorded in design.md Decision 4: extend the canonical FORMCHECKBOX→FORMTEXT modification pattern to whole-field deletion (fldChar unwrapped, instrText→delInstrText and result→delText wrapped in `<w:del>`).
 - [ ] 3.3 Empirical follow-up (gated on Phase 9 manual round-trip): if Word or LibreOffice rejects the empty-shell accept-state, revisit Decision 4 and inspect LibreOffice source / docx4j to find an alternative.
 
-## 4. Phase 1.5 — Field-change classifier
+## 4. Phase 1.5 — Field-change classifier (DROPPED per design Decision 1)
 
-- [ ] 4.1 Create `packages/docx-core/src/baselines/atomizer/fieldChangeClassifier.ts` exporting `FieldChangeClass` type and `classifyFieldChange(originalAtom, revisedAtom)` function.
-- [ ] 4.2 Implement classification logic by walking `collapsedFieldAtoms` of both sides and comparing instr/result content. Returns one of: `whole-field-insertion`, `whole-field-deletion`, `instr-modification`, `result-modification`, `no-change`.
-- [ ] 4.3 Create `packages/docx-core/src/baselines/atomizer/fieldChangeClassifier.test.ts` with unit tests for each class.
-- [ ] 4.4 No behavior change yet — classifier is dormant until Phase 2.
+Per Steven's #217 comment, fragmentation is uniform across all three handlers — fldChar runs are always emitted unwrapped at sibling level when handling a collapsed-field atom. The yes/no predicate "is this a collapsed field?" reduces to `atom.collapsedFieldAtoms !== undefined` and does not warrant a separate module. The 5-class classifier was a leftover from an earlier draft that proposed keeping whole-field insertion unfragmented.
 
-## 5. Phase 2 — Modification-case fragmentation
+- [x] 4.1 SKIPPED — superseded by Decision 1.
 
-- [ ] 5.1 Add `fragmentModifiedField(atom, wrapperKind)` helper near `getAtomRuns:721` in `inPlaceModifier.ts`. Walks `collapsedFieldAtoms`; emits each `w:fldChar` run at sibling level (unwrapped); wraps `w:instrText` / `w:delInstrText` / result payloads inside one wrapper per contiguous run group of the target kind.
-- [ ] 5.2 Rewire `handleInserted:1957` to call `classifyFieldChange`. `whole-field-insertion` → existing single-wrapper behavior. `instr-modification` / `result-modification` → `fragmentModifiedField(atom, 'w:ins')`.
-- [ ] 5.3 Rewire `handleMovedDestination:2300` analogously with `'w:moveTo'`.
-- [ ] 5.4 Rewire `insertDeletedRun:923` for the `instr-modification` subcase → `fragmentModifiedField(atom, 'w:del')`. Whole-field deletion deferred to Phase 3.
-- [ ] 5.5 Verify Phase 0 fixtures 2.2–2.7 now pass.
+## 5. Phase 2+3 — Deletion-side fragmentation (modification + whole-field deletion)
 
-## 6. Phase 3 — Whole-field deletion fragmentation
-
-- [ ] 6.1 Apply Phase-1 decision to `insertDeletedRun:923` for the `whole-field-deletion` subcase.
-- [ ] 6.2 Add fixture for whole-field deletion to `field-fragmentation.test.ts`.
-- [ ] 6.3 Verify the new fixture passes.
+- [x] 5.1 Add `isCollapsedFieldAtom(atom)` predicate near `getAtomRuns:721` in `inPlaceModifier.ts`.
+- [x] 5.2 Add `insertFragmentedDeletedField` helper: iterates `collapsedFieldAtoms` and emits one cloned run per atom; `w:fldChar` runs at sibling level, payload runs wrapped in their own `<w:del>` with `convertToDelText` rename.
+- [x] 5.3 Rewire `insertDeletedRun:923` to dispatch on `isCollapsedFieldAtom(deletedAtom)` and call the fragmentation helper.
+- [x] 5.4 Leave `handleInserted:1957` and `handleMovedDestination:2300` UNCHANGED. ECMA-376 permits `w:fldChar` inside `<w:ins>` / `<w:moveTo>` — fragmenting them would regress NVCA fixtures and the bridge-test insertion `assertRecursivelyWellformed`.
+- [x] 5.5 Verify Phase 0 deletion + modification fixtures pass; full docx-core test suite (1259 tests + 3 skipped) green.
 
 ## 7. Phase 4 — Gates, test updates, docs
 
-- [ ] 7.1 Add combined-output `validateFieldStructure(combinedXml)` call alongside accept/reject in `pipeline.ts:468`.
-- [ ] 7.2 Update `lean-spec-bridge.test.ts` deletion fixture TODO at lines 962–970: clarify that the engine is now conformant but the per-wrapper check still over-asserts (fragmented `<w:del>` payloads are not neutral under ∀ ctx). Keep `assertFieldInvariant` only; do NOT re-enable `assertRecursivelyWellformed`.
-- [ ] 7.3 Update `collapsed-field-inplace.test.ts` helpers (`:125–195`) and assertions (`:211`, `:478–510`): add fragmented-shape variants of `countRunsInTrackedChangeWrappers`, `hasSingleRunPackedField`, `hasLeakedInstrText`. Tests for instr-modification scenarios assert fragmented output; whole-field cases unchanged.
-- [ ] 7.4 Update `verification/lean/README.md`: replace stale references to `recursivelyWellformed` axiom with `preservationFriendly`; link PR #220.
-- [ ] 7.5 Run full pre-submit: `npm run build && npm run lint:workspaces && npm run test:run && npm run check:spec-coverage`.
+- [x] 7.1 Add targeted combined-output gate in `pipeline.ts`: introduce `hasFldCharInsideDel(xml)` helper and require `!hasFldCharInsideDel(candidateXml)` alongside the existing accept/reject `validateFieldStructure` checks. Narrower than full `validateFieldStructure(combinedXml)` because the latter surfaces unrelated legacy non-conformances (e.g. `w:delInstrText` inside `<w:moveFrom>` from `insertMoveFromRun`) out of #217 scope.
+- [x] 7.2 Refresh `lean-spec-bridge.test.ts` deletion-fixture comment (lines 962–970 region): clarify that the engine now satisfies the no-fldChar-in-del rule but the per-wrapper recursive check still over-asserts (fragmented `<w:del>` payloads are not neutral under ∀ ctx — that's the predicate-strength gap PR #220 weakened the axiom around). Keep `assertFieldInvariant` only.
+- [x] 7.3 Update `collapsed-field-inplace.test.ts:211`: replace the "multi-run inside one w:del" assertion with "fldChar at sibling level + single-payload w:del wrappers."
+- [x] 7.4 Update unit test in `inPlaceModifier.test.ts:1269`: contract change — `insertDeletedRun` now returns the last inserted sibling (a `<w:r>` for fldChar end), not the `<w:del>` wrapper. Assert structural shape of the fragmented sequence instead.
+- [ ] 7.5 (Optional) Update `verification/lean/README.md` stale references to legacy axiom names. Defer — README inspection is the follow-up if Lean docs are referenced by other PRs.
+- [ ] 7.6 Run full pre-submit: `npm run build && npm run lint:workspaces && npm run test:run && npm run check:spec-coverage`.
 
 ## 8. Lean verification (no code changes)
 

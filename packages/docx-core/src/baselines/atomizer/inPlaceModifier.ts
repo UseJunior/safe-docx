@@ -736,6 +736,15 @@ function getAtomRuns(atom: ComparisonUnitAtom): Element[] {
 }
 
 /**
+ * True iff `atom` represents a collapsed-field sequence (a complex field
+ * captured as a single logical atom). See {@link getAtomRuns} for the
+ * multi-run resolution.
+ */
+function isCollapsedFieldAtom(atom: ComparisonUnitAtom): boolean {
+  return !!(atom.collapsedFieldAtoms && atom.collapsedFieldAtoms.length > 0);
+}
+
+/**
  * Convert a run node to the correct insertion anchor.
  *
  * If the run is wrapped in a track-change container, the insertion anchor
@@ -935,29 +944,40 @@ export function insertDeletedRun(
     return null;
   }
 
-  // Create w:del wrapper
+  const runs = getAtomRuns(deletedAtom);
+
+  // ECMA-376 Part 4 fragmentation (issue #217): for a collapsed-field atom,
+  // emit w:fldChar runs at sibling level (unwrapped) and wrap only the
+  // payload runs (w:instrText, w:t, etc.) in <w:del>. w:fldChar inside
+  // <w:del> is non-conformant and Word treats it as fatal. Iterates the
+  // constituent collapsedFieldAtoms (not the deduped source runs) so a
+  // mixed-run field — where multiple field elements share one source `<w:r>` —
+  // is correctly split into one cloned run per field element.
+  if (isCollapsedFieldAtom(deletedAtom)) {
+    return insertFragmentedDeletedField(
+      deletedAtom,
+      sourceRun,
+      insertAfterRun,
+      targetParagraph,
+      author,
+      dateStr,
+      state,
+      context,
+    );
+  }
+  // Avoid an unused variable when the collapsed-field branch above is not taken.
+  void runs;
+
+  // Single-run path: wrap the cloned run in one <w:del>.
   const id = allocateRevisionId(state);
   const del = createEl('w:del', {
     'w:id': String(id),
     'w:author': author,
     'w:date': dateStr,
   });
-
-  // For collapsed field atoms, replay one cloned run per original source run
-  // to preserve multi-run field structure. Without this, all field elements
-  // get packed into a single run, breaking Word's field parsing.
-  const runs = getAtomRuns(deletedAtom);
-  if (runs.length > 1) {
-    for (const run of runs) {
-      const clonedRun = cloneRunWithAtomContent(run, deletedAtom, run);
-      convertToDelText(clonedRun);
-      del.appendChild(clonedRun);
-    }
-  } else {
-    const clonedRun = cloneRunWithAtomContent(sourceRun, deletedAtom);
-    convertToDelText(clonedRun);
-    del.appendChild(clonedRun);
-  }
+  const clonedRun = cloneRunWithAtomContent(sourceRun, deletedAtom);
+  convertToDelText(clonedRun);
+  del.appendChild(clonedRun);
 
   // Insert at correct position
   if (insertAfterRun) {
@@ -976,6 +996,89 @@ export function insertDeletedRun(
   if (sourceMarkers.length > 0) insertMarkersBeforeWrapper(del, sourceMarkers);
 
   return del;
+}
+
+/**
+ * Emit a fragmented deletion of a collapsed-field atom: walks the constituent
+ * source runs in document order, cloning each into the target paragraph as
+ * either a sibling-level unwrapped run (for `w:fldChar`) or a `<w:del>`-wrapped
+ * run (for payload runs whose text is renamed to `w:delText` / `w:delInstrText`).
+ *
+ * Returns the last sibling element inserted, which the caller uses as the
+ * next insertion anchor (preserving the contract of `insertDeletedRun`).
+ *
+ * Per ECMA-376 Part 4 § 17.16.5: `w:delInstrText` MUST appear inside `<w:del>`;
+ * by extension and by issue #217's deep-research conclusion, `w:fldChar` runs
+ * stay at sibling level.
+ */
+function insertFragmentedDeletedField(
+  deletedAtom: ComparisonUnitAtom,
+  sourceRun: Element,
+  insertAfterRun: Element | null,
+  targetParagraph: Element,
+  author: string,
+  dateStr: string,
+  state: RevisionIdState,
+  context?: BookmarkSurvivalContext,
+): Element | null {
+  const fieldAtoms = deletedAtom.collapsedFieldAtoms;
+  if (!fieldAtoms || fieldAtoms.length === 0) return null;
+
+  let anchor: Element | null = insertAfterRun;
+  let firstInserted: Element | null = null;
+  let lastInserted: Element | null = null;
+  const pPr = findChildByTagName(targetParagraph, 'w:pPr');
+
+  const place = (el: Element): void => {
+    if (anchor) {
+      insertAfterElement(anchor, el);
+    } else if (pPr) {
+      insertAfterElement(pPr, el);
+    } else {
+      targetParagraph.insertBefore(el, targetParagraph.firstChild);
+    }
+    if (firstInserted === null) firstInserted = el;
+    lastInserted = el;
+    anchor = el;
+  };
+
+  for (const fieldAtom of fieldAtoms) {
+    // Each constituent field atom produces its own cloned run carrying exactly
+    // one content element (fldChar / instrText / t). This is critical for
+    // mixed-run fields where multiple field elements share a single `<w:r>` in
+    // the source — we MUST emit them as separate runs so we can fragment
+    // fldChars out of the `<w:del>` wrapper.
+    const baseRun =
+      fieldAtom.sourceRunElement ?? findAncestorByTag(fieldAtom, 'w:r') ?? sourceRun;
+    if (!baseRun) continue;
+
+    const clonedRun = cloneRunWithAtomContent(baseRun, fieldAtom);
+    const contentTag = fieldAtom.contentElement.tagName;
+
+    if (contentTag === 'w:fldChar') {
+      // Sibling level — unwrapped.
+      place(clonedRun);
+      continue;
+    }
+
+    // Payload — wrap in <w:del> and rename w:t→w:delText / w:instrText→w:delInstrText.
+    convertToDelText(clonedRun);
+    const id = allocateRevisionId(state);
+    const del = createEl('w:del', {
+      'w:id': String(id),
+      'w:author': author,
+      'w:date': dateStr,
+    });
+    del.appendChild(clonedRun);
+    place(del);
+  }
+
+  if (firstInserted) {
+    const sourceMarkers = cloneUnemittedSourceBookmarkMarkers(sourceRun, targetParagraph, state, context);
+    if (sourceMarkers.length > 0) insertMarkersBeforeWrapper(firstInserted, sourceMarkers);
+  }
+
+  return lastInserted;
 }
 
 /**
@@ -1957,6 +2060,10 @@ function isParagraphRemovedOnRejectInContext(paragraph: Element, ctx: Processing
 function handleInserted(atom: ComparisonUnitAtom, ctx: ProcessingContext): HandlerResult {
   const runs = getAtomRuns(atom);
   if (runs.length > 0) {
+    // ECMA-376 Part 4 permits w:fldChar inside <w:ins> (only <w:del> bars it),
+    // so an inserted complete field stays wrapped as a single <w:ins>. The
+    // fragmentation work for issue #217 is scoped to the <w:del> side via
+    // insertDeletedRun.
     for (const run of runs) {
       wrapAsInserted(run, ctx.author, ctx.dateStr, ctx.state);
     }
@@ -2300,6 +2407,9 @@ function handleMovedSource(atom: ComparisonUnitAtom, ctx: ProcessingContext): Ha
 function handleMovedDestination(atom: ComparisonUnitAtom, ctx: ProcessingContext): HandlerResult {
   const runs = getAtomRuns(atom);
   if (runs.length > 0) {
+    // Move destinations behave like insertions; ECMA-376 does not bar w:fldChar
+    // from <w:moveTo> (only <w:del> is explicitly forbidden). Keep the existing
+    // single-wrapper behavior to avoid fragmenting a moved-in field.
     for (const run of runs) {
       wrapAsMoveTo(run, atom.moveName || 'move1', ctx.author, ctx.dateStr, ctx.state);
     }

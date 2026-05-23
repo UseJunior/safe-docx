@@ -432,6 +432,48 @@ export function splitStories(
  * `FieldStory` fragments. Stories are validated independently and short-circuit
  * on the first failure.
  */
+/**
+ * Targeted check for the ECMA-376 Part 4 conformance rule that's the focus of
+ * issue #217: `w:fldChar` MUST NOT appear inside any `<w:del>` element. Word
+ * treats this violation as fatal — the field state machine is discarded and
+ * the field renders as literal-text fallback.
+ *
+ * Used as a combined-output safety gate alongside the per-projection
+ * `validateFieldStructure` checks. Kept narrower than the full structural
+ * validation so that legacy non-#217-related shapes (e.g. `delInstrText`
+ * inside `<w:moveFrom>`) don't trigger fallback when the inplace candidate
+ * is otherwise sound on its accept/reject projections.
+ */
+export function hasFldCharInsideDel(documentXml: string): boolean {
+  const root = parseDocumentXml(documentXml);
+  let insideDelDepth = 0;
+  let violation = false;
+
+  function scan(node: Element): void {
+    if (violation) return;
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType !== 1) continue;
+      const el = child as Element;
+      const tag = el.tagName;
+      if (tag === 'w:del') {
+        insideDelDepth++;
+        scan(el);
+        insideDelDepth--;
+        if (violation) return;
+        continue;
+      }
+      if (tag === 'w:fldChar' && insideDelDepth > 0) {
+        violation = true;
+        return;
+      }
+      scan(el);
+      if (violation) return;
+    }
+  }
+  scan(root);
+  return violation;
+}
+
 export function validateFieldStructure(input: string | FieldStory[]): boolean {
   if (typeof input === 'string') {
     return validateFieldStructureForStory(input);
@@ -567,8 +609,18 @@ function evaluateSafetyChecks(
     auxiliarySidecars.footnotesXmls,
     auxiliarySidecars.endnotesXmls,
   );
+  // Issue #217 conformance gate on the COMBINED output: w:fldChar MUST NOT
+  // appear inside <w:del>. ECMA-376 Part 4 § 17.16.5 makes this fatal for
+  // Word's field state machine. The full validateFieldStructure check is run
+  // on the accept/reject projections (per-story); on the combined view we
+  // only gate the strict no-fldChar-in-del rule because some legacy emit
+  // paths (e.g. delInstrText inside <w:moveFrom>) are non-conformant in shape
+  // but out of scope for #217.
+  const combinedNoFldCharInDel = !hasFldCharInsideDel(candidateXml);
   const fieldStructureOk =
-    validateFieldStructure(acceptedStories) && validateFieldStructure(rejectedStories);
+    combinedNoFldCharInDel &&
+    validateFieldStructure(acceptedStories) &&
+    validateFieldStructure(rejectedStories);
 
   const checks: ReconstructionSafetyChecks = {
     acceptText: acceptTextComparison.normalizedIdentical,

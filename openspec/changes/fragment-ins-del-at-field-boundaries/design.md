@@ -20,16 +20,21 @@ Three years of round-trip incidents in adjacent open-source projects (LibreOffic
 
 ## Decisions
 
-### Decision 1: Add a field-change classifier, do NOT extend `ComparisonUnitAtom`
+### Decision 1: Uniform per-handler fragmentation; no atom-pairing classifier needed
 
-**What**: Introduce `classifyFieldChange(originalAtom, revisedAtom) → FieldChangeClass` as a side-table function that reads the two collapsed-field atoms and returns one of five classes.
+**What**: All three handlers (`handleInserted:1957`, `handleMovedDestination:2300`, `insertDeletedRun:923`) treat a collapsed-field atom the same way: walk its `collapsedFieldAtoms`, emit `w:fldChar` runs unwrapped at sibling level, wrap the `w:instrText`/`w:delInstrText`/result payloads inside the handler's target wrapper (`<w:ins>` / `<w:del>` / `<w:moveTo>`). No 5-class classifier or cross-atom pairing is required.
 
-**Why**: `ComparisonUnitAtom.collapsedFieldAtoms` carries only ONE `correlationStatus`, derived from the first field atom at `atomizer.ts:780`. Per-constituent comparison status is not preserved. To distinguish (a) new-field-insertion vs (b) modification of an existing field vs (c) whole-field deletion at the handler call sites (`handleInserted:1957`, `handleMovedDestination:2300`, `insertDeletedRun:923`), we must inspect both sides' field atom sequences.
+**Why**: An earlier draft of this design called for a `classifyFieldChange` function returning one of `{whole-field-insertion, whole-field-deletion, instr-modification, result-modification, no-change}` so that whole-field-insertion could stay unfragmented (preserving the strong `assertRecursivelyWellformed` invariant in the bridge test). Steven's #217 comment from 2026-05-22 is explicit that the bridge test's over-check will fire on fragmented insertion output too, and should be relaxed as part of this PR:
 
-**Alternatives considered**:
-- *Per-constituent status on `ComparisonUnitAtom`*: would require atomizer rewrite, breaking other invariants. Rejected.
-- *Heuristic at handler call sites* (e.g., "if the atom is a collapsed field and the wrapper is `<w:del>`, assume modification"): fragile, wrong for whole-field deletion, doesn't separate result-only from instr-only modifications. Rejected.
-- *Defer classification to Phase 2*: would block Phase 0 fixtures from being precisely typed. Rejected.
+> "When the engine starts fragmenting fields per ECMA-376, the bridge test's `assertRecursivelyWellformed` over-check (`lean-spec-bridge.test.ts:766`) will start firing on fragmented inplace outputs. Remove or relax it as part of this issue's PR."
+
+That directive implies whole-field insertion *should* fragment too. With that decision, the classifier collapses to a single yes/no predicate: "is this a collapsed-field atom?" — already trivially expressible as `atom.collapsedFieldAtoms !== undefined`. No new module is needed.
+
+A consequence: for a modification scenario (e.g., NUMPAGES 3 → 4), the engine emits TWO complete field shells in document order — the Deleted side wraps the original payloads in `<w:del>` with unwrapped fldChars, and the Inserted side wraps the revised payloads in `<w:ins>` with its own set of unwrapped fldChars. Each shell is structurally well-formed; the combined output is two consecutive fields. `validateFieldStructure` passes on combined, accept, and reject. This is strictly less ambitious than emitting the ECMA-376 canonical single-field-with-fragmented-payloads pattern, but it (a) eliminates the `w:fldChar` inside `<w:del>` violation, (b) satisfies all engine validators, and (c) defers the cross-atom pairing complexity to a future change if needed.
+
+**Alternatives considered and rejected**:
+- *Five-class classifier with atom pairing*: would produce the cleaner ECMA-376 canonical FORMCHECKBOX example form (single field with fragmented payloads), but requires linking Deleted and Inserted collapsed-field atoms across the merged list. The atomizer assigns one `correlationStatus` per collapsed atom (from the first field atom at `atomizer.ts:780`) and doesn't link them; pairing would need a new pre-handler pass. Out of scope for this change; reconsider if Phase 9 round-trips show a real-world rendering issue.
+- *Keep whole-field insertion unfragmented*: would preserve `assertRecursivelyWellformed` on the insertion fixture, but contradicts Steven's directive. Rejected.
 
 ### Decision 2: Fragmentation happens via a new `fragmentModifiedField` helper, not by relaxing pre-split guards
 
@@ -41,11 +46,20 @@ Three years of round-trip incidents in adjacent open-source projects (LibreOffic
 - *Relax pre-split guards*: doesn't work for zero-visible-length atoms. Rejected.
 - *Extend the pre-split splitter to split on child-element boundaries*: large surface change, risks affecting non-field paths. Rejected.
 
-### Decision 3: Whole-field INSERTION stays unfragmented
+### Decision 3: Whole-field INSERTION and MOVE-DESTINATION stay unfragmented (revised from earlier draft)
 
-**What**: When `classifyFieldChange` returns `whole-field-insertion`, `handleInserted` keeps its existing behavior — wrap the entire field sequence in one `<w:ins>`.
+**What**: `handleInserted` and `handleMovedDestination` keep their existing behavior — wrap the entire field sequence in one `<w:ins>` (or `<w:moveTo>`).
 
-**Why**: ECMA-376 Part 4 bars `w:fldChar` from `<w:del>` only. A complete `[begin..end]` field inside one `<w:ins>` is well-formed and is `fieldContextNeutral` under `∀ ctx` (verified empirically by `assertRecursivelyWellformed` passing at `lean-spec-bridge.test.ts:935`). Fragmenting it would lose the stronger wrapper-neutrality property without conformance benefit.
+**Why**: ECMA-376 Part 4 § 17.16.5 bars `w:fldChar` from `<w:del>` only. `<w:ins>` and `<w:moveTo>` may contain `w:fldChar` markers. An earlier draft of this design (informed by Steven's #217 comment from 2026-05-22 which suggested the `lean-spec-bridge.test.ts` insertion over-check would also need to be relaxed) attempted symmetric fragmentation across all three handlers. When implemented, that broke the NVCA regression fixtures (`nvca-coi-regression.test.ts`, `nvca-structural-regression.test.ts`) — both fell back to rebuild with `rejectText` failures because the inserted-side fragmentation interacts with mixed-run revised-document patterns in ways that drop end-fldChars on the reject path.
+
+Narrowing the scope to deletion-side fragmentation:
+
+- Satisfies the actual ECMA-376 conformance rule (no `w:fldChar` inside `<w:del>`).
+- Keeps the NVCA fixtures passing.
+- Keeps the bridge-test insertion fixture's `assertRecursivelyWellformed` passing — no Lean-side test relaxation needed.
+- Bridge-test DELETION fixture stays on `assertFieldInvariant` only because fragmented `<w:del><w:delInstrText>…</w:delInstrText></w:del>` is still not field-context-neutral under ∀ ctx (the `<w:del>` wrapper has an empty local stack when entered).
+
+If future work needs `<w:ins>` fragmentation for a real-world conformance reason, the engine path is open — the deletion-side helper `insertFragmentedDeletedField` is the model and a symmetric `insertFragmentedInsertedField` would be the entry point. That work needs a different fixture suite + atomizer-side analysis to handle the mixed-run revised-tree case correctly.
 
 ### Decision 4: Whole-field DELETION representation — content-only deletion, fldChars unwrapped
 
@@ -80,11 +94,13 @@ ECMA-376 is silent on whole-field deletion specifically — the spec gives only 
 - *Wrap each fldChar in its own `<w:ins>` of the post-deletion state*: paradoxical; ECMA-376 doesn't model "tracked deletion of a fldChar marker." Rejected.
 - *Defer whole-field deletion entirely and route to rebuild fallback*: degrades inplace coverage; doesn't match the engine's existing capability surface.
 
-### Decision 5: Combined-output safety gate
+### Decision 5: Targeted combined-output safety gate (narrowed from full structural validation)
 
-**What**: Add a third call site to `validateFieldStructure` in `pipeline.ts` — alongside the existing accept/reject validation at `:468`, also validate the combined output. Failure causes the inplace pipeline to fall back to rebuild.
+**What**: Add a new `hasFldCharInsideDel(documentXml)` helper in `pipeline.ts` and gate the combined output on it returning `false` — alongside the existing `validateFieldStructure` checks on the accept/reject projections. Failure causes the inplace pipeline to fall back to rebuild.
 
-**Why**: Without this gate, a regression that re-emits `w:fldChar` inside `<w:del>` in the combined output (but not in the accept/reject projections) would silently slip through. The runtime check from PR #211 at `pipeline.ts:407` enforces the rule per-XML but is only called on the accept/reject projections.
+**Why a narrow gate, not full `validateFieldStructure(combined)`**: An earlier draft of this design proposed calling `validateFieldStructure` directly on `candidateXml`. When implemented, it surfaced a pre-existing non-conformance unrelated to #217: `insertMoveFromRun` (`inPlaceModifier.ts:1100`) calls `convertToDelText` on cloned runs even though the runs end up inside `<w:moveFrom>`, not `<w:del>`. The result is `w:delInstrText` inside `<w:moveFrom>`, which violates the rule "delInstrText must be inside w:del." This breaks NVCA structural regression. That's a separate gap — the right fix is in `insertMoveFromRun`, not in this PR.
+
+Narrowing the combined gate to the `hasFldCharInsideDel` rule scopes it to the exact #217 conformance concern: catch any regression that puts `w:fldChar` inside `<w:del>` in the combined output. The accept and reject projections still get full `validateFieldStructure`, which catches the orphan-instrText and out-of-order-fldChar bugs the existing PR #211 check was designed for.
 
 ### Decision 6: Bridge test deletion fixture keeps `assertFieldInvariant` only
 
