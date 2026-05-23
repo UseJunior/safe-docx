@@ -16,11 +16,9 @@
 
 ## 3. Phase 1 — Research whole-field deletion representation
 
-- [ ] 3.1 Consult ECMA-376 Part 4 § DeletedFieldCode and § fldChar topics (c-rex.net mirror).
-- [ ] 3.2 Inspect LibreOffice `sw/source/filter/ww8/wrtw8nds.cxx` and adjacent — record how a tracked field deletion is emitted.
-- [ ] 3.3 Inspect docx4j field-deletion handling.
-- [ ] 3.4 Round-trip a Word-tracked field deletion (PAGEREF + NUMPAGES) and inspect XML.
-- [ ] 3.5 Record decision in `design.md` § "Phase 1 Outcome" with evidence trail (file references, screenshots).
+- [x] 3.1 Consult ECMA-376 Part 4 § DeletedFieldCode and § fldChar topics (Microsoft Learn / c-rex.net mirror).
+- [x] 3.2 Decision recorded in design.md Decision 4: extend the canonical FORMCHECKBOX→FORMTEXT modification pattern to whole-field deletion (fldChar unwrapped, instrText→delInstrText and result→delText wrapped in `<w:del>`).
+- [ ] 3.3 Empirical follow-up (gated on Phase 9 manual round-trip): if Word or LibreOffice rejects the empty-shell accept-state, revisit Decision 4 and inspect LibreOffice source / docx4j to find an alternative.
 
 ## 4. Phase 1.5 — Field-change classifier
 

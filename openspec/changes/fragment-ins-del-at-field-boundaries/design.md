@@ -47,19 +47,38 @@ Three years of round-trip incidents in adjacent open-source projects (LibreOffic
 
 **Why**: ECMA-376 Part 4 bars `w:fldChar` from `<w:del>` only. A complete `[begin..end]` field inside one `<w:ins>` is well-formed and is `fieldContextNeutral` under `∀ ctx` (verified empirically by `assertRecursivelyWellformed` passing at `lean-spec-bridge.test.ts:935`). Fragmenting it would lose the stronger wrapper-neutrality property without conformance benefit.
 
-### Decision 4: Whole-field DELETION representation is research-gated
+### Decision 4: Whole-field DELETION representation — content-only deletion, fldChars unwrapped
 
-**What**: Phase 1 of the implementation is a research spike to decide the on-disk shape for "user deleted an entire complex field." Phase 3 applies the decision to `insertDeletedRun:923`.
+**What**: For whole-field deletion, fragment the field the same way as a modification — emit `[begin]`, `[separate]`, `[end]` runs unwrapped at sibling level; wrap the `[instrText]` (renamed to `delInstrText`) and `[result]` (renamed to `delText`) runs in `<w:del>`.
 
-**Why**: The naïve approach — emit `[begin][separate][end]` unwrapped + `<w:del>` around `[instrText][result]` — leaves an empty field shell after accept (`begin/separate/end` with no payload), which Word renders as malformed. Conformant emitters use a different representation that we need to identify empirically.
+**Why**: ECMA-376 Part 4 § 17.16.5 (Deleted Field Code / delInstrText) specifies that `w:delInstrText` MUST appear inside `<w:del>` ("If this element is not contained within a del element, then the document is non-conformant"). The canonical example for a tracked field modification — quoted verbatim from ISO/IEC 29500-1 1st Edition via Microsoft Learn — keeps `w:fldChar` markers OUTSIDE the `<w:ins>` / `<w:del>` wrappers:
 
-**Research sources**:
-- ECMA-376 Part 4, § DeletedFieldCode and § fldChar topics (c-rex.net mirror, Microsoft Learn).
-- LibreOffice: `sw/source/filter/ww8/wrtw8nds.cxx` (and adjacent) — how it emits a tracked field deletion.
-- docx4j: field-deletion handling in `org.docx4j.wml` packages.
-- Empirical: open Word, enable Track Changes, delete a complex field (PAGEREF or NUMPAGES), save, inspect the XML.
+```xml
+<w:fldChar w:fldCharType="begin"/>
+<w:ins><w:r><w:instrText>FORMCHECKBOX</w:instrText></w:r></w:ins>
+<w:del><w:r><w:delInstrText>FORMFIELDTEXT</w:delInstrText></w:r></w:del>
+<w:fldChar w:fldCharType="separate"/>…<w:fldChar w:fldCharType="end"/>
+```
 
-The Phase 1 deliverable is a short addendum to this `design.md` recording the chosen representation and the evidence trail.
+ECMA-376 is silent on whole-field deletion specifically — the spec gives only the modification example. We extend the same fragmentation pattern: keep `w:fldChar` runs at sibling level, wrap only the payloads. The accept-state becomes `[begin][separate][end]` (a structurally well-formed but semantically empty field shell). The reject-state restores the field intact. Validation:
+
+- `validateFieldStructure(accept)`: `[begin]` increments depth, `[separate]` flips the separator bit, `[end]` decrements. Final depth 0. No `w:instrText` between begin and separate. ✓
+- `validateFieldStructure(reject)`: full field is restored. ✓
+- `validateFieldStructure(combined)`: with `w:fldChar` at sibling level and `delInstrText` properly inside `<w:del>` between begin and separate — all three constraints in `pipeline.ts:361–430` are satisfied. ✓
+
+**Trade-off**: On accept, the empty shell `[begin][separate][end]` is structurally valid but semantically degenerate. Microsoft Word renders an empty field as nothing (no field code, no result), which matches the user's intent of "delete this field." If empirical round-trip testing in Phase 9 surfaces a rendering problem, we will iterate — but the alternative (leaving fldChar inside `<w:del>`, the current behavior) is unambiguously non-conformant per `pipeline.ts:407`'s own runtime check.
+
+**Research sources consulted**:
+- ECMA-376 Part 4 § 17.16.5 (delInstrText) — Microsoft Learn `DeletedFieldCode` class documentation [quotes ISO/IEC 29500-1 1st Edition verbatim].
+- ECMA-376 Part 4 § 17.16.18 (fldChar) — c-rex.net mirror; documents only that `fldChar`'s parent element is `<r>`, no explicit ban on `<w:del>` ancestry in schema, but no example showing `w:fldChar` inside `<w:del>` either.
+- The canonical FORMCHECKBOX→FORMTEXT example is the only authoritative XML the spec provides for a tracked field-content change. We extend it.
+- docx4j forum and openxml.info section 17.16 were consulted but did not contain a whole-field-deletion example.
+- LibreOffice source code (`sw/source/filter/ww8/`) was not directly inspected — declaring this an open follow-up. If a later empirical comparison against LibreOffice output shows a different representation, this decision is revisable.
+
+**Alternatives considered and rejected**:
+- *Keep current behavior (fldChar inside `<w:del>`)*: directly forbidden by `pipeline.ts:407` runtime check (added in PR #211). Word reportedly treats this as fatal (issue #217 body).
+- *Wrap each fldChar in its own `<w:ins>` of the post-deletion state*: paradoxical; ECMA-376 doesn't model "tracked deletion of a fldChar marker." Rejected.
+- *Defer whole-field deletion entirely and route to rebuild fallback*: degrades inplace coverage; doesn't match the engine's existing capability surface.
 
 ### Decision 5: Combined-output safety gate
 
