@@ -921,13 +921,23 @@ export function wrapAsDeleted(
 /**
  * Clone a deleted run from the original document and insert it into the revised document.
  *
+ * For a single-content atom this wraps one cloned run in `<w:del>` and returns
+ * the `<w:del>` element. For a collapsed-field atom (issue #217), control
+ * routes to `insertFragmentedDeletedField` which emits multiple sibling
+ * elements — `w:fldChar` runs at sibling level (unwrapped) and individual
+ * `<w:del>` wrappers around each payload run — and returns the LAST inserted
+ * sibling (which may be a `<w:r>` carrying the end fldChar, not a `<w:del>`).
+ * Callers use the return value purely as the next insertion anchor.
+ *
  * @param deletedAtom - Atom with the deleted content
  * @param insertAfterRun - The run to insert after (null to insert at beginning of paragraph)
  * @param targetParagraph - The paragraph to insert into
  * @param author - Author name
  * @param dateStr - Formatted date
  * @param state - Revision ID state
- * @returns The inserted del element, or null if insertion failed
+ * @returns The last inserted sibling element (a `<w:del>` for non-collapsed-field
+ *   atoms; possibly a `<w:r>` for fragmented collapsed-field atoms), or null
+ *   if insertion failed.
  */
 export function insertDeletedRun(
   deletedAtom: ComparisonUnitAtom,

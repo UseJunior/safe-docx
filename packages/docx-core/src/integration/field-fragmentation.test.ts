@@ -259,6 +259,54 @@ describe('Field fragmentation — modification scenarios', () => {
   );
 
   test(
+    'deleted field with an internal bookmark survives accept/reject (pre-existing first-source-run hoist; regression guard)',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given(
+        'a NUMPAGES field with bookmarkStart between begin and instrText in the original; field deleted in revised',
+        async () => {
+          const fieldWithInternalBookmark =
+            `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+            `<w:bookmarkStart w:id="9" w:name="bm_inside_field"/>` +
+            `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
+            `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+            `<w:r><w:t>3</w:t></w:r>` +
+            `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+            `<w:bookmarkEnd w:id="9"/>`;
+          const original = await buildFieldDocx(
+            `<w:p><w:r><w:t>Pages </w:t></w:r>${fieldWithInternalBookmark}<w:r><w:t> total.</w:t></w:r></w:p>`,
+          );
+          const revised = await buildFieldDocx(
+            `<w:p><w:r><w:t>Pages total.</w:t></w:r></w:p>`,
+          );
+          combined = await compareInplace(original, revised);
+        },
+      );
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then('no w:fldChar inside <w:del>; field validates; bookmarkStart/End survive in the combined view', () => {
+        assertNoFldCharInside(combined, 'w:del');
+        assertFieldStructureSurvives(combined);
+        // The pre-existing engine behavior hoists the bookmarkStart found
+        // adjacent to the first source run BEFORE the first emitted element
+        // (the begin fldChar). It does NOT walk per-source-run, so a bookmark
+        // sitting between later field runs would not be cloned. That is a
+        // known limitation documented in the OpenSpec design Risks section
+        // and tracked as a follow-up. This fixture only guards the first-run
+        // case from regressing.
+        expect(combined, 'bookmarkStart cloned into combined output').toMatch(
+          /<w:bookmarkStart[^>]*w:name="bm_inside_field"/,
+        );
+        expect(combined, 'bookmarkEnd cloned into combined output').toMatch(
+          /<w:bookmarkEnd[^>]*w:id="9"/,
+        );
+      });
+    },
+  );
+
+  test(
     'result-text-only change (NUMPAGES 3 → 4): w:fldChar runs are unwrapped, only delText/text payloads are wrapped',
     async ({ given, when, then }: AllureBddContext) => {
       let combined: string;

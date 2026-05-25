@@ -20,21 +20,22 @@ Three years of round-trip incidents in adjacent open-source projects (LibreOffic
 
 ## Decisions
 
-### Decision 1: Uniform per-handler fragmentation; no atom-pairing classifier needed
+### Decision 1: Deletion-side fragmentation only; no atom-pairing classifier
 
-**What**: All three handlers (`handleInserted:1957`, `handleMovedDestination:2300`, `insertDeletedRun:923`) treat a collapsed-field atom the same way: walk its `collapsedFieldAtoms`, emit `w:fldChar` runs unwrapped at sibling level, wrap the `w:instrText`/`w:delInstrText`/result payloads inside the handler's target wrapper (`<w:ins>` / `<w:del>` / `<w:moveTo>`). No 5-class classifier or cross-atom pairing is required.
+**What**: Only `insertDeletedRun:923` fragments collapsed-field atoms. `handleInserted:1957` and `handleMovedDestination:2300` keep their existing single-wrapper behavior. No 5-class classifier or cross-atom pairing is required — the engine just checks `atom.collapsedFieldAtoms !== undefined` at the deletion site.
 
-**Why**: An earlier draft of this design called for a `classifyFieldChange` function returning one of `{whole-field-insertion, whole-field-deletion, instr-modification, result-modification, no-change}` so that whole-field-insertion could stay unfragmented (preserving the strong `assertRecursivelyWellformed` invariant in the bridge test). Steven's #217 comment from 2026-05-22 is explicit that the bridge test's over-check will fire on fragmented insertion output too, and should be relaxed as part of this PR:
+**Why**: ECMA-376 Part 4 § 17.16.5 forbids `w:fldChar` inside `<w:del>` only. Per the canonical FORMCHECKBOX→FORMFIELDTEXT modification example in Microsoft Learn's `DeletedFieldCode` docs (quoting ISO/IEC 29500-1 1st Edition verbatim), `<w:ins>` legitimately contains `w:fldChar`. So insertion-side fragmentation is not required for conformance.
 
-> "When the engine starts fragmenting fields per ECMA-376, the bridge test's `assertRecursivelyWellformed` over-check (`lean-spec-bridge.test.ts:766`) will start firing on fragmented inplace outputs. Remove or relax it as part of this issue's PR."
+An earlier draft of this design proposed symmetric fragmentation across all three handlers (informed by Steven's #217 comment from 2026-05-22 which suggested the bridge-test insertion `assertRecursivelyWellformed` would fire after fragmentation). When implemented, that regressed the NVCA fixtures (`nvca-coi-regression.test.ts`, `nvca-structural-regression.test.ts`) with `rejectText` failures because the inserted-side fragmentation interacts with mixed-run revised-document patterns in ways that drop end-fldChars on the reject path. The narrowed scope:
 
-That directive implies whole-field insertion *should* fragment too. With that decision, the classifier collapses to a single yes/no predicate: "is this a collapsed-field atom?" — already trivially expressible as `atom.collapsedFieldAtoms !== undefined`. No new module is needed.
-
-A consequence: for a modification scenario (e.g., NUMPAGES 3 → 4), the engine emits TWO complete field shells in document order — the Deleted side wraps the original payloads in `<w:del>` with unwrapped fldChars, and the Inserted side wraps the revised payloads in `<w:ins>` with its own set of unwrapped fldChars. Each shell is structurally well-formed; the combined output is two consecutive fields. `validateFieldStructure` passes on combined, accept, and reject. This is strictly less ambitious than emitting the ECMA-376 canonical single-field-with-fragmented-payloads pattern, but it (a) eliminates the `w:fldChar` inside `<w:del>` violation, (b) satisfies all engine validators, and (c) defers the cross-atom pairing complexity to a future change if needed.
+- Satisfies the actual ECMA-376 conformance rule (no `w:fldChar` inside `<w:del>`).
+- Keeps the NVCA fixtures passing.
+- Keeps the bridge-test insertion fixture's `assertRecursivelyWellformed` passing — no Lean-side test relaxation needed.
+- For a modification scenario where the same field appears as both Deleted (original side) and Inserted (revised side), the engine emits the deleted side with fragmented fldChars at sibling level + payload-wrapping `<w:del>` siblings, followed by the inserted side with its complete field inside one `<w:ins>` (with `w:fldChar` inside `<w:ins>` — permitted by ECMA-376). Each half is structurally well-formed; the combined output validates.
 
 **Alternatives considered and rejected**:
-- *Five-class classifier with atom pairing*: would produce the cleaner ECMA-376 canonical FORMCHECKBOX example form (single field with fragmented payloads), but requires linking Deleted and Inserted collapsed-field atoms across the merged list. The atomizer assigns one `correlationStatus` per collapsed atom (from the first field atom at `atomizer.ts:780`) and doesn't link them; pairing would need a new pre-handler pass. Out of scope for this change; reconsider if Phase 9 round-trips show a real-world rendering issue.
-- *Keep whole-field insertion unfragmented*: would preserve `assertRecursivelyWellformed` on the insertion fixture, but contradicts Steven's directive. Rejected.
+- *Five-class classifier with atom pairing*: would produce the cleaner single-field-with-fragmented-payloads form from ECMA-376's canonical example, but requires linking Deleted and Inserted collapsed-field atoms across the merged list. Out of scope; reconsider if Phase 9 round-trips show a real-world rendering issue.
+- *Symmetric fragmentation across all three handlers*: contradicts ECMA-376 (which permits `w:fldChar` inside `<w:ins>` and `<w:moveTo>`) AND empirically regresses NVCA fixtures. Rejected.
 
 ### Decision 2: Fragmentation happens via a new `fragmentModifiedField` helper, not by relaxing pre-split guards
 
@@ -112,23 +113,24 @@ Narrowing the combined gate to the `hasFldCharInsideDel` rule scopes it to the e
 
 | Risk | Mitigation |
 |---|---|
-| Field-change classifier mis-classifies a corner case (e.g., nested fields, fields without separator) and triggers wrong dispatch | Phase 1.5 unit tests with fabricated atom pairs cover each class; Phase 0 fixtures include the corner cases |
-| Whole-field deletion research stalls Phase 3 indefinitely | Phase 2 (modification) ships first as a partial fix that resolves the most-observed failure mode; Phase 3 lands when research completes |
-| Combined-output gate breaks pre-existing pipelines that emit `w:fldChar` inside `<w:del>` for legitimate reasons | None expected — ECMA-376 is explicit. If found, the gate provides immediate visibility |
-| `lean-spec-bridge.test.ts` insertion fixture's `assertRecursivelyWellformed` starts failing because some downstream code path also fragments inserts | Insertion handler keeps its current single-wrapper behavior under `whole-field-insertion` classification; no fragmentation introduced on the insertion path |
+| Whole-field deletion empty-shell accept-state renders unexpectedly in Word | Phase 9 manual round-trip in Word + LibreOffice. If renderer rejects the empty shell, revisit Decision 4 by inspecting LibreOffice source for an alternative representation. |
+| Combined-output gate `hasFldCharInsideDel` lets a regression through in a non-#217-related shape | The gate is intentionally narrow to the #217 conformance rule. Broader structural validation is run on accept/reject projections (which catches orphan-instrText, out-of-order fldChars). |
+| Pre-existing `convertToDelText` call inside `<w:moveFrom>` (`inPlaceModifier.ts:1100`) produces `w:delInstrText` outside `<w:del>` | Out of scope for this change. Track as a separate follow-up. The narrow combined-output gate intentionally does not catch this. |
+| Bookmark markers internal to a deleted complex field follow the pre-existing first-source-run-only hoisting in `cloneUnemittedSourceBookmarkMarkers` (`inPlaceModifier.ts:491`) | Pre-existing limitation, not a regression introduced by this PR. The same hoisting happened with the old whole-field `<w:del>` wrapper. Track as a separate follow-up if real-world fixtures surface it. |
 
 ## Migration Plan
 
-- **Phase 0**: Add fixtures (red).
-- **Phase 1**: Research whole-field deletion representation; record decision.
-- **Phase 1.5**: Add classifier + unit tests (no behavior change yet).
-- **Phase 2**: Field-modification fragmentation (Phase 0 fixtures go green).
-- **Phase 3**: Whole-field deletion fragmentation (additional fixtures go green).
-- **Phase 4**: Combined-output gate, test updates, doc updates.
-- **Rollback**: Each phase is its own commit; `git revert` per phase. The new classifier and helper are additive — reverting Phase 2/3 leaves them dormant. Reverting Phase 4 only undoes the gate and doc updates.
+- **Phase 0**: Add red fixtures.
+- **Phase 1**: Research whole-field deletion representation; record decision (Decision 4).
+- **Phase 1.5**: SKIPPED — superseded by Decision 1 (no classifier needed; uniform `atom.collapsedFieldAtoms` check suffices).
+- **Phase 2 + 3**: Deletion-side fragmentation (`isCollapsedFieldAtom`, `insertFragmentedDeletedField`, rewired `insertDeletedRun`); subsumes both the modification and whole-field-deletion cases via the same code path.
+- **Phase 4**: Targeted combined-output gate (`hasFldCharInsideDel`), test contract updates, documentation refresh.
+- **Phase 9 (follow-up, not in this PR)**: Manual Word + LibreOffice round-trip; OpenSpec archive.
+- **Rollback**: Each phase is its own commit on the branch; `git revert` per phase. The new helper and gate are additive — reverting Phase 2+3 leaves `hasFldCharInsideDel` dormant.
 
 ## Open Questions
 
-1. **Whole-field deletion**: Phase 1 deliverable.
-2. **Nested fields**: Does the classifier handle a field-inside-a-field correctly, or does the inner-field's `collapsedFieldAtoms` get hidden by the outer collapse? To be verified in Phase 1.5 unit tests.
-3. **Move source/destination of a complex field**: Out of scope for this change unless Phase 0 fixtures surface it as a failure mode.
+1. **Whole-field deletion empty-shell rendering in Word.** Closed on paper (Decision 4) but unvalidated empirically. Phase 9 deliverable.
+2. **Nested fields**: Does `collapsedFieldAtoms` for an outer field include or exclude an inner field's atoms? The atomizer in `atomizer.ts:740` does not nest-collapse, so inner fields should appear as separate collapsed-field atoms. Verify with a fixture if a real-world failure surfaces.
+3. **Move source/destination of a complex field**: `insertMoveFromRun:1100` has a pre-existing non-conformance (`w:delInstrText` inside `<w:moveFrom>`). Out of scope; file as separate follow-up.
+4. **Bookmark markers internal to a deleted field**: Hoisted before the first emitted element (begin fldChar) via `cloneUnemittedSourceBookmarkMarkers` on the first source run only. Pre-existing behavior; document as known limitation.
