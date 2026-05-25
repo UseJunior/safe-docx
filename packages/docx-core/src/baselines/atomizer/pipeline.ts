@@ -342,11 +342,81 @@ function buildFailureSummary(
   return Object.keys(summary).length > 0 ? summary : undefined;
 }
 
+// Declared above splitStories so the function body never observes an
+// uninitialized binding under circular imports.
+const serializer = new XMLSerializer();
+
 /**
- * Validate field structure integrity in document XML.
+ * One story (a self-contained complex-field state machine per ECMA-376 Part 4):
+ * the main document body, an individual footnote entry, or an individual
+ * endnote entry. `label` is for diagnostics only; `xml` is the serialized
+ * fragment that gets parsed and walked.
+ */
+export interface FieldStory {
+  label: string;
+  xml: string;
+}
+
+/**
+ * Split a docx into per-story XML fragments for field-closure validation.
  *
- * Enforces three ECMA-376 Part 4 constraints on complex fields:
- *   1. Global `w:fldChar` begin/end count balance.
+ * ECMA-376 Part 4 treats each footnote/endnote entry as an isolated story:
+ * a complex field whose `begin` and `end` markers straddle stories breaks
+ * Word's field state machine. We therefore validate each `<w:footnote>` and
+ * `<w:endnote>` entry independently rather than treating the whole
+ * `footnotes.xml`/`endnotes.xml` as one stream.
+ *
+ * Accepts arrays of sidecar XMLs (one per source archive) so callers can
+ * validate the union of entries from every archive that may contribute to the
+ * final result. Step 12 of `compareDocumentsAtomizer` merges entries from a
+ * mode-dependent source archive into the base archive; passing both archives'
+ * sidecars guarantees that whichever path the merge takes, the entries it
+ * could publish have already been screened. Duplicates (same `w:id` in both
+ * archives) yield redundant but harmless validation work.
+ *
+ * Header/footer stories are not yet covered — they require relationship
+ * walking to enumerate `headerN.xml`/`footerN.xml` and are tracked in a
+ * follow-up to issue #212.
+ */
+export function splitStories(
+  documentXml: string,
+  footnotesXmls: ReadonlyArray<string | null>,
+  endnotesXmls: ReadonlyArray<string | null>,
+): FieldStory[] {
+  const stories: FieldStory[] = [{ label: 'document', xml: documentXml }];
+
+  const collectEntries = (
+    sidecars: ReadonlyArray<string | null>,
+    entryTag: string,
+    labelPrefix: string,
+  ): void => {
+    for (let s = 0; s < sidecars.length; s++) {
+      const sidecarXml = sidecars[s];
+      if (!sidecarXml) continue;
+      const doc = parseXml(sidecarXml);
+      const entries = doc.getElementsByTagName(entryTag);
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i] as Element;
+        const id = entry.getAttribute('w:id') ?? String(i);
+        stories.push({
+          label: `${labelPrefix}[${s}]:${id}`,
+          xml: serializer.serializeToString(entry),
+        });
+      }
+    }
+  };
+
+  collectEntries(footnotesXmls, 'w:footnote', 'footnote');
+  collectEntries(endnotesXmls, 'w:endnote', 'endnote');
+
+  return stories;
+}
+
+/**
+ * Validate field structure integrity across one or more document stories.
+ *
+ * Enforces three ECMA-376 Part 4 constraints on complex fields **per story**:
+ *   1. `w:fldChar` begin/end count balance within the story.
  *   2. Every `w:instrText` AND `w:delInstrText` sits inside an open field body
  *      (between `begin` and `separate`). Orphaned instruction text renders as
  *      literal text in Word.
@@ -357,8 +427,22 @@ function buildFailureSummary(
  * Called on both pre-accept/reject combined XML (with track-change wrappers)
  * and on post-accept/reject XML (wrappers removed). Both cases must satisfy the
  * field placement check; constraint (3) is vacuous post-accept/reject.
+ *
+ * Accepts either a single XML string (legacy single-story call) or an array of
+ * `FieldStory` fragments. Stories are validated independently and short-circuit
+ * on the first failure.
  */
-export function validateFieldStructure(documentXml: string): boolean {
+export function validateFieldStructure(input: string | FieldStory[]): boolean {
+  if (typeof input === 'string') {
+    return validateFieldStructureForStory(input);
+  }
+  for (const story of input) {
+    if (!validateFieldStructureForStory(story.xml)) return false;
+  }
+  return true;
+}
+
+function validateFieldStructureForStory(documentXml: string): boolean {
   const root = parseDocumentXml(documentXml);
 
   const allFldChars = findAllByTagName(root, 'w:fldChar');
@@ -434,7 +518,11 @@ function evaluateSafetyChecks(
   revisedTextForRoundTrip: string,
   originalBookmarkDiagnostics: BookmarkDiagnostics,
   revisedBookmarkDiagnostics: BookmarkDiagnostics,
-  candidateXml: string
+  candidateXml: string,
+  auxiliarySidecars: {
+    footnotesXmls: ReadonlyArray<string | null>;
+    endnotesXmls: ReadonlyArray<string | null>;
+  },
 ): {
   safe: boolean;
   checks: ReconstructionSafetyChecks;
@@ -460,12 +548,27 @@ function evaluateSafetyChecks(
     rejectedBookmarkDiagnostics
   );
 
-  // Validate field structure: after accept-all and reject-all, every
-  // w:instrText must be inside a proper field sequence (between fldChar
-  // begin and fldChar separate). Orphaned instrText renders as visible
-  // text in Word.
+  // Validate field structure per-story. Each footnote/endnote entry is its own
+  // ECMA-376 story; a complex field that crosses a story boundary breaks
+  // Word's field state machine even when global begin/end counts balance.
+  // Sidecars from BOTH archives are validated because Step 12's auxiliary-part
+  // merge picks its base and source archives by reconstruction mode (inplace
+  // base = revised; rebuild base = original) and validating only one side
+  // would miss field issues that would still ship in the merged result.
+  // `acceptAllChanges` / `rejectAllChanges` only transform document.xml, so
+  // the sidecar set is identical for both transforms.
+  const acceptedStories = splitStories(
+    acceptedXml,
+    auxiliarySidecars.footnotesXmls,
+    auxiliarySidecars.endnotesXmls,
+  );
+  const rejectedStories = splitStories(
+    rejectedXml,
+    auxiliarySidecars.footnotesXmls,
+    auxiliarySidecars.endnotesXmls,
+  );
   const fieldStructureOk =
-    validateFieldStructure(acceptedXml) && validateFieldStructure(rejectedXml);
+    validateFieldStructure(acceptedStories) && validateFieldStructure(rejectedStories);
 
   const checks: ReconstructionSafetyChecks = {
     acceptText: acceptTextComparison.normalizedIdentical,
@@ -579,6 +682,28 @@ export async function compareDocumentsAtomizer(
   const originalNumberingXml = await originalArchive.getNumberingXml() ?? undefined;
   const revisedNumberingXml = await revisedArchive.getNumberingXml() ?? undefined;
 
+  // Extract footnote/endnote sidecars from BOTH archives for per-story
+  // field-closure validation (issue #212). Step 12 picks the base archive by
+  // reconstruction mode (inplace = revised, rebuild = original) and merges
+  // missing referenced entries from the opposite archive. Validating both
+  // archives' sidecars covers the union of entries that could ship without
+  // having to duplicate the merge logic at safety-check time.
+  const [
+    originalFootnotesXml,
+    originalEndnotesXml,
+    revisedFootnotesXml,
+    revisedEndnotesXml,
+  ] = await Promise.all([
+    originalArchive.getFile('word/footnotes.xml'),
+    originalArchive.getFile('word/endnotes.xml'),
+    revisedArchive.getFile('word/footnotes.xml'),
+    revisedArchive.getFile('word/endnotes.xml'),
+  ]);
+  const auxiliarySidecars = {
+    footnotesXmls: [originalFootnotesXml, revisedFootnotesXml] as const,
+    endnotesXmls: [originalEndnotesXml, revisedEndnotesXml] as const,
+  };
+
   const originalPart: OpcPart = {
     uri: 'word/document.xml',
     contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
@@ -684,7 +809,8 @@ export async function compareDocumentsAtomizer(
       revisedTextForRoundTrip,
       originalBookmarkDiagnostics,
       revisedBookmarkDiagnostics,
-      candidateXml
+      candidateXml,
+      auxiliarySidecars,
     );
 
   let comparisonResult: {
@@ -925,8 +1051,6 @@ function parseEntries(xml: string, entryTag: string): { doc: Document; entries: 
   }
   return { doc, entries };
 }
-
-const serializer = new XMLSerializer();
 
 /**
  * Merge auxiliary part definitions (footnotes, endnotes, comments) from the
