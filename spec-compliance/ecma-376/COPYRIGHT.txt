@@ -1,0 +1,48 @@
+ECMA-376 Office Open XML File Formats — vendored XML schemas
+============================================================
+
+The files under `schemas/` are unmodified copies of the normative (XSD) and
+informative (RELAX NG) schemas distributed by Ecma International as part of
+the ECMA-376, 5th Edition Office Open XML standard:
+
+    Part 1 (Fundamentals and Markup Language Reference), December 2016
+    Part 2 (Open Packaging Conventions),                December 2021
+    Part 4 (Transitional Migration Features),           December 2016
+
+The canonical downloads live at:
+
+    https://ecma-international.org/publications-and-standards/standards/ecma-376/
+
+These files are reproduced here verbatim and have not been modified. This
+COPYRIGHT.txt is preserved alongside them per Ecma International's text
+copyright policy. The authentic copies remain those published by Ecma.
+
+
+Copyright notice and license
+----------------------------
+
+© Ecma International, 2016, 2021. All rights reserved.
+
+This document and translations of it may be copied and furnished to others,
+and derivative works that comment on or otherwise explain it or assist in
+its implementation may be prepared, copied, published, and distributed, in
+whole or in part, without restriction of any kind, provided that the above
+copyright notice and this section are included on all such copies and
+derivative works. However, this document itself may not be modified in any
+way, including by removing the copyright notice or references to Ecma
+International, except as needed for the purpose of developing any document
+or deliverable produced by Ecma International (in which case the rules
+applied to copyrights must be followed) or as required to translate it into
+languages other than English.
+
+The limited permissions granted above are perpetual and will not be revoked
+by Ecma International or its successors or assigns.
+
+This document and the information contained herein is provided on an "AS IS"
+basis and ECMA INTERNATIONAL DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION
+HEREIN WILL NOT INFRINGE ANY OWNERSHIP RIGHTS OR ANY IMPLIED WARRANTIES OF
+MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Reference: Ecma International Text Copyright Policy
+           https://ecma-international.org/policies/by-ipr/ecma-text-copyright-policy/
