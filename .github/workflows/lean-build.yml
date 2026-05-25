@@ -91,23 +91,25 @@ jobs:
       - name: Audit non-Spec modules are zero-sorry
         working-directory: verification/lean
         run: |
-          # All LeanSpike modules except Spec.lean (which intentionally holds
-          # exactly two sorries — the deferred specification targets).
+          # All LeanSpike and Tier2 modules except Spec.lean (which intentionally
+          # holds exactly one sorry — the deferred `inv_rt_001` target).
           # `find -print0 | xargs -0 grep` avoids the SC2086 word-splitting
           # foot-gun on an unquoted variable while still letting future modules
-          # under LeanSpike/ get picked up automatically.
-          if find LeanSpike.lean LeanSpike -name '*.lean' ! -name 'Spec.lean' -print0 \
+          # under LeanSpike/ and Tier2/ get picked up automatically.
+          if find LeanSpike.lean LeanSpike Tier2.lean Tier2 -name '*.lean' ! -name 'Spec.lean' -print0 \
                | xargs -0 grep -nwH "sorry"; then
             echo "ERROR: sorry found in non-Spec Lean modules. They must remain zero-sorry."
             exit 1
           fi
 
-      - name: Audit Spec.lean has exactly 2 sorries
+      - name: Audit Spec.lean has exactly 1 sorry
         working-directory: verification/lean
         run: |
+          # `inv_field_001` is closed as of Tier 2; `inv_rt_001` remains the
+          # single deferred specification target.
           count=$(grep -cw "sorry" LeanSpike/Spec.lean || true)
-          if [ "$count" != "2" ]; then
-            echo "ERROR: Spec.lean expected exactly 2 sorries, found $count."
+          if [ "$count" != "1" ]; then
+            echo "ERROR: Spec.lean expected exactly 1 sorry, found $count."
             grep -nw "sorry" LeanSpike/Spec.lean || true
             exit 1
           fi

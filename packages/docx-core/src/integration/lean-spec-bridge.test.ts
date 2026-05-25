@@ -47,9 +47,15 @@
  */
 
 import fc from 'fast-check';
+import { DOMParser } from '@xmldom/xmldom';
 import { describe } from 'vitest';
 import { compareDocuments, type ReconstructionMode } from '../index.js';
 import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
+import {
+  COMPLETE_NUMPAGES_FIELD,
+  WHOLE_FIELD_IN_INS,
+  buildDocxFromBodyXml,
+} from '../testing/ooxml-fixtures.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -674,6 +680,91 @@ async function assertRoundTripInvariant(
   }
 }
 
+// =============================================================================
+// Field-bearing falsifiability layer for the Tier 2 residual axiom
+//
+// The current (post-PR-B) axiom in `verification/lean/LeanSpike/Spec.lean` is
+// `compareDocumentXml_output_preservation_friendly`: it asserts only that the
+// inplace combined output is *preservation-friendly* — its document-level walk
+// and begin/end balance are unchanged by accept/reject. That weaker shape is
+// what `assertFieldInvariant` already checks (via `validateFieldStructure` on
+// the accepted and rejected outputs).
+//
+// `assertRecursivelyWellformed` (below) additionally checks the STRICTER
+// `fieldContextNeutral ∀ ctx` property per wrapper subtree. The current engine
+// satisfies this stronger property because it emits whole field sequences as
+// single track-change wrappers (`inPlaceModifier.ts:717, 938, 1505, 1671,
+// 1957, 2300`). When ECMA-376 fragmentation conformance lands (#217),
+// fragmented wrapper subtrees will NOT satisfy `∀ ctx` neutrality and this
+// over-check will need to be removed or relaxed. Until then it serves as an
+// audit gate that the engine has not regressed into emitting partial-wrapper
+// fragments unexpectedly.
+// =============================================================================
+
+/**
+ * TS-side analogue of `Tier2.FieldStructure.fieldContextNeutral` for one wrapper
+ * subtree. Walks every descendant `w:fldChar` / `w:instrText` / `w:delInstrText`
+ * atom in document order over a depth-indexed `pastSeparatorAtDepth` stack —
+ * the exact model the Lean walk and `pipeline.ts:374-389` use.
+ *
+ * Pop-on-empty and separate-on-empty are treated as FAILURE (not the no-op the
+ * whole-document walk uses): an inner subtree that pops or flips a separator bit
+ * on the empty local stack would disturb an outer field context, so it is not
+ * context-neutral under the universal quantifier `∀ ctx`.
+ */
+function isFieldContextNeutral(wrapper: Element): boolean {
+  const descendants = wrapper.getElementsByTagName('*');
+  const stack: boolean[] = [];
+  for (let i = 0; i < descendants.length; i++) {
+    const el = descendants[i];
+    if (!el) continue;
+    const tag = el.nodeName;
+    if (tag === 'w:fldChar') {
+      const kind = el.getAttribute('w:fldCharType');
+      if (kind === 'begin') {
+        stack.push(false);
+      } else if (kind === 'separate') {
+        if (stack.length === 0) return false;
+        stack[stack.length - 1] = true;
+      } else if (kind === 'end') {
+        if (stack.length === 0) return false;
+        stack.pop();
+      }
+    } else if (tag === 'w:instrText' || tag === 'w:delInstrText') {
+      if (stack.length === 0 || stack[stack.length - 1] === true) return false;
+    }
+  }
+  return stack.length === 0;
+}
+
+function assertRecursivelyWellformed(
+  invariant: string,
+  context: Record<string, unknown>,
+  combinedXml: string,
+): void {
+  if (!validateFieldStructure(combinedXml)) {
+    throw new Error(
+      `${invariant}: triage=engine-bug whole-document validateFieldStructure failed on ` +
+        `inplace comparison output. context=${JSON.stringify(context)}`,
+    );
+  }
+  const doc = new DOMParser().parseFromString(combinedXml, 'application/xml');
+  for (const tag of ['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']) {
+    const wrappers = doc.getElementsByTagName(tag);
+    for (let i = 0; i < wrappers.length; i++) {
+      const wrapper = wrappers[i];
+      if (!wrapper) continue;
+      if (!isFieldContextNeutral(wrapper as unknown as Element)) {
+        throw new Error(
+          `${invariant}: triage=engine-bug wrapper subtree <${tag}>[${i}] is not ` +
+            `field-context-neutral — recursivelyWellformed precondition violated. ` +
+            `context=${JSON.stringify(context)}`,
+        );
+      }
+    }
+  }
+}
+
 describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () => {
   test(
     'INV-FIELD-001: field structure preserved after accept-all and reject-all on inplace comparison output',
@@ -789,6 +880,164 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
           await allureJsonAttachment('tracked-input-family-hits-inv-rt-001', coverage);
         }
         assertTrackedScenarioCoverage('INV-RT-001 tracked', coverage);
+      });
+    },
+  );
+
+  test(
+    'INV-FIELD-001: field-bearing inplace comparison output is recursivelyWellformed (axiom falsifiability layer)',
+    async ({ given, when, then }: AllureBddContext) => {
+      await given('a field-free original and a revised document with a complete NUMPAGES field inserted', async () => {});
+
+      await when('the live inplace comparison output is computed', async () => {});
+
+      await then(
+        'the combined document validates and every wrapper subtree is field-context-neutral',
+        async () => {
+          const field = COMPLETE_NUMPAGES_FIELD;
+          const original = await buildDocxFromBodyXml(
+            `<w:p><w:r><w:t>Total pages here.</w:t></w:r></w:p>`,
+          );
+          const revised = await buildDocxFromBodyXml(
+            `<w:p><w:r><w:t>Total pages </w:t></w:r>${field}<w:r><w:t> here.</w:t></w:r></w:p>`,
+          );
+
+          const result = await compareDocumentBuffers(original, revised);
+          const context = { fixture: 'numpages-field-insert' };
+
+          assertInplaceResult('INV-FIELD-001 field-bearing', context, result);
+          // The new axiom's precondition: recursivelyWellformed on inplace output.
+          assertRecursivelyWellformed('INV-FIELD-001 field-bearing', context, result.combined);
+          // The axiom's consequence: field structure survives accept/reject.
+          assertFieldInvariant('INV-FIELD-001 field-bearing', context, result.combined);
+        },
+      );
+    },
+  );
+
+  test(
+    'INV-FIELD-001: deleting a complete field produces accept/reject outputs that pass validateFieldStructure (delInstrText axiom coverage)',
+    async ({ given, when, then }: AllureBddContext) => {
+      await given(
+        'an original document containing a complete NUMPAGES field and a revised document with the field deleted',
+        async () => {},
+      );
+
+      await when('the live inplace comparison output is computed', async () => {});
+
+      await then(
+        'the accept and reject outputs both validate, exercising the w:delInstrText atom case post-rename',
+        async () => {
+          // Post-#217 the inplace atomizer fragments deleted fields per
+          // ECMA-376 Part 4: w:fldChar runs are emitted at sibling level
+          // (unwrapped) and <w:del> wraps only the w:delInstrText / w:delText
+          // payloads. The combined output now satisfies the no-fldChar-in-del
+          // rule (gated by `hasFldCharInsideDel` in pipeline.ts).
+          //
+          // We still do NOT call `assertRecursivelyWellformed` here. The
+          // fragmented `<w:del>` subtrees contain w:delInstrText with an empty
+          // *local* field stack (the surrounding [begin]/[separate]/[end] are
+          // at sibling level, outside the wrapper), so they are not
+          // field-context-neutral under ∀ ctx. That is the predicate-strength
+          // gap PR #220 weakened the residual axiom to accommodate: the
+          // engine output satisfies the document-level `preservationFriendly`
+          // property but not per-subtree `recursivelyWellformed`.
+          // `assertFieldInvariant` is the right document-level check.
+          const field = COMPLETE_NUMPAGES_FIELD;
+          const original = await buildDocxFromBodyXml(
+            `<w:p><w:r><w:t>Total pages </w:t></w:r>${field}<w:r><w:t> here.</w:t></w:r></w:p>`,
+          );
+          const revised = await buildDocxFromBodyXml(
+            `<w:p><w:r><w:t>Total pages here.</w:t></w:r></w:p>`,
+          );
+
+          const result = await compareDocumentBuffers(original, revised);
+          const context = { fixture: 'numpages-field-delete' };
+
+          assertInplaceResult('INV-FIELD-001 field-bearing delete', context, result);
+          // The post-PR-220 axiom's consequence: field structure survives accept/reject.
+          assertFieldInvariant('INV-FIELD-001 field-bearing delete', context, result.combined);
+        },
+      );
+    },
+  );
+
+  test(
+    'isFieldContextNeutral rejects standalone separator, end, and begin+separate fragments (regression guard)',
+    async ({ given, when, then }: AllureBddContext) => {
+      const cases: { name: string; xml: string }[] = [];
+
+      await given(
+        'three crafted wrapper XML fragments that each disturb the outer field context (standalone separate, standalone end, begin+separate)',
+        () => {
+          cases.push(
+            {
+              name: 'standalone separate',
+              xml:
+                `<w:ins xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+                `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+                `</w:ins>`,
+            },
+            {
+              name: 'standalone end',
+              xml:
+                `<w:del xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+                `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+                `</w:del>`,
+            },
+            {
+              name: 'begin without matching end',
+              xml:
+                `<w:ins xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+                `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+                `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+                `</w:ins>`,
+            },
+          );
+        },
+      );
+
+      await when('isFieldContextNeutral is applied to each', () => {});
+
+      await then('every fragment is rejected as not context-neutral', () => {
+        for (const c of cases) {
+          const doc = new DOMParser().parseFromString(c.xml, 'application/xml');
+          const wrapper = doc.documentElement as unknown as Element;
+          if (!wrapper) throw new Error(`${c.name}: failed to parse wrapper`);
+          if (isFieldContextNeutral(wrapper)) {
+            throw new Error(
+              `isFieldContextNeutral regression: case "${c.name}" should be non-neutral but returned true`,
+            );
+          }
+        }
+      });
+    },
+  );
+
+  test(
+    'isFieldContextNeutral accepts a wrapper containing a complete self-contained field (regression guard)',
+    async ({ given, when, then }: AllureBddContext) => {
+      let wrapper: Element | null = null;
+      let result = false;
+
+      await given(
+        'a <w:ins> wrapping a complete NUMPAGES begin/instrText/separate/result/end sequence',
+        () => {
+          const xml = WHOLE_FIELD_IN_INS(COMPLETE_NUMPAGES_FIELD, { standalone: true });
+          wrapper = new DOMParser().parseFromString(xml, 'application/xml')
+            .documentElement as unknown as Element;
+        },
+      );
+
+      await when('isFieldContextNeutral is applied', () => {
+        if (!wrapper) throw new Error('wrapper failed to parse');
+        result = isFieldContextNeutral(wrapper);
+      });
+
+      await then('the wrapper is accepted as context-neutral', () => {
+        if (!result) {
+          throw new Error('isFieldContextNeutral regression: complete-field wrapper should be neutral');
+        }
       });
     },
   );

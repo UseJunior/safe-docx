@@ -15,7 +15,7 @@ export async function addFootnote(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'add_footnote' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
-  const ctx = getRevisionContextForSession(session);
+  const ctx = await getRevisionContextForSession(session);
 
   if (!params.target_paragraph_id) {
     return err('MISSING_PARAMETER', 'target_paragraph_id is required.', 'Provide the _bk_* ID of the paragraph to anchor the footnote to.');

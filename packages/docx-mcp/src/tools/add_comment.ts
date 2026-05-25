@@ -19,7 +19,7 @@ export async function addComment(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'add_comment' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
-  const ctx = getRevisionContextForSession(session);
+  const ctx = await getRevisionContextForSession(session);
 
   try {
     // Reply mode: parent_comment_id provided

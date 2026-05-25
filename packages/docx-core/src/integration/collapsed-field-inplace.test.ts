@@ -14,7 +14,7 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import JSZip from 'jszip';
+import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { compareDocuments } from '../index.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
@@ -22,45 +22,6 @@ import {
   extractTextWithParagraphs,
   rejectAllChanges,
 } from '../baselines/atomizer/trackChangesAcceptorAst.js';
-
-// =============================================================================
-// Synthetic DOCX builder (field-aware)
-// =============================================================================
-
-async function createDocxWithFieldXml(bodyXml: string): Promise<Buffer> {
-  const documentXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
-    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
-    `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
-
-  const contentTypesXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
-    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
-    `<Default Extension="xml" ContentType="application/xml"/>` +
-    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
-    `</Types>`;
-
-  const rootRelsXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
-    `</Relationships>`;
-
-  const docRelsXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-    `</Relationships>`;
-
-  const zip = new JSZip();
-  zip.file('[Content_Types].xml', contentTypesXml);
-  zip.file('_rels/.rels', rootRelsXml);
-  zip.file('word/document.xml', documentXml);
-  zip.file('word/_rels/document.xml.rels', docRelsXml);
-
-  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
-}
 
 // =============================================================================
 // Fixture: Dedicated-run PAGEREF field (field chars in separate runs)
@@ -144,30 +105,6 @@ function countRunsInTrackedChangeWrappers(xml: string, wrapperTag: string): numb
   return counts;
 }
 
-/**
- * Check if any tracked change wrapper contains a single run with both fldChar
- * and instrText — the signature of the single-run packing bug.
- */
-function hasSingleRunPackedField(xml: string, wrapperTag: string): boolean {
-  const wrapperRegex = new RegExp(`<${wrapperTag}[^>]*>(.*?)</${wrapperTag}>`, 'gs');
-  let match;
-  while ((match = wrapperRegex.exec(xml)) !== null) {
-    const content = match[1]!;
-    // Check each run in the wrapper
-    const runRegex = /<w:r[ >].*?<\/w:r>/gs;
-    let runMatch;
-    while ((runMatch = runRegex.exec(content)) !== null) {
-      const runContent = runMatch[0];
-      const hasFldChar = runContent.includes('w:fldChar');
-      const hasInstrText = runContent.includes('w:instrText');
-      const hasText = runContent.includes('w:delText') || runContent.includes('w:t>');
-      // A single run containing fldChar + instrText + text is the packed bug
-      if (hasFldChar && hasInstrText && hasText) return true;
-    }
-  }
-  return false;
-}
-
 function hasLeakedInstrText(xml: string): boolean {
   // instrText should only appear between fldChar[begin] and fldChar[separate].
   // If it appears outside a tracked change wrapper without a preceding begin in the
@@ -208,14 +145,14 @@ describe('Collapsed field inplace reconstruction', () => {
   describe('Dedicated-run field (PAGEREF)', () => {
     let resultXml: string;
 
-    test('deleted field preserves multi-run structure in w:del wrapper', async ({ given, when, then, and, attachPrettyJson, parameter }: AllureBddContext) => {
+    test('deleted field emits fldChar at sibling level and wraps only payloads in w:del (ECMA-376 fragmentation per #217)', async ({ given, when, then, and, attachPrettyJson, parameter }: AllureBddContext) => {
       await given('original and revised docs with a PAGEREF field change (23 -> 42)', async () => {
         await parameter('fixture', 'dedicated-run-field');
       });
 
       const [original, revised] = await Promise.all([
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-        createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+        buildDocxFromBodyXml(DEDICATED_RUN_FIELD_ORIGINAL),
+        buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
       ]);
 
       let result: Awaited<ReturnType<typeof compareDocuments>>;
@@ -233,19 +170,20 @@ describe('Collapsed field inplace reconstruction', () => {
         });
       });
 
-      await then('the tracked change wrappers contain valid field structure', async () => {
+      await then('fldChars are balanced, no instrText leaks, and w:del contains only payload runs', async () => {
         const fieldPairs = countFieldCharPairs(resultXml);
-        const delRunCounts = countRunsInTrackedChangeWrappers(resultXml, 'w:del');
-        const packedBug = hasSingleRunPackedField(resultXml, 'w:del');
-        await attachPrettyJson('field-char-counts.json', { fieldPairs, delRunCounts, packedBug });
+        await attachPrettyJson('field-char-counts.json', { fieldPairs });
         expect(fieldPairs.balanced, 'fldChar begin/end counts must be balanced').toBe(true);
         expect(hasLeakedInstrText(resultXml), 'instrText must not leak outside field boundaries').toBe(false);
-        // The deleted field must be replayed as multiple runs, not packed into one
-        expect(packedBug, 'w:del must not pack all field atoms into a single run').toBe(false);
-        // The del wrapper should contain multiple runs for the field sequence
+        // ECMA-376 conformance: w:fldChar MUST NOT appear inside <w:del>. Per
+        // #217, fragmentation emits fldChar runs at sibling level; <w:del>
+        // wraps only delInstrText / delText payload runs.
+        expect(resultXml).not.toMatch(/<w:del[^>]*>[^<]*<w:r[^>]*>[^<]*<w:fldChar/);
+        const delRunCounts = countRunsInTrackedChangeWrappers(resultXml, 'w:del');
+        // After fragmentation each <w:del> wraps exactly one payload run.
         for (const count of delRunCounts) {
           if (count > 0) {
-            expect(count, 'w:del wrapper should contain multiple runs for a field sequence').toBeGreaterThan(1);
+            expect(count, 'fragmented w:del should wrap exactly one payload run').toBe(1);
           }
         }
       });
@@ -269,8 +207,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await given('original and revised dedicated-run PAGEREF fixture documents', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -294,8 +232,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await given('inplace comparison result of dedicated-run PAGEREF fixtures', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -313,8 +251,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await given('inplace comparison result of dedicated-run PAGEREF fixtures', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -334,8 +272,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await given('inplace comparison result of dedicated-run PAGEREF fixtures', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -355,8 +293,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let result: Awaited<ReturnType<typeof compareDocuments>>;
       await given('original and revised dedicated-run PAGEREF fixture documents', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -382,8 +320,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await when('documents are compared in inplace mode', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(MIXED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(MIXED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -410,8 +348,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await given('inplace comparison result of mixed-run REF fixtures', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(MIXED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(MIXED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -431,8 +369,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await given('inplace comparison result of mixed-run REF fixtures', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(MIXED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(MIXED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -452,8 +390,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await given('inplace comparison result of mixed-run REF fixtures', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(MIXED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(MIXED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(MIXED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(MIXED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -479,8 +417,8 @@ describe('Collapsed field inplace reconstruction', () => {
       let xml: string;
       await given('inplace comparison result of dedicated-run PAGEREF fixtures', async () => {
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_ORIGINAL),
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_ORIGINAL),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
         const result = await compareDocuments(original, revised, {
           engine: 'atomizer',
@@ -521,8 +459,8 @@ describe('Collapsed field inplace reconstruction', () => {
 </w:p>`;
 
         const [original, revised] = await Promise.all([
-          createDocxWithFieldXml(noFieldOriginal),
-          createDocxWithFieldXml(DEDICATED_RUN_FIELD_REVISED),
+          buildDocxFromBodyXml(noFieldOriginal),
+          buildDocxFromBodyXml(DEDICATED_RUN_FIELD_REVISED),
         ]);
 
         const result = await compareDocuments(original, revised, {

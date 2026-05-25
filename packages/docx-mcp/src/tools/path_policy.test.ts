@@ -1,6 +1,10 @@
 import { describe, expect, afterEach } from 'vitest';
-import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { enforceReadPathPolicy, enforceWritePathPolicy } from './path_policy.js';
+import { testAllure } from '../testing/allure-test.js';
+import {
+  enforceReadPathPolicy,
+  enforceWritePathPolicy,
+  getPlatformTempDefaults,
+} from './path_policy.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -77,6 +81,88 @@ describe('enforceReadPathPolicy', () => {
     }
   });
 
+  test('allows paths under the common POSIX /tmp directory by default', async () => {
+    if (process.platform === 'win32') return;
+
+    const tmpDir = await fs.mkdtemp(path.join('/tmp', 'policy-system-tmp-'));
+    tmpDirs.push(tmpDir);
+    const filePath = path.join(tmpDir, 'test.docx');
+    await fs.writeFile(filePath, 'data');
+
+    const result = await enforceReadPathPolicy(filePath);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.allowedRoots).toContain(await fs.realpath('/tmp'));
+    }
+  });
+
+  test('explicit allowed roots override the default POSIX /tmp allowance', async () => {
+    if (process.platform === 'win32') return;
+
+    const allowedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-explicit-allowed-'));
+    tmpDirs.push(allowedDir);
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = allowedDir;
+
+    const tmpDir = await fs.mkdtemp(path.join('/tmp', 'policy-explicit-tmp-'));
+    tmpDirs.push(tmpDir);
+    const filePath = path.join(tmpDir, 'test.docx');
+    await fs.writeFile(filePath, 'data');
+
+    const result = await enforceReadPathPolicy(filePath);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.success).toBe(false);
+      if (!result.response.success) {
+        expect(result.response.error.code).toBe('PATH_NOT_ALLOWED');
+      }
+    }
+  });
+
+  test('PATH_NOT_ALLOWED hint omits the $VAR prefix when SAFE_DOCX_ALLOWED_ROOTS is unset', async () => {
+    delete process.env.SAFE_DOCX_ALLOWED_ROOTS;
+
+    // Reject by pointing at a path under the root which is outside every default
+    // root (HOME, os.tmpdir(), platform temp). On macOS '/private/etc' is real
+    // but not a default; on Linux '/etc' suffices. realpath must succeed for
+    // the read path policy to reach the policy-error branch.
+    const candidate = process.platform === 'darwin' ? '/private/etc/hosts' : '/etc/hosts';
+
+    const result = await enforceReadPathPolicy(candidate);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.success).toBe(false);
+      if (!result.response.success) {
+        expect(result.response.error.code).toBe('PATH_NOT_ALLOWED');
+        const hint = result.response.error.hint ?? '';
+        expect(hint).toContain('SAFE_DOCX_ALLOWED_ROOTS=');
+        expect(hint).not.toContain('$SAFE_DOCX_ALLOWED_ROOTS');
+      }
+    }
+  });
+
+  test('PATH_NOT_ALLOWED hint includes a delimiter-aware SAFE_DOCX_ALLOWED_ROOTS fix', async () => {
+    const allowedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-hint-allowed-'));
+    tmpDirs.push(allowedDir);
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = allowedDir;
+
+    const otherDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-hint-other-'));
+    tmpDirs.push(otherDir);
+    const filePath = path.join(otherDir, 'test.docx');
+    await fs.writeFile(filePath, 'test');
+
+    const result = await enforceReadPathPolicy(filePath);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.success).toBe(false);
+      if (!result.response.success) {
+        const realOtherDir = await fs.realpath(otherDir);
+        expect(result.response.error.code).toBe('PATH_NOT_ALLOWED');
+        expect(result.response.error.hint).toContain('SAFE_DOCX_ALLOWED_ROOTS=');
+        expect(result.response.error.hint).toContain(`$SAFE_DOCX_ALLOWED_ROOTS${path.delimiter}${realOtherDir}`);
+      }
+    }
+  });
+
   test('expands tilde in path', async () => {
     // This test verifies tilde expansion works; the actual resolution
     // may fail if file doesn't exist, but the normalization should work
@@ -128,6 +214,20 @@ describe('enforceWritePathPolicy', () => {
     expect(result.ok).toBe(true);
   });
 
+  test('allows write paths under the common POSIX /tmp directory by default', async () => {
+    if (process.platform === 'win32') return;
+
+    const tmpDir = await fs.mkdtemp(path.join('/tmp', 'policy-system-write-'));
+    tmpDirs.push(tmpDir);
+    const filePath = path.join(tmpDir, 'output.docx');
+
+    const result = await enforceWritePathPolicy(filePath);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.allowedRoots).toContain(await fs.realpath('/tmp'));
+    }
+  });
+
   test('allows write to non-existent file in existing directory', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-write-'));
     tmpDirs.push(tmpDir);
@@ -164,5 +264,19 @@ describe('enforceWritePathPolicy', () => {
 
     const result = await enforceWritePathPolicy(filePath);
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('getPlatformTempDefaults', () => {
+  test('darwin includes /tmp and /private/tmp (canonical form of /tmp on macOS)', () => {
+    expect(getPlatformTempDefaults('darwin')).toEqual(['/tmp', '/private/tmp']);
+  });
+
+  test('linux includes /tmp only — /private/tmp is not a real Linux path and would leave a ghost root', () => {
+    expect(getPlatformTempDefaults('linux')).toEqual(['/tmp']);
+  });
+
+  test('win32 is empty — os.tmpdir() already covers %TEMP%/%TMP%', () => {
+    expect(getPlatformTempDefaults('win32')).toEqual([]);
   });
 });

@@ -407,7 +407,7 @@ export async function applyPlan(
     const allWarnings = validations.flatMap((v) => v.warnings.map((w) => ({ step_id: v.step_id, warning: w })));
 
     // Apply phase — execute steps sequentially
-    const ctx = getRevisionContextForSession(session);
+    const ctx = await getRevisionContextForSession(session);
     const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
 
     if (result.failed_step_id !== undefined) {
