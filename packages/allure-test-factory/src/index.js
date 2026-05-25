@@ -419,6 +419,13 @@ function mergeAllureDefaults(current, next) {
     ]);
   }
 
+  if (current?.conformanceClaims || next?.conformanceClaims) {
+    merged.conformanceClaims = normalizeConformanceClaims([
+      ...(current?.conformanceClaims ?? []),
+      ...(next?.conformanceClaims ?? []),
+    ]);
+  }
+
   if (current?.tags || next?.tags) {
     merged.tags = normalizeTags([
       ...(current?.tags ?? []),
@@ -434,6 +441,25 @@ function mergeAllureDefaults(current, next) {
   }
 
   return merged;
+}
+
+function formatConformanceLabel(claim) {
+  return `${claim.spec}/edition-${claim.edition}/part-${claim.part}/${claim.section}`;
+}
+
+function normalizeConformanceClaims(claims) {
+  const seen = new Set();
+  const out = [];
+  for (const claim of claims) {
+    if (!claim || typeof claim !== 'object') continue;
+    const { spec, edition, part, section } = claim;
+    if (!spec || edition === undefined || part === undefined || !section) continue;
+    const key = formatConformanceLabel({ spec, edition, part, section });
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ spec: String(spec), edition, part, section: String(section) });
+  }
+  return out;
 }
 
 function resolveStoryLabel(explicitName, nameParts) {
@@ -903,6 +929,10 @@ export function createAllureTestHelpers(config) {
           for (const id of scenarioSerials) {
             await allureRuntime.label('openspecScenarioId', id);
           }
+          const conformanceClaims = effectiveDefaults?.conformanceClaims ?? [];
+          for (const claim of conformanceClaims) {
+            await allureRuntime.label('conformance', formatConformanceLabel(claim));
+          }
         }
         if (typeof allureRuntime.link === 'function') {
           for (const id of scenarioSerials) {
@@ -988,6 +1018,10 @@ export function createAllureTestHelpers(config) {
     wrapped.openspec = (...scenarioIds) =>
       withAllure(base, mergeAllureDefaults(defaults, {
         openspecScenarioIds: normalizeOpenSpecScenarioIds(scenarioIds),
+      }));
+    wrapped.conformance = (...claims) =>
+      withAllure(base, mergeAllureDefaults(defaults, {
+        conformanceClaims: normalizeConformanceClaims(claims),
       }));
     wrapped.allure = (metadata) =>
       withAllure(base, mergeAllureDefaults(defaults, metadata));
