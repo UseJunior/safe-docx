@@ -11,7 +11,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -194,21 +193,10 @@ function countGaps() {
   return count;
 }
 
-function getCommitHash() {
-  try {
-    return execSync('git rev-parse --short HEAD', { cwd: REPO_ROOT }).toString().trim();
-  } catch {
-    return 'uncommitted';
-  }
-}
-
 function renderReadmeBlock(registry) {
   const N = registry.entries.length;
   const M = registry.nonGoals.length;
   const K = countGaps();
-  const commit = getCommitHash();
-  // Use a stable date format that doesn't change minute-to-minute.
-  const today = new Date().toISOString().slice(0, 10);
   const lines = [];
   lines.push(SUMMARY_START);
   lines.push('safe-docx targets a defined subset of **ECMA-376 5th edition**. The full surface');
@@ -219,8 +207,6 @@ function renderReadmeBlock(registry) {
   lines.push(`- **${M}** section${M === 1 ? '' : 's'} explicitly out-of-scope (Non-Goals)`);
   lines.push(`- **${K}** known gap${K === 1 ? '' : 's'} under \`@conformance-gap\``);
   lines.push('- Vendored normative schemas: `spec-compliance/ecma-376/schemas/`');
-  lines.push('');
-  lines.push(`Last regenerated: \`${commit}\` on \`${today}\`.`);
   lines.push(SUMMARY_END);
   return lines.join('\n');
 }

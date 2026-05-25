@@ -48,8 +48,6 @@ safe-docx targets a defined subset of **ECMA-376 5th edition**. The full surface
 - **0** sections explicitly out-of-scope (Non-Goals)
 - **0** known gaps under `@conformance-gap`
 - Vendored normative schemas: `spec-compliance/ecma-376/schemas/`
-
-Last regenerated: `86e175f` on `2026-05-25`.
 <!-- AUTO-GENERATED:conformance-summary END -->
 
 ## Trusted By
