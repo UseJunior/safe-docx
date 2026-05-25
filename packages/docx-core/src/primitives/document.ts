@@ -40,6 +40,7 @@ import { simplifyRedlines } from './simplify_redlines.js';
 import { preventDoubleElevation } from './prevent_double_elevation.js';
 import { validateDocument, type ValidateDocumentResult } from './validate_document.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
+import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
 import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
@@ -68,6 +69,89 @@ export type NormalizationResult = {
   wrappersConsolidated: number;
   doubleElevationsFixed: number;
 };
+
+const REVISION_STORY_PART_PATHS = [
+  'word/footnotes.xml',
+  'word/endnotes.xml',
+  'word/comments.xml',
+] as const;
+
+function emptyAcceptChangesResult(): AcceptChangesResult {
+  return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
+}
+
+function hasAcceptedChanges(result: AcceptChangesResult): boolean {
+  return (
+    result.insertionsAccepted > 0 ||
+    result.deletionsAccepted > 0 ||
+    result.movesResolved > 0 ||
+    result.propertyChangesResolved > 0
+  );
+}
+
+function addAcceptChangesResult(total: AcceptChangesResult, result: AcceptChangesResult): void {
+  total.insertionsAccepted += result.insertionsAccepted;
+  total.deletionsAccepted += result.deletionsAccepted;
+  total.movesResolved += result.movesResolved;
+  total.propertyChangesResolved += result.propertyChangesResolved;
+}
+
+function emptyRejectChangesResult(): RejectChangesResult {
+  return { insertionsRemoved: 0, deletionsRestored: 0, movesReverted: 0, propertyChangesReverted: 0 };
+}
+
+function hasRejectedChanges(result: RejectChangesResult): boolean {
+  return (
+    result.insertionsRemoved > 0 ||
+    result.deletionsRestored > 0 ||
+    result.movesReverted > 0 ||
+    result.propertyChangesReverted > 0
+  );
+}
+
+function addRejectChangesResult(total: RejectChangesResult, result: RejectChangesResult): void {
+  total.insertionsRemoved += result.insertionsRemoved;
+  total.deletionsRestored += result.deletionsRestored;
+  total.movesReverted += result.movesReverted;
+  total.propertyChangesReverted += result.propertyChangesReverted;
+}
+
+function parseWId(el: Element): number | null {
+  const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+  if (!idStr) return null;
+  const n = parseInt(idStr, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+function collectLiveFootnoteRefIds(doc: Document): Set<number> {
+  const ids = new Set<number>();
+  const refs = doc.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference);
+  for (let i = 0; i < refs.length; i++) {
+    const id = parseWId(refs.item(i) as Element);
+    if (id !== null) ids.add(id);
+  }
+  return ids;
+}
+
+// Side-effect of accept/reject on document.xml: a body w:footnoteReference that
+// lived inside a removed w:del (accept) or w:ins (reject) is gone afterwards.
+// The corresponding <w:footnote w:id=N> in footnotes.xml is then unreachable —
+// remove it so the side part matches the post-sweep body. Reserved separator /
+// continuationSeparator entries are preserved unconditionally.
+function pruneOrphanedFootnotes(footnotesDoc: Document, liveRefIds: Set<number>): number {
+  const entries = Array.from(footnotesDoc.getElementsByTagNameNS(OOXML.W_NS, W.footnote));
+  let pruned = 0;
+  for (const fn of entries) {
+    const typ = fn.getAttributeNS(OOXML.W_NS, 'type') ?? fn.getAttribute('w:type');
+    if (typ === W.separator || typ === W.continuationSeparator) continue;
+    const id = parseWId(fn);
+    if (id === null) continue;
+    if (liveRefIds.has(id)) continue;
+    fn.parentNode?.removeChild(fn);
+    pruned++;
+  }
+  return pruned;
+}
 
 export type ParagraphRef = {
   id: string; // _bk_###
@@ -394,21 +478,91 @@ export class DocxDocument {
   }
 
   /**
-   * Accept all tracked changes in the document body, producing a clean
-   * document with no revision markup.
+   * Accept all tracked changes in document.xml plus supported revisionable
+   * side-story parts, producing clean XML with no revision markup.
    */
-  acceptChanges(): AcceptChangesResult {
-    const result = acceptChangesImpl(this.documentXml);
-    if (
-      result.insertionsAccepted > 0 ||
-      result.deletionsAccepted > 0 ||
-      result.movesResolved > 0 ||
-      result.propertyChangesResolved > 0
-    ) {
+  async acceptChanges(): Promise<AcceptChangesResult> {
+    const total = emptyAcceptChangesResult();
+    const bodyResult = acceptChangesImpl(this.documentXml);
+    addAcceptChangesResult(total, bodyResult);
+
+    // After accepting, footnotes whose body reference lived inside a removed
+    // w:del are orphaned. Only worth checking when the body sweep removed
+    // deletions (the only operation that can drop a footnoteReference).
+    const liveFootnoteRefIds = bodyResult.deletionsAccepted > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
+    for (const partPath of REVISION_STORY_PART_PATHS) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (!xml) continue;
+
+      const partDoc = parseXml(xml);
+      const partResult = acceptChangesImpl(partDoc);
+      addAcceptChangesResult(total, partResult);
+
+      let footnotesPruned = 0;
+      if (partPath === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(partDoc, liveFootnoteRefIds);
+      }
+
+      if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
+        this.zip.writeText(partPath, serializeXml(partDoc));
+        if (partPath === 'word/footnotes.xml') {
+          this.footnotesXml = partDoc;
+        }
+      }
+    }
+
+    if (hasAcceptedChanges(total)) {
       this.dirty = true;
       this.documentViewCache = null;
     }
-    return result;
+    return total;
+  }
+
+  /**
+   * Reject all tracked changes in document.xml plus supported revisionable
+   * side-story parts, restoring their pre-edit state where possible.
+   */
+  async rejectChanges(): Promise<RejectChangesResult> {
+    const total = emptyRejectChangesResult();
+    const bodyResult = rejectChangesImpl(this.documentXml);
+    addRejectChangesResult(total, bodyResult);
+
+    // After rejecting, footnotes whose body reference lived inside a removed
+    // w:ins are orphaned. Only worth checking when the body sweep removed
+    // insertions (the only operation that can drop a footnoteReference).
+    const liveFootnoteRefIds = bodyResult.insertionsRemoved > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
+    for (const partPath of REVISION_STORY_PART_PATHS) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (!xml) continue;
+
+      const partDoc = parseXml(xml);
+      const partResult = rejectChangesImpl(partDoc);
+      addRejectChangesResult(total, partResult);
+
+      let footnotesPruned = 0;
+      if (partPath === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(partDoc, liveFootnoteRefIds);
+      }
+
+      if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
+        this.zip.writeText(partPath, serializeXml(partDoc));
+        if (partPath === 'word/footnotes.xml') {
+          this.footnotesXml = partDoc;
+        }
+      }
+    }
+
+    if (hasRejectedChanges(total)) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return total;
   }
 
   removeJuniorBookmarks(): number {
