@@ -137,10 +137,8 @@ function cloneRunFormattingOnly(doc: Document, sourceRun: Element): Element {
 function cloneRPrWithoutChangeRecords(doc: Document, rPr: Element): Element {
   const clone = doc.createElementNS(OOXML.W_NS, `w:${W.rPr}`);
   for (const child of Array.from(rPr.childNodes)) {
-    if (child.nodeType !== 1) continue;
-    const el = child as Element;
-    if (isW(el, 'rPrChange')) continue;
-    clone.appendChild(el.cloneNode(true));
+    if (child.nodeType === 1 && isW(child as Element, 'rPrChange')) continue;
+    clone.appendChild(child.cloneNode(true));
   }
   return clone;
 }
