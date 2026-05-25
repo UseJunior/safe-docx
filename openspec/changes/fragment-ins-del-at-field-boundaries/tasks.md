@@ -22,7 +22,7 @@
 
 ## 4. Phase 1.5 — Field-change classifier (DROPPED per design Decision 1)
 
-Per Steven's #217 comment, fragmentation is uniform across all three handlers — fldChar runs are always emitted unwrapped at sibling level when handling a collapsed-field atom. The yes/no predicate "is this a collapsed field?" reduces to `atom.collapsedFieldAtoms !== undefined` and does not warrant a separate module. The 5-class classifier was a leftover from an earlier draft that proposed keeping whole-field insertion unfragmented.
+Per ECMA-376 Part 4 § 17.16.5, only `<w:del>` bars `w:fldChar`; `<w:ins>` and `<w:moveTo>` may contain `w:fldChar`. So only the deletion path needs fragmentation. The check at the deletion site reduces to `atom.collapsedFieldAtoms !== undefined` and does not warrant a separate classifier module. The 5-class classifier was a leftover from an earlier draft that proposed symmetric fragmentation across all three handlers (that draft was rejected after it regressed the NVCA fixtures — see design.md Decision 1).
 
 - [x] 4.1 SKIPPED — superseded by Decision 1.
 
