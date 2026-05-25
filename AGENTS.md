@@ -41,6 +41,16 @@ Follow all conventions in [CONTRIBUTING.md](CONTRIBUTING.md). The rules below ar
 ### Pre-submit
 - All CI checks must pass locally before pushing: `npm run build && npm run lint:workspaces && npm run test:run && npm run check:spec-coverage`
 
+### Test Fixtures
+
+Before adding OOXML / DOCX test fixtures, check `packages/docx-core/src/testing/` first.
+
+- **Field XML primitives and complete-field constants** (`<w:fldChar>`, `<w:instrText>`, NUMPAGES / PAGE / PAGEREF sequences, fragmented modification patterns, whole-field `<w:ins>`/`<w:del>` wrappers): use `packages/docx-core/src/testing/ooxml-fixtures.ts`. Add new constants and helpers there rather than inline in a test file.
+- **Minimal DOCX package from raw body XML**: use `buildDocxFromBodyXml(bodyXml)` from `ooxml-fixtures.ts`. Do not copy-paste a local `JSZip` builder unless the test needs a deliberately different package shape (e.g., to test how the engine handles a missing `_rels/.rels`).
+- **Paragraph-array DOCX with optional footnote/comment/bookmark scaffolding**: use `buildSyntheticDocx` from `packages/docx-core/src/integration/synthetic-docx-fixture.ts`.
+
+Inline OOXML literals are acceptable for scenario fixtures that are *the subject* of a test (e.g., a deliberately malformed standalone-`<w:fldChar>` regression guard). They are not acceptable for re-deriving shapes that already live in the fixtures module — that produces the kind of cross-file drift issue #221 was filed to fix.
+
 ## Skills
 
 A skill is a set of local instructions stored in a `SKILL.md` file.

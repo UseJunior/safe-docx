@@ -47,11 +47,15 @@
  */
 
 import fc from 'fast-check';
-import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
 import { describe } from 'vitest';
 import { compareDocuments, type ReconstructionMode } from '../index.js';
 import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
+import {
+  COMPLETE_NUMPAGES_FIELD,
+  WHOLE_FIELD_IN_INS,
+  buildDocxFromBodyXml,
+} from '../testing/ooxml-fixtures.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -697,30 +701,6 @@ async function assertRoundTripInvariant(
 // fragments unexpectedly.
 // =============================================================================
 
-async function buildFieldDocx(bodyXml: string): Promise<Buffer> {
-  const documentXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-    `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
-  const contentTypesXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
-    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
-    `<Default Extension="xml" ContentType="application/xml"/>` +
-    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
-    `</Types>`;
-  const rootRelsXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
-    `</Relationships>`;
-  const zip = new JSZip();
-  zip.file('[Content_Types].xml', contentTypesXml);
-  zip.file('_rels/.rels', rootRelsXml);
-  zip.file('word/document.xml', documentXml);
-  return await zip.generateAsync({ type: 'nodebuffer' });
-}
-
 /**
  * TS-side analogue of `Tier2.FieldStructure.fieldContextNeutral` for one wrapper
  * subtree. Walks every descendant `w:fldChar` / `w:instrText` / `w:delInstrText`
@@ -914,16 +894,11 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
       await then(
         'the combined document validates and every wrapper subtree is field-context-neutral',
         async () => {
-          const field =
-            `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
-            `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
-            `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
-            `<w:r><w:t>3</w:t></w:r>` +
-            `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
-          const original = await buildFieldDocx(
+          const field = COMPLETE_NUMPAGES_FIELD;
+          const original = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Total pages here.</w:t></w:r></w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Total pages </w:t></w:r>${field}<w:r><w:t> here.</w:t></w:r></w:p>`,
           );
 
@@ -968,16 +943,11 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
           // engine output satisfies the document-level `preservationFriendly`
           // property but not per-subtree `recursivelyWellformed`.
           // `assertFieldInvariant` is the right document-level check.
-          const field =
-            `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
-            `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
-            `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
-            `<w:r><w:t>3</w:t></w:r>` +
-            `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
-          const original = await buildFieldDocx(
+          const field = COMPLETE_NUMPAGES_FIELD;
+          const original = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Total pages </w:t></w:r>${field}<w:r><w:t> here.</w:t></w:r></w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Total pages here.</w:t></w:r></w:p>`,
           );
 
@@ -1053,14 +1023,7 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
       await given(
         'a <w:ins> wrapping a complete NUMPAGES begin/instrText/separate/result/end sequence',
         () => {
-          const xml =
-            `<w:ins xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-            `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
-            `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
-            `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
-            `<w:r><w:t>3</w:t></w:r>` +
-            `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
-            `</w:ins>`;
+          const xml = WHOLE_FIELD_IN_INS(COMPLETE_NUMPAGES_FIELD, { standalone: true });
           wrapper = new DOMParser().parseFromString(xml, 'application/xml')
             .documentElement as unknown as Element;
         },
