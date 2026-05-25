@@ -39,6 +39,15 @@ Safe Docx é otimizado para fluxos de trabalho de agentes que precisam de ediç�
 
 Safe Docx não pretende substituir bibliotecas de `.docx` orientadas à geração.
 
+## Conformidade com padrões
+
+safe-docx mira um subconjunto definido da **ECMA-376 5ª edição**. A
+superfície completa (seções alvo, não-metas explícitas e status de
+verificação) está em
+[spec-compliance/CONFORMANCE.md](spec-compliance/CONFORMANCE.md), gerado
+automaticamente a partir do registro e mantido como fonte canônica apenas
+em inglês.
+
 ## Confiam em nós
 
 - **Escritório Am Law top-10** — pipeline de tradução de contratos em múltiplas etapas

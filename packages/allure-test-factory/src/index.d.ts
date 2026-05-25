@@ -50,9 +50,17 @@ export interface AllureLabelDefaults<TEpic extends string = string> {
   subSuite?: string;
   severity?: string;
   openspecScenarioIds?: string[];
+  conformanceClaims?: ConformanceClaim[];
   description?: string;
   tags?: string[];
   parameters?: Record<string, string | number | boolean | null | undefined>;
+}
+
+export interface ConformanceClaim {
+  spec: string;
+  edition: number | string;
+  part: number | string;
+  section: string;
 }
 
 export type AllureMetadata<TEpic extends string = string> = Partial<AllureLabelDefaults<TEpic>>;
@@ -141,6 +149,7 @@ export type WrappedAllureTestFn<TEpic extends string = string> = WrappedTestFn &
   withLabels: (defaults: AllureLabelDefaults<TEpic>) => WrappedAllureTestFn<TEpic>;
   epic: (epic: TEpic) => WrappedAllureTestFn<TEpic>;
   openspec: (...scenarioIds: Array<string | string[]>) => WrappedAllureTestFn<TEpic>;
+  conformance: (...claims: ConformanceClaim[]) => WrappedAllureTestFn<TEpic>;
   allure: (metadata: AllureMetadata<TEpic>) => WrappedAllureTestFn<TEpic>;
 };
 

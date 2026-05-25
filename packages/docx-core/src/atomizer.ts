@@ -216,7 +216,7 @@ const LEAF_NODE_TAGS = new Set([
 ]);
 
 /**
- * Tag names that are paragraph-level OOXML markers per ECMA-376 §17.13.5.
+ * Tag names that are paragraph-level OOXML markers.
  *
  * These elements are valid as direct children of <w:p> (and revision wrappers
  * like <w:ins>/<w:del>/<w:moveFrom>/<w:moveTo>) but never inside <w:r>. The
@@ -227,6 +227,8 @@ const LEAF_NODE_TAGS = new Set([
  * permStart / permEnd are deferred to follow-up issues — moveRange collides
  * with the synthetic emission in wrapWithMoveFrom and wrapWithMoveTo, and
  * permStart / permEnd needs fixture coverage.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
  */
 export const PARAGRAPH_LEVEL_TAGS = new Set([
   'w:commentRangeStart',

@@ -77,9 +77,10 @@ import {
   type AllureBddContext,
 } from '../testing/allure-test.js';
 
-const test = testAllure.epic('Document Comparison').withLabels({
-  feature: 'Lean Spec Bridge (fast-check)',
-});
+const test = testAllure
+  .epic('Document Comparison')
+  .withLabels({ feature: 'Lean Spec Bridge (fast-check)' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
 
 const TRACKED_REVISION_AUTHOR = 'Lean Bridge';
 const TRACKED_REVISION_DATE = '2026-05-11T00:00:00Z';

@@ -8,7 +8,8 @@ import { hasFldCharInsideDel, splitStories, validateFieldStructure } from './pip
 
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Field Structure Validation (ECMA-376)' });
+  .withLabels({ feature: 'Field Structure Validation (ECMA-376)' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
 
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 

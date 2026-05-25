@@ -3,13 +3,15 @@
  *
  * Handles sequential footnote/endnote numbering by document order.
  *
- * Per ECMA-376, w:id on footnoteReference is a reference identifier, NOT the
- * display number. Display numbers are sequential based on document order.
+ * `w:id` on `w:footnoteReference` is a reference identifier, NOT the display
+ * number. Display numbers are sequential based on document order.
  *
  * @example
  * Document has 91 footnotes with XML IDs 2-92 (IDs 0, 1 are reserved):
  * - Incorrect: Display as 2, 3, 4, ..., 92
  * - Correct: Display as 1, 2, 3, ..., 91
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  */
 
 import {
@@ -54,10 +56,13 @@ export function findReferencesInOrder(
 /**
  * Check if a footnote/endnote ID is reserved.
  *
- * IDs 0 and 1 are reserved for separator types per ECMA-376.
+ * IDs 0 and 1 are treated as reserved, matching the special separator and
+ * continuation-separator footnote examples in ECMA-376 5th edition Part 1
+ * §17.11.9 / §17.11.10.
  *
  * @param xmlId - The XML ID to check
  * @returns True if this is a reserved ID
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  */
 export function isReservedId(xmlId: string): boolean {
   return (

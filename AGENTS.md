@@ -17,6 +17,21 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 <!-- OPENSPEC:END -->
 
+## ECMA-376 conformance
+
+safe-docx targets a defined subset of [ECMA-376 5th edition](spec-compliance/CONFORMANCE.md).
+Spec conformance is a foundational property of this repo, not a side concern, so the
+machinery lives at the repo root rather than under `openspec/`.
+
+- **Targeted sections + Non-Goals:** [`spec-compliance/registry/ecma-376.md`](spec-compliance/registry/ecma-376.md)
+- **Vendored normative schemas:** [`spec-compliance/ecma-376/schemas/`](spec-compliance/ecma-376/schemas/)
+- **Citation-hygiene rules + `@conformance` tag grammar:** [`spec-compliance/AGENTS.md`](spec-compliance/AGENTS.md)
+
+When editing OOXML behavior, lead conformance claims with a `@conformance ECMA-376 edition <N>, Part <N> § <SECTION>`
+JSDoc tag and demote internal `#NNN` issue references to `@see`. Tests use
+`testAllure.conformance({ spec, edition, part, section })`. The lint
+`npm run check:conformance-citations` enforces both.
+
 ## Workflow Conventions
 
 Follow all conventions in [CONTRIBUTING.md](CONTRIBUTING.md). The rules below are **mandatory** for AI agents:
@@ -39,7 +54,7 @@ Follow all conventions in [CONTRIBUTING.md](CONTRIBUTING.md). The rules below ar
 - Include screenshots for any visual changes.
 
 ### Pre-submit
-- All CI checks must pass locally before pushing: `npm run build && npm run lint:workspaces && npm run test:run && npm run check:spec-coverage`
+- All CI checks must pass locally before pushing: `npm run build && npm run lint:workspaces && npm run test:run && npm run check:spec-coverage && npm run check:conformance-citations && npm run check:conformance-doc`
 
 ### Test Fixtures
 

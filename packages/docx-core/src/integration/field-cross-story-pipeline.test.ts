@@ -16,7 +16,8 @@ import { compareDocuments } from '../index.js';
 
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Cross-story Field Closure (#212)' });
+  .withLabels({ feature: 'Cross-story Field Closure (#212)' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
 
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 const NS14 = 'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"';

@@ -337,7 +337,11 @@ export interface NumberingDefinition {
 // =============================================================================
 
 /**
- * Reserved footnote/endnote IDs per ECMA-376.
+ * Reserved footnote/endnote IDs (separator and continuation-separator). The
+ * convention follows the ECMA-376 5th edition Part 1 §17.11.9 / §17.11.10
+ * examples that use `w:id="0"` / `w:id="1"` for the special footnote types.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
  */
 export const RESERVED_FOOTNOTE_IDS = {
   /** Separator footnote */
