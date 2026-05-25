@@ -1266,11 +1266,11 @@ describe('inPlaceModifier', () => {
       });
     });
 
-    test('handles collapsed field atoms by replaying field sequence', async ({ given, when, then, and }: AllureBddContext) => {
+    test('handles collapsed field atoms by replaying field sequence (ECMA-376 fragmentation per #217)', async ({ given, when, then, and }: AllureBddContext) => {
       let atom: ComparisonUnitAtom;
       let targetP: Element;
       let state: ReturnType<typeof createRevisionIdState>;
-      let del: Element | null;
+      let lastInserted: Element | null;
 
       await given('a deleted atom with a collapsed field sequence (HYPERLINK)', () => {
         const fldCharBegin = el('w:fldChar', { 'w:fldCharType': 'begin' });
@@ -1305,21 +1305,53 @@ describe('inPlaceModifier', () => {
       });
 
       await when('insertDeletedRun is called', () => {
-        del = insertDeletedRun(atom, null, targetP, author, dateStr, state);
+        lastInserted = insertDeletedRun(atom, null, targetP, author, dateStr, state);
       });
 
-      await then('a w:del wrapper is returned', () => {
-        assertDefined(del, 'del wrapper');
-        expect(del.tagName).toBe('w:del');
+      await then('the last inserted element is the trailing field-char run (sibling level, unwrapped)', () => {
+        // ECMA-376 Part 4 forbids w:fldChar inside <w:del>. Fragmented output
+        // emits fldChar runs at sibling level; the trailing element of the
+        // HYPERLINK field is the end fldChar in its own <w:r>.
+        assertDefined(lastInserted, 'last inserted sibling');
+        expect(lastInserted.tagName).toBe('w:r');
+        const endFldChar = childElements(lastInserted).find(
+          (c) => c.tagName === 'w:fldChar' && c.getAttribute('w:fldCharType') === 'end',
+        );
+        expect(endFldChar).toBeDefined();
       });
 
-      await and('the cloned run contains the full field sequence rather than synthetic text', () => {
-        assertDefined(del, 'del wrapper');
-        // The cloned run should contain the field sequence, not the synthetic text
-        const clonedRun = childElements(del)[0]!;
-        const clonedRunChildren = childElements(clonedRun);
-        // Should have rPr + 5 field elements (fldChar, instrText, etc.)
-        expect(clonedRunChildren.length).toBeGreaterThanOrEqual(5);
+      await and('w:fldChar runs are emitted at sibling level of the paragraph (never inside w:del)', () => {
+        // Walk the target paragraph and confirm: every fldChar's parent chain
+        // up to w:p contains no w:del ancestor.
+        const fldChars = (Array.from(
+          targetP.getElementsByTagName('w:fldChar'),
+        ) as unknown) as Element[];
+        expect(fldChars.length).toBe(3); // begin, separate, end
+        for (const fc of fldChars) {
+          let cur: Node | null = fc.parentNode;
+          while (cur && cur !== targetP) {
+            expect((cur as Element).tagName).not.toBe('w:del');
+            cur = cur.parentNode;
+          }
+        }
+      });
+
+      await and('payload runs (instrText, t) are wrapped in their own <w:del> siblings', () => {
+        // We expect exactly two <w:del> wrappers: one around instrText, one around t.
+        const dels = childElements(targetP).filter((c) => c.tagName === 'w:del');
+        expect(dels.length).toBe(2);
+        // First del wraps delInstrText
+        const firstDelRun = childElements(dels[0]!)[0]!;
+        const hasDelInstrText = childElements(firstDelRun).some(
+          (c) => c.tagName === 'w:delInstrText',
+        );
+        expect(hasDelInstrText).toBe(true);
+        // Second del wraps delText
+        const secondDelRun = childElements(dels[1]!)[0]!;
+        const hasDelText = childElements(secondDelRun).some(
+          (c) => c.tagName === 'w:delText',
+        );
+        expect(hasDelText).toBe(true);
       });
     });
   });
