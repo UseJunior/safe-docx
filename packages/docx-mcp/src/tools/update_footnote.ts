@@ -14,7 +14,7 @@ export async function updateFootnote(
   const resolved = await resolveSessionForTool(manager, params, { toolName: 'update_footnote' });
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
-  const ctx = getRevisionContextForSession(session);
+  const ctx = await getRevisionContextForSession(session);
 
   if (params.note_id == null) {
     return err('MISSING_PARAMETER', 'note_id is required.', 'Provide the footnote ID to update.');
