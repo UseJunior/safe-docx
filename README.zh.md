@@ -39,6 +39,13 @@ Safe Docx 针对需要确定性、本地优先编辑现有 `.docx` 文件的代�
 
 Safe Docx 不旨在替代以生成为主的 `.docx` 库。
 
+## 标准合规性
+
+safe-docx 针对 **ECMA-376 第 5 版** 的一个明确定义的子集。完整的范围
+（目标章节、明确的非目标、验证状态）见
+[spec-compliance/CONFORMANCE.md](spec-compliance/CONFORMANCE.md)。
+该文件由注册表自动生成，仅以英文维护为权威版本。
+
 ## 信赖我们的用户
 
 - **Am Law 十强律所** — 多步骤合同翻译流水线
