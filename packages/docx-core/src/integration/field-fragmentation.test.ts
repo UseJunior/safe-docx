@@ -24,7 +24,6 @@
  */
 
 import { describe, expect } from 'vitest';
-import JSZip from 'jszip';
 import { DOMParser } from '@xmldom/xmldom';
 import { compareDocuments } from '../index.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
@@ -34,6 +33,12 @@ import {
   rejectAllChanges,
 } from '../baselines/atomizer/trackChangesAcceptorAst.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import {
+  buildDocxFromBodyXml,
+  fldChar,
+  instrText,
+  resultText,
+} from '../testing/ooxml-fixtures.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({
   feature: 'Field Fragmentation (ECMA-376)',
@@ -44,30 +49,6 @@ const test = testAllure.epic('Document Comparison').withLabels({
 // =============================================================================
 // Helpers
 // =============================================================================
-
-async function buildFieldDocx(bodyXml: string): Promise<Buffer> {
-  const documentXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
-    `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
-  const contentTypesXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
-    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
-    `<Default Extension="xml" ContentType="application/xml"/>` +
-    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
-    `</Types>`;
-  const rootRelsXml =
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
-    `</Relationships>`;
-  const zip = new JSZip();
-  zip.file('[Content_Types].xml', contentTypesXml);
-  zip.file('_rels/.rels', rootRelsXml);
-  zip.file('word/document.xml', documentXml);
-  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
-}
 
 async function compareInplace(original: Buffer, revised: Buffer): Promise<string> {
   const result = await compareDocuments(original, revised, {
@@ -125,11 +106,11 @@ function assertFieldStructureSurvives(combined: string): void {
 
 function makeField(instr: string, result: string): string {
   return (
-    `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
-    `<w:r><w:instrText xml:space="preserve">${instr}</w:instrText></w:r>` +
-    `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
-    `<w:r><w:t>${result}</w:t></w:r>` +
-    `<w:r><w:fldChar w:fldCharType="end"/></w:r>`
+    fldChar('begin') +
+    instrText(instr, { preserve: true }) +
+    fldChar('separate') +
+    resultText(result) +
+    fldChar('end')
   );
 }
 
@@ -156,10 +137,10 @@ describe('Field fragmentation — modification scenarios', () => {
       await given(
         'an original FORMCHECKBOX field (result "☐") and a revised FORMTEXT field (result "answer")',
         async () => {
-          const original = await buildFieldDocx(
+          const original = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Status: </w:t></w:r>${makeField(' FORMCHECKBOX ', '☐')}</w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Status: </w:t></w:r>${makeField(' FORMTEXT ', 'answer')}</w:p>`,
           );
           combined = await compareInplace(original, revised);
@@ -183,10 +164,10 @@ describe('Field fragmentation — modification scenarios', () => {
       await given(
         'an original HYPERLINK "https://a.example" (text "old link") and a revised HYPERLINK "https://b.example" (text "new link")',
         async () => {
-          const original = await buildFieldDocx(
+          const original = await buildDocxFromBodyXml(
             `<w:p>${makeField(' HYPERLINK "https://a.example" ', 'old link')}</w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p>${makeField(' HYPERLINK "https://b.example" ', 'new link')}</w:p>`,
           );
           combined = await compareInplace(original, revised);
@@ -210,10 +191,10 @@ describe('Field fragmentation — modification scenarios', () => {
       await given(
         'an original PAGEREF _Toc-A (result "12") and a revised PAGEREF _Toc-B (result "15")',
         async () => {
-          const original = await buildFieldDocx(
+          const original = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>See page </w:t></w:r>${makeField(' PAGEREF _Toc-A \\h ', '12')}</w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>See page </w:t></w:r>${makeField(' PAGEREF _Toc-B \\h ', '15')}</w:p>`,
           );
           combined = await compareInplace(original, revised);
@@ -239,10 +220,10 @@ describe('Field fragmentation — modification scenarios', () => {
         async () => {
           const wrapBookmark = (inner: string) =>
             `<w:bookmarkStart w:id="1" w:name="fld"/>${inner}<w:bookmarkEnd w:id="1"/>`;
-          const original = await buildFieldDocx(
+          const original = await buildDocxFromBodyXml(
             `<w:p>${wrapBookmark(makeField(' NUMPAGES ', '3'))}</w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p>${wrapBookmark(makeField(' SECTIONPAGES ', '1'))}</w:p>`,
           );
           combined = await compareInplace(original, revised);
@@ -274,10 +255,10 @@ describe('Field fragmentation — modification scenarios', () => {
             `<w:r><w:t>3</w:t></w:r>` +
             `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
             `<w:bookmarkEnd w:id="9"/>`;
-          const original = await buildFieldDocx(
+          const original = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Pages </w:t></w:r>${fieldWithInternalBookmark}<w:r><w:t> total.</w:t></w:r></w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Pages total.</w:t></w:r></w:p>`,
           );
           combined = await compareInplace(original, revised);
@@ -314,10 +295,10 @@ describe('Field fragmentation — modification scenarios', () => {
       await given(
         'an original NUMPAGES with result "3" and a revised with result "4" (instr unchanged)',
         async () => {
-          const original = await buildFieldDocx(
+          const original = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Pages: </w:t></w:r>${makeField(' NUMPAGES ', '3')}</w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Pages: </w:t></w:r>${makeField(' NUMPAGES ', '4')}</w:p>`,
           );
           combined = await compareInplace(original, revised);
@@ -347,10 +328,10 @@ describe('Field fragmentation — whole-field deletion', () => {
       await given(
         'an original document containing a NUMPAGES field and a revised document with the field removed',
         async () => {
-          const original = await buildFieldDocx(
+          const original = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Total pages </w:t></w:r>${makeField(' NUMPAGES ', '3')}<w:r><w:t> here.</w:t></w:r></w:p>`,
           );
-          const revised = await buildFieldDocx(
+          const revised = await buildDocxFromBodyXml(
             `<w:p><w:r><w:t>Total pages here.</w:t></w:r></w:p>`,
           );
           combined = await compareInplace(original, revised);

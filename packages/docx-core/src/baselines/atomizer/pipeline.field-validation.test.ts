@@ -1,5 +1,9 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
+import {
+  COMPLETE_NUMPAGES_FIELD as COMPLETE_FIELD,
+  FRAGMENTED_NUMPAGES_MODIFICATION as MODIFIED_FIELD_FRAGMENTED,
+} from '../../testing/ooxml-fixtures.js';
 import { hasFldCharInsideDel, splitStories, validateFieldStructure } from './pipeline.js';
 
 const test = testAllure
@@ -15,26 +19,6 @@ function buildDoc(bodyXml: string): string {
     `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`
   );
 }
-
-const COMPLETE_FIELD =
-  `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
-  `<w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r>` +
-  `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
-  `<w:r><w:t>3</w:t></w:r>` +
-  `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
-
-// ECMA-376 conformant field-modification pattern: a field whose instruction
-// text is changing under track changes. The fldChars remain UNWRAPPED at the
-// sibling-run level (they cannot enter <w:del>), while the changed instrText
-// fragments into <w:ins>/<w:del> wrappers. Research summary: c-rex ECMA-376
-// Part 4 fldChar topic + DeletedFieldCode placement constraint.
-const MODIFIED_FIELD_FRAGMENTED =
-  `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
-  `<w:ins><w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r></w:ins>` +
-  `<w:del><w:r><w:delInstrText xml:space="preserve"> PAGE </w:delInstrText></w:r></w:del>` +
-  `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
-  `<w:r><w:t>3</w:t></w:r>` +
-  `<w:r><w:fldChar w:fldCharType="end"/></w:r>`;
 
 describe('validateFieldStructure', () => {
   test(
