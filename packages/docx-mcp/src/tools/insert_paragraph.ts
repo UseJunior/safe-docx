@@ -127,7 +127,7 @@ export async function insertParagraph(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'insert_paragraph' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const revisionCtx = ctx ?? getRevisionContextForSession(session);
+    const revisionCtx = ctx ?? await getRevisionContextForSession(session);
 
     const positionUpper = (params.position ?? 'AFTER').toUpperCase();
     if (positionUpper !== 'BEFORE' && positionUpper !== 'AFTER') {

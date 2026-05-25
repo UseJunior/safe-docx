@@ -8,3 +8,6 @@ require mathlib from git
 
 @[default_target]
 lean_lib LeanSpike
+
+@[default_target]
+lean_lib Tier2

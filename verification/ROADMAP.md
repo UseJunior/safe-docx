@@ -1,6 +1,6 @@
 # safe-docx Verification — Roadmap
 
-**Status (2026-05-12)**: Stages 1-6 of the Lean 4 verification spike shipped via PR #164 (merged 2026-05-11). Tiers 1, 1.5, and 1.6 are complete; Tier 2 kickoff is in progress via OpenSpec change `add-ooxml-doc-subset-and-inv-field-001-proof` (issue #201); Tier 2.5 / 3 / 3+ remain not started.
+**Status (2026-05-15)**: Stages 1-6 of the Lean 4 verification spike shipped via PR #164 (merged 2026-05-11). Tiers 1, 1.5, and 1.6 are complete. Tier 2 is **in progress**: OpenSpec change `add-ooxml-doc-subset-and-inv-field-001-proof` (issue #201) lands the definitional `OoxmlDoc` subset and **closes `inv_field_001`** as "preservation lemma + single named residual axiom". `inv_rt_001` remains `sorry`'d (deferred to `add-inv-rt-001-proof`); Tier 2.5 / 3 / 3+ remain not started.
 
 ## How to use this document
 
@@ -40,9 +40,9 @@ This tier is the tooling-validation layer. It shows that Lean 4 plus mathlib can
 
 Specification targets are stated over an uninterpreted Lean signature plus an empirical bridge against the live TS engine. Lives in `verification/lean/LeanSpike/Spec.lean` and `packages/docx-core/src/integration/lean-spec-bridge.test.ts`.
 
-- `INV-FIELD-001` — **sorry'd**. Field-structure preservation across accept/reject of inplace comparison output. `Spec.lean`.
+- `INV-FIELD-001` — shipped **sorry'd** in Tier 1.5; **closed in Tier 2** (see below). `Spec.lean`.
 - `INV-RT-001` — **sorry'd**. Paired round-trip text equality under normalization. `Spec.lean`.
-- fast-check bridge — empirically exercises both invariants at 100 runs/property × 2 properties against the live TS engine, gated on `reconstructionModeUsed === 'inplace'`. 0 falsifications to date.
+- fast-check bridge — empirically exercises both invariants at 100 runs/property against the live TS engine, gated on `reconstructionModeUsed === 'inplace'`. 0 falsifications to date. Tier 2 adds one field-bearing fixture case as a falsifiability layer for the Tier 2 residual axiom.
 
 This tier is intentionally not a proof claim about the production engine. It is a named specification surface plus a falsifiability layer over live runtime behavior. The TS evidence motivates the targets, but it does not justify universal Lean theorems while `Spec.lean` is still an uninterpreted axiom surface.
 
@@ -70,29 +70,48 @@ Status: Stage 6 of the spike shipped on PR #164. Single workflow file at `.githu
 
 This tier is operational, not mathematical. It does not expand proof scope; it preserves the value of Tier 1 and Tier 1.5 by making toolchain regressions visible in normal PR flow.
 
-## Tier 2 — Definitional `OoxmlDoc` model + closed proofs of `Spec.lean` invariants
+## Tier 2 — Definitional `OoxmlDoc` model + closed proof of `inv_field_001`
 
-**Status: NOT STARTED.**
+**Status: IN PROGRESS.** `inv_field_001` is closed; `inv_rt_001` deferred.
 
-The `Spec.lean` theorems are currently sorry'd over a fully uninterpreted axiom signature. Closing them requires replacing the axioms with a definitional Lean model of OOXML, or at least a tractable subset, and then proving the invariants by structural induction on that model.
+OpenSpec change `add-ooxml-doc-subset-and-inv-field-001-proof` (issue #201)
+replaces the uninterpreted document-level axioms with a definitional Lean model
+of a tractable OOXML subset and **closes `inv_field_001`**. The closure is framed
+as **"machine-checked preservation lemma + single named residual axiom"**, not a
+discharge of the comparison engine: the proof is honest about exactly one
+remaining assumption rather than hiding it in a hand-wave.
 
-Estimated rough effort at the spike's intermittent agent-driven cadence: **4-12 months elapsed**. The dominant risk is not proof tactics; it is choosing a document model that is faithful enough to matter and narrow enough to stay provable.
+Delivered:
 
-Sub-deliverables:
+- `Tier2/OoxmlModel.lean` — definitional datatypes for a tree-structured OOXML
+  subset: paragraphs, runs, `ins`/`del`/`moveFrom`/`moveTo` wrappers, and
+  `w:fldChar` / `w:instrText` / `w:delInstrText` field atoms.
+- `Tier2/FieldStructure.lean` — the stack-valued field-context walk (mirroring
+  `pastSeparatorAtDepth: number[]` at `pipeline.ts:374-389`), definitional
+  `validateFieldStructure` (`pipeline.ts:352-402`), `fieldContextNeutral`, and
+  the recursive precondition `recursivelyWellformed`.
+- `Tier2/WalkLemmas.lean` — generic walk lemmas (`walkBlocks_append`,
+  context-neutral no-op, `neutral_balanced`, `delInstrText` rewrite-safety).
+- `Tier2/AcceptReject.lean` — definitional `accept` / `reject` mirroring
+  `trackChangesAcceptorAst.ts:368-659`.
+- `Tier2/InvFieldOne.lean` — **closed** preservation lemma
+  `field_structure_preserved` (zero `sorry`).
+- `LeanSpike/Spec.lean` — `OoxmlDoc` / `acceptAllChanges` / `rejectAllChanges` /
+  `validateFieldStructure` rewired from `axiom` to the Tier 2 definitions;
+  `inv_field_001` closed by composing `field_structure_preserved` with the single
+  named residual axiom `compareDocumentXml_output_recursivelyWellformed`.
 
-- `Tier2.OoxmlModel` — definitional Lean datatypes for a minimal but faithful OOXML subset: paragraphs, runs, ins/del markers, basic field markup (`w:fldChar`, `w:instrText`), and text content.
-- `Tier2.AcceptReject` — definitional Lean operations mirroring `acceptAllChanges` and `rejectAllChanges` from `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
-- `Tier2.FieldStructure` — definitional Lean predicate mirroring `validateFieldStructure` from `packages/docx-core/src/baselines/atomizer/pipeline.ts:352-402`.
-- `Tier2.INV_FIELD_001` — closed proof replacing the `INV-FIELD-001` sorry in `Spec.lean`.
-- `Tier2.INV_RT_001` — closed proof replacing the `INV-RT-001` sorry in `Spec.lean`.
+The residual axiom asserts that this repo's inplace atomizer output is
+`recursivelyWellformed`. Discharging it by modeling `compareDocumentXml`
+definitionally is Tier 3 work.
 
-The central design question is the model boundary. Too narrow, and the proof stops saying anything about real bugs. Too broad, and the definitions become a second OOXML engine inside Lean.
+Still open in Tier 2 / deferred:
 
-Practical unknowns before Tier 2 starts:
-
-- Whether fields should be modeled syntactically, semantically, or both.
-- How much of run splitting and paragraph structure is necessary to state the existing invariants cleanly.
-- Whether the right first target is full accept/reject semantics or a smaller normalization layer that factors the proofs.
+- `inv_rt_001` — paragraph round-trip text equality. Deferred to the
+  `add-inv-rt-001-proof` successor change (`extractTextWithParagraphs` and
+  `normalizeText` stay axiomatic until then).
+- A full field-bearing fast-check arbitrary for the bridge test — only one
+  fixture case ships here; the arbitrary opens as `add-field-bearing-bridge-arbitrary`.
 
 Tier 2 is the first place where the roadmap becomes specification-heavy enough to deserve an OpenSpec change on start.
 

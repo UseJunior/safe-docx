@@ -174,7 +174,7 @@ export async function replaceText(
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'replace_text' });
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
-    const revisionCtx = ctx ?? getRevisionContextForSession(session);
+    const revisionCtx = ctx ?? await getRevisionContextForSession(session);
 
     if (params.normalize_first) {
       session.doc.mergeRunsOnly();

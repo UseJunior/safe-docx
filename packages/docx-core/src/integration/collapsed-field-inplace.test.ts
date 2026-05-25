@@ -144,30 +144,6 @@ function countRunsInTrackedChangeWrappers(xml: string, wrapperTag: string): numb
   return counts;
 }
 
-/**
- * Check if any tracked change wrapper contains a single run with both fldChar
- * and instrText — the signature of the single-run packing bug.
- */
-function hasSingleRunPackedField(xml: string, wrapperTag: string): boolean {
-  const wrapperRegex = new RegExp(`<${wrapperTag}[^>]*>(.*?)</${wrapperTag}>`, 'gs');
-  let match;
-  while ((match = wrapperRegex.exec(xml)) !== null) {
-    const content = match[1]!;
-    // Check each run in the wrapper
-    const runRegex = /<w:r[ >].*?<\/w:r>/gs;
-    let runMatch;
-    while ((runMatch = runRegex.exec(content)) !== null) {
-      const runContent = runMatch[0];
-      const hasFldChar = runContent.includes('w:fldChar');
-      const hasInstrText = runContent.includes('w:instrText');
-      const hasText = runContent.includes('w:delText') || runContent.includes('w:t>');
-      // A single run containing fldChar + instrText + text is the packed bug
-      if (hasFldChar && hasInstrText && hasText) return true;
-    }
-  }
-  return false;
-}
-
 function hasLeakedInstrText(xml: string): boolean {
   // instrText should only appear between fldChar[begin] and fldChar[separate].
   // If it appears outside a tracked change wrapper without a preceding begin in the
@@ -208,7 +184,7 @@ describe('Collapsed field inplace reconstruction', () => {
   describe('Dedicated-run field (PAGEREF)', () => {
     let resultXml: string;
 
-    test('deleted field preserves multi-run structure in w:del wrapper', async ({ given, when, then, and, attachPrettyJson, parameter }: AllureBddContext) => {
+    test('deleted field emits fldChar at sibling level and wraps only payloads in w:del (ECMA-376 fragmentation per #217)', async ({ given, when, then, and, attachPrettyJson, parameter }: AllureBddContext) => {
       await given('original and revised docs with a PAGEREF field change (23 -> 42)', async () => {
         await parameter('fixture', 'dedicated-run-field');
       });
@@ -233,19 +209,20 @@ describe('Collapsed field inplace reconstruction', () => {
         });
       });
 
-      await then('the tracked change wrappers contain valid field structure', async () => {
+      await then('fldChars are balanced, no instrText leaks, and w:del contains only payload runs', async () => {
         const fieldPairs = countFieldCharPairs(resultXml);
-        const delRunCounts = countRunsInTrackedChangeWrappers(resultXml, 'w:del');
-        const packedBug = hasSingleRunPackedField(resultXml, 'w:del');
-        await attachPrettyJson('field-char-counts.json', { fieldPairs, delRunCounts, packedBug });
+        await attachPrettyJson('field-char-counts.json', { fieldPairs });
         expect(fieldPairs.balanced, 'fldChar begin/end counts must be balanced').toBe(true);
         expect(hasLeakedInstrText(resultXml), 'instrText must not leak outside field boundaries').toBe(false);
-        // The deleted field must be replayed as multiple runs, not packed into one
-        expect(packedBug, 'w:del must not pack all field atoms into a single run').toBe(false);
-        // The del wrapper should contain multiple runs for the field sequence
+        // ECMA-376 conformance: w:fldChar MUST NOT appear inside <w:del>. Per
+        // #217, fragmentation emits fldChar runs at sibling level; <w:del>
+        // wraps only delInstrText / delText payload runs.
+        expect(resultXml).not.toMatch(/<w:del[^>]*>[^<]*<w:r[^>]*>[^<]*<w:fldChar/);
+        const delRunCounts = countRunsInTrackedChangeWrappers(resultXml, 'w:del');
+        // After fragmentation each <w:del> wraps exactly one payload run.
         for (const count of delRunCounts) {
           if (count > 0) {
-            expect(count, 'w:del wrapper should contain multiple runs for a field sequence').toBeGreaterThan(1);
+            expect(count, 'fragmented w:del should wrap exactly one payload run').toBe(1);
           }
         }
       });
