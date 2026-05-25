@@ -12,7 +12,7 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 
 | Primitive / tool | Source path | OOXML revision element | Notes |
 | --- | --- | --- | --- |
-| `text.ts` — `replaceParagraphTextRange` | `packages/docx-core/src/primitives/text.ts` | `w:ins`, `w:del`, *`w:rPrChange` (pending #173)* | Run-level text replacement; current implementation emits `w:ins`/`w:del` only. `w:rPrChange` for formatting-aware replacements is tracked as **#173**. **Verified by [120.8] (#143) regression test (locks ins/del behavior).** |
+| `text.ts` — `replaceParagraphTextRange` | `packages/docx-core/src/primitives/text.ts` | `w:ins`, `w:del`, `w:rPrChange` | Run-level text replacement emits insertion/deletion wrappers, and formatting-aware replacements record the prior run properties with `w:rPrChange`. **Verified by [120.8] (#143) regression test (after #173).** |
 | `layout.ts` — `setParagraphSpacing` | `packages/docx-core/src/primitives/layout.ts` | `w:pPrChange` | Paragraph spacing mutations change paragraph properties, not spacer-paragraph structure. **Verified by [120.8] (#143) regression test.** |
 | `layout.ts` — `setTableRowHeight` | `packages/docx-core/src/primitives/layout.ts` | `w:trPrChange` | Row geometry changes belong under row-property revisions. **Verified by [120.8] (#143) regression test.** |
 | `layout.ts` — `setTableCellPadding` | `packages/docx-core/src/primitives/layout.ts` | `w:tcPrChange` | Cell padding changes belong under cell-property revisions. **Verified by [120.8] (#143) regression test.** |

@@ -145,7 +145,7 @@ function revisionTuples(xml: string, requiredAuthor?: string): RevisionTuple[] {
 }
 
 describe('Canonical emission catalog', () => {
-  test('Table A: text.ts replaceParagraphTextRange emits tracked insertion and deletion wrappers', async ({
+  test('Table A: text.ts replaceParagraphTextRange emits tracked insertion, deletion, and run-property change wrappers', async ({
     given,
     when,
     then,
@@ -172,11 +172,11 @@ describe('Canonical emission catalog', () => {
       });
     });
 
-    await then('document.xml contains tracked insertion and deletion metadata', () => {
-      // Current implementation emits tracked insertion/deletion containers but
-      // does not currently emit w:rPrChange from text replacement itself.
-      expectTrackedElementsWithFixedMetadata(documentXml, ['ins', 'del']);
+    await then('document.xml contains tracked insertion, deletion, and run-property metadata', () => {
+      expectTrackedElementsWithFixedMetadata(documentXml, ['ins', 'del', 'rPrChange']);
       expect(elementsByName(documentXml, 'b').length).toBeGreaterThan(0);
+      const rPrChange = elementsByName(documentXml, 'rPrChange')[0]!;
+      expect(rPrChange.getElementsByTagNameNS(W_NS, 'rPr')).toHaveLength(1);
     });
   });
 
