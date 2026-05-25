@@ -347,10 +347,12 @@ function buildFailureSummary(
 const serializer = new XMLSerializer();
 
 /**
- * One story (a self-contained complex-field state machine per ECMA-376 Part 4):
- * the main document body, an individual footnote entry, or an individual
- * endnote entry. `label` is for diagnostics only; `xml` is the serialized
- * fragment that gets parsed and walked.
+ * One story (a self-contained complex-field state machine): the main document
+ * body, an individual footnote entry, or an individual endnote entry. `label`
+ * is for diagnostics only; `xml` is the serialized fragment that gets parsed
+ * and walked.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
  */
 export interface FieldStory {
   label: string;
@@ -360,9 +362,9 @@ export interface FieldStory {
 /**
  * Split a docx into per-story XML fragments for field-closure validation.
  *
- * ECMA-376 Part 4 treats each footnote/endnote entry as an isolated story:
- * a complex field whose `begin` and `end` markers straddle stories breaks
- * Word's field state machine. We therefore validate each `<w:footnote>` and
+ * Each footnote/endnote entry is treated as an isolated story: a complex
+ * field whose `begin` and `end` markers straddle stories breaks Word's
+ * field state machine. We therefore validate each `<w:footnote>` and
  * `<w:endnote>` entry independently rather than treating the whole
  * `footnotes.xml`/`endnotes.xml` as one stream.
  *
@@ -375,8 +377,10 @@ export interface FieldStory {
  * archives) yield redundant but harmless validation work.
  *
  * Header/footer stories are not yet covered — they require relationship
- * walking to enumerate `headerN.xml`/`footerN.xml` and are tracked in a
- * follow-up to issue #212.
+ * walking to enumerate `headerN.xml`/`footerN.xml`.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
+ * @see https://github.com/UseJunior/safe-docx/issues/212
  */
 export function splitStories(
   documentXml: string,
@@ -415,7 +419,7 @@ export function splitStories(
 /**
  * Validate field structure integrity across one or more document stories.
  *
- * Enforces three ECMA-376 Part 4 constraints on complex fields **per story**:
+ * Enforces three constraints on complex fields **per story**:
  *   1. `w:fldChar` begin/end count balance within the story.
  *   2. Every `w:instrText` AND `w:delInstrText` sits inside an open field body
  *      (between `begin` and `separate`). Orphaned instruction text renders as
@@ -431,18 +435,23 @@ export function splitStories(
  * Accepts either a single XML string (legacy single-story call) or an array of
  * `FieldStory` fragments. Stories are validated independently and short-circuit
  * on the first failure.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
  */
 /**
- * Targeted check for the ECMA-376 Part 4 conformance rule that's the focus of
- * issue #217: `w:fldChar` MUST NOT appear inside any `<w:del>` element. Word
- * treats this violation as fatal — the field state machine is discarded and
- * the field renders as literal-text fallback.
+ * Targeted check for one of the constraints above: `w:fldChar` MUST NOT appear
+ * inside any `<w:del>` element. Word treats this violation as fatal — the
+ * field state machine is discarded and the field renders as literal-text
+ * fallback.
  *
  * Used as a combined-output safety gate alongside the per-projection
  * `validateFieldStructure` checks. Kept narrower than the full structural
- * validation so that legacy non-#217-related shapes (e.g. `delInstrText`
- * inside `<w:moveFrom>`) don't trigger fallback when the inplace candidate
- * is otherwise sound on its accept/reject projections.
+ * validation so that legacy shapes (e.g. `delInstrText` inside `<w:moveFrom>`)
+ * don't trigger fallback when the inplace candidate is otherwise sound on its
+ * accept/reject projections.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
+ * @see https://github.com/UseJunior/safe-docx/issues/217
  */
 export function hasFldCharInsideDel(documentXml: string): boolean {
   const root = parseDocumentXml(documentXml);

@@ -1017,7 +1017,9 @@ export function insertDeletedRun(
  * Returns the last sibling element inserted, which the caller uses as the
  * next insertion anchor (preserving the contract of `insertDeletedRun`).
  *
- * Per ECMA-376 Part 4 § 17.16.5: `w:delInstrText` MUST appear inside `<w:del>`;
+ * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
+ *
+ * Rule: `w:delInstrText` MUST appear inside `<w:del>`;
  * by extension and by issue #217's deep-research conclusion, `w:fldChar` runs
  * stay at sibling level.
  */

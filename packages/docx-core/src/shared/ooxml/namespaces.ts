@@ -6,7 +6,10 @@
  * Central definitions for all WordprocessingML namespaces and qualified element names.
  * This ensures consistent namespace handling across all XML operations.
  *
- * Reference: ECMA-376 Office Open XML File Formats
+ * Normative source: the `targetNamespace` declarations on the vendored
+ * WordprocessingML schemas under `spec-compliance/`. The constants are not
+ * a section-bound conformance claim; they're a catalog. The section-bound
+ * surface lives at the repo-root path `spec-compliance/CONFORMANCE.md`.
  */
 
 // =============================================================================
