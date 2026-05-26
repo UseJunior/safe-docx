@@ -73,9 +73,13 @@ defines exactly these tags:
 | `implementationAlternativeRejected` | optional | 40-250 | Implementation alternatives considered and rejected |
 | `ecma376Difficulty` | optional | 40-250 | What makes this hard in ECMA-376 |
 
-The schema is the only place these strings and ranges live. The drafter,
-AST extractor, CI validator, corpus emitter, and any renderer import from
-it instead of copying constants.
+The schema is the only place these strings and ranges live. In-repo
+consumers (the drafter, AST extractor, CI validator, and corpus emitter)
+import from it directly. Cross-repo consumers (notably the downstream
+renderer that lives in another repository) consume the emitted
+`tests-corpus.schema.json` artifact instead — they do not import the
+TypeScript package. See D6c and the spec's "Corpus artifact is the
+renderer-facing contract" requirement.
 
 The rejected names `limitation`, `aiContext`, `compare`, `specQuirk`,
 `notCovered`, `prose`, `description`, and `discussion` are intentionally

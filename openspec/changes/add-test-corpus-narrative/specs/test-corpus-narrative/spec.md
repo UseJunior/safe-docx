@@ -59,22 +59,28 @@ accepted as aliases.
 
 ### Requirement: Narrative tags describe distinct rendering sections
 
-Each present optional narrative tag SHALL render as its own self-titled
-section using the title provided by the schema. The renderer MUST NOT
-group optional tag bodies under a generic "Discussion" section.
+Each narrative tag SHALL carry its own distinct section identifier and
+title from the schema, so the corpus emitter emits a separate entry in
+the `sections` array per present tag. The corpus emitter MUST NOT emit
+a generic `discussion` (or equivalent umbrella) section identifier that
+groups multiple tag bodies; the schema also MUST NOT define one. (Cross-
+repo renderers consume the resulting sections array — see the "Corpus
+artifact is the renderer-facing contract" requirement.)
 
-`motivatingProblem` SHALL describe the problem in the world that motivates
-the scenario, framed as a problem statement rather than a capability claim.
-`implementationLimitation` SHALL describe constraints of the code under
-test and bias toward underselling on rot. `testScopeExclusion` SHALL
-describe input shapes the test itself does not exercise, independent of
-whether the implementation handles them. `observedPerformance` SHALL
-describe applicable Big-O, memory complexity, observed runtime range, or
-scaling caveats without requiring every category. `potentialMisconception`
-SHALL include both the misconception and corrective claim in one block.
-`implementationAlternativeRejected` SHALL describe implementation designs
-considered and rejected, not test-design alternatives. `ecma376Difficulty`
-SHALL describe ECMA-376 idiosyncrasies that motivated the test.
+The schema's tag definitions SHALL constrain content as follows:
+`motivatingProblem` describes the problem in the world that motivates
+the scenario, framed as a problem statement rather than a capability
+claim. `implementationLimitation` describes constraints of the code
+under test and biases toward underselling on rot. `testScopeExclusion`
+describes input shapes the test itself does not exercise, independent
+of whether the implementation handles them. `observedPerformance`
+describes applicable Big-O, memory complexity, observed runtime range,
+or scaling caveats without requiring every category.
+`potentialMisconception` includes both the misconception and corrective
+claim in one block. `implementationAlternativeRejected` describes
+implementation designs considered and rejected, not test-design
+alternatives. `ecma376Difficulty` describes ECMA-376 idiosyncrasies that
+motivated the test.
 
 #### Scenario: optional tags render independently
 
@@ -351,10 +357,12 @@ identifiers in their canonical rendering order: `breadcrumb`,
 `specCitations`, `sourceLink`. Sections whose backing content is absent
 (e.g., the entry has no `@implementationLimitation` tag) SHALL be
 omitted from the array, not emitted with empty content. The schema
-SHALL document each section identifier's human-readable title. Renderers
-in any repository SHALL render the sections in array order; they SHALL
-NOT introduce a "Related scenarios" section as a structural element of
-the page.
+SHALL document each section identifier's human-readable title. The
+emitted `sections` array MUST NOT contain a `relatedScenarios`,
+`discussion`, or other umbrella identifier — the canonical list above is
+exhaustive. (Cross-repo renderers iterate the array in order and emit
+one slab per identifier; this proposal places no further normative
+requirement on those renderers because they live outside this repo.)
 
 #### Scenario: schema is checked in and CI fails on drift
 
