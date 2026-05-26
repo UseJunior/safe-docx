@@ -60,7 +60,9 @@
     "trust:check": "npm run check:trust-metrics",
     "generate:conformance-doc": "node scripts/generate_conformance_doc.mjs",
     "check:conformance-citations": "node scripts/check_conformance_citations.mjs",
-    "check:conformance-doc": "node scripts/check_conformance_doc.mjs"
+    "check:conformance-doc": "node scripts/check_conformance_doc.mjs",
+    "sync:readme": "node scripts/sync_readme_blocks.mjs",
+    "check:readme-sync": "node scripts/sync_readme_blocks.mjs --check"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.56.0",

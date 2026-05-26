@@ -1,19 +1,81 @@
-# Safe DOCX Suite
+# Word-Dokumente (.docx) mit Programmier-Agenten via MCP bearbeiten
 
+<!-- SYNC:badges BEGIN -->
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
 [![npm version](https://img.shields.io/npm/v/@usejunior/safe-docx)](https://www.npmjs.com/package/@usejunior/safe-docx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
 [![GitHub last commit](https://img.shields.io/github/last-commit/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/commits/main)
 [![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
+<!-- SYNC:badges END -->
 
+<!-- SYNC:lang-nav BEGIN -->
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
+<!-- SYNC:lang-nav END -->
 
 > **Übersetzungshinweis:** Die englische Version `README.md` ist die kanonische Quelle der Wahrheit. Diese Übersetzung kann einen kurzen Rückstand haben. Wesentliche Aktualisierungen des englischen READMEs sollten innerhalb von 72 Stunden in diese Datei übernommen werden.
 
-**safe-docx** von [UseJunior](https://usejunior.com) — nutze Programmier-Agenten auch für Papierkram.
+<!-- SYNC:architecture-diagram BEGIN -->
+```mermaid
+%%{init: {"flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 30, "rankSpacing": 50}, "themeVariables": {"fontSize": "14px"}} }%%
+flowchart LR
+    DocInLeft["<b>Existing .docx</b><br/>on disk"]
 
-Teil der [UseJunior-Entwicklertools](https://usejunior.com/developer-tools/safe-docx).
+    subgraph Server["@usejunior/safe-docx — local MCP server"]
+        direction LR
+
+        subgraph ReadParse["<b>1. Read</b>"]
+            direction TB
+            RPTool["<code>read_file(file_path,<br/>&nbsp;&nbsp;format)</code>"]
+        end
+
+        subgraph Locate["<b>2. Locate</b>"]
+            direction TB
+            LocTool["<code>grep(file_path,<br/>&nbsp;&nbsp;pattern)</code>"]
+        end
+
+        subgraph Edit["<b>3. Edit</b>"]
+            direction TB
+            EditTool["<code>replace_text(<br/>&nbsp;&nbsp;target_paragraph_id,<br/>&nbsp;&nbsp;old_string, new_string,<br/>&nbsp;&nbsp;instruction)</code>"]
+        end
+
+        subgraph Save["<b>4. Save</b>"]
+            direction TB
+            SaveTool["<code>save(save_to_local_path,<br/>&nbsp;&nbsp;save_format)</code>"]
+        end
+
+        ReadParse --> Locate
+        Locate --> Edit
+        Edit --> Save
+    end
+
+    DocInRight["<b>Saved .docx output</b><br/>on disk"]
+
+    subgraph Client [" "]
+        direction TB
+        Prompt["<b>Prompt</b><br/>'Change NDA governing law to Delaware'"]
+        Agent["<b>Coding agent / MCP client</b><br/>Claude Code · Cursor · Gemini CLI"]
+        Prompt --> Agent
+    end
+
+    DocInLeft --> RPTool
+    SaveTool --> DocInRight
+    Agent <-->|tool call / tool result| Server
+
+    classDef io fill:#f5f5f5,stroke:#888,color:#222
+    classDef server fill:#eff6ff,stroke:#3b82f6,color:#1e3a8a
+    classDef stage fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+    classDef tools fill:#ecfdf5,stroke:#10b981,color:#064e3b
+    classDef ext fill:#ddd6fe,stroke:#7c3aed,color:#3b0764
+    classDef hidden fill:none,stroke:none
+    class DocInLeft,DocInRight io
+    class Server server
+    class ReadParse,Locate,Edit,Save stage
+    class RPTool,LocTool,EditTool,SaveTool tools
+    class Prompt,Agent ext
+    class Client hidden
+```
+<!-- SYNC:architecture-diagram END -->
 
 Safe Docx ist ein Open-Source-TypeScript-Stack für die chirurgische Bearbeitung bestehender Microsoft Word `.docx`-Dateien. Es wurde für Workflows entwickelt, in denen ein Agent Änderungen vorschlägt und ein Mensch weiterhin zuverlässige, formatierungserhaltende Dokumentenbearbeitungen benötigt.
 
@@ -235,7 +297,6 @@ npm run coverage:matrix
 ## Siehe auch
 
 - [Open Agreements](https://github.com/open-agreements/open-agreements) — Standardmäßige Rechtsvorlagen mit Programmier-Agenten ausfüllen (NDAs, SAFEs, NVCA)
-- [UseJunior-Entwicklertools](https://usejunior.com/developer-tools/safe-docx) — Produktseite mit Installationsoptionen und Tool-Katalog
 
 ## Datenschutz
 

@@ -1,19 +1,81 @@
-# Safe DOCX Suite
+# 使用编程代理通过 MCP 编辑 Word 文档 (.docx)
 
+<!-- SYNC:badges BEGIN -->
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
 [![npm version](https://img.shields.io/npm/v/@usejunior/safe-docx)](https://www.npmjs.com/package/@usejunior/safe-docx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
 [![GitHub last commit](https://img.shields.io/github/last-commit/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/commits/main)
 [![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
+<!-- SYNC:badges END -->
 
+<!-- SYNC:lang-nav BEGIN -->
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
+<!-- SYNC:lang-nav END -->
 
 > **翻译说明：** 英文版 `README.md` 是规范的事实来源。此翻译可能会有短暂滞后。英文 README 的重大更新应在 72 小时内同步到本文件。
 
-**safe-docx** 由 [UseJunior](https://usejunior.com) 开发 — 让编程代理也能处理文书工作。
+<!-- SYNC:architecture-diagram BEGIN -->
+```mermaid
+%%{init: {"flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 30, "rankSpacing": 50}, "themeVariables": {"fontSize": "14px"}} }%%
+flowchart LR
+    DocInLeft["<b>Existing .docx</b><br/>on disk"]
 
-隶属于 [UseJunior 开发者工具](https://usejunior.com/developer-tools/safe-docx)。
+    subgraph Server["@usejunior/safe-docx — local MCP server"]
+        direction LR
+
+        subgraph ReadParse["<b>1. Read</b>"]
+            direction TB
+            RPTool["<code>read_file(file_path,<br/>&nbsp;&nbsp;format)</code>"]
+        end
+
+        subgraph Locate["<b>2. Locate</b>"]
+            direction TB
+            LocTool["<code>grep(file_path,<br/>&nbsp;&nbsp;pattern)</code>"]
+        end
+
+        subgraph Edit["<b>3. Edit</b>"]
+            direction TB
+            EditTool["<code>replace_text(<br/>&nbsp;&nbsp;target_paragraph_id,<br/>&nbsp;&nbsp;old_string, new_string,<br/>&nbsp;&nbsp;instruction)</code>"]
+        end
+
+        subgraph Save["<b>4. Save</b>"]
+            direction TB
+            SaveTool["<code>save(save_to_local_path,<br/>&nbsp;&nbsp;save_format)</code>"]
+        end
+
+        ReadParse --> Locate
+        Locate --> Edit
+        Edit --> Save
+    end
+
+    DocInRight["<b>Saved .docx output</b><br/>on disk"]
+
+    subgraph Client [" "]
+        direction TB
+        Prompt["<b>Prompt</b><br/>'Change NDA governing law to Delaware'"]
+        Agent["<b>Coding agent / MCP client</b><br/>Claude Code · Cursor · Gemini CLI"]
+        Prompt --> Agent
+    end
+
+    DocInLeft --> RPTool
+    SaveTool --> DocInRight
+    Agent <-->|tool call / tool result| Server
+
+    classDef io fill:#f5f5f5,stroke:#888,color:#222
+    classDef server fill:#eff6ff,stroke:#3b82f6,color:#1e3a8a
+    classDef stage fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+    classDef tools fill:#ecfdf5,stroke:#10b981,color:#064e3b
+    classDef ext fill:#ddd6fe,stroke:#7c3aed,color:#3b0764
+    classDef hidden fill:none,stroke:none
+    class DocInLeft,DocInRight io
+    class Server server
+    class ReadParse,Locate,Edit,Save stage
+    class RPTool,LocTool,EditTool,SaveTool tools
+    class Prompt,Agent ext
+    class Client hidden
+```
+<!-- SYNC:architecture-diagram END -->
 
 Safe Docx 是一套开源 TypeScript 技术栈，用于对现有 Microsoft Word `.docx` 文件进行精确编辑。它专为代理提出更改建议、人工仍需可靠且保留格式的文档编辑场景而构建。
 
@@ -232,7 +294,6 @@ npm run coverage:matrix
 ## 另请参阅
 
 - [Open Agreements](https://github.com/open-agreements/open-agreements) — 使用编程代理填写标准法律模板（NDA、SAFE、NVCA）
-- [UseJunior 开发者工具](https://usejunior.com/developer-tools/safe-docx) — 产品页面，包含安装选项和工具目录
 
 ## 隐私
 
