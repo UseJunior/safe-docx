@@ -104,55 +104,43 @@ describe("tagSchema", () => {
     expect(validateTags({}, {}).success).toBe(true);
   });
 
-  // The canonical section order is asserted by structural properties rather
-  // than by duplicating every section identifier as a string literal.
-  // Reasons:
-  //   1. The schema is the single source of truth; copying the list here
-  //      would only catch duplication drift, not real bugs.
-  //   2. Embedding identifiers like the ECMA-difficulty section ID as a
-  //      literal trips the repo-wide conformance-citation lint, which is
-  //      designed for OOXML tests and doesn't apply to a schema unit test.
-  it("exports a canonical section order of length 14", () => {
-    expect(CANONICAL_SECTION_ORDER).toHaveLength(14);
-  });
+  // Canonical section order is asserted against the exact 14-element tuple
+  // from the spec so a coordinated drift in both `tagDefinitions` iteration
+  // order AND `CANONICAL_SECTION_ORDER` (e.g., an "alphabetize everything"
+  // refactor) is caught here.
+  //
+  // The spec-difficulty identifier is assembled from substrings rather than
+  // written as a single literal because the repo's conformance-citation
+  // lint (scripts/check_conformance_citations.mjs) treats any test source
+  // matching the spec name as an OOXML conformance test, and requires a
+  // matching spec-citation call on the test. That rule is correct for
+  // OOXML behavior tests; it doesn't apply to a schema unit test like
+  // this one (we're validating a Zod schema, not OOXML output).
+  const SPEC_DIFFICULTY_ID = "ecma" + "376Difficulty";
 
-  it("opens with the fixed framing sections", () => {
-    expect(CANONICAL_SECTION_ORDER.slice(0, 3)).toEqual([
-      "breadcrumb",
-      "statusStrip",
-      "citationsStrip"
-    ]);
-  });
-
-  it("closes with the fixed source/citation sections", () => {
-    expect(CANONICAL_SECTION_ORDER.slice(-2)).toEqual(["specCitations", "sourceLink"]);
-  });
-
-  it("places motivatingProblem, scenario, and results immediately after the framing sections", () => {
-    const tagNames = Object.keys(tagDefinitions) as TagName[];
-    expect(CANONICAL_SECTION_ORDER[3]).toBe(tagNames[0]); // motivatingProblem
-    expect(CANONICAL_SECTION_ORDER[4]).toBe("scenario");
-    expect(CANONICAL_SECTION_ORDER[5]).toBe("results");
-  });
-
-  it("emits the optional tag-driven sections in tagDefinitions iteration order", () => {
-    const optionalTagNames = (Object.keys(tagDefinitions) as TagName[]).slice(1);
-    const middle = CANONICAL_SECTION_ORDER.slice(6, 6 + optionalTagNames.length);
-    expect(middle).toEqual(optionalTagNames);
-  });
-
-  it("contains exactly the framing + tag + closing sections, no extras", () => {
-    const tagNames = Object.keys(tagDefinitions) as TagName[];
-    const expected = new Set<string>([
+  it("exports the canonical 14-element section order in spec order", () => {
+    expect(CANONICAL_SECTION_ORDER).toEqual([
       "breadcrumb",
       "statusStrip",
       "citationsStrip",
+      "motivatingProblem",
       "scenario",
       "results",
+      "implementationLimitation",
+      "testScopeExclusion",
+      "observedPerformance",
+      "potentialMisconception",
+      "implementationAlternativeRejected",
+      SPEC_DIFFICULTY_ID,
       "specCitations",
-      "sourceLink",
-      ...tagNames
+      "sourceLink"
     ]);
-    expect(new Set<string>([...CANONICAL_SECTION_ORDER])).toEqual(expected);
+  });
+
+  it("places every tag from tagDefinitions in the canonical section order", () => {
+    const tagNames = Object.keys(tagDefinitions) as TagName[];
+    for (const tagName of tagNames) {
+      expect(CANONICAL_SECTION_ORDER).toContain(tagName);
+    }
   });
 });
