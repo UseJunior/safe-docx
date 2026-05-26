@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from '@typescript-eslint/parser';
 import { XMLParser } from 'fast-xml-parser';
+import { loadRegistry } from './lib/conformance-registry.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY_DIR = path.join(REPO_ROOT, 'spec-compliance', 'registry');
@@ -58,76 +59,6 @@ function* walkFiles(dir, predicate) {
       yield full;
     }
   }
-}
-
-function parseRegistryFile(file) {
-  const text = fs.readFileSync(file, 'utf8');
-  const lines = text.split('\n');
-  const entries = [];
-  const nonGoals = [];
-  let current = null;
-  let inYaml = false;
-  let yamlBuf = [];
-  let section = 'targets';
-  let lineNo = 0;
-  for (const raw of lines) {
-    lineNo += 1;
-    if (raw.startsWith('## Non-Goals')) {
-      if (current) finalize();
-      section = 'non-goals';
-      continue;
-    }
-    const heading = raw.match(/^##\s+\[([A-Z][A-Z0-9-]+)\]\s+(.+)$/);
-    if (heading) {
-      if (current) finalize();
-      current = { id: heading[1], title: heading[2], line: lineNo, file, section, meta: {}, prose: [] };
-      continue;
-    }
-    if (!current) continue;
-    if (raw.startsWith('```yaml')) { inYaml = true; yamlBuf = []; continue; }
-    if (raw.startsWith('```') && inYaml) {
-      inYaml = false;
-      for (const ymlLine of yamlBuf) {
-        const m = ymlLine.match(/^(\w+):\s*(.*)$/);
-        if (m) {
-          let val = m[2].trim();
-          if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
-          current.meta[m[1]] = val;
-        }
-      }
-      yamlBuf = [];
-      continue;
-    }
-    if (inYaml) { yamlBuf.push(raw); continue; }
-    current.prose.push(raw);
-  }
-  if (current) finalize();
-
-  function finalize() {
-    if (current.section === 'non-goals') nonGoals.push(current);
-    else entries.push(current);
-    current = null;
-  }
-  return { entries, nonGoals };
-}
-
-function loadRegistry() {
-  const result = { targets: new Map(), nonGoals: new Map(), entries: [] };
-  for (const file of walkFiles(REGISTRY_DIR, (f) => f.endsWith('.md'))) {
-    const { entries, nonGoals } = parseRegistryFile(file);
-    for (const e of entries) {
-      if (result.targets.has(e.id)) {
-        err(file, e.line, `Duplicate registry ID ${e.id}`);
-        continue;
-      }
-      result.targets.set(e.id, e);
-      result.entries.push(e);
-    }
-    for (const e of nonGoals) {
-      result.nonGoals.set(e.id, e);
-    }
-  }
-  return result;
 }
 
 // Explicit spec → registry-ID-family map. Regex-stripping `-\d+$` from spec
@@ -363,6 +294,9 @@ function lintTestFile(file, registry) {
 
 function main() {
   const registry = loadRegistry();
+  for (const e of registry.errors ?? []) {
+    err(e.file, e.line, e.message);
+  }
   if (registry.entries.length === 0) {
     err(REGISTRY_DIR, 1, 'No registry entries found under spec-compliance/registry/. Add at least one before this lint can be useful.');
   }
