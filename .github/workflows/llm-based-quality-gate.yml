@@ -1,0 +1,354 @@
+name: LLM-Based Quality Gate
+
+on:
+  pull_request:
+    # `labeled` and `unlabeled` are included so that adding/removing the
+    # `llm-gate/override` label after a failed gate run re-triggers the
+    # workflow and clears the failing check without requiring a push. The
+    # job-level `if:` below filters out unrelated label changes so we don't
+    # re-run the costly matrix on every label add.
+    types: [opened, ready_for_review, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to re-run the gate against.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr_number }}'
+  cancel-in-progress: true
+
+env:
+  # Pin both the CLI and the model so behavior is reproducible. Bump
+  # via `gh variable set` without editing this file:
+  #   gh variable set LLM_GATE_CLI_VERSION --body 0.40.0
+  #   gh variable set LLM_GATE_MODEL --body gemini-3.5-flash
+  #   gh variable set LLM_GATE_MAX_PARALLEL --body 3
+  #   gh variable set LLM_GATE_BLOCKING --body 1
+  GEMINI_CLI_VERSION: ${{ vars.LLM_GATE_CLI_VERSION || '0.39.1' }}
+  GEMINI_MODEL: ${{ vars.LLM_GATE_MODEL || 'gemini-3.5-flash' }}
+  LLM_GATE_BLOCKING: ${{ vars.LLM_GATE_BLOCKING || '0' }}
+  # Estimated cost per 1M tokens — used only to compute a ballpark figure
+  # for the PR-comment footer. Override per-repo via repo variables if
+  # pricing drifts.
+  LLM_GATE_PRICE_PER_M_INPUT: ${{ vars.LLM_GATE_PRICE_PER_M_INPUT || '0.30' }}
+  LLM_GATE_PRICE_PER_M_OUTPUT: ${{ vars.LLM_GATE_PRICE_PER_M_OUTPUT || '2.50' }}
+
+jobs:
+  parse-checklist:
+    name: Parse checklist
+    # Skip on label changes that aren't the override label (otherwise we'd
+    # re-run the whole 14-check matrix every time someone adds a
+    # `priority/*` or `area/*` label). For `labeled`/`unlabeled` events the
+    # gate only re-runs when the label change is `llm-gate/override`.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.draft == false &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        (
+          (github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+          github.event.label.name == 'llm-gate/override'
+        )
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      matrix: ${{ steps.parse.outputs.matrix }}
+      count: ${{ steps.parse.outputs.count }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      base_ref: ${{ steps.pr.outputs.base_ref }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      labels: ${{ steps.pr.outputs.labels }}
+    steps:
+      - name: Resolve PR context
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            gh pr view "$DISPATCH_PR_NUMBER" --json headRefOid,headRefName,baseRefName,labels,headRepository,headRepositoryOwner > "$RUNNER_TEMP/pr.json"
+            # SECURITY: the job-level `if:` permits workflow_dispatch
+            # unconditionally; the same-repo gate (`head.repo.full_name ==
+            # github.repository`) is only enforced for pull_request events. Without
+            # this check, a maintainer dispatching the gate against a fork PR's
+            # head SHA would check out fork-controlled content with
+            # GEMINI_API_KEY in env. Fail closed if head repo != this repo.
+            HEAD_REPO=$(jq -r '.headRepositoryOwner.login + "/" + .headRepository.name' "$RUNNER_TEMP/pr.json")
+            if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+              echo "::error::workflow_dispatch attempted on PR #${DISPATCH_PR_NUMBER} from ${HEAD_REPO} (expected ${GITHUB_REPOSITORY}). The gate only runs on same-repo PRs; refusing to expose GEMINI_API_KEY to fork-controlled content."
+              exit 1
+            fi
+            {
+              echo "pr_number=$DISPATCH_PR_NUMBER"
+              echo "head_sha=$(jq -r '.headRefOid' "$RUNNER_TEMP/pr.json")"
+              echo "head_ref=$(jq -r '.headRefName' "$RUNNER_TEMP/pr.json")"
+              echo "base_ref=$(jq -r '.baseRefName' "$RUNNER_TEMP/pr.json")"
+              echo "labels=$(jq -c '[.labels[].name]' "$RUNNER_TEMP/pr.json")"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "pr_number=$PR_NUMBER"
+              echo "head_sha=$PR_HEAD_SHA"
+              echo "head_ref=$PR_HEAD_REF"
+              echo "base_ref=$PR_BASE_REF"
+              echo "labels=$PR_LABELS"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      # SECURITY: parse the checklist from the trusted base ref, not from the
+      # PR head. Reading `.github/llm-based-quality-gate/checklist.md` from
+      # PR-controlled content would let a PR empty the file (matrix=0 items,
+      # gate trivially "passes") or replace items with innocuous questions
+      # that bypass the real checks.
+      - name: Checkout gate source (trusted base ref)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ steps.pr.outputs.base_ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Parse checklist.md → matrix JSON
+        id: parse
+        run: |
+          set -euo pipefail
+          node <<'NODE' > "$RUNNER_TEMP/matrix.json"
+          const fs = require('fs');
+          const path = '.github/llm-based-quality-gate/checklist.md';
+          const text = fs.readFileSync(path, 'utf8');
+          const include = text.split(/\r?\n/)
+            .flatMap(line => {
+              const m = line.match(/^- \[ \] (.+)$/);
+              return m ? [m[1].trim()] : [];
+            })
+            .map((question, index) => ({
+              id: String(index + 1).padStart(2, '0'),
+              question,
+            }));
+          process.stdout.write(JSON.stringify({ include }));
+          NODE
+          jq -e . "$RUNNER_TEMP/matrix.json" >/dev/null
+          {
+            echo "matrix=$(cat "$RUNNER_TEMP/matrix.json")"
+            echo "count=$(jq '.include | length' "$RUNNER_TEMP/matrix.json")"
+          } >> "$GITHUB_OUTPUT"
+          echo "Parsed $(jq '.include | length' "$RUNNER_TEMP/matrix.json") checklist item(s)"
+          jq -r '.include[] | "- " + .id + ": " + .question' "$RUNNER_TEMP/matrix.json"
+
+  run-check:
+    name: Check ${{ matrix.id }} — ${{ matrix.question }}
+    needs: parse-checklist
+    if: ${{ needs.parse-checklist.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(vars.LLM_GATE_MAX_PARALLEL || '2') }}
+      matrix: ${{ fromJSON(needs.parse-checklist.outputs.matrix) }}
+    steps:
+      # SECURITY: always check out the PR's resolved base ref (trusted),
+      # regardless of event type. For workflow_dispatch the maintainer could
+      # otherwise run the dispatch from a PR branch via the Actions UI, which
+      # would pull the composite action and system-prompt.md from PR-controlled
+      # content. Using base_ref ensures the gate source is always the version
+      # the PR is being merged into.
+      - name: Checkout gate source (trusted base ref)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.parse-checklist.outputs.base_ref }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Checkout PR head
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.parse-checklist.outputs.head_sha }}
+          path: review
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Extract PR diff
+        working-directory: review
+        run: |
+          set -euo pipefail
+          git diff "origin/${{ needs.parse-checklist.outputs.base_ref }}...HEAD" > pr_diff.patch
+          wc -l pr_diff.patch
+
+      - name: Run LLM gate check
+        uses: ./.github/actions/llm-gate-check
+        with:
+          check-id: ${{ matrix.id }}
+          question: ${{ matrix.question }}
+          gemini-cli-version: ${{ env.GEMINI_CLI_VERSION }}
+          gemini-model: ${{ env.GEMINI_MODEL }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          price-per-m-input: ${{ env.LLM_GATE_PRICE_PER_M_INPUT }}
+          price-per-m-output: ${{ env.LLM_GATE_PRICE_PER_M_OUTPUT }}
+          working-directory: review
+
+      - name: Upload per-item result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: result-${{ matrix.id }}
+          path: review/results/result-${{ matrix.id }}.json
+          retention-days: 30
+
+  aggregate:
+    name: Aggregate and post review
+    needs: [parse-checklist, run-check]
+    # `always()` keeps the aggregate running even when individual matrix
+    # `run-check` jobs fail (we still want the comment). But `always()`
+    # bypasses the normal skipped-needs cascade, so we must explicitly
+    # require parse-checklist to have succeeded — otherwise an unrelated
+    # label-change event (where parse-checklist is skipped via its own
+    # `if:`) would still start the aggregate job with empty outputs.
+    if: ${{ always() && needs.parse-checklist.result == 'success' && needs.parse-checklist.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download all per-item results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: results
+          pattern: result-*
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: ls -la results/ || echo "no results downloaded"
+
+      - name: Compose and post checklist comment
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          MODEL: ${{ env.GEMINI_MODEL }}
+          LLM_GATE_BLOCKING: ${{ env.LLM_GATE_BLOCKING }}
+          PR_NUMBER: ${{ needs.parse-checklist.outputs.pr_number }}
+          PR_LABELS: ${{ needs.parse-checklist.outputs.labels }}
+          EVENT_NAME: ${{ github.event_name }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const dir = 'results';
+            const files = fs.existsSync(dir)
+              ? fs.readdirSync(dir).filter(f => /^result-\d+\.json$/.test(f)).sort()
+              : [];
+            const rows = files.map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
+
+            const icon = (status) => status === 'PASS' ? '✅' : (status === 'WARN' ? '⚠️' : '❓');
+            const escapePipes = (s) => String(s || '').replaceAll('|', '\\|').replaceAll('\n', ' ');
+
+            // Extract a short title from the bold lead phrase: `**Title**: …` -> `Title`.
+            // Falls back to the first 60 chars of the question if the bold lead is absent.
+            const titleOf = (question) => {
+              const m = String(question || '').match(/^\*\*([^*]+)\*\*/);
+              if (m) return m[1].trim();
+              const q = String(question || '').replace(/\s+/g, ' ').trim();
+              return q.length > 60 ? q.slice(0, 57) + '…' : q;
+            };
+
+            const totalUsd = rows.reduce((acc, r) => acc + parseFloat(r.estimated_usd || '0'), 0);
+            const totalIn = rows.reduce((acc, r) => acc + (r.estimated_input_tokens || 0), 0);
+            const totalOut = rows.reduce((acc, r) => acc + (r.estimated_output_tokens || 0), 0);
+            const totalAttempts = rows.reduce((acc, r) => acc + (r.attempts || 1), 0);
+            const warns = rows.filter(r => r.status === 'WARN').length;
+            const passes = rows.filter(r => r.status === 'PASS').length;
+            const overall = warns > 0 ? '⚠️ WARN' : (passes > 0 ? '✅ PASS' : '❓ NO RESULTS');
+            const labels = JSON.parse(process.env.PR_LABELS || '[]');
+            const overrideActive = labels.includes('llm-gate/override');
+
+            const header = '## LLM-Based Quality Gate';
+            const overrideBanner = overrideActive
+              ? '\n\n> ⚠️ **Override active** — `llm-gate/override` label is set; this gate\'s WARN findings are non-blocking on this PR.\n'
+              : '';
+            const summary = `**Overall:** ${overall} (${passes} pass · ${warns} warn · ${rows.length} total)`;
+
+            let table;
+            if (rows.length === 0) {
+              table = '_No results were produced. Check the workflow run for errors._';
+            } else {
+              table = [
+                '| | Check | Verdict |',
+                '|---|---|---|',
+                ...rows.map(r => `| ${icon(r.status)} | **${escapePipes(titleOf(r.question))}** | ${escapePipes(r.justification)} |`),
+              ].join('\n');
+            }
+
+            // Full questions in a collapsible block (so the table stays scannable).
+            const fullQuestions = rows.length === 0
+              ? ''
+              : '\n\n<details><summary>Full checklist questions</summary>\n\n' +
+                rows.map(r => `${r.id}. ${r.question}`).join('\n\n') +
+                '\n\n</details>';
+
+            const model = process.env.MODEL || 'unknown';
+            const retryNote = totalAttempts > rows.length
+              ? ` · ${totalAttempts - rows.length} retry attempts`
+              : '';
+            const costLine = `_Estimated cost (this run): **$${totalUsd.toFixed(4)}** — ${totalIn.toLocaleString()} input + ${totalOut.toLocaleString()} output tokens (≈4 chars/token) on \`${model}\`${retryNote}. Char-count estimate, not provider telemetry._`;
+
+            const body = `${header}${overrideBanner}\n\n${summary}\n\n${table}${fullQuestions}\n\n${costLine}`;
+            const issue_number = Number(process.env.PR_NUMBER);
+
+            if (process.env.EVENT_NAME === 'workflow_dispatch') {
+              const marker = '## LLM-Based Quality Gate';
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                per_page: 100,
+              });
+              const existing = comments
+                .filter(comment => comment.user?.type === 'Bot' && comment.body?.startsWith(marker))
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number,
+                  body,
+                });
+              }
+            } else {
+              // Append a new comment on every PR-triggered run — preserves an
+              // audit trail of how the gate's verdicts evolved across PR revisions.
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body,
+              });
+            }
+
+            // Also surface the same content in the Actions UI summary.
+            await core.summary.addRaw(body).write();
+
+            const blockingMode = process.env.LLM_GATE_BLOCKING === '1';
+            if (blockingMode && warns > 0 && !overrideActive) {
+              core.setFailed(`LLM-Based Quality Gate found ${warns} WARN row(s). Add the \`llm-gate/override\` label to bypass (with justification in a PR comment).`);
+            }

@@ -90,6 +90,39 @@ Pull request titles follow the same Conventional Commits format as commit messag
 
 All checks must pass locally before pushing.
 
+## LLM-Based Quality Gate
+
+`safe-docx` runs an LLM-based pull-request reviewer in addition to the mechanical CI suite. The gate uses Gemini to read your PR diff and answer a fixed checklist of safe-docx-specific questions (OOXML invariants, tracked-changes correctness, side-part sweeps, paired-artifact updates). It is **advisory** during Phase 1 — it posts a comment with a verdict table but never blocks merge.
+
+### What you'll see
+
+When you open a PR (or mark a draft ready for review), the `LLM-Based Quality Gate` workflow fires and adds a comment within a few minutes. The comment summarizes each checklist item as PASS or WARN, with one-to-two-sentence justifications and file citations.
+
+Most checklist questions begin with `If this PR touches X...`. If your diff doesn't touch the area, the model returns PASS with a one-line note. Items whose preconditions match your diff get a real review.
+
+### Manual re-run
+
+If you fix something raised by a WARN and want to re-run the gate without pushing a new commit, dispatch the workflow manually:
+
+- **Actions → LLM-Based Quality Gate → Run workflow → enter the PR number**
+
+This updates the existing comment rather than appending a new one.
+
+### Override label (Phase 2+)
+
+Once the gate moves to blocking mode, applying the `llm-gate/override` label to a PR causes WARN findings to be non-blocking on that PR. Add a comment explaining why you're overriding. The label is for cases where the reviewer mis-applied a checklist item or the maintainer has decided the WARN is acceptable.
+
+### Adding or editing checklist items
+
+Checklist items live in `.github/llm-based-quality-gate/checklist.md`. Each `- [ ] <question>` line becomes one independent Gemini call. The workflow parses this file from the PR's base ref at runtime, so:
+
+- You **cannot** weaken the checklist by editing it in a PR — the gate uses the base-ref version of the file.
+- To add or refine an item, open a separate PR against `main`. The new item takes effect on subsequent PRs.
+
+The system prompt (`.github/llm-based-quality-gate/system-prompt.md`) and composite action (`.github/actions/llm-gate-check/action.yml`) are read from the same trusted base-ref checkout, for the same reason.
+
+If you change a fundamental OOXML invariant or repo orientation listed in `system-prompt.md` (the "OOXML invariants" or "Repo orientation" sections), update the prompt in the same PR — otherwise the model will reason against a stale picture of the codebase.
+
 ## License
 
 By contributing, you agree your contributions are licensed under the MIT License.
