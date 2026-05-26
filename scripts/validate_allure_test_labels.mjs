@@ -9,6 +9,10 @@ const TEST_PATH_RE = /^packages\/[^/]+\/(src|test)\/.+\.test\.ts$/;
 const ALLURE_EXEMPT_PACKAGES = new Set(['google-docs-core']);
 
 const helperImportRe = /from\s+['"][^'"]*allure-test\.(?:js|ts)['"]/;
+// The allure-test-factory package is the source of the shared helpers; its
+// self-tests construct the wrappers in-process via createAllureTestHelpers,
+// so they satisfy the "use the shared wrappers" rule without an import.
+const factoryConstructorRe = /\bcreateAllureTestHelpers\s*\(/;
 const wrapperReferenceRe = /\b(itAllure|testAllure)\b/;
 const epicWrapperAssignmentRe =
   /(?:const|let|var)\s+\w+\s*=\s*(?:itAllure|testAllure)\.(?:epic\(\s*['"`][^'"`]+['"`]\s*\)|withLabels\(\s*\{[\s\S]*?\bepic\s*:)/m;
@@ -119,14 +123,26 @@ function findSlugFeatureLiteralValues(body) {
 
   return [...values].sort();
 }
+// Strip string-literal contents (backticks, single, double) so that
+// regex-based checks below don't false-positive on fixture source code
+// embedded as strings — e.g., AST-extractor tests that pass synthetic
+// `.openspec(...)` snippets as template-literal inputs.
+function stripStringLiterals(body) {
+  return body
+    .replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``')
+    .replace(/'(?:\\.|[^'\\\n])*'/g, "''")
+    .replace(/"(?:\\.|[^"\\\n])*"/g, '""');
+}
+
 function validateFile(relativePath) {
   const absolutePath = join(ROOT, relativePath);
   const body = readFileSync(absolutePath, 'utf-8');
+  const codeOnlyBody = stripStringLiterals(body);
   const errors = [];
   const isAllureFile = relativePath.endsWith('.allure.test.ts');
-  const isOpenSpecTraceabilityFile = /\.openspec\(/.test(body);
+  const isOpenSpecTraceabilityFile = /\.openspec\(/.test(codeOnlyBody);
 
-  if (!helperImportRe.test(body)) {
+  if (!helperImportRe.test(body) && !factoryConstructorRe.test(body)) {
     errors.push('must import the shared Allure helper (`allure-test`).');
   }
 
