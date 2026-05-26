@@ -7,9 +7,12 @@
 The repository SHALL define a Zod-backed narrative schema in
 `packages/test-narrative/` that is the only source of truth for narrative
 JSDoc tag names, required-vs-optional rules, word-count ranges, and
-rendered section titles. The drafter prompt, AST extractor, CI validator,
-corpus emitter, and downstream renderers MUST import those definitions
-instead of duplicating constants.
+rendered section titles. The in-repo drafter prompt, AST extractor, CI
+validator, and corpus emitter MUST import those definitions instead of
+duplicating constants. Downstream renderers in other repositories MUST
+consume the emitted `tests-corpus.schema.json` artifact (see Requirement:
+Corpus artifact is the renderer-facing contract) rather than importing
+the TypeScript package directly.
 
 The schema SHALL define these tags and no aliases:
 
@@ -98,6 +101,15 @@ new runtime metadata for test narrative; narrative content MUST remain in
 JSDoc above the `test.openspec(...)(...)` call and MUST NOT be passed
 through a runtime narrative API.
 
+When `visibility` is `'public'`, the Allure runtime SHALL emit it as a
+label with name `corpusVisibility` and value `public` on each test
+result. When `visibility` is `'internal'` or omitted, the Allure runtime
+SHALL NOT emit a `corpusVisibility` label; the corpus builder normalizes
+the absent value to `internal`. The label name `corpusVisibility` is the
+hard contract — corpus builders, downstream tooling, and future renderers
+key off it; the alternate name `visibility` MUST NOT be used because it
+collides with the conventional Allure label namespace.
+
 #### Scenario: omitted visibility defaults internal
 
 - **GIVEN** a test whose Allure defaults omit `visibility`
@@ -115,21 +127,37 @@ through a runtime narrative API.
 
 - **GIVEN** a public test with narrative JSDoc
 - **WHEN** the test calls `test.openspec(...)(...)`
-- **THEN** the runtime Allure metadata SHALL include visibility but SHALL
-  NOT include the narrative tag bodies
+- **THEN** the runtime Allure metadata SHALL include the
+  `corpusVisibility` label but SHALL NOT include the narrative tag bodies
 
-### Requirement: Structural tests remain internal
+#### Scenario: public visibility emits stable Allure label
 
-The system SHALL keep tests whose value is purely structural and has no
-natural problem-in-the-world narrative at `visibility: 'internal'`.
-The system MUST NOT provide an escape hatch that allows a public test to
-omit `@motivatingProblem`.
+- **GIVEN** a test with `visibility: 'public'`
+- **WHEN** the Allure runtime emits the test result JSON
+- **THEN** the result's `labels` array SHALL include an entry with
+  `name: 'corpusVisibility'` and `value: 'public'`
 
-#### Scenario: parser empty-input guard stays internal
+#### Scenario: internal visibility omits the label
 
-- **GIVEN** a parser test that only verifies empty input does not crash
-- **WHEN** no meaningful public `@motivatingProblem` can be written
-- **THEN** the test SHALL remain `visibility: 'internal'`
+- **GIVEN** a test with `visibility: 'internal'` or with `visibility`
+  omitted
+- **WHEN** the Allure runtime emits the test result JSON
+- **THEN** the result's `labels` array SHALL NOT include any entry whose
+  `name` is `corpusVisibility`
+- **AND** the corpus builder SHALL classify the test as `internal` when
+  it consumes the result
+
+### Requirement: No public escape hatch for missing narrative
+
+The system MUST NOT provide an escape hatch that allows a `visibility:
+'public'` test to omit `@motivatingProblem`. No alternate tag, label, or
+flag (for example, a hypothetical `@structuralGuarantee` tag) SHALL
+satisfy the public-narrative requirement in place of `@motivatingProblem`.
+
+Authoring policy (non-normative; see `design.md` D4): tests whose value
+is purely structural and for which no useful `@motivatingProblem` can
+honestly be written should stay `visibility: 'internal'`. The mechanical
+contract above is the only normative gate.
 
 #### Scenario: no public escape hatch exists
 
@@ -137,6 +165,13 @@ omit `@motivatingProblem`.
 - **WHEN** it tries to bypass `@motivatingProblem` with any alternate flag
   or tag
 - **THEN** `scripts/check_test_narratives.mjs` SHALL fail the test
+
+#### Scenario: internal structural test passes the gate
+
+- **GIVEN** a structural parser test marked `visibility: 'internal'`
+- **WHEN** it has no `@motivatingProblem` tag
+- **THEN** `scripts/check_test_narratives.mjs` SHALL accept the test
+  without checking for narrative content
 
 ### Requirement: Narrative authoring is local and review-driven
 
@@ -191,6 +226,12 @@ JSDoc narrative tags, verbatim BDD `given`/`when`/`then` strings, local
 fixture literals, `expect()` arguments, source links, and ECMA-376
 `ConformanceClaim[]` values resolved through the conformance registry.
 
+The AST extractor SHALL be purely static. It MUST NOT evaluate test
+code, resolve runtime imports, follow factory function calls, or attempt
+to compute non-literal values. The contract is "extract what is
+syntactically present in the test source; for everything else, point at
+it." See the fallback requirement below.
+
 #### Scenario: corpus includes public narrative and BDD steps
 
 - **GIVEN** a public OpenSpec-mapped test with valid narrative JSDoc and
@@ -209,10 +250,50 @@ fixture literals, `expect()` arguments, source links, and ECMA-376
 
 #### Scenario: corpus includes local test evidence
 
-- **GIVEN** a test with local fixture literals and `expect()` calls
+- **GIVEN** a test whose given/when/then bodies contain only
+  syntactically-local string literals, number literals, and object/array
+  literals (no imports, no factory calls, no computed expressions)
 - **WHEN** the AST extractor processes the test
-- **THEN** the corpus entry SHALL include the relevant fixture literals
-  and `expect()` arguments without executing the test body
+- **THEN** the corpus entry SHALL include those literals verbatim and the
+  exact `expect()` argument expressions without executing the test body
+
+### Requirement: AST extractor falls back on non-literal evidence
+
+The corpus emitter SHALL record an unresolved-evidence marker in place
+of any value the AST extractor cannot statically resolve. The unresolved
+case includes imported bindings, factory function calls, template
+literals with runtime expressions, destructured fixtures, and any
+non-literal expression. The marker SHALL include the source-text of the
+unresolved expression and a stable source reference (file path plus
+line number) so a downstream reader can follow the link. The emitter
+MUST NOT fail the build, MUST NOT execute the test, and MUST NOT
+silently drop the field.
+
+#### Scenario: imported fixture is recorded as unresolved with source link
+
+- **GIVEN** a test whose `given(...)` argument is an imported constant
+  (for example, `given(SHARED_PARAGRAPH_FIXTURE, ...)` where
+  `SHARED_PARAGRAPH_FIXTURE` is imported from another module)
+- **WHEN** `scripts/build_tests_corpus.mjs` runs the AST extractor
+- **THEN** the corpus entry for that step SHALL contain a value object
+  whose `kind` is `unresolved`, whose `sourceText` is the literal
+  expression (`SHARED_PARAGRAPH_FIXTURE`), and whose `sourceRef` is the
+  `path:line` of the call site
+
+#### Scenario: factory call is recorded as unresolved
+
+- **GIVEN** an `expect()` whose argument is a function call (for example,
+  `expect(buildFixture('case-A')).toBe(...)`)
+- **WHEN** the AST extractor processes it
+- **THEN** the corpus entry SHALL record the call as an unresolved
+  evidence marker rather than evaluating the function
+
+#### Scenario: static literal is fully resolved
+
+- **GIVEN** a `given(...)` with a string-literal argument
+- **WHEN** the AST extractor processes it
+- **THEN** the corpus entry SHALL include the literal value directly,
+  without any unresolved-evidence marker
 
 ### Requirement: Tests corpus artifact strips engineer-only noise
 
@@ -250,29 +331,51 @@ Actions workflow.
   `tests-corpus.schema.json`
 - **AND** it SHALL attach both files to the release artifacts
 
-### Requirement: Rendered corpus pages follow fixed section ordering
+### Requirement: Corpus artifact is the renderer-facing contract
 
-Downstream renderers of `tests-corpus.json` SHALL render each public test
-as a self-contained page in this order: breadcrumb/status/citations strip,
-Motivating problem, Scenario, Results, Implementation limitations,
-Test-scope exclusions, Observed performance characteristics, Potential
-misconceptions, Implementation alternatives considered and rejected, What
-makes this hard in ECMA-376, then Spec citations and Source link. Optional
-sections SHALL render only when their source tags are present. Renderers
-MUST NOT require a "Related scenarios" section.
+`scripts/build_tests_corpus.mjs` SHALL generate `tests-corpus.schema.json`
+from the in-repo Zod schema and check it into the repository alongside
+the source schema, so the renderer contract lives in the emitted
+artifact rather than in source-code imports across repositories. A CI
+step SHALL regenerate the JSON Schema and fail the build if it drifts
+from the checked-in copy. The release workflow SHALL publish the same
+generated file as a release artifact so external consumers can pin to
+a stable URL.
 
-#### Scenario: optional section is omitted when tag is absent
+Each corpus entry SHALL carry a `sections` array of stable section
+identifiers in their canonical rendering order: `breadcrumb`,
+`statusStrip`, `citationsStrip`, `motivatingProblem`, `scenario`,
+`results`, `implementationLimitation`, `testScopeExclusion`,
+`observedPerformance`, `potentialMisconception`,
+`implementationAlternativeRejected`, `ecma376Difficulty`,
+`specCitations`, `sourceLink`. Sections whose backing content is absent
+(e.g., the entry has no `@implementationLimitation` tag) SHALL be
+omitted from the array, not emitted with empty content. The schema
+SHALL document each section identifier's human-readable title. Renderers
+in any repository SHALL render the sections in array order; they SHALL
+NOT introduce a "Related scenarios" section as a structural element of
+the page.
 
-- **GIVEN** a corpus entry with `@motivatingProblem` but no
-  `@implementationAlternativeRejected`
-- **WHEN** the entry is rendered
-- **THEN** the page SHALL include "Motivating problem"
-- **AND** it SHALL NOT include "Implementation alternatives considered
-  and rejected"
+#### Scenario: schema is checked in and CI fails on drift
 
-#### Scenario: source and citations remain final
+- **GIVEN** a developer modifies the Zod schema in
+  `packages/test-narrative/` without regenerating
+  `tests-corpus.schema.json`
+- **WHEN** CI runs the schema-drift check
+- **THEN** the check SHALL fail with a message identifying the drift
 
-- **GIVEN** a corpus entry with ECMA-376 citations and a source link
-- **WHEN** the entry is rendered
-- **THEN** the final page section SHALL expose spec citations and the
-  source link after all present narrative sections
+#### Scenario: omitted optional section is not present in sections array
+
+- **GIVEN** a corpus entry derived from a test with `@motivatingProblem`
+  but no `@implementationAlternativeRejected`
+- **WHEN** the entry is emitted
+- **THEN** the entry's `sections` array SHALL contain
+  `motivatingProblem`
+- **AND** SHALL NOT contain `implementationAlternativeRejected`
+
+#### Scenario: spec citations and source link are last
+
+- **GIVEN** any corpus entry with ECMA-376 citations and a source link
+- **WHEN** the entry is emitted
+- **THEN** the last two elements of its `sections` array SHALL be
+  `specCitations` followed by `sourceLink`, in that order

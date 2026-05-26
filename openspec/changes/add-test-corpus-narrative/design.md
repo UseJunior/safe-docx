@@ -84,10 +84,18 @@ not aliases because they are ambiguous or encourage undifferentiated prose.
 ### D4. Public tests require `motivatingProblem`; structural tests stay internal
 
 `motivatingProblem` frames the problem in the world that motivates the
-scenario and may be capability-shaped only where the issue allows it. Tests
-whose value is purely structural, such as checking that a parser does not
-crash on empty input, remain `visibility: internal`; there is no escape
-hatch that allows a public test to omit `motivatingProblem`.
+scenario. The framing is "the problem we are solving" even when the
+sentence necessarily describes a capability deficiency the test catches —
+the writer leans on the problem rather than the capability so the text
+stays true if the solution improves.
+
+The normative mechanical contract is narrow: `visibility: 'public'`
+requires a valid `@motivatingProblem`; `visibility: 'internal'` (or
+omitted) does not. The authoring policy that tests with no honest problem
+statement should stay internal lives here, in design, because no automated
+check can decide whether a candidate `@motivatingProblem` is honest — only
+a human reviewer can. There is no escape-hatch tag that satisfies the
+public-narrative requirement in place of `@motivatingProblem`.
 
 ### D5. Asymmetry-of-rot replaces hash staleness gates
 
@@ -111,25 +119,76 @@ The artifact strips engineer-only noise such as host runner IDs, Vitest
 framework name, millisecond durations, language tags, and other fields that
 do not help downstream corpus readers.
 
-### D7. Rendering order is deterministic and self-contained
+### D6a. AST extractor is purely static; unresolved values become evidence markers
 
-The rendered page order is:
+The AST extractor will encounter many tests whose given/when/then
+arguments are not raw literals — they're imported constants, factory
+calls, destructured fixtures, or template literals with runtime
+expressions (the existing `merge_runs.test.ts`, `accept_changes.test.ts`,
+and most integration tests are in this shape). A spec that required the
+extractor to resolve these would force it to evaluate code, which we
+explicitly reject (slow, unsafe, defeats the purpose of static
+extraction).
 
-1. Breadcrumb, status strip, and citations strip.
-2. Motivating problem.
-3. Scenario from AST-extracted BDD strings.
-4. Results, including conclusion, expected, actual, evaluation,
-   performance, and cross-library subsections when present.
-5. Implementation limitations.
-6. Test-scope exclusions.
-7. Observed performance characteristics.
-8. Potential misconceptions.
-9. Implementation alternatives considered and rejected.
-10. What makes this hard in ECMA-376.
-11. Spec citations and source link.
+The contract is: extract what is syntactically a literal directly; for
+everything else, emit an unresolved-evidence marker with the source-text
+of the expression plus a `path:line` source reference. The downstream
+renderer can show "this fixture is `SHARED_PARAGRAPH_FIXTURE` — see
+[source link]" instead of pretending to show the value. The marker
+shape is normative — see spec.md Requirement: "AST extractor falls back
+on non-literal evidence".
 
-Optional sections render only when their source tag is present. There is no
-"Discussion" umbrella and no "Related scenarios" requirement.
+### D6b. Visibility emitted as `corpusVisibility` Allure label
+
+`AllureLabelDefaults.visibility` is the authoring surface; the runtime
+emission is a label with name `corpusVisibility` and value `public`
+when (and only when) `visibility: 'public'`. The label name avoids the
+bare `visibility` namespace because that conflicts with other Allure
+conventions and is too generic for downstream filters. Internal/omitted
+visibility emits no label; the corpus builder reads the absence as
+`internal`. This makes the Allure JSON the canonical signal — the
+corpus builder does not need to read the test source to classify
+visibility.
+
+### D6c. JSON Schema is generated and checked in; CI fails on drift
+
+`tests-corpus.schema.json` is generated from the Zod schema in
+`packages/test-narrative/` and checked into the repository. A CI step
+regenerates and compares; drift fails the build. The release workflow
+attaches the same file as a release artifact so external consumers
+(particularly the cross-repo renderer) can pin to a stable URL without
+importing this repo's TypeScript package.
+
+This pattern mirrors `scripts/generate_conformance_doc.mjs` (commit
+`9aac629` and the broader spec-compliance directory) — generated file
+checked in, `git diff --exit-code` drift gate. The trade-off vs.
+release-time-only generation: checking in costs almost nothing because
+the schema is small and changes rarely, and it gives PR reviewers a
+visible diff when the schema evolves, which catches accidents the
+generate-at-release flow would only surface after the change ships.
+
+### D7. Rendering order is a corpus-artifact contract, not a renderer-side rule
+
+Each corpus entry carries a `sections` array of stable section identifiers
+in the canonical order. Sections whose source content is absent are
+omitted from the array — the renderer iterates the array and emits one
+slab per identifier. The full identifier set, in canonical order:
+`breadcrumb`, `statusStrip`, `citationsStrip`, `motivatingProblem`,
+`scenario`, `results`, `implementationLimitation`, `testScopeExclusion`,
+`observedPerformance`, `potentialMisconception`,
+`implementationAlternativeRejected`, `ecma376Difficulty`,
+`specCitations`, `sourceLink`.
+
+This shape makes the renderer obligation enforceable from this repo: the
+corpus emitter's tests assert section ordering and omission rules, which
+is mechanical. A spec that put SHALLs on the cross-repo renderer would
+be a contract we cannot test from here.
+
+There is no "Discussion" umbrella and no "Related scenarios" identifier
+in the set; both were rejected during plan iteration (the former as too
+vague to be useful, the latter as a publish-gate that rotted 10× faster
+than other content because editing one scenario forced edits on N
+sibling pages).
 
 ### D8. Conformance-registry parser lift is a prerequisite
 
@@ -167,8 +226,27 @@ public and given valid JSDoc narrative tags.
 
 ## Open Questions
 
-- Should `tests-corpus.schema.json` be checked in, generated during release,
-  or both? The requirement only needs a stable emitted schema artifact.
 - Should the corpus emitter include source ranges for every extracted
   literal or only a source link for the owning test? The current contract
   requires enough identity for a source link, not full range provenance.
+- Should `corpusVisibility` Allure-label emission live inside the
+  `allure-test-factory` runtime, or in a setup-allure-labels helper that
+  callers already wire in? Either works; the implementation PR for Allure
+  visibility metadata will choose.
+
+## Closed Questions
+
+- **Where does `tests-corpus.schema.json` live?** Decided in D6c:
+  generated from the Zod schema, checked into the repo, CI fails on
+  drift, release attaches the same file.
+- **How does a cross-repo renderer consume the schema?** Decided in
+  spec.md Requirement: "Corpus artifact is the renderer-facing
+  contract": through the emitted JSON Schema artifact, not by importing
+  the TypeScript workspace package.
+- **How is `visibility` emitted as Allure metadata?** Decided in D6b:
+  label name `corpusVisibility`, value `public` when public, no label
+  when internal or omitted.
+- **What does the AST extractor do with non-literal fixture values?**
+  Decided in D6a and spec.md Requirement: "AST extractor falls back on
+  non-literal evidence": emit an unresolved-evidence marker with source
+  text and a `path:line` reference; never evaluate code.
