@@ -61,6 +61,7 @@
     "generate:conformance-doc": "node scripts/generate_conformance_doc.mjs",
     "check:conformance-citations": "node scripts/check_conformance_citations.mjs",
     "check:conformance-doc": "node scripts/check_conformance_doc.mjs",
+    "check:test-narratives": "npm run build -w @usejunior/test-narrative && node scripts/check_test_narratives.mjs",
     "sync:readme": "node scripts/sync_readme_blocks.mjs",
     "check:readme-sync": "node scripts/sync_readme_blocks.mjs --check"
   },
