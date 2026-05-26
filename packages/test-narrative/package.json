@@ -1,0 +1,53 @@
+{
+  "name": "@usejunior/test-narrative",
+  "version": "0.9.1",
+  "description": "Shared schema for public test narrative tags and rendered corpus section metadata",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run clean:dist && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "node ../../node_modules/vitest/vitest.mjs",
+    "test:run": "node ../../node_modules/vitest/vitest.mjs run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/UseJunior/safe-docx"
+  },
+  "homepage": "https://github.com/UseJunior/safe-docx/tree/main/packages/test-narrative",
+  "bugs": {
+    "url": "https://github.com/UseJunior/safe-docx/issues"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "test",
+    "narrative",
+    "schema",
+    "corpus",
+    "zod"
+  ],
+  "license": "MIT"
+}
