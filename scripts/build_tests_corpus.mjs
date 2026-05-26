@@ -109,10 +109,10 @@ function buildAllureIndex() {
   return byPackage;
 }
 
-function findAllureResult(allureIndex, packageName, scenarioName) {
+function findAllureResults(allureIndex, packageName, scenarioName) {
   const wanted = normalizeScenarioName(scenarioName);
   const results = allureIndex.get(packageName) ?? [];
-  return results.find(({ result }) => {
+  return results.filter(({ result }) => {
     if (!hasPublicCorpusVisibility(result)) return false;
     return resultNameCandidates(result).includes(wanted);
   });
@@ -271,11 +271,41 @@ function buildCorpusEntries() {
         throw new Error(`${file.rel}:${scenario.sourceRef.line}: invalid public narrative tags: ${issues}`);
       }
 
-      const matched = findAllureResult(allureIndex, packageName, scenario.scenarioName);
-      if (!matched) continue;
+      // Visibility model (per spec): both the AST-side `visibility: 'public'`
+      // marker AND the runtime `corpusVisibility=public` Allure label must
+      // agree before a scenario enters the corpus. The previous-step check
+      // (visibility !== 'public' continue) gates on the AST side; the Allure
+      // lookup gates on the runtime side. A mismatch between them indicates
+      // either a stale `allure-results/` directory (test source was promoted
+      // to public AFTER the last CI run) or a missing `corpusVisibility`
+      // emission (allure-test-factory wasn't built before tests ran). Either
+      // way it's developer error — fail loudly with the file:line + expected
+      // label rather than silently dropping the scenario from the release.
+      const matched = findAllureResults(allureIndex, packageName, scenario.scenarioName);
+      if (matched.length === 0) {
+        throw new Error(
+          `${file.rel}:${scenario.sourceRef.line}: scenario "${scenario.scenarioName}" is marked ` +
+            `visibility: 'public' in source but no matching Allure result with ` +
+            `corpusVisibility=public was found under packages/${packageName}/allure-results/. ` +
+            `Likely causes: tests not run, allure-results was cleaned, scenario renamed since last ` +
+            `CI run, or @usejunior/allure-test-factory wasn't rebuilt before the run that produced ` +
+            `these results.`
+        );
+      }
+      if (matched.length > 1) {
+        const candidates = matched
+          .map((m) => repoRelative(m.file))
+          .join(', ');
+        throw new Error(
+          `${file.rel}:${scenario.sourceRef.line}: scenario "${scenario.scenarioName}" matches ` +
+            `${matched.length} Allure results (${candidates}). Scenario names must be unique within a ` +
+            `package; rename one of the conflicting scenarios.`
+        );
+      }
+      const matchedResult = matched[0];
 
-      const conformanceClaims = resolveConformanceClaims(matched.result, registry);
-      const results = serializeResult(matched.result);
+      const conformanceClaims = resolveConformanceClaims(matchedResult.result, registry);
+      const results = serializeResult(matchedResult.result);
       entries.push({
         id: stableEntryId(packageName, scenario),
         package: packageName,
