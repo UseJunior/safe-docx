@@ -345,7 +345,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Create GitHub Release with auto-generated notes
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
@@ -403,7 +403,7 @@ jobs:
           sha256sum packages/safe-docx-mcpb/safe-docx.mcpb > packages/safe-docx-mcpb/safe-docx.mcpb.sha256
 
       - name: Attach safe-docx.mcpb to GitHub release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: |
