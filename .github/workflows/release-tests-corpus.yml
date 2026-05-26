@@ -1,0 +1,43 @@
+name: Release Tests Corpus
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-tests-corpus:
+    name: Release tests corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build workspaces
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test:run
+
+      - name: Build tests corpus
+        run: npm run build:tests-corpus
+
+      - name: Verify tests corpus schema is fresh
+        run: npm run check:tests-corpus-schema
+
+      - name: Attach tests corpus release assets
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
+        with:
+          files: |
+            tests-corpus.json
+            tests-corpus.schema.json

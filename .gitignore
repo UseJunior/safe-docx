@@ -42,6 +42,7 @@ site/docs/*.md
 site/downloads/
 site/schemas/
 packages/contracts-workspace/schemas/
+tests-corpus.json
 
 # Google service account credentials
 *-credentials.json
