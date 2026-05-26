@@ -238,7 +238,39 @@ export function formatJsDocBlock(tags, indent = '') {
   return lines.join('\n');
 }
 
+/**
+ * Symbol returned by insertJsDocAboveScenario when the scenario already has a
+ * leading JSDoc block. The drafter must NOT add a second consecutive JSDoc
+ * block — that would orphan the original and confuse formatters. Caller
+ * surfaces a clear "please update manually" message instead.
+ */
+export const REFUSED_EXISTING_JSDOC = Symbol.for('draft-narrative-jsdoc/refused-existing-jsdoc');
+
+function detectLineEnding(source) {
+  // Choose the dominant line-ending in the source. A pure-LF file emits LF;
+  // a file with any `\r\n` is treated as CRLF and the patch emits CRLF too.
+  return source.includes('\r\n') ? '\r\n' : '\n';
+}
+
+function lineHasContent(line) {
+  return line.trim().length > 0;
+}
+
+function hasLeadingJsDocBlock(lines, scenarioIndex) {
+  // Walk up from the scenario line; skip pure-whitespace lines; if the first
+  // non-empty line above ends with `*/`, this scenario has an existing JSDoc
+  // block immediately above it.
+  for (let i = scenarioIndex - 1; i >= 0; i -= 1) {
+    const line = lines[i];
+    if (line === undefined) return false;
+    if (!lineHasContent(line)) continue;
+    return line.trimEnd().endsWith('*/');
+  }
+  return false;
+}
+
 export function insertJsDocAboveScenario(source, sourceLine, tags) {
+  const eol = detectLineEnding(source);
   const hasTrailingNewline = /\r?\n$/.test(source);
   const body = hasTrailingNewline ? source.replace(/\r?\n$/, '') : source;
   const lines = body.split(/\r?\n/);
@@ -246,10 +278,13 @@ export function insertJsDocAboveScenario(source, sourceLine, tags) {
   if (index < 0 || index >= lines.length) {
     throw new Error(`Scenario line ${sourceLine} is outside the source file`);
   }
+  if (hasLeadingJsDocBlock(lines, index)) {
+    return REFUSED_EXISTING_JSDOC;
+  }
   const indent = lines[index].match(/^\s*/)?.[0] ?? '';
   const block = formatJsDocBlock(tags, indent);
   lines.splice(index, 0, ...block.split('\n'));
-  return lines.join('\n') + (hasTrailingNewline ? '\n' : '');
+  return lines.join(eol) + (hasTrailingNewline ? eol : '');
 }
 
 function runCodex(prompt) {
@@ -315,7 +350,15 @@ async function main() {
       }
 
       const result = runCodex(prompt);
-      if (result.error) throw result.error;
+      if (result.error) {
+        if (result.error.code === 'ENOENT') {
+          throw new Error(
+            "Codex CLI not found on PATH. Install with `npm install -g @openai/codex` " +
+              "and authenticate it, then re-run. Use --dry-run if you only want to inspect the prompt without invoking Codex."
+          );
+        }
+        throw result.error;
+      }
       if (result.status !== 0) {
         throw new Error(`codex exec failed for ${toRepoRelative(file)}:${scenario.sourceRef.line}\n${result.stderr || result.stdout}`);
       }
@@ -335,14 +378,31 @@ async function main() {
     if (!grouped.has(patch.file)) grouped.set(patch.file, []);
     grouped.get(patch.file).push(patch);
   }
+  let patchedCount = 0;
+  let refusedCount = 0;
   for (const [file, filePatches] of grouped.entries()) {
     let source = fs.readFileSync(file, 'utf8');
+    let modified = false;
     for (const patch of filePatches.sort((a, b) => b.sourceLine - a.sourceLine)) {
-      source = insertJsDocAboveScenario(source, patch.sourceLine, patch.tags);
+      const next = insertJsDocAboveScenario(source, patch.sourceLine, patch.tags);
+      if (next === REFUSED_EXISTING_JSDOC) {
+        console.error(
+          `${toRepoRelative(file)}:${patch.sourceLine}: refusing to patch — scenario already has a leading JSDoc block. ` +
+            "Update it manually to add the missing tags rather than stacking two blocks."
+        );
+        refusedCount += 1;
+        continue;
+      }
+      source = next;
+      modified = true;
+      patchedCount += 1;
     }
-    fs.writeFileSync(file, source);
+    if (modified) fs.writeFileSync(file, source);
   }
-  console.log(`draft-narrative-jsdoc: patched ${patches.length} scenario${patches.length === 1 ? '' : 's'}`);
+  console.log(`draft-narrative-jsdoc: patched ${patchedCount} scenario${patchedCount === 1 ? '' : 's'}`);
+  if (refusedCount > 0) {
+    console.log(`draft-narrative-jsdoc: refused ${refusedCount} (existing JSDoc; update manually)`);
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

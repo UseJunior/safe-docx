@@ -12,7 +12,8 @@ import {
   formatJsDocBlock,
   inferFeatureLabel,
   insertJsDocAboveScenario,
-  parseAndValidateCodexOutput
+  parseAndValidateCodexOutput,
+  REFUSED_EXISTING_JSDOC
 } from './draft-narrative-jsdoc.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -151,4 +152,43 @@ test.openspec('beta')({ visibility: 'public' })('two', () => {});
 `;
   assert.equal(inferFeatureLabel(source, 1), 'alpha');
   assert.equal(inferFeatureLabel(source, 2), 'beta');
+});
+
+test('insertJsDocAboveScenario refuses to patch when a JSDoc block already exists', () => {
+  // Regression for Codex/Gemini peer review (PR #249): the helper used to
+  // insert a SECOND JSDoc block above an existing one. That stacks blocks
+  // and orphans the original. New behavior: return REFUSED_EXISTING_JSDOC
+  // and let the caller surface a "please update manually" message.
+  const source = [
+    `/**`,
+    ` * @implementationLimitation This scenario is intentionally narrow because the suite covers wider cases elsewhere with sibling stories.`,
+    ` */`,
+    `test.openspec('scenario-id')({ visibility: 'public' })('Scenario: name', async () => {});`,
+    ``
+  ].join('\n');
+  const result = insertJsDocAboveScenario(source, 4, { motivatingProblem: 'some valid problem statement' });
+  assert.equal(result, REFUSED_EXISTING_JSDOC);
+});
+
+test('insertJsDocAboveScenario preserves CRLF line endings when patching a CRLF file', () => {
+  // Regression for Codex/Gemini peer review (PR #249): the helper used to
+  // split on /\r?\n/ and rejoin with '\n', silently rewriting a CRLF file
+  // to LF.
+  const lines = [
+    `import { describe } from 'vitest';`,
+    ``,
+    `test.openspec('id')({ visibility: 'public' })('Scenario: a', async () => {});`,
+    ``
+  ];
+  const source = lines.join('\r\n');
+  const result = insertJsDocAboveScenario(source, 3, { motivatingProblem: 'a valid grounded problem statement' });
+  assert.notEqual(result, REFUSED_EXISTING_JSDOC);
+  assert.ok(typeof result === 'string');
+  assert.ok(result.includes('\r\n'), 'patched output should keep CRLF line endings');
+  // No bare LF outside of CRLF pairs (every \n is preceded by \r).
+  for (let i = 0; i < result.length; i += 1) {
+    if (result[i] === '\n') {
+      assert.equal(result[i - 1], '\r', `bare LF at index ${i}`);
+    }
+  }
 });
