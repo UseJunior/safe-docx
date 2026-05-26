@@ -54,7 +54,10 @@
   - [ ] `spec-compliance/CONFORMANCE.md` (full doc, includes section table
         with `verifiedBy:` column).
   - [ ] Replaces the `<!-- AUTO-GENERATED:conformance-summary START -->` …
-        `END` block in every `README*.md`.
+        `END` block in the canonical `README.md`. Localized READMEs
+        (`README.es.md`, `README.zh.md`, `README.pt-br.md`, `README.de.md`)
+        carry hand-translated static content and are not touched by the
+        generator (see Task 8 below for the rationale).
 - [ ] `scripts/check_conformance_doc.mjs` (new) — runs the generator then
       `git diff --exit-code` on both files. Mirrors the
       `check:tool-docs` / `check:trust-metrics` package-script pattern.
@@ -72,9 +75,15 @@
 - [ ] Add `## Standards Conformance` section to `README.md` (between
       `## Positioning` and `## Trusted By`) containing the
       `<!-- AUTO-GENERATED:conformance-summary -->` marker block.
-- [ ] Same marker block to `README.es.md`, `README.zh.md`, `README.pt-br.md`,
-      `README.de.md` (English content in phase 1; full localization is a
-      follow-up).
+- [ ] Localized READMEs (`README.es.md`, `README.zh.md`, `README.pt-br.md`,
+      `README.de.md`) carry a **hand-translated static block** with a
+      localized link to `spec-compliance/CONFORMANCE.md`. They do **not**
+      receive the dynamic `<!-- AUTO-GENERATED:conformance-summary -->`
+      marker block, and the drift gate does **not** verify them. Rationale:
+      injecting English content into the middle of a translated file
+      violates the localization contract and risks translators silently
+      breaking the AUTO-GENERATED markers (round-2 peer-review decision
+      on #230; see also #233).
 
 ## 9. Annotate seeds
 - [ ] `packages/docx-core/src/baselines/atomizer/pipeline.ts:418` — add
