@@ -19,6 +19,9 @@
   },
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
+  "scripts": {
+    "test:run": "vitest run"
+  },
   "files": [
     "src/"
   ],

@@ -53,6 +53,7 @@ export interface AllureLabelDefaults<TEpic extends string = string> {
   conformanceClaims?: ConformanceClaim[];
   description?: string;
   tags?: string[];
+  visibility?: 'public' | 'internal';
   parameters?: Record<string, string | number | boolean | null | undefined>;
 }
 

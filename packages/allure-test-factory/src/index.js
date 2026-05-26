@@ -933,6 +933,9 @@ export function createAllureTestHelpers(config) {
           for (const claim of conformanceClaims) {
             await allureRuntime.label('conformance', formatConformanceLabel(claim));
           }
+          if (effectiveDefaults?.visibility === 'public') {
+            await allureRuntime.label('corpusVisibility', 'public');
+          }
         }
         if (typeof allureRuntime.link === 'function') {
           for (const id of scenarioSerials) {
