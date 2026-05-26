@@ -122,6 +122,16 @@ function parseArgs(argv) {
   };
 }
 
+const STAGE_NAMES = ['codex', 'schema', 'patch', 'verify', 'commit'];
+
+class StageError extends Error {
+  constructor(stage, message) {
+    super(message);
+    this.name = 'StageError';
+    this.stage = stage;
+  }
+}
+
 class Ledger {
   constructor(filePath) {
     this.path = filePath;
@@ -149,19 +159,37 @@ class BatchLock {
 
   acquire() {
     fs.mkdirSync(path.dirname(this.path), { recursive: true });
-    try {
-      this.fd = fs.openSync(this.path, 'wx');
-    } catch (error) {
-      if (error?.code === 'EEXIST') {
+    let recovered = false;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        this.fd = fs.openSync(this.path, 'wx');
+        break;
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error;
         const holder = readFileIfExists(this.path).trim();
-        const detail = holder ? ` (pid ${holder.split(/\s+/)[0]})` : '';
+        const pidText = holder.split(/\s+/)[0];
+        const pid = Number.parseInt(pidText, 10);
+        if (Number.isInteger(pid) && pid > 0 && !isProcessAlive(pid)) {
+          if (recovered) {
+            throw new Error(`Stale lock ${repoRelative(this.path)} could not be reclaimed`);
+          }
+          // Stale lockfile from a crashed prior run. Reclaim it.
+          try {
+            fs.unlinkSync(this.path);
+          } catch (unlinkError) {
+            if (unlinkError?.code !== 'ENOENT') throw unlinkError;
+          }
+          recovered = true;
+          continue;
+        }
+        const detail = pidText ? ` (pid ${pidText})` : '';
         throw new Error(`Another test-narrative batch already holds ${repoRelative(this.path)}${detail}`);
       }
-      throw error;
     }
     fs.writeSync(this.fd, `${process.pid}\n${nowIso()}\n`);
     fs.fsyncSync(this.fd);
     process.once('exit', () => this.release());
+    this.recoveredStale = recovered;
   }
 
   release() {
@@ -176,6 +204,16 @@ class BatchLock {
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error;
     }
+  }
+}
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'EPERM') return true;
+    return false;
   }
 }
 
@@ -434,7 +472,7 @@ async function processOne(item, context) {
   const scenarios = extractScenarios(item.file);
   const scenario = findScenario(scenarios, item.scenarioName);
   if (!scenario) {
-    throw new Error(`scenario not found: ${scenarioKey}`);
+    throw new StageError('patch', `scenario not found: ${scenarioKey}`);
   }
   if (isDone(scenario)) {
     ledger.append({ event: 'skipped-already-done', scenario: scenarioKey });
@@ -458,8 +496,10 @@ async function processOne(item, context) {
     codexCmd: options.codexCmd,
     captureLastMessage: lastMessagePath
   });
-  if (codex.error) throw codex.error;
-  if (codex.status !== 0) throw new Error(`codex exec failed: ${codex.stderr || codex.stdout}`);
+  if (codex.error) throw new StageError('codex', codex.error.message ?? String(codex.error));
+  if (codex.status !== 0) {
+    throw new StageError('codex', `codex exec failed: ${codex.stderr || codex.stdout}`);
+  }
 
   const lastMessage = readFileIfExists(lastMessagePath);
   try {
@@ -467,27 +507,82 @@ async function processOne(item, context) {
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;
   }
-  const tags = parseAndValidateCodexOutput(`${lastMessage}\n${codex.stdout}\n${codex.stderr}`, validateTags);
+  let tags;
+  try {
+    tags = parseAndValidateCodexOutput(`${lastMessage}\n${codex.stdout}\n${codex.stderr}`, validateTags);
+  } catch (error) {
+    throw new StageError('schema', error.message ?? String(error));
+  }
 
-  let patched = promoteVisibilityInSource(source, scenario);
-  patched = insertJsDocAboveScenario(patched, scenario.sourceRef.line, tags);
+  let patched;
+  try {
+    patched = promoteVisibilityInSource(source, scenario);
+    patched = insertJsDocAboveScenario(patched, scenario.sourceRef.line, tags);
+  } catch (error) {
+    throw new StageError('patch', error.message ?? String(error));
+  }
   if (patched === REFUSED_EXISTING_JSDOC) {
-    throw new Error('scenario already has a leading JSDoc block; refusing to stack a second block');
+    throw new StageError('patch', 'scenario already has a leading JSDoc block; refusing to stack a second block');
   }
+
+  // From this point on, the file is dirty in the working tree. Every error
+  // path must revert it via `git checkout HEAD -- <file>` before re-throwing
+  // so the next item starts from a clean state.
   fs.writeFileSync(item.file, patched);
+  try {
+    const reparsed = extractScenarios(item.file);
+    const updated = findScenario(reparsed, item.scenarioName);
+    if (!updated) throw new StageError('verify', 'post-patch AST round-trip could not find the scenario');
+    if (!isDone(updated)) {
+      throw new StageError('verify', 'post-patch AST round-trip did not find visibility public plus @motivatingProblem');
+    }
+    // Target-only invariant: no OTHER scenario in the file changed visibility.
+    for (const sc of scenarios) {
+      if (sc.scenarioName === item.scenarioName) continue;
+      const after = findScenario(reparsed, sc.scenarioName);
+      if (after && (sc.visibility ?? 'internal') !== (after.visibility ?? 'internal')) {
+        throw new StageError(
+          'verify',
+          `target-only invariant violated: scenario "${sc.scenarioName}" changed visibility ` +
+            `from "${sc.visibility ?? 'internal'}" to "${after.visibility ?? 'internal'}"`
+        );
+      }
+    }
 
-  const reparsed = extractScenarios(item.file);
-  const updated = findScenario(reparsed, item.scenarioName);
-  if (!updated) throw new Error('post-patch AST round-trip could not find the scenario');
-  if (!isDone(updated)) {
-    throw new Error('post-patch AST round-trip did not find visibility public plus @motivatingProblem');
+    try {
+      runNarrativeCheck();
+    } catch (error) {
+      throw new StageError('verify', error.message ?? String(error));
+    }
+
+    let commit;
+    try {
+      commit = gitCommitForItem(item.file, item.scenarioName);
+    } catch (error) {
+      throw new StageError('commit', error.message ?? String(error));
+    }
+    ledger.append({ event: 'committed', scenario: scenarioKey, commit });
+    console.log(`[committed] ${scenarioKey} ${commit}`);
+    return 'committed';
+  } catch (error) {
+    // Revert the working-tree change so the next item starts clean.
+    try {
+      runGit(['reset', 'HEAD', '--', item.file]);
+    } catch {
+      // If `git reset` fails (file was never staged), keep going to checkout.
+    }
+    try {
+      runGit(['checkout', 'HEAD', '--', item.file]);
+    } catch (revertError) {
+      // Surface BOTH errors via cause chain — original failure first.
+      const wrapped = new StageError(
+        error instanceof StageError ? error.stage : 'verify',
+        `${error.message ?? error}; ADDITIONALLY: revert via git checkout failed: ${revertError.message ?? revertError}`
+      );
+      throw wrapped;
+    }
+    throw error;
   }
-
-  runNarrativeCheck();
-  const commit = gitCommitForItem(item.file, item.scenarioName);
-  ledger.append({ event: 'committed', scenario: scenarioKey, commit });
-  console.log(`[committed] ${scenarioKey} ${commit}`);
-  return 'committed';
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -551,13 +646,17 @@ async function main(argv = process.argv.slice(2)) {
       if (options.max !== undefined && counts.committed >= options.max) break;
       const scenarioKey = `${repoRelative(item.file)}::${item.scenarioName ?? '(missing)'}`;
       try {
-        if (item.missingAtExpand) throw new Error(`scenario not found: ${scenarioKey}`);
+        if (item.missingAtExpand) throw new StageError('patch', `scenario not found: ${scenarioKey}`);
         const outcome = await processOne(item, { extractScenarios, validateTags, promptTemplate, ledger, options });
         counts[outcome] = (counts[outcome] ?? 0) + 1;
       } catch (error) {
         counts.failed += 1;
-        ledger.append({ event: 'failed', scenario: scenarioKey, reason: shortError(error) });
-        console.error(`[failed] ${scenarioKey}: ${shortError(error)}`);
+        const stage = error instanceof StageError ? error.stage : undefined;
+        const ledgerEvent = { event: 'failed', scenario: scenarioKey, reason: shortError(error) };
+        if (stage) ledgerEvent.stage = stage;
+        ledger.append(ledgerEvent);
+        const stageLabel = stage ? `[${stage}] ` : '';
+        console.error(`[failed] ${stageLabel}${scenarioKey}: ${shortError(error)}`);
         if (options.failFast) {
           exitCode = 1;
           break;
@@ -592,8 +691,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 export {
   BatchLock,
   Ledger,
+  STAGE_NAMES,
+  StageError,
   expandIncludeItems,
   isDone,
+  isProcessAlive,
   main,
   parseArgs,
   parseIncludeList,
