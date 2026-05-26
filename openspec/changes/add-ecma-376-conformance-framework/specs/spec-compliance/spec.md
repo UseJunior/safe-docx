@@ -148,8 +148,8 @@ grammar, and the lint SHALL reject any annotation pointing at a Non-Goal.
 ### Requirement: CONFORMANCE.md and README marker block are generated
 
 The repository SHALL generate `spec-compliance/CONFORMANCE.md` and the
-`<!-- AUTO-GENERATED:conformance-summary -->` marker blocks in every
-`README*.md` from the registry, and the drift check
+`<!-- AUTO-GENERATED:conformance-summary -->` marker block in the canonical
+`README.md` from the registry, and the drift check
 `npm run check:conformance-doc` SHALL fail if either output disagrees
 with the committed version.
 
@@ -165,15 +165,27 @@ with the committed version.
 - **WHEN** a contributor adds a new section to `registry/ecma-376.md`
   but does not run the generator
 - **THEN** `npm run check:conformance-doc` SHALL fail because the
-  generated `CONFORMANCE.md` and README marker blocks are out of date
+  generated `CONFORMANCE.md` and canonical `README.md` marker block are out
+  of date
 
-#### Scenario: missing marker block in README fails drift
+#### Scenario: missing marker block in canonical README fails drift
 
 - **WHEN** a contributor accidentally removes the
   `<!-- AUTO-GENERATED:conformance-summary START -->` …
-  `END` markers from a `README*.md`
+  `END` markers from `README.md`
 - **THEN** `npm run check:conformance-doc` SHALL fail with a clear
   "marker block missing" error
+
+#### Scenario: localized READMEs carry static translated conformance links
+
+- **GIVEN** localized READMEs such as `README.es.md`, `README.zh.md`,
+  `README.pt-br.md`, and `README.de.md`
+- **WHEN** `npm run check:conformance-doc` verifies generated conformance
+  documentation
+- **THEN** the drift gate SHALL NOT verify those localized README files
+- **AND** localized READMEs SHALL carry hand-translated static content that
+  links to `spec-compliance/CONFORMANCE.md` instead of the dynamic
+  `<!-- AUTO-GENERATED:conformance-summary -->` marker block
 
 ### Requirement: `testAllure.conformance({…})` helper
 
