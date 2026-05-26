@@ -89,7 +89,7 @@ AI coding CLIs are great with code and text files but weak on brownfield `.docx`
 
 Mission: enable coding agents to do paperwork too. Safe Docx focuses on deterministic edits to existing Word files where formatting and review semantics must survive automation.
 
-## Positioning
+## How Safe Docx is Different from other Docx Editors
 
 Safe Docx is optimized for agent workflows that need deterministic, local-first edits on existing `.docx` files:
 
