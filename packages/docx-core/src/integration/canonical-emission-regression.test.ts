@@ -293,7 +293,7 @@ describe('Canonical emission catalog', () => {
     });
   });
 
-  test('Table A: comments.ts addCommentReply currently leaves revision markup untouched and updates comments.xml only', async ({
+  test('Table B: comments.ts addCommentReply performs package mutation only with no body revision', async ({
     given,
     when,
     then,
