@@ -3,7 +3,12 @@ import fs from "node:fs";
 import { parse } from "@typescript-eslint/parser";
 import type { TSESTree } from "@typescript-eslint/types";
 
-import { type NarrativeVisibility, type TagName } from "./tagSchema.js";
+import { rejectedAliases, tagDefinitions, type NarrativeVisibility, type TagName } from "./tagSchema.js";
+
+const KNOWN_NARRATIVE_KEYS = new Set<string>([
+  ...Object.keys(tagDefinitions),
+  ...rejectedAliases
+]);
 
 export type SourceRef = {
   path: string;
@@ -103,7 +108,25 @@ function findOpeningOpenspecCall(callee: TSESTree.Expression): TSESTree.CallExpr
 }
 
 function isScenarioCall(node: TSESTree.CallExpression): boolean {
-  return findOpeningOpenspecCall(node.callee) !== undefined;
+  // The scenario call is the OUTERMOST chained call in a pattern like
+  //   test.openspec(...)(...metadata)(scenarioName, scenarioBody)
+  // Its signature is: first arg is a string-shaped literal (the scenario
+  // name), second arg is a function (the scenario body). Intermediate
+  // metadata-shaped calls in the chain (e.g., test.openspec(id)({ visibility }))
+  // are NOT scenarios — they configure subsequent calls — and must not be
+  // extracted as phantom scenarios.
+  if (findOpeningOpenspecCall(node.callee) === undefined) return false;
+  if (node.arguments.length < 2) return false;
+  const firstArg = expressionFromArgument(node.arguments[0]);
+  if (!firstArg) return false;
+  const firstArgLiteral = literalFromExpression(firstArg);
+  if (typeof firstArgLiteral !== "string") return false;
+  const secondArg = expressionFromArgument(node.arguments[1]);
+  if (!secondArg) return false;
+  if (secondArg.type !== "ArrowFunctionExpression" && secondArg.type !== "FunctionExpression") {
+    return false;
+  }
+  return true;
 }
 
 function expressionFromArgument(argument: TSESTree.CallExpressionArgument | undefined): TSESTree.Expression | undefined {
@@ -189,7 +212,14 @@ function extractNarrative(commentValue: string | undefined): Partial<Record<TagN
   let currentLines: string[] = [];
   const flush = () => {
     if (!currentTag) return;
-    narrative[currentTag] = currentLines.join(" ").replace(/\s+/g, " ").trim();
+    // Only emit tags that the schema cares about. Unknown JSDoc tags
+    // (@see, @example, @deprecated, etc.) are part of normal TS convention
+    // and must not poison validation. Known-but-rejected aliases stay so the
+    // downstream validator can produce an explicit "this alias is forbidden"
+    // error rather than silently dropping it.
+    if (KNOWN_NARRATIVE_KEYS.has(currentTag)) {
+      narrative[currentTag] = currentLines.join(" ").replace(/\s+/g, " ").trim();
+    }
   };
 
   for (const rawLine of commentValue.split("\n")) {

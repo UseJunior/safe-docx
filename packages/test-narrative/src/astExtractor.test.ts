@@ -261,4 +261,72 @@ describe("extractScenarios", () => {
       sourceText: "fixture"
     });
   });
+
+  it("does not emit a phantom scenario for metadata-form chained calls", () => {
+    // Regression test (Codex peer review, PR #247): the previous matcher
+    // accepted any call whose callee chain contained `.openspec`, so the
+    // intermediate metadata call in `.openspec("id")({ visibility })("...", fn)`
+    // was extracted as a phantom scenario with name "{ visibility: ... }".
+    // The matcher now requires the OUTER call to have a string first arg
+    // and a function second arg.
+    const filePath = writeFixture(`
+      const test = testAllure.epic("DOCX Primitives").withLabels({ feature: "F", visibility: "public" });
+
+      test.openspec("override-shape")({ visibility: "internal" })("Scenario: metadata override", async () => {});
+    `);
+
+    const scenarios = extractScenarios(filePath);
+
+    expect(scenarios).toHaveLength(1);
+    expect(scenarios[0]?.scenarioName).toBe("Scenario: metadata override");
+  });
+
+  it("ignores unknown JSDoc tags so they don't poison schema validation", () => {
+    // Regression test (Codex peer review, PR #247): the extractor previously
+    // recorded every `@tag` it saw, including standard JSDoc conventions
+    // like `@see`, `@example`, `@deprecated`. Those are not narrative tags
+    // and must not appear in the parsed narrative — the Zod schema's strict()
+    // would otherwise reject them as unknown keys and fail a valid test.
+    const filePath = writeFixture(`
+      const test = testAllure.epic("DOCX Primitives").withLabels({ feature: "F" });
+
+      describe("suite", () => {
+        /**
+         * @see https://example.test/reference
+         * @motivatingProblem ${words(60)}
+         * @example arbitrary inline code example
+         * @deprecated some unrelated marker
+         */
+        test.openspec("with-mixed-tags")("Scenario: mixed tags", async () => {});
+      });
+    `);
+
+    const [scenario] = extractScenarios(filePath);
+
+    expect(scenario).toBeDefined();
+    expect(Object.keys(scenario!.narrative).sort()).toEqual(["motivatingProblem"]);
+  });
+
+  it("preserves rejected aliases in the narrative so the validator can report them explicitly", () => {
+    // The extractor distinguishes "unknown JSDoc tag" (drop) from
+    // "rejected alias the schema knows about" (keep, so the validator can
+    // emit a clear error). Without this, a developer typing @limitation
+    // (a rejected alias) instead of @implementationLimitation would have
+    // the typo silently ignored.
+    const filePath = writeFixture(`
+      const test = testAllure.epic("DOCX Primitives").withLabels({ feature: "F" });
+
+      /**
+       * @limitation this is the wrong tag name
+       */
+      test.openspec("with-rejected-alias")("Scenario: rejected alias", async () => {});
+    `);
+
+    const [scenario] = extractScenarios(filePath);
+
+    expect(scenario).toBeDefined();
+    expect(scenario!.narrative as Record<string, string>).toMatchObject({
+      limitation: "this is the wrong tag name"
+    });
+  });
 });
