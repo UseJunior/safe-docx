@@ -301,6 +301,8 @@ describe('Canonical emission catalog', () => {
     let beforeDocumentXml: string;
     let afterDocumentXml: string;
     let commentsXml: string;
+    let commentsExtendedXml: string | undefined;
+    let peopleXml: string | undefined;
 
     await given('a document with an existing root comment', async () => {
       const { doc } = await loadIndexedDoc(
@@ -325,20 +327,39 @@ describe('Canonical emission catalog', () => {
           createCtx(),
         );
 
-        ({ parts: { 'word/document.xml': afterDocumentXml, 'word/comments.xml': commentsXml } } = await toPartMap(doc, [
+        ({
+          parts: {
+            'word/document.xml': afterDocumentXml,
+            'word/comments.xml': commentsXml,
+            'word/commentsExtended.xml': commentsExtendedXml,
+            'word/people.xml': peopleXml,
+          },
+        } = await toPartMap(doc, [
           'word/document.xml',
           'word/comments.xml',
+          'word/commentsExtended.xml',
+          'word/people.xml',
         ]));
       });
     });
 
-    await then('the document body remains unchanged while the reply is added to comments.xml', () => {
-      // Current implementation explicitly ignores ctx for replies. This test
-      // locks that behavior until reply-side tracked emission lands.
+    await then('the document body remains unchanged and the reply lands as side-part metadata only', () => {
+      // Table B contract for addCommentReply (#174): replies are side-part
+      // metadata writes only — no body anchor per reply, so no body revision
+      // marker is emitted. ctx is accepted as plumbing for API consistency
+      // but does NOT produce w:ins/w:del. The reply still updates the three
+      // side parts that Word needs (comments.xml, commentsExtended.xml,
+      // people.xml).
       expect(afterDocumentXml).toBe(beforeDocumentXml);
       expect(afterDocumentXml).not.toContain('<w:ins');
       expect(afterDocumentXml).not.toContain('<w:del');
       expect(commentsXml).toContain('Reply body');
+      // Package-mutation half of the Table B contract — commentsExtended.xml
+      // gets the threaded-reply linkage and people.xml gets the new author.
+      expect(commentsExtendedXml).toBeDefined();
+      expect(commentsExtendedXml).toContain('w15:commentEx');
+      expect(peopleXml).toBeDefined();
+      expect(peopleXml).toContain('Bob');
     });
   });
 
