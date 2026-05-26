@@ -24,6 +24,8 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "^8.56.0",
+    "@typescript-eslint/types": "^8.56.0",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.2",
     "vitest": "^3.2.4"
