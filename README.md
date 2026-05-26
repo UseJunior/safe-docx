@@ -1,18 +1,19 @@
-# Safe DOCX Suite
+# Edit Word documents (.docx) with coding agents via MCP
 
+<!-- SYNC:badges BEGIN -->
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
 [![npm version](https://img.shields.io/npm/v/@usejunior/safe-docx)](https://www.npmjs.com/package/@usejunior/safe-docx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
 [![GitHub last commit](https://img.shields.io/github/last-commit/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/commits/main)
 [![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
+<!-- SYNC:badges END -->
 
+<!-- SYNC:lang-nav BEGIN -->
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
+<!-- SYNC:lang-nav END -->
 
-**safe-docx** by [UseJunior](https://usejunior.com) — use coding agents for paperwork too.
-
-Part of the [UseJunior developer tools](https://usejunior.com/developer-tools/safe-docx).
-
+<!-- SYNC:architecture-diagram BEGIN -->
 ```mermaid
 %%{init: {"flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 30, "rankSpacing": 50}, "themeVariables": {"fontSize": "14px"}} }%%
 flowchart LR
@@ -72,6 +73,7 @@ flowchart LR
     class Prompt,Agent ext
     class Client hidden
 ```
+<!-- SYNC:architecture-diagram END -->
 
 Safe Docx is an open-source TypeScript stack for surgical editing of existing Microsoft Word `.docx` files. It is built for workflows where an agent proposes changes and a human still needs reliable, formatting-preserving document edits.
 
@@ -303,7 +305,6 @@ npm run coverage:matrix
 ## See Also
 
 - [Open Agreements](https://github.com/open-agreements/open-agreements) — fill standard legal templates with coding agents (NDAs, SAFEs, NVCA)
-- [UseJunior Developer Tools](https://usejunior.com/developer-tools/safe-docx) — product page with install options and tool catalog
 
 ## Privacy
 
