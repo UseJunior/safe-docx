@@ -31,6 +31,14 @@ is unresolved, say only what the unresolved source expression supports.
 Never use rejected aliases such as `limitation`, `aiContext`, `compare`,
 `specQuirk`, `notCovered`, `prose`, `description`, or `discussion`.
 
+## Optional-tag filling bias
+
+When a scenario is being promoted from internal to public visibility, prefer to
+fill supported optional tags instead of returning only `motivatingProblem`.
+Use an optional tag only when the extracted scenario context directly supports
+the claim, and keep every optional tag inside its schema word-count range.
+Do not pad optional tags with generic rationale or unsupported product claims.
+
 The script replaces the placeholder below with a JSON context object containing
 the scenario name, source reference, BDD steps, fixtures, expect arguments, and
 sibling scenario names derived from the same feature label.

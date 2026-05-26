@@ -287,11 +287,22 @@ export function insertJsDocAboveScenario(source, sourceLine, tags) {
   return lines.join(eol) + (hasTrailingNewline ? eol : '');
 }
 
-function runCodex(prompt) {
-  return spawnSync('codex', ['exec', '--sandbox', 'workspace-write', '-C', REPO_ROOT, prompt], {
+export function runCodex(prompt, options = {}) {
+  const {
+    timeoutMs,
+    codexCmd = 'codex',
+    captureLastMessage
+  } = options;
+  const args = ['exec', '--sandbox', 'workspace-write', '-C', REPO_ROOT];
+  if (captureLastMessage) {
+    args.push('--output-last-message', captureLastMessage);
+  }
+  args.push(prompt);
+  return spawnSync(codexCmd, args, {
     cwd: REPO_ROOT,
     encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 20
+    maxBuffer: 1024 * 1024 * 20,
+    timeout: timeoutMs
   });
 }
 

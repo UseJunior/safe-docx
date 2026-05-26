@@ -43,6 +43,7 @@ site/downloads/
 site/schemas/
 packages/contracts-workspace/schemas/
 tests-corpus.json
+data/test-narrative-batch/
 
 # Google service account credentials
 *-credentials.json
