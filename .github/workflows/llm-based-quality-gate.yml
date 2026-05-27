@@ -353,6 +353,9 @@ jobs:
             await core.summary.addRaw(body).write();
 
             const blockingMode = process.env.LLM_GATE_BLOCKING === '1';
+            if (blockingMode && rows.length === 0 && !overrideActive) {
+              core.setFailed('LLM-Based Quality Gate produced no result rows. Failing closed because LLM_GATE_BLOCKING=1.');
+            }
             if (blockingMode && warns > 0 && !overrideActive) {
               core.setFailed(`LLM-Based Quality Gate found ${warns} WARN row(s). Add the \`llm-gate/override\` label to bypass (with justification in a PR comment).`);
             }
