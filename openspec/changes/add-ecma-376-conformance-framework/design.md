@@ -109,7 +109,10 @@ expected outputs. (Note: these are package scripts, not standalone
 two outputs from one registry pass:
 
 1. `spec-compliance/CONFORMANCE.md` (full doc).
-2. The HTML-comment-delimited auto-section in every `README*.md`.
+2. The HTML-comment-delimited auto-section in the canonical `README.md`.
+   Localized READMEs are deliberately excluded — see `tasks.md` task 8
+   and #233 for the rationale (hand-translated static content vs. dynamic
+   English marker block).
 
 The drift check runs the generator and fails if either output disagrees
 with the committed version, catching both "I edited the registry but
