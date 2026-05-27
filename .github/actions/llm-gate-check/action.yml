@@ -60,8 +60,11 @@ runs:
         set -euo pipefail
         : > "$NPM_CONFIG_USERCONFIG"
         : > "$NPM_CONFIG_GLOBALCONFIG"
+        GEMINI_PREFIX="$RUNNER_TEMP/gemini-cli"
         cd "$RUNNER_TEMP"
-        npm install --silent --no-audit --no-fund --global "@google/gemini-cli@${GEMINI_CLI_VERSION}"
+        npm install --silent --no-audit --no-fund --global "@google/gemini-cli@${GEMINI_CLI_VERSION}" --prefix "$GEMINI_PREFIX"
+        echo "$GEMINI_PREFIX/bin" >> "$GITHUB_PATH"
+        export PATH="$GEMINI_PREFIX/bin:$PATH"
         gemini --version
 
     - name: Build settings.json (tool allowlist)
@@ -74,6 +77,9 @@ runs:
         # Top-level `coreTools` / `maxSessionTurns` is silently ignored, which
         # would leave the gate running with default (broader) tool access.
         # See: https://github.com/google-gemini/gemini-cli/blob/v0.39.1/docs/reference/configuration.md
+        # Disable auto-update in CI: the update path shells out to npm before
+        # the model runs, and npm config-load failures look like Gemini startup
+        # failures. The CLI docs define these under `general.*`.
         #
         # The allowlist is intentionally broad so the model can deterministically
         # verify lint/spec/check claims via `npm run *` rather than only
@@ -89,6 +95,10 @@ runs:
         #     by the output sanitizer below.
         cat > .gemini/settings.json <<'JSON'
         {
+          "general": {
+            "enableAutoUpdate": false,
+            "enableAutoUpdateNotification": false
+          },
           "model": {
             "maxSessionTurns": 50
           },
@@ -154,6 +164,16 @@ runs:
         PROMPT_FILE="$RUNNER_TEMP/prompt-${CHECK_ID}.txt"
         compose_prompt "$PROMPT_FILE"
 
+        # The Gemini CLI can invoke npm during startup for package-management
+        # paths such as update checks. Keep the install step's defensive npm
+        # config from leaking into runtime, where npm 11 can abort with
+        # "Exit prior to config file resolving" before Gemini writes JSON.
+        while IFS='=' read -r name _; do
+          case "$name" in
+            npm_config_*|NPM_CONFIG_*) unset "$name" ;;
+          esac
+        done < <(env)
+
         PARSED=""
         ATTEMPTS=0
         MAX_ATTEMPTS=3
@@ -183,6 +203,7 @@ runs:
             GEMINI_EXIT=$?
           fi
 
+          RETRY_REASON="malformed output"
           if [ "$GEMINI_EXIT" -eq 0 ]; then
             # The CLI returns {"response": "<model text>", "stats": {...}}.
             # Extract response, then parse it as our {status, justification} JSON.
@@ -197,25 +218,33 @@ runs:
             fi
             printf 'attempt %d: CLI exit 0 but response JSON did not match {status,justification} contract\n' "$attempt" >> "$DIAG_LOG"
           else
-            printf 'attempt %d: CLI exit %d (no parse attempted)\n' "$attempt" "$GEMINI_EXIT" >> "$DIAG_LOG"
+            if [ ! -s "$RAW" ]; then
+              RETRY_REASON="CLI startup failure before response JSON"
+              printf 'attempt %d: CLI exit %d before writing response JSON\n' "$attempt" "$GEMINI_EXIT" >> "$DIAG_LOG"
+            else
+              RETRY_REASON="CLI failure with unparseable response JSON"
+              printf 'attempt %d: CLI exit %d with non-empty response JSON (no parse attempted)\n' "$attempt" "$GEMINI_EXIT" >> "$DIAG_LOG"
+            fi
           fi
 
           if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-            echo "::warning::Attempt $attempt for check ${CHECK_ID} produced malformed output; retrying"
-            # Append a short corrective note for the next attempt so the
-            # model knows what went wrong.
-            {
-              printf '\n\n## Note from the workflow (attempt %d failed)\n' "$attempt"
-              printf 'Your previous response did not match the required JSON contract. '
-              printf 'Respond with EXACTLY one line: {"status":"PASS or WARN","justification":"..."}. '
-              printf 'No markdown, no fences, no prose.\n'
-            } >> "$PROMPT_FILE"
+            echo "::warning::Attempt $attempt for check ${CHECK_ID} hit ${RETRY_REASON}; retrying"
+            if [ "$RETRY_REASON" = "malformed output" ]; then
+              # Append a short corrective note for the next attempt so the
+              # model knows what went wrong.
+              {
+                printf '\n\n## Note from the workflow (attempt %d failed)\n' "$attempt"
+                printf 'Your previous response did not match the required JSON contract. '
+                printf 'Respond with EXACTLY one line: {"status":"PASS or WARN","justification":"..."}. '
+                printf 'No markdown, no fences, no prose.\n'
+              } >> "$PROMPT_FILE"
+            fi
           fi
         done
 
         if [ -z "$PARSED" ]; then
-          echo "::warning::Check ${CHECK_ID} fell back to WARN after $MAX_ATTEMPTS malformed attempts"
-          PARSED=$(jq -n '{status: "WARN", justification: "Unable to verify: the LLM produced malformed output across all retry attempts. Review this question manually."}')
+          echo "::warning::Check ${CHECK_ID} fell back to WARN after $MAX_ATTEMPTS unsuccessful attempts"
+          PARSED=$(jq -n '{status: "WARN", justification: "Unable to verify: Gemini CLI failed to produce valid gate output across all retry attempts. Review this question manually."}')
 
           # Surface the last-attempt diagnostic so we can root-cause why all
           # retries failed (auth/quota, model availability, CLI/model
