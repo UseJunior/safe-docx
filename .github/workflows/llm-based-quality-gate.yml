@@ -82,7 +82,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            gh pr view "$DISPATCH_PR_NUMBER" --json headRefOid,headRefName,baseRefName,labels,headRepository,headRepositoryOwner > "$RUNNER_TEMP/pr.json"
+            gh pr view "$DISPATCH_PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid,headRefName,baseRefName,labels,headRepository,headRepositoryOwner > "$RUNNER_TEMP/pr.json"
             # SECURITY: the job-level `if:` permits workflow_dispatch
             # unconditionally; the same-repo gate (`head.repo.full_name ==
             # github.repository`) is only enforced for pull_request events. Without
