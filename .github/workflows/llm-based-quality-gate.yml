@@ -62,6 +62,8 @@ jobs:
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
       count: ${{ steps.parse.outputs.count }}
+      skip_gate: ${{ steps.scope.outputs.skip_gate }}
+      skip_reason: ${{ steps.scope.outputs.skip_reason }}
       pr_number: ${{ steps.pr.outputs.pr_number }}
       base_ref: ${{ steps.pr.outputs.base_ref }}
       head_ref: ${{ steps.pr.outputs.head_ref }}
@@ -115,6 +117,32 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Determine changed-file scope
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --jq '.[].filename' > "$RUNNER_TEMP/pr-files.txt"
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const fs = require('fs');
+          const files = fs.readFileSync(process.env.RUNNER_TEMP + '/pr-files.txt', 'utf8')
+            .split(/\r?\n/)
+            .map(file => file.trim())
+            .filter(Boolean);
+          const isPackageLock = (file) => file === 'package-lock.json' || file.endsWith('/package-lock.json');
+          const lockfileOnly = files.length > 0 && files.every(isPackageLock);
+          console.log(`skip_gate=${lockfileOnly ? 'true' : 'false'}`);
+          if (lockfileOnly) {
+            console.log('skip_reason=package-lock-only');
+          } else {
+            console.log('skip_reason=');
+          }
+          NODE
+          echo "Changed files:"
+          sed 's/^/- /' "$RUNNER_TEMP/pr-files.txt"
+
       # SECURITY: parse the checklist from the trusted base ref, not from the
       # PR head. Reading `.github/llm-based-quality-gate/checklist.md` from
       # PR-controlled content would let a PR empty the file (matrix=0 items,
@@ -129,9 +157,14 @@ jobs:
 
       - name: Parse checklist.md → matrix JSON
         id: parse
+        env:
+          SKIP_GATE: ${{ steps.scope.outputs.skip_gate }}
         run: |
           set -euo pipefail
-          node <<'NODE' > "$RUNNER_TEMP/matrix.json"
+          if [ "$SKIP_GATE" = "true" ]; then
+            printf '{"include":[]}' > "$RUNNER_TEMP/matrix.json"
+          else
+            node <<'NODE' > "$RUNNER_TEMP/matrix.json"
           const fs = require('fs');
           const path = '.github/llm-based-quality-gate/checklist.md';
           const text = fs.readFileSync(path, 'utf8');
@@ -146,6 +179,7 @@ jobs:
             }));
           process.stdout.write(JSON.stringify({ include }));
           NODE
+          fi
           jq -e . "$RUNNER_TEMP/matrix.json" >/dev/null
           {
             echo "matrix=$(cat "$RUNNER_TEMP/matrix.json")"
@@ -157,7 +191,7 @@ jobs:
   run-check:
     name: Check ${{ matrix.id }} — ${{ matrix.question }}
     needs: parse-checklist
-    if: ${{ needs.parse-checklist.outputs.count != '0' }}
+    if: ${{ needs.parse-checklist.outputs.skip_gate != 'true' && needs.parse-checklist.outputs.count != '0' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -222,13 +256,14 @@ jobs:
     # require parse-checklist to have succeeded — otherwise an unrelated
     # label-change event (where parse-checklist is skipped via its own
     # `if:`) would still start the aggregate job with empty outputs.
-    if: ${{ always() && needs.parse-checklist.result == 'success' && needs.parse-checklist.outputs.count != '0' }}
+    if: ${{ always() && needs.parse-checklist.result == 'success' && (needs.parse-checklist.outputs.skip_gate == 'true' || needs.parse-checklist.outputs.count != '0') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
       - name: Download all per-item results
+        if: ${{ needs.parse-checklist.outputs.skip_gate != 'true' && needs.parse-checklist.outputs.count != '0' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: results
@@ -236,6 +271,7 @@ jobs:
           merge-multiple: true
 
       - name: List downloaded artifacts
+        if: ${{ needs.parse-checklist.outputs.skip_gate != 'true' && needs.parse-checklist.outputs.count != '0' }}
         run: ls -la results/ || echo "no results downloaded"
 
       - name: Compose and post checklist comment
@@ -246,6 +282,8 @@ jobs:
           PR_NUMBER: ${{ needs.parse-checklist.outputs.pr_number }}
           PR_LABELS: ${{ needs.parse-checklist.outputs.labels }}
           EVENT_NAME: ${{ github.event_name }}
+          SKIP_GATE: ${{ needs.parse-checklist.outputs.skip_gate }}
+          SKIP_REASON: ${{ needs.parse-checklist.outputs.skip_reason }}
         with:
           script: |
             const fs = require('fs');
@@ -275,7 +313,9 @@ jobs:
             const totalAttempts = rows.reduce((acc, r) => acc + (r.attempts || 1), 0);
             const warns = rows.filter(r => r.status === 'WARN').length;
             const passes = rows.filter(r => r.status === 'PASS').length;
-            const overall = warns > 0 ? '⚠️ WARN' : (passes > 0 ? '✅ PASS' : '❓ NO RESULTS');
+            const skipGate = process.env.SKIP_GATE === 'true';
+            const skipReason = process.env.SKIP_REASON || '';
+            const overall = skipGate ? '✅ SKIPPED' : (warns > 0 ? '⚠️ WARN' : (passes > 0 ? '✅ PASS' : '❓ NO RESULTS'));
             const labels = JSON.parse(process.env.PR_LABELS || '[]');
             const overrideActive = labels.includes('llm-gate/override');
 
@@ -286,7 +326,9 @@ jobs:
             const summary = `**Overall:** ${overall} (${passes} pass · ${warns} warn · ${rows.length} total)`;
 
             let table;
-            if (rows.length === 0) {
+            if (skipGate && skipReason === 'package-lock-only') {
+              table = '_Skipped because this PR changes only `package-lock.json` files._';
+            } else if (rows.length === 0) {
               table = '_No results were produced. Check the workflow run for errors._';
             } else {
               table = [
@@ -353,7 +395,7 @@ jobs:
             await core.summary.addRaw(body).write();
 
             const blockingMode = process.env.LLM_GATE_BLOCKING === '1';
-            if (blockingMode && rows.length === 0 && !overrideActive) {
+            if (blockingMode && rows.length === 0 && !skipGate && !overrideActive) {
               core.setFailed('LLM-Based Quality Gate produced no result rows. Failing closed because LLM_GATE_BLOCKING=1.');
             }
             if (blockingMode && warns > 0 && !overrideActive) {
