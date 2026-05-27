@@ -4,7 +4,10 @@
 // Generates two outputs from `spec-compliance/registry/*.md`:
 //   1. `spec-compliance/CONFORMANCE.md` — the full normative-claims summary.
 //   2. The `<!-- AUTO-GENERATED:conformance-summary START -->` … `END` block
-//      inside every `README*.md` at the repo root.
+//      inside the canonical `README.md` at the repo root. Localized READMEs
+//      (`README.es.md`, `README.zh.md`, etc.) carry hand-translated static
+//      content and are deliberately excluded — see the README_FILES const
+//      comment below for the rationale.
 //
 // The drift gate `scripts/check_conformance_doc.mjs` runs this script and
 // then `git diff --exit-code` to catch hand edits to either output.

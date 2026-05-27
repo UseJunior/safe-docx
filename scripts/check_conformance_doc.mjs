@@ -5,8 +5,11 @@
 // `generate_conformance_doc.mjs`, then verifies that the generated outputs
 // match the committed working tree. Fails if either:
 //   - `spec-compliance/CONFORMANCE.md` differs from generator output, or
-//   - any `README*.md` AUTO-GENERATED marker block differs from generator
-//     output.
+//   - the canonical `README.md` AUTO-GENERATED marker block differs from
+//     generator output.
+// Localized READMEs (`README.es.md`, `README.zh.md`, etc.) carry
+// hand-translated static content and are NOT verified by this gate — see
+// `generate_conformance_doc.mjs` for the rationale.
 // Mirrors the package-script pattern used by `check:tool-docs` and
 // `check:trust-metrics`.
 
