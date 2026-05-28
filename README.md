@@ -308,7 +308,7 @@ npm run coverage:matrix
 
 ## Privacy
 
-Safe Docx runs entirely on your local machine. No document content is sent to external servers. See our [Privacy Policy](https://usejunior.com/privacy_policy) for details.
+Safe Docx runs entirely on your local machine. No document content is sent to external servers. See our [Privacy Policy](https://usejunior.com/privacy_policy?utm_source=github&utm_medium=readme&utm_campaign=safe-docx) for details.
 
 ## Governance
 
