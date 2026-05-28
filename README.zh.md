@@ -297,7 +297,7 @@ npm run coverage:matrix
 
 ## 隐私
 
-Safe Docx 完全在你的本地机器上运行。不会向外部服务器发送任何文档内容。详见我们的[隐私政策](https://usejunior.com/privacy_policy)。
+Safe Docx 完全在你的本地机器上运行。不会向外部服务器发送任何文档内容。详见我们的[隐私政策](https://usejunior.com/privacy_policy?utm_source=github&utm_medium=readme&utm_campaign=safe-docx)。
 
 ## 治理
 
