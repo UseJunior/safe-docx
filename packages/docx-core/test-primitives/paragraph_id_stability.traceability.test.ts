@@ -128,11 +128,17 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
         await attachPrettyJson('Duplicate paragraph identifiers', duplicateIds);
       });
 
-      await then('the colliding paragraphs receive distinct canonical identifiers', () => {
+      await then('the colliding paragraphs receive the unsalted hash then the |salt:1 hash', () => {
         expect(duplicateIds.length).toBe(2);
         expect(duplicateIds[0]).toMatch(/^_bk_[0-9a-f]{12}$/);
         expect(duplicateIds[1]).toMatch(/^_bk_[0-9a-f]{12}$/);
         expect(duplicateIds[1]).not.toEqual(duplicateIds[0]);
+        // Pin the exact derivation so the test characterizes the salt-loop, not
+        // just "two distinct IDs". If buildParagraphSeed later includes sibling
+        // position or wider context, both IDs would still be distinct without
+        // the salt loop ever running — this assertion fails loudly in that case.
+        expect(duplicateIds[0]).toBe('_bk_04c5b72c79f7'); // sha12(seed)
+        expect(duplicateIds[1]).toBe('_bk_a2abd088979b'); // sha12(seed|salt:1)
       });
     },
   );
@@ -188,6 +194,10 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
           expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
         }
         expect(firstOpenIds[1]).not.toEqual(firstOpenIds[0]);
+        // Pin the cross-open salt assignment so any drift in salt-loop iteration
+        // order (e.g., if derivation later considered prior-document state)
+        // would fail the test loudly. See companion scenario for the seed math.
+        expect(firstOpenIds).toEqual(['_bk_04c5b72c79f7', '_bk_a2abd088979b']);
       });
     },
   );
