@@ -98,4 +98,97 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Para
       });
     },
   );
+
+  test.openspec('insertParagraphBookmarks resolves seed collisions with a deterministic salt')(
+    'insertParagraphBookmarks resolves seed collisions with a deterministic salt',
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+      const xmlBody =
+        '<w:p><w:r><w:t>Anchor context.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Duplicate clause.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Tail context.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Anchor context.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Duplicate clause.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Tail context.</w:t></w:r></w:p>';
+      const doc = makeDoc(xmlBody);
+      let duplicateIds: (string | null)[] = [];
+
+      await given('two paragraphs have identical text and identical neighbor context', async () => {
+        await attachPrettyJson('Collision fixture', {
+          duplicateParagraphIndexes: [1, 4],
+          duplicateText: 'Duplicate clause.',
+          previousText: 'Anchor context.',
+          nextText: 'Tail context.',
+        });
+      });
+
+      await when('insertParagraphBookmarks is called', async () => {
+        insertParagraphBookmarks(doc, 'test-attachment');
+        const paragraphs = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+        duplicateIds = [paragraphs[1], paragraphs[4]].map((p) => getParagraphBookmarkId(p as Element));
+        await attachPrettyJson('Duplicate paragraph identifiers', duplicateIds);
+      });
+
+      await then('the colliding paragraphs receive distinct canonical identifiers', () => {
+        expect(duplicateIds.length).toBe(2);
+        expect(duplicateIds[0]).toMatch(/^_bk_[0-9a-f]{12}$/);
+        expect(duplicateIds[1]).toMatch(/^_bk_[0-9a-f]{12}$/);
+        expect(duplicateIds[1]).not.toEqual(duplicateIds[0]);
+      });
+    },
+  );
+
+  test.openspec('Collision resolution is stable across independent reopens')(
+    'Collision resolution is stable across independent reopens',
+    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+      const xmlBody =
+        '<w:p><w:r><w:t>Anchor context.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Duplicate clause.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Tail context.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Anchor context.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Duplicate clause.</w:t></w:r></w:p>' +
+        '<w:p><w:r><w:t>Tail context.</w:t></w:r></w:p>';
+
+      let firstOpenIds: (string | null)[] = [];
+      let secondOpenIds: (string | null)[] = [];
+
+      await given('the same colliding paragraph content is opened twice independently', async () => {
+        await attachPrettyJson('Collision fixture', {
+          duplicateParagraphIndexes: [1, 4],
+          duplicateText: 'Duplicate clause.',
+          previousText: 'Anchor context.',
+          nextText: 'Tail context.',
+        });
+      });
+
+      await when('insertParagraphBookmarks is applied to each open', async () => {
+        const doc1 = makeDoc(xmlBody);
+        insertParagraphBookmarks(doc1, 'test-attachment');
+        const firstParagraphs = Array.from(doc1.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+        firstOpenIds = [firstParagraphs[1], firstParagraphs[4]].map((p) =>
+          getParagraphBookmarkId(p as Element),
+        );
+
+        const doc2 = makeDoc(xmlBody);
+        insertParagraphBookmarks(doc2, 'test-attachment');
+        const secondParagraphs = Array.from(doc2.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+        secondOpenIds = [secondParagraphs[1], secondParagraphs[4]].map((p) =>
+          getParagraphBookmarkId(p as Element),
+        );
+
+        await attachPrettyJson('Duplicate paragraph identifiers by open', {
+          firstOpenIds,
+          secondOpenIds,
+        });
+      });
+
+      await then('collision salts are assigned byte-identically by document order', () => {
+        expect(firstOpenIds.length).toBe(2);
+        expect(secondOpenIds).toEqual(firstOpenIds);
+        for (const id of firstOpenIds) {
+          expect(id).toMatch(/^_bk_[0-9a-f]{12}$/);
+        }
+        expect(firstOpenIds[1]).not.toEqual(firstOpenIds[0]);
+      });
+    },
+  );
 });
