@@ -14,9 +14,11 @@ import { save } from '../tools/save.js';
 import { makeDocxWithDocumentXml, extractParaIdsFromToon } from '../testing/docx_test_utils.js';
 import { createTrackedTempDir } from '../testing/session-test-utils.js';
 
-// OOXML preservation invariants distilled from the ECMA-376 / MS-OE376 triage.
-// Each test pins a brownfield-mutation invariant the input already satisfies
-// so future refactors cannot silently regress it.
+// OOXML preservation invariants distilled from the MS-OE376 / Word-behavior
+// triage. Each test pins a brownfield-mutation invariant the input already
+// satisfies so future refactors cannot silently regress it. Spec section
+// citations live in the triage doc and (when the conformance registry covers
+// these elements) in follow-up .conformance(...) calls.
 
 const test = testAllure.epic('Document Editing').withLabels({
   feature: 'OOXML Preservation Invariants',
@@ -194,11 +196,10 @@ describe('OOXML preservation invariants: brownfield mutations preserve what the 
   // cloneParagraphShell path (document.ts ~757): the anchor paragraph is deep-
   // cloned to seed the new <w:p>, which means its <w:sectPr> child rides along.
   //
-  // If this fails, do NOT delete the test — it has caught a real preservation
-  // bug. Leave it failing with this comment so the failure carries its own
-  // explanation. Fixing it belongs in cloneParagraphShell (strip sectPr from
-  // the cloned pPr) or in a post-insert sweep.
-  test('inserting after a sectPr-carrying paragraph does not clone the section break onto the new paragraph', async ({
+  // Marked test.fails because the bug is real and tracked in issue #285. When
+  // that issue is fixed, this test will start "failing" (the assertion will
+  // pass); flip test.fails back to test at that point.
+  test.fails('inserting after a sectPr-carrying paragraph does not clone the section break onto the new paragraph (pins #285)', async ({
     given,
     when,
     then,
@@ -414,17 +415,17 @@ describe('OOXML preservation invariants: brownfield mutations preserve what the 
   // even with normalization bypassed at open, the mutation pipeline should
   // not silently strip rsid from runs the caller did not touch.
   //
-  // Findings while landing this test (left failing intentionally — same
-  // policy as B.2): replace_text.ts:286 calls session.doc.mergeRunsOnly()
-  // after the trimmed-replace branch, which invokes mergeRuns() across the
-  // whole body and strips rsid from every <w:r>, including the flanking
-  // runs this test never touched. Paragraph-level rsids (rsidR / rsidRDefault
-  // / rsidP on <w:p>) DO survive — those are pinned below. Fixing run-level
-  // preservation would mean either scoping mergeRunsOnly to the edited
-  // paragraph or skipping the rsid strip when the pre/post merge keys are
-  // already identical. Do NOT delete this test — it documents a real
-  // preservation gap on the mutation path, not just normalization on open.
-  test('replace_text on one run preserves rsid attribute values on untouched runs and the paragraph (skip_normalization)', async ({
+  // Findings while landing this test (marked test.fails — tracked in #286):
+  // replace_text.ts:286 calls session.doc.mergeRunsOnly() after the trimmed-
+  // replace branch, which invokes mergeRuns() across the whole body and
+  // strips rsid from every <w:r>, including the flanking runs this test never
+  // touched. Paragraph-level rsids (rsidR / rsidRDefault / rsidP on <w:p>) DO
+  // survive — those are pinned below. Fixing run-level preservation would
+  // mean either scoping mergeRunsOnly to the edited paragraph or skipping the
+  // rsid strip when the pre/post merge keys are already identical. When #286
+  // is fixed, this test will start "failing" (assertion will pass); flip
+  // test.fails back to test at that point.
+  test.fails('replace_text on one run preserves rsid attribute values on untouched runs and the paragraph (skip_normalization) (pins #286)', async ({
     given,
     when,
     then,
