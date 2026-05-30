@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
 import { parseXml } from '../src/primitives/xml.js';
-import { OOXML } from '../src/primitives/namespaces.js';
+import { OOXML, W } from '../src/primitives/namespaces.js';
 import { extractTables, type ExtractTablesResult } from '../src/primitives/tables.js';
 
 const test = testAllure.epic('DOCX Primitives').withLabels({ feature: 'Table Extraction' });
@@ -409,6 +409,73 @@ describe('extractTables', () => {
       expect(result!.tables).toHaveLength(2);
       expect(result!.tables[0]!.headers).toEqual(['A', 'B']);
       expect(result!.tables[1]!.headers).toEqual(['F', 'G']);
+    });
+  });
+
+  // Pins the deliberate asymmetry between extractTables (top-level only) and
+  // the paragraph-descent paths (recursive). See tables.ts ~231 comment and
+  // document_view_tables.test.ts:445 for the paragraph-side coverage.
+  test('nested tables: extractTables skips nested rows while getElementsByTagNameNS(W.p) reaches nested paragraphs', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let doc: Document;
+    let result: ExtractTablesResult;
+    let allParagraphTexts: string[];
+
+    await given('an outer table with a nested table inside one cell', async () => {
+      const bodyXml =
+        `<w:tbl>` +
+        `<w:tr>` +
+        `<w:tc><w:p><w:r><w:t>OuterHeaderA</w:t></w:r></w:p></w:tc>` +
+        `<w:tc><w:p><w:r><w:t>OuterHeaderB</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `<w:tr>` +
+        `<w:tc>` +
+        `<w:p><w:r><w:t>OuterCellA1</w:t></w:r></w:p>` +
+        `<w:tbl>` +
+        `<w:tr>` +
+        `<w:tc><w:p><w:r><w:t>NestedHeader</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `<w:tr>` +
+        `<w:tc><w:p><w:r><w:t>NestedRowCell</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `</w:tbl>` +
+        `</w:tc>` +
+        `<w:tc><w:p><w:r><w:t>OuterCellB1</w:t></w:r></w:p></w:tc>` +
+        `</w:tr>` +
+        `</w:tbl>`;
+      doc = makeDoc(bodyXml);
+    });
+
+    await when('extractTables is called and document paragraphs are walked recursively', async () => {
+      result = extractTables(doc!);
+      const paragraphs = Array.from(doc!.getElementsByTagNameNS(OOXML.W_NS, W.p));
+      allParagraphTexts = paragraphs
+        .map((p) =>
+          Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.t))
+            .map((t) => t.textContent ?? '')
+            .join(''),
+        );
+    });
+
+    await then('extractTables returns only the outer table and does not expose nested rows', async () => {
+      expect(result!.tables).toHaveLength(1);
+      const outer = result!.tables[0]!;
+      expect(outer.headers).toEqual(['OuterHeaderA', 'OuterHeaderB']);
+      // Exactly one data row (OuterCellA1, OuterCellB1). The nested table's
+      // header row and nested data row must NOT appear as outer-table rows.
+      expect(outer.rows).toHaveLength(1);
+      const flatRowValues = outer.rows.flatMap((r) => Object.values(r));
+      expect(flatRowValues).not.toContain('NestedHeader');
+      expect(flatRowValues).not.toContain('NestedRowCell');
+    });
+
+    await and('the paragraph-descent path still reaches nested paragraphs', async () => {
+      expect(allParagraphTexts).toContain('NestedHeader');
+      expect(allParagraphTexts).toContain('NestedRowCell');
     });
   });
 });
