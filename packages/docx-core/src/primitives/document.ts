@@ -762,6 +762,13 @@ export class DocxDocument {
         if (child.nodeType === 1 && isWTag(child as Element, W.pPr)) continue;
         newP.removeChild(child);
       }
+      // sectPr is the section terminator — must stay on the anchor, not propagate to the new paragraph.
+      const clonedPPr = getDirectChildrenByName(newP, W.pPr)[0];
+      if (clonedPPr) {
+        for (const sectPr of getDirectChildrenByName(clonedPPr, 'sectPr')) {
+          clonedPPr.removeChild(sectPr);
+        }
+      }
       return newP;
     }
 

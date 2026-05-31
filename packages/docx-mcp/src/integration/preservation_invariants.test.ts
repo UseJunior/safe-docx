@@ -191,15 +191,9 @@ describe('OOXML preservation invariants: brownfield mutations preserve what the 
 
   // B.2 Mid-document section break: inserting AFTER a paragraph that carries
   // <w:sectPr> in its <w:pPr> must NOT clone the sectPr into the new paragraph.
-  //
-  // This assertion exercises the documented risk in insert_paragraph's
-  // cloneParagraphShell path (document.ts ~757): the anchor paragraph is deep-
-  // cloned to seed the new <w:p>, which means its <w:sectPr> child rides along.
-  //
-  // Marked test.fails because the bug is real and tracked in issue #285. When
-  // that issue is fixed, this test will start "failing" (the assertion will
-  // pass); flip test.fails back to test at that point.
-  test.fails('inserting after a sectPr-carrying paragraph does not clone the section break onto the new paragraph (pins #285)', async ({
+  // sectPr is a section terminator, so propagating it would fragment the
+  // document's section model.
+  test('inserting after a sectPr-carrying paragraph does not clone the section break onto the new paragraph', async ({
     given,
     when,
     then,
@@ -263,9 +257,6 @@ describe('OOXML preservation invariants: brownfield mutations preserve what the 
 
       const insertedPPr = directChildren(inserted, 'pPr')[0];
       if (insertedPPr) {
-        // The known failure mode: cloneParagraphShell deep-clones the anchor's
-        // pPr, which carries sectPr along. Asserting zero here pins the
-        // invariant — see test comment above for remediation pointer.
         expect(directChildren(insertedPPr, 'sectPr').length).toBe(0);
       }
     });
