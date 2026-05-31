@@ -228,7 +228,16 @@ export function extractTables(doc: Document, options?: ExtractTablesOptions): Ex
       dataRecords.push(record);
     }
 
-    // Check for nested tables and emit diagnostic (but don't skip the table)
+    // Check for nested tables and emit diagnostic (but don't skip the table).
+    //
+    // extractTables deliberately does not recurse into nested tables: the
+    // structured rows/headers contract treats only top-level body tables as
+    // first-class. Nested-table CONTENT is still mutable via the paragraph-
+    // descent paths (read_file, grep, replace_text) because DocxDocument
+    // .getParagraphs() at document.ts:420 uses getElementsByTagNameNS(W.p),
+    // which is recursive. document_view_tables.test.ts:445 covers the
+    // paragraph-descent side. The asymmetry test in tables.test.ts pins the
+    // extraction skip as intentional rather than accidental.
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
       const cells = getDirectChildrenByName(rows[rowIndex]!, W.tc);
       for (const cell of cells) {
