@@ -400,23 +400,14 @@ describe('OOXML preservation invariants: brownfield mutations preserve what the 
   // proves that the style fingerprint *ignores* rsid (a weaker claim).
   //
   // Opens with skip_normalization=true so we isolate the mutation path itself:
-  // the default open_document calls normalize() → mergeRuns() which strips
-  // rsid from live runs (merge_runs.ts:277). That stripping at open time is
-  // documented normalization behavior. This test pins the narrower invariant:
-  // even with normalization bypassed at open, the mutation pipeline should
-  // not silently strip rsid from runs the caller did not touch.
+  // even with normalization bypassed at open, the mutation pipeline must not
+  // silently strip rsid from runs the caller did not touch.
   //
-  // Findings while landing this test (marked test.fails — tracked in #286):
-  // replace_text.ts:286 calls session.doc.mergeRunsOnly() after the trimmed-
-  // replace branch, which invokes mergeRuns() across the whole body and
-  // strips rsid from every <w:r>, including the flanking runs this test never
-  // touched. Paragraph-level rsids (rsidR / rsidRDefault / rsidP on <w:p>) DO
-  // survive — those are pinned below. Fixing run-level preservation would
-  // mean either scoping mergeRunsOnly to the edited paragraph or skipping the
-  // rsid strip when the pre/post merge keys are already identical. When #286
-  // is fixed, this test will start "failing" (assertion will pass); flip
-  // test.fails back to test at that point.
-  test.fails('replace_text on one run preserves rsid attribute values on untouched runs and the paragraph (skip_normalization) (pins #286)', async ({
+  // Resolved by #286: mergeRuns() no longer strips rsid from live runs and
+  // no longer merges runs whose rsid attributes differ. Untouched flanking
+  // runs keep their rsid; paragraph-level rsids on <w:p> are likewise
+  // preserved.
+  test('replace_text on one run preserves rsid attribute values on untouched runs and the paragraph (skip_normalization) (#286)', async ({
     given,
     when,
     then,

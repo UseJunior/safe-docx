@@ -283,7 +283,9 @@ export async function replaceText(
         }
         // Range trimming splits the original run at prefix/suffix boundaries, producing
         // adjacent runs with identical formatting. Merge them back to keep output clean.
-        session.doc.mergeRunsOnly();
+        // preserveRsidIdentity keeps the merge from rewriting rsids on runs the caller
+        // never touched — see #286.
+        session.doc.mergeRunsOnly({ preserveRsidIdentity: true });
       }
       // else: text is identical after normalization — no-op
     }

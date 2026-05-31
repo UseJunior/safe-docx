@@ -124,6 +124,31 @@ describe('merge_runs', () => {
       });
     });
 
+    test('preserveRsidIdentity blocks merging runs that differ only in rsid attributes (#286)', async ({ given, when, then, and }: AllureBddContext) => {
+      let doc!: Document;
+      let result!: ReturnType<typeof mergeRuns>;
+      await given('two bold runs with different w:rsidR attributes', async () => {
+        doc = makeDoc(
+          '<w:p>' +
+          '<w:r w:rsidR="00A1"><w:rPr><w:b/></w:rPr><w:t>A</w:t></w:r>' +
+          '<w:r w:rsidR="00B2"><w:rPr><w:b/></w:rPr><w:t>B</w:t></w:r>' +
+          '</w:p>',
+        );
+      });
+      await when('mergeRuns is called with preserveRsidIdentity', async () => {
+        result = mergeRuns(doc, { preserveRsidIdentity: true });
+      });
+      await then('no runs are merged', () => {
+        expect(result.runsMerged).toBe(0);
+        expect(countRuns(doc)).toBe(2);
+      });
+      await and('both rsid attributes are preserved on the live runs', () => {
+        const runs = Array.from(doc.getElementsByTagNameNS(W_NS, W.r));
+        expect(runs[0]?.getAttribute('w:rsidR')).toBe('00A1');
+        expect(runs[1]?.getAttribute('w:rsidR')).toBe('00B2');
+      });
+    });
+
     test('handles runs with no rPr (both empty = identical)', async ({ given, when, then, and }: AllureBddContext) => {
       let doc!: Document;
       let result!: ReturnType<typeof mergeRuns>;
