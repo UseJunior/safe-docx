@@ -13,6 +13,20 @@ export type MergeRunsResult = {
   proofErrRemoved: number;
 };
 
+export type MergeRunsOptions = {
+  /**
+   * When true, adjacent runs that differ in any `w:rsid*` attribute are
+   * NOT merged, and existing rsid attributes on live runs are not stripped.
+   * Use this from edit pipelines (e.g. `replace_text`) so that mutations
+   * to one run do not silently rewrite rsid identity on neighbouring runs
+   * the caller never touched. The default (`false`) preserves the
+   * normalize-on-open behaviour: every run in the body is first stripped
+   * of its `w:rsid*` attributes, then format-identical adjacent runs are
+   * merged unconditionally.
+   */
+  preserveRsidIdentity?: boolean;
+};
+
 // ── Barrier element local names ────────────────────────────────────────
 
 const BARRIER_LOCALS = new Set([
@@ -73,6 +87,21 @@ function runFormattingKey(run: Element): string {
   const clone = rPr.cloneNode(true) as Element;
   stripRsidAttributes(clone);
   return serializer.serializeToString(clone);
+}
+
+/**
+ * Canonical key for a run's rsid attributes. Two runs with the same key
+ * carry identical revision-save-id provenance and are mergeable; runs
+ * with differing rsids represent distinct edit sessions and must not be
+ * merged (Word preserves the boundary as part of its revision-tracking
+ * heuristics).
+ */
+function runRsidKey(run: Element): string {
+  return Array.from(run.attributes)
+    .filter((attr) => /^rsid/i.test(attr.localName ?? attr.name))
+    .map((attr) => `${attr.namespaceURI ?? ''}:${attr.localName ?? attr.name}=${attr.value}`)
+    .sort()
+    .join('|');
 }
 
 /** Check whether a run contains barrier content (fldChar, instrText). */
@@ -209,7 +238,7 @@ function collectMergeableRunGroups(paragraph: Element): Element[][] {
 }
 
 /** Merge adjacent format-identical runs within a paragraph. */
-function mergeParagraphRuns(paragraph: Element): number {
+function mergeParagraphRuns(paragraph: Element, preserveRsidIdentity: boolean): number {
   let merged = 0;
   const groups = collectMergeableRunGroups(paragraph);
 
@@ -224,7 +253,8 @@ function mergeParagraphRuns(paragraph: Element): number {
       if (
         !runContainsBarrierContent(current) &&
         !runContainsBarrierContent(next) &&
-        runFormattingKey(current) === runFormattingKey(next)
+        runFormattingKey(current) === runFormattingKey(next) &&
+        (!preserveRsidIdentity || runRsidKey(current) === runRsidKey(next))
       ) {
         // Move all content children of `next` into `current`.
         for (const node of runContentChildren(next)) {
@@ -248,8 +278,13 @@ function mergeParagraphRuns(paragraph: Element): number {
 
 /**
  * Merge adjacent format-identical runs across all paragraphs in the
- * document body. Removes `<w:proofErr>` elements and strips `rsid`
- * attributes from runs before comparison.
+ * document body. Removes `<w:proofErr>` elements.
+ *
+ * Pass `{ preserveRsidIdentity: true }` from edit pipelines that must not
+ * disturb rsid attributes on runs the caller did not touch (see #286).
+ * The default omits that guard and matches the historical normalize-on-open
+ * behaviour, which consolidates rsid-fragmented runs that Word produces
+ * across edit sessions.
  *
  * Safety barriers prevent merges across:
  * - Field boundaries (fldChar, instrText)
@@ -257,10 +292,11 @@ function mergeParagraphRuns(paragraph: Element): number {
  * - Bookmark boundaries (bookmarkStart, bookmarkEnd)
  * - Tracked-change wrapper boundaries (ins, del, moveFrom, moveTo)
  */
-export function mergeRuns(doc: Document): MergeRunsResult {
+export function mergeRuns(doc: Document, opts: MergeRunsOptions = {}): MergeRunsResult {
   const body = doc.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0);
   if (!body) return { runsMerged: 0, proofErrRemoved: 0 };
 
+  const preserveRsidIdentity = opts.preserveRsidIdentity === true;
   let totalMerged = 0;
   let totalProofErr = 0;
 
@@ -271,13 +307,14 @@ export function mergeRuns(doc: Document): MergeRunsResult {
   for (const p of paragraphs) {
     totalProofErr += removeProofErrors(p);
 
-    // Strip rsid attributes from all runs before comparing.
-    const runs = Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.r));
-    for (const r of runs) {
-      stripRsidAttributes(r);
+    if (!preserveRsidIdentity) {
+      const runs = Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.r));
+      for (const r of runs) {
+        stripRsidAttributes(r);
+      }
     }
 
-    totalMerged += mergeParagraphRuns(p);
+    totalMerged += mergeParagraphRuns(p, preserveRsidIdentity);
   }
 
   return { runsMerged: totalMerged, proofErrRemoved: totalProofErr };

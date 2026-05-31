@@ -35,7 +35,7 @@ import {
   type ExtractTablesOptions,
   type ExtractTablesResult,
 } from './tables.js';
-import { mergeRuns, type MergeRunsResult } from './merge_runs.js';
+import { mergeRuns, type MergeRunsOptions, type MergeRunsResult } from './merge_runs.js';
 import { simplifyRedlines } from './simplify_redlines.js';
 import { preventDoubleElevation } from './prevent_double_elevation.js';
 import { validateDocument, type ValidateDocumentResult } from './validate_document.js';
@@ -963,9 +963,11 @@ export class DocxDocument {
   /**
    * Merge format-identical adjacent runs only (no redline simplification).
    * Useful as a pre-processing step before text search when runs may be fragmented.
+   * Pass `{ preserveRsidIdentity: true }` from edit pipelines that must not
+   * disturb rsid attributes on runs the caller did not touch (#286).
    */
-  mergeRunsOnly(): MergeRunsResult {
-    const result = mergeRuns(this.documentXml);
+  mergeRunsOnly(opts: MergeRunsOptions = {}): MergeRunsResult {
+    const result = mergeRuns(this.documentXml, opts);
     if (result.runsMerged > 0) {
       this.dirty = true;
       this.documentViewCache = null;
