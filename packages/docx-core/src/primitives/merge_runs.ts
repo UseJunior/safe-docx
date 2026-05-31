@@ -20,8 +20,9 @@ export type MergeRunsOptions = {
    * Use this from edit pipelines (e.g. `replace_text`) so that mutations
    * to one run do not silently rewrite rsid identity on neighbouring runs
    * the caller never touched. The default (`false`) preserves the
-   * normalize-on-open behaviour: runs with identical formatting are merged
-   * regardless of rsid, with the leftmost run's rsid surviving.
+   * normalize-on-open behaviour: every run in the body is first stripped
+   * of its `w:rsid*` attributes, then format-identical adjacent runs are
+   * merged unconditionally.
    */
   preserveRsidIdentity?: boolean;
 };
