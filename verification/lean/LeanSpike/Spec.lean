@@ -3,6 +3,7 @@ import Tier2.OoxmlModel
 import Tier2.FieldStructure
 import Tier2.AcceptReject
 import Tier2.InvFieldOne
+import Tier2.RoundTripText
 
 namespace LeanSpike
 
@@ -48,15 +49,23 @@ def rejectAllChanges : OoxmlDoc → OoxmlDoc := Tier2.AcceptReject.reject
     As of Tier 2 this is the definitional `Tier2.FieldStructure.validateFieldStructure`. -/
 def validateFieldStructure : OoxmlDoc → Bool := Tier2.FieldStructure.validateFieldStructure
 
-/-- Abstract Lean symbol mirroring `extractTextWithParagraphs` in
+/-- `extractTextWithParagraphs`, mirroring
     `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-688`.
-    Remains axiomatic — owned by the `inv_rt_001` successor change. -/
-axiom extractTextWithParagraphs : OoxmlDoc → String
+    As of the `inv_rt_001` closure this is the definitional
+    `Tier2.RoundTripText.extractText` (per-paragraph text modeled as `List Char`;
+    see that module's header for the `String`-vs-`List Char` modeling note). -/
+def extractTextWithParagraphs : OoxmlDoc → List (List Char) :=
+  Tier2.RoundTripText.extractText
 
-/-- Abstract Lean symbol mirroring `normalizeText` in
+/-- `normalizeText`, mirroring
     `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:701-711`.
-    Remains axiomatic — owned by the `inv_rt_001` successor change. -/
-axiom normalizeText : String → String
+    As of the `inv_rt_001` closure this is the definitional
+    `Tier2.RoundTripText.normalizeText`. It models the load-bearing behaviour
+    (trim each paragraph entry, drop blank entries — the structured analogue of
+    `\n+ → \n` plus outer `trim`); the intra-line multi-space/tab collapse the TS
+    regex also performs is a documented Tier-2.5-class residual. -/
+def normalizeText : List (List Char) → List (List Char) :=
+  Tier2.RoundTripText.normalizeText
 
 /-- **Residual obligation.** This repo's inplace atomizer output
     (`compareDocumentXml` in inplace mode, `pipeline.ts:635-650` then the
@@ -130,6 +139,40 @@ theorem inv_field_001 :
   have hPF := compareDocumentXml_output_preservation_friendly a b combined h
   exact Tier2.InvFieldOne.field_structure_preserved_doc combined hPF
 
+/-- **Residual obligation (text round-trip).** For this repo's inplace atomizer
+    output `combined`, the normalized *revised-side* projection of `combined`
+    (`Tier2.RoundTripText.revisedText` — the per-paragraph text of `acceptBlocks`)
+    equals the normalized text of the revised input `b`, and the normalized
+    *original-side* projection (`Tier2.RoundTripText.originalText` — the
+    per-paragraph text of `rejectBlocks`) equals the normalized text of the
+    original input `a`.
+
+    This is the second named, load-bearing residual axiom of the spike (alongside
+    `compareDocumentXml_output_preservation_friendly`). Like that one it is
+    engine-specific to this repo's inplace atomizer, universal in `(a, b)`, and
+    NOT empirically grounded across the full ECMA-376 surface; Tier 3 discharges it
+    by modeling `compareDocumentXml` definitionally.
+
+    Crucially it is stated over text *projections of `combined` alone*
+    (`revisedText` / `originalText`), with NO reference to the document-level
+    `accept` / `reject`. The machine-checked lemmas
+    `Tier2.RoundTripText.extractText_accept_normalized` and
+    `Tier2.RoundTripText.extractText_reject` carry the connection from those
+    projections to `acceptAllChanges` / `rejectAllChanges`, so this axiom is not a
+    restatement of `inv_rt_001`.
+
+    Evidence: the round-trip bridge fixture in
+    `packages/docx-core/src/integration/lean-spec-bridge.test.ts` checks the
+    TS analogue (normalized revised-side and original-side text of a live
+    comparison output vs. the revised/original inputs), which is what the engine
+    emits today. -/
+axiom compareDocumentXml_output_text_roundtrip :
+  ∀ a b combined, compareDocumentXml a b = some combined →
+    normalizeText (Tier2.RoundTripText.revisedText combined)
+        = normalizeText (extractTextWithParagraphs b) ∧
+    normalizeText (Tier2.RoundTripText.originalText combined)
+        = normalizeText (extractTextWithParagraphs a)
+
 /-- INV-RT-001: paired round-trip text equality under normalization, with
     accept-all recovering `b` and reject-all recovering `a`. Scoped to the
     successful inplace-mode comparison output `compareDocumentXml a b = some combined`.
@@ -144,9 +187,14 @@ theorem inv_field_001 :
     together with the text helpers at
     `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-711`.
 
-    This theorem **remains unproved** — it is explicitly deferred to the
-    `add-inv-rt-001-proof` successor change, which owns `extractTextWithParagraphs`
-    and `normalizeText`. -/
+    **Closed** by composing the named residual axiom
+    `compareDocumentXml_output_text_roundtrip` with the machine-checked round-trip
+    lemmas `Tier2.RoundTripText.extractText_accept_normalized` (accept side:
+    `normalizeText ∘ extractText ∘ accept = normalizeText ∘ revisedText`, the
+    empty-paragraph drop absorbed by `normalizeText`) and
+    `Tier2.RoundTripText.extractText_reject` (reject side:
+    `extractText ∘ reject = originalText`, the `delText → text` rename being
+    text-invariant). -/
 theorem inv_rt_001 :
   ∀ (a b combined : OoxmlDoc),
     compareDocumentXml a b = some combined →
@@ -154,6 +202,12 @@ theorem inv_rt_001 :
       normalizeText (extractTextWithParagraphs b) ∧
     normalizeText (extractTextWithParagraphs (rejectAllChanges combined)) =
       normalizeText (extractTextWithParagraphs a) := by
-  sorry
+  intro a b combined hcomp
+  obtain ⟨hrev, horig⟩ := compareDocumentXml_output_text_roundtrip a b combined hcomp
+  simp only [normalizeText, extractTextWithParagraphs, acceptAllChanges,
+    rejectAllChanges] at hrev horig ⊢
+  refine ⟨?_, ?_⟩
+  · rw [Tier2.RoundTripText.extractText_accept_normalized]; exact hrev
+  · rw [Tier2.RoundTripText.extractText_reject]; exact horig
 
 end LeanSpike
