@@ -559,3 +559,89 @@ The atomizer comparison pipeline SHALL evaluate cross-run inplace reconstruction
 - **THEN** download SHALL succeed without rebuild fallback
 - **AND** tracked output SHALL preserve table structure (`w:tbl` remains present)
 
+### Requirement: Round-trip text preservation across track-change resolution is formally proved, with a single named residual obligation
+
+The system SHALL carry a machine-checked Lean proof closing `inv_rt_001` in `verification/lean/LeanSpike/Spec.lean` (the sole remaining `sorry` in the verification spike). `inv_rt_001` states that for any Lean `OoxmlDoc` values `a`, `b`, `combined` with `compareDocumentXml a b = some combined`, the normalized text of `acceptAllChanges combined` equals the normalized text of `b`, and the normalized text of `rejectAllChanges combined` equals the normalized text of `a`.
+
+The proof SHALL be structured as definitional model + machine-checked lemmas + a single named residual axiom, mirroring the Tier 2 `inv_field_001` closure:
+
+- `extractTextWithParagraphs` and `normalizeText` in `Spec.lean` SHALL be rewired from `axiom` to definitional `def`s aliasing new functions in `verification/lean/Tier2/RoundTripText.lean`, which mirror `extractTextWithParagraphs` (`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-688`) and `normalizeText` (`trackChangesAcceptorAst.ts:701-711`). `extractTextWithParagraphs` collects `w:t` and `w:delText` text in document order per paragraph; `instrText` / `delInstrText` / `fldChar` atoms contribute no text.
+- `RoundTripText.lean` SHALL prove, with no `sorry`: (a) `extractText (accept d)` equals the revised-side text projection of `d`; (b) `extractText (reject d)` equals the original-side text projection of `d`, consuming the text-invariance of the `delText → text` / `delInstrText → instrText` rename pass; and (c) that `accept`'s dropping of empty-collapsing paragraphs (`verification/lean/Tier2/AcceptReject.lean:44`) is absorbed by `normalizeText`.
+- A single new named axiom `compareDocumentXml_output_text_roundtrip` SHALL be declared in `Spec.lean`, asserting that for any `(a, b)` with `compareDocumentXml a b = some combined`, the normalized revised-side projection of `combined` equals the normalized text of `b` and the normalized original-side projection of `combined` equals the normalized text of `a`. The axiom SHALL be stated over text projections of `combined` alone (no `accept` / `reject`), so the machine-checked lemmas carry the connection to the `accept` / `reject` outputs and the axiom is not a restatement of the theorem.
+- The `inv_rt_001` proof SHALL compose the named axiom with the `RoundTripText` lemmas as its only non-`Tier2`-internal premises.
+
+`normalizeText` is modeled structurally over a paragraph list (`List (List Char)`, one `List Char` entry per paragraph) rather than as a faithful `String` regex engine, capturing trim + blank-entry drop; the extensional gap to the literal TS regex rewrite (which also collapses intra-line whitespace) SHALL be documented as a Tier-2.5-class residual, not left as a hidden assumption. Extensional equivalence between the Lean `extractText` / `normalizeText` / `accept` / `reject` and their production TS counterparts is NOT established by this requirement and remains a documented residual owned by Tier 2.5. Discharging `compareDocumentXml_output_text_roundtrip` by modeling `compareDocumentXml` definitionally is out of scope and owned by a successor Tier 3 change.
+
+#### Scenario: [LEAN-RT-01] Accept-side round-trip lemma is closed
+
+- **GIVEN** a Lean `Doc` value `d`
+- **WHEN** `extractText (accept d)` is evaluated and normalized
+- **THEN** it equals the normalized revised-side text projection of `d`, established by a closed Lean proof in `verification/lean/Tier2/RoundTripText.lean` whose normalization step discharges `accept`'s empty-paragraph dropping
+
+#### Scenario: [LEAN-RT-02] Reject-side round-trip lemma is closed
+
+- **GIVEN** a Lean `Doc` value `d`
+- **WHEN** `extractText (reject d)` is evaluated (after `reject`'s global `delText → text` / `delInstrText → instrText` rename pass, mirroring `trackChangesAcceptorAst.ts:602-616`)
+- **THEN** it equals the original-side text projection of `d`, established by a closed Lean proof that consumes the text-invariance of the rename pass
+
+#### Scenario: [LEAN-RT-03] `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas
+
+- **WHEN** `lake build` is run in `verification/lean/`
+- **THEN** the build succeeds with no `sorry` warning anywhere in the spike
+- **AND** the `sorry` audit in `.github/workflows/lean-build.yml` reports zero `sorry`, and its prior allowance for the `inv_rt_001` `sorry` in `Spec.lean` is removed
+- **AND** the `inv_rt_001` proof uses `compareDocumentXml_output_text_roundtrip` and the `Tier2.RoundTripText` lemmas as its only non-`Tier2`-internal premises
+
+#### Scenario: [LEAN-RT-04] Residual obligations and the normalizeText modeling gap are documented
+
+- **WHEN** a reader inspects `verification/lean/Tier2/README.md` or the Specification Gap section of `verification/lean/README.md`
+- **THEN** the document explicitly states (a) that the closed `inv_rt_001` proof carries `compareDocumentXml_output_text_roundtrip` as a named residual axiom scoped to this repo's inplace atomizer output (not OOXML comparison engines in general), owned by Tier 3; (b) that the spike now carries exactly two named residual axioms (`compareDocumentXml_output_preservation_friendly` and `compareDocumentXml_output_text_roundtrip`) and zero `sorry`; (c) that `normalizeText` is modeled as a paragraph-list (`List Char` per entry) transform capturing trim + blank-entry drop, with the TS regex's intra-line multi-space/tab collapse unmodeled and owned by Tier 2.5; (d) that extensional equivalence of `extractText` / `accept` / `reject` with their TS counterparts (including `extractText`'s structural- vs. `w:t`-then-`w:delText` ordering) is owned by Tier 2.5; (e) that the production engine's runtime round-trip safety checks are not made redundant by this proof
+
+#### Scenario: [LEAN-RT-05] Bridge case provides a falsifiability layer for the new axiom
+
+- **WHEN** `packages/docx-core/src/integration/lean-spec-bridge.test.ts` runs
+- **THEN** at least one field-bearing fixture case asserts `inv_rt_001`'s conclusion against the live engine — the normalized accepted comparison output equals the normalized revised input, and the normalized rejected output equals the normalized original input, using the real TS `extractTextWithParagraphs` and `normalizeText` — and passes
+- **AND** the test docstring states precisely that it checks the round-trip conclusion (which the machine-checked lemmas `extractText_accept_normalized` / `extractText_reject` equate to the projection-form residual axiom, so falsifying the conclusion falsifies the axiom), that it does not assert the `revisedText` / `originalText` projection equality directly, and that it is a single fixture case, NOT empirical grounding for a universal claim
+
+### Requirement: Field-bearing property coverage falsifies the inplace residual axioms over generated field documents
+
+The system SHALL exercise the two named residual axioms about this repo's inplace `compareDocumentXml` output — `compareDocumentXml_output_preservation_friendly` (INV-FIELD-001) and `compareDocumentXml_output_text_roundtrip` (INV-RT-001), declared in `verification/lean/LeanSpike/Spec.lean` — against the live TypeScript comparison engine over a **fast-check arbitrary that generates field-bearing documents**, not only over hand-written single fixtures.
+
+The arbitrary SHALL generate clean (non-pre-tracked) `(original, revised)` document pairs in which selected paragraphs carry a complete, self-contained field drawn from the shared constants `COMPLETE_NUMPAGES_FIELD` / `COMPLETE_PAGE_FIELD` / `COMPLETE_PAGEREF_FIELD` (`packages/docx-core/src/testing/ooxml-fixtures.ts`), and the difference between the two sides SHALL realize one of a fixed set of field operations: field-insert, field-delete, field-stable (field present and identical on both sides), and text-only (field unchanged on both sides with a tracked text edit in a different paragraph). The arbitrary SHALL NOT generate fragmented field modifications, nested fields, or fields spanning paragraph boundaries; those surfaces are out of scope.
+
+The property tests SHALL run through the inplace reconstruction path and:
+
+- treat any inplace fallback as falsification (via the existing `assertInplaceResult`, emitting `triage=inplace-fallback`), NOT silently filter it with `fc.pre`;
+- assert an operation-family (and field-type) coverage floor so a generator that stopped producing an operation fails loudly rather than passing vacuously;
+- for INV-FIELD-001, assert the document-level field-structure invariant (`assertFieldInvariant`) on every run, and additionally assert the stronger per-subtree `recursivelyWellformed` / `fieldContextNeutral ∀ ctx` invariant (`assertRecursivelyWellformed`) only on runs whose operation is not field-delete, because post-#217 the inplace atomizer fragments deleted fields and the resulting `<w:del>` subtrees are not field-context-neutral — the same per-operation assertion-strength split the existing field-delete fixture documents;
+- for INV-RT-001, assert that the normalized text of `acceptAllChanges(combined)` equals the revised input's normalized text and the normalized text of `rejectAllChanges(combined)` equals the original's, using the live `extractTextWithParagraphs` / `normalizeText`, with field result text (`<w:t>` payloads) counted and `instrText` / `delInstrText` / `fldChar` atoms contributing no text.
+
+This requirement strengthens empirical falsifiability only; it introduces no Lean change and does not discharge either residual axiom (Tier 3 owns that). The existing field-free property tests and the three single field fixtures SHALL remain.
+
+#### Scenario: [LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations
+
+- **GIVEN** the `fieldBearingPairArb` fast-check arbitrary generating clean field-bearing `(original, revised)` pairs over field-insert / field-delete / field-stable / text-only operations and the NUMPAGES / PAGE / PAGEREF field types
+- **WHEN** each generated pair is compared through the live inplace engine and the combined output is accepted and rejected
+- **THEN** `assertFieldInvariant` holds on every run and `assertInplaceResult` confirms inplace mode was used, with the property executing at `numRuns: 100`
+
+#### Scenario: [LEAN-FBA-02] Per-operation assertion strength matches the post-#217 engine
+
+- **WHEN** a generated run's operation is field-insert, field-stable, or text-only
+- **THEN** the stronger `assertRecursivelyWellformed` (per-subtree `fieldContextNeutral ∀ ctx`) is asserted in addition to `assertFieldInvariant`
+- **AND** when the operation is field-delete, only the document-level `assertFieldInvariant` is asserted, because the fragmented `<w:del>` subtrees are not field-context-neutral — matching the strength of the `compareDocumentXml_output_preservation_friendly` axiom
+
+#### Scenario: [LEAN-FBA-03] Field-bearing arbitrary drives INV-RT-001 round-trip
+
+- **WHEN** each generated field-bearing pair is compared and the combined output is projected through accept-all and reject-all
+- **THEN** the normalized accepted text equals the revised input's normalized text and the normalized rejected text equals the original's, via the live `extractTextWithParagraphs` / `normalizeText`, with field result text counted and field instruction / fldChar atoms contributing none
+
+#### Scenario: [LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered
+
+- **WHEN** the field-bearing properties run
+- **THEN** any inplace fallback fails the property with `triage=inplace-fallback` diagnostics rather than being discarded by `fc.pre`
+- **AND** a coverage assertion requires every field operation family (and field type) to have been exercised, so a degenerate generator that drops an operation fails loudly instead of passing vacuously
+
+#### Scenario: [LEAN-FBA-05] Bridge file self-description stays accurate
+
+- **WHEN** a reader inspects the header comment blocks of `packages/docx-core/src/integration/lean-spec-bridge.test.ts`
+- **THEN** the "Coverage surfaces" block lists the field-bearing arbitrary and its operation families, the "Fallback semantics" block scopes the "field-free ⇒ no `ContainerResolutionError`" claim to the two original generators and documents the field-bearing arbitrary's narrower inplace-safe operation set, and the "Coverage limitations" note no longer implies all field-bearing input families live only in `collapsed-field-inplace.test.ts`
+

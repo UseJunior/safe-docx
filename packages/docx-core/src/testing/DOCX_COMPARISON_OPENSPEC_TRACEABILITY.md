@@ -7,6 +7,7 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
+| Accept-side round-trip lemma is closed | missing | n/a | No scenario mapping found in current tests |
 | Atom from deleted revision | covered | `src/openspec.traceability.test.ts` |  |
 | Atom from inserted revision | covered | `src/openspec.traceability.test.ts` |  |
 | Atom marked as format-changed | covered | `src/openspec.traceability.test.ts` |  |
@@ -17,6 +18,8 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Bold added | covered | `src/openspec.traceability.test.ts` |  |
 | Bold added markup | covered | `src/openspec.traceability.test.ts` |  |
 | Bold removed markup | covered | `src/openspec.traceability.test.ts` |  |
+| Bridge case provides a falsifiability layer for the new axiom | missing | n/a | No scenario mapping found in current tests |
+| Bridge file self-description stays accurate | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | Building footnote mapping | covered | `src/openspec.traceability.test.ts` |  |
 | Continuation pattern inherits formatting | covered | `src/openspec.traceability.test.ts` |  |
 | Creating atom with revision detection | covered | `src/openspec.traceability.test.ts` |  |
@@ -28,6 +31,9 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Element with attributes | covered | `src/openspec.traceability.test.ts` |  |
 | Element with text content | covered | `src/openspec.traceability.test.ts` |  |
 | Empty properties equal | covered | `src/openspec.traceability.test.ts` |  |
+| Fallback is falsification and coverage is floored, not silently filtered | covered | `src/integration/lean-spec-bridge.test.ts` |  |
+| Field-bearing arbitrary drives INV-FIELD-001 across operations | missing | n/a | No scenario mapping found in current tests |
+| Field-bearing arbitrary drives INV-RT-001 round-trip | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | First footnote displays as 1 | covered | `src/openspec.traceability.test.ts` |  |
 | Format change markup structure | covered | `src/openspec.traceability.test.ts` |  |
 | Format detection disabled | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
@@ -47,11 +53,14 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Orphan list item renders with parent format | covered | `src/openspec.traceability.test.ts` |  |
 | Part from main document | covered | `src/openspec.traceability.test.ts` |  |
 | Partial overlap | covered | `src/openspec.traceability.test.ts` |  |
+| Per-operation assertion strength matches the post-#217 engine | missing | n/a | No scenario mapping found in current tests |
 | Proper nested list renders hierarchically | covered | `src/openspec.traceability.test.ts` |  |
 | Range IDs properly paired | covered | `src/openspec.traceability.test.ts` |  |
 | Rebuild fallback only after all inplace passes fail | missing | n/a | No scenario mapping found in current tests |
+| Reject-side round-trip lemma is closed | missing | n/a | No scenario mapping found in current tests |
 | Remove existing revision tracking | covered | `src/openspec.traceability.test.ts` |  |
 | Reserved footnote IDs excluded from numbering | covered | `src/openspec.traceability.test.ts` |  |
+| Residual obligations and the normalizeText modeling gap are documented | missing | n/a | No scenario mapping found in current tests |
 | Run with properties | covered | `src/openspec.traceability.test.ts` |  |
 | Run without properties | covered | `src/openspec.traceability.test.ts` |  |
 | Same properties different order | covered | `src/openspec.traceability.test.ts` |  |
@@ -66,4 +75,5 @@ This matrix maps canonical spec `#### Scenario:` entries to scenario mappings ex
 | Table-heavy run-fragmented templates preserve tracked table structure | missing | n/a | No scenario mapping found in current tests |
 | Text becomes bold | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Unknown property name | covered | `src/openspec.traceability.test.ts` |  |
+| `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas | missing | n/a | No scenario mapping found in current tests |
 
