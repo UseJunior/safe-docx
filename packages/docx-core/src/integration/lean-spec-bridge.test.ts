@@ -94,9 +94,14 @@ import {
   type AllureBddContext,
 } from '../testing/allure-test.js';
 
+// Declared as a named const (not an inline literal) because this file now
+// carries OpenSpec `.openspec([LEAN-FBA-*])` traceability tags, which
+// `scripts/validate_allure_test_labels.mjs` requires to map deterministically
+// to a `TEST_FEATURE`.
+const TEST_FEATURE = 'Lean Spec Bridge (fast-check)';
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Lean Spec Bridge (fast-check)' })
+  .withLabels({ feature: TEST_FEATURE })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
 
 const TRACKED_REVISION_AUTHOR = 'Lean Bridge';
