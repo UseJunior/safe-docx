@@ -123,10 +123,13 @@ The spike is now zero-`sorry`. Two named residual axioms remain, both Tier 3:
 `compareDocumentXml_output_preservation_friendly` and
 `compareDocumentXml_output_text_roundtrip`.
 
+Delivered follow-ups:
+
+- A full field-bearing fast-check arbitrary for the bridge test shipped in
+  `add-field-bearing-bridge-arbitrary`.
+
 Still open / deferred:
 
-- A full field-bearing fast-check arbitrary for the bridge test — only fixture
-  cases ship here; the arbitrary opens as `add-field-bearing-bridge-arbitrary`.
 - Intra-line whitespace-collapse fidelity and Lean↔TS extensional equivalence of
   the text helpers — Tier 2.5.
 

@@ -44,6 +44,21 @@ export function resultText(text: string): string {
   return `<w:r><w:t>${text}</w:t></w:r>`;
 }
 
+function escapeXmlText(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+export function paragraphWithText(text: string): string {
+  return `<w:p>${resultText(escapeXmlText(text))}</w:p>`;
+}
+
+export function paragraphWithField(prefixText: string, field: string, suffixText: string): string {
+  return `<w:p>${resultText(escapeXmlText(prefixText))}${field}${resultText(escapeXmlText(suffixText))}</w:p>`;
+}
+
 export const COMPLETE_NUMPAGES_FIELD =
   fldChar('begin') +
   instrText(' NUMPAGES ', { preserve: true }) +
