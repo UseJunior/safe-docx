@@ -84,32 +84,26 @@ jobs:
         working-directory: verification/lean
         run: lake build
 
-      # Audits use grep (POSIX-guaranteed on ubuntu-latest) rather than ripgrep
+      # Audit uses grep (POSIX-guaranteed on ubuntu-latest) rather than ripgrep
       # — rg is NOT pre-installed on the default runner image. `-w` matches the
       # whole word `sorry` so prose containing the substring (e.g. an English
       # apology in a future docstring) doesn't trip the audit.
-      - name: Audit non-Spec modules are zero-sorry
+      - name: Audit all Lean modules are zero-sorry
         working-directory: verification/lean
         run: |
-          # All LeanSpike and Tier2 modules except Spec.lean (which intentionally
-          # holds exactly one sorry — the deferred `inv_rt_001` target).
+          # The entire spike is zero-sorry as of the `inv_rt_001` closure
+          # (`add-inv-rt-001-proof`): `inv_field_001` was closed in Tier 2 and
+          # `inv_rt_001` is now closed too. Both invariants carry a single named
+          # residual axiom each (`compareDocumentXml_output_preservation_friendly`,
+          # `compareDocumentXml_output_text_roundtrip`), which are `axiom`s, not
+          # `sorry`s — Tier 3 discharges them.
           # `find -print0 | xargs -0 grep` avoids the SC2086 word-splitting
-          # foot-gun on an unquoted variable while still letting future modules
-          # under LeanSpike/ and Tier2/ get picked up automatically.
-          if find LeanSpike.lean LeanSpike Tier2.lean Tier2 -name '*.lean' ! -name 'Spec.lean' -print0 \
+          # foot-gun. Scans every `.lean` under verification/lean (modules,
+          # `lakefile.lean`, and any future files) EXCEPT the `.lake` build/deps
+          # tree, so the audit is genuinely repo-wide rather than tied to the
+          # current module layout.
+          if find . -name '*.lean' -not -path './.lake/*' -print0 \
                | xargs -0 grep -nwH "sorry"; then
-            echo "ERROR: sorry found in non-Spec Lean modules. They must remain zero-sorry."
-            exit 1
-          fi
-
-      - name: Audit Spec.lean has exactly 1 sorry
-        working-directory: verification/lean
-        run: |
-          # `inv_field_001` is closed as of Tier 2; `inv_rt_001` remains the
-          # single deferred specification target.
-          count=$(grep -cw "sorry" LeanSpike/Spec.lean || true)
-          if [ "$count" != "1" ]; then
-            echo "ERROR: Spec.lean expected exactly 1 sorry, found $count."
-            grep -nw "sorry" LeanSpike/Spec.lean || true
+            echo "ERROR: sorry found in Lean modules. The spike must remain zero-sorry."
             exit 1
           fi

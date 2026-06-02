@@ -1,6 +1,6 @@
 # safe-docx Verification — Roadmap
 
-**Status (2026-05-15)**: Stages 1-6 of the Lean 4 verification spike shipped via PR #164 (merged 2026-05-11). Tiers 1, 1.5, and 1.6 are complete. Tier 2 is **in progress**: OpenSpec change `add-ooxml-doc-subset-and-inv-field-001-proof` (issue #201) lands the definitional `OoxmlDoc` subset and **closes `inv_field_001`** as "preservation lemma + single named residual axiom". `inv_rt_001` remains `sorry`'d (deferred to `add-inv-rt-001-proof`); Tier 2.5 / 3 / 3+ remain not started.
+**Status (2026-06-01)**: Stages 1-6 of the Lean 4 verification spike shipped via PR #164 (merged 2026-05-11). Tiers 1, 1.5, and 1.6 are complete. Tier 2 is **complete**: OpenSpec change `add-ooxml-doc-subset-and-inv-field-001-proof` (issue #201) landed the definitional `OoxmlDoc` subset and **closed `inv_field_001`**, and the successor `add-inv-rt-001-proof` **closed `inv_rt_001`** with the same "definitional model + machine-checked lemma + single named residual axiom" shape. The spike is now **zero-`sorry`**, carrying exactly two named residual axioms (`compareDocumentXml_output_preservation_friendly`, `compareDocumentXml_output_text_roundtrip`), both owned by Tier 3. Tier 2.5 / 3 / 3+ remain not started.
 
 ## How to use this document
 
@@ -41,7 +41,7 @@ This tier is the tooling-validation layer. It shows that Lean 4 plus mathlib can
 Specification targets are stated over an uninterpreted Lean signature plus an empirical bridge against the live TS engine. Lives in `verification/lean/LeanSpike/Spec.lean` and `packages/docx-core/src/integration/lean-spec-bridge.test.ts`.
 
 - `INV-FIELD-001` — shipped **sorry'd** in Tier 1.5; **closed in Tier 2** (see below). `Spec.lean`.
-- `INV-RT-001` — **sorry'd**. Paired round-trip text equality under normalization. `Spec.lean`.
+- `INV-RT-001` — shipped **sorry'd** in Tier 1.5; **closed in Tier 2** via `add-inv-rt-001-proof` (see below). Paired round-trip text equality under normalization. `Spec.lean`.
 - fast-check bridge — empirically exercises both invariants at 100 runs/property against the live TS engine, gated on `reconstructionModeUsed === 'inplace'`. 0 falsifications to date. Tier 2 adds one field-bearing fixture case as a falsifiability layer for the Tier 2 residual axiom.
 
 This tier is intentionally not a proof claim about the production engine. It is a named specification surface plus a falsifiability layer over live runtime behavior. The TS evidence motivates the targets, but it does not justify universal Lean theorems while `Spec.lean` is still an uninterpreted axiom surface.
@@ -72,7 +72,7 @@ This tier is operational, not mathematical. It does not expand proof scope; it p
 
 ## Tier 2 — Definitional `OoxmlDoc` model + closed proof of `inv_field_001`
 
-**Status: IN PROGRESS.** `inv_field_001` is closed; `inv_rt_001` deferred.
+**Status: COMPLETE.** `inv_field_001` and `inv_rt_001` are both closed; the spike is zero-`sorry` under two named residual axioms.
 
 OpenSpec change `add-ooxml-doc-subset-and-inv-field-001-proof` (issue #201)
 replaces the uninterpreted document-level axioms with a definitional Lean model
@@ -98,20 +98,37 @@ Delivered:
   `field_structure_preserved` (zero `sorry`).
 - `LeanSpike/Spec.lean` — `OoxmlDoc` / `acceptAllChanges` / `rejectAllChanges` /
   `validateFieldStructure` rewired from `axiom` to the Tier 2 definitions;
-  `inv_field_001` closed by composing `field_structure_preserved` with the single
-  named residual axiom `compareDocumentXml_output_recursivelyWellformed`.
+  `inv_field_001` closed (after the PR #220 weakening) by composing the
+  document-level `field_structure_preserved_doc` with the single named residual
+  axiom `compareDocumentXml_output_preservation_friendly`.
 
 The residual axiom asserts that this repo's inplace atomizer output is
-`recursivelyWellformed`. Discharging it by modeling `compareDocumentXml`
+`preservationFriendly` (PR #220 weakened it from per-subtree
+`recursivelyWellformed`). Discharging it by modeling `compareDocumentXml`
 definitionally is Tier 3 work.
 
-Still open in Tier 2 / deferred:
+`inv_rt_001` (round-trip text equality) was subsequently closed by the successor
+change `add-inv-rt-001-proof`, reusing the same shape:
 
-- `inv_rt_001` — paragraph round-trip text equality. Deferred to the
-  `add-inv-rt-001-proof` successor change (`extractTextWithParagraphs` and
-  `normalizeText` stay axiomatic until then).
-- A full field-bearing fast-check arbitrary for the bridge test — only one
-  fixture case ships here; the arbitrary opens as `add-field-bearing-bridge-arbitrary`.
+- `Tier2/RoundTripText.lean` — definitional `extractText` / `normalizeText` (per-paragraph
+  text as `List Char`) plus `revisedText` / `originalText` projections, and the
+  closed lemmas `text_rename_invariant`, `extractText_reject`, and
+  `extractText_accept_normalized` (the `accept` empty-paragraph drop is absorbed by
+  `normalizeText`).
+- `LeanSpike/Spec.lean` — `extractTextWithParagraphs` / `normalizeText` rewired from
+  `axiom` to the Tier 2 definitions; `inv_rt_001` closed by composing those lemmas
+  with the single named residual axiom `compareDocumentXml_output_text_roundtrip`.
+
+The spike is now zero-`sorry`. Two named residual axioms remain, both Tier 3:
+`compareDocumentXml_output_preservation_friendly` and
+`compareDocumentXml_output_text_roundtrip`.
+
+Still open / deferred:
+
+- A full field-bearing fast-check arbitrary for the bridge test — only fixture
+  cases ship here; the arbitrary opens as `add-field-bearing-bridge-arbitrary`.
+- Intra-line whitespace-collapse fidelity and Lean↔TS extensional equivalence of
+  the text helpers — Tier 2.5.
 
 Tier 2 is the first place where the roadmap becomes specification-heavy enough to deserve an OpenSpec change on start.
 

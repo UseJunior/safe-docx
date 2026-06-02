@@ -1,7 +1,7 @@
 /**
  * Lean Spec Bridge — fast-check property tests
  *
- * Empirically exercises the sorry'd Lean theorems in
+ * Empirically exercises the Lean theorems in
  * `verification/lean/LeanSpike/Spec.lean` against the live TypeScript comparison
  * engine, restricted to the inplace reconstruction path.
  *
@@ -12,8 +12,13 @@
  *       `w:ins`, `w:del`, paragraph-insert, `pPrChange`, comment-anchor,
  *       footnote-anchor.
  *
- * These are empirical bridge tests, not closed proofs. The Lean theorems stay
- * `sorry`'d; this file falsifies them if either invariant fails on random input.
+ * These are empirical bridge tests, not the proofs themselves. As of the
+ * `inv_rt_001` closure both theorems are closed (zero `sorry`) but each rests on a
+ * named residual axiom about this repo's inplace `compareDocumentXml` output
+ * (`compareDocumentXml_output_preservation_friendly`,
+ * `compareDocumentXml_output_text_roundtrip`); this file is the falsifiability
+ * layer for those axioms — it fails if either invariant breaks on real engine
+ * output.
  *
  * Fallback semantics — scoped to both bridge generators in this file:
  *
@@ -960,6 +965,54 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
           assertFieldInvariant('INV-FIELD-001 field-bearing delete', context, result.combined);
         },
       );
+    },
+  );
+
+  test(
+    'INV-RT-001: field-bearing inplace comparison output round-trips on accept/reject (axiom falsifiability layer)',
+    async ({ given, when, then }: AllureBddContext) => {
+      // Falsifiability layer for the residual axiom
+      // `compareDocumentXml_output_text_roundtrip` in
+      // `verification/lean/LeanSpike/Spec.lean`, on a FIELD-BEARING fixture — the
+      // synthetic/tracked INV-RT-001 property tests above are field-free, so this
+      // is the only round-trip case that exercises w:fldChar / w:instrText atoms
+      // (which contribute no text and must not perturb the recovered paragraph
+      // text).
+      //
+      // What it checks vs. what the axiom states: `assertRoundTripInvariant`
+      // asserts `inv_rt_001`'s CONCLUSION against the live engine —
+      // accept(combined)==raw(revised) and reject(combined)==raw(original). The
+      // axiom is stated over the projections `revisedText combined` /
+      // `originalText combined`; the machine-checked lemmas
+      // `extractText_accept_normalized` / `extractText_reject` equate the two, so
+      // falsifying the conclusion here would falsify the axiom. It does NOT assert
+      // the projection equality directly (that would need TS reimplementations of
+      // `revisedText` / `originalText`).
+      //
+      // It exercises the live TS `normalizeText` / `extractTextWithParagraphs` (via
+      // `normalizeDocumentXmlText`). NOTE: this fixture's text has no runs of
+      // spaces/tabs, so it does NOT specifically target the Lean `normalizeText`
+      // intra-line-collapse modeling gap; it guards the round-trip on field-bearing
+      // structure. One fixture case, NOT empirical grounding for the universal axiom.
+      await given('a field-free original and a revised document with a complete NUMPAGES field inserted', async () => {});
+
+      await when('the live inplace comparison output is projected through accept-all and reject-all', async () => {});
+
+      await then('normalized text round-trips to revised on accept and original on reject', async () => {
+        const field = COMPLETE_NUMPAGES_FIELD;
+        const original = await buildDocxFromBodyXml(
+          `<w:p><w:r><w:t>Total pages here.</w:t></w:r></w:p>`,
+        );
+        const revised = await buildDocxFromBodyXml(
+          `<w:p><w:r><w:t>Total pages </w:t></w:r>${field}<w:r><w:t> here.</w:t></w:r></w:p>`,
+        );
+
+        const result = await compareDocumentBuffers(original, revised);
+        const context = { fixture: 'numpages-field-insert' };
+
+        assertInplaceResult('INV-RT-001 field-bearing', context, result);
+        await assertRoundTripInvariant('INV-RT-001 field-bearing', context, result);
+      });
     },
   );
 

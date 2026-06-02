@@ -28,8 +28,10 @@ Currently proved in this stage:
 
 ## Specification targets
 
-`LeanSpike/Spec.lean` carries two named specification targets. As of Tier 2,
-`INV-FIELD-001` is **closed**; `INV-RT-001` remains a `sorry`.
+`LeanSpike/Spec.lean` carries two named specification targets. Both are now
+**closed**: `INV-FIELD-001` in Tier 2, and `INV-RT-001` in the `add-inv-rt-001-proof`
+successor change. The spike is now zero-`sorry`, carrying one named residual
+axiom per invariant (both owned by Tier 3 — see the Specification Gap section).
 
 - `INV-FIELD-001` in `LeanSpike/Spec.lean`: **closed.** `validateFieldStructure`,
   scoped to the inplace-mode comparison output `compareDocumentXml a b`, is
@@ -43,8 +45,8 @@ Currently proved in this stage:
   model (`Tier2/`) and composes the machine-checked preservation lemma
   `Tier2.InvFieldOne.field_structure_preserved` with a single named residual
   axiom — see the Specification Gap section below.
-- `INV-RT-001` in `LeanSpike/Spec.lean`: **still `sorry`'d.** Paired round-trip
-  text recovery, with `acceptAllChanges` matching the revised document and
+- `INV-RT-001` in `LeanSpike/Spec.lean`: **closed.** Paired round-trip text
+  recovery, with `acceptAllChanges` matching the revised document and
   `rejectAllChanges` matching the original document after
   `normalizeText ∘ extractTextWithParagraphs`. This mirrors the helper functions
   in `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-688`
@@ -52,23 +54,31 @@ Currently proved in this stage:
   (`normalizeText`), plus the gold-standard paired assertions in
   `packages/docx-core/src/integration/round-trip-inplace.test.ts:56-63` and
   `:87-94`, with a second paired fixture at
-  `packages/docx-core/src/integration/nvca-coi-regression.test.ts:77-103`. It is
-  deferred to the `add-inv-rt-001-proof` successor change.
+  `packages/docx-core/src/integration/nvca-coi-regression.test.ts:77-103`. The
+  closure rewires the `extractTextWithParagraphs` / `normalizeText` axioms to the
+  definitional Tier 2 model (`Tier2/RoundTripText.lean`, per-paragraph text as
+  `List Char`) and composes the machine-checked round-trip lemmas
+  `Tier2.RoundTripText.extractText_accept_normalized` and
+  `Tier2.RoundTripText.extractText_reject` with a single named residual axiom —
+  see the Specification Gap section below.
 
-The zero-sorry property of every non-`Spec.lean` module (Stage 1-3 modules and
-all of `Tier2/`) is preserved; `Spec.lean` is the only `sorry`-bearing file, and
-it now carries exactly one `sorry` (`inv_rt_001`).
+Every module — Stage 1-3, all of `Tier2/`, and `Spec.lean` — is now zero-`sorry`.
 
-For interactive auditing, inspect `#print sorries`, `#print axioms inv_field_001`, and `#print axioms inv_rt_001`.
+For interactive auditing, inspect `#print axioms inv_field_001` and
+`#print axioms inv_rt_001` — each depends on its single named residual axiom
+(`compareDocumentXml_output_preservation_friendly`,
+`compareDocumentXml_output_text_roundtrip`) and not on `sorryAx`.
 
 ## Still out of scope
 
 This spike still does not cover:
 
 - closed proofs of reconstruction invariants
-- closed proofs of round-trip text equality (`inv_rt_001` is still `sorry`'d)
-- a discharged proof of `compareDocumentXml_output_recursivelyWellformed` — the
-  `inv_field_001` closure carries it as a named residual axiom (Tier 3 work)
+- discharged proofs of the two named residual axioms
+  (`compareDocumentXml_output_preservation_friendly`,
+  `compareDocumentXml_output_text_roundtrip`) — both carried by the `inv_field_001`
+  / `inv_rt_001` closures as named assumptions about this repo's inplace atomizer
+  output (Tier 3 work)
 - extensional equivalence between the Lean model and the production TypeScript implementation
 
 ## Lean model
@@ -86,9 +96,10 @@ The projection intentionally flattens `contentElement.textContent ?? ""` into a 
 ### Tier 2 residual axiom (`inv_field_001`)
 
 The closed `inv_field_001` proof carries exactly one named residual axiom:
-`compareDocumentXml_output_recursivelyWellformed` in `LeanSpike/Spec.lean`. It
+`compareDocumentXml_output_preservation_friendly` in `LeanSpike/Spec.lean`. It
 asserts that this repo's inplace atomizer output satisfies
-`Tier2.FieldStructure.recursivelyWellformed` — scoped to this repo's inplace
+`Tier2.AcceptReject.preservationFriendly` (PR #220 weakened this from the stronger
+`Tier2.FieldStructure.recursivelyWellformed`) — scoped to this repo's inplace
 atomizer, NOT to OOXML comparison engines in general. Discharging it by modeling
 `compareDocumentXml` definitionally is **Tier 3** work. Extensional equivalence
 between the Lean `accept` / `reject` and the production TS
@@ -101,6 +112,32 @@ only wrapper blocks as substantive. Full detail is in `Tier2/README.md`.
 A TS-side falsifiability layer for the residual axiom — one field-bearing fixture
 case checking a TS analogue of `recursivelyWellformed` against the live engine —
 lives in `packages/docx-core/src/integration/lean-spec-bridge.test.ts`.
+
+### Tier 2 residual axiom (`inv_rt_001`)
+
+The closed `inv_rt_001` proof carries one named residual axiom:
+`compareDocumentXml_output_text_roundtrip` in `LeanSpike/Spec.lean`. It asserts
+that, for this repo's inplace atomizer output `combined`, the normalized
+revised-side text projection of `combined` (`Tier2.RoundTripText.revisedText`)
+equals the normalized text of the revised input, and the normalized original-side
+projection (`originalText`) equals the normalized text of the original input. It
+is stated over text projections of `combined` alone (no `accept` / `reject`), so
+the machine-checked lemmas `extractText_accept_normalized` and
+`extractText_reject` carry the connection to `acceptAllChanges` /
+`rejectAllChanges` — the axiom is not a restatement of `inv_rt_001`. Like the
+`inv_field_001` residual axiom it is scoped to this repo's inplace atomizer (NOT
+OOXML engines in general) and discharging it is **Tier 3** work.
+
+Further residual gaps are documented in `Tier2/README.md` and owned by
+**Tier 2.5**: (a) `normalizeText` is modeled over a paragraph list (`List Char`
+per entry) capturing only the trim + blank-entry-drop behaviour; the TS regex's
+intra-line multi-space/tab collapse is not modeled; (b) `extractText` keeps
+structural document order, whereas the TS helper emits all `w:t` then all
+`w:delText`; (c) extensional equivalence between the Lean `extractText` /
+`normalizeText` and the production TS `extractTextWithParagraphs` /
+`normalizeText` is not established. The bridge fixture runs the live TS
+`normalizeText` / `extractTextWithParagraphs` end-to-end (its NUMPAGES text has no
+whitespace runs, so it does not specifically target gap (a)).
 
 ### Tier 1 `Atom` projection gap
 
@@ -142,14 +179,13 @@ lake update
 lake build
 ```
 
-To confirm every non-`Spec.lean` module remains `sorry`-free, and that `Spec.lean`
-contains only the single intentional placeholder (`inv_rt_001`):
+To confirm the entire spike is `sorry`-free:
 
 ```bash
-grep -rnw "sorry" LeanSpike/AtomsEqual.lean LeanSpike/Lcs.lean Tier2/   # must be empty
-grep -cw  "sorry" LeanSpike/Spec.lean                                  # exactly 1 hit
+grep -rnw "sorry" LeanSpike.lean LeanSpike Tier2.lean Tier2   # must be empty
 ```
 
-For interactive auditing, inspect `#print axioms LeanSpike.inv_field_001` — it
-depends only on `propext`, `Quot.sound`, `compareDocumentXml`, and the single
-residual axiom `compareDocumentXml_output_recursivelyWellformed` (no `sorryAx`).
+For interactive auditing, inspect `#print axioms LeanSpike.inv_rt_001` — it
+depends only on the standard logical axioms (`propext`, `Classical.choice`,
+`Quot.sound`), `compareDocumentXml`, and the single residual axiom
+`compareDocumentXml_output_text_roundtrip` (no `sorryAx`).
