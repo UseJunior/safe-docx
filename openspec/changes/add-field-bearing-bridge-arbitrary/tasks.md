@@ -2,39 +2,39 @@
 
 ## 1. Field-bearing arbitrary (`lean-spec-bridge.test.ts`, with `ooxml-fixtures.ts` helpers)
 
-- [ ] 1.1 Add a `paragraphWithField(text, field)` body-XML helper to `ooxml-fixtures.ts` (only if the arbitrary needs more than the existing `COMPLETE_*` constants); otherwise compose inline from the constants. Do not re-derive field XML inline in the test (issue #221 drift rule).
-- [ ] 1.2 Define a `FieldOperation` union `{ field-insert, field-delete, field-stable, text-only }` and a `FieldType` over the three constants `COMPLETE_NUMPAGES_FIELD` / `COMPLETE_PAGE_FIELD` / `COMPLETE_PAGEREF_FIELD`.
-- [ ] 1.3 Define `fieldBearingPairArb`: generates a clean `(originalBodyXml, revisedBodyXml)` pair (via `buildDocxFromBodyXml`) realizing one `FieldOperation` with one `FieldType`, with ordinary `<w:t>` runs around the field. Clean inputs only (no pre-tracked markup) — the engine generates all tracking. Carry the `operation` and `fieldType` on the generated value for per-run dispatch and coverage.
-- [ ] 1.4 Add a `FieldBearingCoverage` map + `createFieldBearingCoverage` / `recordFieldBearingHit` / `assertFieldBearingCoverage` mirroring the `TrackedScenarioCoverage` helpers (`:364-393`), keyed by operation (and field type).
+- [x] 1.1 Added `paragraphWithText` + `paragraphWithField(prefix, field, suffix)` body-XML helpers (with `escapeXmlText`) to `ooxml-fixtures.ts`; the arbitrary sources field XML from the `COMPLETE_*` constants via these helpers — no inline re-derivation (issue #221 drift rule).
+- [x] 1.2 Defined `FieldOperation` union `{ field-insert, field-delete, field-stable, text-only }` and `FieldType` over `COMPLETE_NUMPAGES_FIELD` / `COMPLETE_PAGE_FIELD` / `COMPLETE_PAGEREF_FIELD` (`FIELD_FIXTURES`).
+- [x] 1.3 Defined `fieldBearingPairArb` (+ `buildFieldBearingPair`, `compareFieldBearingPair`): clean `(originalBodyXml, revisedBodyXml)` pairs realizing one operation × field type, ordinary `<w:t>` runs around the field, engine generates all tracking. Carries `operation` / `fieldType` for per-run dispatch and coverage.
+- [x] 1.4 Added `FieldBearingCoverage` map + `createFieldBearingCoverage` / `recordFieldBearingHit` / `assertFieldBearingCoverage`, keyed by operation × field type.
 
 ## 2. Property tests
 
-- [ ] 2.1 `INV-FIELD-001: field structure preserved on field-bearing inplace comparison output` — `fc.assert(fc.asyncProperty(fieldBearingPairArb, …), { numRuns: NUM_RUNS })`: build + compare buffers, `assertInplaceResult`, `assertFieldInvariant`; additionally `assertRecursivelyWellformed` **iff** `operation !== 'field-delete'`. Record coverage; assert full coverage in `finally`.
-- [ ] 2.2 `INV-RT-001: paired round-trip text equality on field-bearing inplace comparison output` — `assertInplaceResult` + `assertRoundTripInvariant` on every run; record + assert coverage. Confirm the round-trip accounts for field **result** text (`<w:t>`) on both sides and that `instrText` / `fldChar` contribute none.
-- [ ] 2.3 (Optional) Allure JSON attachment of the coverage map per property, mirroring `allureJsonAttachment('tracked-input-family-hits-…', coverage)` (`:849`, `:886`).
+- [x] 2.1 `INV-FIELD-001: field structure preserved on field-bearing inplace comparison output` at `numRuns: NUM_RUNS`: `assertInplaceResult` + `assertFieldInvariant`; `assertRecursivelyWellformed` **iff** `operation !== 'field-delete'`. Coverage recorded; full coverage asserted in `finally`. Seeded with all 12 operation×type combos via `examples` so the coverage floor is deterministic on top of the 100 random runs.
+- [x] 2.2 `INV-RT-001: paired round-trip text equality on field-bearing inplace comparison output`: `assertInplaceResult` + `await assertRoundTripInvariant` per run; coverage recorded + asserted. Round-trip exercises the live `extractTextWithParagraphs` / `normalizeText` (field result `<w:t>` counted; `instrText` / `fldChar` contribute none).
+- [x] 2.3 Allure JSON coverage attachment per property (`field-bearing-operation-type-hits-inv-field-001` / `…-inv-rt-001`).
 
 ## 3. Header / comment accuracy (asymmetry-of-rot)
 
-- [ ] 3.1 Extend the "Coverage surfaces" comment (`:8-21`) to list the field-bearing arbitrary and its operation families.
-- [ ] 3.2 Scope the "Fallback semantics" comment (`:23-44`): the "field-free ⇒ no `ContainerResolutionError`" claim now applies to the two original generators; document the field-bearing arbitrary's narrower inplace-safe operation set and that fallback there is still treated as falsification.
-- [ ] 3.3 Update the "Coverage limitations" note (`:46-52`) so it no longer implies *all* field-bearing input families live only in `collapsed-field-inplace.test.ts`.
+- [x] 3.1 Extended the "Coverage surfaces" comment to list the field-bearing arbitrary and its four operation families.
+- [x] 3.2 Scoped the "Fallback semantics" comment: the "field-free ⇒ no `ContainerResolutionError`" claim now applies to the two original generators (`pairArb`, `trackedPairArb`); documented the field-bearing arbitrary's narrower complete-field-at-run-boundary operation set and that fallback there is still falsification. Also de-scoped the `fallbackError` message ("under the bridge generator").
+- [x] 3.3 Updated the "Coverage limitations" note so it no longer implies all field-bearing input families live only in `collapsed-field-inplace.test.ts` (fragmented/nested/paragraph-spanning families are what remain outside this surface).
 
 ## 4. Verify locally (AGENTS.md pre-submit)
 
-- [ ] 4.1 `npm run build`
-- [ ] 4.2 `npm run lint:workspaces`
-- [ ] 4.3 `npm run test:run` (confirm the new properties pass at `numRuns: 100`, full operation/field-type coverage reported, no inplace fallback observed; if any run falls back, triage `engine-bug` vs. generator-shape before suppressing).
-- [ ] 4.4 `npm run check:spec-coverage`
-- [ ] 4.5 `npm run check:conformance-citations && npm run check:conformance-doc`
+- [x] 4.1 `npm run build -w @usejunior/docx-core` — clean.
+- [x] 4.2 `npm run lint -w @usejunior/docx-core` (`tsc --noEmit`, typechecks tests incl. `.openspec()` tags) — clean.
+- [x] 4.3 Full docx-core suite (`npm run test:run -w @usejunior/docx-core`) — 1290 passed, 3 skipped, 87 files. Both new properties pass at `numRuns: 100` with full operation×type coverage and no inplace fallback.
+- [x] 4.4 `npm run check:spec-coverage` — PASS (both workspaces).
+- [x] 4.5 `npm run check:conformance-citations && npm run check:conformance-doc` — OK.
 
 ## 5. Spec coverage mapping
 
-- [ ] 5.1 Map the new `docx-comparison` requirement's `[LEAN-FBA-*]` scenarios to the new bridge property tests in `packages/docx-core/src/testing/DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md` per repo convention, so `check:spec-coverage` passes for them once the change is applied.
+- [x] 5.1 Mapped via `.openspec('[LEAN-FBA-NN] …')` tags on the two new property tests. The traceability matrix `DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md` is **auto-generated** by `validate_openspec_coverage.mjs` from canonical-spec scenarios + these tags — the rows for `[LEAN-FBA-*]` populate automatically when the delta is applied to the canonical spec on archive. No hand-edit of the matrix (a manual edit is overwritten by the generator).
 
 ## 6. Validate
 
-- [ ] 6.1 `openspec validate add-field-bearing-bridge-arbitrary --strict` passes.
+- [x] 6.1 `openspec validate add-field-bearing-bridge-arbitrary --strict` passes.
 
 ## 7. Documentation follow-through
 
-- [ ] 7.1 Update `verification/ROADMAP.md` to mark the `add-field-bearing-bridge-arbitrary` follow-up as delivered (it is currently listed as an open follow-up at `:128-129`).
+- [x] 7.1 Updated `verification/ROADMAP.md`: moved the field-bearing arbitrary from "still open / deferred" to a new "Delivered follow-ups" section.

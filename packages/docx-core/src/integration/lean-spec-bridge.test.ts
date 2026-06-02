@@ -11,6 +11,9 @@
  *     carries one focused tracked-change family:
  *       `w:ins`, `w:del`, paragraph-insert, `pPrChange`, comment-anchor,
  *       footnote-anchor.
+ *   - Tier 2 field-bearing clean pairs whose `document.xml` carries a complete
+ *     NUMPAGES / PAGE / PAGEREF field and realizes one focused operation:
+ *       field-insert, field-delete, field-stable, text-only.
  *
  * These are empirical bridge tests, not the proofs themselves. As of the
  * `inv_rt_001` closure both theorems are closed (zero `sorry`) but each rests on a
@@ -20,7 +23,7 @@
  * layer for those axioms — it fails if either invariant breaks on real engine
  * output.
  *
- * Fallback semantics — scoped to both bridge generators in this file:
+ * Fallback semantics:
  *
  *   `Spec.lean` models `compareDocumentXml : OoxmlDoc → OoxmlDoc → Option OoxmlDoc`
  *   and both theorems are premised on `compareDocumentXml a b = some combined`,
@@ -29,10 +32,13 @@
  *     (a) `evaluateSafetyChecks` rejecting every inplace pass — i.e. an internal
  *         INV-FIELD-001 / INV-RT-001 falsification on the candidate XML;
  *     (b) `ContainerResolutionError` from container-topology mismatch.
- *   Every generator here is paragraph-only, table-free, and field-free, so (b)
- *   is not expected to fire. We therefore treat fallback as falsification and
- *   throw with `triage=inplace-fallback` diagnostics rather than filtering with
- *   `fc.pre`.
+ *   The two original generators (`pairArb`, `trackedPairArb`) are
+ *   paragraph-only, table-free, and field-free, so (b) is not expected to fire
+ *   there. The field-bearing arbitrary is narrower instead: it uses only
+ *   complete fields at run boundaries and the inplace-safe operation families
+ *   already covered by the fixed fixtures. We therefore treat fallback as
+ *   falsification for all bridge properties and throw with
+ *   `triage=inplace-fallback` diagnostics rather than filtering with `fc.pre`.
  *
  * INV-RT-001 tracked-input triage:
  *   - `triage=engine-bug`: accept/reject of `combined` disagrees with the fully
@@ -44,7 +50,9 @@
  *   - `triage=inplace-fallback`: the inplace candidate was never emitted.
  *
  * Coverage limitations (intentional for the spike — not bugs):
- *   - Field-bearing input families still live in `collapsed-field-inplace.test.ts`.
+ *   - Fragmented, nested, and paragraph-spanning field input families still live
+ *     outside this bridge property surface (for example in
+ *     `collapsed-field-inplace.test.ts` / field-fragmentation fixtures).
  *   - Small-edit/run-boundary regression coverage still lives in the fixture
  *     tests (`round-trip-inplace.test.ts`, `nvca-coi-regression.test.ts`).
  *   - Comment and footnote coverage here is limited to `document.xml` anchors;
@@ -57,9 +65,13 @@ import { describe } from 'vitest';
 import { compareDocuments, type ReconstructionMode } from '../index.js';
 import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
 import {
+  COMPLETE_PAGE_FIELD,
+  COMPLETE_PAGEREF_FIELD,
   COMPLETE_NUMPAGES_FIELD,
   WHOLE_FIELD_IN_INS,
   buildDocxFromBodyXml,
+  paragraphWithField,
+  paragraphWithText,
 } from '../testing/ooxml-fixtures.js';
 import {
   acceptAllChanges,
@@ -117,6 +129,25 @@ const TRACKED_SCENARIO_FAMILIES = [
 ] as const;
 
 type TrackedScenarioFamily = (typeof TRACKED_SCENARIO_FAMILIES)[number];
+
+const FIELD_OPERATIONS = [
+  'field-insert',
+  'field-delete',
+  'field-stable',
+  'text-only',
+] as const;
+
+type FieldOperation = (typeof FIELD_OPERATIONS)[number];
+
+const FIELD_FIXTURES = {
+  NUMPAGES: COMPLETE_NUMPAGES_FIELD,
+  PAGE: COMPLETE_PAGE_FIELD,
+  PAGEREF: COMPLETE_PAGEREF_FIELD,
+} as const;
+
+type FieldType = keyof typeof FIELD_FIXTURES;
+
+const FIELD_TYPES = Object.keys(FIELD_FIXTURES) as FieldType[];
 
 interface InsertScenario {
   family: 'w:ins';
@@ -176,6 +207,21 @@ interface TrackedScenarioPair {
   revisedScenario: TrackedScenario;
 }
 
+interface FieldBearingPair {
+  operation: FieldOperation;
+  fieldType: FieldType;
+  originalBodyXml: string;
+  revisedBodyXml: string;
+}
+
+interface FieldTextShape {
+  prefix: string;
+  suffix: string;
+  revisedSuffix: string;
+  originalPlainText: string;
+  revisedPlainText: string;
+}
+
 interface MaterializedTrackedScenario {
   scenario: TrackedScenario;
   document: Buffer;
@@ -183,6 +229,7 @@ interface MaterializedTrackedScenario {
 }
 
 type TrackedScenarioCoverage = Record<TrackedScenarioFamily, number>;
+type FieldBearingCoverage = Record<FieldOperation, Record<FieldType, number>>;
 
 const NUM_RUNS = 100;
 
@@ -289,6 +336,75 @@ const trackedPairArb: fc.Arbitrary<TrackedScenarioPair> = fc.record({
   revisedScenario: trackedRevisedScenarioArb,
 });
 
+const fieldTextShapeArb = fc.record({
+  prefix: fc.constantFrom('Total pages ', 'Field value ', 'Reference '),
+  suffix: fc.constantFrom(' here.', ' done.', ' end.'),
+  revisedSuffix: fc.constantFrom(' updated.', ' complete.', ' final.'),
+  originalPlainText: fc.constantFrom('Plain edit before field.', 'Separate original text.'),
+  revisedPlainText: fc.constantFrom('Plain edit after field.', 'Separate revised text.'),
+});
+
+function buildFieldBearingPair(
+  operation: FieldOperation,
+  fieldType: FieldType,
+  shape: FieldTextShape,
+): FieldBearingPair {
+  const field = FIELD_FIXTURES[fieldType];
+  const stableFieldParagraph = paragraphWithField(shape.prefix, field, shape.suffix);
+
+  switch (operation) {
+    case 'field-insert':
+      return {
+        operation,
+        fieldType,
+        originalBodyXml: paragraphWithText(`${shape.prefix}${shape.suffix}`),
+        revisedBodyXml: paragraphWithField(shape.prefix, field, shape.suffix),
+      };
+    case 'field-delete':
+      return {
+        operation,
+        fieldType,
+        originalBodyXml: paragraphWithField(shape.prefix, field, shape.suffix),
+        revisedBodyXml: paragraphWithText(`${shape.prefix}${shape.suffix}`),
+      };
+    case 'field-stable':
+      return {
+        operation,
+        fieldType,
+        originalBodyXml: stableFieldParagraph,
+        revisedBodyXml: paragraphWithField(shape.prefix, field, shape.revisedSuffix),
+      };
+    case 'text-only':
+      return {
+        operation,
+        fieldType,
+        originalBodyXml: stableFieldParagraph + paragraphWithText(shape.originalPlainText),
+        revisedBodyXml: stableFieldParagraph + paragraphWithText(shape.revisedPlainText),
+      };
+  }
+}
+
+const fieldBearingExamples: FieldBearingPair[] = FIELD_OPERATIONS.flatMap((operation) =>
+  FIELD_TYPES.map((fieldType) =>
+    buildFieldBearingPair(operation, fieldType, {
+      prefix: 'Total pages ',
+      suffix: ' here.',
+      revisedSuffix: ' updated.',
+      originalPlainText: 'Plain edit before field.',
+      revisedPlainText: 'Plain edit after field.',
+    }),
+  ),
+);
+const fieldBearingExampleArgs = fieldBearingExamples.map((pair) => [pair] as [FieldBearingPair]);
+
+const fieldBearingPairArb: fc.Arbitrary<FieldBearingPair> = fc
+  .record({
+    operation: fc.constantFrom(...FIELD_OPERATIONS),
+    fieldType: fc.constantFrom(...FIELD_TYPES),
+    shape: fieldTextShapeArb,
+  })
+  .map(({ operation, fieldType, shape }) => buildFieldBearingPair(operation, fieldType, shape));
+
 async function getDocumentXml(document: Buffer): Promise<string> {
   const archive = await DocxArchive.load(document);
   return await archive.getDocumentXml();
@@ -351,6 +467,15 @@ async function compareSyntheticDocuments(
   return compareDocumentBuffers(original, revised);
 }
 
+async function compareFieldBearingPair(pair: FieldBearingPair): Promise<CompareBridgeResult> {
+  const [original, revised] = await Promise.all([
+    buildDocxFromBodyXml(pair.originalBodyXml),
+    buildDocxFromBodyXml(pair.revisedBodyXml),
+  ]);
+
+  return compareDocumentBuffers(original, revised);
+}
+
 async function getDocumentTextViews(document: Buffer): Promise<DocumentTextViews> {
   const rawXml = await getDocumentXml(document);
   return {
@@ -387,6 +512,33 @@ function assertTrackedScenarioCoverage(
   if (missing.length > 0) {
     throw new Error(
       `${invariant}: tracked-input family coverage incomplete. ` +
+        `missing=${missing.join(', ')} hits=${JSON.stringify(coverage)}`,
+    );
+  }
+}
+
+function createFieldBearingCoverage(): FieldBearingCoverage {
+  return Object.fromEntries(
+    FIELD_OPERATIONS.map((operation) => [
+      operation,
+      Object.fromEntries(FIELD_TYPES.map((fieldType) => [fieldType, 0])),
+    ]),
+  ) as FieldBearingCoverage;
+}
+
+function recordFieldBearingHit(coverage: FieldBearingCoverage, pair: FieldBearingPair): void {
+  coverage[pair.operation][pair.fieldType] += 1;
+}
+
+function assertFieldBearingCoverage(invariant: string, coverage: FieldBearingCoverage): void {
+  const missing = FIELD_OPERATIONS.flatMap((operation) =>
+    FIELD_TYPES.filter((fieldType) => coverage[operation][fieldType] === 0).map(
+      (fieldType) => `${operation}/${fieldType}`,
+    ),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `${invariant}: field-bearing operation/type coverage incomplete. ` +
         `missing=${missing.join(', ')} hits=${JSON.stringify(coverage)}`,
     );
   }
@@ -586,7 +738,7 @@ function fallbackError(
 ): Error {
   return new Error(
     `${invariant}: triage=inplace-fallback inplace mode fell back to ${result.modeUsed ?? 'unknown'} ` +
-      `under the paragraph-only, table-free bridge generator. ` +
+      `under the bridge generator. ` +
       `fallbackReason=${result.fallbackReason ?? '(none)'} ` +
       `failedChecks=${JSON.stringify(result.failedChecks)} ` +
       `context=${JSON.stringify(context)}`,
@@ -887,6 +1039,113 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
         }
         assertTrackedScenarioCoverage('INV-RT-001 tracked', coverage);
       });
+    },
+  );
+
+  test
+    .openspec(
+      '[LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations',
+    )
+    .openspec('[LEAN-FBA-02] Per-operation assertion strength matches the post-#217 engine')
+    .openspec('[LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered')
+    .openspec('[LEAN-FBA-05] Bridge file self-description stays accurate')(
+    'INV-FIELD-001: field structure preserved on field-bearing inplace comparison output',
+    async ({ given, when, then }: AllureBddContext) => {
+      const coverage = createFieldBearingCoverage();
+
+      await given(
+        'clean original and revised document pairs are generated with complete NUMPAGES, PAGE, or PAGEREF fields',
+        async () => {},
+      );
+
+      await when('the live inplace comparison output is accepted and rejected across field-bearing pairs', async () => {});
+
+      await then(
+        'field structure remains valid, delete runs use document-level strength, and every operation/type family is exercised',
+        async () => {
+          try {
+            await fc.assert(
+              fc.asyncProperty(fieldBearingPairArb, async (pair) => {
+                recordFieldBearingHit(coverage, pair);
+
+                const result = await compareFieldBearingPair(pair);
+                const context = {
+                  operation: pair.operation,
+                  fieldType: pair.fieldType,
+                  originalBodyXml: pair.originalBodyXml,
+                  revisedBodyXml: pair.revisedBodyXml,
+                };
+
+                assertInplaceResult('INV-FIELD-001 field-bearing property', context, result);
+                assertFieldInvariant(
+                  'INV-FIELD-001 field-bearing property',
+                  context,
+                  result.combined,
+                );
+                if (pair.operation !== 'field-delete') {
+                  assertRecursivelyWellformed(
+                    'INV-FIELD-001 field-bearing property',
+                    context,
+                    result.combined,
+                  );
+                }
+              }),
+              { numRuns: NUM_RUNS, examples: fieldBearingExampleArgs },
+            );
+          } finally {
+            await allureJsonAttachment('field-bearing-operation-type-hits-inv-field-001', coverage);
+          }
+          assertFieldBearingCoverage('INV-FIELD-001 field-bearing property', coverage);
+        },
+      );
+    },
+  );
+
+  test
+    .openspec('[LEAN-FBA-03] Field-bearing arbitrary drives INV-RT-001 round-trip')
+    .openspec('[LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered')(
+    'INV-RT-001: paired round-trip text equality on field-bearing inplace comparison output',
+    async ({ given, when, then }: AllureBddContext) => {
+      const coverage = createFieldBearingCoverage();
+
+      await given(
+        'clean original and revised document pairs are generated with complete fields and field result text',
+        async () => {},
+      );
+
+      await when('the live inplace comparison output is projected through accept-all and reject-all', async () => {});
+
+      await then(
+        'normalized text round-trips and every field operation/type family is exercised',
+        async () => {
+          try {
+            await fc.assert(
+              fc.asyncProperty(fieldBearingPairArb, async (pair) => {
+                recordFieldBearingHit(coverage, pair);
+
+                const result = await compareFieldBearingPair(pair);
+                const context = {
+                  operation: pair.operation,
+                  fieldType: pair.fieldType,
+                  originalBodyXml: pair.originalBodyXml,
+                  revisedBodyXml: pair.revisedBodyXml,
+                };
+
+                assertInplaceResult('INV-RT-001 field-bearing property', context, result);
+                await assertRoundTripInvariant(
+                  'INV-RT-001 field-bearing property',
+                  context,
+                  result,
+                );
+              }),
+              { numRuns: NUM_RUNS, examples: fieldBearingExampleArgs },
+            );
+          } finally {
+            await allureJsonAttachment('field-bearing-operation-type-hits-inv-rt-001', coverage);
+          }
+          assertFieldBearingCoverage('INV-RT-001 field-bearing property', coverage);
+        },
+      );
     },
   );
 
