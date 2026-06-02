@@ -37,14 +37,23 @@ an invalid state. The field-context walk carries a depth-indexed stack of
 "separator-seen" bits exactly mirroring the TS engine's `pastSeparatorAtDepth:
 number[]` at `packages/docx-core/src/baselines/atomizer/pipeline.ts:374-389`.
 
-`inv_field_001` in `Spec.lean` is then closed by composing this lemma with the
-single named residual axiom `compareDocumentXml_output_recursivelyWellformed`.
+`inv_field_001` in `Spec.lean` is closed by composing the document-level variant
+`field_structure_preserved_doc` (which consumes the weaker `preservationFriendly`
+precondition) with the single named residual axiom
+`compareDocumentXml_output_preservation_friendly`. PR #220 weakened the
+precondition from per-subtree `recursivelyWellformed` to document-level
+`preservationFriendly` so the axiom stays compatible with ECMA-376 field
+fragmentation (#217); the `recursivelyWellformed`-based `field_structure_preserved`
+above is retained as a stronger legacy lemma, off the `inv_field_001` path. See
+`Spec.lean` for detail.
 
 ## Residual obligations — what the proof does NOT say
 
-- **`compareDocumentXml_output_recursivelyWellformed` is the single named
+- **`compareDocumentXml_output_preservation_friendly` is the single named
   residual axiom.** It asserts that this repo's inplace atomizer output satisfies
-  `recursivelyWellformed`. It is scoped to this repo's inplace atomizer — NOT to
+  `preservationFriendly` (whole-doc `validateFieldStructure`, and accept/reject
+  leave the field walk and begin/end balance unchanged). It is scoped to this
+  repo's inplace atomizer — NOT to
   OOXML comparison engines in general. It is **not discharged**; discharging it
   by modeling `compareDocumentXml` definitionally is **Tier 3** work, and the next
   step there is exactly that definitional model.

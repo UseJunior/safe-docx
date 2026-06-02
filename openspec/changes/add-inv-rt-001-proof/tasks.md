@@ -11,8 +11,8 @@
 
 - [x] 2.1 `rename_text_invariant`: `extractText (renameBlocks bs) = extractText bs` (the `delText → text` rename does not change extracted text, since `extractText` already counts `delText`).
 - [x] 2.2 `extractText_reject`: `extractText (reject d) = originalText d`, by induction over `rejectBlocks`, consuming 2.1.
-- [x] 2.3 `normalize_absorbs_empty_paragraphs`: dropping empty-collapsing paragraphs (as `accept` does, `AcceptReject.lean:44`) leaves `normalizeText` output unchanged.
-- [x] 2.4 `extractText_accept`: `normalizeText (extractText (accept d)) = normalizeText (revisedText d)`, by induction over `acceptBlocks` + 2.3.
+- [x] 2.3 `normalizeText_cons_empty` (with helper `normalizeText_cons`): a leading empty entry is invisible to `normalizeText`, so dropping empty-collapsing paragraphs (as `accept` does, `AcceptReject.lean:44`) leaves `normalizeText` output unchanged.
+- [x] 2.4 `extractText_accept_normalized`: `normalizeText (extractText (accept d)) = normalizeText (revisedText d)`, by induction over the document + 2.3.
 
 ## 3. Wire into `Spec.lean` and close the `sorry`
 

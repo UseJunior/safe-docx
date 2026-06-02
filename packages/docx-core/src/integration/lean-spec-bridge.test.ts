@@ -1,7 +1,7 @@
 /**
  * Lean Spec Bridge — fast-check property tests
  *
- * Empirically exercises the sorry'd Lean theorems in
+ * Empirically exercises the Lean theorems in
  * `verification/lean/LeanSpike/Spec.lean` against the live TypeScript comparison
  * engine, restricted to the inplace reconstruction path.
  *
@@ -12,8 +12,13 @@
  *       `w:ins`, `w:del`, paragraph-insert, `pPrChange`, comment-anchor,
  *       footnote-anchor.
  *
- * These are empirical bridge tests, not closed proofs. The Lean theorems stay
- * `sorry`'d; this file falsifies them if either invariant fails on random input.
+ * These are empirical bridge tests, not the proofs themselves. As of the
+ * `inv_rt_001` closure both theorems are closed (zero `sorry`) but each rests on a
+ * named residual axiom about this repo's inplace `compareDocumentXml` output
+ * (`compareDocumentXml_output_preservation_friendly`,
+ * `compareDocumentXml_output_text_roundtrip`); this file is the falsifiability
+ * layer for those axioms — it fails if either invariant breaks on real engine
+ * output.
  *
  * Fallback semantics — scoped to both bridge generators in this file:
  *

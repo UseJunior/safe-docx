@@ -98,11 +98,13 @@ Delivered:
   `field_structure_preserved` (zero `sorry`).
 - `LeanSpike/Spec.lean` — `OoxmlDoc` / `acceptAllChanges` / `rejectAllChanges` /
   `validateFieldStructure` rewired from `axiom` to the Tier 2 definitions;
-  `inv_field_001` closed by composing `field_structure_preserved` with the single
-  named residual axiom `compareDocumentXml_output_recursivelyWellformed`.
+  `inv_field_001` closed (after the PR #220 weakening) by composing the
+  document-level `field_structure_preserved_doc` with the single named residual
+  axiom `compareDocumentXml_output_preservation_friendly`.
 
 The residual axiom asserts that this repo's inplace atomizer output is
-`recursivelyWellformed`. Discharging it by modeling `compareDocumentXml`
+`preservationFriendly` (PR #220 weakened it from per-subtree
+`recursivelyWellformed`). Discharging it by modeling `compareDocumentXml`
 definitionally is Tier 3 work.
 
 `inv_rt_001` (round-trip text equality) was subsequently closed by the successor

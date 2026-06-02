@@ -96,9 +96,10 @@ The projection intentionally flattens `contentElement.textContent ?? ""` into a 
 ### Tier 2 residual axiom (`inv_field_001`)
 
 The closed `inv_field_001` proof carries exactly one named residual axiom:
-`compareDocumentXml_output_recursivelyWellformed` in `LeanSpike/Spec.lean`. It
+`compareDocumentXml_output_preservation_friendly` in `LeanSpike/Spec.lean`. It
 asserts that this repo's inplace atomizer output satisfies
-`Tier2.FieldStructure.recursivelyWellformed` — scoped to this repo's inplace
+`Tier2.AcceptReject.preservationFriendly` (PR #220 weakened this from the stronger
+`Tier2.FieldStructure.recursivelyWellformed`) — scoped to this repo's inplace
 atomizer, NOT to OOXML comparison engines in general. Discharging it by modeling
 `compareDocumentXml` definitionally is **Tier 3** work. Extensional equivalence
 between the Lean `accept` / `reject` and the production TS

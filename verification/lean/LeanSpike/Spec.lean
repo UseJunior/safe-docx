@@ -29,9 +29,10 @@ abbrev OoxmlDoc : Type := Tier2.OoxmlModel.Doc
     would have constrained is never emitted.
 
     This **remains axiomatic**: modeling `compareDocumentXml` definitionally is
-    Tier 3 work. The residual obligation about its output well-formedness is
-    captured by the named axiom `compareDocumentXml_output_recursivelyWellformed`
-    below. -/
+    Tier 3 work. The residual obligations about its output are captured by the two
+    named axioms below: `compareDocumentXml_output_preservation_friendly`
+    (field structure) and `compareDocumentXml_output_text_roundtrip` (round-trip
+    text). -/
 axiom compareDocumentXml : OoxmlDoc → OoxmlDoc → Option OoxmlDoc
 
 /-- `acceptAllChanges`, mirroring
