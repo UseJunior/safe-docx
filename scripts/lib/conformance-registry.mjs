@@ -25,6 +25,11 @@ export function parseRegistryFile(file) {
   const lines = text.split('\n');
   const entries = [];
   const nonGoals = [];
+  // Prose that sits under `## Non-Goals` before the first `## [ID]` entry. It
+  // states the product-level scope boundaries that have no single spec section,
+  // so it cannot be a registry entry; capture it as free text instead of
+  // discarding it (the `if (!current) continue` below used to drop these lines).
+  const nonGoalsPreambleLines = [];
   let current = null;
   let inYaml = false;
   let yamlBuf = [];
@@ -43,7 +48,10 @@ export function parseRegistryFile(file) {
       current = { id: heading[1], title: heading[2], line: lineNo, file, section, meta: {}, prose: [] };
       continue;
     }
-    if (!current) continue;
+    if (!current) {
+      if (section === 'non-goals') nonGoalsPreambleLines.push(raw);
+      continue;
+    }
     if (raw.startsWith('```yaml')) { inYaml = true; yamlBuf = []; continue; }
     if (raw.startsWith('```') && inYaml) {
       inYaml = false;
@@ -68,17 +76,19 @@ export function parseRegistryFile(file) {
     else entries.push(current);
     current = null;
   }
-  return { entries, nonGoals };
+  return { entries, nonGoals, nonGoalsPreamble: nonGoalsPreambleLines.join('\n').trim() };
 }
 
 export function loadRegistry() {
-  const result = { targets: new Map(), nonGoals: [], entries: [], sources: [], errors: [] };
+  const result = { targets: new Map(), nonGoals: [], entries: [], sources: [], errors: [], nonGoalsPreamble: '' };
   const nonGoalTargets = new Map();
   result.nonGoals.has = (id) => nonGoalTargets.has(id);
+  const preambles = [];
 
   for (const file of walkFiles(REGISTRY_DIR, (f) => f.endsWith('.md'))) {
-    const { entries, nonGoals } = parseRegistryFile(file);
+    const { entries, nonGoals, nonGoalsPreamble } = parseRegistryFile(file);
     result.sources.push(path.relative(REPO_ROOT, file));
+    if (nonGoalsPreamble) preambles.push(nonGoalsPreamble);
     for (const e of entries) {
       if (result.targets.has(e.id)) {
         result.errors.push({ file, line: e.line, message: `Duplicate registry ID ${e.id}` });
@@ -88,9 +98,17 @@ export function loadRegistry() {
       result.entries.push(e);
     }
     for (const e of nonGoals) {
+      // A Non-Goal ID must not shadow a targeted section: the citation lint
+      // consults `nonGoals.has(id)` to reject `@conformance` against Non-Goals,
+      // so an overlap would make a legitimate target's annotation fail.
+      if (result.targets.has(e.id)) {
+        result.errors.push({ file, line: e.line, message: `Non-Goal ID ${e.id} collides with a targeted registry entry` });
+        continue;
+      }
       nonGoalTargets.set(e.id, e);
       result.nonGoals.push(e);
     }
   }
+  result.nonGoalsPreamble = preambles.join('\n\n');
   return result;
 }

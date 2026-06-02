@@ -303,8 +303,11 @@ function main() {
 
   const xsdIndex = buildXsdIndex();
 
-  // 1. Verify every registry schemaRef resolves.
-  for (const entry of registry.entries) {
+  // 1. Verify every registry schemaRef resolves. Non-Goals carry the same
+  // schema binding as targeted sections ("we explicitly do not target this
+  // element") so they are validated identically — otherwise a typo'd Non-Goal
+  // anchor would pass silently and the out-of-scope claim would rot.
+  for (const entry of [...registry.entries, ...registry.nonGoals]) {
     if (!entry.meta.schemaRef) {
       err(entry.file, entry.line, `Registry entry ${entry.id} is missing required schemaRef field.`);
       continue;
