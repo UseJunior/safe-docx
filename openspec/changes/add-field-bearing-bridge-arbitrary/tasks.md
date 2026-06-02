@@ -9,7 +9,7 @@
 
 ## 2. Property tests
 
-- [x] 2.1 `INV-FIELD-001: field structure preserved on field-bearing inplace comparison output` at `numRuns: NUM_RUNS`: `assertInplaceResult` + `assertFieldInvariant`; `assertRecursivelyWellformed` **iff** `operation !== 'field-delete'`. Coverage recorded; full coverage asserted in `finally`. Seeded with all 12 operation×type combos via `examples` so the coverage floor is deterministic on top of the 100 random runs.
+- [x] 2.1 `INV-FIELD-001: field structure preserved on field-bearing inplace comparison output` at `numRuns: NUM_RUNS`: `assertInplaceResult` + `assertFieldInvariant`; `assertRecursivelyWellformed` **iff** `operation !== 'field-delete'`. Coverage recorded; full coverage asserted in `finally`. Seeded with all 12 operation×type combos via `examples` so the coverage floor is deterministic; the budget is `NUM_RUNS + fieldBearingExampleArgs.length` because fast-check consumes `examples` from within `numRuns`, so this keeps a full `NUM_RUNS` random cases on top of the 12 deterministic examples.
 - [x] 2.2 `INV-RT-001: paired round-trip text equality on field-bearing inplace comparison output`: `assertInplaceResult` + `await assertRoundTripInvariant` per run; coverage recorded + asserted. Round-trip exercises the live `extractTextWithParagraphs` / `normalizeText` (field result `<w:t>` counted; `instrText` / `fldChar` contribute none).
 - [x] 2.3 Allure JSON coverage attachment per property (`field-bearing-operation-type-hits-inv-field-001` / `…-inv-rt-001`).
 

@@ -384,6 +384,12 @@ function buildFieldBearingPair(
   }
 }
 
+// One deterministic example per (operation, fieldType) combo. Seeded via
+// fast-check `examples` so the coverage floor (`assertFieldBearingCoverage`) is
+// guaranteed to be satisfied every run rather than relying on the random
+// generator happening to hit all 12 combos. NOTE: fast-check consumes examples
+// from within the `numRuns` budget, so both properties run at
+// `NUM_RUNS + fieldBearingExampleArgs.length` to keep NUM_RUNS *random* cases.
 const fieldBearingExamples: FieldBearingPair[] = FIELD_OPERATIONS.flatMap((operation) =>
   FIELD_TYPES.map((fieldType) =>
     buildFieldBearingPair(operation, fieldType, {
@@ -1090,7 +1096,13 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
                   );
                 }
               }),
-              { numRuns: NUM_RUNS, examples: fieldBearingExampleArgs },
+              // fast-check runs `examples` from WITHIN the numRuns budget, not in
+              // addition to it, so bump the budget by the example count to get the
+              // full 12 deterministic operation×type combos AND NUM_RUNS random cases.
+              {
+                numRuns: NUM_RUNS + fieldBearingExampleArgs.length,
+                examples: fieldBearingExampleArgs,
+              },
             );
           } finally {
             await allureJsonAttachment('field-bearing-operation-type-hits-inv-field-001', coverage);
@@ -1138,7 +1150,13 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
                   result,
                 );
               }),
-              { numRuns: NUM_RUNS, examples: fieldBearingExampleArgs },
+              // fast-check runs `examples` from WITHIN the numRuns budget, not in
+              // addition to it, so bump the budget by the example count to get the
+              // full 12 deterministic operation×type combos AND NUM_RUNS random cases.
+              {
+                numRuns: NUM_RUNS + fieldBearingExampleArgs.length,
+                examples: fieldBearingExampleArgs,
+              },
             );
           } finally {
             await allureJsonAttachment('field-bearing-operation-type-hits-inv-rt-001', coverage);
