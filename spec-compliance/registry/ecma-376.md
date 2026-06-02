@@ -76,11 +76,103 @@ reference-vs-display distinction this section establishes.
 
 ## Non-Goals
 
-Sections explicitly **out of scope** for safe-docx. Annotations pointing
-at these IDs via `@conformance` or `.conformance(…)` fail the lint;
-contributors must use `@conformance-gap` for known deliberate divergence
-within targeted sections instead.
+Sections explicitly **out of scope** for safe-docx. Each entry below carries the
+same spec section and vendored-schema binding as a targeted section, so "we do
+not target this" is a first-class, reviewable statement rather than silence.
 
-_None yet. As the registry grows, Non-Goals will be enumerated here using
-the same `[ECMA-PART<N>-<section>]` ID grammar so the framework treats
-"we explicitly do not target this" as a first-class statement._
+Beyond the enumerated sections, safe-docx is not a from-scratch document
+generator, rejects Word template packages (`.dotx`), and makes no rendering,
+layout, pagination, or cross-editor-fidelity guarantees. Those boundaries have no
+single ECMA-376 section; they are described under
+[“What Safe Docx Is Not Optimized For”](/README.md#what-safe-docx-is-not-optimized-for)
+in the root README.
+
+A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
+the citation lint. For a deliberate divergence *inside a targeted section*, use
+`@conformance-gap` with a reason instead.
+
+## [ECMA-PART1-17-13-5-2] Cell-topology revisions (w:cellIns / w:cellDel / w:cellMerge)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellIns
+verifiedBy:
+```
+
+ECMA-376 Part 1 §17.13.5.1–§17.13.5.3 define tracked changes to table-cell
+topology: `w:cellDel` (cell deletion), `w:cellIns` (cell insertion), and
+`w:cellMerge` (vertical merge/split). safe-docx surfaces no cell-topology
+mutation today — it neither authors these revision elements nor offers an
+accept/reject path dedicated to them — so it makes no conformance claim over
+this section.
+
+## [ECMA-PART1-17-13-5-21] Tracked move revisions (w:moveFrom / w:moveTo)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.21"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom
+verifiedBy:
+```
+
+ECMA-376 Part 1 §17.13.5.21 onward define tracked *moves*: the `w:moveFrom` and
+`w:moveTo` content wrappers plus the paired `w:moveFromRangeStart` /
+`w:moveFromRangeEnd` and `w:moveToRangeStart` / `w:moveToRangeEnd` range markers.
+safe-docx surfaces no move primitive today; relocating content is expressed as a
+deletion plus an insertion, not as a first-class move pair. No conformance claim
+is made over the move-revision section.
+
+## [ECMA-PART1-17-13-5-30] Numbering-property revisions (w:numberingChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.30"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numberingChange
+verifiedBy:
+```
+
+ECMA-376 Part 1 §17.13.5.30 defines `w:numberingChange`, the revision record for
+a paragraph's previous numbering properties. safe-docx surfaces no numbering
+mutation today and does not author this revision element, so it makes no
+conformance claim over this section.
+
+## [ECMA-PART1-17-13-5-34] Section-property revisions (w:sectPrChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.34"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange
+verifiedBy:
+```
+
+ECMA-376 Part 1 §17.13.5.34 defines `w:sectPrChange`, the revision record for a
+prior set of section properties (page layout, columns, headers/footers binding).
+safe-docx surfaces no section-layout mutation today and does not author this
+revision element, so it makes no conformance claim over this section.
+
+## [ECMA-PART1-17-13-5-36] Table-property and grid revisions (w:tblPrChange / w:tblPrExChange / w:tblGridChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.36"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange
+verifiedBy:
+```
+
+ECMA-376 Part 1 §17.13.5.35–§17.13.5.37 define tracked changes to table-wide
+structure: `w:tblGridChange` (grid-column definitions), `w:tblPrChange`
+(table properties), and `w:tblPrExChange` (table-level property exceptions).
+safe-docx surfaces no table-wide property or grid mutation today and does not
+author these revision elements, so it makes no conformance claim over this
+section.
