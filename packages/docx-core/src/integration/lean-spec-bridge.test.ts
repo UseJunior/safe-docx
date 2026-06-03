@@ -14,6 +14,11 @@
  *   - Tier 2 field-bearing clean pairs whose `document.xml` carries a complete
  *     NUMPAGES / PAGE / PAGEREF field and realizes one focused operation:
  *       field-insert, field-delete, field-stable, text-only.
+ *   - Tier 2 fragmented-field pairs (`fragmentedFieldPairArb`) whose difference
+ *     fragments a field's internal atoms under track changes — a changed result
+ *     run and/or a pre-tracked field whose instruction code is already split
+ *     into `<w:ins>`/`<w:del>` — over the operations:
+ *       result-edit, pretracked-fragmented-to-clean, clean-to-pretracked-fragmented.
  *
  * These are empirical bridge tests, not the proofs themselves. As of the
  * `inv_rt_001` closure both theorems are closed (zero `sorry`) but each rests on a
@@ -34,11 +39,25 @@
  *     (b) `ContainerResolutionError` from container-topology mismatch.
  *   The two original generators (`pairArb`, `trackedPairArb`) are
  *   paragraph-only, table-free, and field-free, so (b) is not expected to fire
- *   there. The field-bearing arbitrary is narrower instead: it uses only
- *   complete fields at run boundaries and the inplace-safe operation families
- *   already covered by the fixed fixtures. We therefore treat fallback as
- *   falsification for all bridge properties and throw with
- *   `triage=inplace-fallback` diagnostics rather than filtering with `fc.pre`.
+ *   there. The whole-field arbitrary (`fieldBearingPairArb`) is narrower
+ *   instead: it uses only complete fields at run boundaries and the
+ *   inplace-safe operation families already covered by the fixed fixtures. For
+ *   all of these — `pairArb`, `trackedPairArb`, `fieldBearingPairArb` — we treat
+ *   fallback as falsification and throw with `triage=inplace-fallback`
+ *   diagnostics rather than filtering with `fc.pre`.
+ *
+ *   The fragmented-field arbitrary (`fragmentedFieldPairArb`) is the deliberate
+ *   EXCEPTION: on the clean→pretracked-fragmented operation with a result-text
+ *   change, the engine's inplace candidate fails the fieldStructure safety
+ *   check (it would place a `w:fldChar` in a `<w:del>`-adjacent context / break
+ *   per-story field validity), so the engine CORRECTLY falls back to rebuild and
+ *   still produces conformant accept/reject output. The residual axioms
+ *   constrain the comparison OUTPUT, not the reconstruction strategy, so for
+ *   this arbitrary fallback is a LEGITIMATE outcome: its property asserts the
+ *   invariants mode-independently (on the resolved accept/reject projections,
+ *   never on the raw combined output) and a mode-distribution coverage floor
+ *   requires both inplace and fallback outcomes to be observed, so a silent
+ *   all-inplace or all-fallback regression fails loudly rather than via `fc.pre`.
  *
  * INV-RT-001 tracked-input triage:
  *   - `triage=engine-bug`: accept/reject of `combined` disagrees with the fully
@@ -50,9 +69,10 @@
  *   - `triage=inplace-fallback`: the inplace candidate was never emitted.
  *
  * Coverage limitations (intentional for the spike — not bugs):
- *   - Fragmented, nested, and paragraph-spanning field input families still live
- *     outside this bridge property surface (for example in
- *     `collapsed-field-inplace.test.ts` / field-fragmentation fixtures).
+ *   - Nested fields and fields spanning paragraph boundaries still live outside
+ *     this bridge property surface (deferred to a named successor); the
+ *     fragmented (single-field, instruction/result fragmentation) surface IS now
+ *     covered by `fragmentedFieldPairArb`.
  *   - Small-edit/run-boundary regression coverage still lives in the fixture
  *     tests (`round-trip-inplace.test.ts`, `nvca-coi-regression.test.ts`).
  *   - Comment and footnote coverage here is limited to `document.xml` anchors;
@@ -69,6 +89,9 @@ import {
   COMPLETE_PAGEREF_FIELD,
   COMPLETE_NUMPAGES_FIELD,
   WHOLE_FIELD_IN_INS,
+  FIELD_INSTRUCTIONS,
+  completeField,
+  fragmentedFieldModification,
   buildDocxFromBodyXml,
   paragraphWithField,
   paragraphWithText,
@@ -416,6 +439,135 @@ const fieldBearingPairArb: fc.Arbitrary<FieldBearingPair> = fc
   })
   .map(({ operation, fieldType, shape }) => buildFieldBearingPair(operation, fieldType, shape));
 
+// ---------------------------------------------------------------------------
+// Fragmented-field arbitrary (sibling of fieldBearingPairArb)
+//
+// Where fieldBearingPairArb covers WHOLE, self-contained fields at run
+// boundaries, this arbitrary covers the harder fragmented surface: a field
+// whose result run changes under track changes, and/or a pre-tracked field
+// whose instruction code is already split into <w:ins>/<w:del> wrappers.
+//
+// Its property is MODE-INDEPENDENT: the residual axioms constrain the
+// comparison OUTPUT, not the reconstruction strategy. The engine correctly
+// falls back from inplace to a rebuild reconstruction for one operation of
+// this surface (clean → pretracked-fragmented with a result-text change, which
+// fails the inplace fieldStructure safety check), so — unlike the field-free /
+// whole-field arbitraries — fallback here is a LEGITIMATE outcome, not
+// falsification. The mode-distribution coverage floor (below) requires both an
+// inplace and a fallback outcome to be observed, so a silent all-inplace or
+// all-fallback regression fails loudly.
+// ---------------------------------------------------------------------------
+
+const FRAGMENTED_FIELD_OPERATIONS = [
+  'result-edit',
+  'pretracked-fragmented-to-clean',
+  'clean-to-pretracked-fragmented',
+] as const;
+
+type FragmentedFieldOperation = (typeof FRAGMENTED_FIELD_OPERATIONS)[number];
+
+// The instruction code that the pre-tracked fragmented field deletes (the "old"
+// code under <w:del>), distinct from the field type's own (the "new" code under
+// <w:ins>), so the modification is non-trivial.
+const FIELD_ALT_INSTRUCTIONS: Record<FieldType, string> = {
+  NUMPAGES: FIELD_INSTRUCTIONS.PAGE,
+  PAGE: FIELD_INSTRUCTIONS.NUMPAGES,
+  PAGEREF: FIELD_INSTRUCTIONS.PAGE,
+};
+
+interface FragmentedFieldPair {
+  operation: FragmentedFieldOperation;
+  fieldType: FieldType;
+  originalBodyXml: string;
+  revisedBodyXml: string;
+}
+
+interface FragmentedFieldShape {
+  prefix: string;
+  suffix: string;
+  originalResult: string;
+  revisedResult: string;
+}
+
+// originalResult and revisedResult are drawn from DISJOINT pools so they always
+// differ — guaranteeing a tracked result-text change, which (together with the
+// clean→pretracked-fragmented direction) is what deterministically drives the
+// engine's correct rebuild fallback and thus satisfies the mode floor.
+const fragmentedFieldShapeArb: fc.Arbitrary<FragmentedFieldShape> = fc.record({
+  prefix: fc.constantFrom('Total pages ', 'Page count ', 'See section '),
+  suffix: fc.constantFrom(' total.', ' here.', ' end.'),
+  originalResult: fc.constantFrom('1', '2', '3'),
+  revisedResult: fc.constantFrom('7', '8', '9'),
+});
+
+function buildFragmentedFieldPair(
+  operation: FragmentedFieldOperation,
+  fieldType: FieldType,
+  shape: FragmentedFieldShape,
+): FragmentedFieldPair {
+  const instruction = FIELD_INSTRUCTIONS[fieldType];
+  const altInstruction = FIELD_ALT_INSTRUCTIONS[fieldType];
+  const clean = (result: string) =>
+    paragraphWithField(shape.prefix, completeField(instruction, result), shape.suffix);
+  const fragmented = (result: string) =>
+    paragraphWithField(
+      shape.prefix,
+      fragmentedFieldModification(instruction, altInstruction, result),
+      shape.suffix,
+    );
+
+  switch (operation) {
+    case 'result-edit':
+      return {
+        operation,
+        fieldType,
+        originalBodyXml: clean(shape.originalResult),
+        revisedBodyXml: clean(shape.revisedResult),
+      };
+    case 'pretracked-fragmented-to-clean':
+      return {
+        operation,
+        fieldType,
+        originalBodyXml: fragmented(shape.originalResult),
+        revisedBodyXml: clean(shape.revisedResult),
+      };
+    case 'clean-to-pretracked-fragmented':
+      return {
+        operation,
+        fieldType,
+        originalBodyXml: clean(shape.originalResult),
+        revisedBodyXml: fragmented(shape.revisedResult),
+      };
+  }
+}
+
+// One deterministic example per (operation, fieldType). Seeded via fast-check
+// `examples` so the coverage floor is guaranteed every run: the
+// clean-to-pretracked-fragmented examples (result 3 → 7) deterministically
+// produce the fallback outcome and the other operations the inplace outcome.
+const fragmentedFieldExamples: FragmentedFieldPair[] = FRAGMENTED_FIELD_OPERATIONS.flatMap(
+  (operation) =>
+    FIELD_TYPES.map((fieldType) =>
+      buildFragmentedFieldPair(operation, fieldType, {
+        prefix: 'Total pages ',
+        suffix: ' end.',
+        originalResult: '3',
+        revisedResult: '7',
+      }),
+    ),
+);
+const fragmentedFieldExampleArgs = fragmentedFieldExamples.map(
+  (pair) => [pair] as [FragmentedFieldPair],
+);
+
+const fragmentedFieldPairArb: fc.Arbitrary<FragmentedFieldPair> = fc
+  .record({
+    operation: fc.constantFrom(...FRAGMENTED_FIELD_OPERATIONS),
+    fieldType: fc.constantFrom(...FIELD_TYPES),
+    shape: fragmentedFieldShapeArb,
+  })
+  .map(({ operation, fieldType, shape }) => buildFragmentedFieldPair(operation, fieldType, shape));
+
 async function getDocumentXml(document: Buffer): Promise<string> {
   const archive = await DocxArchive.load(document);
   return await archive.getDocumentXml();
@@ -479,6 +631,17 @@ async function compareSyntheticDocuments(
 }
 
 async function compareFieldBearingPair(pair: FieldBearingPair): Promise<CompareBridgeResult> {
+  const [original, revised] = await Promise.all([
+    buildDocxFromBodyXml(pair.originalBodyXml),
+    buildDocxFromBodyXml(pair.revisedBodyXml),
+  ]);
+
+  return compareDocumentBuffers(original, revised);
+}
+
+async function compareFragmentedFieldPair(
+  pair: FragmentedFieldPair,
+): Promise<CompareBridgeResult> {
   const [original, revised] = await Promise.all([
     buildDocxFromBodyXml(pair.originalBodyXml),
     buildDocxFromBodyXml(pair.revisedBodyXml),
@@ -551,6 +714,65 @@ function assertFieldBearingCoverage(invariant: string, coverage: FieldBearingCov
     throw new Error(
       `${invariant}: field-bearing operation/type coverage incomplete. ` +
         `missing=${missing.join(', ')} hits=${JSON.stringify(coverage)}`,
+    );
+  }
+}
+
+// Fragmented-field coverage is floored over TWO axes: the operation family, and
+// the reconstruction OUTCOME (inplace vs fallback). Recording the outcome — and
+// requiring both to appear — is the safety valve for not asserting
+// `assertInplaceResult` on this surface: it converts "the engine still both
+// stays-inplace and falls-back here" from an unstated assumption into a checked
+// invariant, so a regression that makes the surface all-inplace or all-fallback
+// fails loudly instead of passing vacuously.
+type ReconstructionOutcome = 'inplace' | 'fallback';
+const RECONSTRUCTION_OUTCOMES: readonly ReconstructionOutcome[] = ['inplace', 'fallback'];
+
+interface FragmentedFieldCoverage {
+  operations: Record<FragmentedFieldOperation, number>;
+  outcomes: Record<ReconstructionOutcome, number>;
+}
+
+function createFragmentedFieldCoverage(): FragmentedFieldCoverage {
+  return {
+    operations: Object.fromEntries(
+      FRAGMENTED_FIELD_OPERATIONS.map((operation) => [operation, 0]),
+    ) as Record<FragmentedFieldOperation, number>,
+    outcomes: { inplace: 0, fallback: 0 },
+  };
+}
+
+function reconstructionOutcome(result: CompareBridgeResult): ReconstructionOutcome {
+  // The comparison is always requested in inplace mode, so any non-inplace
+  // result is the engine's own fallback to rebuild.
+  return result.modeUsed === 'inplace' ? 'inplace' : 'fallback';
+}
+
+function recordFragmentedFieldHit(
+  coverage: FragmentedFieldCoverage,
+  pair: FragmentedFieldPair,
+  result: CompareBridgeResult,
+): void {
+  coverage.operations[pair.operation] += 1;
+  coverage.outcomes[reconstructionOutcome(result)] += 1;
+}
+
+function assertFragmentedFieldCoverage(
+  invariant: string,
+  coverage: FragmentedFieldCoverage,
+): void {
+  const missingOperations = FRAGMENTED_FIELD_OPERATIONS.filter(
+    (operation) => coverage.operations[operation] === 0,
+  );
+  const missingOutcomes = RECONSTRUCTION_OUTCOMES.filter(
+    (outcome) => coverage.outcomes[outcome] === 0,
+  );
+  if (missingOperations.length > 0 || missingOutcomes.length > 0) {
+    throw new Error(
+      `${invariant}: fragmented-field coverage incomplete. ` +
+        `missingOperations=${missingOperations.join(', ') || '(none)'} ` +
+        `missingOutcomes=${missingOutcomes.join(', ') || '(none)'} ` +
+        `hits=${JSON.stringify(coverage)}`,
     );
   }
 }
@@ -1167,6 +1389,89 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
             await allureJsonAttachment('field-bearing-operation-type-hits-inv-rt-001', coverage);
           }
           assertFieldBearingCoverage('INV-RT-001 field-bearing property', coverage);
+        },
+      );
+    },
+  );
+
+  test
+    .openspec(
+      '[LEAN-FRAG-01] Fragmented-field arbitrary drives both residual axioms across operations',
+    )
+    .openspec(
+      '[LEAN-FRAG-02] Inplace fallback is a legitimate, mode-independent outcome, not falsification',
+    )
+    .openspec(
+      '[LEAN-FRAG-03] Mode-distribution and operation coverage are floored, not silently filtered',
+    )
+    .openspec(
+      '[LEAN-FRAG-04] Bridge file self-description distinguishes fallback-is-falsification from fallback-is-legitimate',
+    )(
+    'INV-FIELD-001 + INV-RT-001: mode-independent invariants on fragmented-field comparison output',
+    async ({ given, when, then }: AllureBddContext) => {
+      const coverage = createFragmentedFieldCoverage();
+
+      await given(
+        'fragmented-field pairs are generated over result-edit, pretracked-fragmented-to-clean, and clean-to-pretracked-fragmented',
+        async () => {},
+      );
+
+      await when(
+        'each pair is compared through the live engine and the combined output is accepted and rejected, regardless of the reconstruction mode the engine selected',
+        async () => {},
+      );
+
+      await then(
+        'field structure holds on accept and reject, text round-trips, and both reconstruction modes plus every operation are exercised',
+        async () => {
+          try {
+            await fc.assert(
+              fc.asyncProperty(fragmentedFieldPairArb, async (pair) => {
+                const result = await compareFragmentedFieldPair(pair);
+                recordFragmentedFieldHit(coverage, pair, result);
+
+                const context = {
+                  operation: pair.operation,
+                  fieldType: pair.fieldType,
+                  modeUsed: result.modeUsed,
+                  fallbackReason: result.fallbackReason,
+                  originalBodyXml: pair.originalBodyXml,
+                  revisedBodyXml: pair.revisedBodyXml,
+                };
+
+                // Mode-independent: the residual axioms constrain the OUTPUT,
+                // not the reconstruction strategy. The engine correctly rebuilds
+                // the clean→pretracked-fragmented + result-change case (its
+                // inplace candidate fails the fieldStructure safety check), so we
+                // assert the INV-FIELD-001 and INV-RT-001 obligations on whatever
+                // output it produced — on the resolved accept/reject projections,
+                // NOT on the raw mixed-revision combined output — and we do NOT
+                // call assertInplaceResult or assertRecursivelyWellformed here.
+                assertFieldInvariant(
+                  'INV-FIELD-001 fragmented-field property',
+                  context,
+                  result.combined,
+                );
+                await assertRoundTripInvariant(
+                  'INV-RT-001 fragmented-field property',
+                  context,
+                  result,
+                );
+              }),
+              // fast-check runs `examples` from WITHIN the numRuns budget, so bump
+              // the budget by the example count to keep NUM_RUNS random cases on
+              // top of the deterministic operation×type seeds (which also floor
+              // the mode distribution: the clean→pretracked-fragmented seeds force
+              // the fallback outcome, the rest force inplace).
+              {
+                numRuns: NUM_RUNS + fragmentedFieldExampleArgs.length,
+                examples: fragmentedFieldExampleArgs,
+              },
+            );
+          } finally {
+            await allureJsonAttachment('fragmented-field-operation-and-mode-hits', coverage);
+          }
+          assertFragmentedFieldCoverage('fragmented-field property', coverage);
         },
       );
     },
