@@ -59,39 +59,59 @@ export function paragraphWithField(prefixText: string, field: string, suffixText
   return `<w:p>${resultText(escapeXmlText(prefixText))}${field}${resultText(escapeXmlText(suffixText))}</w:p>`;
 }
 
-export const COMPLETE_NUMPAGES_FIELD =
-  fldChar('begin') +
-  instrText(' NUMPAGES ', { preserve: true }) +
-  fldChar('separate') +
-  resultText('3') +
-  fldChar('end');
+// Field instruction-code strings, keyed by field type. Single source of truth so
+// the complete-field constants and the fragmented-field builder agree on the
+// exact instruction text per type.
+export const FIELD_INSTRUCTIONS = {
+  NUMPAGES: ' NUMPAGES ',
+  PAGE: ' PAGE ',
+  PAGEREF: ' PAGEREF _Toc123 \\h ',
+} as const;
 
-export const COMPLETE_PAGE_FIELD =
-  fldChar('begin') +
-  instrText(' PAGE ', { preserve: true }) +
-  fldChar('separate') +
-  resultText('1') +
-  fldChar('end');
+// A complete, self-contained simple field: begin → instrText → separate →
+// result → end. Generalizes the COMPLETE_* constants over instruction and
+// result text.
+export function completeField(instruction: string, result: string): string {
+  return (
+    fldChar('begin') +
+    instrText(instruction, { preserve: true }) +
+    fldChar('separate') +
+    resultText(result) +
+    fldChar('end')
+  );
+}
 
-export const COMPLETE_PAGEREF_FIELD =
-  fldChar('begin') +
-  instrText(' PAGEREF _Toc123 \\h ', { preserve: true }) +
-  fldChar('separate') +
-  resultText('42') +
-  fldChar('end');
+export const COMPLETE_NUMPAGES_FIELD = completeField(FIELD_INSTRUCTIONS.NUMPAGES, '3');
+
+export const COMPLETE_PAGE_FIELD = completeField(FIELD_INSTRUCTIONS.PAGE, '1');
+
+export const COMPLETE_PAGEREF_FIELD = completeField(FIELD_INSTRUCTIONS.PAGEREF, '42');
 
 // ECMA-376 conformant field-modification pattern: a field whose instruction
 // text is changing under track changes. The fldChars remain UNWRAPPED at the
 // sibling-run level (they cannot enter <w:del>), while the changed instrText
 // fragments into <w:ins>/<w:del> wrappers. See c-rex ECMA-376 Part 4 fldChar
 // topic + DeletedFieldCode placement constraint.
-export const FRAGMENTED_NUMPAGES_MODIFICATION =
-  fldChar('begin') +
-  `<w:ins>${instrText(' NUMPAGES ', { preserve: true })}</w:ins>` +
-  `<w:del>${delInstrText(' PAGE ', { preserve: true })}</w:del>` +
-  fldChar('separate') +
-  resultText('3') +
-  fldChar('end');
+export function fragmentedFieldModification(
+  newInstruction: string,
+  oldInstruction: string,
+  result: string,
+): string {
+  return (
+    fldChar('begin') +
+    `<w:ins>${instrText(newInstruction, { preserve: true })}</w:ins>` +
+    `<w:del>${delInstrText(oldInstruction, { preserve: true })}</w:del>` +
+    fldChar('separate') +
+    resultText(result) +
+    fldChar('end')
+  );
+}
+
+export const FRAGMENTED_NUMPAGES_MODIFICATION = fragmentedFieldModification(
+  FIELD_INSTRUCTIONS.NUMPAGES,
+  FIELD_INSTRUCTIONS.PAGE,
+  '3',
+);
 
 const W_NS_ATTR = ' xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 
