@@ -1395,18 +1395,10 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
   );
 
   test
-    .openspec(
-      '[LEAN-FRAG-01] Fragmented-field arbitrary drives both residual axioms across operations',
-    )
-    .openspec(
-      '[LEAN-FRAG-02] Inplace fallback is a legitimate, mode-independent outcome, not falsification',
-    )
-    .openspec(
-      '[LEAN-FRAG-03] Mode-distribution and operation coverage are floored, not silently filtered',
-    )
-    .openspec(
-      '[LEAN-FRAG-04] Bridge file self-description distinguishes fallback-is-falsification from fallback-is-legitimate',
-    )(
+    .openspec('[LEAN-FRAG-01] Fragmented-field arbitrary drives both residual axioms across operations')
+    .openspec('[LEAN-FRAG-02] Inplace fallback is a legitimate, mode-independent outcome, not falsification')
+    .openspec('[LEAN-FRAG-03] Mode-distribution and operation coverage are floored, not silently filtered')
+    .openspec('[LEAN-FRAG-04] Bridge file self-description distinguishes fallback-is-falsification from fallback-is-legitimate')(
     'INV-FIELD-001 + INV-RT-001: mode-independent invariants on fragmented-field comparison output',
     async ({ given, when, then }: AllureBddContext) => {
       const coverage = createFragmentedFieldCoverage();
