@@ -1,4 +1,5 @@
 import { OOXML, W } from './namespaces.js';
+import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
 import { getParagraphText, getParagraphRuns } from './text.js';
 import { extractListLabel, stripListLabel, LabelType } from './list_labels.js';
 import { parseNumberingXml, type NumberingCounters, computeListLabelForParagraph } from './numbering.js';
@@ -19,13 +20,13 @@ const MAX_CENTERED_TITLE_LENGTH = 120;
 const STYLE_EXAMPLE_TEXT_PREVIEW_LENGTH = 50;
 
 function getWAttr(el: Element, localName: string): string | null {
-  return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
+  return getAttributeSafe(el, OOXML.W_NS, localName, 'w');
 }
 
 function runHighlightVal(run: Element): string | null {
-  const rPr = run.getElementsByTagNameNS(OOXML.W_NS, W.rPr).item(0);
+  const rPr = getFirstChild(run, OOXML.W_NS, W.rPr);
   if (!rPr) return null;
-  const h = rPr.getElementsByTagNameNS(OOXML.W_NS, W.highlight).item(0);
+  const h = getFirstChild(rPr, OOXML.W_NS, W.highlight);
   if (!h) return null;
   const v = getWAttr(h, 'val');
   if (!v || v === 'none') return null;
@@ -1032,7 +1033,7 @@ export function buildDocumentView(params: {
   const counters: NumberingCounters = new Map();
   void counters;
 
-  const body = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0);
+  const body = getFirstChild(documentXml, OOXML.W_NS, W.body);
   if (!body) return { nodes: [], styles: { styles: new Map(), fingerprint_to_style: new Map() } };
 
   const paragraphs = Array.from(body.getElementsByTagNameNS(OOXML.W_NS, W.p));
@@ -1057,10 +1058,7 @@ function resolveRunHyperlinkUrl(runEl: Element, relsMap: RelsMap | undefined): s
   const parent = runEl.parentNode as Element | null;
   if (!parent || parent.localName !== W.hyperlink) return null;
   // r:id attribute can be namespaced or prefixed.
-  const rId =
-    parent.getAttributeNS(OOXML.R_NS, 'id') ??
-    parent.getAttribute('r:id') ??
-    null;
+  const rId = getAttributeSafe(parent, OOXML.R_NS, 'id', 'r', { bareFallback: false });
   if (!rId) return null;
   return relsMap.get(rId) ?? null;
 }
@@ -1286,7 +1284,7 @@ export function buildNodesForDocumentView(params: {
 
   if (showFormatting) {
     for (const { p } of paragraphs) {
-      const paraPPr = p.getElementsByTagNameNS(OOXML.W_NS, W.pPr).item(0);
+      const paraPPr = getFirstChild(p, OOXML.W_NS, W.pPr);
       const paraFmt = extractParagraphFormatting(paraPPr ?? null, stylesModel);
       const runs = buildAnnotatedRuns({
         p,
@@ -1339,7 +1337,7 @@ export function buildNodesForDocumentView(params: {
   for (let idx = 0; idx < paragraphs.length; idx++) {
     const { id, p, tableContext } = paragraphs[idx]!;
 
-    const paraPPr = p.getElementsByTagNameNS(OOXML.W_NS, W.pPr).item(0);
+    const paraPPr = getFirstChild(p, OOXML.W_NS, W.pPr);
     const paraFmt = extractParagraphFormatting(paraPPr ?? null, stylesModel);
 
     // Visible clean text (field codes stripped).
@@ -1350,10 +1348,10 @@ export function buildNodesForDocumentView(params: {
     // Numbering (auto-numbered) info from numPr.
     let numId: string | null = null;
     let ilvl: number | null = null;
-    const numPr = paraPPr ? paraPPr.getElementsByTagNameNS(OOXML.W_NS, W.numPr).item(0) : null;
+    const numPr = paraPPr ? getFirstChild(paraPPr, OOXML.W_NS, W.numPr) : null;
     if (numPr) {
-      const numIdEl = numPr.getElementsByTagNameNS(OOXML.W_NS, W.numId).item(0);
-      const ilvlEl = numPr.getElementsByTagNameNS(OOXML.W_NS, W.ilvl).item(0);
+      const numIdEl = getFirstChild(numPr, OOXML.W_NS, W.numId);
+      const ilvlEl = getFirstChild(numPr, OOXML.W_NS, W.ilvl);
       const numIdVal = numIdEl ? getWAttr(numIdEl, 'val') : null;
       const ilvlVal = ilvlEl ? getWAttr(ilvlEl, 'val') : null;
       if (numIdVal) numId = numIdVal;

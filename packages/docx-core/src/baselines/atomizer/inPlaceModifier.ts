@@ -22,6 +22,7 @@ import { areRunPropertiesEqual } from '../../format-detection.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml } from '../../primitives/xml.js';
+import { findChild } from '../../primitives/xml-helpers.js';
 import { warn } from './debug.js';
 
 const SYNTHETIC_DOC = parseXml('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>');
@@ -2616,8 +2617,7 @@ function processAtoms(
   state: RevisionIdState,
   revisedRoot: Element
 ): ProcessingContext {
-  const bodyElements = Array.from(revisedRoot.getElementsByTagName('w:body')) as Element[];
-  const body = bodyElements[0];
+  const body = findChild(revisedRoot, 'w:body');
   if (!body) {
     warn('inPlaceModifier', 'Cannot process atoms: no w:body element found');
     // Return a minimal context to avoid callers having to handle undefined.

@@ -8,6 +8,7 @@
 
 import { OOXML, W } from './namespaces.js';
 import { isW, getDirectChildrenByName } from './dom-helpers.js';
+import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -118,7 +119,7 @@ function detectMerge(tc: Element): 'hMerge' | 'vMerge' | 'gridSpan' | null {
     if (child.nodeType !== 1) continue;
     const el = child as Element;
     if (isW(el, 'gridSpan')) {
-      const val = el.getAttributeNS(OOXML.W_NS, W.val) ?? el.getAttribute('w:val');
+      const val = getAttributeSafe(el, OOXML.W_NS, W.val, 'w', { bareFallback: false });
       if (val && parseInt(val, 10) > 1) return 'gridSpan';
     }
   }
@@ -128,7 +129,7 @@ function detectMerge(tc: Element): 'hMerge' | 'vMerge' | 'gridSpan' | null {
 
 /** Get top-level tables from w:body only (not nested tables). */
 function getBodyTables(doc: Document): Element[] {
-  const body = doc.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0);
+  const body = getFirstChild(doc, OOXML.W_NS, W.body);
   if (!body) return [];
   return getDirectChildrenByName(body as Element, W.tbl);
 }
