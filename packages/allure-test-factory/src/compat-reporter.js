@@ -22,6 +22,59 @@ function resolvePrefix(prefix, overrides, packageName) {
   return null;
 }
 
+/**
+ * Rewrite an ordered path (the dot-split `package` label or the `titlePath`
+ * array) so the Allure tree groups by display name.
+ *
+ * allure-vitest >=3.6 prepends a project-scope segment — the nearest
+ * package.json `name`, e.g. `@usejunior/docx-core` — ahead of the source
+ * directory, so the source-root anchor (`src`/`test`/an override key) is no
+ * longer at index 0. Find that anchor wherever it now sits, drop everything
+ * before it (the project scope), and replace it with its display name. Pre-3.6
+ * shapes have the anchor at index 0, so this is a no-op-equivalent rewrite for
+ * them and stays backward compatible.
+ *
+ * @param {string[]} segments - Ordered path segments.
+ * @param {Record<string, string> | undefined} overrides
+ * @param {string | undefined} packageName
+ * @returns {string[] | null} - Rewritten segments, or null if no anchor resolves.
+ */
+function rewritePathSegments(segments, overrides, packageName) {
+  for (let i = 0; i < segments.length; i++) {
+    const resolved = resolvePrefix(segments[i], overrides, packageName);
+    if (resolved !== null) {
+      return [resolved, ...segments.slice(i + 1)];
+    }
+  }
+  return null;
+}
+
+/**
+ * Rewrite an allure-vitest `fullName`. The shape is `<project>:<specPath>#<test>`
+ * in >=3.6 (e.g. `@usejunior/docx-core:src/foo.test.ts#suite test`) and just
+ * `<specPath>#<test>` before that. Drop the leading `<project>:` scope (package
+ * names never contain `:`), then replace the spec path's source-root directory
+ * with its display name.
+ *
+ * @returns {string | null} - Rewritten fullName, or null if the prefix doesn't resolve.
+ */
+function rewriteFullName(fullName, overrides, packageName) {
+  const hashIdx = fullName.indexOf('#');
+  const locator = hashIdx === -1 ? fullName : fullName.slice(0, hashIdx);
+  const testPart = hashIdx === -1 ? '' : fullName.slice(hashIdx);
+
+  const colonIdx = locator.indexOf(':');
+  const specPath = colonIdx === -1 ? locator : locator.slice(colonIdx + 1);
+
+  const slashIdx = specPath.indexOf('/');
+  const prefix = slashIdx === -1 ? specPath : specPath.slice(0, slashIdx);
+  const resolved = resolvePrefix(prefix, overrides, packageName);
+  if (resolved === null) return null;
+
+  const rewrittenPath = slashIdx === -1 ? resolved : resolved + specPath.slice(slashIdx);
+  return rewrittenPath + testPart;
+}
+
 export default class AllureVitestCompatReporter {
   /** @type {unknown} */
   ctx;
@@ -120,40 +173,34 @@ export default class AllureVitestCompatReporter {
           }
         }
 
-        // 2. Rewrite `package` label: replace leading directory with resolved name.
+        // 2. Rewrite `package` label so the Packages tab groups by display name.
+        //    Anchor on the source-root segment (`src`/override key), dropping any
+        //    leading project-scope segment that allure-vitest >=3.6 prepends.
         if (packageName) {
           for (const label of data.labels) {
             if (label.name === 'package' && typeof label.value === 'string') {
-              const parts = label.value.split('.');
-              if (parts.length > 0) {
-                const resolved = resolvePrefix(parts[0], overrides, packageName);
-                if (resolved !== null) {
-                  parts[0] = resolved;
-                  label.value = parts.join('.');
-                  changed = true;
-                }
+              const rewritten = rewritePathSegments(label.value.split('.'), overrides, packageName);
+              if (rewritten !== null) {
+                label.value = rewritten.join('.');
+                changed = true;
               }
             }
           }
 
           // 3. Rewrite `fullName`: controls the Results page tree hierarchy.
           if (typeof data.fullName === 'string') {
-            const slashIdx = data.fullName.indexOf('/');
-            if (slashIdx !== -1) {
-              const prefix = data.fullName.slice(0, slashIdx);
-              const resolved = resolvePrefix(prefix, overrides, packageName);
-              if (resolved !== null) {
-                data.fullName = resolved + data.fullName.slice(slashIdx);
-                changed = true;
-              }
+            const rewritten = rewriteFullName(data.fullName, overrides, packageName);
+            if (rewritten !== null && rewritten !== data.fullName) {
+              data.fullName = rewritten;
+              changed = true;
             }
           }
 
-          // 4. Rewrite `titlePath[0]`.
+          // 4. Rewrite `titlePath`: drop the project scope and map the source root.
           if (Array.isArray(data.titlePath) && data.titlePath.length > 0) {
-            const resolved = resolvePrefix(data.titlePath[0], overrides, packageName);
-            if (resolved !== null) {
-              data.titlePath[0] = resolved;
+            const rewritten = rewritePathSegments(data.titlePath, overrides, packageName);
+            if (rewritten !== null) {
+              data.titlePath = rewritten;
               changed = true;
             }
           }

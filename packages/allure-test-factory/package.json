@@ -20,6 +20,7 @@
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "scripts": {
+    "test": "vitest",
     "test:run": "vitest run"
   },
   "files": [
