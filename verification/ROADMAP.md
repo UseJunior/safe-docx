@@ -31,7 +31,7 @@ Relevant implementation framing already lives in `verification/lean/README.md`.
 
 **Caveats** (already documented in `README.md`):
 
-- Properties of the Lean model, not the TS code. Extensional equivalence Lean ↔ TS is validated empirically (1.19M cases on sequences ≤ 6 over a 3-symbol alphabet, zero divergence) but not formally proven.
+- Properties of the Lean model, not the TS code. Extensional equivalence Lean ↔ TS is validated empirically (1,194,649 cases on sequences ≤ 6 over a 3-symbol alphabet, zero divergence) but not formally proven. As of the Tier 2.5 first increment this sweep is **reproducible in CI** over the genuine compiled Lean definition — see `add-lean-ts-lcs-differential-harness` and Tier 2.5 below — rather than a one-off external exercise.
 - `atomsEqual_implies_eq` holds only because `Atom` is projected to 3 fields; it would break under a broader projection toward the real `ComparisonUnitAtom`.
 
 This tier is the tooling-validation layer. It shows that Lean 4 plus mathlib can carry a real proof in this repo without forcing the whole comparison engine into a formal model up front.
@@ -137,14 +137,16 @@ Tier 2 is the first place where the roadmap becomes specification-heavy enough t
 
 ## Tier 2.5 — Lean ↔ TS equivalence + projection broadening
 
-**Status: NOT STARTED.**
+**Status: IN PROGRESS** (first increment landed: reproducible LCS differential harness).
 
 This tier sits between "the Lean model is sound" and "the Lean model is faithfully about the production code." It closes the two biggest remaining abstraction gaps from Tier 1.
 
-- **Extensional equivalence LCS Lean ↔ TS DP**: currently validated only by exhaustive brute-force on small inputs. Closing this requires either a proof that the recursive Lean LCS and the iterative TS Wagner-Fischer DP produce the same output set, or a refactor of the TS to a structure where equivalence is direct.
-- **Broaden `Atom` projection toward the real `ComparisonUnitAtom`**: the current 3-field model is enough for Tier 1 but narrower than production. Once broadened, `atomsEqual_implies_eq` breaks and must be replaced by a weaker lemma keyed on the LCS-relevant subset; the LCS proof's equality branch then has to be rewired around that weaker result.
+- **Extensional equivalence LCS Lean ↔ TS DP**: the previously un-reproducible "1.19M cases, zero divergence" brute-force is now a **reproducible, in-CI executable differential harness** (`add-lean-ts-lcs-differential-harness`). The genuine `LeanSpike.computeAtomLcs` is compiled to the `leanDifferential` exe (`verification/lean/Differential.lean`) and run against the production TS `computeAtomLcs` over shared generated inputs by `packages/docx-core/src/integration/lean-differential-lcs.test.ts`; the exhaustive length-≤6 / 3-symbol sweep (1,194,649 pairs, zero divergence) runs in the `lean-build` workflow. This grounds the empirical claim and de-risks the *formal* closure, which still **requires either a proof that the recursive Lean LCS and the iterative TS Wagner-Fischer DP produce the same output set, or a refactor of the TS** — both deferred.
+- **Broaden `Atom` projection toward the real `ComparisonUnitAtom`**: the current 3-field model is enough for Tier 1 but narrower than production. Once broadened, `atomsEqual_implies_eq` breaks and must be replaced by a weaker lemma keyed on the LCS-relevant subset; the LCS proof's equality branch then has to be rewired around that weaker result. Deferred.
 
-Rough effort: **2-6 months** combined.
+The Tier 2 *helper* differential (`accept` / `reject` / `validateFieldStructure` / `extractText` / `normalizeText`) is a named successor (`add-lean-ts-helper-differential-harness`); it needs a `Doc`→`document.xml` adapter to feed the TS AST path.
+
+Rough effort: **2-6 months** combined (the harness above is the first slice).
 
 This tier is optional from the perspective of "Lean proves something." It is not optional from the perspective of "Lean proves the right thing about the right implementation surface."
 
