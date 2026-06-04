@@ -17,12 +17,12 @@
     "@usejunior/safe-docx": "^0.9.1"
   },
   "devDependencies": {
-    "@vitest/runner": "^3.2.4",
+    "@vitest/runner": "^4.1.8",
     "@types/node": "^22.10.0",
-    "allure-vitest": "^3.0.0",
+    "allure-vitest": "^3.9.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.2",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=18.0.0"
