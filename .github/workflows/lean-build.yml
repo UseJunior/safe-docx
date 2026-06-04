@@ -11,6 +11,11 @@ on:
       # so a change to either must re-run it — not just changes to the harness.
       - 'packages/docx-core/src/baselines/atomizer/atomLcs.ts'
       - 'packages/docx-core/src/core-types.ts'
+      # Tier 2-helper differential: guards the production accept/reject/validate engine
+      # against the Lean Tier 2 model, so a change to either re-runs it.
+      - 'packages/docx-core/src/integration/lean-differential-helpers.test.ts'
+      - 'packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts'
+      - 'packages/docx-core/src/baselines/atomizer/pipeline.ts'
   pull_request:
     branches: [main]
     paths:
@@ -19,6 +24,9 @@ on:
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
       - 'packages/docx-core/src/baselines/atomizer/atomLcs.ts'
       - 'packages/docx-core/src/core-types.ts'
+      - 'packages/docx-core/src/integration/lean-differential-helpers.test.ts'
+      - 'packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts'
+      - 'packages/docx-core/src/baselines/atomizer/pipeline.ts'
   workflow_dispatch:
 
 permissions:
@@ -141,3 +149,14 @@ jobs:
         env:
           LEAN_DIFF_EXHAUSTIVE: '1'
         run: npm run test:run -w @usejunior/docx-core -- src/integration/lean-differential-lcs.test.ts
+
+      # Lean↔TS Tier 2-helper differential harness (Tier 2.5, second increment). `lake build`
+      # above also built the `leanHelperDifferential` exe (a @[default_target] lean_exe). This
+      # step runs the genuine `Tier2.AcceptReject.accept`/`.reject` and
+      # `Tier2.FieldStructure.validateFieldStructure` against the production
+      # accept/reject/validate engine over a widened randomized sweep, reusing the Node setup
+      # and `npm ci` above. `LEAN_DIFF_EXHAUSTIVE=1` widens this harness's random sweep too.
+      - name: Lean↔TS Tier 2-helper differential harness (extended)
+        env:
+          LEAN_DIFF_EXHAUSTIVE: '1'
+        run: npm run test:run -w @usejunior/docx-core -- src/integration/lean-differential-helpers.test.ts
