@@ -22,7 +22,8 @@ abbrev OoxmlDoc : Type := Tier2.OoxmlModel.Doc
 
     Modeled as **partial** via `Option OoxmlDoc` because the real TS pipeline can
     fail to produce an inplace candidate at all — either by raising
-    `ContainerResolutionError` from `inPlaceModifier.ts:59` (container topology
+    `ContainerResolutionError` from `inPlaceModifier-containers.ts`
+    (grep `@lean-segment: container-topology`; container topology
     mismatch; see `pipeline.ts:723`) or by having every inplace pass fail
     `evaluateRoundTripSafety` at `pipeline.ts:736-749`, in which case the pipeline
     falls back to rebuild mode and the inplace candidate that the Stage 4 specs
@@ -85,8 +86,8 @@ def normalizeText : List (List Char) → List (List Char) :=
     `Tier2.FieldStructure.recursivelyWellformed` (per-subtree
     `fieldContextNeutral ∀ ctx`). That stronger property happens to hold for the
     current safe-docx engine, which emits whole field sequences as single
-    track-change wrappers (`inPlaceModifier.ts:717, 938, 1505, 1671, 1957,
-    2300`; `collapsed-field-inplace.test.ts:211`). But ECMA-376 Part 4 requires
+    track-change wrappers (grep `@lean-segment: field-wrapper-emission` in
+    `inPlaceModifier-wrappers.ts`; `collapsed-field-inplace.test.ts:211`). But ECMA-376 Part 4 requires
     a conformant emitter to *fragment* fields across wrapper boundaries when a
     field is modified — `w:fldChar` is strictly barred from `<w:del>`, so a
     modified field has its `w:fldChar begin/separate/end` markers unwrapped at

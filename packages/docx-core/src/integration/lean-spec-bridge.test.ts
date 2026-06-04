@@ -1084,8 +1084,8 @@ async function assertRoundTripInvariant(
 // `assertRecursivelyWellformed` (below) additionally checks the STRICTER
 // `fieldContextNeutral ∀ ctx` property per wrapper subtree. The current engine
 // satisfies this stronger property because it emits whole field sequences as
-// single track-change wrappers (`inPlaceModifier.ts:717, 938, 1505, 1671,
-// 1957, 2300`). When ECMA-376 fragmentation conformance lands (#217),
+// single track-change wrappers (grep `@lean-segment: field-wrapper-emission`
+// in `inPlaceModifier-wrappers.ts`). When ECMA-376 fragmentation conformance lands (#217),
 // fragmented wrapper subtrees will NOT satisfy `∀ ctx` neutrality and this
 // over-check will need to be removed or relaxed. Until then it serves as an
 // audit gate that the engine has not regressed into emitting partial-wrapper
