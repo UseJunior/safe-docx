@@ -151,4 +151,26 @@ describe('OpenSpec traceability: add-markdown-export (export tool)', () => {
       });
     },
   );
+
+  // Bonus (security regression, no spec scenario): the source-clobber guard must canonicalize
+  // both paths so a symlink output (`link.md` -> the source .docx) cannot slip past a purely
+  // lexical comparison and destroy the source document through the link.
+  test(
+    'a symlink output_path pointing back at the source is refused',
+    async ({ then }: AllureBddContext) => {
+      const opened = await openSession(['Original document body.']);
+      const sourceBefore = await fs.readFile(opened.inputPath);
+      const linkPath = path.join(opened.tmpDir, 'link.md');
+      await fs.symlink(opened.inputPath, linkPath);
+      const result = await exportDocument(opened.mgr, {
+        file_path: opened.inputPath,
+        output_path: linkPath,
+        allow_overwrite: true,
+      });
+      await then('export refuses and the source .docx is byte-for-byte intact', async () => {
+        assertFailure(result, 'OVERWRITE_BLOCKED', 'export');
+        expect(Buffer.compare(await fs.readFile(opened.inputPath), sourceBefore)).toBe(0);
+      });
+    },
+  );
 });

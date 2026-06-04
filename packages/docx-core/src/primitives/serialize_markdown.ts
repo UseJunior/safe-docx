@@ -111,28 +111,50 @@ export function inlineTagsToMarkdown(text: string): string {
     ops.push({ t: 'md', v: `](${linkUrls.pop()})` });
   }
 
-  // Collapse redundant *adjacent* emphasis toggles (nothing between them). Word splits a
-  // single formatted phrase into multiple runs, so `tagged_text` often holds
-  // `</b></i><b><i>` or empty `<b></b>` pairs. Mapped naively these become `******` or
-  // `****`, which render as literal asterisks. Removing the adjacent close→open (and empty
-  // open→close) pairs re-fuses the phrase into one clean emphasis span.
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (let i = 0; i < ops.length - 1; i++) {
-      const a = ops[i]!;
-      const b = ops[i + 1]!;
-      if (a.t === 'emph' && b.t === 'emph' && a.kind === b.kind && a.dir === -b.dir) {
-        ops.splice(i, 2);
-        changed = true;
-        break;
-      }
-    }
-  }
-
+  // Emit emphasis delimiters only where the *active* emphasis state actually changes
+  // between two text spans. Word splits a single formatted phrase into many runs, so
+  // `tagged_text` carries boundary noise: `</b></i><b><i>` (state unchanged across the
+  // boundary), interleaved different-kind toggles `</b></i><i><b>`, or empty `<b></b>`
+  // pairs. Mapping each toggle naively yields runs like `******` / `****` that render as
+  // literal asterisks. Tracking the state and reconciling on a stack collapses all of that
+  // to the minimal delimiters while keeping nesting well-formed (`**a*b*c**`).
+  const DELIM: Record<'b' | 'i', string> = { b: '**', i: '*' };
   let out = '';
+  const activeStack: ('b' | 'i')[] = []; // emphasis kinds currently open, in open order
+  const desired = new Set<'b' | 'i'>(); // running target state as we scan emph ops
+
+  const reconcile = (): void => {
+    // Close from the top until every still-open kind is wanted, remembering any wanted
+    // kinds we had to close (because they sat above an unwanted one) so we can reopen them.
+    const reopen: ('b' | 'i')[] = [];
+    while (activeStack.length > 0 && !activeStack.every((k) => desired.has(k))) {
+      const k = activeStack.pop()!;
+      out += DELIM[k];
+      if (desired.has(k)) reopen.push(k);
+    }
+    // Open the kinds that are wanted but not currently open: the reopened ones first (in
+    // their original open order), then any brand-new kinds in a stable order (b before i).
+    const active = new Set(activeStack);
+    const toOpen = [...reopen.reverse(), ...(['b', 'i'] as const).filter((k) => desired.has(k))];
+    for (const k of toOpen) {
+      if (active.has(k)) continue;
+      active.add(k);
+      activeStack.push(k);
+      out += DELIM[k];
+    }
+  };
+
   for (const op of ops) {
-    out += op.t === 'md' ? op.v : op.kind === 'b' ? '**' : '*';
+    if (op.t === 'emph') {
+      if (op.dir === 1) desired.add(op.kind);
+      else desired.delete(op.kind);
+      continue;
+    }
+    reconcile(); // realize pending state changes before emitting literal text/Markdown
+    out += op.v;
   }
+  desired.clear();
+  reconcile(); // close any still-open emphasis at end of string
   return out;
 }
 

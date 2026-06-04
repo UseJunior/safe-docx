@@ -73,7 +73,16 @@ export async function exportDocument(
 
     // Never let the export clobber the source DOCX (e.g. a stray output_path pointing back
     // at it). The default path always differs by extension, but an explicit one might not.
-    if (path.resolve(outputPath) === path.resolve(session.originalPath)) {
+    // Compare via realpath so a symlink output (`foo.md` -> `foo.docx`) can't slip past a
+    // purely lexical check and overwrite the source through the link.
+    const canonical = async (p: string): Promise<string> => {
+      try {
+        return await fs.realpath(p);
+      } catch {
+        return path.resolve(p);
+      }
+    };
+    if ((await canonical(outputPath)) === (await canonical(session.originalPath))) {
       return err(
         'OVERWRITE_BLOCKED',
         `Refusing to overwrite the source document: ${outputPath}`,

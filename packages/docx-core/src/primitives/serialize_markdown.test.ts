@@ -122,6 +122,14 @@ describe('OpenSpec traceability: add-markdown-export (Markdown serializer)', () 
         expect(split).toBe('***2 years total***');
         expect(split).not.toContain('******');
       });
+      // A run-split where the second run re-opens emphasis in the *opposite* order
+      // (`<i><b>` vs `<b><i>`) leaves no adjacent same-kind toggle to cancel pairwise; the
+      // state-machine reconciliation must still collapse it rather than emit `******`.
+      const reordered = inlineTagsToMarkdown('<b><i>A</i></b><i><b>B</b></i>');
+      await then('opposite-order run-split also coalesces', async () => {
+        expect(reordered).toBe('***AB***');
+        expect(reordered).not.toContain('******');
+      });
     },
   );
 
