@@ -6,11 +6,13 @@ on:
     paths:
       - 'verification/lean/**'
       - '.github/workflows/lean-build.yml'
+      - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
   pull_request:
     branches: [main]
     paths:
       - 'verification/lean/**'
       - '.github/workflows/lean-build.yml'
+      - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
   workflow_dispatch:
 
 permissions:
@@ -107,3 +109,29 @@ jobs:
             echo "ERROR: sorry found in Lean modules. The spike must remain zero-sorry."
             exit 1
           fi
+
+      # Lean↔TS LCS differential harness (Tier 2.5). `lake build` above already built
+      # the `leanDifferential` exe (a @[default_target] lean_exe). This step runs it
+      # against the production TS `computeAtomLcs` and asserts identical output over
+      # the exhaustive length-≤6 / 3-symbol sweep. Needs Node; runs at repo root.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
+      - name: Lean↔TS LCS differential harness (exhaustive)
+        env:
+          LEAN_DIFF_EXHAUSTIVE: '1'
+        run: npm run test:run -w @usejunior/docx-core -- src/integration/lean-differential-lcs.test.ts
