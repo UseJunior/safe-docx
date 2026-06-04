@@ -37,6 +37,7 @@ env:
   # pricing drifts.
   LLM_GATE_PRICE_PER_M_INPUT: ${{ vars.LLM_GATE_PRICE_PER_M_INPUT || '0.30' }}
   LLM_GATE_PRICE_PER_M_OUTPUT: ${{ vars.LLM_GATE_PRICE_PER_M_OUTPUT || '2.50' }}
+  LLM_GATE_MAX_DIFF_BYTES: ${{ vars.LLM_GATE_MAX_DIFF_BYTES || '131072' }}
 
 jobs:
   parse-checklist:
@@ -167,16 +168,25 @@ jobs:
             node <<'NODE' > "$RUNNER_TEMP/matrix.json"
           const fs = require('fs');
           const path = '.github/llm-based-quality-gate/checklist.md';
+          const pathsComment = /<!--\s*paths:\s*([^>]*)-->\s*$/;
           const text = fs.readFileSync(path, 'utf8');
           const include = text.split(/\r?\n/)
             .flatMap(line => {
               const m = line.match(/^- \[ \] (.+)$/);
               return m ? [m[1].trim()] : [];
             })
-            .map((question, index) => ({
-              id: String(index + 1).padStart(2, '0'),
-              question,
-            }));
+            .map((rawQuestion, index) => {
+              const pathsMatch = rawQuestion.match(pathsComment);
+              const paths = pathsMatch
+                ? pathsMatch[1].trim().split(/\s+/).filter(Boolean)
+                : [];
+              const question = rawQuestion.replace(pathsComment, '').trim();
+              return {
+                id: String(index + 1).padStart(2, '0'),
+                question,
+                paths,
+              };
+            });
           process.stdout.write(JSON.stringify({ include }));
           NODE
           fi
@@ -222,13 +232,102 @@ jobs:
           fetch-depth: 0
 
       - name: Extract PR diff
+        id: diff
         working-directory: review
+        env:
+          BASE_REF: ${{ needs.parse-checklist.outputs.base_ref }}
+          ITEM_PATHS: ${{ toJSON(matrix.paths) }}
+          CHECK_ID: ${{ matrix.id }}
+          QUESTION: ${{ matrix.question }}
+          GEMINI_MODEL: ${{ env.GEMINI_MODEL }}
         run: |
           set -euo pipefail
           git diff "origin/${{ needs.parse-checklist.outputs.base_ref }}...HEAD" > pr_diff.patch
           wc -l pr_diff.patch
+          git diff --name-only "origin/${{ needs.parse-checklist.outputs.base_ref }}...HEAD" > "$RUNNER_TEMP/changed-files-${CHECK_ID}.txt"
+          node <<'NODE'
+          const fs = require('fs');
+          const cp = require('child_process');
+          const shellQuote = (value) => `'${String(value).replace(/'/g, "'\\''")}'`;
+
+          const paths = JSON.parse(process.env.ITEM_PATHS || '[]');
+          const changedFiles = fs.readFileSync(`${process.env.RUNNER_TEMP}/changed-files-${process.env.CHECK_ID}.txt`, 'utf8')
+            .split(/\r?\n/)
+            .map(file => file.trim())
+            .filter(Boolean);
+
+          const escapeRe = (char) => char.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+          const globToRegExp = (glob) => {
+            let re = '^';
+            for (let i = 0; i < glob.length; i += 1) {
+              const char = glob[i];
+              if (char === '*') {
+                if (glob[i + 1] === '*') {
+                  const after = glob[i + 2];
+                  if (after === '/') {
+                    re += '(?:.*/)?';
+                    i += 2;
+                  } else {
+                    re += '.*';
+                    i += 1;
+                  }
+                } else {
+                  re += '[^/]*';
+                }
+              } else {
+                re += escapeRe(char);
+              }
+            }
+            return new RegExp(`${re}$`);
+          };
+
+          const patterns = paths.map(globToRegExp);
+          const matched = paths.length === 0
+            ? changedFiles
+            : changedFiles.filter(file => patterns.some(pattern => pattern.test(file)));
+          fs.writeFileSync('.llm-gate-matched-files.txt', `${matched.join('\n')}${matched.length > 0 ? '\n' : ''}`);
+
+          if (paths.length > 0 && matched.length === 0) {
+            fs.mkdirSync('results', { recursive: true });
+            fs.writeFileSync(
+              `results/result-${process.env.CHECK_ID}.json`,
+              `${JSON.stringify({
+                id: process.env.CHECK_ID,
+                question: process.env.QUESTION,
+                status: 'SKIPPED',
+                justification: 'paths not touched by this PR',
+                attempts: 0,
+                estimated_input_tokens: 0,
+                estimated_output_tokens: 0,
+                estimated_usd: '0.0000',
+                model: process.env.GEMINI_MODEL || 'skipped',
+              }, null, 2)}\n`,
+            );
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'skip_check=true\n');
+            console.log(`No changed files matched check ${process.env.CHECK_ID} paths; wrote SKIPPED result.`);
+            process.exit(0);
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'skip_check=false\n');
+          if (paths.length === 0) {
+            fs.writeFileSync('.llm-gate-diff-command.txt', `git diff origin/${process.env.BASE_REF}...HEAD\n`);
+            console.log(`Check ${process.env.CHECK_ID} has no path filters; keeping full diff.`);
+            process.exit(0);
+          }
+
+          fs.writeFileSync('.llm-gate-diff-command.txt', `git diff origin/${process.env.BASE_REF}...HEAD -- ${matched.map(shellQuote).join(' ')}\n`);
+          cp.execFileSync(
+            'git',
+            ['diff', `origin/${process.env.BASE_REF}...HEAD`, '--', ...matched],
+            { stdio: ['ignore', fs.openSync('pr_diff.patch', 'w'), 'inherit'] },
+          );
+          console.log(`Check ${process.env.CHECK_ID} matched ${matched.length} changed file(s):`);
+          for (const file of matched) console.log(`- ${file}`);
+          NODE
+          wc -l pr_diff.patch
 
       - name: Run LLM gate check
+        if: ${{ steps.diff.outputs.skip_check != 'true' }}
         uses: ./.github/actions/llm-gate-check
         with:
           check-id: ${{ matrix.id }}
@@ -236,8 +335,10 @@ jobs:
           gemini-cli-version: ${{ env.GEMINI_CLI_VERSION }}
           gemini-model: ${{ env.GEMINI_MODEL }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          base-ref: ${{ needs.parse-checklist.outputs.base_ref }}
           price-per-m-input: ${{ env.LLM_GATE_PRICE_PER_M_INPUT }}
           price-per-m-output: ${{ env.LLM_GATE_PRICE_PER_M_OUTPUT }}
+          max-diff-bytes: ${{ env.LLM_GATE_MAX_DIFF_BYTES }}
           working-directory: review
 
       - name: Upload per-item result
@@ -301,7 +402,7 @@ jobs:
               : [];
             const rows = files.map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
 
-            const icon = (status) => status === 'PASS' ? '✅' : (status === 'WARN' ? '⚠️' : '❓');
+            const icon = (status) => status === 'PASS' ? '✅' : (status === 'WARN' ? '⚠️' : (status === 'SKIPPED' ? '⏭️ SKIPPED' : '❓'));
             const escapePipes = (s) => String(s || '').replaceAll('|', '\\|').replaceAll('\n', ' ');
 
             // Extract a short title from the bold lead phrase: `**Title**: …` -> `Title`.
@@ -319,9 +420,10 @@ jobs:
             const totalAttempts = rows.reduce((acc, r) => acc + (r.attempts || 1), 0);
             const warns = rows.filter(r => r.status === 'WARN').length;
             const passes = rows.filter(r => r.status === 'PASS').length;
+            const skipped = rows.filter(r => r.status === 'SKIPPED').length;
             const skipGate = process.env.SKIP_GATE === 'true';
             const skipReason = process.env.SKIP_REASON || '';
-            const overall = skipGate ? '✅ SKIPPED' : (warns > 0 ? '⚠️ WARN' : (passes > 0 ? '✅ PASS' : '❓ NO RESULTS'));
+            const overall = skipGate ? '✅ SKIPPED' : (warns > 0 ? '⚠️ WARN' : ((passes > 0 || skipped > 0) ? '✅ PASS' : '❓ NO RESULTS'));
             const labels = JSON.parse(process.env.PR_LABELS || '[]');
             const overrideActive = labels.includes('llm-gate/override');
 
@@ -329,7 +431,7 @@ jobs:
             const overrideBanner = overrideActive
               ? '\n\n> ⚠️ **Override active** — `llm-gate/override` label is set; this gate\'s WARN findings are non-blocking on this PR.\n'
               : '';
-            const summary = `**Overall:** ${overall} (${passes} pass · ${warns} warn · ${rows.length} total)`;
+            const summary = `**Overall:** ${overall} (${passes} pass · ${warns} warn · ${skipped} skipped · ${rows.length} total)`;
 
             let table;
             if (skipGate && skipReason === 'package-lock-only') {
