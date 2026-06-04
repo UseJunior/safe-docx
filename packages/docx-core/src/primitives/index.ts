@@ -7,6 +7,7 @@ export * from './matching.js';
 export * from './namespaces.js';
 export * from './numbering.js';
 export * from './semantic_tags.js';
+export * from './serialize_markdown.js';
 export * from './styles.js';
 export * from './text.js';
 export * from './xml.js';

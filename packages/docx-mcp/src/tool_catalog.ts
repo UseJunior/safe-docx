@@ -177,6 +177,31 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
+    name: 'export',
+    description:
+      'Export a document to a portable text rendering. Writes an output file (default: source path with the format extension, e.g. .md) and returns its path, byte count, and the rendered content. Markdown is intentionally lossy (no round-trip). DOCX only — Google Docs is not supported.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      format: z
+        .enum(['markdown'])
+        .optional()
+        .describe("Output format. 'markdown' (default). 'html'/'text' are planned."),
+      output_path: z
+        .string()
+        .optional()
+        .describe('Where to write the rendering. Defaults to the source path with the format extension.'),
+      allow_overwrite: z
+        .boolean()
+        .optional()
+        .describe('Overwrite output_path if it already exists. Default: false.'),
+      include_markdown: z
+        .boolean()
+        .optional()
+        .describe('Include the rendered content in the response. Default: true; set false for large documents.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
     name: 'format_layout',
     description: 'Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only.',
     input: z.object({
