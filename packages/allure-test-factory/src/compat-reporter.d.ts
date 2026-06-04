@@ -12,4 +12,9 @@ export default class AllureVitestCompatReporter {
   onInit(ctx: unknown): void;
   onTaskUpdate(packs: unknown[]): Promise<void>;
   onFinished(files?: unknown[], errors?: unknown[]): Promise<void>;
+  onTestRunEnd(
+    testModules?: unknown[],
+    unhandledErrors?: unknown[],
+    reason?: unknown,
+  ): Promise<void>;
 }

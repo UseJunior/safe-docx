@@ -64,6 +64,25 @@ export default class AllureVitestCompatReporter {
     await this.normalizeResultLabels();
   }
 
+  /**
+   * Vitest 4 removed the legacy `onFinished`/`onTaskUpdate` reporter hooks and
+   * drives reporters through `onTestRunEnd(testModules, errors, reason)`
+   * instead. allure-vitest >=3.4 already implements `onTestRunEnd`, so forward
+   * Vitest's native arguments straight through rather than the old shim shape.
+   */
+  async onTestRunEnd(testModules = [], unhandledErrors = [], reason) {
+    const inner = await this.ensureInnerReporter();
+    if (!inner) return;
+
+    if (inner.onTestRunEnd) {
+      await inner.onTestRunEnd(testModules, unhandledErrors, reason);
+    } else if (inner.onFinished) {
+      await inner.onFinished(testModules, unhandledErrors);
+    }
+
+    await this.normalizeResultLabels();
+  }
+
   async normalizeResultLabels() {
     const resultsDir = this.options.resultsDir;
     if (!resultsDir) return;
