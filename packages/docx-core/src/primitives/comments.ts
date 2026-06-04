@@ -11,6 +11,7 @@ import { DocxZip } from './zip.js';
 import { getParagraphRuns, getParagraphText, splitRunAtVisibleOffset, type TextRun } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { childElements, getLeafText, isW } from './dom-helpers.js';
+import { getAttributeSafe } from './xml-helpers.js';
 import {
   createRevisionContainer,
   prepareElementForDeletion,
@@ -328,7 +329,7 @@ function allocateNextCommentId(commentsDoc: Document): number {
   let maxId = -1;
   for (let i = 0; i < commentEls.length; i++) {
     const el = commentEls.item(i) as Element;
-    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const idStr = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     if (idStr) {
       const id = parseInt(idStr, 10);
       if (id > maxId) maxId = id;
@@ -341,13 +342,13 @@ function findCommentParaId(commentsDoc: Document, commentId: number): string | n
   const commentEls = commentsDoc.getElementsByTagNameNS(OOXML.W_NS, W.comment);
   for (let i = 0; i < commentEls.length; i++) {
     const el = commentEls.item(i) as Element;
-    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const idStr = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     if (idStr && parseInt(idStr, 10) === commentId) {
       // paraId is on the w:p child inside the comment
       const paras = el.getElementsByTagNameNS(OOXML.W_NS, W.p);
       if (paras.length > 0) {
         const p = paras.item(0) as Element;
-        return p.getAttributeNS(OOXML.W14_NS, 'paraId') ?? p.getAttribute('w14:paraId') ?? null;
+        return getAttributeSafe(p, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false });
       }
     }
   }
@@ -612,7 +613,7 @@ async function ensureCommentExEntry(
   const existing = root.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
   for (let i = 0; i < existing.length; i++) {
     const el = existing.item(i) as Element;
-    const pid = el.getAttributeNS(OOXML.W15_NS, 'paraId') ?? el.getAttribute('w15:paraId');
+    const pid = getAttributeSafe(el, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
     if (pid === paraId) return; // Already present
   }
 
@@ -634,7 +635,7 @@ async function ensureAuthorInPeople(zip: DocxZip, author: string): Promise<void>
   const persons = root.getElementsByTagNameNS(OOXML.W15_NS, 'person');
   for (let i = 0; i < persons.length; i++) {
     const el = persons.item(i) as Element;
-    const name = el.getAttributeNS(OOXML.W15_NS, 'author') ?? el.getAttribute('w15:author');
+    const name = getAttributeSafe(el, OOXML.W15_NS, 'author', 'w15', { bareFallback: false });
     if (name === author) return; // Already present
   }
 
@@ -730,13 +731,13 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
 
   for (let i = 0; i < commentEls.length; i++) {
     const el = commentEls.item(i) as Element;
-    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const idStr = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     const id = idStr ? parseInt(idStr, 10) : -1;
     if (id < 0) continue;
 
-    const author = el.getAttributeNS(OOXML.W_NS, 'author') ?? el.getAttribute('w:author') ?? '';
-    const date = el.getAttributeNS(OOXML.W_NS, 'date') ?? el.getAttribute('w:date') ?? '';
-    const initials = el.getAttributeNS(OOXML.W_NS, 'initials') ?? el.getAttribute('w:initials') ?? '';
+    const author = getAttributeSafe(el, OOXML.W_NS, 'author', 'w', { bareFallback: false }) ?? '';
+    const date = getAttributeSafe(el, OOXML.W_NS, 'date', 'w', { bareFallback: false }) ?? '';
+    const initials = getAttributeSafe(el, OOXML.W_NS, 'initials', 'w', { bareFallback: false }) ?? '';
 
     // Extract text from <w:t> elements, skipping annotationRef runs
     const text = extractCommentText(el);
@@ -746,7 +747,7 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
     let paragraphId: string | null = null;
     if (paras.length > 0) {
       const p = paras.item(0) as Element;
-      paragraphId = p.getAttributeNS(OOXML.W14_NS, 'paraId') ?? p.getAttribute('w14:paraId') ?? null;
+      paragraphId = getAttributeSafe(p, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false });
     }
 
     const startPoint = rangeMetadata.startById.get(id);
@@ -779,8 +780,8 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
     const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
     for (let i = 0; i < exEls.length; i++) {
       const ex = exEls.item(i) as Element;
-      const childParaId = ex.getAttributeNS(OOXML.W15_NS, 'paraId') ?? ex.getAttribute('w15:paraId');
-      const parentParaId = ex.getAttributeNS(OOXML.W15_NS, 'paraIdParent') ?? ex.getAttribute('w15:paraIdParent');
+      const childParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
+      const parentParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraIdParent', 'w15', { bareFallback: false });
       if (!childParaId || !parentParaId) continue;
 
       const child = byParaId.get(childParaId);
@@ -798,8 +799,8 @@ export async function getComments(zip: DocxZip, documentXml: Document): Promise<
     const exEls = extDoc.getElementsByTagNameNS(OOXML.W15_NS, 'commentEx');
     for (let i = 0; i < exEls.length; i++) {
       const ex = exEls.item(i) as Element;
-      const childParaId = ex.getAttributeNS(OOXML.W15_NS, 'paraId') ?? ex.getAttribute('w15:paraId');
-      const parentParaId = ex.getAttributeNS(OOXML.W15_NS, 'paraIdParent') ?? ex.getAttribute('w15:paraIdParent');
+      const childParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
+      const parentParaId = getAttributeSafe(ex, OOXML.W15_NS, 'paraIdParent', 'w15', { bareFallback: false });
       if (childParaId && parentParaId) {
         replyParaIds.add(childParaId);
       }
@@ -951,14 +952,14 @@ function recordParagraphLevelMarker(
 }
 
 function getCommentMarkerId(markerEl: Element): number | null {
-  const idStr = markerEl.getAttributeNS(OOXML.W_NS, 'id') ?? markerEl.getAttribute('w:id');
+  const idStr = getAttributeSafe(markerEl, OOXML.W_NS, 'id', 'w', { bareFallback: false });
   if (!idStr) return null;
   const id = parseInt(idStr, 10);
   return Number.isNaN(id) ? null : id;
 }
 
 function getWordAttribute(el: Element, localName: string): string | null {
-  return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
+  return getAttributeSafe(el, OOXML.W_NS, localName, 'w');
 }
 
 function resolveMarkerToRunBoundary(
@@ -1055,7 +1056,7 @@ export async function deleteComment(
   const allCommentEls = commentsDoc.getElementsByTagNameNS(OOXML.W_NS, W.comment);
   for (let i = 0; i < allCommentEls.length; i++) {
     const el = allCommentEls.item(i) as Element;
-    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const idStr = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     const id = idStr ? parseInt(idStr, 10) : -1;
     if (id < 0) continue;
     const pid = getCommentElParaId(el);
@@ -1072,8 +1073,8 @@ export async function deleteComment(
     const childrenOf = new Map<string, string[]>();
     for (let i = 0; i < exEls.length; i++) {
       const ex = exEls.item(i) as Element;
-      const childPid = ex.getAttributeNS(OOXML.W15_NS, 'paraId') ?? ex.getAttribute('w15:paraId');
-      const parentPid = ex.getAttributeNS(OOXML.W15_NS, 'paraIdParent') ?? ex.getAttribute('w15:paraIdParent');
+      const childPid = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
+      const parentPid = getAttributeSafe(ex, OOXML.W15_NS, 'paraIdParent', 'w15', { bareFallback: false });
       if (childPid && parentPid) {
         const arr = childrenOf.get(parentPid);
         if (arr) arr.push(childPid);
@@ -1102,7 +1103,7 @@ export async function deleteComment(
   const elsToRemove: Element[] = [];
   for (let i = 0; i < allCommentEls.length; i++) {
     const el = allCommentEls.item(i) as Element;
-    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const idStr = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     const id = idStr ? parseInt(idStr, 10) : -1;
     if (idsToDelete.has(id)) elsToRemove.push(el);
   }
@@ -1118,7 +1119,7 @@ export async function deleteComment(
     const exToRemove: Element[] = [];
     for (let i = 0; i < exEls.length; i++) {
       const ex = exEls.item(i) as Element;
-      const pid = ex.getAttributeNS(OOXML.W15_NS, 'paraId') ?? ex.getAttribute('w15:paraId');
+      const pid = getAttributeSafe(ex, OOXML.W15_NS, 'paraId', 'w15', { bareFallback: false });
       if (pid && paraIdsToDelete.has(pid)) exToRemove.push(ex);
     }
     for (const ex of exToRemove) {
@@ -1137,7 +1138,7 @@ function findCommentElementById(commentsDoc: Document, commentId: number): Eleme
   const commentEls = commentsDoc.getElementsByTagNameNS(OOXML.W_NS, W.comment);
   for (let i = 0; i < commentEls.length; i++) {
     const el = commentEls.item(i) as Element;
-    const idStr = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const idStr = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     if (idStr && parseInt(idStr, 10) === commentId) return el;
   }
   return null;
@@ -1147,7 +1148,7 @@ function getCommentElParaId(commentEl: Element): string | null {
   const paras = commentEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
   if (paras.length === 0) return null;
   const p = paras.item(0) as Element;
-  return p.getAttributeNS(OOXML.W14_NS, 'paraId') ?? p.getAttribute('w14:paraId') ?? null;
+  return getAttributeSafe(p, OOXML.W14_NS, 'paraId', 'w14', { bareFallback: false });
 }
 
 function removeCommentMarkersFromDocument(
@@ -1162,7 +1163,7 @@ function removeCommentMarkersFromDocument(
   const startsToRemove: Element[] = [];
   for (let i = 0; i < rangeStarts.length; i++) {
     const el = rangeStarts.item(i) as Element;
-    const id = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const id = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     if (id === cidStr) startsToRemove.push(el);
   }
   for (const el of startsToRemove) el.parentNode?.removeChild(el);
@@ -1172,7 +1173,7 @@ function removeCommentMarkersFromDocument(
   const endsToRemove: Element[] = [];
   for (let i = 0; i < rangeEnds.length; i++) {
     const el = rangeEnds.item(i) as Element;
-    const id = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const id = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     if (id === cidStr) endsToRemove.push(el);
   }
   for (const el of endsToRemove) el.parentNode?.removeChild(el);
@@ -1183,7 +1184,7 @@ function removeCommentMarkersFromDocument(
   const refsToRemove: Element[] = [];
   for (let i = 0; i < refs.length; i++) {
     const el = refs.item(i) as Element;
-    const id = el.getAttributeNS(OOXML.W_NS, 'id') ?? el.getAttribute('w:id');
+    const id = getAttributeSafe(el, OOXML.W_NS, 'id', 'w', { bareFallback: false });
     if (id === cidStr) refsToRemove.push(el);
   }
   for (const ref of refsToRemove) {

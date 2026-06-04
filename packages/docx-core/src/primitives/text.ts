@@ -1,5 +1,6 @@
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
+import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
 import {
   buildRPrChangeElement,
   createRevisionContainer,
@@ -21,7 +22,7 @@ export function getParagraphRuns(p: Element): TextRun[] {
   }
 
   function getWAttr(el: Element, localName: string): string | null {
-    return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
+    return getAttributeSafe(el, OOXML.W_NS, localName, 'w');
   }
 
   const runs: TextRun[] = [];
@@ -382,7 +383,7 @@ function ensureRPr(doc: Document, run: Element): Element {
 }
 
 function ensureBoolProp(doc: Document, rPr: Element, localName: string, val: boolean): void {
-  let el = rPr.getElementsByTagNameNS(OOXML.W_NS, localName).item(0) as Element | null;
+  let el = getFirstChild(rPr, OOXML.W_NS, localName);
   if (val) {
     if (!el) {
       el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
@@ -395,7 +396,7 @@ function ensureBoolProp(doc: Document, rPr: Element, localName: string, val: boo
 }
 
 function ensureUnderline(doc: Document, rPr: Element, val: boolean | string): void {
-  let el = rPr.getElementsByTagNameNS(OOXML.W_NS, W.u).item(0) as Element | null;
+  let el = getFirstChild(rPr, OOXML.W_NS, W.u);
   if (val === false) {
     if (el) el.parentNode?.removeChild(el);
     return;
@@ -418,7 +419,7 @@ function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): vo
     clearHighlightProp(rPr);
     return;
   }
-  let el = rPr.getElementsByTagNameNS(OOXML.W_NS, W.highlight).item(0) as Element | null;
+  let el = getFirstChild(rPr, OOXML.W_NS, W.highlight);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.highlight}`);
     rPr.insertBefore(el, rPr.firstChild);
@@ -428,7 +429,7 @@ function ensureHighlight(doc: Document, rPr: Element, val: boolean | string): vo
 
 function ensureSz(doc: Document, rPr: Element, halfPoints: number): void {
   for (const localName of [W.sz, W.szCs]) {
-    let el = rPr.getElementsByTagNameNS(OOXML.W_NS, localName).item(0) as Element | null;
+    let el = getFirstChild(rPr, OOXML.W_NS, localName);
     if (!el) {
       el = doc.createElementNS(OOXML.W_NS, `w:${localName}`);
       rPr.insertBefore(el, rPr.firstChild);
@@ -438,7 +439,7 @@ function ensureSz(doc: Document, rPr: Element, halfPoints: number): void {
 }
 
 function ensureColor(doc: Document, rPr: Element, hex: string): void {
-  let el = rPr.getElementsByTagNameNS(OOXML.W_NS, W.color).item(0) as Element | null;
+  let el = getFirstChild(rPr, OOXML.W_NS, W.color);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.color}`);
     rPr.insertBefore(el, rPr.firstChild);
@@ -447,7 +448,7 @@ function ensureColor(doc: Document, rPr: Element, hex: string): void {
 }
 
 function ensureFont(doc: Document, rPr: Element, name: string): void {
-  let el = rPr.getElementsByTagNameNS(OOXML.W_NS, W.rFonts).item(0) as Element | null;
+  let el = getFirstChild(rPr, OOXML.W_NS, W.rFonts);
   if (!el) {
     el = doc.createElementNS(OOXML.W_NS, `w:${W.rFonts}`);
     rPr.insertBefore(el, rPr.firstChild);

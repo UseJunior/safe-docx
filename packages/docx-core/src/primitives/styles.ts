@@ -1,10 +1,10 @@
 import { OOXML, W } from './namespaces.js';
+import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
 
 function getWAttr(el: Element, localName: string): string | null {
-  // Use || instead of ?? — getAttributeNS returns "" (not null) when the
-  // attribute exists without proper NS binding (e.g. set via setAttribute
-  // instead of setAttributeNS).
-  return el.getAttributeNS(OOXML.W_NS, localName) || el.getAttribute(`w:${localName}`) || el.getAttribute(localName) || null;
+  // Preserve legacy truthy fallback for empty strings from namespace-bound reads
+  // when attributes were written without a real namespace binding.
+  return getAttributeSafe(el, OOXML.W_NS, localName, 'w', { emptyIsMissing: true });
 }
 
 export type StyleDef = {
@@ -27,10 +27,10 @@ export function parseStylesXml(stylesDoc: Document | null): StylesModel {
   for (const st of styles) {
     const id = getWAttr(st, 'styleId');
     if (!id) continue;
-    const nameEl = st.getElementsByTagNameNS(OOXML.W_NS, W.name).item(0);
-    const basedOnEl = st.getElementsByTagNameNS(OOXML.W_NS, W.basedOn).item(0);
-    const pPr = st.getElementsByTagNameNS(OOXML.W_NS, W.pPr).item(0);
-    const rPr = st.getElementsByTagNameNS(OOXML.W_NS, W.rPr).item(0);
+    const nameEl = getFirstChild(st, OOXML.W_NS, W.name);
+    const basedOnEl = getFirstChild(st, OOXML.W_NS, W.basedOn);
+    const pPr = getFirstChild(st, OOXML.W_NS, W.pPr);
+    const rPr = getFirstChild(st, OOXML.W_NS, W.rPr);
 
     const name = nameEl ? (getWAttr(nameEl, 'val') ?? id) : id;
     const basedOn = basedOnEl ? (getWAttr(basedOnEl, 'val') ?? null) : null;
@@ -113,18 +113,18 @@ export function extractParagraphFormatting(
   pPr: Element | null,
   styles: StylesModel,
 ): ParagraphFormatting {
-  const pStyleEl = pPr ? pPr.getElementsByTagNameNS(OOXML.W_NS, W.pStyle).item(0) : null;
+  const pStyleEl = pPr ? getFirstChild(pPr, OOXML.W_NS, W.pStyle) : null;
   const styleId = pStyleEl ? (getWAttr(pStyleEl, 'val') ?? null) : null;
 
   const chain = resolveStyleChain(styles, styleId);
   const styleName = (styleId && styles.byId.get(styleId)?.name) || styleId || '';
 
   // Resolve alignment and indents: direct pPr overrides style chain.
-  const directJc = pPr ? pPr.getElementsByTagNameNS(OOXML.W_NS, W.jc).item(0) : null;
-  const directInd = pPr ? pPr.getElementsByTagNameNS(OOXML.W_NS, W.ind).item(0) : null;
+  const directJc = pPr ? getFirstChild(pPr, OOXML.W_NS, W.jc) : null;
+  const directInd = pPr ? getFirstChild(pPr, OOXML.W_NS, W.ind) : null;
 
-  const styleJc = firstNonNull(chain.map((s) => (s.pPr ? s.pPr.getElementsByTagNameNS(OOXML.W_NS, W.jc).item(0) : null)));
-  const styleInd = firstNonNull(chain.map((s) => (s.pPr ? s.pPr.getElementsByTagNameNS(OOXML.W_NS, W.ind).item(0) : null)));
+  const styleJc = firstNonNull(chain.map((s) => (s.pPr ? getFirstChild(s.pPr, OOXML.W_NS, W.jc) : null)));
+  const styleInd = firstNonNull(chain.map((s) => (s.pPr ? getFirstChild(s.pPr, OOXML.W_NS, W.ind) : null)));
 
   const alignment = parseAlignment(directJc ?? styleJc);
   const ind = parseIndentPt(directInd ?? styleInd);
@@ -150,7 +150,7 @@ export type RunFormatting = {
 
 function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null {
   if (!parent) return null;
-  const el = parent.getElementsByTagNameNS(OOXML.W_NS, tagLocal).item(0);
+  const el = getFirstChild(parent, OOXML.W_NS, tagLocal);
   if (!el) return null;
   // <w:b/> implies true. <w:b w:val="0"/> implies false.
   const v = getWAttr(el, 'val');
@@ -160,7 +160,7 @@ function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null
 
 function parseUnderline(parent: Element | null): boolean | null {
   if (!parent) return null;
-  const el = parent.getElementsByTagNameNS(OOXML.W_NS, W.u).item(0);
+  const el = getFirstChild(parent, OOXML.W_NS, W.u);
   if (!el) return null;
   const v = getWAttr(el, 'val');
   if (!v) return true;
@@ -169,14 +169,14 @@ function parseUnderline(parent: Element | null): boolean | null {
 
 function parseFontName(parent: Element | null): string | null {
   if (!parent) return null;
-  const el = parent.getElementsByTagNameNS(OOXML.W_NS, W.rFonts).item(0);
+  const el = getFirstChild(parent, OOXML.W_NS, W.rFonts);
   if (!el) return null;
   return getWAttr(el, 'ascii') ?? getWAttr(el, 'hAnsi') ?? getWAttr(el, 'cs') ?? getWAttr(el, 'val') ?? null;
 }
 
 function parseFontSizePt(parent: Element | null): number | null {
   if (!parent) return null;
-  const el = parent.getElementsByTagNameNS(OOXML.W_NS, W.sz).item(0);
+  const el = getFirstChild(parent, OOXML.W_NS, W.sz);
   if (!el) return null;
   const valStr = getWAttr(el, 'val') || el.getAttribute('val');
   if (!valStr) return null;
@@ -188,7 +188,7 @@ function parseFontSizePt(parent: Element | null): number | null {
 
 function parseColorHex(parent: Element | null): string | null {
   if (!parent) return null;
-  const el = parent.getElementsByTagNameNS(OOXML.W_NS, W.color).item(0);
+  const el = getFirstChild(parent, OOXML.W_NS, W.color);
   if (!el) return null;
   const v = getWAttr(el, 'val') || el.getAttribute('val');
   if (!v || v === 'auto') return null;
@@ -197,7 +197,7 @@ function parseColorHex(parent: Element | null): string | null {
 
 function parseHighlightVal(parent: Element | null): string | null {
   if (!parent) return null;
-  const el = parent.getElementsByTagNameNS(OOXML.W_NS, W.highlight).item(0);
+  const el = getFirstChild(parent, OOXML.W_NS, W.highlight);
   if (!el) return null;
   const v = getWAttr(el, 'val');
   if (!v || v === 'none') return null;
@@ -212,11 +212,11 @@ export function extractEffectiveRunFormatting(params: {
 }): RunFormatting {
   const { run, paragraphPPr, paragraphStyleId, styles } = params;
   const isRun = run.localName === W.r || run.localName === 'r';
-  const rPr = isRun ? run.getElementsByTagNameNS(OOXML.W_NS, W.rPr).item(0) : null;
-  const pRPr = paragraphPPr ? paragraphPPr.getElementsByTagNameNS(OOXML.W_NS, W.rPr).item(0) : null;
+  const rPr = isRun ? getFirstChild(run, OOXML.W_NS, W.rPr) : null;
+  const pRPr = paragraphPPr ? getFirstChild(paragraphPPr, OOXML.W_NS, W.rPr) : null;
 
   // Resolve w:rStyle character style chain (e.g. "Strong" → bold via style definition).
-  const rStyleEl = rPr?.getElementsByTagNameNS(OOXML.W_NS, W.rStyle).item(0);
+  const rStyleEl = rPr ? getFirstChild(rPr, OOXML.W_NS, W.rStyle) : null;
   const rStyleId = rStyleEl ? (getWAttr(rStyleEl, 'val') ?? null) : null;
   const rStyleChain = resolveStyleChain(styles, rStyleId);
   const rStyleRPr = firstNonNull(rStyleChain.map((s) => s.rPr));
