@@ -12,6 +12,7 @@ import { insertParagraph } from './tools/insert_paragraph.js';
 import { mergePlans } from './tools/merge_plans.js';
 import { applyPlan } from './tools/apply_plan.js';
 import { save } from './tools/save.js';
+import { exportDocument } from './tools/export.js';
 import { getFileStatus } from './tools/get_file_status.js';
 import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
 import { closeFile } from './tools/close_file.js';
@@ -109,6 +110,8 @@ export async function dispatchToolCall(
     case 'save':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'save');
       return await save(sessions, args as Parameters<typeof save>[1]);
+    case 'export':
+      return await exportDocument(sessions, args as Parameters<typeof exportDocument>[1]);
     case 'format_layout':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'format_layout');
       return await formatLayout(sessions, args as Parameters<typeof formatLayout>[1]);

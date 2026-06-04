@@ -589,7 +589,40 @@ function headerStripFromText(params: { header: string; text: string }): string {
 // the formatter only emits `<a href="...">` and `<font ATTR=...>` — never bare `<a>` or
 // `<font>`. Allowing the bare forms would cause literal `<a>` / `<font>` in document text to
 // be silently skipped, shifting marker positions.
-const TOON_INLINE_TAG_RE = /^(?:<\/?(?:b|i|u|highlight)>|<\/(?:a|font)>|<(?:a|font)\s[^>]*>)/;
+export const TOON_INLINE_TAG_RE = /^(?:<\/?(?:b|i|u|highlight)>|<\/(?:a|font)>|<(?:a|font)\s[^>]*>)/;
+
+/** A single token produced by {@link tokenizeToonInline}. */
+export type ToonInlineToken =
+  | { kind: 'tag'; value: string }
+  | { kind: 'text'; value: string };
+
+/**
+ * Split a TOON inline-tag string (`DocumentViewNode.tagged_text` produced with
+ * `show_formatting`) into an ordered list of `tag` and `text` tokens, using the exact same
+ * grammar (`TOON_INLINE_TAG_RE`) the formatter emits. Consecutive literal characters are
+ * coalesced into one `text` token. This is the shared tokenization primitive used by
+ * downstream serializers (Markdown today, HTML next) so they never reason about the tag
+ * grammar independently and drift from the emitter.
+ */
+export function tokenizeToonInline(text: string): ToonInlineToken[] {
+  const tokens: ToonInlineToken[] = [];
+  let buffer = '';
+  for (let i = 0; i < text.length; i++) {
+    const tagLen = toonTagLengthAt(text, i);
+    if (tagLen > 0) {
+      if (buffer) {
+        tokens.push({ kind: 'text', value: buffer });
+        buffer = '';
+      }
+      tokens.push({ kind: 'tag', value: text.slice(i, i + tagLen) });
+      i += tagLen - 1;
+      continue;
+    }
+    buffer += text[i];
+  }
+  if (buffer) tokens.push({ kind: 'text', value: buffer });
+  return tokens;
+}
 
 function toonTagLengthAt(text: string, i: number): number {
   if (text[i] !== '<') return 0;
@@ -1200,6 +1233,12 @@ function getFootnoteMarkersForParagraph(
 /**
  * Inject footnote markers into a text string at the given offsets.
  * Markers must be sorted descending by offset.
+ *
+ * Offsets are *visible*-character offsets (they count document text, not the inline
+ * formatting tags emitted by `emitFormattingTags`). When `text` carries formatting tags
+ * we therefore map each visible offset to a tag-aware insertion index, exactly as the
+ * comment-marker path does (`findTaggedTextInsertionIndex`). A naive `slice(offset)` would
+ * land the `[^n]` marker inside a tag or mid-word once formatting is present.
  */
 function injectFootnoteMarkers(
   text: string,
@@ -1208,9 +1247,8 @@ function injectFootnoteMarkers(
   if (markers.length === 0) return text;
   let result = text;
   for (const { offset, marker } of markers) {
-    // Clamp offset to text length
-    const pos = Math.min(offset, result.length);
-    result = result.slice(0, pos) + marker + result.slice(pos);
+    const insertionIndex = findTaggedTextInsertionIndex(result, offset);
+    result = result.slice(0, insertionIndex) + marker + result.slice(insertionIndex);
   }
   return result;
 }
