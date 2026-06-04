@@ -31,4 +31,17 @@ theorem atomsEqual_implies_text_and_tag_eq :
     exact hEq
   · simp [atomsEqual, hHash] at hEq
 
+/-- The projection-broadening companion of the (now-retired) `atomsEqual_implies_eq`.
+    When `atomsEqual` returns `true`, the two atoms agree on their full **LCS-relevant
+    projection** (`sha1Hash`, `textContent`, `tagName`) — but NOT necessarily on
+    LCS-irrelevant fields like `correlationStatus`. This is the load-bearing fact the
+    LCS soundness proof needs once `Atom` models fields `atomsEqual` ignores. -/
+theorem atomsEqual_implies_relevant_eq :
+    ∀ a b : Atom, atomsEqual a b = true → a.relevant = b.relevant := by
+  intro a b hEq
+  by_cases hHash : a.sha1Hash = b.sha1Hash
+  · have hTextTag := atomsEqual_implies_text_and_tag_eq a b hEq
+    simp [Atom.relevant, hHash, hTextTag.1, hTextTag.2]
+  · simp [atomsEqual, hHash] at hEq
+
 end LeanSpike

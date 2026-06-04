@@ -10,6 +10,15 @@ structure LcsResult where
   «matches» : List Match
   deletedIndices : List Nat
   insertedIndices : List Nat
+/-- A **structural** common subsequence: `s` is literally a sublist of both inputs
+    (same `Atom`s, including LCS-irrelevant fields). NOTE on scope after broadening
+    `Atom`: the optimality theorem `rawMatches_are_longest` (INV-LCS-002) bounds the
+    length of every such *structural* common subsequence. Because `atomsEqual` now
+    correlates atoms only up to `Atom.relevant`, a structural common subsequence is
+    strictly rarer than an `atomsEqual`-matchable one, so this optimality claim is
+    *weaker* than "longest under `atomsEqual`". The stronger, projection-level
+    optimality (over `atomsEqual`-common subsequences) is left as deferred follow-up;
+    the soundness theorems already speak at the `Atom.relevant` level. -/
 def isCommonSubseq (s orig rev : List Atom) : Prop :=
   s <+ orig ∧ s <+ rev
 def matchedOriginalAtoms (orig : List Atom) (ms : List Match) : List Atom :=
@@ -85,32 +94,26 @@ lemma index_lt_of_getElem?_eq_some {α : Type} {l : List α} {i : Nat} {a : α}
   by_contra hge
   have hNone : l[i]? = none := List.getElem?_eq_none (Nat.le_of_not_lt hge)
   simp [hNone] at h
-/-- CAVEAT — overfits the 3-field `Atom` projection.
-    This lemma concludes *full structural equality* `a = b` from `atomsEqual a b`,
-    which is only sound because `Atom` is currently projected to exactly three
-    fields (`sha1Hash`, `textContent`, `tagName`) — the same three fields
-    `atomsEqual` inspects. It would NOT hold under a broader projection toward
-    the real `ComparisonUnitAtom` (~20 fields including DOM references,
-    paragraph indices, format-change metadata, etc.). The lemma is load-bearing
-    in the LCS soundness proof's equality branch; broadening `Atom` requires
-    replacing it with a weaker `atomsEqual_implies_relevant_fields_eq` and
-    rewiring the LCS proof accordingly. See `verification/lean/README.md`
-    ("Caveat: `atomsEqual_implies_eq` overfits the 3-field projection") and
-    `INV-ATOMSEQ-001` in `AtomsEqual.lean` for the weaker companion lemma
-    that survives projection broadening. -/
-theorem atomsEqual_implies_eq {a b : Atom} (hEq : atomsEqual a b = true) : a = b := by
-  cases a
-  cases b
-  simp [atomsEqual] at hEq
-  rcases hEq with ⟨hHash, hText, hTag⟩
-  simp [hHash, hText, hTag]
+/- The former `atomsEqual_implies_eq` (which concluded *full structural equality*
+   `a = b` from `atomsEqual a b`) has been RETIRED. It overfit the 3-field `Atom`
+   projection: it was only sound because `Atom` exposed exactly the three fields
+   `atomsEqual` inspects. Now that `Atom` also carries an LCS-irrelevant field
+   (`correlationStatus`) — modelling the broader `ComparisonUnitAtom` — that
+   conclusion is false (two atoms can be `atomsEqual` yet differ in
+   `correlationStatus`). The soundness proof below is keyed on the surviving
+   companion `atomsEqual_implies_relevant_eq` (`AtomsEqual.lean`), which concludes
+   only that the two atoms share their LCS-relevant projection `Atom.relevant`. -/
 lemma atomsEqual_self (a : Atom) : atomsEqual a a = true := by
   simp [atomsEqual]
 lemma tail_sublist_of_cons_sublist {α : Type} {a : α} {l₁ l₂ : List α}
     (h : a :: l₁ <+ l₂) : l₁ <+ l₂ := by
   exact (List.sublist_cons_of_sublist a (List.Sublist.refl _)).trans h
-lemma commonSubseq_drop_equal_heads {a : Atom} {os rs s : List Atom}
-    (hOrig : s <+ a :: os) (hRev : s <+ a :: rs) :
+/-- Drop the heads of two cons-lists a common subsequence sits under. The heads
+    `a` and `b` need NOT be equal: the length bound `s.length ≤ t.length + 1` is
+    head-agnostic, so this survives broadening `Atom` (where the LCS equality
+    branch only gives `a.relevant = b.relevant`, not `a = b`). -/
+lemma commonSubseq_drop_heads {a b : Atom} {os rs s : List Atom}
+    (hOrig : s <+ a :: os) (hRev : s <+ b :: rs) :
     ∃ t, isCommonSubseq t os rs ∧ s.length ≤ t.length + 1 := by
   cases s with
   | nil =>
@@ -132,11 +135,13 @@ lemma commonSubseq_drop_equal_heads {a : Atom} {os rs s : List Atom}
 theorem rawMatches_subsequence (orig rev : List Atom) :
     matchedOriginalAtoms orig (rawMatches orig rev) <+ orig ∧
     matchedRevisedAtoms rev (rawMatches orig rev) <+ rev ∧
-    matchedOriginalAtoms orig (rawMatches orig rev) = matchedRevisedAtoms rev (rawMatches orig rev) := by
+    (matchedOriginalAtoms orig (rawMatches orig rev)).map Atom.relevant
+      = (matchedRevisedAtoms rev (rawMatches orig rev)).map Atom.relevant := by
   refine Nat.strong_induction_on (p := fun n => ∀ orig rev, orig.length + rev.length = n →
       matchedOriginalAtoms orig (rawMatches orig rev) <+ orig ∧
       matchedRevisedAtoms rev (rawMatches orig rev) <+ rev ∧
-      matchedOriginalAtoms orig (rawMatches orig rev) = matchedRevisedAtoms rev (rawMatches orig rev))
+      (matchedOriginalAtoms orig (rawMatches orig rev)).map Atom.relevant
+        = (matchedRevisedAtoms rev (rawMatches orig rev)).map Atom.relevant)
     (orig.length + rev.length) ?_ orig rev rfl
   intro n ih orig rev hLen
   cases orig with
@@ -155,9 +160,9 @@ theorem rawMatches_subsequence (orig rev : List Atom) :
             · simpa [rawMatches, hEq, matchedOriginalAtoms_eqBranch] using (List.Sublist.cons₂ o hOrig)
             constructor
             · simpa [rawMatches, hEq, matchedRevisedAtoms_eqBranch] using (List.Sublist.cons₂ r hRev)
-            · have hAtom : o = r := atomsEqual_implies_eq hEq
-              subst r
-              simp [rawMatches, atomsEqual, matchedOriginalAtoms_eqBranch, matchedRevisedAtoms_eqBranch, hCommon]
+            · have hRel : o.relevant = r.relevant := atomsEqual_implies_relevant_eq o r hEq
+              simp [rawMatches, hEq, matchedOriginalAtoms_eqBranch, matchedRevisedAtoms_eqBranch,
+                    List.map_cons, hRel, hCommon]
           · have hSmallLeft : os.length + (r :: rs).length < n := by
               rw [← hLen]
               simp [Nat.add_left_comm, Nat.add_comm]
@@ -328,13 +333,11 @@ theorem rawMatches_are_longest (orig rev s : List Atom) :
           · have hSmall : os.length + rs.length < n := by
               rw [← hLen]
               simp [Nat.add_left_comm, Nat.add_comm]
-            have hAtom : o = r := atomsEqual_implies_eq hEq
-            subst r
-            rcases commonSubseq_drop_equal_heads hOrig hRev with ⟨t, ht, hDrop⟩
+            rcases commonSubseq_drop_heads hOrig hRev with ⟨t, ht, hDrop⟩
             have hRec := ih (os.length + rs.length) hSmall os rs rfl t ht
             have hBound : s.length ≤ (rawMatches os rs).length + 1 := by
               exact le_trans hDrop (Nat.succ_le_succ hRec)
-            simpa [rawMatches, atomsEqual_self] using hBound
+            simpa [rawMatches, hEq] using hBound
           · have hSmallLeft : os.length + (r :: rs).length < n := by
               rw [← hLen]
               simp [Nat.add_left_comm, Nat.add_comm]
@@ -428,8 +431,8 @@ form a genuine common subsequence of both inputs. -/
 theorem lcs_matches_are_common_subsequence (orig rev : List Atom) :
     matchedOriginalAtoms orig (computeAtomLcs orig rev).matches <+ orig ∧
     matchedRevisedAtoms rev (computeAtomLcs orig rev).matches <+ rev ∧
-    matchedOriginalAtoms orig (computeAtomLcs orig rev).matches =
-      matchedRevisedAtoms rev (computeAtomLcs orig rev).matches := by
+    (matchedOriginalAtoms orig (computeAtomLcs orig rev).matches).map Atom.relevant =
+      (matchedRevisedAtoms rev (computeAtomLcs orig rev).matches).map Atom.relevant := by
   let raw := rawMatches orig.reverse rev.reverse
   have hSub := rawMatches_subsequence orig.reverse rev.reverse
   have hPair := rawMatches_pair_sound orig.reverse rev.reverse
@@ -452,7 +455,8 @@ theorem lcs_matches_are_common_subsequence (orig rev : List Atom) :
   · simpa [computeAtomLcs, computeMatches, raw, hOrigMap] using List.Sublist.reverse hOrigSub
   constructor
   · simpa [computeAtomLcs, computeMatches, raw, hRevMap] using List.Sublist.reverse hRevSub
-  · simpa [computeAtomLcs, computeMatches, raw, hOrigMap, hRevMap] using congrArg List.reverse hEq
+  · simpa [computeAtomLcs, computeMatches, raw, hOrigMap, hRevMap, List.map_reverse]
+      using congrArg List.reverse hEq
 theorem lcs_match_pairs_are_sound (orig rev : List Atom) :
     ∀ p ∈ (computeAtomLcs orig rev).matches, ∃ a b,
       orig[p.1]? = some a ∧ rev[p.2]? = some b ∧ atomsEqual a b = true := by

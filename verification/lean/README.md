@@ -83,13 +83,14 @@ This spike still does not cover:
 
 ## Lean model
 
-`LeanSpike/Atom.lean` projects a `ComparisonUnitAtom` down to exactly three fields:
+`LeanSpike/Atom.lean` models a `ComparisonUnitAtom` with the three **LCS-relevant** fields that `atomsEqual` inspects, plus one representative **LCS-irrelevant** field:
 
-- `sha1Hash : String`
-- `textContent : String`
-- `tagName : String`
+- `sha1Hash : String` — relevant
+- `textContent : String` — relevant
+- `tagName : String` — relevant
+- `correlationStatus : Nat := 0` — irrelevant (stands in for the production atom's correlation status / ancestry / part; `atomsEqual` never reads it)
 
-The projection intentionally flattens `contentElement.textContent ?? ""` into a total `textContent : String`. Any `null` handling is assumed to happen before an atom is translated into the Lean model.
+`Atom.relevant a := (a.sha1Hash, a.textContent, a.tagName)` names the three-field LCS projection. Carrying at least one ignored field keeps the model faithful: `atomsEqual` correlates atoms *up to `Atom.relevant`*, not up to structural identity (so `atomsEqual a b = true` does NOT imply `a = b`). The projection intentionally flattens `contentElement.textContent ?? ""` into a total `textContent : String`. Any `null` handling is assumed to happen before an atom is translated into the Lean model.
 
 ## Specification Gap
 
@@ -153,17 +154,19 @@ The projection omits the nested `contentElement` object itself and all non-equal
 
 That gap is deliberate in Stage 1: the proof targets only the equality predicate consumed by LCS, not the full reconstruction model.
 
-### Caveat: `atomsEqual_implies_eq` overfits the 3-field projection
+### Resolved: `Atom` projection broadened past `atomsEqual_implies_eq`
 
-The Stage 2 LCS proof relies on a stronger lemma than `INV-ATOMSEQ-001`:
+Earlier stages relied on a lemma that *overfit* the 3-field projection:
 
 ```
 theorem atomsEqual_implies_eq {a b : Atom} (hEq : atomsEqual a b = true) : a = b
 ```
 
-This concludes *full atom equality* (`a = b`), not just `textContent` and `tagName` equality. It holds for the current 3-field projected `Atom` because `atomsEqual` checks all three fields and the structure has no other fields to differ on. **It would NOT hold** if the projection were broadened toward the real `ComparisonUnitAtom` (which has ~20 fields including DOM references, paragraph indices, format-change metadata, etc.). The lemma is load-bearing in the LCS soundness proof — used in the equality branch to substitute the matched atoms for each other.
+It concluded *full atom equality* (`a = b`), which held only because `Atom` exposed exactly the three fields `atomsEqual` inspects. The `Atom` model has since been **broadened** to carry an LCS-irrelevant field (`correlationStatus`, standing in for the production `ComparisonUnitAtom`'s correlation status / ancestry / part), so `atomsEqual a b` no longer implies `a = b` — two atoms can be `atomsEqual` while differing in `correlationStatus`.
 
-If a future stage broadens the `Atom` projection, this lemma must be replaced by a weaker version (e.g. `atomsEqual_implies_relevant_fields_eq`) and the LCS proof's equality branch must be re-engineered accordingly.
+`atomsEqual_implies_eq` is therefore **retired**. The LCS soundness proof is now keyed on the surviving companion `atomsEqual_implies_relevant_eq` (`AtomsEqual.lean`), which concludes only that the atoms share their LCS-relevant projection `Atom.relevant = (sha1Hash, textContent, tagName)`. The soundness theorems `rawMatches_subsequence` and `lcs_matches_are_common_subsequence` (INV-LCS-001) were re-engineered: their matched-atom equality conjunct is now `(matchedOriginalAtoms …).map Atom.relevant = (matchedRevisedAtoms …).map Atom.relevant`, and `commonSubseq_drop_equal_heads` was generalized to `commonSubseq_drop_heads` (its length bound is head-agnostic, so it no longer needs the two heads to be structurally equal). The full spike remains zero-`sorry`.
+
+**Scope note on optimality (INV-LCS-002).** `rawMatches_are_longest` bounds the length of every *structural* common subsequence (`isCommonSubseq s orig rev := s <+ orig ∧ s <+ rev`, i.e. literal sublists of both). It remains true and non-vacuous after broadening, but it is now *strictly weaker* than "longest under `atomsEqual`": because `atomsEqual` correlates atoms only up to `Atom.relevant`, an `atomsEqual`-matchable common subsequence need not be a structural sublist of both inputs. Strengthening optimality to the `atomsEqual` / projection level is deferred follow-up; the soundness side already speaks at the `Atom.relevant` level.
 
 ## Build
 
