@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
-import { enforceWritePathPolicy } from './path_policy.js';
+import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { checkGDocsSupport } from './provider_guard.js';
 
 /** Output formats the export tool can emit. Extensible: `html`/`text` land in #304/#305. */
@@ -73,16 +73,9 @@ export async function exportDocument(
 
     // Never let the export clobber the source DOCX (e.g. a stray output_path pointing back
     // at it). The default path always differs by extension, but an explicit one might not.
-    // Compare via realpath so a symlink output (`foo.md` -> `foo.docx`) can't slip past a
-    // purely lexical check and overwrite the source through the link.
-    const canonical = async (p: string): Promise<string> => {
-      try {
-        return await fs.realpath(p);
-      } catch {
-        return path.resolve(p);
-      }
-    };
-    if ((await canonical(outputPath)) === (await canonical(session.originalPath))) {
+    // Compare via the shared realpath helper so a symlink output (`foo.md` -> `foo.docx`)
+    // can't slip past a purely lexical check and overwrite the source through the link.
+    if (await resolvesToSamePath(outputPath, session.originalPath)) {
       return err(
         'OVERWRITE_BLOCKED',
         `Refusing to overwrite the source document: ${outputPath}`,

@@ -265,6 +265,91 @@ describe('enforceWritePathPolicy', () => {
     const result = await enforceWritePathPolicy(filePath);
     expect(result.ok).toBe(true);
   });
+
+  // Issue #313: the final path component must be canonicalized too, not just its existing ancestor.
+  // Otherwise an in-root symlink output is policy-checked at the link's location while `fs.writeFile`
+  // follows it and writes outside the allowed roots. Both an *existing*-target and a *dangling* link
+  // must be caught — the dangling case is the one a naive `realpath(full path)` fix misses.
+
+  test('rejects write through an existing symlink whose target is outside allowed roots', async () => {
+    if (process.platform === 'win32') return;
+
+    const allowedRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-symlink-allowed-'));
+    tmpDirs.push(allowedRoot);
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-symlink-outside-'));
+    tmpDirs.push(outsideDir);
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = allowedRoot;
+
+    // An existing file outside the root, and an in-root symlink pointing at it.
+    const outsideTarget = path.join(outsideDir, 'target.docx');
+    await fs.writeFile(outsideTarget, 'outside');
+    const link = path.join(allowedRoot, 'link.docx');
+    await fs.symlink(outsideTarget, link);
+
+    const result = await enforceWritePathPolicy(link);
+    expect(result.ok).toBe(false);
+    if (!result.ok && !result.response.success) {
+      expect(result.response.error.code).toBe('PATH_NOT_ALLOWED');
+    }
+  });
+
+  test('rejects write through a dangling symlink whose target is outside allowed roots, and never creates it', async () => {
+    if (process.platform === 'win32') return;
+
+    const allowedRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-dangling-allowed-'));
+    tmpDirs.push(allowedRoot);
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-dangling-outside-'));
+    tmpDirs.push(outsideDir);
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = allowedRoot;
+
+    // The parent dir exists, but the target file does not — a dangling link. `fs.realpath(link)`
+    // throws here, so the fix must `readlink` + follow it manually.
+    const outsideTarget = path.join(outsideDir, 'created-by-write.docx');
+    const link = path.join(allowedRoot, 'dangling-link.docx');
+    await fs.symlink(outsideTarget, link);
+
+    const result = await enforceWritePathPolicy(link);
+    expect(result.ok).toBe(false);
+    if (!result.ok && !result.response.success) {
+      expect(result.response.error.code).toBe('PATH_NOT_ALLOWED');
+    }
+    // The policy check must not have created the target through the link.
+    await expect(fs.access(outsideTarget)).rejects.toThrow();
+  });
+
+  test('allows write through a dangling symlink whose target is inside an allowed root', async () => {
+    if (process.platform === 'win32') return;
+
+    const allowedRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-dangling-inside-'));
+    tmpDirs.push(allowedRoot);
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = allowedRoot;
+
+    const inRootTarget = path.join(allowedRoot, 'created-inside.docx');
+    const link = path.join(allowedRoot, 'inside-link.docx');
+    await fs.symlink(inRootTarget, link);
+
+    const result = await enforceWritePathPolicy(link);
+    expect(result.ok).toBe(true);
+  });
+
+  test('reports a resolution error for a symlink cycle rather than hanging', async () => {
+    if (process.platform === 'win32') return;
+
+    const allowedRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'policy-cycle-'));
+    tmpDirs.push(allowedRoot);
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = allowedRoot;
+
+    const a = path.join(allowedRoot, 'a.docx');
+    const b = path.join(allowedRoot, 'b.docx');
+    await fs.symlink(b, a);
+    await fs.symlink(a, b);
+
+    const result = await enforceWritePathPolicy(a);
+    expect(result.ok).toBe(false);
+    if (!result.ok && !result.response.success) {
+      expect(result.response.error.code).toBe('PATH_RESOLUTION_ERROR');
+    }
+  });
 });
 
 describe('getPlatformTempDefaults', () => {

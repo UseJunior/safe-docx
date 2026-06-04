@@ -213,6 +213,72 @@ describe('compare_documents tool', () => {
     },
   );
 
+  // ── Path policy (issue #313) ─────────────────────────────────────
+
+  test(
+    'refuses a symlink save_to_local_path that escapes the allowed roots',
+    async ({ when, then }: AllureBddContext) => {
+      if (process.platform === 'win32') return;
+
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+      const outsideDir = await createTrackedTempDir();
+      const originalPath = await writeTestDocx(dir, 'original.docx', ['Hello world']);
+      const revisedPath = await writeTestDocx(dir, 'revised.docx', ['Hello brave new world']);
+
+      const previousRoots = process.env.SAFE_DOCX_ALLOWED_ROOTS;
+      process.env.SAFE_DOCX_ALLOWED_ROOTS = dir;
+      try {
+        const escapeTarget = path.join(outsideDir, 'redline.docx');
+        const link = path.join(dir, 'redline-link.docx');
+        await fs.symlink(escapeTarget, link);
+
+        const result = await when('compare with an escaping symlink output', () =>
+          compareDocuments_tool(mgr, {
+            original_file_path: originalPath,
+            revised_file_path: revisedPath,
+            save_to_local_path: link,
+          }),
+        );
+        await then('the write is refused and the outside target is never created', async () => {
+          assertFailure(result, 'PATH_NOT_ALLOWED', 'compare symlink escape');
+          await expect(fs.access(escapeTarget)).rejects.toThrow();
+        });
+      } finally {
+        if (previousRoots === undefined) delete process.env.SAFE_DOCX_ALLOWED_ROOTS;
+        else process.env.SAFE_DOCX_ALLOWED_ROOTS = previousRoots;
+      }
+    },
+  );
+
+  test(
+    'refuses a save_to_local_path that resolves onto a source document (incl. via symlink)',
+    async ({ when, then }: AllureBddContext) => {
+      if (process.platform === 'win32') return;
+
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+      const originalPath = await writeTestDocx(dir, 'original.docx', ['Hello world']);
+      const revisedPath = await writeTestDocx(dir, 'revised.docx', ['Hello brave new world']);
+      const originalBytes = await fs.readFile(originalPath);
+
+      const link = path.join(dir, 'link-to-original.docx');
+      await fs.symlink(originalPath, link);
+
+      const result = await when('compare with output symlinked to a source', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: revisedPath,
+          save_to_local_path: link,
+        }),
+      );
+      await then('the write is refused and the source is byte-for-byte intact', async () => {
+        assertFailure(result, 'OVERWRITE_BLOCKED', 'compare clobbers source');
+        expect(Buffer.compare(await fs.readFile(originalPath), originalBytes)).toBe(0);
+      });
+    },
+  );
+
   // ── Tool registration ────────────────────────────────────────────
 
   test(

@@ -9,7 +9,7 @@ import {
   resolveSessionForTool,
   validateAndLoadDocxFromPath,
 } from './session_resolution.js';
-import { enforceWritePathPolicy } from './path_policy.js';
+import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
 function expandPath(inputPath: string): string {
@@ -100,6 +100,21 @@ export async function compareDocuments_tool(
       originalFilePath = manager.normalizePath(session.originalPath);
     }
 
+    // Refuse to clobber an input document via the output path (issue #313). compare has no
+    // allow_overwrite — the source files are inputs and must never be overwritten. Check before the
+    // (expensive) comparison so we fail fast, and compare via realpath so a symlinked save path can't
+    // mask a clobber of a source through the link.
+    const savePath = expandPath(params.save_to_local_path);
+    for (const source of [originalFilePath, revisedFilePath]) {
+      if (source && (await resolvesToSamePath(savePath, source))) {
+        return err(
+          'OVERWRITE_BLOCKED',
+          `Refusing to overwrite a source document: ${source}`,
+          'Choose a different save_to_local_path.',
+        );
+      }
+    }
+
     // Run comparison
     const result = await runWithoutConsoleLog(() =>
       compareDocuments(originalBuffer, revisedBuffer, {
@@ -110,7 +125,6 @@ export async function compareDocuments_tool(
     );
 
     // Validate and write output
-    const savePath = expandPath(params.save_to_local_path);
     const writePolicy = await enforceWritePathPolicy(savePath);
     if (!writePolicy.ok) return writePolicy.response;
 

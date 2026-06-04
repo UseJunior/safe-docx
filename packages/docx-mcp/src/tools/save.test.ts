@@ -191,4 +191,69 @@ describe('save', () => {
     });
     assertSuccess(result, 'save by file_path');
   });
+
+  // Issue #313: a symlink output_path inside an allowed root that points OUTSIDE all roots must be
+  // refused — the policy now follows the final symlink (existing or dangling) instead of judging it at
+  // the link's in-root location and letting `fs.writeFile` follow it out.
+  test('refuses a symlink save_to_local_path that escapes the allowed roots (existing and dangling)', async () => {
+    if (process.platform === 'win32') return;
+
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const outsideDir = await createTrackedTempDir('save-outside-');
+    const previousRoots = process.env.SAFE_DOCX_ALLOWED_ROOTS;
+    process.env.SAFE_DOCX_ALLOWED_ROOTS = tmpDir;
+    try {
+      // Existing target outside the root.
+      const existingTarget = path.join(outsideDir, 'existing.docx');
+      await fs.writeFile(existingTarget, 'PRE-EXISTING');
+      const existingTargetBytes = await fs.readFile(existingTarget);
+      const existingLink = path.join(tmpDir, 'escape-existing.docx');
+      await fs.symlink(existingTarget, existingLink);
+
+      const viaExisting = await save(mgr, {
+        file_path: inputPath,
+        save_to_local_path: existingLink,
+        save_format: 'clean',
+        allow_overwrite: true,
+      });
+      assertFailure(viaExisting, 'PATH_NOT_ALLOWED', 'existing symlink escape');
+      expect(Buffer.compare(await fs.readFile(existingTarget), existingTargetBytes)).toBe(0);
+
+      // Dangling target outside the root — the case a naive realpath-only fix misses.
+      const danglingTarget = path.join(outsideDir, 'created-by-write.docx');
+      const danglingLink = path.join(tmpDir, 'escape-dangling.docx');
+      await fs.symlink(danglingTarget, danglingLink);
+
+      const viaDangling = await save(mgr, {
+        file_path: inputPath,
+        save_to_local_path: danglingLink,
+        save_format: 'clean',
+        allow_overwrite: true,
+      });
+      assertFailure(viaDangling, 'PATH_NOT_ALLOWED', 'dangling symlink escape');
+      await expect(fs.access(danglingTarget)).rejects.toThrow();
+    } finally {
+      if (previousRoots === undefined) delete process.env.SAFE_DOCX_ALLOWED_ROOTS;
+      else process.env.SAFE_DOCX_ALLOWED_ROOTS = previousRoots;
+    }
+  });
+
+  // Issue #313: the in-place-overwrite guard must canonicalize via realpath so a symlink output that
+  // points back at the source can't slip past the (previously lexical) check and clobber the original.
+  test('refuses a symlink save_to_local_path that points back at the source document', async () => {
+    if (process.platform === 'win32') return;
+
+    const { mgr, tmpDir, inputPath } = await openTestDoc();
+    const sourceBytes = await fs.readFile(inputPath);
+    const link = path.join(tmpDir, 'link-to-source.docx');
+    await fs.symlink(inputPath, link);
+
+    const result = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: link,
+      save_format: 'clean',
+    });
+    assertFailure(result, 'OVERWRITE_BLOCKED', 'symlink to source');
+    expect(Buffer.compare(await fs.readFile(inputPath), sourceBytes)).toBe(0);
+  });
 });

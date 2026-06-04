@@ -294,6 +294,40 @@ describe('Google Docs MCP tool dispatch', () => {
       // Cleanup
       try { (await import('node:fs/promises')).unlink(tmpPath); } catch {}
     });
+
+    // Issue #313: a snapshot save_to_local_path that is a symlink escaping the allowed roots must be
+    // refused — covers the shared write-policy fix for the gdocs snapshot path (existing and dangling).
+    it('refuses a symlink save_to_local_path that escapes the allowed roots', async () => {
+      if (process.platform === 'win32') return;
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const fs = await import('node:fs/promises');
+
+      const session = setupGDocsSession(manager);
+      const allowedRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gdocs-allowed-'));
+      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gdocs-outside-'));
+      const previousRoots = process.env.SAFE_DOCX_ALLOWED_ROOTS;
+      process.env.SAFE_DOCX_ALLOWED_ROOTS = allowedRoot;
+      try {
+        const escapeTarget = path.join(outsideDir, 'snapshot.docx');
+        const link = path.join(allowedRoot, 'snapshot-link.docx');
+        await fs.symlink(escapeTarget, link); // dangling: target does not exist yet
+
+        const result = await dispatchToolCall(manager, 'save', {
+          google_doc_id: 'test-doc-id-123',
+          save_to_local_path: link,
+        });
+        assertError(result);
+        expect(result.error.code).toBe('PATH_NOT_ALLOWED');
+        expect(session.doc.exportAsDocx).not.toHaveBeenCalled();
+        await expect(fs.access(escapeTarget)).rejects.toThrow();
+      } finally {
+        if (previousRoots === undefined) delete process.env.SAFE_DOCX_ALLOWED_ROOTS;
+        else process.env.SAFE_DOCX_ALLOWED_ROOTS = previousRoots;
+        await fs.rm(allowedRoot, { recursive: true, force: true }).catch(() => {});
+        await fs.rm(outsideDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
   });
 
   describe('get_file_status', () => {
