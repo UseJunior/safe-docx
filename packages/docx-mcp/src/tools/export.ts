@@ -6,12 +6,13 @@ import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session
 import { enforceWritePathPolicy } from './path_policy.js';
 import { checkGDocsSupport } from './provider_guard.js';
 
-/** Output formats the export tool can emit. Extensible: `html`/`text` land in #304/#305. */
-const SUPPORTED_FORMATS = ['markdown'] as const;
+/** Output formats the export tool can emit. Extensible: `text` lands in #305. */
+const SUPPORTED_FORMATS = ['markdown', 'html'] as const;
 type ExportFormat = (typeof SUPPORTED_FORMATS)[number];
 
 const EXTENSION_FOR_FORMAT: Record<ExportFormat, string> = {
   markdown: '.md',
+  html: '.html',
 };
 
 function expandPath(inputPath: string): string {
@@ -25,9 +26,10 @@ function defaultOutputPath(sourcePath: string, format: ExportFormat): string {
 }
 
 /**
- * Export a document to a portable text rendering (Markdown today). Writes the rendering to a
+ * Export a document to a portable text rendering (Markdown or HTML). Writes the rendering to a
  * file (this tool is NOT read-only) and returns the written path, byte count, and — unless
- * `include_markdown: false` — the rendered content itself.
+ * `include_markdown: false` — the rendered content under a format-agnostic `content` key (plus
+ * a legacy `markdown` key for the Markdown format).
  *
  * DOCX only. Google Docs (`google_doc_id`) is out of scope for this tool.
  */
@@ -105,22 +107,25 @@ export async function exportDocument(
       }
     }
 
-    const markdown = await session.doc.toMarkdown();
-    const buffer = Buffer.from(markdown, 'utf8');
+    const content = exportFormat === 'html' ? await session.doc.toHtml() : await session.doc.toMarkdown();
+    const buffer = Buffer.from(content, 'utf8');
 
     const policy = await enforceWritePathPolicy(outputPath);
     if (!policy.ok) return policy.response;
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, new Uint8Array(buffer));
 
-    const includeMarkdown = params.include_markdown !== false;
+    // `include_markdown` gates the inline content for both formats (its name predates HTML).
+    const includeContent = params.include_markdown !== false;
     return ok(
       mergeSessionResolutionMetadata(
         {
           format: exportFormat,
           output_path: manager.normalizePath(outputPath),
           bytes_written: buffer.byteLength,
-          ...(includeMarkdown ? { markdown } : {}),
+          // `content` is the format-agnostic key; `markdown` is kept for back-compat on Markdown.
+          ...(includeContent ? { content } : {}),
+          ...(includeContent && exportFormat === 'markdown' ? { markdown: content } : {}),
         },
         metadata,
       ),

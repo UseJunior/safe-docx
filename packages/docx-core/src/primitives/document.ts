@@ -17,6 +17,7 @@ import {
 } from './track-changes-emitter.js';
 import { buildNodesForDocumentView, type DocumentStyles, type DocumentViewNode, type TableContext } from './document_view.js';
 import { serializeToMarkdown, type SerializeMarkdownOptions } from './serialize_markdown.js';
+import { serializeToHtml, type SerializeHtmlOptions } from './serialize_html.js';
 import type { FormattingMode } from './formatting_tags.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
@@ -1069,6 +1070,20 @@ export class DocxDocument {
     const { nodes } = this.buildDocumentView({ showFormatting: true });
     const footnotes = await this.getFootnotes();
     return serializeToMarkdown(nodes, footnotes, opts);
+  }
+
+  /**
+   * Serialize the document to semantic HTML. Convenience wrapper that wires the structured
+   * document view (with inline formatting) and footnotes into {@link serializeToHtml}. The
+   * default output is a complete `<!DOCTYPE html>` document; pass `{ fragment: true }` for the
+   * body-level elements only. This is the semantic tier — exact layout is not reproduced.
+   *
+   * Async because footnote extraction reads the footnotes part from the zip.
+   */
+  async toHtml(opts?: SerializeHtmlOptions): Promise<string> {
+    const { nodes } = this.buildDocumentView({ showFormatting: true });
+    const footnotes = await this.getFootnotes();
+    return serializeToHtml(nodes, footnotes, opts);
   }
 
   async getFootnote(noteId: number): Promise<Footnote | null> {

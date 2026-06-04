@@ -179,13 +179,13 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'export',
     description:
-      'Export a document to a portable text rendering. Writes an output file (default: source path with the format extension, e.g. .md) and returns its path, byte count, and the rendered content. Markdown is intentionally lossy (no round-trip). DOCX only — Google Docs is not supported.',
+      'Export a document to a portable rendering (Markdown or semantic HTML). Writes an output file (default: source path with the format extension, e.g. .md or .html) and returns its path, byte count, and the rendered content. Intentionally lossy (no round-trip); HTML is the semantic tier, not pixel-faithful. DOCX only — Google Docs is not supported.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       format: z
-        .enum(['markdown'])
+        .enum(['markdown', 'html'])
         .optional()
-        .describe("Output format. 'markdown' (default). 'html'/'text' are planned."),
+        .describe("Output format: 'markdown' (default) or 'html'. 'text' is planned."),
       output_path: z
         .string()
         .optional()
@@ -197,7 +197,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       include_markdown: z
         .boolean()
         .optional()
-        .describe('Include the rendered content in the response. Default: true; set false for large documents.'),
+        .describe('Include the rendered content (under `content`) in the response. Default: true; set false for large documents.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
