@@ -5,7 +5,7 @@ import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import { DocxZip, compareDocuments, parseXml, type CompareOptions, type CompareResult } from '@usejunior/docx-core';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
-import { enforceWritePathPolicy } from './path_policy.js';
+import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
 type SaveFormat = 'clean' | 'tracked' | 'both';
@@ -264,18 +264,17 @@ export async function save(
           : defaultTrackedPath(savePath, exportTimestamp);
     }
 
-    const originalPathResolved = path.resolve(session.originalPath);
-    const cleanPathResolved = path.resolve(savePath);
-    const trackedPathResolved = trackedPath ? path.resolve(trackedPath) : null;
+    // Compare against the original via realpath (issue #313) so a symlinked save_to_local_path pointing
+    // back at the source can't slip past a purely lexical check and overwrite the original through the link.
     if (!allowOverwrite) {
-      if ((format === 'clean' || format === 'both') && cleanPathResolved === originalPathResolved) {
+      if ((format === 'clean' || format === 'both') && await resolvesToSamePath(savePath, session.originalPath)) {
         return err(
           'OVERWRITE_BLOCKED',
           `Refusing to overwrite original file: ${savePath}`,
           "Save to a different path, or set allow_overwrite=true if you explicitly want in-place overwrite.",
         );
       }
-      if ((format === 'tracked' || format === 'both') && trackedPathResolved === originalPathResolved) {
+      if ((format === 'tracked' || format === 'both') && trackedPath && await resolvesToSamePath(trackedPath, session.originalPath)) {
         return err(
           'OVERWRITE_BLOCKED',
           `Refusing to overwrite original file with tracked output: ${trackedPath}`,
