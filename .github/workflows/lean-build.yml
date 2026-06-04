@@ -7,12 +7,18 @@ on:
       - 'verification/lean/**'
       - '.github/workflows/lean-build.yml'
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
+      # The differential gate guards the production TS LCS against the Lean model,
+      # so a change to either must re-run it — not just changes to the harness.
+      - 'packages/docx-core/src/baselines/atomizer/atomLcs.ts'
+      - 'packages/docx-core/src/core-types.ts'
   pull_request:
     branches: [main]
     paths:
       - 'verification/lean/**'
       - '.github/workflows/lean-build.yml'
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
+      - 'packages/docx-core/src/baselines/atomizer/atomLcs.ts'
+      - 'packages/docx-core/src/core-types.ts'
   workflow_dispatch:
 
 permissions:

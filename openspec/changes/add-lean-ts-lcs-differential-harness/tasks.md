@@ -13,7 +13,7 @@
 - [x] 2.1 Add `packages/docx-core/src/integration/lean-differential-lcs.test.ts` with `const TEST_FEATURE` and `.openspec()` tags.
 - [x] 2.2 `fast-check` arbitrary producing `Atom[]` pairs over a small alphabet; per atom build the Lean JSON object and a typed `ComparisonUnitAtom` stub with a real `@xmldom/xmldom` Element for `contentElement` (no `as any`).
 - [x] 2.3 Resolve the exe path (`verification/lean/.lake/build/bin/leanDifferential`); if absent, `skip` with a clear message.
-- [x] 2.4 Run TS `computeAtomLcs` per case in-process; spawn the exe **once** (`spawnSync`) with the full batch; parse results.
+- [x] 2.4 Run TS `computeAtomLcs` per case in-process; spawn the exe (`spawnSync`) **once per memory-bounded chunk** of the batch; parse results.
 - [x] 2.5 Normalize TS matches to `[originalIndex, revisedIndex]` tuples; assert structural deep-equality of `{matches, deletedIndices, insertedIndices}` per case.
 - [x] 2.6 Default mode = a few thousand random cases; `LEAN_DIFF_EXHAUSTIVE=1` mode enumerates all length-≤6 / 3-symbol pairs. On divergence, fail with a per-case diff.
 

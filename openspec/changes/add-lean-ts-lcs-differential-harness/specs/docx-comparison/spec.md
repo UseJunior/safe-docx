@@ -9,7 +9,7 @@ The harness SHALL run the **actual compiled Lean definition**, not a re-implemen
 A TypeScript property test (`packages/docx-core/src/integration/lean-differential-lcs.test.ts`) SHALL:
 
 - generate `(orig, rev)` atom-array pairs over a small alphabet via `fast-check`, building for each abstract atom both the Lean JSON object and a typed `ComparisonUnitAtom` stub whose `contentElement` is a real `@xmldom/xmldom` Element carrying the atom's `textContent` and `tagName`, and whose `sha1Hash` matches the Lean atom — with no `as any` cast that could hide future field drift;
-- run the TS `computeAtomLcs` in-process per case and spawn the Lean executable **once** for the whole batch (not once per case);
+- run the TS `computeAtomLcs` in-process per case and spawn the Lean executable **once per memory-bounded chunk** — amortizing the spawn over the whole batch rather than spawning once per case;
 - normalize the TS `LcsResult.matches` (objects `{ originalIndex, revisedIndex }`) to `[originalIndex, revisedIndex]` tuples to match the Lean `Prod`-derived JSON array shape, then assert structural deep-equality of `{ matches, deletedIndices, insertedIndices }` per case;
 - run a bounded random sample by default and, under an opt-in environment flag, an exhaustive sweep over all length-≤6 pairs on a 3-symbol alphabet;
 - **skip** with a clear message when the Lean executable is absent (so a developer without the Lean toolchain still gets a green `npm test`), while CI builds the executable so the comparison actually runs there.

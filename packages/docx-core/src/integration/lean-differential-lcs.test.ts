@@ -91,20 +91,23 @@ interface Divergence {
  *
  * Memoized per symbol: `computeAtomLcs` only reads the atoms (it never mutates them),
  * so reusing one object per symbol collapses millions of xmldom-element builds (under
- * the exhaustive sweep) to one per distinct symbol.
+ * the exhaustive sweep) to one per distinct symbol. The cached object is frozen so that
+ * if a future edit routes a mutating helper (e.g. `markCorrelationStatus`, which writes
+ * `.correlationStatus`) through here, it throws loudly under ESM strict mode rather than
+ * silently corrupting later cases.
  */
 const tsAtomCache = new Map<string, ComparisonUnitAtom>();
 function makeTsAtom(symbol: string): ComparisonUnitAtom {
   let atom = tsAtomCache.get(symbol);
   if (atom === undefined) {
-    atom = {
+    atom = Object.freeze({
       sha1Hash: symbol,
       correlationStatus: CorrelationStatus.Unknown,
       contentElement: el('w:t', {}, undefined, symbol),
       ancestorElements: [],
       ancestorUnids: [],
       part: PART,
-    };
+    });
     tsAtomCache.set(symbol, atom);
   }
   return atom;
