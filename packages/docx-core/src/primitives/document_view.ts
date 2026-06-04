@@ -3,7 +3,7 @@ import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
 import { getParagraphText, getParagraphRuns } from './text.js';
 import { extractListLabel, stripListLabel, LabelType } from './list_labels.js';
 import { parseNumberingXml, type NumberingCounters, computeListLabelForParagraph } from './numbering.js';
-import { parseStylesXml, type StylesModel, extractParagraphFormatting, extractEffectiveRunFormatting, type ParagraphAlignment, type RunFormatting } from './styles.js';
+import { parseStylesXml, type StylesModel, extractParagraphFormatting, extractEffectiveRunFormatting, type RunFormatting } from './styles.js';
 import { HIGHLIGHT_TAG } from './semantic_tags.js';
 import { type AnnotatedRun, type FormattingBaseline, type FormattingMode, computeModalBaseline, computeParagraphFontBaseline, emitFormattingTags, mergeAdjacentTags } from './formatting_tags.js';
 import type { RelsMap } from './relationships.js';
@@ -14,13 +14,20 @@ import {
   detectTitleCapsCentered,
   extractHeaderInfo,
   suppressSignatureClusters,
-  type HeaderFormatting,
-  type HeadingValue,
-  type HeuristicHeadingSource,
 } from './document_view-headings.js';
-import { discoverStyles, fingerprintKey, type DocumentStyles, type FormattingFingerprint } from './document_view-styles.js';
-import { findTaggedTextInsertionIndex, type DocumentViewComment } from './document_view-comments.js';
+import { discoverStyles, fingerprintKey } from './document_view-styles.js';
+import { findTaggedTextInsertionIndex } from './document_view-comments.js';
+import type {
+  BuildDocumentViewOptions,
+  DocumentStyles,
+  DocumentViewNode,
+  FormattingFingerprint,
+  HeaderFormatting,
+  HeuristicHeadingSource,
+  TableContext,
+} from './document_view-types.js';
 
+export type { BuildDocumentViewOptions, DocumentViewNode, ListMetadata, TableContext } from './document_view-types.js';
 export type { HeaderFormatting, HeadingSource, HeadingValue, HeuristicHeadingSource } from './document_view-headings.js';
 export { discoverStyles } from './document_view-styles.js';
 export type { DocumentStyleInfo, DocumentStyles, FormattingFingerprint } from './document_view-styles.js';
@@ -73,69 +80,6 @@ function emitHighlightTagsFromParagraph(p: Element): string {
   if (inHighlight) out.push(`</${HIGHLIGHT_TAG}>`);
   return out.join('');
 }
-
-export type ListMetadata = {
-  list_level: number; // -1 for non-list
-  label_type: LabelType | null;
-  label_string: string;
-  header_text: string | null;
-  header_style: HeuristicHeadingSource | null;
-  header_formatting: HeaderFormatting | null;
-  is_auto_numbered: boolean;
-};
-
-export type TableContext = {
-  table_id: string;         // "_tbl_0", "_tbl_1" — body-level table index
-  table_index: number;      // 0-based among body-level w:tbl elements
-  row_index: number;        // 0-based row within table (by w:tr position)
-  col_index: number;        // Grid-aware column (accounts for gridSpan)
-  col_header: string;       // Header text for this grid column (from row 0)
-  total_rows: number;
-  total_cols: number;       // Max grid columns (accounts for gridSpan)
-  is_header_row: boolean;
-  para_in_cell: number;     // 0-based paragraph index within cell
-  cell_para_count: number;  // Total paragraphs in this cell
-};
-
-export type DocumentViewNode = {
-  id: string; // _bk_*
-  list_label: string;
-  header: string;
-  style: string;
-  text: string;
-
-  // Metadata for JSON mode / parity tooling.
-  clean_text: string;
-  tagged_text: string;
-  list_metadata: ListMetadata;
-  style_fingerprint: FormattingFingerprint;
-  paragraph_style_id: string | null;
-  paragraph_style_name: string;
-  paragraph_alignment: ParagraphAlignment;
-  paragraph_indents_pt: { left: number; first_line: number };
-  numbering: { num_id: string | null; ilvl: number | null; is_auto_numbered: boolean };
-  heading?: HeadingValue;
-  header_formatting: HeaderFormatting | null;
-  body_run_formatting: RunFormatting | null;
-  table_context?: TableContext;
-  comments?: DocumentViewComment[];
-  /**
-   * Number of visible characters stripped from the head of the raw paragraph text when
-   * extracting a manual list label (and trimming the trailing whitespace). Used by the
-   * inline-comment-marker injector to translate run/offset positions (which are computed
-   * against the FULL paragraph visible text by `getComments()`) into positions within
-   * `tagged_text` (which has the label stripped).
-   *
-   * Auto-numbered list paragraphs do NOT have their text stripped — their label lives in
-   * the `list_label` field separately — so this stays 0 for them. Run-in header stripping
-   * is handled separately at format time and is not included here.
-   */
-  visible_offset_correction?: number;
-};
-
-export type BuildDocumentViewOptions = {
-  include_semantic_tags?: boolean;
-};
 
 export function buildDocumentView(params: {
   documentXml: Document;

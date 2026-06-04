@@ -1,6 +1,6 @@
-import { collectInlineCommentMarkers, countVisibleTextCharacters, injectToonCommentMarkers, type DocumentViewComment, type ToonCommentMarkerMap } from './document_view-comments.js';
+import { collectInlineCommentMarkers, countVisibleTextCharacters, injectToonCommentMarkers } from './document_view-comments.js';
 import { computeFingerprintToken } from './document_view-styles.js';
-import type { DocumentViewNode } from './document_view.js';
+import type { DocumentViewComment, DocumentViewNode, ToonCommentMarkerMap } from './document_view-types.js';
 
 function headerStripFromText(params: { header: string; text: string }): string {
   // Mirrors Python TOONRenderer header stripping.

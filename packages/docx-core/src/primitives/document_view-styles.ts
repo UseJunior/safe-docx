@@ -1,29 +1,7 @@
 import { LabelType } from './list_labels.js';
-import type { ParagraphAlignment } from './styles.js';
-import type { DocumentViewNode } from './document_view.js';
+import type { DocumentStyleInfo, DocumentStyles, DocumentViewNode, FormattingFingerprint } from './document_view-types.js';
 
-export type FormattingFingerprint = {
-  list_level: number;
-  left_indent_pt: number;
-  first_line_indent_pt: number;
-  style_name: string;
-  alignment: ParagraphAlignment;
-};
-
-export type DocumentStyleInfo = {
-  style_id: string;
-  display_name: string;
-  fingerprint: FormattingFingerprint;
-  example_node_id: string;
-  example_text: string;
-  count: number;
-  dominant_alignment: ParagraphAlignment;
-};
-
-export type DocumentStyles = {
-  styles: Map<string, DocumentStyleInfo>;
-  fingerprint_to_style: Map<string, string>; // fingerprintKey -> style_id
-};
+export type { DocumentStyleInfo, DocumentStyles, FormattingFingerprint } from './document_view-types.js';
 
 const STYLE_EXAMPLE_TEXT_PREVIEW_LENGTH = 50;
 

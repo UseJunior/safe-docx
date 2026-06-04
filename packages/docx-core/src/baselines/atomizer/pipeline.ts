@@ -26,7 +26,7 @@ import type {
   ReconstructionTextMismatchSummary,
   ReconstructionTextMismatchDetails,
   ReconstructionMode,
-} from '../../index.js';
+} from '../../compare-types.js';
 import type {
   ComparisonUnitAtom,
   MoveDetectionSettings,

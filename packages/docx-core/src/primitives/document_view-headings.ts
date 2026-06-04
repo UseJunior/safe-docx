@@ -1,37 +1,9 @@
 import { OOXML, W } from './namespaces.js';
 import { getParagraphRuns } from './text.js';
 import { extractEffectiveRunFormatting, type ParagraphAlignment, type StylesModel } from './styles.js';
-import type { DocumentViewNode } from './document_view.js';
+import type { DocumentViewNode, HeaderFormatting, HeadingValue, HeuristicHeadingSource } from './document_view-types.js';
 
-export type HeaderFormatting = {
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
-};
-
-export type HeadingSource =
-  | 'word_style'
-  | 'run_in_header'
-  | 'title_with_period'
-  | 'title_with_colon'
-  | 'title_caps_centered'
-  | 'title_bare';
-
-export type HeuristicHeadingSource = Exclude<HeadingSource, 'word_style'>;
-
-export type HeadingValue = {
-  /**
-   * Heading label text. Semantics depend on `source`:
-   * - `word_style`: the full paragraph text (the entire paragraph IS the heading).
-   * - All heuristic sources (`run_in_header`, `title_with_period`, `title_with_colon`,
-   *   `title_caps_centered`, `title_bare`): only the extracted heading prefix.
-   *   For example, on `"Indemnification. The Company shall …"` the value is
-   *   `"Indemnification"`, not the whole paragraph.
-   */
-  text: string;
-  source: HeadingSource;
-  level: number | null;
-};
+export type { HeaderFormatting, HeadingSource, HeadingValue, HeuristicHeadingSource } from './document_view-types.js';
 
 const SHORT_HEADER_MAX_LENGTH = 50;
 const MAX_HEADER_TEXT_LENGTH = 60;

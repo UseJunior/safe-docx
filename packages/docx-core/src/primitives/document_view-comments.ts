@@ -1,23 +1,6 @@
-import type { DocumentViewNode } from './document_view.js';
+import type { DocumentViewComment, DocumentViewNode, ToonCommentMarker, ToonCommentMarkerMap, ToonInlineToken } from './document_view-types.js';
 
-export type DocumentViewCommentRange = {
-  startParagraphId: string;
-  endParagraphId: string;
-  startRunIndex?: number;
-  startCharOffset?: number;
-  endRunIndex?: number;
-  endCharOffset?: number;
-};
-
-export type DocumentViewComment = {
-  id: number;
-  author: string;
-  date: string | null;
-  initials: string;
-  text: string;
-  replies: DocumentViewComment[];
-  range?: DocumentViewCommentRange;
-};
+export type { DocumentViewComment, DocumentViewCommentRange, ToonCommentMarker, ToonCommentMarkerMap, ToonInlineToken } from './document_view-types.js';
 
 export const INLINE_COMMENT_MARKER_RUNTIME = Symbol('inline_comment_marker_runtime');
 
@@ -31,13 +14,6 @@ type DocumentViewCommentWithRuntime = DocumentViewComment & {
   [INLINE_COMMENT_MARKER_RUNTIME]?: InlineCommentMarkerRuntime;
 };
 
-export type ToonCommentMarker = {
-  offset: number;
-  marker: string;
-};
-
-export type ToonCommentMarkerMap = Map<string, ToonCommentMarker[]>;
-
 // Matches the exact set of TOON inline formatting tags that emitFormattingTags() can emit:
 //   <b>, </b>, <i>, </i>, <u>, </u>, <highlight>, </highlight>,
 //   <a href="...">, </a>, <font ATTR=...>, </font>
@@ -50,11 +26,6 @@ export type ToonCommentMarkerMap = Map<string, ToonCommentMarker[]>;
 // `<font>`. Allowing the bare forms would cause literal `<a>` / `<font>` in document text to
 // be silently skipped, shifting marker positions.
 export const TOON_INLINE_TAG_RE = /^(?:<\/?(?:b|i|u|highlight)>|<\/(?:a|font)>|<(?:a|font)\s[^>]*>)/;
-
-/** A single token produced by {@link tokenizeToonInline}. */
-export type ToonInlineToken =
-  | { kind: 'tag'; value: string }
-  | { kind: 'text'; value: string };
 
 /**
  * Split a TOON inline-tag string (`DocumentViewNode.tagged_text` produced with
