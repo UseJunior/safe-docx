@@ -53,6 +53,10 @@
       "description": "Save clean/tracked output document variants to disk."
     },
     {
+      "name": "export",
+      "description": "Export a document to a portable Markdown rendering on disk (lossy; DOCX only)."
+    },
+    {
       "name": "format_layout",
       "description": "Apply deterministic paragraph/table layout formatting controls."
     },

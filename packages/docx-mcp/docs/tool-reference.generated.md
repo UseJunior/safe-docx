@@ -139,6 +139,21 @@ Save document. For DOCX: saves clean and/or tracked changes output. For Google D
 | `tracked_changes_engine` | `enum("auto", "atomizer")` | no |  |
 | `fail_on_rebuild_fallback` | `boolean` | no | When true, return an error instead of a destructive output if the comparison engine falls back to rebuild mode (which destroys table structure). Default: false. |
 
+## `export`
+
+Export a document to a portable text rendering. Writes an output file (default: source path with the format extension, e.g. .md) and returns its path, byte count, and the rendered content. Markdown is intentionally lossy (no round-trip). DOCX only — Google Docs is not supported.
+
+- readOnly: `false`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX file. |
+| `format` | `enum("markdown")` | no | Output format. 'markdown' (default). 'html'/'text' are planned. |
+| `output_path` | `string` | no | Where to write the rendering. Defaults to the source path with the format extension. |
+| `allow_overwrite` | `boolean` | no | Overwrite output_path if it already exists. Default: false. |
+| `include_markdown` | `boolean` | no | Include the rendered content in the response. Default: true; set false for large documents. |
+
 ## `format_layout`
 
 Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only.
