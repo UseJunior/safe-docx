@@ -137,14 +137,19 @@ Tier 2 is the first place where the roadmap becomes specification-heavy enough t
 
 ## Tier 2.5 — Lean ↔ TS equivalence + projection broadening
 
-**Status: IN PROGRESS** (first increment landed: reproducible LCS differential harness).
+**Status: IN PROGRESS** (two increments landed: reproducible LCS differential harness, and the Tier 2-helper accept/reject/validate differential harness).
 
 This tier sits between "the Lean model is sound" and "the Lean model is faithfully about the production code." It closes the two biggest remaining abstraction gaps from Tier 1.
 
 - **Extensional equivalence LCS Lean ↔ TS DP**: the previously un-reproducible "1.19M cases, zero divergence" brute-force is now a **reproducible, in-CI executable differential harness** (`add-lean-ts-lcs-differential-harness`). The genuine `LeanSpike.computeAtomLcs` is compiled to the `leanDifferential` exe (`verification/lean/Differential.lean`) and run against the production TS `computeAtomLcs` over shared generated inputs by `packages/docx-core/src/integration/lean-differential-lcs.test.ts`; the exhaustive length-≤6 / 3-symbol sweep (1,194,649 pairs, zero divergence) runs in the `lean-build` workflow. This grounds the empirical claim and de-risks the *formal* closure, which still **requires either a proof that the recursive Lean LCS and the iterative TS Wagner-Fischer DP produce the same output set, or a refactor of the TS** — both deferred.
 - **Broaden `Atom` projection toward the real `ComparisonUnitAtom`**: the current 3-field model is enough for Tier 1 but narrower than production. Once broadened, `atomsEqual_implies_eq` breaks and must be replaced by a weaker lemma keyed on the LCS-relevant subset; the LCS proof's equality branch then has to be rewired around that weaker result. Deferred.
 
-The Tier 2 *helper* differential (`accept` / `reject` / `validateFieldStructure` / `extractText` / `normalizeText`) is a named successor (`add-lean-ts-helper-differential-harness`); it needs a `Doc`→`document.xml` adapter to feed the TS AST path.
+- **Extensional equivalence helpers Lean ↔ TS**: the Tier 2 *helper* differential (`add-lean-ts-helper-differential-harness`) is now **landed** for the three modeled helpers. The genuine `Tier2.AcceptReject.accept`/`.reject` and `Tier2.FieldStructure.validateFieldStructure` compile to the `leanHelperDifferential` exe (`verification/lean/DifferentialHelpers.lean`) and run against the production `acceptAllChanges`/`rejectAllChanges`/`validateFieldStructure` over shared generated `Doc`s by `packages/docx-core/src/integration/lean-differential-helpers.test.ts`, via a `Doc`→`document.xml` adapter and a canonical token projection. The harness surfaced **four characterized model gaps** the current spike does not capture — its concrete worklist for the model-broadening proof increment:
+  - **G1** `w:fldChar` inside `w:del`: Lean `validateFieldStructure` returns `true`, the TS engine returns `false` (constraint (3), field-chars-not-inside-`del`, `pipeline.ts:542`, is unmodeled).
+  - **G2** `w:delInstrText` outside `w:del`: Lean `true`, TS `false` (`pipeline.ts:555`).
+  - **G3** accept of an `ins`-wrappered paragraph that collapses to empty: Lean `accept` drops it; the TS engine keeps an empty `<w:p>` (`trackChangesAcceptorAst.ts:399`).
+  - **G4** reject of an `ins`-only paragraph: Lean `reject` keeps an empty `<w:p>` (it never drops paragraphs, `AcceptReject.lean:83-85`); the TS engine drops it (`trackChangesAcceptorAst.ts:536-578`) — the reject-side analog of G3.
+  These are pinned by explicit characterization cases rather than hidden, and feed the deferred proof increment that would teach the Lean model the missing constraints. `extractText` / `normalizeText` are **not** modeled in Lean Tier 2 and are deferred to a further increment (`add-lean-ts-text-extraction-differential`).
 
 Rough effort: **2-6 months** combined (the harness above is the first slice).
 

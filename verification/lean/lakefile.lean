@@ -19,3 +19,12 @@ lean_lib Tier2
 @[default_target]
 lean_exe leanDifferential where
   root := `Differential
+
+-- Tier 2-helper differential harness executable: runs the genuine
+-- `Tier2.AcceptReject.accept` / `.reject` and `Tier2.FieldStructure.validateFieldStructure`
+-- over batched JSON stdin/stdout so the TS bridge can assert Lean↔TS accept/reject/validate
+-- extensional equivalence (Tier 2.5, second increment). Plain executable code with no proof
+-- placeholders, so the zero-proof-placeholder audit is unaffected.
+@[default_target]
+lean_exe leanHelperDifferential where
+  root := `DifferentialHelpers
