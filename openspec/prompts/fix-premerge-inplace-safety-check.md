@@ -29,7 +29,7 @@ When `premergeRuns: true` (the default since v0.3), the ILPA corpus comparison w
 
 Merges adjacent `<w:r>` siblings that have identical `w:rPr` formatting and identical element attributes. Only merges runs whose children are all in `{w:rPr, w:t, w:tab, w:br, w:cr, w:delText}`. Mutates the DOM in-place: moves children from the second run into the first, then removes the second run. Conservative — no semantic change to text.
 
-### preSplitMixedStatusRuns (inPlaceModifier.ts:1292-1409)
+### preSplitMixedStatusRuns (inPlaceModifier-presplit.ts)
 
 After comparison, revised-tree runs may contain atoms with mixed statuses (e.g., part Equal, part Inserted). This function splits those runs at status boundaries so each fragment can be wrapped independently. Has a cross-run safety guard: if atom lengths exceed run visible length (indicating a cross-run merged atom), the run is skipped. Skips collapsed field atoms and field character elements entirely.
 
