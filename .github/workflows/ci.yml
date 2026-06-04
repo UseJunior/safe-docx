@@ -69,6 +69,8 @@ jobs:
         run: npm run build
       - name: Lint/typecheck workspaces
         run: npm run lint:workspaces
+      - name: Check for import cycles
+        run: npm run check:cycles
 
   spec-coverage:
     runs-on: ubuntu-latest
