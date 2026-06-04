@@ -324,4 +324,55 @@ describe('OpenSpec traceability: add-html-export (HTML serializer)', () => {
       });
     },
   );
+
+  test(
+    'repeated items at the same level after a jump are siblings, not nested deeper',
+    async ({ then }: AllureBddContext) => {
+      const html = body([
+        node({ tagged_text: 'Top', list_metadata: { list_level: 0, is_auto_numbered: true } }),
+        node({ tagged_text: 'B', list_metadata: { list_level: 2, is_auto_numbered: true } }),
+        node({ tagged_text: 'C', list_metadata: { list_level: 2, is_auto_numbered: true } }),
+      ]);
+      await then('the two level-2 items share one nested list (no extra opening between them)', async () => {
+        // Exactly two <ol> open (level 0 + the single clamped nested list shared by B and C).
+        expect((html.match(/<ol>/g) ?? []).length).toBe(2);
+        // B and C are consecutive <li> with no intervening <ol> (they are siblings).
+        expect(html).toMatch(/<li>B\s*<\/li>\s*<li>C/);
+        expect((html.match(/<li[ >]/g) ?? []).length).toBe((html.match(/<\/li>/g) ?? []).length);
+        expect((html.match(/<ol>/g) ?? []).length).toBe((html.match(/<\/ol>/g) ?? []).length);
+      });
+    },
+  );
+
+  test(
+    'an unsafe javascript: hyperlink is neutralized while a safe one is kept',
+    async ({ then }: AllureBddContext) => {
+      const evil = inlineTagsToHtml('<a href="javascript:alert(1)">x</a>');
+      const safe = inlineTagsToHtml('<a href="https://example.com/p?a=1">x</a>');
+      await then('javascript: loses its href; https keeps it', async () => {
+        expect(evil).toBe('<a>x</a>');
+        expect(evil).not.toContain('javascript:');
+        expect(safe).toBe('<a href="https://example.com/p?a=1">x</a>');
+      });
+    },
+  );
+
+  test(
+    'footnote ids stay unique and orphan definitions get no dangling back-link',
+    async ({ then }: AllureBddContext) => {
+      const html = body(
+        // [^1] appears twice (duplicate marker); footnote 2 has a definition but no marker.
+        [node({ tagged_text: 'See[^1] and again[^1].' })],
+        [footnote(1, 'First note.'), footnote(2, 'Orphan note.')],
+      );
+      await then('the second marker gets a distinct id and the orphan omits its back-link', async () => {
+        expect(html).toContain('<sup id="fnref-1">');
+        expect(html).toContain('<sup id="fnref-1-2">'); // duplicate marker → unique id
+        // Footnote 1 was referenced → its definition links back; footnote 2 was not → no back-link.
+        expect(html).toContain('<li id="fn-1">First note. <a href="#fnref-1">↩</a></li>');
+        expect(html).toContain('<li id="fn-2">Orphan note.</li>');
+        expect(html).not.toContain('#fnref-2');
+      });
+    },
+  );
 });

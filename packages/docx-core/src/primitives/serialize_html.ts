@@ -21,6 +21,13 @@ import type { Footnote } from './footnotes.js';
 /** Footnote markers already injected into `tagged_text`, e.g. `[^1]`, `[^12]`. */
 const FOOTNOTE_MARKER_RE = /\[\^(\d+)\]/g;
 
+/**
+ * Tracks which footnote numbers were actually rendered as markers in the body, and how many
+ * times each appeared. Used to (a) give repeated markers unique element ids and (b) emit a
+ * back-link from a definition only when its marker was really rendered (no dangling `#fnref-n`).
+ */
+type FootnoteRefs = Map<number, number>;
+
 /** Escape the characters that are significant in HTML *text* content. */
 function escapeHtmlText(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
@@ -30,19 +37,42 @@ function escapeHtmlText(text: string): string {
  * Escape literal text and turn any injected `[^n]` footnote marker into a trusted superscript
  * anchor. Order matters: the literal spans are escaped, but the generated `<sup>` is emitted
  * verbatim (escaping it would render the markup literally).
+ *
+ * When a `refs` registry is supplied, the first marker for footnote N keeps `id="fnref-N"` (the
+ * definition's back-link target); later repeats get a unique `id="fnref-N-k"` so the document
+ * never carries duplicate ids.
  */
-function renderTextWithFootnotes(raw: string): string {
+function renderTextWithFootnotes(raw: string, refs?: FootnoteRefs): string {
   let out = '';
   let last = 0;
   for (const match of raw.matchAll(FOOTNOTE_MARKER_RE)) {
     const idx = match.index ?? 0;
     out += escapeHtmlText(raw.slice(last, idx));
     const n = match[1]!;
-    out += `<sup id="fnref-${n}"><a href="#fn-${n}">${n}</a></sup>`;
+    let id = `fnref-${n}`;
+    if (refs) {
+      const k = (refs.get(Number(n)) ?? 0) + 1;
+      refs.set(Number(n), k);
+      if (k > 1) id = `fnref-${n}-${k}`;
+    }
+    out += `<sup id="${id}"><a href="#fn-${n}">${n}</a></sup>`;
     last = idx + match[0].length;
   }
   out += escapeHtmlText(raw.slice(last));
   return out;
+}
+
+/**
+ * Allow only schemes that are safe to follow from a rendered document. The href arrives already
+ * attribute-escaped from `formatting_tags.ts`; a `javascript:`/`data:`/`vbscript:` URL would
+ * otherwise pass through and execute on click. Relative URLs and fragments (no scheme) are kept.
+ */
+const SAFE_URL_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
+function isSafeHref(href: string): boolean {
+  // Strip whitespace/control chars browsers ignore (e.g. `java\tscript:`) before scheme-matching.
+  const v = href.replace(/[\u0000-\u0020]/g, '').toLowerCase();
+  const scheme = /^([a-z][a-z0-9+.-]*):/.exec(v);
+  return scheme ? SAFE_URL_SCHEMES.has(scheme[1]!) : true;
 }
 
 // ── Font (`<font ...>`) → sanitized inline style ─────────────────────────────
@@ -93,11 +123,11 @@ function fontTagToSpan(tag: string): string {
  *
  * Literal text spans are HTML-escaped; injected `[^n]` footnote markers become `<sup>` anchors.
  */
-export function inlineTagsToHtml(text: string): string {
+export function inlineTagsToHtml(text: string, refs?: FootnoteRefs): string {
   let out = '';
   for (const token of tokenizeToonInline(text)) {
     if (token.kind === 'text') {
-      out += renderTextWithFootnotes(token.value);
+      out += renderTextWithFootnotes(token.value, refs);
       continue;
     }
     const tag = token.value;
@@ -105,7 +135,13 @@ export function inlineTagsToHtml(text: string): string {
     else if (tag === '</highlight>') out += '</mark>';
     else if (tag.startsWith('<font ')) out += fontTagToSpan(tag);
     else if (tag === '</font>') out += '</span>';
-    // <b>/<i>/<u>/<a ...>/</a> and their closers are already valid HTML — pass through.
+    else if (tag.startsWith('<a ')) {
+      // Drop the href for unsafe schemes (e.g. `javascript:`); keep the anchor so `</a>` still
+      // balances and the link text survives as plain text.
+      const href = /href="([^"]*)"/.exec(tag)?.[1] ?? '';
+      out += isSafeHref(href) ? tag : '<a>';
+    }
+    // <b>/<i>/<u> and `</a>` and the closers are already valid HTML — pass through.
     else out += tag;
   }
   return out;
@@ -125,7 +161,7 @@ function isStructuralHeading(node: DocumentViewNode): boolean {
  * - Vertically merged cells and nested tables flatten into the body-level grid; multi-paragraph
  *   cells join with `<br/>`.
  */
-function renderTable(group: DocumentViewNode[]): string {
+function renderTable(group: DocumentViewNode[], refs: FootnoteRefs): string {
   let totalCols = 0;
   for (const n of group) {
     const tc = n.table_context;
@@ -146,7 +182,7 @@ function renderTable(group: DocumentViewNode[]): string {
       rowOrder.push(tc.row_index);
     }
     const cellMap = rows.get(tc.row_index)!;
-    const cellHtml = inlineTagsToHtml(n.tagged_text).replace(/\s*\n+\s*/g, '<br/>').trim();
+    const cellHtml = inlineTagsToHtml(n.tagged_text, refs).replace(/\s*\n+\s*/g, '<br/>').trim();
     const parts = cellMap.get(tc.col_index) ?? [];
     if (cellHtml) parts.push(cellHtml);
     cellMap.set(tc.col_index, parts);
@@ -187,29 +223,35 @@ function renderTable(group: DocumentViewNode[]): string {
  * malformed HTML.
  */
 class ListBuilder {
-  private stack: Array<'ul' | 'ol'> = [];
+  // Each open list records its tag AND the item `level` that opened it. Storing the level (not
+  // just depth) is what keeps consecutive same-level items siblings even after a level jump that
+  // skipped intermediate depths — depth alone would drift deeper on every repeated jumped level.
+  private stack: Array<{ tag: 'ul' | 'ol'; level: number }> = [];
   private out: string[] = [];
 
   /** Append one list item at the given 0-based level with the given list tag. */
   item(level: number, tag: 'ul' | 'ol', content: string): void {
-    const targetDepth = Math.max(1, level + 1);
-    if (this.stack.length < targetDepth) {
-      // Grow by exactly one (clamp jumps) — the nested list lives inside the current open <li>.
-      this.out.push(`<${tag}>`);
-      this.stack.push(tag);
-    } else {
-      while (this.stack.length > targetDepth) {
-        this.out.push('</li>');
-        this.out.push(`</${this.stack.pop()}>`);
-      }
-      // Close the sibling <li> we are returning to before opening the new one.
+    const lvl = Math.max(0, level);
+    // Close any lists deeper than this item's level.
+    while (this.stack.length > 0 && this.stack[this.stack.length - 1]!.level > lvl) {
       this.out.push('</li>');
-      // Same-depth list-kind change (<ol>↔<ul>): close and reopen with the desired tag.
-      if (this.stack[this.stack.length - 1] !== tag) {
-        this.out.push(`</${this.stack.pop()}>`);
+      this.out.push(`</${this.stack.pop()!.tag}>`);
+    }
+    const top = this.stack[this.stack.length - 1];
+    if (top && top.level === lvl) {
+      // Sibling at the same list level: close the previous item; swap list kind if it changed.
+      this.out.push('</li>');
+      if (top.tag !== tag) {
+        this.out.push(`</${this.stack.pop()!.tag}>`);
         this.out.push(`<${tag}>`);
-        this.stack.push(tag);
+        this.stack.push({ tag, level: lvl });
       }
+    } else {
+      // Deeper than the current top (or the first item): open one nested list inside the open
+      // <li>. We record the item's actual level, so a jump of >1 opens a single step and a later
+      // same-level item lands here as a sibling rather than nesting further.
+      this.out.push(`<${tag}>`);
+      this.stack.push({ tag, level: lvl });
     }
     this.out.push(`<li>${content}`);
   }
@@ -223,7 +265,7 @@ class ListBuilder {
   flush(): string {
     while (this.stack.length > 0) {
       this.out.push('</li>');
-      this.out.push(`</${this.stack.pop()}>`);
+      this.out.push(`</${this.stack.pop()!.tag}>`);
     }
     const html = this.out.join('\n');
     this.out = [];
@@ -231,9 +273,9 @@ class ListBuilder {
   }
 }
 
-function renderListContent(node: DocumentViewNode): { tag: 'ul' | 'ol'; content: string } {
+function renderListContent(node: DocumentViewNode, refs: FootnoteRefs): { tag: 'ul' | 'ol'; content: string } {
   const lm = node.list_metadata;
-  const html = inlineTagsToHtml(node.tagged_text).trim();
+  const html = inlineTagsToHtml(node.tagged_text, refs).trim();
   // Auto-numbered lists become <ol> (the renderer numbers them). Manual/legal labels keep their
   // literal text (`Section 2.1`, `(a)`) prefixed inside a <ul> item — a bare number would
   // silently destroy meaningful legal labels. `is_auto_numbered` is the reliable signal:
@@ -243,12 +285,15 @@ function renderListContent(node: DocumentViewNode): { tag: 'ul' | 'ol'; content:
   return { tag: 'ul', content: label ? `${escapeHtmlText(label)} ${html}` : html };
 }
 
-function renderFootnotes(footnotes: Footnote[]): string {
+function renderFootnotes(footnotes: Footnote[], refs: FootnoteRefs): string {
   const defs = footnotes.filter((fn) => fn.displayNumber > 0);
   if (defs.length === 0) return '';
   const items = defs.map((fn) => {
     const body = escapeHtmlText(fn.text.replace(/\s+/g, ' ').trim());
-    return `<li id="fn-${fn.displayNumber}">${body} <a href="#fnref-${fn.displayNumber}">↩</a></li>`;
+    // Only link back when the marker was actually rendered in the body — otherwise the `#fnref-n`
+    // target does not exist (an unreferenced/orphan footnote definition), so omit the back-link.
+    const backlink = refs.has(fn.displayNumber) ? ` <a href="#fnref-${fn.displayNumber}">↩</a>` : '';
+    return `<li id="fn-${fn.displayNumber}">${body}${backlink}</li>`;
   });
   return ['<section class="footnotes">', '<hr/>', '<ol>', ...items, '</ol>', '</section>'].join('\n');
 }
@@ -297,6 +342,8 @@ export function serializeToHtml(
   opts: SerializeHtmlOptions = {},
 ): string {
   const blocks: string[] = [];
+  // Footnote markers rendered in the body, used to dedupe ids and gate definition back-links.
+  const refs: FootnoteRefs = new Map();
   let lists: ListBuilder | null = null;
 
   const closeLists = (): void => {
@@ -317,7 +364,7 @@ export function serializeToHtml(
         i++;
       }
       i--; // for-loop will re-increment
-      const table = renderTable(group);
+      const table = renderTable(group, refs);
       if (table) blocks.push(table);
       continue;
     }
@@ -326,14 +373,14 @@ export function serializeToHtml(
     if (isStructuralHeading(node)) {
       closeLists();
       const level = Math.min(6, Math.max(1, node.heading!.level as number));
-      blocks.push(`<h${level}>${inlineTagsToHtml(node.tagged_text).trim()}</h${level}>`);
+      blocks.push(`<h${level}>${inlineTagsToHtml(node.tagged_text, refs).trim()}</h${level}>`);
       continue;
     }
 
     // ── List items: accumulated in a stateful nested-list builder ──
     if (node.list_metadata.list_level >= 0) {
       if (!lists) lists = new ListBuilder();
-      const { tag, content } = renderListContent(node);
+      const { tag, content } = renderListContent(node, refs);
       lists.item(Math.max(0, node.list_metadata.list_level), tag, content);
       continue;
     }
@@ -341,13 +388,13 @@ export function serializeToHtml(
     // ── Normal paragraphs (heuristic headings land here: their run-in bold is already in the
     //     inline tags, so they stay <p> rather than being promoted to a heading). ──
     closeLists();
-    const html = inlineTagsToHtml(node.tagged_text).trim();
+    const html = inlineTagsToHtml(node.tagged_text, refs).trim();
     if (html) blocks.push(`<p>${html}</p>`);
   }
 
   closeLists();
 
-  const footnotesHtml = renderFootnotes(footnotes);
+  const footnotesHtml = renderFootnotes(footnotes, refs);
   if (footnotesHtml) blocks.push(footnotesHtml);
 
   const body = blocks.join('\n');
