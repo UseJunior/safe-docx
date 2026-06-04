@@ -232,7 +232,12 @@ function closeTags(out: string[], tags: ActiveTags): void {
   if (tags.hyperlinkUrl !== null) out.push('</a>');
 }
 
-function escapeHtmlAttribute(value: string): string {
+/**
+ * Escape a string for safe inclusion inside an HTML double-quoted attribute value. Exported so
+ * the HTML serializer (`serialize_html.ts`) reuses one attribute-escaper rather than re-deriving
+ * it and drifting from what the tag emitter assumes.
+ */
+export function escapeHtmlAttribute(value: string): string {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('"', '&quot;')

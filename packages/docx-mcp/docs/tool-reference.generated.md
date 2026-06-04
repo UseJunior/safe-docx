@@ -141,7 +141,7 @@ Save document. For DOCX: saves clean and/or tracked changes output. For Google D
 
 ## `export`
 
-Export a document to a portable text rendering. Writes an output file (default: source path with the format extension, e.g. .md) and returns its path, byte count, and the rendered content. Markdown is intentionally lossy (no round-trip). DOCX only — Google Docs is not supported.
+Export a document to a portable rendering (Markdown or semantic HTML). Writes an output file (default: source path with the format extension, e.g. .md or .html) and returns its path, byte count, and the rendered content. Intentionally lossy (no round-trip); HTML is the semantic tier, not pixel-faithful. DOCX only — Google Docs is not supported.
 
 - readOnly: `false`
 - destructive: `false`
@@ -149,10 +149,10 @@ Export a document to a portable text rendering. Writes an output file (default: 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
-| `format` | `enum("markdown")` | no | Output format. 'markdown' (default). 'html'/'text' are planned. |
+| `format` | `enum("markdown", "html")` | no | Output format: 'markdown' (default) or 'html'. 'text' is planned. |
 | `output_path` | `string` | no | Where to write the rendering. Defaults to the source path with the format extension. |
 | `allow_overwrite` | `boolean` | no | Overwrite output_path if it already exists. Default: false. |
-| `include_markdown` | `boolean` | no | Include the rendered content in the response. Default: true; set false for large documents. |
+| `include_markdown` | `boolean` | no | Include the rendered content (under `content`) in the response. Default: true; set false for large documents. |
 
 ## `format_layout`
 
