@@ -74,8 +74,21 @@ const ALL_INLINE_TAGS_RE =
  * `<highlight>`, `<highlighting>`, `<a href="...">`, `</a>`, `<font ...>`,
  * `</font>`, `<header>`, `</header>`, `<RunInHeader>`, `</RunInHeader>`,
  * `<definition>`, `</definition>`.
+ *
+ * The replacement runs to a fixpoint (loop until the string stops changing) rather than a
+ * single pass: removing one tag can splice two halves together into a *new* tag occurrence
+ * (e.g. `<b<b>i>` → `<bi>`), which a single pass would leave behind. Looping closes that
+ * `js/incomplete-multi-character-sanitization` gap. Well-formed document `tagged_text`
+ * (non-nested, known tags only) reaches the fixpoint on the first pass, so this is a no-op
+ * for real input.
  */
 export function stripAllInlineTags(text: string): string {
-  ALL_INLINE_TAGS_RE.lastIndex = 0;
-  return text.replace(ALL_INLINE_TAGS_RE, '');
+  let current = text;
+  let previous: string;
+  do {
+    previous = current;
+    ALL_INLINE_TAGS_RE.lastIndex = 0;
+    current = current.replace(ALL_INLINE_TAGS_RE, '');
+  } while (current !== previous);
+  return current;
 }
