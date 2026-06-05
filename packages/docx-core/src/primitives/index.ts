@@ -9,6 +9,7 @@ export * from './numbering.js';
 export * from './semantic_tags.js';
 export * from './serialize_markdown.js';
 export * from './serialize_html.js';
+export * from './serialize_plaintext.js';
 export * from './styles.js';
 export * from './text.js';
 export * from './xml.js';

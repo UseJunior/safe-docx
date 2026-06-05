@@ -6,13 +6,14 @@ import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { checkGDocsSupport } from './provider_guard.js';
 
-/** Output formats the export tool can emit. Extensible: `text` lands in #305. */
-const SUPPORTED_FORMATS = ['markdown', 'html'] as const;
+/** Output formats the export tool can emit. */
+const SUPPORTED_FORMATS = ['markdown', 'html', 'plaintext'] as const;
 type ExportFormat = (typeof SUPPORTED_FORMATS)[number];
 
 const EXTENSION_FOR_FORMAT: Record<ExportFormat, string> = {
   markdown: '.md',
   html: '.html',
+  plaintext: '.txt',
 };
 
 function expandPath(inputPath: string): string {
@@ -26,10 +27,10 @@ function defaultOutputPath(sourcePath: string, format: ExportFormat): string {
 }
 
 /**
- * Export a document to a portable text rendering (Markdown or HTML). Writes the rendering to a
- * file (this tool is NOT read-only) and returns the written path, byte count, and — unless
- * `include_markdown: false` — the rendered content under a format-agnostic `content` key (plus
- * a legacy `markdown` key for the Markdown format).
+ * Export a document to a portable rendering (Markdown, HTML, or plain text). Writes the
+ * rendering to a file (this tool is NOT read-only) and returns the written path, byte count,
+ * and — unless `include_markdown: false` — the rendered content under a format-agnostic
+ * `content` key (plus a legacy `markdown` key for the Markdown format).
  *
  * DOCX only. Google Docs (`google_doc_id`) is out of scope for this tool.
  */
@@ -100,7 +101,12 @@ export async function exportDocument(
       }
     }
 
-    const content = exportFormat === 'html' ? await session.doc.toHtml() : await session.doc.toMarkdown();
+    const content =
+      exportFormat === 'html'
+        ? await session.doc.toHtml()
+        : exportFormat === 'plaintext'
+          ? await session.doc.toPlainText()
+          : await session.doc.toMarkdown();
     const buffer = Buffer.from(content, 'utf8');
 
     const policy = await enforceWritePathPolicy(outputPath);
@@ -108,7 +114,10 @@ export async function exportDocument(
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, new Uint8Array(buffer));
 
-    // `include_markdown` gates the inline content for both formats (its name predates HTML).
+    // `content` is the canonical rendered-content field for every format. `markdown` is kept
+    // populated only for the markdown format as a deprecated back-compat alias (callers
+    // predate the multi-format `content` field). `include_markdown` gates inclusion of both
+    // (its name predates the multi-format era).
     const includeContent = params.include_markdown !== false;
     return ok(
       mergeSessionResolutionMetadata(
