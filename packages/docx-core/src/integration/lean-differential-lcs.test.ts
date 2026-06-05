@@ -83,6 +83,19 @@ interface Divergence {
   lean: Lcs;
 }
 
+/** Per-case output of the Lean exe: the recursive LCS and the functional DP. */
+interface LeanPair {
+  classic: Lcs;
+  dp: Lcs;
+}
+
+interface DpDivergence {
+  index: number;
+  input: Pair;
+  classic: Lcs;
+  dp: Lcs;
+}
+
 /**
  * Build the TS `ComparisonUnitAtom` stub for a symbol. `atomsEqual`
  * (`atomLcs.ts:112-131`) reads only `sha1Hash`, `contentElement.textContent`, and
@@ -128,9 +141,13 @@ function tsLcs(pair: Pair): Lcs {
   };
 }
 
-/** Run the genuine Lean exe over a case batch, spawning once per chunk. */
-function leanLcsBatch(cases: Pair[]): Lcs[] {
-  const out: Lcs[] = [];
+/**
+ * Run the genuine Lean exe over a case batch, spawning once per chunk. Each result
+ * carries both the recursive LCS (`classic`) and the functional Wagner–Fischer DP
+ * (`dp`) for the same case.
+ */
+function leanLcsBatch(cases: Pair[]): LeanPair[] {
+  const out: LeanPair[] = [];
   for (let i = 0; i < cases.length; i += LEAN_CHUNK) {
     const chunk = cases.slice(i, i + LEAN_CHUNK);
     const payload = JSON.stringify({
@@ -150,7 +167,7 @@ function leanLcsBatch(cases: Pair[]): Lcs[] {
     if (proc.status !== 0) {
       throw new Error(`leanDifferential exited ${proc.status}: ${proc.stderr}`);
     }
-    const parsed = JSON.parse(proc.stdout) as { results: Lcs[] };
+    const parsed = JSON.parse(proc.stdout) as { results: LeanPair[] };
     out.push(...parsed.results);
   }
   return out;
@@ -161,14 +178,31 @@ function lcsKey(r: Lcs): string {
   return JSON.stringify([r.matches, r.deletedIndices, r.insertedIndices]);
 }
 
-/** Compare TS vs Lean per case; collect divergences (empty array = full agreement). */
-function findDivergences(cases: Pair[], leanResults: Lcs[]): Divergence[] {
+/** Compare TS vs the recursive Lean LCS per case; collect divergences (empty = agreement). */
+function findDivergences(cases: Pair[], leanResults: LeanPair[]): Divergence[] {
   const divergences: Divergence[] = [];
   for (let i = 0; i < cases.length; i++) {
     const ts = tsLcs(cases[i]!);
-    const lean = leanResults[i]!;
+    const lean = leanResults[i]!.classic;
     if (lcsKey(ts) !== lcsKey(lean)) {
       divergences.push({ index: i, input: cases[i]!, ts, lean });
+    }
+  }
+  return divergences;
+}
+
+/**
+ * Compare the functional DP (`computeAtomLcsDP`) against the recursive LCS
+ * (`computeAtomLcs`) per case. This is the runtime counterpart to the proven
+ * `computeAtomLcsDP_eq_computeAtomLcs` (`verification/lean/LeanSpike/LcsDP.lean`):
+ * the theorem makes it universal, this guards the exact executable functions.
+ */
+function findDpDivergences(cases: Pair[], leanResults: LeanPair[]): DpDivergence[] {
+  const divergences: DpDivergence[] = [];
+  for (let i = 0; i < cases.length; i++) {
+    const { classic, dp } = leanResults[i]!;
+    if (lcsKey(classic) !== lcsKey(dp)) {
+      divergences.push({ index: i, input: cases[i]!, classic, dp });
     }
   }
   return divergences;
@@ -233,11 +267,12 @@ describeMaybe('Lean Differential Harness - LCS extensional equivalence', () => {
   test
     .openspec('[LEAN-DIFF-01] Compiled Lean LCS matches the TS LCS on generated atom-array pairs')
     .openspec('[LEAN-DIFF-02] Exhaustive sweep reproduces the documented zero-divergence result')
-    .openspec('[LEAN-DIFF-03] Harness skips cleanly without the Lean toolchain and runs in CI')(
+    .openspec('[LEAN-DIFF-03] Harness skips cleanly without the Lean toolchain and runs in CI')
+    .openspec('[LEAN-DIFF-05] Functional DP computeAtomLcsDP matches the recursive computeAtomLcs on every pair')(
     'genuine Lean computeAtomLcs and TS computeAtomLcs agree on every generated pair',
     async ({ given, when, then }: AllureBddContext) => {
       let cases: Pair[] = [];
-      let leanResults: Lcs[] = [];
+      let leanResults: LeanPair[] = [];
 
       await given(
         EXHAUSTIVE
@@ -265,6 +300,20 @@ describeMaybe('Lean Differential Harness - LCS extensional equivalence', () => {
           ).toBe(0);
         },
       );
+
+      await then(
+        'the functional DP computeAtomLcsDP is byte-identical to the recursive computeAtomLcs on every case ' +
+          '(runtime guard over the proven computeAtomLcsDP_eq_computeAtomLcs)',
+        async () => {
+          const dpDivergences = findDpDivergences(cases, leanResults);
+          expect(
+            dpDivergences.length,
+            dpDivergences.length === 0
+              ? ''
+              : `${dpDivergences.length}/${cases.length} DP cases diverged. First: ${JSON.stringify(dpDivergences[0])}`,
+          ).toBe(0);
+        },
+      );
     },
     TEST_TIMEOUT,
   );
@@ -277,7 +326,7 @@ describeMaybe('Lean Differential Harness - LCS extensional equivalence', () => {
       let perturbed: Lcs;
 
       await given('a case where the genuine Lean and TS outputs agree', async () => {
-        realLean = leanLcsBatch([pair])[0]!;
+        realLean = leanLcsBatch([pair])[0]!.classic;
         expect(lcsKey(realLean)).toBe(lcsKey(tsLcs(pair)));
       });
 
@@ -290,7 +339,7 @@ describeMaybe('Lean Differential Harness - LCS extensional equivalence', () => {
       });
 
       await then('findDivergences reports the perturbed case with a diff, proving the check is load-bearing', async () => {
-        const divergences = findDivergences([pair], [perturbed!]);
+        const divergences = findDivergences([pair], [{ classic: perturbed!, dp: perturbed! }]);
         expect(divergences.length).toBe(1);
         expect(divergences[0]!.lean).toEqual(perturbed);
         expect(divergences[0]!.ts).toEqual(tsLcs(pair));

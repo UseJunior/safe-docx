@@ -9,10 +9,18 @@ feeds the same generated inputs to the production TS `computeAtomLcs`
 establishing Lean↔TS extensional equivalence of the LCS as a reproducible CI gate
 (Tier 2.5, first increment; see `openspec/changes/add-lean-ts-lcs-differential-harness/`).
 
+Each case is run through BOTH the recursive `LeanSpike.computeAtomLcs` and the
+functional Wagner–Fischer DP `LeanSpike.computeAtomLcsDP` (`LeanSpike/LcsDP.lean`).
+The TS harness asserts (a) the recursive result equals the production TS LCS and
+(b) the DP result equals the recursive one. The DP↔recursive equality is *proven*
+universally (`computeAtomLcsDP_eq_computeAtomLcs`); emitting it here is a runtime
+regression guard over the exact functions the theorem is about.
+
 Wire protocol (one process spawn amortized over the whole batch):
 
   stdin : { "cases":   [ { "orig": [Atom], "rev": [Atom] } ] }
-  stdout: { "results": [ { "matches": [[origIdx, revIdx]], "deletedIndices": [Nat], "insertedIndices": [Nat] } ] }
+  stdout: { "results": [ { "classic": <Lcs>, "dp": <Lcs> } ] }
+          where <Lcs> = { "matches": [[origIdx, revIdx]], "deletedIndices": [Nat], "insertedIndices": [Nat] }
 
 where Atom is the 3-field projection { sha1Hash, textContent, tagName }. `matches`
 uses the array shape `[origIdx, revIdx]` because Lean's `Match = Nat × Nat` serializes
@@ -30,6 +38,7 @@ is required under the pinned toolchain — it brings both `Json.parse` and the
 -/
 import Lean.Data.Json
 import LeanSpike.Lcs
+import LeanSpike.LcsDP
 
 open Lean
 
@@ -63,8 +72,13 @@ def encodeResult (r : LeanSpike.LcsResult) : Json :=
     , ("deletedIndices", toJson r.deletedIndices)
     , ("insertedIndices", toJson r.insertedIndices) ]
 
+/-- Emit both the recursive and the functional-DP results for a case, so the TS
+    harness can cross-check DP↔recursive (proven by `computeAtomLcsDP_eq_computeAtomLcs`)
+    alongside recursive↔TS. -/
 def runCase (c : CaseIn) : Json :=
-  encodeResult (LeanSpike.computeAtomLcs c.orig c.rev)
+  Json.mkObj
+    [ ("classic", encodeResult (LeanSpike.computeAtomLcs c.orig c.rev))
+    , ("dp", encodeResult (LeanSpike.computeAtomLcsDP c.orig c.rev)) ]
 
 def main : IO Unit := do
   let stdin ← IO.getStdin
