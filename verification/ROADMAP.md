@@ -87,15 +87,20 @@ Delivered:
   subset: paragraphs, runs, `ins`/`del`/`moveFrom`/`moveTo` wrappers, and
   `w:fldChar` / `w:instrText` / `w:delInstrText` field atoms.
 - `Tier2/FieldStructure.lean` — the stack-valued field-context walk (mirroring
-  `pastSeparatorAtDepth: number[]` at `pipeline.ts:374-389`), definitional
-  `validateFieldStructure` (`pipeline.ts:352-402`), `fieldContextNeutral`, and
-  the recursive precondition `recursivelyWellformed`.
-- `Tier2/WalkLemmas.lean` — generic walk lemmas (`walkBlocks_append`,
-  context-neutral no-op, `neutral_balanced`, `delInstrText` rewrite-safety).
+  `pastSeparatorAtDepth: number[]` at `pipeline.ts:525-560`) threaded with a
+  structural del-ancestry depth, definitional `validateFieldStructure`
+  (`pipeline.ts:496-565`) that now enforces the DeletedFieldCode locality
+  constraint (`w:fldChar` barred from `w:del`, `w:delInstrText` confined to it —
+  `add-lean-deleted-field-code-constraint`), `fieldContextNeutral`, and the
+  recursive precondition `recursivelyWellformed`.
 - `Tier2/AcceptReject.lean` — definitional `accept` / `reject` mirroring
   `trackChangesAcceptorAst.ts:368-659`.
-- `Tier2/InvFieldOne.lean` — **closed** preservation lemma
-  `field_structure_preserved` (zero `sorry`).
+- `Tier2/InvFieldOne.lean` — **closed** document-level preservation lemma
+  `field_structure_preserved_doc` (zero `sorry`). (The earlier per-subtree
+  `field_structure_preserved` and the standalone `WalkLemmas.lean` were retired
+  when the DeletedFieldCode constraint falsified their per-step rename-safety
+  lemmas; the document-level theorem is non-load-bearing-equivalent and is the
+  sole headline.)
 - `LeanSpike/Spec.lean` — `OoxmlDoc` / `acceptAllChanges` / `rejectAllChanges` /
   `validateFieldStructure` rewired from `axiom` to the Tier 2 definitions;
   `inv_field_001` closed (after the PR #220 weakening) by composing the
@@ -144,11 +149,11 @@ This tier sits between "the Lean model is sound" and "the Lean model is faithful
 - **Extensional equivalence LCS Lean ↔ TS DP**: the previously un-reproducible "1.19M cases, zero divergence" brute-force is now a **reproducible, in-CI executable differential harness** (`add-lean-ts-lcs-differential-harness`). The genuine `LeanSpike.computeAtomLcs` is compiled to the `leanDifferential` exe (`verification/lean/Differential.lean`) and run against the production TS `computeAtomLcs` over shared generated inputs by `packages/docx-core/src/integration/lean-differential-lcs.test.ts`; the exhaustive length-≤6 / 3-symbol sweep (1,194,649 pairs, zero divergence) runs in the `lean-build` workflow. The *formal* closure is now **landed** (`add-lean-ts-lcs-dp-equivalence`): `LeanSpike/LcsDP.lean` defines a functional Wagner-Fischer DP — a length recurrence `lcsLen` (`dp[i][j]`) plus a backtracker `dpMatches` — and proves it produces a **byte-identical** `LcsResult` to the recursive `computeAtomLcs` on every input (`computeAtomLcsDP_eq_computeAtomLcs`, via `lcsLen_eq_rawMatches_length` and `dpMatches_eq_rawMatches`), zero-`sorry`. The two tie-break rules reconcile because `(rawMatches _ _).length` satisfies the Wagner-Fischer length recurrence *definitionally*, so the backtracker's length comparison is the same boolean `rawMatches` tests. The differential exe (`Differential.lean`) now also runs `computeAtomLcsDP` and the test asserts DP↔recursive identity across the full 1.19M-pair sweep, a runtime guard over the exact proven functions. This made the alternative "refactor the TS to match the recursive Lean" route unnecessary.
 - **Broaden `Atom` projection toward the real `ComparisonUnitAtom`** — **landed**. `LeanSpike.Atom` now carries an LCS-irrelevant field (`correlationStatus`) alongside the relevant `sha1Hash`/`textContent`/`tagName`, with a `Atom.relevant` projection. The overfit `atomsEqual_implies_eq` (`a = b`) is retired in favour of `atomsEqual_implies_relevant_eq` (`a.relevant = b.relevant`); `commonSubseq_drop_equal_heads` was generalized to `commonSubseq_drop_heads` (head-agnostic length bound); and the soundness theorems `rawMatches_subsequence` / `lcs_matches_are_common_subsequence` (INV-LCS-001) now state matched-atom agreement as `.map Atom.relevant` equality. The full spike stays zero-`sorry`. This was the structural prerequisite for the formal DP-equivalence proof (now landed, above). The scope note this surfaced (peer review) is also **resolved**: `rawMatches_are_longest` (INV-LCS-002) bounded only *structural* common subsequences (`s <+ orig ∧ s <+ rev`), strictly weaker than optimality under `atomsEqual` after broadening; `rawMatches_are_longest_relevant` (`LeanSpike/LcsDP.lean`) now strengthens optimality to the `atomsEqual` / `Atom.relevant` level — it bounds every common subsequence of the relevant projections (`orig.map Atom.relevant`, `rev.map Atom.relevant`), using the converse `atomsEqual_of_relevant_eq` to make the projection-equality ↔ `atomsEqual` correspondence exact.
 
-- **Extensional equivalence helpers Lean ↔ TS**: the Tier 2 *helper* differential (`add-lean-ts-helper-differential-harness`) is now **landed** for the three modeled helpers. The genuine `Tier2.AcceptReject.accept`/`.reject` and `Tier2.FieldStructure.validateFieldStructure` compile to the `leanHelperDifferential` exe (`verification/lean/DifferentialHelpers.lean`) and run against the production `acceptAllChanges`/`rejectAllChanges`/`validateFieldStructure` over shared generated `Doc`s by `packages/docx-core/src/integration/lean-differential-helpers.test.ts`, via a `Doc`→`document.xml` adapter and a canonical token projection. The harness surfaced **four characterized model gaps** the current spike does not capture — its concrete worklist for the model-broadening proof increment:
-  - **G1** `w:fldChar` inside `w:del`: Lean `validateFieldStructure` returns `true`, the TS engine returns `false` (constraint (3), field-chars-not-inside-`del`, `pipeline.ts:542`, is unmodeled).
-  - **G2** `w:delInstrText` outside `w:del`: Lean `true`, TS `false` (`pipeline.ts:555`).
-  - **G3** accept of an `ins`-wrappered paragraph that collapses to empty: Lean `accept` drops it; the TS engine keeps an empty `<w:p>` (`trackChangesAcceptorAst.ts:399`).
-  - **G4** reject of an `ins`-only paragraph: Lean `reject` keeps an empty `<w:p>` (it never drops paragraphs, `AcceptReject.lean:83-85`); the TS engine drops it (`trackChangesAcceptorAst.ts:536-578`) — the reject-side analog of G3.
+- **Extensional equivalence helpers Lean ↔ TS**: the Tier 2 *helper* differential (`add-lean-ts-helper-differential-harness`) is now **landed** for the three modeled helpers. The genuine `Tier2.AcceptReject.accept`/`.reject` and `Tier2.FieldStructure.validateFieldStructure` compile to the `leanHelperDifferential` exe (`verification/lean/DifferentialHelpers.lean`) and run against the production `acceptAllChanges`/`rejectAllChanges`/`validateFieldStructure` over shared generated `Doc`s by `packages/docx-core/src/integration/lean-differential-helpers.test.ts`, via a `Doc`→`document.xml` adapter and a canonical token projection. The harness surfaced four characterized model gaps; the first two are now **closed** and the remaining two are the worklist for the next model-broadening increment:
+  - **G1 — CLOSED** (`add-lean-deleted-field-code-constraint`): `w:fldChar` inside `w:del`. The Lean field-context walk now carries a structural del-ancestry depth and rejects any `w:fldChar` at depth > 0 (`pipeline.ts:542`), so Lean and TS `validateFieldStructure` both return `false` — agreement.
+  - **G2 — CLOSED** (same increment): `w:delInstrText` outside `w:del` is rejected by both (`pipeline.ts:555`); `delInstrText` is confined to a `w:del` ancestor in the Lean model. Closing G1/G2 strengthened `validateFieldStructure` toward the engine's constraint (3) and retired the legacy `field_structure_preserved` whose precondition the constraint vacated.
+  - **G3** (slice 4b) accept of an `ins`-wrappered paragraph that collapses to empty: Lean `accept` drops it; the TS engine keeps an empty `<w:p>` (`trackChangesAcceptorAst.ts:399`). Needs an `OoxmlModel` paragraph-mark datatype extension.
+  - **G4** (slice 4b) reject of an `ins`-only paragraph: Lean `reject` keeps an empty `<w:p>` (it never drops paragraphs, `AcceptReject.lean:83-85`); the TS engine drops it (`trackChangesAcceptorAst.ts:536-578`) — the reject-side analog of G3.
   These are pinned by explicit characterization cases rather than hidden, and feed the deferred proof increment that would teach the Lean model the missing constraints. `extractText` / `normalizeText` are **not** modeled in Lean Tier 2 and are deferred to a further increment (`add-lean-ts-text-extraction-differential`).
 
 Rough effort: **2-6 months** combined (the harness above is the first slice).

@@ -104,10 +104,10 @@ This shape is future-compatible with ECMA-376-conformant field fragmentation
     `Tier2.FieldStructure.recursivelyWellformed`. -/
 def preservationFriendly (d : Doc) : Prop :=
   validateFieldStructure d = true ∧
-  walkBlocks (.ok []) (acceptBlocks d.blocks)
-    = walkBlocks (.ok []) d.blocks ∧
-  walkBlocks (.ok []) (renameBlocks (rejectBlocks d.blocks))
-    = walkBlocks (.ok []) d.blocks ∧
+  walkBlocks 0 (.ok []) (acceptBlocks d.blocks)
+    = walkBlocks 0 (.ok []) d.blocks ∧
+  walkBlocks 0 (.ok []) (renameBlocks (rejectBlocks d.blocks))
+    = walkBlocks 0 (.ok []) d.blocks ∧
   countBlocks Atom.isBegin (acceptBlocks d.blocks)
     = countBlocks Atom.isEnd (acceptBlocks d.blocks) ∧
   countBlocks Atom.isBegin (renameBlocks (rejectBlocks d.blocks))
