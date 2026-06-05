@@ -18,7 +18,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "lint:workspaces": "npm run lint --workspaces --if-present && npm run lint:allure-imports",
-    "lint:allure-imports": "eslint \"packages/**/*.test.ts\" --ignore-pattern \"packages/google-docs-core/**\"",
+    "lint:allure-imports": "eslint \"packages/**/*.test.ts\" --ignore-pattern \"packages/google-docs-core/**\" --ignore-pattern \"packages/odf-core/**\"",
     "check:cycles": "madge --circular --extensions ts packages/*/src",
     "test": "npm run test --workspaces --if-present",
     "test:run": "npm run test:run --workspaces --if-present",
