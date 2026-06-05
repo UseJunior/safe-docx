@@ -18,6 +18,7 @@ import {
 import { buildNodesForDocumentView, type DocumentStyles, type DocumentViewNode, type TableContext } from './document_view.js';
 import { serializeToMarkdown, type SerializeMarkdownOptions } from './serialize_markdown.js';
 import { serializeToHtml, type SerializeHtmlOptions } from './serialize_html.js';
+import { serializeToPlainText, type SerializePlainTextOptions } from './serialize_plaintext.js';
 import type { FormattingMode } from './formatting_tags.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
@@ -1084,6 +1085,23 @@ export class DocxDocument {
     const { nodes } = this.buildDocumentView({ showFormatting: true });
     const footnotes = await this.getFootnotes();
     return serializeToHtml(nodes, footnotes, opts);
+  }
+
+  /**
+   * Serialize the document to plain text (no markup). Convenience wrapper that wires the
+   * structured document view and footnotes into {@link serializeToPlainText}. All formatting
+   * is stripped; block structure survives as blank-line-separated paragraphs, `- ` bullets,
+   * and tab-separated table rows. Intentionally lossy — see that serializer.
+   *
+   * Uses the same `showFormatting: true` view as {@link toMarkdown} so the block structure
+   * and injected `[^n]` footnote markers match; the inline tags it produces are then stripped.
+   *
+   * Async because footnote extraction reads the footnotes part from the zip.
+   */
+  async toPlainText(opts?: SerializePlainTextOptions): Promise<string> {
+    const { nodes } = this.buildDocumentView({ showFormatting: true });
+    const footnotes = await this.getFootnotes();
+    return serializeToPlainText(nodes, footnotes, opts);
   }
 
   async getFootnote(noteId: number): Promise<Footnote | null> {
