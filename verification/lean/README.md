@@ -4,7 +4,7 @@ This directory contains an experimental Lean 4 project for verifying a narrow pa
 
 This spike now includes a Lean model of the atom-level LCS computation from `packages/docx-core/src/baselines/atomizer/atomLcs.ts:45-104` and a full proof of the four planned LCS invariants on that model.
 
-**Important framing:** the Lean implementation is an *alternate executable specification* of the same LCS, not a line-for-line port of the TypeScript. The TS uses an explicit DP table with backtracking; the Lean uses recursive direct computation over reversed inputs. They produce the same `matches` (verified by exhaustive brute-force testing on all sequence pairs of length ≤ 6 over a 3-symbol alphabet — 1.19M cases, zero divergence — see Stage 2 peer review), but the proof obligation here is "soundness of the Lean model," not "soundness of the TypeScript implementation." Extensional equivalence between the Lean model and the TS code remains deferred future work.
+**Important framing:** the Lean implementation is an *alternate executable specification* of the same LCS, not a line-for-line port of the TypeScript. The TS uses an explicit DP table with backtracking; the recursive Lean `computeAtomLcs` uses direct computation over reversed inputs. They produce the same `matches` (verified by exhaustive brute-force testing on all sequence pairs of length ≤ 6 over a 3-symbol alphabet — 1.19M cases, zero divergence — see Stage 2 peer review). The gap between "same `matches` empirically" and "same `matches` provably" is now closed internally: `LeanSpike/LcsDP.lean` defines a functional Wagner-Fischer DP (`computeAtomLcsDP`) in the *same style* as the TS algorithm and proves it is byte-identical to the recursive `computeAtomLcs` on every input (`computeAtomLcsDP_eq_computeAtomLcs`). Extensional equivalence with the *production TS code specifically* is still established empirically by the in-CI differential harness rather than by proof (Lean cannot reason about TS source).
 
 ## Files
 
@@ -12,6 +12,7 @@ This spike now includes a Lean model of the atom-level LCS computation from `pac
 - `LeanSpike/Atom.lean`
 - `LeanSpike/AtomsEqual.lean`
 - `LeanSpike/Lcs.lean`
+- `LeanSpike/LcsDP.lean` — functional Wagner-Fischer DP (`lcsLen`/`dpMatches`/`computeAtomLcsDP`), its proven equivalence to the recursive `computeAtomLcs`, and the `atomsEqual`-level optimality strengthening.
 - `LeanSpike/Spec.lean`
 - `Tier2.lean` and `Tier2/` — the Tier 2 definitional `OoxmlDoc` subset and the
   closed `inv_field_001` proof. See `Tier2/README.md`.
@@ -25,6 +26,8 @@ Currently proved in this stage:
 - `INV-LCS-002` in `LeanSpike/Lcs.lean`: **optimality.** Any common subsequence of the two input atom lists is no longer than the matched subsequence returned by `computeAtomLcs`.
 - `INV-LCS-003` in `LeanSpike/Lcs.lean`: **strict index monotonicity.** The reported match pairs are pairwise strictly increasing in both original and revised indices.
 - `INV-LCS-004` in `LeanSpike/Lcs.lean`: **partition completeness.** Matched and deleted original indices partition `range original.length`, and matched and inserted revised indices partition `range revised.length`.
+- `INV-LCS-DP-001` in `LeanSpike/LcsDP.lean`: **DP-equivalence (exact output).** The functional Wagner-Fischer DP `computeAtomLcsDP` produces a byte-identical `LcsResult` to the recursive `computeAtomLcs` on every input (`computeAtomLcsDP_eq_computeAtomLcs`), via `lcsLen_eq_rawMatches_length` (the length recurrence agrees) and `dpMatches_eq_rawMatches` (the backtracker makes the same tie-break decisions). This is the universal counterpart to the 1.19M-pair differential.
+- `INV-LCS-002+` in `LeanSpike/LcsDP.lean`: **`atomsEqual`-level optimality** (`rawMatches_are_longest_relevant`). Strengthens INV-LCS-002 from structural common subsequences to common subsequences of the relevant projections (`orig.map Atom.relevant`, `rev.map Atom.relevant`) — the genuinely-stronger statement after the `Atom` broadening (see the scope note below).
 
 ## Specification targets
 
@@ -166,7 +169,7 @@ It concluded *full atom equality* (`a = b`), which held only because `Atom` expo
 
 `atomsEqual_implies_eq` is therefore **retired**. The LCS soundness proof is now keyed on the surviving companion `atomsEqual_implies_relevant_eq` (`AtomsEqual.lean`), which concludes only that the atoms share their LCS-relevant projection `Atom.relevant = (sha1Hash, textContent, tagName)`. The soundness theorems `rawMatches_subsequence` and `lcs_matches_are_common_subsequence` (INV-LCS-001) were re-engineered: their matched-atom equality conjunct is now `(matchedOriginalAtoms …).map Atom.relevant = (matchedRevisedAtoms …).map Atom.relevant`, and `commonSubseq_drop_equal_heads` was generalized to `commonSubseq_drop_heads` (its length bound is head-agnostic, so it no longer needs the two heads to be structurally equal). The full spike remains zero-`sorry`.
 
-**Scope note on optimality (INV-LCS-002).** `rawMatches_are_longest` bounds the length of every *structural* common subsequence (`isCommonSubseq s orig rev := s <+ orig ∧ s <+ rev`, i.e. literal sublists of both). It remains true and non-vacuous after broadening, but it is now *strictly weaker* than "longest under `atomsEqual`": because `atomsEqual` correlates atoms only up to `Atom.relevant`, an `atomsEqual`-matchable common subsequence need not be a structural sublist of both inputs. Strengthening optimality to the `atomsEqual` / projection level is deferred follow-up; the soundness side already speaks at the `Atom.relevant` level.
+**Scope note on optimality (INV-LCS-002) — resolved.** `rawMatches_are_longest` bounds the length of every *structural* common subsequence (`isCommonSubseq s orig rev := s <+ orig ∧ s <+ rev`, i.e. literal sublists of both). It remains true and non-vacuous after broadening, but it is *strictly weaker* than "longest under `atomsEqual`": because `atomsEqual` correlates atoms only up to `Atom.relevant`, an `atomsEqual`-matchable common subsequence need not be a structural sublist of both inputs. This gap is now closed by `rawMatches_are_longest_relevant` (`LeanSpike/LcsDP.lean`), which bounds every common subsequence of the relevant projections (`orig.map Atom.relevant`, `rev.map Atom.relevant`) — i.e. optimality at the `atomsEqual` level. It is provably stronger: e.g. two atoms with equal `Atom.relevant` but differing `correlationStatus` have an `atomsEqual`-matchable common subsequence of length 1 that is *not* a structural sublist of both. The proof reuses the `rawMatches_are_longest` induction skeleton, lifted to projected lists via a type-polymorphic `sublist_drop_heads` and the converse lemma `atomsEqual_of_relevant_eq` (projection equality ⇒ `atomsEqual`).
 
 ## Build
 
