@@ -43,6 +43,8 @@
     "check:allure-filenames": "node scripts/check_allure_test_filename_policy.mjs --baseline coverage/allure-test-filename-baseline.json",
     "check:mcpb-manifest": "npm run check:manifest-contract -w @usejunior/safedocx-mcpb",
     "check:gemini-extension-manifest": "node scripts/check_gemini_extension_manifest.mjs",
+    "check:release-isolation": "node scripts/check-release-isolation.mjs",
+    "test:release-isolation": "node --test scripts/check-release-isolation.test.mjs",
     "preflight:ci": "npm run lint:workspaces && npm run check:spec-coverage && npm run check:tool-docs && npm run check:mcpb-manifest && npm run check:gemini-extension-manifest && npm run check:allure-labels && npm run check:allure-filenames && npm run check:allure-quality && npm run check:conformance-citations && npm run check:conformance-doc && npm run check:site && npm run check:cycles",
     "test:coverage:packages": "npm run test:coverage -w @usejunior/docx-core && npm run test:coverage -w @usejunior/docx-mcp",
     "coverage:matrix": "node scripts/print_coverage_matrix.mjs",

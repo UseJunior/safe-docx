@@ -71,6 +71,10 @@ jobs:
         run: npm run lint:workspaces
       - name: Check for import cycles
         run: npm run check:cycles
+      - name: Check release isolation (ODF decoupling guard)
+        run: npm run check:release-isolation
+      - name: Test release-isolation guard
+        run: npm run test:release-isolation
 
   spec-coverage:
     runs-on: ubuntu-latest
