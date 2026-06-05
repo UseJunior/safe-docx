@@ -161,5 +161,14 @@ export function serializeToPlainText(
     }
   }
 
-  return `${blocks.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n`;
+  // Trim only blank *lines* at the document boundary — not all whitespace. A plain `.trim()`
+  // would eat a leading/trailing tab that is a meaningful empty TSV field when the document
+  // starts or ends with a table whose boundary cell is empty (e.g. a row `\tZ`), breaking the
+  // "every row keeps the same column count" contract.
+  const rendered = blocks
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\n+/, '')
+    .replace(/\n+$/, '');
+  return `${rendered}\n`;
 }

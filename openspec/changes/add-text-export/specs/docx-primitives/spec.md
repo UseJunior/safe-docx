@@ -42,6 +42,11 @@ stripped, and only block structure survives as whitespace separators.
 - **WHEN** the document is serialized to plain text
 - **THEN** the missing grid positions SHALL render as empty tab-delimited fields so every row has the full column count
 
+#### Scenario: empty cells at table boundaries are preserved
+- **GIVEN** a document that starts or ends with a table row whose boundary cell is empty
+- **WHEN** the document is serialized to plain text
+- **THEN** the leading/trailing empty tab field SHALL be preserved (not stripped by document-level trimming) so the row keeps its full column count
+
 #### Scenario: intra-cell newlines collapse to a space
 - **GIVEN** a table cell whose text contains a line break
 - **WHEN** the document is serialized to plain text

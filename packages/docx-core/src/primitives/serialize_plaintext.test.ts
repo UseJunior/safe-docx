@@ -6,7 +6,7 @@ import { LabelType } from './list_labels.js';
 import type { Footnote } from './footnotes.js';
 
 const TEST_FEATURE = 'add-text-export';
-const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
 
 // ── Minimal DocumentViewNode factory ────────────────────────────────────────
 // The serializer only reads `tagged_text`, `heading`, `list_metadata`, and `table_context`;
@@ -185,6 +185,21 @@ describe('OpenSpec traceability: add-text-export (plain text serializer)', () =>
       const out = serializeToPlainText([tableCell(0, 0, 'line one\nline two'), tableCell(0, 1, 'B')]);
       await then('the cell newline becomes a space, not a row break', async () => {
         expect(out).toContain('line one line two\tB');
+      });
+    },
+  );
+
+  test.openspec('empty cells at table boundaries are preserved')(
+    'empty cells at table boundaries are preserved',
+    async ({ then }: AllureBddContext) => {
+      // A document that *starts* with a row whose first cell is empty, and *ends* with a row
+      // whose last cell is empty. The boundary tabs must survive document-level trimming so
+      // the column count stays consistent (regression: a whole-string `.trim()` ate them).
+      const leading = serializeToPlainText([tableCell(0, 0, ''), tableCell(0, 1, 'Z')]);
+      const trailing = serializeToPlainText([tableCell(0, 0, 'X'), tableCell(0, 1, '')]);
+      await then('the leading and trailing empty tab fields are kept', async () => {
+        expect(leading).toBe('\tZ\n');
+        expect(trailing).toBe('X\t\n');
       });
     },
   );
