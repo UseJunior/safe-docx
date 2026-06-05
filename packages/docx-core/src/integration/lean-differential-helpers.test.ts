@@ -25,18 +25,18 @@
  * the production engine provably agree — fldChar/instrText only in top-level runs;
  * delInstrText only in its one OOXML-legal home (inside a w:del, in an open pre-separate
  * field), where both engines agree; and every paragraph keeps a surviving top-level run.
- * Four KNOWN model gaps live OUTSIDE that subset and are pinned by explicit
- * characterization cases rather than hidden:
- *   G1  fldChar inside w:del            → Lean validate=true,  TS validate=false
- *   G2  delInstrText outside w:del      → Lean validate=true,  TS validate=false
+ * Model gaps that live OUTSIDE that subset are pinned by explicit cases rather than hidden.
+ * G1/G2 — the DeletedFieldCode locality constraint — are now CLOSED: the Lean model enforces
+ * it (`add-lean-deleted-field-code-constraint`), so the two engines AGREE:
+ *   G1  fldChar inside w:del            → Lean validate=false, TS validate=false  (agree)
+ *   G2  delInstrText outside w:del      → Lean validate=false, TS validate=false  (agree)
+ * Two KNOWN gaps remain, pinned as characterization cases — the worklist for the next
+ * model-broadening increment (slice 4b: paragraph-mark accept/reject collapse, which needs
+ * an OoxmlModel paragraph-datatype extension), not harness bugs:
  *   G3  accept of an ins-wrappered      → Lean drops the paragraph, TS keeps empty <w:p>
  *       paragraph that collapses to empty
  *   G4  reject of an ins-only paragraph → Lean keeps an empty <w:p>, TS drops it
  *       (Lean `reject` never drops paragraphs; the reject-side analog of G3)
- * These are characterized limitations of the current Lean spike (it models field-balance
- * and instr-inside-open-field but not the del-ancestry constraint, and its accept/reject
- * use simpler paragraph-collapse rules than the engine); they are the worklist for a later
- * model-broadening proof increment, not harness bugs.
  *
  * Gating: when the executable is absent (a developer without the Lean toolchain, or an
  * un-built `.lake`), the suite is SKIPPED with a clear message so `npm test` stays green;
@@ -428,10 +428,12 @@ function buildDocs(): WireDoc[] {
 }
 
 // ---------------------------------------------------------------------------
-// Characterization fixtures (the three KNOWN out-of-subset model gaps).
+// Out-of-subset fixtures. G1/G2 are now CLOSED (both engines agree — the Lean
+// model enforces the DeletedFieldCode locality constraint); G3/G4 remain the two
+// characterized gaps for slice 4b.
 // ---------------------------------------------------------------------------
 
-/** G1: fldChar inside w:del. */
+/** G1: fldChar inside w:del — both engines now reject. */
 const G1_DOC: WireDoc = [
   { body: [{ del: [{ run: { content: [{ fldChar: 'begin' }] } }] }, { run: { content: [{ fldChar: 'end' }] } }] },
 ];
@@ -500,38 +502,75 @@ describeMaybe('Lean Differential Harness - Tier 2 helper extensional equivalence
     TEST_TIMEOUT,
   );
 
-  test.openspec('[LEAN-HELP-03] G1 — fldChar inside w:del is a characterized validate divergence')(
-    'fldChar inside w:del: Lean validate=true, TS validate=false (constraint (3) unmodeled)',
+  test
+    .openspec('[LEAN-HELP-03] G1 — fldChar inside w:del: Lean and TS validate agree (both reject)')
+    .openspec('[LEAN-DFC-01] fldChar inside w:del is rejected by both engines')(
+    'fldChar inside w:del: Lean validate=false, TS validate=false (constraint (3) modeled)',
     async ({ given, when, then }: AllureBddContext) => {
       let lean: HelperResult;
-      await given('a doc whose field characters sit inside a w:del wrapper', async () => {
+      await given('a doc with a w:fldChar inside a w:del wrapper', async () => {
         lean = leanHelperBatch([G1_DOC])[0]!;
       });
-      let tsValidate = false;
+      let tsValidate = true;
       await when('both engines validate it', async () => {
         tsValidate = validateFieldStructure(renderDocToXml(G1_DOC));
       });
-      await then('Lean accepts it (true) while the TS engine rejects it (false)', async () => {
-        expect(lean!.validate).toBe(true);
+      await then('both reject it (false): the Lean model now enforces the DeletedFieldCode locality constraint', async () => {
+        expect(lean!.validate).toBe(false);
         expect(tsValidate).toBe(false);
+        expect(lean!.validate).toBe(tsValidate);
       });
     },
   );
 
-  test.openspec('[LEAN-HELP-04] G2 — delInstrText outside w:del is a characterized validate divergence')(
-    'delInstrText outside w:del: Lean validate=true, TS validate=false',
+  test
+    .openspec('[LEAN-HELP-04] G2 — delInstrText outside w:del: Lean and TS validate agree (both reject)')
+    .openspec('[LEAN-DFC-02] delInstrText outside w:del is rejected by both engines')(
+    'delInstrText outside w:del: Lean validate=false, TS validate=false (constraint (3) modeled)',
     async ({ given, when, then }: AllureBddContext) => {
       let lean: HelperResult;
       await given('a doc with a delInstrText in an open pre-separate field outside any w:del', async () => {
         lean = leanHelperBatch([G2_DOC])[0]!;
       });
-      let tsValidate = false;
+      let tsValidate = true;
       await when('both engines validate it', async () => {
         tsValidate = validateFieldStructure(renderDocToXml(G2_DOC));
       });
-      await then('Lean accepts it (true) while the TS engine rejects it (false)', async () => {
-        expect(lean!.validate).toBe(true);
+      await then('both reject it (false): delInstrText is confined to a w:del ancestor in both models', async () => {
+        expect(lean!.validate).toBe(false);
         expect(tsValidate).toBe(false);
+        expect(lean!.validate).toBe(tsValidate);
+      });
+    },
+  );
+
+  test.openspec('[LEAN-DFC-03] Legal delInstrText inside an open field inside w:del still validates')(
+    'delInstrText inside w:del in an open pre-separate field: Lean and TS both accept (true)',
+    async ({ given, when, then }: AllureBddContext) => {
+      // Field opened at top level, delInstrText nested inside a w:del while the field is
+      // open and pre-separate — the one OOXML-legal home. The del-ancestry gate is
+      // orthogonal to the field context that crosses the w:del boundary.
+      const LEGAL_DOC: WireDoc = [
+        {
+          body: [
+            { run: { content: [{ fldChar: 'begin' }] } },
+            { del: [{ run: { content: [{ delInstrText: 'PAGE' }] } }] },
+            { run: { content: [{ fldChar: 'separate' }, { text: 'a' }, { fldChar: 'end' }] } },
+          ],
+        },
+      ];
+      let lean: HelperResult;
+      await given('a doc with a delInstrText in its one OOXML-legal home (inside w:del, open pre-separate field)', async () => {
+        lean = leanHelperBatch([LEGAL_DOC])[0]!;
+      });
+      let tsValidate = false;
+      await when('both engines validate it', async () => {
+        tsValidate = validateFieldStructure(renderDocToXml(LEGAL_DOC));
+      });
+      await then('both accept it (true): the del-ancestry gate does not disturb the legal in-del field code', async () => {
+        expect(lean!.validate).toBe(true);
+        expect(tsValidate).toBe(true);
+        expect(lean!.validate).toBe(tsValidate);
       });
     },
   );

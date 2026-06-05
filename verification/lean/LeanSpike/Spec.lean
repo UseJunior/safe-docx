@@ -98,11 +98,17 @@ def normalizeText : List (List Char) → List (List Char) :=
 
     To make this axiom future-compatible with that work, we weaken the
     precondition here to `preservationFriendly` (asserts only the *composed*
-    walk and balance equalities, not pointwise neutrality of each wrapper).
-    The legacy `Tier2.InvFieldOne.field_structure_preserved` lemma remains
-    proved (and the underlying `fieldContextNeutral` predicate still exists in
-    `Tier2.FieldStructure`) for audit traceability, but is no longer on the
-    path to `inv_field_001`.
+    walk and balance equalities, not pointwise neutrality of each wrapper). The
+    `fieldContextNeutral` / `recursivelyWellformed` predicates still exist in
+    `Tier2.FieldStructure` as the documented stronger contrast. The previously
+    retained legacy `field_structure_preserved` (which consumed the per-subtree
+    `recursivelyWellformed`) has since been **retired**: modeling the
+    DeletedFieldCode locality constraint (`w:fldChar` barred from `<w:del>`,
+    `w:delInstrText` confined to it) made `recursivelyWellformed` exclude legal
+    deleted-field-code documents and falsified the per-step rename-safety lemmas
+    the legacy proof relied on, so it is no longer provable as stated. It was
+    never on the path to `inv_field_001`, which rides
+    `field_structure_preserved_doc` below.
 
     Evidence: the field-bearing bridge fixtures
     (`packages/docx-core/src/integration/lean-spec-bridge.test.ts` — NUMPAGES

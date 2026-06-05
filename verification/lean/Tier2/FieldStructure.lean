@@ -40,59 +40,81 @@ def WalkResult.isValid : WalkResult → Bool
   | .ok _ => true
   | .invalid => false
 
-/-- Step the field-context walk across one atom. Mirrors `pipeline.ts:374-389`:
-    `begin` pushes a fresh `false`; `separate` sets the top bit (no-op on the
-    empty stack, matching the `if (depth > 0)` guard at `pipeline.ts:387`);
-    `end` pops (no-op on empty, matching `pipeline.ts:389`); `instrText` /
-    `delInstrText` require a non-empty stack whose top bit is `false`. -/
-def stepAtom (r : WalkResult) (a : Atom) : WalkResult :=
+/-- Step the field-context walk across one atom, at structural del-ancestry depth
+    `delDepth` (the number of enclosing `w:del` wrappers). Mirrors the main
+    `validateFieldStructure` scan at `pipeline.ts:525-560`:
+
+    * field-context state — `begin` pushes a fresh `false`; `separate` sets the
+      top bit (no-op on the empty stack, matching the `if (depth > 0)` guard at
+      `pipeline.ts:548`); `end` pops (no-op on empty, `pipeline.ts:550`);
+      `instrText` requires a non-empty stack whose top bit is `false`
+      (`pipeline.ts:553`);
+    * DeletedFieldCode locality (constraint (3)) — a `w:fldChar` of ANY
+      `w:fldCharType` at `delDepth > 0` is `invalid` (`pipeline.ts:542`, G1), and a
+      `w:delInstrText` at `delDepth = 0` is `invalid` (`pipeline.ts:555`, G2). The
+      `delInstrText` open-pre-`separate` field check (`pipeline.ts:556`) still
+      applies once the del-ancestry gate passes. -/
+def stepAtom (delDepth : Nat) (r : WalkResult) (a : Atom) : WalkResult :=
   match r with
   | .invalid => .invalid
   | .ok ctx =>
     match a with
     | .text _ => .ok ctx
     | .delText _ => .ok ctx
-    | .fldChar .begin => .ok (false :: ctx)
-    | .fldChar .separate =>
-      match ctx with
-      | [] => .ok []
-      | _ :: rest => .ok (true :: rest)
-    | .fldChar .endf =>
-      match ctx with
-      | [] => .ok []
-      | _ :: rest => .ok rest
+    | .fldChar k =>
+      -- constraint (3): no field characters inside a `del` ancestor (G1)
+      if delDepth > 0 then .invalid
+      else
+        match k with
+        | .begin => .ok (false :: ctx)
+        | .separate =>
+          match ctx with
+          | [] => .ok []
+          | _ :: rest => .ok (true :: rest)
+        | .endf =>
+          match ctx with
+          | [] => .ok []
+          | _ :: rest => .ok rest
     | .instrText _ =>
       match ctx with
       | false :: _ => .ok ctx
       | _ => .invalid
     | .delInstrText _ =>
-      match ctx with
-      | false :: _ => .ok ctx
-      | _ => .invalid
+      -- constraint (3): `delInstrText` only inside a `del` ancestor (G2)
+      if delDepth = 0 then .invalid
+      else
+        match ctx with
+        | false :: _ => .ok ctx
+        | _ => .invalid
 
-/-- Step the field-context walk across a run's atoms, left to right. -/
-def stepAtoms (r : WalkResult) (as : List Atom) : WalkResult :=
-  as.foldl stepAtom r
+/-- Step the field-context walk across a run's atoms, left to right, at del-depth
+    `delDepth`. -/
+def stepAtoms (delDepth : Nat) (r : WalkResult) (as : List Atom) : WalkResult :=
+  as.foldl (stepAtom delDepth) r
 
-/-- Walk the field context across a block sequence in document order. Wrappers
-    (`ins` / `del` / `moveFrom` / `moveTo`) and transparent containers (`other`)
-    are all transparent for the walk: the walk simply descends into their
-    children, because the TS `validateFieldStructure` scans every element
-    regardless of tag (`pipeline.ts:396`). -/
-def walkBlocks : WalkResult → List Block → WalkResult
+/-- Walk the field context across a block sequence in document order at
+    del-ancestry depth `delDepth`. The walk descends into every wrapper and
+    transparent container, because the TS `validateFieldStructure` scans every
+    element regardless of tag (`pipeline.ts:528`). Only `del` is structurally
+    significant: descending into a `del` subtree increments `delDepth`
+    (`pipeline.ts:533-538`), so the atom-level constraint-(3) gate in `stepAtom`
+    can see the del-ancestry. The linear field context flows across the `del`
+    boundary unchanged, exactly as the engine shares `depth`/`pastSeparatorAtDepth`
+    across the `insideDelDepth` recursion. -/
+def walkBlocks (delDepth : Nat) : WalkResult → List Block → WalkResult
   | r, [] => r
-  | r, .run run :: rest => walkBlocks (stepAtoms r run.content) rest
-  | r, .ins bs :: rest => walkBlocks (walkBlocks r bs) rest
-  | r, .del bs :: rest => walkBlocks (walkBlocks r bs) rest
-  | r, .moveFrom bs :: rest => walkBlocks (walkBlocks r bs) rest
-  | r, .moveTo bs :: rest => walkBlocks (walkBlocks r bs) rest
-  | r, .other _ bs :: rest => walkBlocks (walkBlocks r bs) rest
+  | r, .run run :: rest => walkBlocks delDepth (stepAtoms delDepth r run.content) rest
+  | r, .ins bs :: rest => walkBlocks delDepth (walkBlocks delDepth r bs) rest
+  | r, .del bs :: rest => walkBlocks delDepth (walkBlocks (delDepth + 1) r bs) rest
+  | r, .moveFrom bs :: rest => walkBlocks delDepth (walkBlocks delDepth r bs) rest
+  | r, .moveTo bs :: rest => walkBlocks delDepth (walkBlocks delDepth r bs) rest
+  | r, .other _ bs :: rest => walkBlocks delDepth (walkBlocks delDepth r bs) rest
 termination_by _ bs => sizeOf bs
 
-/-- Walk a single block. Provided for parity with `design.md`'s stated API; the
-    primary recursive object is `walkBlocks`. -/
+/-- Walk a single block at top-level del-depth. Provided for parity with
+    `design.md`'s stated API; the primary recursive object is `walkBlocks`. -/
 def stepBlock (r : WalkResult) (b : Block) : WalkResult :=
-  walkBlocks r [b]
+  walkBlocks 0 r [b]
 
 /-- Atom-level predicate: this atom is a `w:fldChar` with `w:fldCharType="begin"`. -/
 def Atom.isBegin : Atom → Bool
@@ -120,9 +142,11 @@ termination_by bs => sizeOf bs
 def fldCharBalanced (d : Doc) : Bool :=
   countBlocks Atom.isBegin d.blocks == countBlocks Atom.isEnd d.blocks
 
-/-- `validateFieldStructure` — definitional mirror of `pipeline.ts:352-402`. -/
+/-- `validateFieldStructure` — definitional mirror of the main scan at
+    `pipeline.ts:496-565` (begin/end balance, the open-field walk, and the
+    DeletedFieldCode locality constraint). The walk starts at del-depth 0. -/
 def validateFieldStructure (d : Doc) : Bool :=
-  fldCharBalanced d && (walkBlocks (.ok []) d.blocks).isValid
+  fldCharBalanced d && (walkBlocks 0 (.ok []) d.blocks).isValid
 
 /-- A wrapper subtree's block list is *field-context-neutral* iff, scanned under
     **any** outer field context, it leaves that context unchanged and never
@@ -130,7 +154,7 @@ def validateFieldStructure (d : Doc) : Bool :=
     `validateFieldStructure`; this is the predicate the preservation lemma needs
     and the property `compareDocumentXml_output_recursivelyWellformed` asserts. -/
 def fieldContextNeutral (bs : List Block) : Prop :=
-  ∀ ctx, walkBlocks (.ok ctx) bs = .ok ctx
+  ∀ ctx, walkBlocks 0 (.ok ctx) bs = .ok ctx
 
 /-- Every track-change wrapper child block list in a block sequence, transitively.
     `other` containers are NOT track-change wrappers — they are traversed but

@@ -45,9 +45,9 @@ axiom per invariant (both owned by Tier 3 — see the Specification Gap section)
   `pipeline.ts:669`), and the inplace-mode comparison-output surface assigned at
   `pipeline.ts:635-650`. The closure rewires the `OoxmlDoc` / `acceptAllChanges` /
   `rejectAllChanges` / `validateFieldStructure` axioms to the definitional Tier 2
-  model (`Tier2/`) and composes the machine-checked preservation lemma
-  `Tier2.InvFieldOne.field_structure_preserved` with a single named residual
-  axiom — see the Specification Gap section below.
+  model (`Tier2/`) and composes the machine-checked document-level preservation
+  lemma `Tier2.InvFieldOne.field_structure_preserved_doc` with a single named
+  residual axiom — see the Specification Gap section below.
 - `INV-RT-001` in `LeanSpike/Spec.lean`: **closed.** Paired round-trip text
   recovery, with `acceptAllChanges` matching the revised document and
   `rejectAllChanges` matching the original document after

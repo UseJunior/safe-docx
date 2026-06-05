@@ -11,41 +11,45 @@ preservation lemma that discharges the `inv_field_001` `sorry` in
 - `OoxmlModel.lean` — definitional datatypes (`Doc`, `Paragraph`, `Block`, `Run`,
   `Atom`, `FldCharKind`) for a tree-structured OOXML subset.
 - `FieldStructure.lean` — the stack-valued field-context walk (`FieldCtx`,
-  `WalkResult`, `stepAtom`, `walkBlocks`), `validateFieldStructure`,
+  `WalkResult`, `stepAtom`, `walkBlocks`) threaded with a structural del-ancestry
+  depth, `validateFieldStructure` (which enforces the DeletedFieldCode locality
+  constraint — `w:fldChar` barred from `w:del`, `w:delInstrText` confined to it),
   `fieldContextNeutral`, and `recursivelyWellformed`.
-- `WalkLemmas.lean` — generic, operation-agnostic walk lemmas: `walkBlocks_append`
-  (L1), `walkBlocks_neutral_ok` (L2 core), `neutral_balanced`,
-  `delInstrText_rewrite_safe` (L3).
 - `AcceptReject.lean` — definitional `accept` and `reject`.
-- `InvFieldOne.lean` — the preservation lemma `field_structure_preserved`
-  (no `sorry`).
+- `InvFieldOne.lean` — the document-level preservation lemma
+  `field_structure_preserved_doc` (no `sorry`), proved walk-free from the
+  `preservationFriendly` precondition plus the `accept_blocks` / `reject_blocks`
+  append lemmas.
 - `RoundTripText.lean` — the round-trip text model (`extractText`, `normalizeText`,
   `revisedText`, `originalText`) and the lemmas that close `inv_rt_001`
   (`text_rename_invariant`, `extractText_reject`, `extractText_accept_normalized`).
 
 ## What the closed proof says
 
-`Tier2.InvFieldOne.field_structure_preserved`: for any `Doc` `d` satisfying
-`recursivelyWellformed d`, both `accept d` and `reject d` satisfy
+`Tier2.InvFieldOne.field_structure_preserved_doc`: for any `Doc` `d` satisfying
+the document-level `preservationFriendly d`, both `accept d` and `reject d` satisfy
 `validateFieldStructure`.
 
-`recursivelyWellformed d` requires (a) the whole document passes
-`validateFieldStructure`, AND (b) every `w:ins` / `w:del` / `w:moveFrom` /
-`w:moveTo` wrapper subtree (transitively) is `fieldContextNeutral` — i.e. scanned
-under **any** outer field context, it returns to that context and never produces
-an invalid state. The field-context walk carries a depth-indexed stack of
-"separator-seen" bits exactly mirroring the TS engine's `pastSeparatorAtDepth:
-number[]` at `packages/docx-core/src/baselines/atomizer/pipeline.ts:374-389`.
+`preservationFriendly d` asserts that the whole document passes
+`validateFieldStructure` and that `accept` / `reject` leave the *composed*
+document-level field walk and begin/end balance unchanged — strictly weaker than
+the per-subtree `recursivelyWellformed` (`∀ ctx` neutrality of every wrapper
+subtree). The field-context walk carries a depth-indexed stack of "separator-seen"
+bits mirroring the TS engine's `pastSeparatorAtDepth: number[]`
+(`packages/docx-core/src/baselines/atomizer/pipeline.ts:525-560`) and a structural
+del-ancestry depth enforcing the DeletedFieldCode locality constraint
+(`pipeline.ts:542`/`555`).
 
-`inv_field_001` in `Spec.lean` is closed by composing the document-level variant
-`field_structure_preserved_doc` (which consumes the weaker `preservationFriendly`
-precondition) with the single named residual axiom
-`compareDocumentXml_output_preservation_friendly`. PR #220 weakened the
-precondition from per-subtree `recursivelyWellformed` to document-level
-`preservationFriendly` so the axiom stays compatible with ECMA-376 field
-fragmentation (#217); the `recursivelyWellformed`-based `field_structure_preserved`
-above is retained as a stronger legacy lemma, off the `inv_field_001` path. See
-`Spec.lean` for detail.
+`inv_field_001` in `Spec.lean` is closed by composing `field_structure_preserved_doc`
+with the single named residual axiom
+`compareDocumentXml_output_preservation_friendly`. PR #220 weakened the precondition
+from per-subtree `recursivelyWellformed` to document-level `preservationFriendly` so
+the axiom stays compatible with ECMA-376 field fragmentation (#217). A stronger legacy
+`field_structure_preserved` over `recursivelyWellformed` was retained for a time but
+**retired** when the DeletedFieldCode constraint (`add-lean-deleted-field-code-constraint`)
+falsified its per-step rename-safety lemmas and made `recursivelyWellformed` exclude
+legal deleted-field-code documents; the document-level theorem is the sole headline.
+See `Spec.lean` for detail.
 
 ## Residual obligations — what the proof does NOT say
 
@@ -60,8 +64,11 @@ above is retained as a stronger legacy lemma, off the `inv_field_001` path. See
 - **Extensional equivalence is not established.** The Lean `accept` / `reject` /
   `validateFieldStructure` are definitional mirrors of the TS
   `acceptAllChanges` / `rejectAllChanges` / `validateFieldStructure`
-  (`trackChangesAcceptorAst.ts:368-659`, `pipeline.ts:352-402`), but no proof
+  (`trackChangesAcceptorAst.ts:368-659`, `pipeline.ts:496-565`), but no proof
   ties the Lean operations extensionally to the TS code. That is **Tier 2.5**.
+  (The Lean↔TS helper differential now exercises this for `validateFieldStructure`
+  including the closed G1/G2 DeletedFieldCode cases — see
+  `add-lean-deleted-field-code-constraint`.)
 - **The runtime check is not made redundant.** The production engine's runtime
   `validateFieldStructure` call (`pipeline.ts:439-440`) is not removed or
   weakened by this proof; the proof is a property of the Lean model.
@@ -74,13 +81,15 @@ all non-excluded descendants looking for `w:r` children, catching arbitrary
 nested OOXML. The Lean model deliberately narrows this: non-wrapper descendants
 are out of model. A broader `Block` shape is owned by Tier 2.5.
 
-Locality of `delInstrText` to deleted-content wrappers (`w:del` / `w:moveFrom`)
-is **not** enforced by the bare `OoxmlModel` datatype — `reject`'s
-`delInstrText → instrText` rename pass runs globally after both unwraps complete
-(matching `trackChangesAcceptorAst.ts:602-616`). The precondition that
-`delInstrText` only originates inside deleted-content wrappers is enforced by
-`recursivelyWellformed` on the *input* (`fieldContextNeutral` rejects a
-`delInstrText` outside an open pre-separator field).
+Locality of `delInstrText` to a `w:del` ancestor is now enforced by
+`validateFieldStructure` itself: the field-context walk carries a structural
+del-ancestry depth and rejects any `delInstrText` at del-depth 0 and any `fldChar`
+at del-depth > 0 (the DeletedFieldCode locality constraint, `pipeline.ts:542`/`555`).
+The `reject` `delInstrText → instrText` rename pass still runs globally after both
+unwraps complete (matching `trackChangesAcceptorAst.ts:602-616`); the walk-level
+constraint on the *input* document is what guarantees the rename only ever fires on
+a `delInstrText` that was inside a `w:del`, which `reject` is simultaneously
+unwrapping to del-depth 0.
 
 ## Round-trip text (`inv_rt_001`)
 
