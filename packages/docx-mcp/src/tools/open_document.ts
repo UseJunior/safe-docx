@@ -6,6 +6,7 @@ import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
 import { SAFE_DOCX_MCP_TOOLS } from '../tool_catalog.js';
+import { validateOdfArchiveSafety } from '@usejunior/odf-core';
 
 function getAvailableToolsSchema(): Array<{
   name: string;
@@ -56,10 +57,10 @@ export async function openDocument(
       );
     }
     const extension = path.extname(expanded).toLowerCase();
-    if (extension !== '.docx') {
+    if (extension !== '.docx' && extension !== '.odt') {
       const hint = extension === '.dotx'
-        ? 'Only .docx files are supported in the local runtime. Convert the .dotx template to .docx before opening it.'
-        : 'Only .docx files are supported.';
+        ? 'Only .docx and .odt files are supported in the local runtime. Convert the .dotx template to .docx before opening it.'
+        : 'Only .docx and .odt files are supported.';
       return err('INVALID_FILE_TYPE', `Invalid file type: ${extension}`, hint);
     }
     const policy = await enforceReadPathPolicy(filePath);
@@ -68,8 +69,35 @@ export async function openDocument(
 
     const content = await fs.readFile(safePath);
     if (content.length > 50 * 1024 * 1024) {
-      return err('VALIDATION_ERROR', 'File too large', 'Check file type (.docx only) and size (max 50MB).');
+      return err('VALIDATION_ERROR', 'File too large', 'Check file type (.docx or .odt only) and size (max 50MB).');
     }
+    if (extension === '.odt') {
+      const archiveGuard = await validateOdfArchiveSafety(content as Buffer);
+      if (!archiveGuard.ok) return err(archiveGuard.code, archiveGuard.message, archiveGuard.hint);
+
+      const filename = path.basename(safePath);
+      const session = await manager.createOdfSession(content as Buffer, filename, safePath);
+      const paragraphCount = session.doc.getParagraphs().length;
+
+      return ok({
+        file_path: manager.normalizePath(session.originalPath),
+        provider: 'odf',
+        expires_at: session.expiresAt.toISOString(),
+        document: {
+          filename,
+          paragraphs: paragraphCount,
+          size_bytes: content.length,
+        },
+        normalization: { runs_merged: 0, redlines_simplified: 0, double_elevations_fixed: 0, normalization_skipped: true },
+        save_defaults: {
+          default_variants: ['odt'],
+          default_save_format: 'odt',
+          supports_variant_override: false,
+        },
+        tools: getAvailableToolsSchema(),
+      });
+    }
+
     const archiveGuard = await validateDocxArchiveSafety(content as Buffer);
     if (!archiveGuard.ok) return archiveGuard.response;
 

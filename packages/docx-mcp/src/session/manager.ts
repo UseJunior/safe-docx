@@ -16,6 +16,7 @@ import {
   type RevisionContext,
   type RevisionIdState,
 } from '@usejunior/docx-core';
+import { OdfArchive, OdfDocument } from '@usejunior/odf-core';
 
 export type SaveFormat = 'clean' | 'tracked' | 'both';
 
@@ -92,7 +93,23 @@ export type GDocsSession = {
   expiresAt: Date;
 };
 
-export type Session = DocxSession | GDocsSession;
+export type OdfSession = {
+  provider: 'odf';
+  sessionId: string;
+  filename: string;
+  tmpPath: string;
+  originalPath: string;
+  originalBuffer: Buffer;
+  archive: OdfArchive;
+  doc: OdfDocument;
+  editCount: number;
+  editRevision: number;
+  createdAt: Date;
+  lastAccessedAt: Date;
+  expiresAt: Date;
+};
+
+export type Session = DocxSession | GDocsSession | OdfSession;
 
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -271,6 +288,10 @@ export function isGDocsSession(s: Session): s is GDocsSession {
   return s.provider === 'gdocs';
 }
 
+export function isOdfSession(s: Session): s is OdfSession {
+  return s.provider === 'odf';
+}
+
 export class SessionManager {
   /** Sessions keyed by canonical file path (realpath). */
   private sessions = new Map<string, Session>();
@@ -354,6 +375,41 @@ export class SessionManager {
       lastAccessedAt: now,
       expiresAt,
       normalizationStats: null,
+    };
+    this.sessions.set(canonicalPath, session);
+    return session;
+  }
+
+  async createOdfSession(documentContent: Buffer, filename: string, originalPath: string): Promise<OdfSession> {
+    const canonicalPath = await this.canonicalizePath(originalPath);
+
+    const existing = this.sessions.get(canonicalPath);
+    if (existing) {
+      await this.cleanupSessionArtifacts(existing);
+    }
+
+    const sessionId = this.newSessionId();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-odf-'));
+    const tmpPath = path.join(dir, filename);
+    await fs.writeFile(tmpPath, new Uint8Array(documentContent));
+
+    const archive = await OdfArchive.load(documentContent);
+    const doc = OdfDocument.fromContentXml(await archive.getContentXml());
+    const now = new Date();
+    const session: OdfSession = {
+      provider: 'odf',
+      sessionId,
+      filename,
+      tmpPath,
+      originalPath,
+      originalBuffer: Buffer.from(documentContent),
+      archive,
+      doc,
+      editCount: 0,
+      editRevision: 0,
+      createdAt: now,
+      lastAccessedAt: now,
+      expiresAt: new Date(now.getTime() + this.ttlMs),
     };
     this.sessions.set(canonicalPath, session);
     return session;
@@ -449,7 +505,7 @@ export class SessionManager {
   }
 
   private async cleanupSessionArtifacts(session: Session): Promise<void> {
-    if (isDocxSession(session)) {
+    if (isDocxSession(session) || isOdfSession(session)) {
       const tmpDir = path.dirname(session.tmpPath);
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -546,5 +602,12 @@ export class SessionManager {
   async saveTo(session: DocxSession, savePath: string, opts?: { cleanBookmarks?: boolean }): Promise<void> {
     const { buffer } = await session.doc.toBuffer({ cleanBookmarks: opts?.cleanBookmarks ?? true });
     await fs.writeFile(savePath, new Uint8Array(buffer));
+  }
+
+  async saveOdfTo(session: OdfSession, savePath: string): Promise<Buffer> {
+    session.archive.setContentXml(session.doc.toXml());
+    const buffer = await session.archive.save();
+    await fs.writeFile(savePath, new Uint8Array(buffer));
+    return buffer;
   }
 }

@@ -7,14 +7,14 @@ Do not edit manually. Regenerate with:
 
 ## `read_file`
 
-Read document content (DOCX or Google Doc). Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.
+Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.
 
 - readOnly: `true`
 - destructive: `false`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `offset` | `number` | no | 1-based paragraph offset for pagination. Negative values count from end. |
 | `limit` | `number` | no | Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination. |
@@ -22,7 +22,7 @@ Read document content (DOCX or Google Doc). Output is token-limited (~14k tokens
 | `format` | `enum("toon", "json", "simple")` | no |  |
 | `comment_rendering` | `enum("none", "paragraph_notes", "endnotes", "inline_markers")` | no | How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. |
 | `show_formatting` | `boolean` | no | When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags. |
-| `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs. |
+| `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs and ODT. |
 
 ## `grep`
 
@@ -33,7 +33,7 @@ Search paragraphs with regex. Use file_path for session-based search, file_paths
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `file_paths` | `array<string>` | no | Multiple file paths for stateless multi-file search. No session created. |
 | `patterns` | `array<string>` | no |  |
@@ -55,7 +55,7 @@ Initialize revision-bound context metadata for coordinated multi-agent planning.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `plan_name` | `string` | no |  |
 | `orchestrator_id` | `string` | no |  |
 
@@ -81,20 +81,20 @@ Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a d
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `steps` | `array<object>` | no | JSON array of edit steps. Each step needs step_id, operation, and operation-specific fields. |
 | `plan_file_path` | `string` | no | Path to a .json file containing an array of edit steps. Mutually exclusive with steps. |
 
 ## `replace_text`
 
-Replace text in a paragraph by _bk_* id, preserving formatting. Supports DOCX and Google Docs.
+Replace text in a paragraph by provider paragraph id, preserving formatting where supported. Supports DOCX, ODT, and Google Docs.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `target_paragraph_id` | `string` | yes |  |
 | `old_string` | `string` | yes |  |
@@ -111,7 +111,7 @@ Insert a paragraph before/after an anchor paragraph by _bk_* id. Supports DOCX a
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `positional_anchor_node_id` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
@@ -121,14 +121,14 @@ Insert a paragraph before/after an anchor paragraph by _bk_* id. Supports DOCX a
 
 ## `save`
 
-Save document. For DOCX: saves clean and/or tracked changes output. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX.
+Save document. For DOCX: saves clean and/or tracked changes output. For ODT: saves an .odt package. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `save_to_local_path` | `string` | yes |  |
 | `clean_bookmarks` | `boolean` | no |  |
@@ -148,7 +148,7 @@ Export a document to a portable rendering (Markdown, semantic HTML, or plain tex
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `format` | `enum("markdown", "html", "plaintext")` | no | Output format: 'markdown' (default, writes .md), 'html' (writes .html), or 'plaintext' (writes .txt). |
 | `output_path` | `string` | no | Where to write the rendering. Defaults to the source path with the format extension. |
 | `allow_overwrite` | `boolean` | no | Overwrite output_path if it already exists. Default: false. |
@@ -163,7 +163,7 @@ Apply layout controls (paragraph spacing, table row height, cell padding). Googl
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `strict` | `boolean` | no |  |
 | `paragraph_spacing` | `object` | no |  |
@@ -179,7 +179,7 @@ Accept all tracked changes in the document body, producing a clean document with
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 
 ## `has_tracked_changes`
 
@@ -190,30 +190,30 @@ Check whether the document body contains tracked-change markers (insertions, del
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 
 ## `get_file_status`
 
-Get file/session metadata including edit count, normalization stats, and cache info. Supports DOCX and Google Docs.
+Get file/session metadata including edit count, normalization stats, and cache info. Supports DOCX, ODT, and Google Docs.
 
 - readOnly: `true`
 - destructive: `false`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 
 ## `close_file`
 
-Close an open file session, or close all sessions with explicit confirmation. Supports DOCX and Google Docs.
+Close an open file session, or close all sessions with explicit confirmation. Supports DOCX, ODT, and Google Docs.
 
 - readOnly: `false`
 - destructive: `true`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `clear_all` | `boolean` | no |  |
 | `confirm` | `boolean` | no |  |
@@ -227,7 +227,7 @@ Add a comment or threaded reply to a document. Provide target_paragraph_id + anc
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `target_paragraph_id` | `string` | no | Paragraph ID to anchor the comment to (for root comments). |
 | `anchor_text` | `string` | no | Text within the paragraph to anchor the comment to. If omitted, anchors to entire paragraph. |
 | `parent_comment_id` | `number` | no | Parent comment ID for threaded replies. |
@@ -244,7 +244,7 @@ Get all comments from the document with IDs, authors, dates, text, and anchored 
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 
 ## `delete_comment`
 
@@ -255,7 +255,7 @@ Delete a comment and all its threaded replies from the document. Cascade-deletes
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `comment_id` | `number` | yes | Comment ID to delete. |
 
 ## `compare_documents`
@@ -269,7 +269,7 @@ Compare two DOCX documents and produce a tracked-changes output document. Provid
 | --- | --- | --- | --- |
 | `original_file_path` | `string` | no | Path to the original DOCX file. |
 | `revised_file_path` | `string` | no | Path to the revised DOCX file. |
-| `file_path` | `string` | no | Path to the DOCX file. |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `save_to_local_path` | `string` | yes | Path to save the tracked-changes DOCX output. |
 | `author` | `string` | no | Author name for track changes. Default: 'Comparison'. |
 | `engine` | `enum("auto", "atomizer")` | no | Comparison engine. Default: 'auto'. |
@@ -283,7 +283,7 @@ Get all footnotes from the document with IDs, display numbers, text, and anchore
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 
 ## `add_footnote`
 
@@ -294,7 +294,7 @@ Add a footnote anchored to a paragraph. Optionally position the reference after 
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `target_paragraph_id` | `string` | yes | Paragraph ID to anchor the footnote to. |
 | `after_text` | `string` | no | Text after which to insert the footnote reference. If omitted, appends at end of paragraph. |
 | `text` | `string` | yes | Footnote body text. |
@@ -308,7 +308,7 @@ Update the text content of an existing footnote.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `note_id` | `number` | yes | Footnote ID to update. |
 | `new_text` | `string` | yes | New footnote body text. |
 
@@ -321,7 +321,7 @@ Delete a footnote and its reference from the document.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `note_id` | `number` | yes | Footnote ID to delete. |
 
 ## `clear_formatting`
@@ -333,7 +333,7 @@ Clear specific run-level formatting (bold, italic, underline, highlight, color, 
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `paragraph_ids` | `array<string>` | no | Paragraph IDs to clear formatting from. If omitted, clears from all paragraphs. |
 | `clear_highlight` | `boolean` | no | Remove highlight formatting. |
 | `clear_bold` | `boolean` | no | Remove bold formatting. |
@@ -351,6 +351,6 @@ Extract tracked changes as structured JSON with before/after text per paragraph,
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX file. |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 | `offset` | `number` | no | 0-based offset for pagination. Default: 0. |
 | `limit` | `number` | no | Max entries per page (1-500). Default: 50. |

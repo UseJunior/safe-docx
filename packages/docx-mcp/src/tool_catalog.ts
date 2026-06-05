@@ -13,11 +13,11 @@ type ToolCatalogEntry = {
 };
 
 const FILE_FIELD = {
-  file_path: z.string().describe('Path to the DOCX file.'),
+  file_path: z.string().describe('Path to the DOCX or ODT file.'),
 };
 
 const FILE_FIELD_OPTIONAL = {
-  file_path: z.string().optional().describe('Path to the DOCX file.'),
+  file_path: z.string().optional().describe('Path to the DOCX or ODT file.'),
 };
 
 const GOOGLE_DOC_ID_FIELD = {
@@ -32,7 +32,7 @@ const PLAN_OBJECT_SCHEMA = z.object({}).catchall(z.unknown());
 export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'read_file',
-    description: 'Read document content (DOCX or Google Doc). Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.',
+    description: 'Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k tokens) by default with pagination metadata (has_more, next_offset). Use offset/limit to paginate.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -56,7 +56,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .boolean()
         .optional()
         .describe(
-          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs.',
+          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
         ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
@@ -119,7 +119,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'replace_text',
-    description: 'Replace text in a paragraph by _bk_* id, preserving formatting. Supports DOCX and Google Docs.',
+    description: 'Replace text in a paragraph by provider paragraph id, preserving formatting where supported. Supports DOCX, ODT, and Google Docs.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -156,7 +156,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'save',
     description:
-      'Save document. For DOCX: saves clean and/or tracked changes output. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX.',
+      'Save document. For DOCX: saves clean and/or tracked changes output. For ODT: saves an .odt package. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -257,7 +257,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'get_file_status',
-    description: 'Get file/session metadata including edit count, normalization stats, and cache info. Supports DOCX and Google Docs.',
+    description: 'Get file/session metadata including edit count, normalization stats, and cache info. Supports DOCX, ODT, and Google Docs.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -266,7 +266,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'close_file',
-    description: 'Close an open file session, or close all sessions with explicit confirmation. Supports DOCX and Google Docs.',
+    description: 'Close an open file session, or close all sessions with explicit confirmation. Supports DOCX, ODT, and Google Docs.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
