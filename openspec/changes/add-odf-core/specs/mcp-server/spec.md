@@ -5,8 +5,11 @@
 The MCP server SHALL treat `.odt` as a first-class local provider via a parallel
 resolver lane, leaving the DOCX and Google Docs resolution paths unchanged. An
 `OdfSession` SHALL be a member of the session union. A `.odt` `file_path` SHALL
-auto-open an ODF session on first use (parity with `.docx`), and a request whose
-canonical path already has an `OdfSession` SHALL resolve to it. The `read_file`,
+auto-open an ODF session on first use (parity with `.docx`), and a `.odt` `file_path`
+that resolves to an existing `OdfSession` SHALL reuse it. (Provider dispatch keys on
+the `.odt` file extension for race-free, synchronous routing; reusing an open ODF
+session via an aliased path whose spelling does not end in `.odt` is a Phase-2
+refinement.) The `read_file`,
 `replace_text`, `save`, `get_file_status`, and `close_file` tools SHALL service ODF
 sessions; every other tool invoked against an ODF session (or a `.odt` `file_path`)
 SHALL return an `UNSUPPORTED_FOR_ODF` error rather than running DOCX logic — enforced
