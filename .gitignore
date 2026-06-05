@@ -55,6 +55,10 @@ data/test-narrative-batch/
 # Git worktrees
 .worktrees/
 
+# Spec-traceability PoC: gitignored output + local PDF cache
+out/
+scripts/spec-traceability/.cache/
+
 # CI / test artifacts
 artifacts/
 integration-tests/OPENSPEC_TRACEABILITY.md

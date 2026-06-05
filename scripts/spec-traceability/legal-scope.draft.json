@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "_doc": "DRAFT mapping of lawyer-relevant Word features to OOXML element families. Used to scope the wiki page set: only elements that appear in this manifest (directly or as 1-hop expansions through the XSD graph) become wiki pages. AI is *not* the source for these mappings; this file is hand-curated and reviewed.",
+  "_status": "draft proposal — needs user review before any pages are generated",
+  "_layered_scope": [
+    "Layer 0 — explicitly named here (the 'in-scope spine')",
+    "Layer 1 — 1-hop expansions via XSD child/type/group references",
+    "Layer 2+ — NOT in scope; still mentioned in prose where they appear, as flat names without links"
+  ],
+  "topics": [
+    {
+      "topic": "Paragraph",
+      "elements": ["w:p", "w:pPr"],
+      "types": ["CT_P", "CT_PPr"],
+      "notes": "The atom. Container for all paragraph-level content; carries pPr for properties."
+    },
+    {
+      "topic": "Runs and run formatting (bold, italic, underline, strikethrough)",
+      "elements": ["w:r", "w:rPr", "w:b", "w:i", "w:u", "w:strike", "w:dstrike"],
+      "types": ["CT_R", "CT_RPr", "CT_OnOff", "CT_Underline"]
+    },
+    {
+      "topic": "Text content",
+      "elements": ["w:t", "w:tab", "w:br", "w:noBreakHyphen", "w:softHyphen", "w:cr"],
+      "types": ["CT_Text", "CT_Br"]
+    },
+    {
+      "topic": "Highlighting",
+      "elements": ["w:highlight", "w:shd"],
+      "types": ["CT_Highlight", "CT_Shd"]
+    },
+    {
+      "topic": "Paragraph alignment (justified, centered, left, right)",
+      "elements": ["w:jc", "w:textAlignment"],
+      "types": ["CT_Jc"]
+    },
+    {
+      "topic": "Indentation",
+      "elements": ["w:ind"],
+      "types": ["CT_Ind"]
+    },
+    {
+      "topic": "Spacing (line, before, after)",
+      "elements": ["w:spacing", "w:contextualSpacing"],
+      "types": ["CT_Spacing"]
+    },
+    {
+      "topic": "Line, paragraph, page, and column breaks",
+      "elements": ["w:br", "w:p", "w:lastRenderedPageBreak", "w:pageBreakBefore"],
+      "types": ["CT_Br"]
+    },
+    {
+      "topic": "Section breaks and section properties",
+      "elements": ["w:sectPr", "w:type", "w:pgSz", "w:pgMar", "w:cols", "w:titlePg"],
+      "types": ["CT_SectPr", "CT_PageSz", "CT_PageMar", "CT_Columns"]
+    },
+    {
+      "topic": "Page margins and page orientation",
+      "elements": ["w:pgSz", "w:pgMar"],
+      "types": ["CT_PageSz", "CT_PageMar"],
+      "notes": "Orientation is the w:orient attribute on w:pgSz."
+    },
+    {
+      "topic": "Headers and footers (incl. first-page-only / odd-even rules)",
+      "elements": ["w:hdr", "w:ftr", "w:headerReference", "w:footerReference", "w:titlePg", "w:evenAndOddHeaders"],
+      "types": ["CT_HdrFtr", "CT_HdrFtrRef"]
+    },
+    {
+      "topic": "Footnotes",
+      "elements": ["w:footnote", "w:footnoteReference", "w:footnotes", "w:footnotePr", "w:footnoteRef"],
+      "types": ["CT_FtnEdn", "CT_FtnEdnRef", "CT_FtnProps"]
+    },
+    {
+      "topic": "Endnotes",
+      "elements": ["w:endnote", "w:endnoteReference", "w:endnotes", "w:endnotePr", "w:endnoteRef"],
+      "types": ["CT_FtnEdn", "CT_FtnEdnRef", "CT_EdnProps"]
+    },
+    {
+      "topic": "Numbering (legal numbering, multi-level lists)",
+      "elements": ["w:num", "w:numbering", "w:numId", "w:ilvl", "w:numPr", "w:abstractNum", "w:lvl", "w:numFmt", "w:lvlText", "w:lvlJc"],
+      "types": ["CT_Num", "CT_Numbering", "CT_NumPr", "CT_AbstractNum", "CT_Lvl", "CT_NumFmt"]
+    },
+    {
+      "topic": "Styles (paragraph, character, table, numbering)",
+      "elements": ["w:style", "w:styles", "w:pStyle", "w:rStyle", "w:tblStyle", "w:basedOn", "w:next", "w:link"],
+      "types": ["CT_Style", "CT_Styles"]
+    },
+    {
+      "topic": "Tables",
+      "elements": ["w:tbl", "w:tr", "w:tc", "w:tblPr", "w:tblGrid", "w:gridCol", "w:trPr", "w:tcPr"],
+      "types": ["CT_Tbl", "CT_Row", "CT_Tc", "CT_TblPr", "CT_TblGrid"]
+    },
+    {
+      "topic": "Table cell merges (horizontal gridSpan, vertical vMerge)",
+      "elements": ["w:gridSpan", "w:vMerge", "w:hMerge"],
+      "types": ["CT_DecimalNumber"]
+    },
+    {
+      "topic": "Table formatting (borders, shading, widths)",
+      "elements": ["w:tblBorders", "w:tcBorders", "w:tblW", "w:tcW", "w:shd"],
+      "types": ["CT_TblBorders", "CT_TcBorders", "CT_TblWidth", "CT_Shd"]
+    },
+    {
+      "topic": "Cross-references and bookmarks",
+      "elements": ["w:bookmarkStart", "w:bookmarkEnd", "w:hyperlink", "w:fldSimple", "w:fldChar", "w:instrText"],
+      "types": ["CT_Bookmark", "CT_MarkupRange", "CT_Hyperlink", "CT_SimpleField", "CT_FldChar"]
+    },
+    {
+      "topic": "Field codes (PAGE, NUMPAGES, REF, PAGEREF, AUTHOR, DATE, …)",
+      "elements": ["w:fldSimple", "w:fldChar", "w:instrText"],
+      "types": ["CT_SimpleField", "CT_FldChar"],
+      "notes": "Field codes are strings inside w:instrText; the wiki should index a curated list of switches."
+    },
+    {
+      "topic": "Page numbers and page counts",
+      "elements": ["w:pgNumType", "w:fldSimple", "w:instrText"],
+      "types": ["CT_PageNumber"],
+      "notes": "Page numbering is partly via field codes (PAGE, NUMPAGES); the rendering rules live in pgNumType."
+    },
+    {
+      "topic": "Tracked changes — insertions and deletions",
+      "elements": ["w:ins", "w:del", "w:delText", "w:delInstrText"],
+      "types": ["CT_RunTrackChange", "CT_TrackChange"]
+    },
+    {
+      "topic": "Tracked changes — moves",
+      "elements": ["w:moveFrom", "w:moveTo", "w:moveFromRangeStart", "w:moveFromRangeEnd", "w:moveToRangeStart", "w:moveToRangeEnd"]
+    },
+    {
+      "topic": "Tracked changes — formatting revisions",
+      "elements": ["w:pPrChange", "w:rPrChange", "w:sectPrChange", "w:tblPrChange", "w:trPrChange", "w:tcPrChange"]
+    },
+    {
+      "topic": "Comments",
+      "elements": ["w:comment", "w:commentRangeStart", "w:commentRangeEnd", "w:commentReference", "w:comments"],
+      "types": ["CT_Comment", "CT_Comments", "CT_MarkupRange"]
+    },
+    {
+      "topic": "Document comparison helpers (RSIDs)",
+      "elements": ["w:rsids", "w:rsid"],
+      "types": ["CT_LongHexNumber"],
+      "notes": "rsid* attributes appear throughout; the document-level rsid registry is here."
+    }
+  ],
+  "_out_of_scope_notes": [
+    "Math (w:oMath, w:oMathPara, shared-math.xsd) — lawyers don't use this for contracts.",
+    "Drawing / shapes / images for now (dml-main.xsd large surface) — could add later for letterheads/diagrams.",
+    "Spreadsheet (sml.xsd entirely) — not relevant to Word documents.",
+    "Presentation (pml.xsd entirely) — not relevant.",
+    "VML (vml-*.xsd) — legacy; only relevant for backward-compat ingestion."
+  ],
+  "_open_questions": [
+    "Should this file ALSO drive what gets indexed for SEO, or only what gets a wiki page? (Probably both — same answer.)",
+    "Are 'rich excerpts' subject to the same in-scope predicate? Probably yes — only attached to elements present here.",
+    "Mapping confidence: hand-curated, no AI yet. After user review, could be checked against MS-OE376 to see which in-scope elements have notes worth surfacing."
+  ]
+}
