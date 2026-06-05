@@ -6,7 +6,7 @@ import { join } from 'node:path';
 const ROOT = process.cwd();
 const TEST_PATH_RE = /^packages\/[^/]+\/(src|test)\/.+\.test\.ts$/;
 // Packages that haven't been migrated to allure wrappers yet.
-const ALLURE_EXEMPT_PACKAGES = new Set(['google-docs-core']);
+const ALLURE_EXEMPT_PACKAGES = new Set(['google-docs-core', 'odf-core']);
 
 const helperImportRe = /from\s+['"][^'"]*allure-test\.(?:js|ts)['"]/;
 // The allure-test-factory package is the source of the shared helpers; its
