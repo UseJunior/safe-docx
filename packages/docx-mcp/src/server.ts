@@ -1,8 +1,9 @@
+import path from 'node:path';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { SessionManager, type GDocsSession } from './session/manager.js';
+import { SessionManager, type GDocsSession, type OdfSession } from './session/manager.js';
 import { SAFE_DOCX_MCP_TOOLS } from './tool_catalog.js';
 import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
@@ -28,8 +29,8 @@ import { deleteFootnote } from './tools/delete_footnote.js';
 import { compareDocuments_tool } from './tools/compare_documents.js';
 import { extractRevisions_tool } from './tools/extract_revisions.js';
 import { clearFormatting } from './tools/clear_formatting.js';
-import { resolveGDocsSessionForTool } from './tools/session_resolution.js';
-import { checkGDocsSupport } from './tools/provider_guard.js';
+import { resolveGDocsSessionForTool, resolveOdfSessionForTool } from './tools/session_resolution.js';
+import { checkGDocsSupport, checkOdfSupport } from './tools/provider_guard.js';
 import type { ToolResponse } from './tools/types.js';
 
 export const MCP_TRANSPORT = 'stdio' as const;
@@ -40,8 +41,14 @@ function isGDocsRequest(args: Record<string, unknown>): boolean {
   return typeof args.google_doc_id === 'string' && args.google_doc_id.trim().length > 0;
 }
 
+function isOdfRequest(args: Record<string, unknown>): boolean {
+  const filePath = typeof args.file_path === 'string' ? args.file_path.trim() : '';
+  return path.extname(filePath).toLowerCase() === '.odt';
+}
+
 // Lazy-loaded gdocs handler map (populated on first gdocs request)
 let gdocsHandlers: Record<string, (m: SessionManager, s: GDocsSession, p: any, meta: Record<string, unknown>) => Promise<ToolResponse>> | null = null;
+let odfHandlers: Record<string, (m: SessionManager, s: OdfSession, p: any, meta: Record<string, unknown>) => Promise<ToolResponse>> | null = null;
 
 async function loadGDocsHandlers(): Promise<typeof gdocsHandlers> {
   if (gdocsHandlers) return gdocsHandlers;
@@ -68,6 +75,25 @@ async function loadGDocsHandlers(): Promise<typeof gdocsHandlers> {
   return gdocsHandlers;
 }
 
+async function loadOdfHandlers(): Promise<typeof odfHandlers> {
+  if (odfHandlers) return odfHandlers;
+  const [readFile, replaceText, save, getFileStatus, closeFile] = await Promise.all([
+    import('./tools/odf/read_file.js'),
+    import('./tools/odf/replace_text.js'),
+    import('./tools/odf/save.js'),
+    import('./tools/odf/get_file_status.js'),
+    import('./tools/odf/close_file.js'),
+  ]);
+  odfHandlers = {
+    read_file: readFile.odfReadFile,
+    replace_text: replaceText.odfReplaceText,
+    save: save.odfSave,
+    get_file_status: getFileStatus.odfGetFileStatus,
+    close_file: closeFile.odfCloseFile,
+  };
+  return odfHandlers;
+}
+
 async function dispatchGDocs(
   manager: SessionManager,
   args: Record<string, unknown>,
@@ -83,6 +109,21 @@ async function dispatchGDocs(
   return handler(manager, resolved.session, args, resolved.metadata);
 }
 
+async function dispatchOdf(
+  manager: SessionManager,
+  args: Record<string, unknown>,
+  toolName: string,
+): Promise<ToolResponse> {
+  const guard = checkOdfSupport(toolName);
+  if (guard) return guard;
+  const resolved = await resolveOdfSessionForTool(manager, args, { toolName });
+  if (!resolved.ok) return resolved.response;
+  const handlers = await loadOdfHandlers();
+  const handler = handlers![toolName];
+  if (!handler) return { success: false, error: { code: 'UNKNOWN_TOOL', message: `No ODF handler for: ${toolName}` } };
+  return handler(manager, resolved.session, args, resolved.metadata);
+}
+
 export async function dispatchToolCall(
   sessions: SessionManager,
   name: string,
@@ -91,6 +132,7 @@ export async function dispatchToolCall(
   switch (name) {
     case 'read_file':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'read_file');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'read_file');
       return await readFile(sessions, args as Parameters<typeof readFile>[1]);
     case 'grep':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'grep');
@@ -103,12 +145,14 @@ export async function dispatchToolCall(
       return await applyPlan(sessions, args as Parameters<typeof applyPlan>[1]);
     case 'replace_text':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'replace_text');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'replace_text');
       return await replaceText(sessions, args as Parameters<typeof replaceText>[1]);
     case 'insert_paragraph':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'insert_paragraph');
       return await insertParagraph(sessions, args as Parameters<typeof insertParagraph>[1]);
     case 'save':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'save');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'save');
       return await save(sessions, args as Parameters<typeof save>[1]);
     case 'export':
       return await exportDocument(sessions, args as Parameters<typeof exportDocument>[1]);
@@ -121,9 +165,11 @@ export async function dispatchToolCall(
       return await hasTrackedChanges_tool(sessions, args as Parameters<typeof hasTrackedChanges_tool>[1]);
     case 'get_file_status':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'get_file_status');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'get_file_status');
       return await getFileStatus(sessions, args as Parameters<typeof getFileStatus>[1]);
     case 'close_file':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'close_file');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'close_file');
       return await closeFile(sessions, args as Parameters<typeof closeFile>[1]);
     case 'add_comment':
       return await addComment(sessions, args as Parameters<typeof addComment>[1]);
