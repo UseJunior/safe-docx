@@ -63,7 +63,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'grep',
-    description: 'Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs.',
+    description: 'Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs. ODT supported via file_path (single-file) only.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -136,7 +136,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   },
   {
     name: 'insert_paragraph',
-    description: 'Insert a paragraph before/after an anchor paragraph by _bk_* id. Supports DOCX and Google Docs.',
+    description: 'Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.)',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,

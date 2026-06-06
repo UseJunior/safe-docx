@@ -30,7 +30,7 @@ never reach DOCX-only fields. Genuinely unsupported extensions SHALL still retur
 - **THEN** the ODF handler services it and the DOCX/gdocs handlers are not invoked
 
 #### Scenario: [OPLR-04] Unsupported tools are guarded for ODF
-- **WHEN** a Phase-2 tool (e.g. `compare_documents`, `add_comment`, `insert_paragraph`) is invoked against an ODF session
+- **WHEN** a Phase-2 tool (e.g. `compare_documents`, `add_comment`) is invoked against an ODF session
 - **THEN** an `UNSUPPORTED_FOR_ODF` error is returned and no DOCX logic runs
 
 #### Scenario: [OPLR-05] File-first `.odt` auto-opens

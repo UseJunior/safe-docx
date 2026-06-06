@@ -77,9 +77,11 @@ async function loadGDocsHandlers(): Promise<typeof gdocsHandlers> {
 
 async function loadOdfHandlers(): Promise<typeof odfHandlers> {
   if (odfHandlers) return odfHandlers;
-  const [readFile, replaceText, save, getFileStatus, closeFile] = await Promise.all([
+  const [readFile, replaceText, grep, insertParagraph, save, getFileStatus, closeFile] = await Promise.all([
     import('./tools/odf/read_file.js'),
     import('./tools/odf/replace_text.js'),
+    import('./tools/odf/grep.js'),
+    import('./tools/odf/insert_paragraph.js'),
     import('./tools/odf/save.js'),
     import('./tools/odf/get_file_status.js'),
     import('./tools/odf/close_file.js'),
@@ -87,6 +89,8 @@ async function loadOdfHandlers(): Promise<typeof odfHandlers> {
   odfHandlers = {
     read_file: readFile.odfReadFile,
     replace_text: replaceText.odfReplaceText,
+    grep: grep.odfGrep,
+    insert_paragraph: insertParagraph.odfInsertParagraph,
     save: save.odfSave,
     get_file_status: getFileStatus.odfGetFileStatus,
     close_file: closeFile.odfCloseFile,
@@ -136,6 +140,7 @@ export async function dispatchToolCall(
       return await readFile(sessions, args as Parameters<typeof readFile>[1]);
     case 'grep':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'grep');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'grep');
       return await grep(sessions, args as Parameters<typeof grep>[1]);
     case 'init_plan':
       return await initPlan(sessions, args as Parameters<typeof initPlan>[1]);
@@ -149,6 +154,7 @@ export async function dispatchToolCall(
       return await replaceText(sessions, args as Parameters<typeof replaceText>[1]);
     case 'insert_paragraph':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'insert_paragraph');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'insert_paragraph');
       return await insertParagraph(sessions, args as Parameters<typeof insertParagraph>[1]);
     case 'save':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'save');

@@ -29,6 +29,10 @@ export type ReplaceResult =
   | { ok: true }
   | { ok: false; code: 'ANCHOR_NOT_FOUND' | 'TEXT_NOT_FOUND' | 'MATCH_SPANS_MULTIPLE_NODES'; message: string };
 
+export type InsertResult =
+  | { ok: true; newIds: string[] }
+  | { ok: false; code: 'ANCHOR_NOT_FOUND'; message: string };
+
 /** A contiguous slice of a paragraph's visible text and where it came from. */
 type Segment =
   | { kind: 'text'; node: { data: string }; visStart: number; length: number }
@@ -179,6 +183,64 @@ export class OdfDocument {
     const localEnd = matchEnd - host.visStart;
     host.node.data = host.node.data.slice(0, localStart) + replaceWith + host.node.data.slice(localEnd);
     return { ok: true };
+  }
+
+  /**
+   * Insert one or more paragraphs relative to the anchor paragraph identified by `id`.
+   *
+   * `text` is split on blank lines (`\n{2,}`) into separate `text:p` blocks (parity with
+   * the DOCX `insert_paragraph` tool); a single `\n` within a block becomes a
+   * `text:line-break`. Inserted blocks inherit the anchor's `text:style-name` ONLY when
+   * the anchor is itself a `text:p` — inserting after a heading (`text:h`) produces
+   * default body paragraphs, never more headings.
+   *
+   * Paragraph IDs are positional ordinals, so every ID at or after the insertion point
+   * shifts by the number of inserted blocks. Returns the inserted blocks' freshly
+   * recomputed IDs in document order; callers must re-read before issuing further edits
+   * that target IDs near or after the insertion point.
+   */
+  insertParagraph(id: string, text: string, position: 'BEFORE' | 'AFTER'): InsertResult {
+    const anchor = this.blockForId(id);
+    if (!anchor) {
+      return { ok: false, code: 'ANCHOR_NOT_FOUND', message: `Paragraph not found: ${id}` };
+    }
+    const parent = anchor.parentNode;
+    if (!parent) {
+      return { ok: false, code: 'ANCHOR_NOT_FOUND', message: `Paragraph ${id} has no parent element` };
+    }
+
+    // Inherit the anchor's paragraph style only when the anchor is a body paragraph.
+    // Inserting relative to a heading must not produce another heading.
+    const inheritStyle =
+      anchor.localName === 'p'
+        ? anchor.getAttributeNS(ODF_NS.TEXT, 'style-name') ?? anchor.getAttribute('text:style-name')
+        : null;
+
+    const blockTexts = text.replace(/\r\n/g, '\n').split(/\n{2,}/);
+    const newEls: Element[] = blockTexts.map((blockText) => {
+      const p = this.doc.createElementNS(ODF_NS.TEXT, 'text:p');
+      if (inheritStyle) p.setAttributeNS(ODF_NS.TEXT, 'text:style-name', inheritStyle);
+      const lines = blockText.split('\n');
+      lines.forEach((line, i) => {
+        if (i > 0) p.appendChild(this.doc.createElementNS(ODF_NS.TEXT, 'text:line-break'));
+        if (line.length > 0) p.appendChild(this.doc.createTextNode(line));
+      });
+      return p;
+    });
+
+    // `insertBefore(el, null)` appends, so AFTER on the last child appends correctly.
+    const refNode = position === 'AFTER' ? anchor.nextSibling : anchor;
+    for (const el of newEls) {
+      parent.insertBefore(el, refNode);
+    }
+
+    // Rebuild the structural block index; positional IDs shift accordingly.
+    const blocks: Element[] = [];
+    OdfDocument.collectBlocks(this.doc.documentElement, blocks);
+    this.blocks = blocks;
+
+    const newIds = newEls.map((el) => this.idForIndex(blocks.indexOf(el)));
+    return { ok: true, newIds };
   }
 
   /** Serialize the (possibly edited) document back to a `content.xml` string. */

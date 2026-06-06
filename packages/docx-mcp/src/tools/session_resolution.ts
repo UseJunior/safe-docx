@@ -266,7 +266,7 @@ export async function resolveSessionForTool(
       response: err(
         'UNSUPPORTED_FOR_ODF',
         `Tool '${opts.toolName}' is not supported for ODF (.odt) files.`,
-        'Use read_file, replace_text, save, get_file_status, or close_file for .odt files.',
+        'Use read_file, replace_text, grep, insert_paragraph, save, get_file_status, or close_file for .odt files.',
       ),
     };
   }
@@ -327,7 +327,7 @@ export async function resolveSessionForTool(
           response: err(
             'UNSUPPORTED_FOR_ODF',
             `Tool '${opts.toolName}' is not supported for ODF (.odt) files.`,
-            'Use read_file, replace_text, save, get_file_status, or close_file for .odt files.',
+            'Use read_file, replace_text, grep, insert_paragraph, save, get_file_status, or close_file for .odt files.',
           ),
         };
       }
