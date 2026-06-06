@@ -11,7 +11,7 @@ import { buildPaginationMeta, DEFAULT_CONTENT_TOKEN_BUDGET, estimateTokens } fro
 import { READ_SIMPLE_PREVIEW_CHARS, previewText } from '../preview.js';
 
 function odfParagraphsToDocumentViewNodes(session: OdfSession): DocumentViewNode[] {
-  return session.doc.getParagraphs().map((paragraph) => ({
+  return session.doc.getParagraphs().map((paragraph: { id: string; text: string }) => ({
     id: paragraph.id,
     list_label: '',
     header: '',

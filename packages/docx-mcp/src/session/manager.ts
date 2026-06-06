@@ -16,7 +16,13 @@ import {
   type RevisionContext,
   type RevisionIdState,
 } from '@usejunior/docx-core';
-import { OdfArchive, OdfDocument } from '@usejunior/odf-core';
+// NOTE: @usejunior/odf-core is an OPTIONAL provider (private/unpublished, like
+// @usejunior/google-docs-core) and is intentionally NOT imported here. A static
+// import in this always-loaded module would make a production install of the
+// published package — which never fetches the private odf-core — crash at load.
+// The ODF archive/document are loaded by the lazily-reached resolver/open path
+// (see odf_loader.ts) and injected into createOdfSession; this module stores and
+// operates on them structurally (typed `any`, mirroring GDocsSession.doc).
 
 export type SaveFormat = 'clean' | 'tracked' | 'both';
 
@@ -100,8 +106,8 @@ export type OdfSession = {
   tmpPath: string;
   originalPath: string;
   originalBuffer: Buffer;
-  archive: OdfArchive;
-  doc: OdfDocument;
+  archive: any; // OdfArchive — loaded via the optional odf-core provider (see note above)
+  doc: any; // OdfDocument — loaded via the optional odf-core provider
   editCount: number;
   editRevision: number;
   createdAt: Date;
@@ -380,7 +386,19 @@ export class SessionManager {
     return session;
   }
 
-  async createOdfSession(documentContent: Buffer, filename: string, originalPath: string): Promise<OdfSession> {
+  /**
+   * Create an ODF session from an already-loaded `archive` + `doc`. The caller (the
+   * lazily-reached ODF resolver / open path) loads these via the optional odf-core
+   * provider — this method does NOT import odf-core, keeping the always-loaded
+   * SessionManager free of a hard dependency on the private package.
+   */
+  async createOdfSession(
+    documentContent: Buffer,
+    filename: string,
+    originalPath: string,
+    archive: any,
+    doc: any,
+  ): Promise<OdfSession> {
     const canonicalPath = await this.canonicalizePath(originalPath);
 
     const existing = this.sessions.get(canonicalPath);
@@ -393,8 +411,6 @@ export class SessionManager {
     const tmpPath = path.join(dir, filename);
     await fs.writeFile(tmpPath, new Uint8Array(documentContent));
 
-    const archive = await OdfArchive.load(documentContent);
-    const doc = OdfDocument.fromContentXml(await archive.getContentXml());
     const now = new Date();
     const session: OdfSession = {
       provider: 'odf',

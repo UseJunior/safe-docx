@@ -6,7 +6,7 @@ import { err, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
 import { loadGDocsCore } from '../gdocs_loader.js';
-import { validateOdfArchiveSafety } from '@usejunior/odf-core';
+import { loadOdfCore } from '../odf_loader.js';
 
 const MAX_DOCX_BYTES = 50 * 1024 * 1024;
 
@@ -128,7 +128,7 @@ export async function validateAndLoadOdfFromPath(
   manager: SessionManager,
   filePath: string,
 ): Promise<
-  | { ok: true; normalizedPath: string; filename: string; content: Buffer }
+  | { ok: true; normalizedPath: string; filename: string; content: Buffer; archive: any; doc: any }
   | { ok: false; response: ToolResponse }
 > {
   const normalizedPath = manager.normalizePath(filePath);
@@ -182,19 +182,34 @@ export async function validateAndLoadOdfFromPath(
       ),
     };
   }
+  const odf = await loadOdfCore();
+  if (!odf) {
+    return {
+      ok: false,
+      response: err(
+        'MISSING_DEPENDENCY',
+        'ODF (.odt) support requires @usejunior/odf-core.',
+        'Install @usejunior/odf-core to enable ODF editing.',
+      ),
+    };
+  }
   const content = await fs.readFile(safePath);
-  const archiveGuard = await validateOdfArchiveSafety(content as Buffer);
+  const archiveGuard = await odf.validateOdfArchiveSafety(content as Buffer);
   if (!archiveGuard.ok) {
     return {
       ok: false,
       response: err(archiveGuard.code, archiveGuard.message, archiveGuard.hint),
     };
   }
+  const archive = await odf.OdfArchive.load(content as Buffer);
+  const doc = odf.OdfDocument.fromContentXml(await archive.getContentXml());
   return {
     ok: true,
     normalizedPath: safePath,
     filename: path.basename(safePath),
     content: content as Buffer,
+    archive,
+    doc,
   };
 }
 
@@ -455,6 +470,8 @@ export async function resolveOdfSessionForTool(
         loaded.content,
         loaded.filename,
         loaded.normalizedPath,
+        loaded.archive,
+        loaded.doc,
       );
 
       return {

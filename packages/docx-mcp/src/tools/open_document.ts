@@ -6,7 +6,7 @@ import { err, ok, type ToolResponse } from './types.js';
 import { enforceReadPathPolicy } from './path_policy.js';
 import { validateDocxArchiveSafety } from './docx_archive_guard.js';
 import { SAFE_DOCX_MCP_TOOLS } from '../tool_catalog.js';
-import { validateOdfArchiveSafety } from '@usejunior/odf-core';
+import { loadOdfCore } from '../odf_loader.js';
 
 function getAvailableToolsSchema(): Array<{
   name: string;
@@ -72,11 +72,21 @@ export async function openDocument(
       return err('VALIDATION_ERROR', 'File too large', 'Check file type (.docx or .odt only) and size (max 50MB).');
     }
     if (extension === '.odt') {
-      const archiveGuard = await validateOdfArchiveSafety(content as Buffer);
+      const odf = await loadOdfCore();
+      if (!odf) {
+        return err(
+          'MISSING_DEPENDENCY',
+          'ODF (.odt) support requires @usejunior/odf-core.',
+          'Install @usejunior/odf-core to enable ODF editing.',
+        );
+      }
+      const archiveGuard = await odf.validateOdfArchiveSafety(content as Buffer);
       if (!archiveGuard.ok) return err(archiveGuard.code, archiveGuard.message, archiveGuard.hint);
 
       const filename = path.basename(safePath);
-      const session = await manager.createOdfSession(content as Buffer, filename, safePath);
+      const archive = await odf.OdfArchive.load(content as Buffer);
+      const doc = odf.OdfDocument.fromContentXml(await archive.getContentXml());
+      const session = await manager.createOdfSession(content as Buffer, filename, safePath, archive, doc);
       const paragraphCount = session.doc.getParagraphs().length;
 
       return ok({
