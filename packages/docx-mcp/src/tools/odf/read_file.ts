@@ -1,6 +1,4 @@
 import {
-  collectTableMarkerInfo,
-  formatTableMarker,
   formatToonDataLine,
   renderToon,
   type DocumentViewNode,
@@ -121,46 +119,23 @@ function renderSimpleOdf(nodes: readonly DocumentViewNode[]): string {
   return lines.join('\n');
 }
 
+// ODF Phase 1 flattens table cells to body paragraphs, so nodes never carry
+// `table_context`. The budget renderer therefore has no table-marker handling
+// (unlike the DOCX/gdocs renderers) — keeping it free of structurally-unreachable
+// branches.
 function renderToonWithBudgetOdf(
   nodes: readonly DocumentViewNode[],
   budget: number,
 ): { content: string; count: number } {
-  const headerLine = '#SCHEMA id | list_label | header | style | text';
-  let accumulated = headerLine;
+  let accumulated = '#SCHEMA id | list_label | header | style | text';
   let count = 0;
-  let currentTableIndex: number | null = null;
-  const tableInfo = collectTableMarkerInfo(nodes);
 
   for (const node of nodes) {
-    const tc = node.table_context;
-    const nodeTableIndex = tc ? tc.table_index : null;
-
-    if (currentTableIndex !== null && nodeTableIndex !== currentTableIndex) {
-      accumulated += '\n#END_TABLE';
-      currentTableIndex = null;
-    }
-
-    if (nodeTableIndex !== null && currentTableIndex === null) {
-      const info = tableInfo.get(nodeTableIndex);
-      if (info) {
-        const marker = formatTableMarker(info);
-        const candidateWithMarker = accumulated + '\n' + marker;
-        if (count > 0 && estimateTokens(candidateWithMarker) > budget) break;
-        accumulated = candidateWithMarker;
-      }
-      currentTableIndex = nodeTableIndex;
-    }
-
-    const dataLine = formatToonDataLine(node);
-    const candidate = accumulated + '\n' + dataLine;
-    if (count > 0 && estimateTokens(candidate) > budget) {
-      if (currentTableIndex !== null) accumulated += '\n#END_TABLE';
-      break;
-    }
+    const candidate = accumulated + '\n' + formatToonDataLine(node);
+    if (count > 0 && estimateTokens(candidate) > budget) break;
     accumulated = candidate;
     count++;
   }
 
-  if (currentTableIndex !== null) accumulated += '\n#END_TABLE';
   return { content: accumulated, count };
 }
