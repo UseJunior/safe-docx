@@ -17,7 +17,8 @@
 - [x] Update `tool_catalog.ts` provider text + regenerate `tool-reference.generated.md`
 
 ## Tests & verification
-- [ ] odf-core `document.test.ts`: insert BEFORE/AFTER, style inherit + heading guard, ID shift, line-break, ANCHOR_NOT_FOUND
-- [ ] docx-mcp ODF grep + insert scenarios (OPLR-06/07) + branch tests (MISSING_PATTERN, INVALID_POSITION, dedupe, search_xml), `TEST_FEATURE='add-odf-grep-insert'`
-- [ ] Full CI gate locally + document-shaped `.odt` smoke (grep + insert on real NVCA .odt, reopen in LibreOffice)
-- [ ] Coverage ratchet not regressed
+- [x] odf-core `document.test.ts`: insert BEFORE/AFTER, style inherit + heading guard, ID shift, line-break, ANCHOR_NOT_FOUND
+- [x] docx-mcp ODF grep + insert scenarios (OPLR-06/07/08) + branch tests (MISSING_PATTERN, INVALID_POSITION, dedupe, search_xml), `TEST_FEATURE='add-odf-grep-insert'`
+- [x] Peer-review fixes: compare_documents two-file `.odt` guard (UNSUPPORTED_FOR_ODF); hoist `.odt` early-return before pending-map (correct tool name) — both with regression tests
+- [x] Full CI gate locally + document-shaped `.odt` smoke (grep + insert on real NVCA .odt, reopen in LibreOffice)
+- [x] Coverage ratchet not regressed

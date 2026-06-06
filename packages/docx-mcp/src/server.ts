@@ -46,6 +46,18 @@ function isOdfRequest(args: Record<string, unknown>): boolean {
   return path.extname(filePath).toLowerCase() === '.odt';
 }
 
+/**
+ * True when any input-path field on the args points at a `.odt`. Used to guard tools
+ * that take path fields other than `file_path` (e.g. `compare_documents`'s two-file
+ * `original_file_path` / `revised_file_path`), which `isOdfRequest` does not cover.
+ */
+function hasOdfInputPath(args: Record<string, unknown>, fields: string[]): boolean {
+  return fields.some((f) => {
+    const v = args[f];
+    return typeof v === 'string' && path.extname(v.trim()).toLowerCase() === '.odt';
+  });
+}
+
 // Lazy-loaded gdocs handler map (populated on first gdocs request)
 let gdocsHandlers: Record<string, (m: SessionManager, s: GDocsSession, p: any, meta: Record<string, unknown>) => Promise<ToolResponse>> | null = null;
 let odfHandlers: Record<string, (m: SessionManager, s: OdfSession, p: any, meta: Record<string, unknown>) => Promise<ToolResponse>> | null = null;
@@ -184,6 +196,12 @@ export async function dispatchToolCall(
     case 'delete_comment':
       return await deleteComment(sessions, args as Parameters<typeof deleteComment>[1]);
     case 'compare_documents':
+      // compare_documents resolves its inputs via original_file_path / revised_file_path
+      // (not file_path), so the shared resolver's .odt chokepoint can't see them. Guard
+      // here: a .odt on any input path is UNSUPPORTED_FOR_ODF (compare is Phase-2b ODF work).
+      if (isOdfRequest(args) || hasOdfInputPath(args, ['original_file_path', 'revised_file_path'])) {
+        return checkOdfSupport('compare_documents')!;
+      }
       return await compareDocuments_tool(sessions, args as Parameters<typeof compareDocuments_tool>[1]);
     case 'get_footnotes':
       return await getFootnotes(sessions, args as Parameters<typeof getFootnotes>[1]);

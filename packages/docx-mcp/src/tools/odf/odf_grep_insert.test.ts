@@ -231,6 +231,35 @@ describe('ODF grep + insert branch coverage', () => {
     expect((res.new_paragraph_ids as string[]).length).toBe(2);
   });
 
+  it('compare_documents with .odt input paths returns UNSUPPORTED_FOR_ODF (two-file form)', async () => {
+    const manager = new SessionManager();
+    const original = await copyFixture('orig.odt');
+    const revised = await copyFixture('rev.odt');
+    const res = await dispatchToolCall(manager, 'compare_documents', {
+      original_file_path: original,
+      revised_file_path: revised,
+      save_to_local_path: path.join(path.dirname(original), 'redline.docx'),
+    });
+    assertError(res, 'UNSUPPORTED_FOR_ODF');
+  });
+
+  it('two unsupported tools on the same .odt path name the correct tool (no stale pending replay)', async () => {
+    const manager = new SessionManager();
+    const filePath = await copyFixture();
+    const one = await dispatchToolCall(manager, 'add_comment', {
+      file_path: filePath, target_paragraph_id: 'p0', comment_text: 'x', author: 'Jane Doe',
+    });
+    const two = await dispatchToolCall(manager, 'delete_comment', { file_path: filePath, comment_id: 'c1' });
+    assertError(one, 'UNSUPPORTED_FOR_ODF');
+    assertError(two, 'UNSUPPORTED_FOR_ODF');
+    expect(one.error.message).toContain("'add_comment'");
+    expect(two.error.message).toContain("'delete_comment'");
+    // A supported tool on the same path must still work (pending map not poisoned).
+    const read = await dispatchToolCall(manager, 'read_file', { file_path: filePath, format: 'simple', limit: 50 });
+    assertSuccess(read, 'read_file after unsupported');
+    expect(read.provider).toBe('odf');
+  });
+
   it('insert_paragraph defaults to AFTER and round-trips through save', async () => {
     const manager = new SessionManager();
     const filePath = await copyFixture();

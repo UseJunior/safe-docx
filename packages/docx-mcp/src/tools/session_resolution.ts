@@ -292,6 +292,21 @@ export async function resolveSessionForTool(
     };
   }
 
+  // Fail fast for unsupported tools on a `.odt` path BEFORE touching the pending map.
+  // This must be a synchronous early return: registering it as a leader promise would
+  // resolve before `pendingMap.set` runs, leaving a stale entry that replays THIS tool's
+  // error (and tool name) for the next unsupported tool on the same path.
+  if (path.extname(manager.normalizePath(filePath)).toLowerCase() === '.odt') {
+    return {
+      ok: false,
+      response: err(
+        'UNSUPPORTED_FOR_ODF',
+        `Tool '${opts.toolName}' is not supported for ODF (.odt) files.`,
+        'Use read_file, replace_text, grep, insert_paragraph, save, get_file_status, or close_file for .odt files.',
+      ),
+    };
+  }
+
   // --- Concurrent auto-open deduplication ---
   const pendingMap = getPendingMap(manager);
   const pending = pendingMap.get(canonicalPath);
@@ -321,16 +336,8 @@ export async function resolveSessionForTool(
 
   const outcomePromise: Promise<SessionResolutionOutcome> = (async () => {
     try {
-      if (path.extname(manager.normalizePath(filePath)).toLowerCase() === '.odt') {
-        return {
-          ok: false as const,
-          response: err(
-            'UNSUPPORTED_FOR_ODF',
-            `Tool '${opts.toolName}' is not supported for ODF (.odt) files.`,
-            'Use read_file, replace_text, grep, insert_paragraph, save, get_file_status, or close_file for .odt files.',
-          ),
-        };
-      }
+      // `.odt` is already handled by the synchronous early return above, so by here
+      // the path is a non-`.odt` DOCX candidate.
       const loaded = await validateAndLoadDocxFromPath(manager, filePath);
       if (!loaded.ok) {
         return { ok: false as const, response: loaded.response };
