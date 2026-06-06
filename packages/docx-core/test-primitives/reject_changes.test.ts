@@ -49,6 +49,31 @@ describe('rejectChanges', () => {
     });
   });
 
+  test('detects the paragraph mark strictly (pPr/rPr) and ignores w:ins nested in a w:pPrChange snapshot', async ({ given, when, then }: AllureBddContext) => {
+    // Mirrors the AST rejectAllChanges regression: both reject entry points must keep a
+    // paragraph whose only w:ins under pPr is inside a w:pPrChange snapshot, and drop one
+    // with a direct w:pPr/w:rPr/w:ins mark — proving the two paths behave identically.
+    let doc: Document;
+
+    await given('a doc with (A) a w:pPrChange-nested w:ins + a bare run, and (B) a direct pPr/rPr w:ins mark', async () => {
+      doc = makeDoc(
+        '<w:p><w:pPr><w:pPrChange w:id="9" w:author="x" w:date="2024-01-01T00:00:00Z">' +
+          '<w:pPr><w:rPr><w:ins w:id="8" w:author="x" w:date="2024-01-01T00:00:00Z"/></w:rPr></w:pPr>' +
+          '</w:pPrChange></w:pPr><w:r><w:t>survives</w:t></w:r></w:p>' +
+        '<w:p><w:pPr><w:rPr><w:ins w:id="1" w:author="x" w:date="2024-01-01T00:00:00Z"/></w:rPr></w:pPr>' +
+          '<w:ins w:id="2" w:author="x" w:date="2024-01-01T00:00:00Z"><w:r><w:t>inserted</w:t></w:r></w:ins></w:p>',
+      );
+    });
+
+    await when('rejectChanges is called', async () => {
+      rejectChanges(doc);
+    });
+
+    await then('only the pPrChange-nested paragraph survives, matching the AST reject path', async () => {
+      expect(getAllParagraphTexts(doc)).toEqual(['survives']);
+    });
+  });
+
   test('should remove inserted content', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let result: ReturnType<typeof rejectChanges>;
