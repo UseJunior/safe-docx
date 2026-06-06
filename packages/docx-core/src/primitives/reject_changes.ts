@@ -33,10 +33,6 @@ function isW(node: Node, localName: string): node is Element {
   );
 }
 
-function isWElement(node: Node): node is Element {
-  return node.nodeType === 1 && (node as Element).namespaceURI === W_NS;
-}
-
 function getDepth(node: Node): number {
   let depth = 0;
   let cur: Node | null = node.parentNode;
@@ -95,61 +91,6 @@ function paragraphHasParaMarker(p: Element, markerLocalName: string): boolean {
         const rPrChild = pPrChild.childNodes[k]!;
         if (isW(rPrChild, markerLocalName)) return true;
       }
-    }
-  }
-  return false;
-}
-
-/**
- * Check if a node (or its descendants) contains any w:r elements.
- */
-function containsRun(node: Node): boolean {
-  if (isW(node, 'r')) return true;
-  for (let i = 0; i < node.childNodes.length; i++) {
-    if (containsRun(node.childNodes[i]!)) return true;
-  }
-  return false;
-}
-
-// Tags that are "inserted" content — removal candidates when rejecting
-const INSERTED_LOCALS = new Set(['ins', 'moveTo']);
-// Tags that are "kept" content when rejecting
-const KEPT_LOCALS = new Set(['del', 'moveFrom']);
-// Range marker tags to ignore
-const RANGE_MARKER_LOCALS = new Set([
-  'moveFromRangeStart', 'moveFromRangeEnd',
-  'moveToRangeStart', 'moveToRangeEnd',
-]);
-
-/**
- * Determine if a paragraph's only content lives inside w:ins or w:moveTo
- * (no w:r outside those wrappers, and no w:del/w:moveFrom siblings).
- * These paragraphs should be removed when rejecting changes.
- */
-function paragraphHasOnlyInsertedContent(p: Element): boolean {
-  for (let i = 0; i < p.childNodes.length; i++) {
-    const child = p.childNodes[i]!;
-    if (child.nodeType !== 1) continue;
-    const el = child as Element;
-    if (el.namespaceURI !== W_NS) continue;
-    const local = el.localName;
-
-    // If the paragraph has kept content wrappers, it stays
-    if (KEPT_LOCALS.has(local)) return false;
-
-    // Skip pPr, range markers, and inserted wrappers
-    if (local === 'pPr' || RANGE_MARKER_LOCALS.has(local) || INSERTED_LOCALS.has(local)) continue;
-
-    // A bare w:r or any other element that contains runs means live content
-    if (local === 'r' || containsRun(el)) return false;
-  }
-
-  // We passed all children without finding live content — but there must be
-  // at least one inserted wrapper for this to be an "inserted content" paragraph
-  for (let i = 0; i < p.childNodes.length; i++) {
-    const child = p.childNodes[i]!;
-    if (child.nodeType === 1 && isWElement(child) && INSERTED_LOCALS.has(child.localName)) {
-      return true;
     }
   }
   return false;
@@ -259,13 +200,14 @@ export function rejectChanges(doc: Document): RejectChangesResult {
   const allParagraphs = collectByLocalName(root, 'p');
 
   for (const p of allParagraphs) {
-    // Paragraph-level insertion marker: w:p > w:pPr > w:rPr > w:ins
+    // Remove a paragraph iff its paragraph MARK is a tracked insertion
+    // (w:p > w:pPr > w:rPr > w:ins) — the paragraph break itself was inserted.
+    // We deliberately do NOT drop a paragraph based on content ("all runs inside
+    // w:ins/w:moveTo"): a run-level insertion under an untracked mark means text was
+    // inserted into a pre-existing paragraph, which Word/LibreOffice keep (empty) on
+    // reject. safe-docx's inserted paragraphs always carry the mark now, so the
+    // mark-based rule suffices and is Word-faithful. (Mirrors rejectAllChanges.)
     if (paragraphHasParaMarker(p, 'ins')) {
-      paragraphsToRemove.add(p);
-      continue;
-    }
-    // Paragraphs whose only content is inside w:ins or w:moveTo
-    if (paragraphHasOnlyInsertedContent(p)) {
       paragraphsToRemove.add(p);
     }
   }

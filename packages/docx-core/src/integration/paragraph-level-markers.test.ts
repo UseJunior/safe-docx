@@ -69,4 +69,41 @@ describe('Paragraph-Level Track Changes Markers (Aspose-Style)', () => {
       expect(countParagraphs(rejectedXml)).toBe(countParagraphs(origXml));
     });
   });
+
+  test('reject detects the paragraph mark strictly (pPr/rPr) and ignores w:ins nested in a w:pPrChange snapshot', async ({ given, when, then, and }: AllureBddContext) => {
+    // Regression: paragraphHasParaMarker must match only the live w:pPr > w:rPr > w:ins
+    // shape, not any descendant w:ins under w:pPr. A w:pPrChange snapshot stores a prior
+    // w:pPr/w:rPr that can contain a w:ins; a descendant search would mistake it for the
+    // live paragraph mark and drop a paragraph the primitive rejectChanges keeps.
+    let xml: string;
+    let rejectedXml = '';
+
+    await given('a doc with (A) a paragraph whose only w:ins under pPr is nested in a w:pPrChange + a bare run, and (B) a paragraph with a direct pPr/rPr w:ins mark', () => {
+      const ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+      xml =
+        `<w:document ${ns}><w:body>` +
+        // (A) nested-in-pPrChange — NOT a live mark → must survive reject (its run stays)
+        '<w:p><w:pPr><w:pPrChange w:id="9" w:author="x" w:date="2024-01-01T00:00:00Z">' +
+        '<w:pPr><w:rPr><w:ins w:id="8" w:author="x" w:date="2024-01-01T00:00:00Z"/></w:rPr></w:pPr>' +
+        '</w:pPrChange></w:pPr><w:r><w:t>survives</w:t></w:r></w:p>' +
+        // (B) direct PPR-INS mark → must be dropped on reject
+        '<w:p><w:pPr><w:rPr><w:ins w:id="1" w:author="x" w:date="2024-01-01T00:00:00Z"/></w:rPr></w:pPr>' +
+        '<w:ins w:id="2" w:author="x" w:date="2024-01-01T00:00:00Z"><w:r><w:t>inserted</w:t></w:r></w:ins></w:p>' +
+        '</w:body></w:document>';
+    });
+
+    await when('rejectAllChanges is applied', () => {
+      rejectedXml = rejectAllChanges(xml);
+    });
+
+    await then('the pPrChange-nested paragraph survives (its run is kept)', () => {
+      expect(rejectedXml).toContain('survives');
+    });
+
+    await and('the directly-PPR-INS-marked paragraph is dropped', () => {
+      expect(rejectedXml).not.toContain('inserted');
+      // Exactly one paragraph remains: the pPrChange one kept, the marked one removed.
+      expect(countParagraphs(rejectedXml)).toBe(1);
+    });
+  });
 });

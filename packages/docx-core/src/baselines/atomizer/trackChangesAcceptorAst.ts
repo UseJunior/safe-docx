@@ -28,9 +28,17 @@ function getParagraphPPr(p: Element): Element | undefined {
 }
 
 function paragraphHasParaMarker(p: Element, tagName: 'w:ins' | 'w:del'): boolean {
+  // Strict paragraph-mark marker shape: w:p > w:pPr > w:rPr > (w:ins | w:del),
+  // navigated by direct children only — NOT a descendant search. A descendant
+  // search would mistake a marker nested inside a w:pPrChange snapshot (which
+  // stores a prior w:pPr/w:rPr) for the live paragraph mark, and would diverge
+  // from the primitive rejectChanges (primitives/reject_changes.ts), which both
+  // reject paths must agree with.
   const pPr = getParagraphPPr(p);
   if (!pPr) return false;
-  return findAllByTagName(pPr, tagName).length > 0;
+  const rPr = childElements(pPr).find((c) => c.tagName === 'w:rPr');
+  if (!rPr) return false;
+  return childElements(rPr).some((c) => c.tagName === tagName);
 }
 
 function removeParaMarkers(root: Element): void {
@@ -89,29 +97,6 @@ function findNeighborParagraphOutsideRemoval(
   }
 
   return undefined;
-}
-
-/**
- * Tag names that represent visible content inside a w:r element.
- * A run containing at least one of these is considered substantive (non-empty).
- */
-const RUN_VISIBLE_CONTENT_TAGS: ReadonlySet<string> = new Set([
-  'w:t', 'w:tab', 'w:br', 'w:cr', 'w:drawing', 'w:object', 'w:pict',
-  'w:sym', 'w:fldChar', 'w:instrText',
-]);
-
-/**
- * Returns true if a w:r element contains at least one visible content child.
- * Empty runs (containing only w:rPr or nothing) return false.
- */
-function runHasVisibleContent(run: Element): boolean {
-  for (let i = 0; i < run.childNodes.length; i++) {
-    const child = run.childNodes[i]!;
-    if (child.nodeType === NODE_TYPE.ELEMENT && RUN_VISIBLE_CONTENT_TAGS.has((child as Element).tagName)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function paragraphContentStartIndex(paragraph: Element): number {
@@ -519,61 +504,20 @@ export function acceptAllChanges(documentXml: string): string {
 export function rejectAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
-  // Step 1: Find paragraphs where w:ins is the ONLY substantive content
-  // (no w:del, no w:r outside track changes)
+  // Step 1: Remove a paragraph on Reject All iff its paragraph MARK is a tracked
+  // insertion (<w:pPr><w:rPr><w:ins .../></w:rPr>) — i.e. the paragraph break itself
+  // was inserted, so rejecting the insertion removes the whole paragraph. This is the
+  // Word/LibreOffice-faithful, purely mark-based rule.
+  //
+  // We deliberately do NOT drop a paragraph based on content (e.g. "all runs are inside
+  // w:ins"). A run-level insertion under an UNTRACKED paragraph mark means text was
+  // inserted into a pre-existing paragraph; Word and LibreOffice both keep that
+  // paragraph (empty) on reject, and a content-based drop over-deletes it. safe-docx's
+  // own inserted paragraphs always carry the PPR-INS mark now (wrapParagraphAsInserted),
+  // so the mark-based rule covers them without the old content heuristic.
   const paragraphsToRemove = new Set<Element>();
-  // Paragraph-level insertion markers (Aspose/Word encode inserted paragraphs via <w:pPr><w:rPr><w:ins .../></w:rPr>)
-  // should remove the paragraph on Reject All.
   for (const p of findAllByTagName(root, 'w:p')) {
     if (paragraphHasParaMarker(p, 'w:ins')) {
-      paragraphsToRemove.add(p);
-    }
-  }
-
-  // Also check paragraphs where ALL substantive content is inside w:ins and/or
-  // w:moveTo wrappers (no bare w:r, no w:del, no w:moveFrom). These paragraphs
-  // should be removed on reject even without an explicit PPR-INS paragraph marker.
-  // This handles the inplace modifier's no-op wrapParagraphAsInserted (which omits
-  // PPR-INS for Google Docs compatibility).
-  for (const p of findAllByTagName(root, 'w:p')) {
-    if (paragraphsToRemove.has(p)) continue;
-
-    // Must have at least one w:ins or w:moveTo
-    const insEls = findAllByTagName(p, 'w:ins');
-    const moveToEls = findAllByTagName(p, 'w:moveTo');
-    if (insEls.length === 0 && moveToEls.length === 0) continue;
-
-    // Skip if paragraph has deleted/moveFrom content (those survive reject)
-    const dels = findAllByTagName(p, 'w:del');
-    const moveFroms = findAllByTagName(p, 'w:moveFrom');
-    if (dels.length > 0 || moveFroms.length > 0) continue;
-
-    // Check if this paragraph has any w:r elements with visible content
-    // outside of w:ins/w:moveTo. Empty w:r shells (no w:t, w:tab, w:br, etc.)
-    // should NOT count as substantive content — they are artifacts that would
-    // otherwise prevent paragraph removal, leaving ghost paragraphs after reject.
-    let hasContentOutsideRemoved = false;
-    for (const child of childElements(p)) {
-      if (child.tagName === 'w:r') {
-        if (runHasVisibleContent(child)) {
-          hasContentOutsideRemoved = true;
-          break;
-        }
-        continue;
-      }
-      if (child.tagName !== 'w:ins' && child.tagName !== 'w:moveTo' &&
-          child.tagName !== 'w:pPr' &&
-          child.tagName !== 'w:moveToRangeStart' && child.tagName !== 'w:moveToRangeEnd' &&
-          child.tagName !== 'w:bookmarkStart' && child.tagName !== 'w:bookmarkEnd') {
-        const runsInChild = findAllByTagName(child, 'w:r');
-        if (runsInChild.some(runHasVisibleContent)) {
-          hasContentOutsideRemoved = true;
-          break;
-        }
-      }
-    }
-
-    if (!hasContentOutsideRemoved) {
       paragraphsToRemove.add(p);
     }
   }
@@ -583,7 +527,7 @@ export function rejectAllChanges(documentXml: string): string {
   // Step 2: Remove w:ins elements entirely (inserted content disappears)
   removeAllByTagName(root, 'w:ins');
 
-  // Step 3: Remove paragraphs that ONLY had w:ins content
+  // Step 3: Remove the PPR-INS-marked paragraphs (their paragraph mark was inserted)
   for (const p of paragraphsToRemove) {
     if (p.parentNode) {
       p.parentNode.removeChild(p);

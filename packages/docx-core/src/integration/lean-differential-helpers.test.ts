@@ -30,13 +30,15 @@
  * it (`add-lean-deleted-field-code-constraint`), so the two engines AGREE:
  *   G1  fldChar inside w:del            → Lean validate=false, TS validate=false  (agree)
  *   G2  delInstrText outside w:del      → Lean validate=false, TS validate=false  (agree)
- * Two KNOWN gaps remain, pinned as characterization cases — the worklist for the next
- * model-broadening increment (slice 4b: paragraph-mark accept/reject collapse, which needs
- * an OoxmlModel paragraph-datatype extension), not harness bugs:
+ * G4 — the reject-side paragraph collapse — is now also CLOSED, but as an ENGINE fidelity fix
+ * rather than a Lean change: an ins-only paragraph whose paragraph MARK is untracked means text
+ * inserted into a pre-existing paragraph, which Word/LibreOffice keep (empty) on reject. The TS
+ * engine used to drop it via a content-based heuristic; reject is now purely mark-based, so it
+ * keeps the empty paragraph, matching Lean (which never dropped it):
+ *   G4  reject of an ins-only paragraph → Lean keeps an empty <w:p>, TS keeps empty <w:p>  (agree)
+ * One KNOWN gap remains, pinned as a characterization case (a Lean-model gap, not a harness bug):
  *   G3  accept of an ins-wrappered      → Lean drops the paragraph, TS keeps empty <w:p>
- *       paragraph that collapses to empty
- *   G4  reject of an ins-only paragraph → Lean keeps an empty <w:p>, TS drops it
- *       (Lean `reject` never drops paragraphs; the reject-side analog of G3)
+ *       paragraph that collapses to empty  (closes when Lean `accept` is broadened to keep empties)
  *
  * Gating: when the executable is absent (a developer without the Lean toolchain, or an
  * un-built `.lake`), the suite is SKIPPED with a clear message so `npm test` stays green;
@@ -598,8 +600,8 @@ describeMaybe('Lean Differential Harness - Tier 2 helper extensional equivalence
     },
   );
 
-  test.openspec('[LEAN-HELP-06] G4 — reject paragraph-collapse is a characterized divergence')(
-    'reject of an ins-only paragraph: Lean keeps an empty paragraph, TS drops it',
+  test.openspec('[LEAN-HELP-06] G4 — reject paragraph-collapse now AGREES (engine fidelity fix)')(
+    'reject of an ins-only paragraph (untracked mark): Lean and TS both keep an empty paragraph',
     async ({ given, when, then }: AllureBddContext) => {
       let lean: HelperResult;
       await given('a doc whose first paragraph is only a w:ins (no surviving content)', async () => {
@@ -611,12 +613,14 @@ describeMaybe('Lean Differential Harness - Tier 2 helper extensional equivalence
         tsReject = xmlToTokens(rejectAllChanges(renderDocToXml(G4_DOC)));
         leanReject = docToTokens(lean!.reject);
       });
-      await then('Lean keeps an empty paragraph (its reject never drops) while the TS engine removes it', async () => {
-        // Lean reject keeps every paragraph: the collapsed one becomes an empty P[ ].
+      await then('both keep the collapsed paragraph as an empty P[ ] — mark-based reject is Word-faithful', async () => {
+        // The first paragraph's mark is UNTRACKED, so reject keeps it (now empty): an
+        // ins-run under an untracked mark means text inserted into a pre-existing
+        // paragraph, which Word and LibreOffice both keep on reject. The engine's old
+        // content-based drop over-deleted it; the mark-based reject now matches Lean.
         expect(leanReject).toEqual(['P[', ']', 'P[', 'R[', 't:keep', ']', ']']);
-        // TS drops the ins-only paragraph, keeping only the survivor.
-        expect(tsReject).toEqual(['P[', 'R[', 't:keep', ']', ']']);
-        expect(key(tsReject)).not.toBe(key(leanReject));
+        expect(tsReject).toEqual(['P[', ']', 'P[', 'R[', 't:keep', ']', ']']);
+        expect(key(tsReject)).toBe(key(leanReject));
       });
     },
   );

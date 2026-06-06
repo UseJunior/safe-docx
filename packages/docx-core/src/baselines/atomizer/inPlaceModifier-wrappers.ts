@@ -528,40 +528,22 @@ export function wrapParagraphAsInserted(
   dateStr: string,
   state: RevisionIdState
 ): boolean {
-  // For paragraphs with substantive run content: skip the paragraph-mark marker.
-  // Google Docs ignores (or actively hides) w:ins-wrapped runs when they
-  // coexist with PPR-INS markers. Since individual runs are already wrapped
-  // with <w:ins>, the paragraph-level marker is redundant for non-empty
-  // paragraphs and omitting it maximises cross-application compatibility.
+  // Mark the paragraph MARK as inserted (<w:pPr><w:rPr><w:ins/>). For a genuinely
+  // inserted paragraph the paragraph break itself is a tracked insertion, so this
+  // marker is what makes Reject All remove the whole paragraph (mark + content) and
+  // Accept All keep it. The individual runs are wrapped in <w:ins> separately; this
+  // function only adds the paragraph-mark marker.
   //
-  // For empty paragraphs (no runs, or only empty w:r shells): we MUST add
-  // the PPR-INS marker so that Reject All removes the paragraph. Without it,
-  // the empty paragraph shell survives reject, causing round-trip safety failures.
-  //
-  // Important: empty <w:r> elements (no w:t, w:tab, w:br, etc.) should NOT
-  // count as substantive content. They are empty shells that don't produce
-  // visible output and should not prevent PPR-INS from being added.
-  let hasSubstantiveContent = false;
-  for (const child of childElements(paragraph)) {
-    if (child.tagName === 'w:ins') {
-      // Check if the w:ins wrapper contains runs with visible content
-      for (let i = 0; i < child.childNodes.length; i++) {
-        const insChild = child.childNodes[i]!;
-        if (insChild.nodeType === 1 && (insChild as Element).tagName === 'w:r' &&
-            runHasVisibleContent(insChild as Element)) {
-          hasSubstantiveContent = true;
-          break;
-        }
-      }
-      if (hasSubstantiveContent) break;
-    } else if (child.tagName === 'w:r' && runHasVisibleContent(child)) {
-      hasSubstantiveContent = true;
-      break;
-    }
-  }
-  if (hasSubstantiveContent) {
-    return true;
-  }
+  // We ALWAYS emit the marker, including for non-empty paragraphs. A prior heuristic
+  // omitted it when the paragraph had substantive run content, on the (uncited) belief
+  // that Google Docs hides w:ins-wrapped runs that coexist with a PPR-INS marker. That
+  // is false — Google Docs renders the inserted runs identically with or without
+  // PPR-INS, and rejecting WITH the marker is cleaner there (it leaves no empty
+  // paragraph). Omitting the marker forced Reject All to guess via a content-based
+  // "all content is inside w:ins" heuristic that over-deleted foreign paragraphs whose
+  // mark is untracked (i.e. text inserted into a pre-existing paragraph, which Word and
+  // LibreOffice keep as an empty paragraph on reject). Reject is now purely mark-based
+  // (see rejectAllChanges / rejectChanges), which requires this marker to be present.
   addParagraphMarkRevisionMarker(paragraph, 'w:ins', author, dateStr, state);
   return true;
 }

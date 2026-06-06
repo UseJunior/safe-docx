@@ -782,7 +782,7 @@ describe('inPlaceModifier', () => {
       });
     });
 
-    test('should be a no-op for paragraphs with substantive runs (Google Docs compat)', async ({ given, when, then }: AllureBddContext) => {
+    test('always adds the PPR-INS marker, including for paragraphs with substantive runs', async ({ given, when, then }: AllureBddContext) => {
       let pPr: Element, p: Element;
       let state: ReturnType<typeof createRevisionIdState>;
       let result: boolean;
@@ -799,13 +799,18 @@ describe('inPlaceModifier', () => {
         result = wrapParagraphAsInserted(p, author, dateStr, state);
       });
 
-      await then('no PPR-INS marker is added — runs with visible content are wrapped by w:ins', () => {
+      await then('the PPR-INS paragraph-mark marker is added so reject stays purely mark-based', () => {
         expect(result).toBe(true);
 
-        // No PPR-INS marker — runs with visible content already wrapped by w:ins
+        // A genuinely inserted paragraph's mark is itself inserted. We always emit
+        // PPR-INS (even for non-empty paragraphs) so that mark-based Reject All removes
+        // the whole paragraph. The prior "Google Docs compat" omission was uncited and
+        // false — Google Docs renders the inserted runs identically with PPR-INS present.
         const pPrChildren = childElements(pPr);
         const rPr = pPrChildren.find((c) => c.tagName === 'w:rPr');
-        expect(rPr).toBeUndefined();
+        expect(rPr).toBeDefined();
+        const insMarker = childElements(rPr!).find((c) => c.tagName === 'w:ins');
+        expect(insMarker).toBeDefined();
       });
     });
   });
