@@ -125,3 +125,67 @@ describe('OdfDocument — replaceTextById', () => {
     expect(doc.getParagraphTextById('p0')).toBe('Hello planet today');
   });
 });
+
+describe('OdfDocument — insertParagraph', () => {
+  it('[OINS-01] inserts a body paragraph AFTER the anchor, inheriting its style', () => {
+    const doc = OdfDocument.fromContentXml(
+      contentXml('<text:p text:style-name="Standard">First</text:p><text:p>Second</text:p>'),
+    );
+    const res = doc.insertParagraph('p0', 'Inserted', 'AFTER');
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.newIds).toEqual(['p1']);
+    expect(doc.getParagraphs().map((p) => p.text)).toEqual(['First', 'Inserted', 'Second']);
+    // Inherited the anchor's body-paragraph style.
+    expect(doc.toXml()).toContain('text:style-name="Standard">Inserted');
+  });
+
+  it('inserts BEFORE the anchor', () => {
+    const doc = OdfDocument.fromContentXml(contentXml('<text:p>Only</text:p>'));
+    const res = doc.insertParagraph('p0', 'New first', 'BEFORE');
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.newIds).toEqual(['p0']);
+    expect(doc.getParagraphs().map((p) => p.text)).toEqual(['New first', 'Only']);
+  });
+
+  it('[OINS-02] does NOT propagate heading style when the anchor is a text:h', () => {
+    const doc = OdfDocument.fromContentXml(
+      contentXml('<text:h text:style-name="Heading_2">Title</text:h>'),
+    );
+    const res = doc.insertParagraph('p0', 'Body text', 'AFTER');
+    expect(res.ok).toBe(true);
+    const xml = doc.toXml();
+    // The inserted body paragraph must not carry the heading style.
+    expect(xml).toContain('<text:p>Body text</text:p>');
+    expect(xml).not.toContain('text:style-name="Heading_2">Body text');
+  });
+
+  it('[OINS-03] splits blank lines into multiple paragraphs; single newline is a line break', () => {
+    const doc = OdfDocument.fromContentXml(contentXml('<text:p>Anchor</text:p>'));
+    const res = doc.insertParagraph('p0', 'Para one\n\nPara two\nstill two', 'AFTER');
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.newIds).toEqual(['p1', 'p2']);
+    const texts = doc.getParagraphs().map((p) => p.text);
+    expect(texts[0]).toBe('Anchor');
+    expect(texts[1]).toBe('Para one');
+    expect(texts[2]).toBe('Para two\nstill two'); // line-break preserved as \n in visible text
+    expect(doc.toXml()).toContain('<text:line-break/>');
+  });
+
+  it('[OINS-04] returns ANCHOR_NOT_FOUND for an unknown id without throwing', () => {
+    const doc = OdfDocument.fromContentXml(contentXml('<text:p>Only</text:p>'));
+    const res = doc.insertParagraph('p9', 'X', 'AFTER');
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe('ANCHOR_NOT_FOUND');
+    expect(doc.getParagraphs()).toHaveLength(1);
+  });
+
+  it('shifts positional IDs after the insertion point', () => {
+    const doc = OdfDocument.fromContentXml(
+      contentXml('<text:p>A</text:p><text:p>B</text:p><text:p>C</text:p>'),
+    );
+    // Insert after p0 — old p1/p2 (B/C) shift to p2/p3.
+    doc.insertParagraph('p0', 'NEW', 'AFTER');
+    const paras = doc.getParagraphs();
+    expect(paras.map((p) => `${p.id}:${p.text}`)).toEqual(['p0:A', 'p1:NEW', 'p2:B', 'p3:C']);
+  });
+});

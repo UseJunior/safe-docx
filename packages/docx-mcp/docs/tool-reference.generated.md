@@ -26,7 +26,7 @@ Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k 
 
 ## `grep`
 
-Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs.
+Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs. ODT supported via file_path (single-file) only.
 
 - readOnly: `true`
 - destructive: `false`
@@ -104,7 +104,7 @@ Replace text in a paragraph by provider paragraph id, preserving formatting wher
 
 ## `insert_paragraph`
 
-Insert a paragraph before/after an anchor paragraph by _bk_* id. Supports DOCX and Google Docs.
+Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.)
 
 - readOnly: `false`
 - destructive: `true`

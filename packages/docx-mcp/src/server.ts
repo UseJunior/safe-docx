@@ -46,6 +46,18 @@ function isOdfRequest(args: Record<string, unknown>): boolean {
   return path.extname(filePath).toLowerCase() === '.odt';
 }
 
+/**
+ * True when any input-path field on the args points at a `.odt`. Used to guard tools
+ * that take path fields other than `file_path` (e.g. `compare_documents`'s two-file
+ * `original_file_path` / `revised_file_path`), which `isOdfRequest` does not cover.
+ */
+function hasOdfInputPath(args: Record<string, unknown>, fields: string[]): boolean {
+  return fields.some((f) => {
+    const v = args[f];
+    return typeof v === 'string' && path.extname(v.trim()).toLowerCase() === '.odt';
+  });
+}
+
 // Lazy-loaded gdocs handler map (populated on first gdocs request)
 let gdocsHandlers: Record<string, (m: SessionManager, s: GDocsSession, p: any, meta: Record<string, unknown>) => Promise<ToolResponse>> | null = null;
 let odfHandlers: Record<string, (m: SessionManager, s: OdfSession, p: any, meta: Record<string, unknown>) => Promise<ToolResponse>> | null = null;
@@ -77,9 +89,11 @@ async function loadGDocsHandlers(): Promise<typeof gdocsHandlers> {
 
 async function loadOdfHandlers(): Promise<typeof odfHandlers> {
   if (odfHandlers) return odfHandlers;
-  const [readFile, replaceText, save, getFileStatus, closeFile] = await Promise.all([
+  const [readFile, replaceText, grep, insertParagraph, save, getFileStatus, closeFile] = await Promise.all([
     import('./tools/odf/read_file.js'),
     import('./tools/odf/replace_text.js'),
+    import('./tools/odf/grep.js'),
+    import('./tools/odf/insert_paragraph.js'),
     import('./tools/odf/save.js'),
     import('./tools/odf/get_file_status.js'),
     import('./tools/odf/close_file.js'),
@@ -87,6 +101,8 @@ async function loadOdfHandlers(): Promise<typeof odfHandlers> {
   odfHandlers = {
     read_file: readFile.odfReadFile,
     replace_text: replaceText.odfReplaceText,
+    grep: grep.odfGrep,
+    insert_paragraph: insertParagraph.odfInsertParagraph,
     save: save.odfSave,
     get_file_status: getFileStatus.odfGetFileStatus,
     close_file: closeFile.odfCloseFile,
@@ -136,6 +152,7 @@ export async function dispatchToolCall(
       return await readFile(sessions, args as Parameters<typeof readFile>[1]);
     case 'grep':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'grep');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'grep');
       return await grep(sessions, args as Parameters<typeof grep>[1]);
     case 'init_plan':
       return await initPlan(sessions, args as Parameters<typeof initPlan>[1]);
@@ -149,6 +166,7 @@ export async function dispatchToolCall(
       return await replaceText(sessions, args as Parameters<typeof replaceText>[1]);
     case 'insert_paragraph':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'insert_paragraph');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'insert_paragraph');
       return await insertParagraph(sessions, args as Parameters<typeof insertParagraph>[1]);
     case 'save':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'save');
@@ -178,6 +196,12 @@ export async function dispatchToolCall(
     case 'delete_comment':
       return await deleteComment(sessions, args as Parameters<typeof deleteComment>[1]);
     case 'compare_documents':
+      // compare_documents resolves its inputs via original_file_path / revised_file_path
+      // (not file_path), so the shared resolver's .odt chokepoint can't see them. Guard
+      // here: a .odt on any input path is UNSUPPORTED_FOR_ODF (compare is Phase-2b ODF work).
+      if (isOdfRequest(args) || hasOdfInputPath(args, ['original_file_path', 'revised_file_path'])) {
+        return checkOdfSupport('compare_documents')!;
+      }
       return await compareDocuments_tool(sessions, args as Parameters<typeof compareDocuments_tool>[1]);
     case 'get_footnotes':
       return await getFootnotes(sessions, args as Parameters<typeof getFootnotes>[1]);
