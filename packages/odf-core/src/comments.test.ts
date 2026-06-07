@@ -108,4 +108,53 @@ describe('OdfDocument — comments (office:annotation)', () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.code).toBe('ANCHOR_NOT_FOUND');
   });
+
+  it('rejects a reversed/out-of-bounds/one-sided range with INVALID_RANGE and does not mutate text', () => {
+    const make = () => OdfDocument.fromContentXml(contentXml('<text:p>abcdef</text:p>'));
+    for (const range of [
+      { start: 4, end: 2 }, // reversed
+      { start: 2, end: 2 }, // empty
+      { start: -1, end: 3 }, // negative
+      { start: 0, end: 99 }, // out of bounds
+      { start: 1 }, // one-sided
+      { end: 3 }, // one-sided
+    ]) {
+      const doc = make();
+      const res = doc.addComment({ paragraphId: 'p0', author: 'A', text: 'x', ...range });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('INVALID_RANGE');
+      // The paragraph text is untouched (no duplication / corruption).
+      expect(doc.getParagraphs()[0]!.text).toBe('abcdef');
+    }
+  });
+
+  it('round-trips a multi-line comment body (line breaks preserved, not collapsed to spaces)', () => {
+    const doc = OdfDocument.fromContentXml(contentXml('<text:p>Anchor</text:p>'));
+    const res = doc.addComment({ paragraphId: 'p0', author: 'A', text: 'line one\nline two' });
+    expect(res.ok).toBe(true);
+    // Written as text:line-break, not a literal newline in one text node.
+    expect(doc.toXml()).toContain('line one<text:line-break/>line two');
+    // Reads back with the newline intact (via a serialize → reparse round trip).
+    const reparsed = OdfDocument.fromContentXml(doc.toXml());
+    expect(reparsed.getComments()[0]!.text).toBe('line one\nline two');
+  });
+
+  it('allocates new ids past the synthetic ids readAnnotations assigns to custom-named annotations', () => {
+    // A LibreOffice-style annotation with a non-`__Annot__N` name is read as a synthetic id.
+    const doc = OdfDocument.fromContentXml(
+      contentXml('<text:p>Body<office:annotation office:name="Bob"><dc:creator>Bob</dc:creator><text:p>hi</text:p></office:annotation><office:annotation-end office:name="Bob"/></text:p>'),
+    );
+    const before = doc.getComments();
+    expect(before).toHaveLength(1);
+    const customId = before[0]!.id; // synthetic id for "Bob"
+    const res = doc.addComment({ paragraphId: 'p0', author: 'A', text: 'new' });
+    expect(res.ok).toBe(true);
+    const after = doc.getComments();
+    // No two comments share an id, and the new comment's id does not steal the custom one's.
+    const ids = after.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    if (res.ok) expect(ids).toContain(res.commentId);
+    // The newly added comment's id is distinct from the custom annotation's original id.
+    if (res.ok) expect(res.commentId).not.toBe(customId);
+  });
 });

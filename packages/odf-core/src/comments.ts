@@ -39,7 +39,7 @@ export type AddAnnotationParams = {
 
 export type AddAnnotationResult =
   | { ok: true; commentId: number; name: string }
-  | { ok: false; code: 'MATCH_SPANS_MULTIPLE_NODES'; message: string };
+  | { ok: false; code: 'MATCH_SPANS_MULTIPLE_NODES' | 'INVALID_RANGE'; message: string };
 
 const ANNOT_NAME_RE = /^__Annot__(\d+)$/;
 
@@ -66,17 +66,25 @@ function existingAnnotationNames(doc: Document): Set<string> {
 }
 
 /**
- * Allocate `{ id, name }` for a new annotation: the smallest N such that `__Annot__N` collides
- * with no existing `office:name` AND N exceeds every numeric suffix already present.
+ * Allocate `{ id, name }` for a new annotation, in the SAME id space `readAnnotations` derives.
+ * `readAnnotations` assigns parsed `__Annot__<n>` suffixes, then hands every annotation whose name
+ * does NOT match that pattern a synthetic id starting at `maxParsed + 1`. So the next free id must
+ * clear both: `maxParsed + (count of non-matching annotation elements) + 1`. Still guard against a
+ * literal `office:name` collision. This keeps the returned `commentId` from coinciding with the
+ * synthetic id a custom-named (e.g. LibreOffice) annotation would otherwise receive.
  */
 function allocateName(doc: Document): { id: number; name: string } {
   const names = existingAnnotationNames(doc);
   let maxParsed = 0;
-  for (const name of names) {
-    const m = ANNOT_NAME_RE.exec(name);
+  let nonMatching = 0;
+  const annots = doc.getElementsByTagNameNS(ODF_NS.OFFICE, 'annotation');
+  for (let i = 0; i < annots.length; i++) {
+    const name = attrNS(annots[i] as Element, ODF_NS.OFFICE, 'name', 'office:name');
+    const m = name ? ANNOT_NAME_RE.exec(name) : null;
     if (m) maxParsed = Math.max(maxParsed, Number.parseInt(m[1]!, 10));
+    else nonMatching += 1;
   }
-  let id = maxParsed + 1;
+  let id = maxParsed + nonMatching + 1;
   while (names.has(`__Annot__${id}`)) id += 1;
   return { id, name: `__Annot__${id}` };
 }
@@ -90,9 +98,18 @@ function makeAnnotation(doc: Document, name: string, params: AddAnnotationParams
   const date = doc.createElementNS(ODF_NS.DC, 'dc:date');
   date.appendChild(doc.createTextNode(nowOdfDate()));
   annot.appendChild(date);
-  const body = doc.createElementNS(ODF_NS.TEXT, 'text:p');
-  if (params.text.length > 0) body.appendChild(doc.createTextNode(params.text));
-  annot.appendChild(body);
+  // Body: blank lines split into separate `text:p`; single newlines become `text:line-break`
+  // (parity with insertParagraph). A literal `\n` in one text node would otherwise render as a
+  // space in LibreOffice and round-trip lossily through getComments.
+  const blockTexts = params.text.replace(/\r\n/g, '\n').split(/\n{2,}/);
+  for (const blockText of blockTexts) {
+    const body = doc.createElementNS(ODF_NS.TEXT, 'text:p');
+    blockText.split('\n').forEach((line, i) => {
+      if (i > 0) body.appendChild(doc.createElementNS(ODF_NS.TEXT, 'text:line-break'));
+      if (line.length > 0) body.appendChild(doc.createTextNode(line));
+    });
+    annot.appendChild(body);
+  }
   return annot;
 }
 
@@ -108,12 +125,22 @@ function makeAnnotationEnd(doc: Document, name: string): Element {
  * `MATCH_SPANS_MULTIPLE_NODES` if a ranged match crosses node boundaries.
  */
 export function addAnnotation(doc: Document, block: Element, params: AddAnnotationParams): AddAnnotationResult {
-  const ranged = params.start != null && params.end != null;
-  const { id, name } = allocateName(doc);
-  const annot = makeAnnotation(doc, name, params);
+  const hasStart = params.start != null;
+  const hasEnd = params.end != null;
+  // A range is all-or-nothing; a one-sided range is a caller error, not a whole-paragraph comment.
+  if (hasStart !== hasEnd) {
+    return {
+      ok: false,
+      code: 'INVALID_RANGE',
+      message: 'A ranged comment requires both start and end; provide neither for a whole-paragraph comment.',
+    };
+  }
+  const ranged = hasStart && hasEnd;
 
   if (!ranged) {
     // Whole-paragraph: structural bracket, independent of text segmentation.
+    const { id, name } = allocateName(doc);
+    const annot = makeAnnotation(doc, name, params);
     if (!block.firstChild) {
       // Empty paragraph → a single point annotation (no end marker).
       block.appendChild(annot);
@@ -126,7 +153,17 @@ export function addAnnotation(doc: Document, block: Element, params: AddAnnotati
 
   const start = params.start!;
   const end = params.end!;
-  const { segments } = buildSegments(block);
+  const { segments, visible } = buildSegments(block);
+  // Fail closed on a malformed range before mutating the DOM (reversed/oob ranges duplicate text).
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= end || end > visible.length) {
+    return {
+      ok: false,
+      code: 'INVALID_RANGE',
+      message: `Invalid annotation range [${start}, ${end}) for a paragraph of visible length ${visible.length}.`,
+    };
+  }
+  const { id, name } = allocateName(doc);
+  const annot = makeAnnotation(doc, name, params);
   const host = segments.find(
     (seg) => seg.kind === 'text' && start >= seg.visStart && end <= seg.visStart + seg.length,
   );
@@ -160,14 +197,18 @@ export function addAnnotation(doc: Document, block: Element, params: AddAnnotati
   return { ok: true, commentId: id, name };
 }
 
-/** Visible text of an annotation body (its child `text:p` elements, joined by newlines). */
+/**
+ * Visible text of an annotation body (its child `text:p` elements, joined by newlines). Uses
+ * `buildSegments` rather than `textContent` so `text:line-break` → `\n` and `text:s` → spaces are
+ * preserved (a LibreOffice multi-line comment round-trips instead of collapsing to one line).
+ */
 function annotationBodyText(annot: Element): string {
   const parts: string[] = [];
   for (let child = annot.firstChild; child; child = child.nextSibling) {
     if (child.nodeType !== ELEMENT_NODE) continue;
     const el = child as Element;
     if (el.namespaceURI === ODF_NS.TEXT && el.localName === 'p') {
-      parts.push(el.textContent ?? '');
+      parts.push(buildSegments(el).visible);
     }
   }
   return parts.join('\n');

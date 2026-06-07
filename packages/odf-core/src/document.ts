@@ -44,7 +44,7 @@ export type AddCommentParams = {
 
 export type AddCommentResult =
   | { ok: true; commentId: number }
-  | { ok: false; code: 'ANCHOR_NOT_FOUND' | 'MATCH_SPANS_MULTIPLE_NODES'; message: string };
+  | { ok: false; code: 'ANCHOR_NOT_FOUND' | 'MATCH_SPANS_MULTIPLE_NODES' | 'INVALID_RANGE'; message: string };
 
 export class OdfDocument {
   private doc: Document;
