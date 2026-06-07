@@ -278,7 +278,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'add_comment',
     description:
-      'Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies.',
+      'Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies. Supports DOCX and ODT (ODT backs comments with office:annotation; threaded replies are DOCX-only).',
     input: z.object({
       ...FILE_FIELD,
       target_paragraph_id: z.string().optional().describe('Paragraph ID to anchor the comment to (for root comments).'),
@@ -293,7 +293,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'get_comments',
     description:
-      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies. Read-only.',
+      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.',
     input: z.object({
       ...FILE_FIELD,
     }),

@@ -11,6 +11,8 @@ export const ODF_NS = {
   STYLE: 'urn:oasis:names:tc:opendocument:xmlns:style:1.0',
   TABLE: 'urn:oasis:names:tc:opendocument:xmlns:table:1.0',
   MANIFEST: 'urn:oasis:names:tc:opendocument:xmlns:manifest:1.0',
+  // Dublin Core — carries annotation/change author (`dc:creator`) and date (`dc:date`).
+  DC: 'http://purl.org/dc/elements/1.1/',
 } as const;
 
 /** The mimetype value an OpenDocument text package declares. */

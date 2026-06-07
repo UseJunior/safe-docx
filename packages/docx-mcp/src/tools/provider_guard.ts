@@ -7,7 +7,8 @@ const GDOCS_SUPPORTED_TOOLS = new Set([
 ]);
 
 const ODF_SUPPORTED_TOOLS = new Set([
-  'read_file', 'replace_text', 'grep', 'insert_paragraph', 'save', 'get_file_status', 'close_file',
+  'read_file', 'replace_text', 'grep', 'insert_paragraph', 'add_comment', 'get_comments',
+  'save', 'get_file_status', 'close_file',
 ]);
 
 export function checkGDocsSupport(toolName: string): ToolResponse | null {
@@ -26,7 +27,7 @@ export function checkOdfSupport(toolName: string): ToolResponse | null {
     return err(
       'UNSUPPORTED_FOR_ODF',
       `'${toolName}' is not supported for ODF (.odt) files.`,
-      'Use read_file, replace_text, grep, insert_paragraph, save, get_file_status, or close_file for .odt files.',
+      'Use read_file, replace_text, grep, insert_paragraph, add_comment, get_comments, save, get_file_status, or close_file for .odt files.',
     );
   }
   return null;

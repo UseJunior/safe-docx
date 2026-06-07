@@ -14,9 +14,8 @@
 import { parseXml, serializeXml } from '@usejunior/docx-core';
 
 import { ODF_NS } from './shared/odf/namespaces.js';
-
-const TEXT_NODE = 3;
-const ELEMENT_NODE = 1;
+import { ELEMENT_NODE, buildSegments, isAnnotationSubtree, isTextBlock } from './shared/odf/text_segments.js';
+import { addAnnotation, readAnnotations, type AddAnnotationResult, type OdfComment } from './comments.js';
 
 export type OdfParagraph = {
   /** Deterministic structural ID (document-order ordinal), stable for identical bytes. */
@@ -33,14 +32,19 @@ export type InsertResult =
   | { ok: true; newIds: string[] }
   | { ok: false; code: 'ANCHOR_NOT_FOUND'; message: string };
 
-/** A contiguous slice of a paragraph's visible text and where it came from. */
-type Segment =
-  | { kind: 'text'; node: { data: string }; visStart: number; length: number }
-  | { kind: 'virtual'; visStart: number; length: number };
+/** Parameters for {@link OdfDocument.addComment}. A `start`/`end` range is optional; omit for whole-paragraph. */
+export type AddCommentParams = {
+  paragraphId: string;
+  start?: number;
+  end?: number;
+  author: string;
+  text: string;
+  initials?: string;
+};
 
-function isTextBlock(el: { namespaceURI?: string | null; localName?: string | null }): boolean {
-  return el.namespaceURI === ODF_NS.TEXT && (el.localName === 'p' || el.localName === 'h');
-}
+export type AddCommentResult =
+  | { ok: true; commentId: number }
+  | { ok: false; code: 'ANCHOR_NOT_FOUND' | 'MATCH_SPANS_MULTIPLE_NODES' | 'INVALID_RANGE'; message: string };
 
 export class OdfDocument {
   private doc: Document;
@@ -66,6 +70,8 @@ export class OdfDocument {
     for (let child = node.firstChild; child; child = child.nextSibling) {
       if (child.nodeType !== ELEMENT_NODE) continue;
       const el = child as Element;
+      // An annotation carries its own `text:p` comment body; never enumerate it as a block.
+      if (isAnnotationSubtree(el)) continue;
       if (isTextBlock(el)) {
         out.push(el);
         // Block-level text elements are not nested inside one another in ODF, but
@@ -90,7 +96,7 @@ export class OdfDocument {
   getParagraphs(): OdfParagraph[] {
     return this.blocks.map((el, i) => ({
       id: this.idForIndex(i),
-      text: this.buildSegments(el).visible,
+      text: buildSegments(el).visible,
     }));
   }
 
@@ -98,56 +104,7 @@ export class OdfDocument {
   getParagraphTextById(id: string): string | null {
     const el = this.blockForId(id);
     if (!el) return null;
-    return this.buildSegments(el).visible;
-  }
-
-  /**
-   * Build the ordered segment list and concatenated visible string for a block.
-   * `text:s` (count via `text:c`) expands to spaces, `text:tab` to a tab, and
-   * `text:line-break` to a newline — each a "virtual" segment with no single host
-   * `#text` node (so a match landing on one cannot be edited in place in Phase 1).
-   */
-  private buildSegments(block: Element): { segments: Segment[]; visible: string } {
-    const segments: Segment[] = [];
-    let visible = '';
-
-    const walk = (node: Node): void => {
-      for (let child = node.firstChild; child; child = child.nextSibling) {
-        if (child.nodeType === TEXT_NODE) {
-          const data = (child as unknown as { data: string }).data ?? '';
-          if (data.length === 0) continue;
-          segments.push({ kind: 'text', node: child as unknown as { data: string }, visStart: visible.length, length: data.length });
-          visible += data;
-          continue;
-        }
-        if (child.nodeType !== ELEMENT_NODE) continue;
-        const el = child as Element;
-        if (el.namespaceURI === ODF_NS.TEXT && el.localName === 's') {
-          const countRaw = el.getAttributeNS(ODF_NS.TEXT, 'c') ?? el.getAttribute('text:c');
-          const count = Math.max(1, Number.parseInt(countRaw ?? '1', 10) || 1);
-          const spaces = ' '.repeat(count);
-          segments.push({ kind: 'virtual', visStart: visible.length, length: spaces.length });
-          visible += spaces;
-          continue;
-        }
-        if (el.namespaceURI === ODF_NS.TEXT && el.localName === 'tab') {
-          segments.push({ kind: 'virtual', visStart: visible.length, length: 1 });
-          visible += '\t';
-          continue;
-        }
-        if (el.namespaceURI === ODF_NS.TEXT && el.localName === 'line-break') {
-          segments.push({ kind: 'virtual', visStart: visible.length, length: 1 });
-          visible += '\n';
-          continue;
-        }
-        // Other elements (text:span, hyperlink, etc.): recurse so their inner
-        // #text nodes are recorded as separate segments.
-        walk(el);
-      }
-    };
-
-    walk(block);
-    return { segments, visible };
+    return buildSegments(el).visible;
   }
 
   /**
@@ -159,7 +116,7 @@ export class OdfDocument {
     if (!el) {
       return { ok: false, code: 'ANCHOR_NOT_FOUND', message: `Paragraph not found: ${id}` };
     }
-    const { segments, visible } = this.buildSegments(el);
+    const { segments, visible } = buildSegments(el);
     const matchStart = visible.indexOf(findText);
     if (matchStart < 0) {
       return { ok: false, code: 'TEXT_NOT_FOUND', message: `Text not found in paragraph ${id}: ${JSON.stringify(findText)}` };
@@ -241,6 +198,34 @@ export class OdfDocument {
 
     const newIds = newEls.map((el) => this.idForIndex(blocks.indexOf(el)));
     return { ok: true, newIds };
+  }
+
+  /**
+   * Insert an `office:annotation` comment on the paragraph identified by `paragraphId`.
+   * Omit `start`/`end` to bracket the whole paragraph (structural insertion, independent of
+   * text segmentation); supply a visible `start`/`end` range to bracket a substring (which must
+   * lie within a single `#text` node, else `MATCH_SPANS_MULTIPLE_NODES`). Annotations are inline
+   * children, so positional paragraph IDs do NOT shift.
+   */
+  addComment(params: AddCommentParams): AddCommentResult {
+    const block = this.blockForId(params.paragraphId);
+    if (!block) {
+      return { ok: false, code: 'ANCHOR_NOT_FOUND', message: `Paragraph not found: ${params.paragraphId}` };
+    }
+    const result: AddAnnotationResult = addAnnotation(this.doc, block, {
+      start: params.start,
+      end: params.end,
+      author: params.author,
+      text: params.text,
+      initials: params.initials,
+    });
+    if (!result.ok) return result;
+    return { ok: true, commentId: result.commentId };
+  }
+
+  /** All `office:annotation` comments in document order. */
+  getComments(): OdfComment[] {
+    return readAnnotations(this.blocks);
   }
 
   /** Serialize the (possibly edited) document back to a `content.xml` string. */
