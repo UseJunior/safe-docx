@@ -126,11 +126,9 @@ describe('ODF grep + insert_paragraph lane', () => {
         await firstId(manager, filePath);
       });
       await when('a still-unsupported tool targets the .odt path', async () => {
-        result = await dispatchToolCall(manager, 'add_comment', {
+        result = await dispatchToolCall(manager, 'compare_documents', {
           file_path: filePath,
-          target_paragraph_id: 'p0',
-          comment_text: 'should be rejected',
-          author: 'Jane Doe',
+          save_to_local_path: '/tmp/should-be-rejected.odt',
         });
       });
       await then('the provider guard returns UNSUPPORTED_FOR_ODF', () => {
@@ -246,13 +244,11 @@ describe('ODF grep + insert branch coverage', () => {
   it('two unsupported tools on the same .odt path name the correct tool (no stale pending replay)', async () => {
     const manager = new SessionManager();
     const filePath = await copyFixture();
-    const one = await dispatchToolCall(manager, 'add_comment', {
-      file_path: filePath, target_paragraph_id: 'p0', comment_text: 'x', author: 'Jane Doe',
-    });
+    const one = await dispatchToolCall(manager, 'extract_revisions', { file_path: filePath });
     const two = await dispatchToolCall(manager, 'delete_comment', { file_path: filePath, comment_id: 'c1' });
     assertError(one, 'UNSUPPORTED_FOR_ODF');
     assertError(two, 'UNSUPPORTED_FOR_ODF');
-    expect(one.error.message).toContain("'add_comment'");
+    expect(one.error.message).toContain("'extract_revisions'");
     expect(two.error.message).toContain("'delete_comment'");
     // A supported tool on the same path must still work (pending map not poisoned).
     const read = await dispatchToolCall(manager, 'read_file', { file_path: filePath, format: 'simple', limit: 50 });

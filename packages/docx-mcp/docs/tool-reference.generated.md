@@ -220,7 +220,7 @@ Close an open file session, or close all sessions with explicit confirmation. Su
 
 ## `add_comment`
 
-Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies.
+Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies. Supports DOCX and ODT (ODT backs comments with office:annotation; threaded replies are DOCX-only).
 
 - readOnly: `false`
 - destructive: `true`
@@ -237,7 +237,7 @@ Add a comment or threaded reply to a document. Provide target_paragraph_id + anc
 
 ## `get_comments`
 
-Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies. Read-only.
+Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.
 
 - readOnly: `true`
 - destructive: `false`

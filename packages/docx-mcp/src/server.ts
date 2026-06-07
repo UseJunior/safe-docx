@@ -89,11 +89,13 @@ async function loadGDocsHandlers(): Promise<typeof gdocsHandlers> {
 
 async function loadOdfHandlers(): Promise<typeof odfHandlers> {
   if (odfHandlers) return odfHandlers;
-  const [readFile, replaceText, grep, insertParagraph, save, getFileStatus, closeFile] = await Promise.all([
+  const [readFile, replaceText, grep, insertParagraph, addComment, getComments, save, getFileStatus, closeFile] = await Promise.all([
     import('./tools/odf/read_file.js'),
     import('./tools/odf/replace_text.js'),
     import('./tools/odf/grep.js'),
     import('./tools/odf/insert_paragraph.js'),
+    import('./tools/odf/add_comment.js'),
+    import('./tools/odf/get_comments.js'),
     import('./tools/odf/save.js'),
     import('./tools/odf/get_file_status.js'),
     import('./tools/odf/close_file.js'),
@@ -103,6 +105,8 @@ async function loadOdfHandlers(): Promise<typeof odfHandlers> {
     replace_text: replaceText.odfReplaceText,
     grep: grep.odfGrep,
     insert_paragraph: insertParagraph.odfInsertParagraph,
+    add_comment: addComment.odfAddComment,
+    get_comments: getComments.odfGetComments,
     save: save.odfSave,
     get_file_status: getFileStatus.odfGetFileStatus,
     close_file: closeFile.odfCloseFile,
@@ -190,8 +194,10 @@ export async function dispatchToolCall(
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'close_file');
       return await closeFile(sessions, args as Parameters<typeof closeFile>[1]);
     case 'add_comment':
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'add_comment');
       return await addComment(sessions, args as Parameters<typeof addComment>[1]);
     case 'get_comments':
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'get_comments');
       return await getComments(sessions, args as Parameters<typeof getComments>[1]);
     case 'delete_comment':
       return await deleteComment(sessions, args as Parameters<typeof deleteComment>[1]);
