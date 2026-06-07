@@ -35,10 +35,6 @@ function isW(node: Node, localName: string): node is Element {
   );
 }
 
-function isWElement(node: Node): node is Element {
-  return node.nodeType === 1 && (node as Element).namespaceURI === W_NS;
-}
-
 function getDepth(node: Node): number {
   let depth = 0;
   let cur: Node | null = node.parentNode;
@@ -103,60 +99,6 @@ function paragraphHasParaMarker(p: Element, markerLocalName: string): boolean {
   return false;
 }
 
-/**
- * Check if a node (or its descendants) contains any w:r elements.
- */
-function containsRun(node: Node): boolean {
-  if (isW(node, 'r')) return true;
-  for (let i = 0; i < node.childNodes.length; i++) {
-    if (containsRun(node.childNodes[i]!)) return true;
-  }
-  return false;
-}
-
-// Tags that are "removed" content — should not count as live content
-const REMOVED_LOCALS = new Set(['del', 'moveFrom']);
-// Tags that are "kept" content — their presence means the paragraph has live content
-const KEPT_LOCALS = new Set(['ins', 'moveTo']);
-// Range marker tags to ignore when scanning paragraph children
-const RANGE_MARKER_LOCALS = new Set([
-  'moveFromRangeStart', 'moveFromRangeEnd',
-  'moveToRangeStart', 'moveToRangeEnd',
-]);
-
-/**
- * Determine if a paragraph's only content lives inside w:del or w:moveFrom
- * (no w:r outside those wrappers, and no w:ins/w:moveTo siblings).
- */
-function paragraphHasOnlyRemovedContent(p: Element): boolean {
-  for (let i = 0; i < p.childNodes.length; i++) {
-    const child = p.childNodes[i]!;
-    if (child.nodeType !== 1) continue;
-    const el = child as Element;
-    if (el.namespaceURI !== W_NS) continue;
-    const local = el.localName;
-
-    // If the paragraph has kept content wrappers, it stays
-    if (KEPT_LOCALS.has(local)) return false;
-
-    // Skip pPr, range markers, and removed wrappers — they don't contribute live content
-    if (local === 'pPr' || RANGE_MARKER_LOCALS.has(local) || REMOVED_LOCALS.has(local)) continue;
-
-    // A bare w:r or any other element that contains runs means live content
-    if (local === 'r' || containsRun(el)) return false;
-  }
-
-  // We passed all children without finding live content — but there must be
-  // at least one removed wrapper for this to be a "removed content" paragraph
-  for (let i = 0; i < p.childNodes.length; i++) {
-    const child = p.childNodes[i]!;
-    if (child.nodeType === 1 && isWElement(child) && REMOVED_LOCALS.has(child.localName)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // Property change element local names (all 6 types)
 const PR_CHANGE_LOCALS = [
   'rPrChange', 'pPrChange', 'sectPrChange',
@@ -183,13 +125,15 @@ export function acceptChanges(doc: Document): AcceptChangesResult {
   const allParagraphs = collectByLocalName(root, 'p');
 
   for (const p of allParagraphs) {
-    // Paragraph-level deletion marker: w:p > w:pPr > w:rPr > w:del
+    // Remove a paragraph iff its paragraph MARK is a tracked deletion
+    // (w:p > w:pPr > w:rPr > w:del) — the paragraph break itself was deleted.
+    // We deliberately do NOT drop a paragraph based on content ("all runs inside
+    // w:del/w:moveFrom"): a run-level deletion under an untracked mark means text was
+    // deleted from a pre-existing paragraph, which Word/LibreOffice keep (empty) on
+    // accept. safe-docx's deleted paragraphs always carry the mark now, so the
+    // mark-based rule suffices and is Word-faithful. (Mirrors acceptAllChanges and the
+    // reject-side rule.)
     if (paragraphHasParaMarker(p, 'del')) {
-      paragraphsToRemove.add(p);
-      continue;
-    }
-    // Paragraphs whose only content is inside w:del or w:moveFrom
-    if (paragraphHasOnlyRemovedContent(p)) {
       paragraphsToRemove.add(p);
     }
   }

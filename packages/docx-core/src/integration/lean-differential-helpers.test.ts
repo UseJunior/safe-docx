@@ -42,10 +42,14 @@
  * paragraph). Lean `accept` was broadened to never drop, so the two engines now AGREE:
  *   G3  accept of an ins-wrappered      → Lean keeps an empty <w:p>, TS keeps empty <w:p>  (agree)
  *       paragraph that collapses to empty
- * One KNOWN gap remains, pinned as a characterization case (an ENGINE accept-side gap, the symmetric
- * analog of pre-#337 G4 — surfaced precisely by broadening Lean `accept`):
- *   G5  accept of a del-only paragraph  → Lean keeps an empty <w:p>, TS DROPS the paragraph
- *       whose mark is untracked           (closes when the TS engine accept path is made mark-based)
+ * G5 — the accept-side analog of G4 — is also CLOSED, as an ENGINE fidelity fix (the accept-side mirror
+ * of #337): a del-only paragraph whose paragraph MARK is untracked means text deleted from a pre-existing
+ * paragraph, which Word/LibreOffice keep (empty) on accept. The TS engine used to drop it via a
+ * content-based heuristic; accept is now purely mark-based (drop iff the mark is PPR-DEL), so it keeps the
+ * empty paragraph, matching Lean (which never dropped it):
+ *   G5  accept of a del-only paragraph  → Lean keeps an empty <w:p>, TS keeps empty <w:p>  (agree)
+ *       whose mark is untracked
+ * No KNOWN gap remains: G1–G5 all AGREE between the genuine Lean helpers and the production engine.
  *
  * Gating: when the executable is absent (a developer without the Lean toolchain, or an
  * un-built `.lake`), the suite is SKIPPED with a clear message so `npm test` stays green;
@@ -470,12 +474,11 @@ const G4_DOC: WireDoc = [
   { body: [{ run: { content: [{ text: 'keep' }] } }] },
 ];
 /**
- * G5: a del-only paragraph whose mark is untracked (accept side). The SYMMETRIC analog of
- * pre-#337 G4 — broadening Lean `accept` to keep empties surfaces it: Lean now keeps the
- * collapsed paragraph as an empty <w:p>, while the TS engine accept path still drops a
- * del-only paragraph via a content-based heuristic (the accept-side mirror of the reject
- * over-deletion fixed in #337). LibreOffice/Word keep the empty paragraph, so the TS accept
- * path is the one that needs the (deferred) mark-based fix; Lean is already faithful.
+ * G5: a del-only paragraph whose mark is untracked (accept side). The accept-side mirror of
+ * #337's reject fix: the paragraph mark is untracked, so accepting (dropping the del) leaves an
+ * empty <w:p> — which LibreOffice/Word keep. The TS engine accept path is now purely mark-based
+ * (drop iff the mark is PPR-DEL), so it keeps the empty paragraph, matching Lean (which never
+ * dropped it). Both engines now AGREE.
  */
 const G5_DOC: WireDoc = [
   { body: [{ del: [{ run: { content: [{ delText: 'x' }] } }] }] },
@@ -649,8 +652,8 @@ describeMaybe('Lean Differential Harness - Tier 2 helper extensional equivalence
     },
   );
 
-  test.openspec('[LEAN-HELP-08] G5 — accept paragraph-collapse for a del-only paragraph is a characterized divergence')(
-    'accept of a del-only untracked-mark paragraph: Lean keeps an empty <w:p>, the TS engine drops it',
+  test.openspec('[LEAN-HELP-08] G5 — accept paragraph-collapse for a del-only paragraph agrees (engine accept made mark-based)')(
+    'accept of a del-only untracked-mark paragraph: Lean and the TS engine both keep an empty <w:p>',
     async ({ given, when, then }: AllureBddContext) => {
       let lean: HelperResult;
       await given('a doc whose first paragraph is only a w:del (untracked paragraph mark)', async () => {
@@ -662,18 +665,17 @@ describeMaybe('Lean Differential Harness - Tier 2 helper extensional equivalence
         tsAccept = xmlToTokens(acceptAllChanges(renderDocToXml(G5_DOC)));
         leanAccept = docToTokens(lean!.accept);
       });
-      await then('Lean keeps the empty paragraph (faithful) while the TS engine over-deletes it', async () => {
-        // SYMMETRIC analog of pre-#337 G4, surfaced by broadening Lean `accept`: the paragraph
-        // mark is untracked, so accepting (dropping the del) leaves an empty <w:p> — which
-        // LibreOffice and Word keep. Lean now keeps it; the TS engine accept path still drops a
-        // del-only paragraph via a content-based heuristic (the accept-side mirror of the reject
-        // over-deletion fixed in #337). The engine accept fix is the deferred follow-up; this case
-        // pins the gap so it stays visible rather than silently passing.
+      await then('both keep the empty first paragraph, so the projections agree', async () => {
+        // Accept-side mirror of #337: the paragraph mark is untracked, so accepting (dropping the
+        // del) leaves an empty <w:p> — which LibreOffice and Word keep. Lean never dropped it, and
+        // the TS engine accept path is now purely mark-based (drop iff the mark is PPR-DEL), so it
+        // keeps the empty paragraph too. The content-based accept heuristic that used to over-delete
+        // this paragraph is gone; the two engines now AGREE.
         expect(leanAccept).toEqual(['P[', ']', 'P[', 'R[', 't:keep', ']', ']']);
-        // TS over-deletes the empty first paragraph: only the survivor remains.
-        expect(tsAccept).toEqual(['P[', 'R[', 't:keep', ']', ']']);
-        expect(key(tsAccept)).not.toBe(key(leanAccept));
-        expect(tsAccept.filter((t) => t === 'P[').length).toBe(1);
+        expect(tsAccept).toEqual(['P[', ']', 'P[', 'R[', 't:keep', ']', ']']);
+        expect(key(tsAccept)).toBe(key(leanAccept));
+        // The empty first paragraph survives: two paragraph-open tokens.
+        expect(tsAccept.filter((t) => t === 'P[').length).toBe(2);
       });
     },
   );

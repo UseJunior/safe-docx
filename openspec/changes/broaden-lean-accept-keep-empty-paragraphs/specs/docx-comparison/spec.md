@@ -25,8 +25,9 @@ and Lean `accept` SHALL now agree on a `w:ins`-wrappered collapsing paragraph. B
 surface and the harness SHALL pin a new characterized divergence `G5`: a `del`-only untracked-mark paragraph
 accepts to an empty `<w:p>` in Lean (faithful), but the TS `acceptAllChanges` over-deletes it via a
 content-based heuristic — the symmetric accept-side analog of the reject over-deletion fixed in
-`make-reject-paragraph-collapse-mark-based`, whose TS accept-side mark-based fix is the deferred successor
-increment. This requirement modifies the proved Lean model only; it introduces no production-engine change.
+`make-reject-paragraph-collapse-mark-based`. (That TS accept-side mark-based fix is subsequently delivered by
+the successor change `make-accept-paragraph-collapse-mark-based`, closing G5 to agreement.) This requirement
+modifies the proved Lean model only; it introduces no production-engine change.
 
 #### Scenario: [ACCEPT-KEEP-01] Ins-wrappered collapsing paragraph is kept as an empty paragraph on accept
 
@@ -46,11 +47,11 @@ increment. This requirement modifies the proved Lean model only; it introduces n
 - **WHEN** the Tier 2 modules are built
 - **THEN** `field_structure_preserved_doc` and `inv_field_001` compile with no statement change, the spike is zero-`sorry`, and `#print axioms field_structure_preserved_doc` reports no new axioms
 
-#### Scenario: [ACCEPT-KEEP-04] Broadening surfaces and pins the symmetric engine accept-side gap (G5)
+#### Scenario: [ACCEPT-KEEP-04] Broadening surfaces the symmetric engine accept-side gap (G5), since closed
 
 - **GIVEN** a `del`-only paragraph whose paragraph mark is untracked, followed by a surviving paragraph
 - **WHEN** both engines accept it
-- **THEN** the Lean `accept` keeps an empty `<w:p>` (faithful to LibreOffice/Word) while the TS `acceptAllChanges` drops it, asserted via the harness token projection as the characterized divergence `[LEAN-HELP-08]` (G5), the deferred engine accept-side fidelity fix
+- **THEN** the Lean `accept` keeps an empty `<w:p>` (faithful to LibreOffice/Word); broadening `accept` surfaces and the harness pins this as `[LEAN-HELP-08]` (G5) — the engine accept-side over-deletion that the successor change `make-accept-paragraph-collapse-mark-based` subsequently closes to agreement (TS `acceptAllChanges` made mark-based)
 
 ## MODIFIED Requirements
 
