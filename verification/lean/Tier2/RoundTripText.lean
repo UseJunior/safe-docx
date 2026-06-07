@@ -46,9 +46,10 @@ named residual axiom to close `inv_rt_001`:
     projection `originalText d` exactly (no normalization needed; `reject` does
     not drop paragraphs).
   * `extractText_accept_normalized` — `extractText (accept d)` equals the
-    revised-side projection `revisedText d` *after* `normalizeText`. They differ
-    only by the empty entries `accept` drops (`AcceptReject.lean:44`), which
-    `normalizeText` removes. This empty-paragraph absorption is the reason
+    revised-side projection `revisedText d` *after* `normalizeText`. `accept`
+    keeps every paragraph (a body that collapses to empty leaves an empty text
+    entry); `normalizeText` drops those blank entries from both aligned sides via
+    its `if normLine t != []` branch. This blank-entry absorption is the reason
     `inv_rt_001` is stated post-`normalizeText`.
 -/
 import Tier2.AcceptReject
@@ -101,8 +102,8 @@ theorem extractText_cons (p : Paragraph) (ps : Doc) :
     extractText (p :: ps) = paraTextBlocks p.body :: extractText ps := rfl
 
 /-- The revised-side text projection: the per-paragraph text of `acceptBlocks`
-    (drop `del`/`moveFrom`, unwrap `ins`/`moveTo`), WITHOUT `accept`'s
-    empty-paragraph drop. -/
+    (drop `del`/`moveFrom`, unwrap `ins`/`moveTo`). One entry per paragraph,
+    matching `extractText (accept d)` now that `accept` keeps every paragraph. -/
 def revisedText (d : Doc) : List Line :=
   d.map fun p => paraTextBlocks (acceptBlocks p.body)
 

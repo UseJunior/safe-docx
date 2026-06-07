@@ -198,8 +198,9 @@ axiom compareDocumentXml_output_text_roundtrip :
     **Closed** by composing the named residual axiom
     `compareDocumentXml_output_text_roundtrip` with the machine-checked round-trip
     lemmas `Tier2.RoundTripText.extractText_accept_normalized` (accept side:
-    `normalizeText ∘ extractText ∘ accept = normalizeText ∘ revisedText`, the
-    empty-paragraph drop absorbed by `normalizeText`) and
+    `normalizeText ∘ extractText ∘ accept = normalizeText ∘ revisedText`; `accept`
+    keeps every paragraph and the blank text entry of an empty-collapsing paragraph
+    is absorbed by `normalizeText` on both aligned sides) and
     `Tier2.RoundTripText.extractText_reject` (reject side:
     `extractText ∘ reject = originalText`, the `delText → text` rename being
     text-invariant). -/
