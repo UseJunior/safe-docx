@@ -353,105 +353,21 @@ function preserveCrossParagraphBookmarksForReject(
 export function acceptAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
-  // First, find paragraphs that ONLY contain w:del or w:moveFrom content (no w:ins, no regular w:r)
-  // These paragraphs should be removed entirely when accepting
+  // Remove a paragraph on Accept All iff its paragraph MARK is a tracked deletion
+  // (<w:pPr><w:rPr><w:del .../></w:rPr>) — the paragraph break itself was deleted, so accepting
+  // the deletion removes the whole paragraph. This is the Word/LibreOffice-faithful, purely
+  // mark-based rule (the accept-side mirror of rejectAllChanges).
+  //
+  // We deliberately do NOT drop a paragraph based on content (e.g. "all runs are inside w:del"
+  // or "w:moveFrom"). A run-level deletion under an UNTRACKED paragraph mark means text was
+  // deleted from a pre-existing paragraph; Word and LibreOffice both keep that paragraph (empty)
+  // on accept, and a content-based drop over-deletes it. safe-docx's own deleted paragraphs
+  // always carry the PPR-DEL mark (wrapParagraphAsDeleted), so the mark-based rule covers them
+  // without the old content heuristic.
   const paragraphsToRemove = new Set<Element>();
-
-  // Paragraph-level deletion markers (Aspose/Word encode deleted paragraphs via <w:pPr><w:rPr><w:del .../></w:rPr>)
-  // should remove the paragraph on Accept All.
   for (const p of findAllByTagName(root, 'w:p')) {
     if (paragraphHasParaMarker(p, 'w:del')) {
       paragraphsToRemove.add(p);
-    }
-  }
-
-  // Check w:del elements
-  for (const del of findAllByTagName(root, 'w:del')) {
-    // Walk up to find containing w:p
-    let p: Element | undefined;
-    let current: Element | undefined = parentElement(del);
-    while (current) {
-      if (current.tagName === 'w:p') {
-        p = current;
-        break;
-      }
-      current = parentElement(current);
-    }
-
-    if (p) {
-      // Check if this paragraph has any w:ins elements (should keep those)
-      const insElements = findAllByTagName(p, 'w:ins');
-      if (insElements.length > 0) {
-        continue; // Paragraph has inserted content, don't remove it
-      }
-
-      // Check if this paragraph has any w:r elements outside of w:del
-      // If the only content is inside w:del, we can remove the paragraph
-      let hasContentOutsideDel = false;
-      for (const child of childElements(p)) {
-        if (child.tagName === 'w:r') {
-          hasContentOutsideDel = true;
-          break;
-        }
-        if (child.tagName !== 'w:del' && child.tagName !== 'w:pPr' &&
-            child.tagName !== 'w:moveFromRangeStart' && child.tagName !== 'w:moveFromRangeEnd') {
-          // Check if this non-del child has w:r descendants
-          const runsInChild = findAllByTagName(child, 'w:r');
-          if (runsInChild.length > 0) {
-            hasContentOutsideDel = true;
-            break;
-          }
-        }
-      }
-
-      if (!hasContentOutsideDel) {
-        paragraphsToRemove.add(p);
-      }
-    }
-  }
-
-  // Also check w:moveFrom elements (moved-away content, also removed when accepting)
-  for (const moveFrom of findAllByTagName(root, 'w:moveFrom')) {
-    // Walk up to find containing w:p
-    let p: Element | undefined;
-    let current: Element | undefined = parentElement(moveFrom);
-    while (current) {
-      if (current.tagName === 'w:p') {
-        p = current;
-        break;
-      }
-      current = parentElement(current);
-    }
-
-    if (p && !paragraphsToRemove.has(p)) {
-      // Check if this paragraph has any w:ins or w:moveTo elements (should keep those)
-      const insElements = findAllByTagName(p, 'w:ins');
-      const moveToElements = findAllByTagName(p, 'w:moveTo');
-      if (insElements.length > 0 || moveToElements.length > 0) {
-        continue;
-      }
-
-      // Check if this paragraph has any w:r elements outside of w:del/w:moveFrom
-      let hasContentOutsideRemoved = false;
-      for (const child of childElements(p)) {
-        if (child.tagName === 'w:r') {
-          hasContentOutsideRemoved = true;
-          break;
-        }
-        if (child.tagName !== 'w:del' && child.tagName !== 'w:moveFrom' &&
-            child.tagName !== 'w:pPr' &&
-            child.tagName !== 'w:moveFromRangeStart' && child.tagName !== 'w:moveFromRangeEnd') {
-          const runsInChild = findAllByTagName(child, 'w:r');
-          if (runsInChild.length > 0) {
-            hasContentOutsideRemoved = true;
-            break;
-          }
-        }
-      }
-
-      if (!hasContentOutsideRemoved) {
-        paragraphsToRemove.add(p);
-      }
     }
   }
 
@@ -480,7 +396,7 @@ export function acceptAllChanges(documentXml: string): string {
   // Strip paragraph-level markers now that changes are accepted.
   removeParaMarkers(root);
 
-  // Remove paragraphs that ONLY had w:del content (now empty after removal)
+  // Remove the PPR-DEL-marked paragraphs (their paragraph mark was deleted).
   for (const p of paragraphsToRemove) {
     if (p.parentNode) {
       p.parentNode.removeChild(p);

@@ -9,7 +9,12 @@ import {
   compareTexts,
 } from './trackChangesAcceptorAst.js';
 import { parseDocumentXml } from './xmlToWmlElement.js';
-import { findAllByTagName } from '../../primitives/index.js';
+import {
+  findAllByTagName,
+  acceptChanges as acceptChangesPrimitive,
+  parseXml,
+  serializeXml,
+} from '../../primitives/index.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Track Changes Acceptor' });
 
@@ -847,6 +852,97 @@ describe('trackChangesAcceptorAst', () => {
         expect(result.expectedLength).toBe(3);
         expect(result.actualLength).toBe(4);
       });
+    });
+  });
+});
+
+// ── G5 regression: Accept-All paragraph removal is purely mark-based (both accept paths) ──
+//
+// Closes G5 — the accept-side mirror of #337's reject fix. Both accept entry points — the
+// baseline-atomizer `acceptAllChanges` (string→string) and the primitive `acceptChanges`
+// (Document, mutated in place) — must drop a paragraph IFF its paragraph MARK is PPR-DEL
+// (<w:pPr><w:rPr><w:del/></w:rPr>), never via a content-based heuristic. A run-level deletion
+// (or moveFrom) under an UNTRACKED mark means text removed from a pre-existing paragraph, which
+// Word/LibreOffice keep (empty) on accept. The two paths must agree on every case.
+describe('Accept-All paragraph removal is mark-based (G5, both accept paths agree)', () => {
+  const wrapBody = (inner: string): string =>
+    `<?xml version="1.0"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+    `<w:body>${inner}</w:body></w:document>`;
+
+  // Count <w:p> opens, matching self-closing empties (<w:p/>) too; never matches <w:pPr>/<w:pPrChange>.
+  const countParagraphs = (xml: string): number => (xml.match(/<w:p(?:\s|\/|>)/g) ?? []).length;
+
+  const KEEP_PARA = `<w:p><w:r><w:t>keep</w:t></w:r></w:p>`;
+
+  // Run a body fragment through BOTH accept entry points (fresh parse for the in-place primitive).
+  const acceptBoth = (inner: string): { ast: string; primitive: string } => {
+    const ast = acceptAllChanges(wrapBody(inner));
+    const doc = parseXml(wrapBody(inner));
+    acceptChangesPrimitive(doc);
+    return { ast, primitive: serializeXml(doc) };
+  };
+
+  test('PPR-DEL-marked paragraph: both paths DROP it', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('both accept paths run on a PPR-DEL-marked paragraph + a plain paragraph', () => {
+      out = acceptBoth(
+        `<w:p><w:pPr><w:rPr><w:del w:id="1" w:author="T"/></w:rPr></w:pPr><w:r><w:t>gone</w:t></w:r></w:p>` +
+          KEEP_PARA,
+      );
+    });
+    await then('only the survivor paragraph remains, on both paths', () => {
+      expect(countParagraphs(out.ast)).toBe(1);
+      expect(countParagraphs(out.primitive)).toBe(1);
+      expect(out.ast).not.toContain('gone');
+      expect(out.primitive).not.toContain('gone');
+    });
+  });
+
+  test('del-only paragraph with an untracked mark: both paths KEEP an empty <w:p>', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('both accept paths run on a del-only untracked-mark paragraph + a plain paragraph', () => {
+      out = acceptBoth(
+        `<w:p><w:del w:id="1" w:author="T"><w:r><w:delText>x</w:delText></w:r></w:del></w:p>` + KEEP_PARA,
+      );
+    });
+    await then('the now-empty paragraph survives, on both paths', () => {
+      expect(countParagraphs(out.ast)).toBe(2);
+      expect(countParagraphs(out.primitive)).toBe(2);
+      expect(out.ast).not.toContain('w:del');
+      expect(out.primitive).not.toContain('w:del');
+    });
+  });
+
+  test('moveFrom-only paragraph with an untracked mark: both paths KEEP an empty <w:p>', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('both accept paths run on a moveFrom-only untracked-mark paragraph + a plain paragraph', () => {
+      out = acceptBoth(
+        `<w:p><w:moveFrom w:id="1" w:author="T"><w:r><w:t>moved</w:t></w:r></w:moveFrom></w:p>` + KEEP_PARA,
+      );
+    });
+    await then('the now-empty paragraph survives, on both paths', () => {
+      expect(countParagraphs(out.ast)).toBe(2);
+      expect(countParagraphs(out.primitive)).toBe(2);
+      expect(out.ast).not.toContain('w:moveFrom');
+      expect(out.primitive).not.toContain('w:moveFrom');
+    });
+  });
+
+  test('pPrChange snapshot holding a nested w:del is NOT a live mark: both paths KEEP the paragraph', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('both accept paths run on a surviving paragraph whose w:pPrChange snapshot nests a w:del', () => {
+      out = acceptBoth(
+        `<w:p><w:pPr><w:rPr/>` +
+          `<w:pPrChange w:id="1" w:author="T"><w:pPr><w:rPr><w:del/></w:rPr></w:pPr></w:pPrChange>` +
+          `</w:pPr><w:r><w:t>survives</w:t></w:r></w:p>`,
+      );
+    });
+    await then('the paragraph is kept (the nested snapshot del is ignored), on both paths', () => {
+      expect(countParagraphs(out.ast)).toBe(1);
+      expect(countParagraphs(out.primitive)).toBe(1);
+      expect(out.ast).toContain('survives');
+      expect(out.primitive).toContain('survives');
     });
   });
 });
