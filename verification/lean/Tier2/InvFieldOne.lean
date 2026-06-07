@@ -59,13 +59,7 @@ theorem accept_blocks (d : Doc) :
   | cons p ps ih =>
     rw [List.flatMap_cons, acceptBlocks_append]
     simp only [accept]
-    split
-    · next hb =>
-      have hnil : acceptBlocks p.body = [] := by simpa using hb
-      rw [hnil, List.nil_append]
-      exact ih
-    · next hb =>
-      rw [List.flatMap_cons, ih]
+    rw [List.flatMap_cons, ih]
 
 theorem reject_blocks (d : Doc) :
     (reject d).blocks = renameBlocks (rejectBlocks d.blocks) := by

@@ -6,8 +6,12 @@ Mirrors `acceptAllChanges` / `rejectAllChanges` in
 at the granularity the `OoxmlModel` subset exposes.
 
   * `accept` (`trackChangesAcceptorAst.ts:368-506`): drop `del` / `moveFrom`
-    subtrees entirely; unwrap `ins` / `moveTo` (keep children); drop paragraphs
-    whose body collapses to empty.
+    subtrees entirely; unwrap `ins` / `moveTo` (keep children); keep every
+    paragraph — a body that collapses to empty leaves an empty `<w:p>` behind,
+    matching the TS engine, LibreOffice, and Word (a paragraph whose MARK is
+    untracked is a pre-existing paragraph, so accepting its content edits never
+    removes the paragraph itself). This is symmetric with `reject`, which also
+    never drops a paragraph.
   * `reject` (`trackChangesAcceptorAst.ts:509-659`): drop `ins` / `moveTo`;
     unwrap `del` / `moveFrom`; THEN rewrite `delText → text` and
     `delInstrText → instrText` globally over the result — matching the TS line
@@ -36,13 +40,14 @@ def acceptBlocks : List Block → List Block
   | .other tag bs :: rest => .other tag (acceptBlocks bs) :: acceptBlocks rest
 termination_by bs => sizeOf bs
 
-/-- Accept all track changes in a document, dropping paragraphs that collapse to
-    an empty body. -/
+/-- Accept all track changes in a document, **preserving every paragraph mark**:
+    a body that collapses to empty leaves an empty paragraph behind, matching the
+    TS engine / LibreOffice / Word (an untracked paragraph mark is a pre-existing
+    paragraph, so accepting its content edits never removes the paragraph itself).
+    Symmetric with `reject`. -/
 def accept : Doc → Doc
   | [] => []
-  | p :: ps =>
-    if (acceptBlocks p.body).isEmpty then accept ps
-    else ⟨p.pPr, acceptBlocks p.body⟩ :: accept ps
+  | p :: ps => ⟨p.pPr, acceptBlocks p.body⟩ :: accept ps
 
 /-! ### reject -/
 

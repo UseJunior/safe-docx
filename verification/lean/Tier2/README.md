@@ -105,11 +105,12 @@ What the closed lemmas say:
 - `extractText_reject`: `extractText (reject d) = originalText d` exactly —
   `reject` does not drop paragraphs, so no normalization is needed.
 - `extractText_accept_normalized`:
-  `normalizeText (extractText (accept d)) = normalizeText (revisedText d)`. The
-  two differ only by the empty entries `accept` drops when a paragraph body
-  collapses to empty (`AcceptReject.lean:44`); `normalizeText` removes them. This
-  empty-paragraph absorption is the reason `inv_rt_001` is stated
-  post-`normalizeText`.
+  `normalizeText (extractText (accept d)) = normalizeText (revisedText d)`. `accept`
+  keeps every paragraph (a body that collapses to empty leaves an empty `<w:p>`,
+  matching the TS engine / LibreOffice / Word — the `broaden-lean-accept-keep-empty-paragraphs`
+  fidelity fix that closed differential gap G3); the empty text entry that the kept
+  paragraph contributes is absorbed by `normalizeText`. This empty-entry absorption
+  is the reason `inv_rt_001` is stated post-`normalizeText`.
 
 `inv_rt_001` in `Spec.lean` composes these with the single named residual axiom
 `compareDocumentXml_output_text_roundtrip`, which asserts that the normalized

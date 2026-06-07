@@ -190,25 +190,16 @@ theorem extractText_reject (d : Doc) : extractText (reject d) = originalText d :
 /-! ### Accept-side round-trip lemma -/
 
 /-- **Accept-side round-trip lemma.** `extractText (accept d)` equals the
-    revised-side projection after `normalizeText`. They differ only by the
-    empty entries `accept` drops, which `normalizeText` removes. -/
+    revised-side projection after `normalizeText`. `accept` now preserves every
+    paragraph (an empty body yields an empty text entry), and `normalizeText`
+    absorbs that empty entry via the `if normLine t != []` branch of
+    `normalizeText_cons`, so both sides stay aligned entrywise. -/
 theorem extractText_accept_normalized (d : Doc) :
     normalizeText (extractText (accept d)) = normalizeText (revisedText d) := by
   induction d with
   | nil => rfl
   | cons p ps ih =>
     simp only [accept]
-    split
-    · next hb =>
-      have hnil : acceptBlocks p.body = [] := by simpa using hb
-      show normalizeText (extractText (accept ps)) = normalizeText (revisedText (p :: ps))
-      rw [revisedText_cons, hnil]
-      simp only [paraTextBlocks]
-      rw [normalizeText_cons_empty]
-      exact ih
-    · next hb =>
-      show normalizeText (extractText (⟨p.pPr, acceptBlocks p.body⟩ :: accept ps))
-        = normalizeText (revisedText (p :: ps))
-      rw [extractText_cons, revisedText_cons, normalizeText_cons, normalizeText_cons, ih]
+    rw [extractText_cons, revisedText_cons, normalizeText_cons, normalizeText_cons, ih]
 
 end Tier2.RoundTripText
