@@ -12,10 +12,10 @@ A TypeScript property test (`packages/docx-core/src/integration/lean-differentia
 - render each generated `Doc` both to the Lean JSON encoding and, via a **`Doc`→`document.xml` adapter**, to a real OOXML `document.xml` string parseable by the engine's `@xmldom/xmldom` path;
 - run the TS helpers in-process per case and spawn the Lean executable **once per memory-bounded chunk** of the batch;
 - compare `accept`/`reject` outputs on a **canonical token projection** that both the Lean output `Doc` and the TS output XML reduce to deterministically (paragraph/run/wrapper/atom tokens in document order), and compare `validate` as a boolean, asserting strict per-case equality;
-- assert the known out-of-subset model cases explicitly as fixed cases rather than hiding them: `fldChar` inside `del` (G1) and `delInstrText` outside `del` (G2) — now **closed** to agreement by `add-lean-deleted-field-code-constraint` — and reject of an `ins`-only untracked-mark paragraph (G4) — now **closed** to agreement by the engine fidelity fix `make-reject-paragraph-collapse-mark-based` (mark-based reject) — plus the one still-characterized gap, accept of an `ins`-wrappered collapsing paragraph (G3);
+- assert the known out-of-subset model cases explicitly as fixed cases rather than hiding them: `fldChar` inside `del` (G1) and `delInstrText` outside `del` (G2) — now **closed** to agreement by `add-lean-deleted-field-code-constraint` — reject of an `ins`-only untracked-mark paragraph (G4) — now **closed** to agreement by the engine fidelity fix `make-reject-paragraph-collapse-mark-based` (mark-based reject) — and accept of an `ins`-wrappered collapsing paragraph (G3) — now **closed** to agreement by the Lean fidelity fix `broaden-lean-accept-keep-empty-paragraphs` (Lean `accept` broadened to keep empties) — plus the one remaining characterized gap, accept of a `del`-only untracked-mark paragraph (G5), a symmetric ENGINE accept-side over-deletion surfaced by broadening Lean `accept`;
 - **skip** with a clear message when the Lean executable is absent (so a developer without the Lean toolchain still gets a green `npm test`), while CI builds the executable so the comparison runs there.
 
-The harness SHALL assert **strict** agreement on the faithful subset by default; any in-subset divergence is a genuine finding, NOT a reason to weaken the assertion. The out-of-subset cases SHALL be asserted explicitly: G1/G2 as agreement (the DeletedFieldCode locality constraint is modeled), G4 as agreement (reject is now mark-based, an engine fidelity fix), and the remaining gap G3 as a documented divergence (a characterization case), forming the worklist for the next model-broadening increment. This requirement strengthens extensional-equivalence evidence between the existing Lean and TS helpers only; it introduces no production-engine change and modifies no proved Lean module.
+The harness SHALL assert **strict** agreement on the faithful subset by default; any in-subset divergence is a genuine finding, NOT a reason to weaken the assertion. The out-of-subset cases SHALL be asserted explicitly: G1/G2 as agreement (the DeletedFieldCode locality constraint is modeled), G4 as agreement (reject is now mark-based, an engine fidelity fix), G3 as agreement (Lean `accept` is now broadened to keep empties, a Lean fidelity fix), and the remaining gap G5 as a documented divergence (a characterization case — the symmetric accept-side engine over-deletion), forming the worklist for the next engine-fidelity increment. This requirement strengthens extensional-equivalence evidence between the existing Lean and TS helpers only; it introduces no production-engine change and modifies no proved Lean module.
 
 #### Scenario: [LEAN-HELP-01] Compiled Lean accept/reject/validate match the TS engine on generated docs in the faithful subset
 
@@ -39,15 +39,20 @@ The harness SHALL assert **strict** agreement on the faithful subset by default;
 - **WHEN** the harness runs the fixed [G2] `Doc` with a `delInstrText` in an open pre-`separate` field outside any `del` wrapper
 - **THEN** both the Lean `validateFieldStructure` and the TS `validateFieldStructure` return `false`, asserted as agreement
 
-#### Scenario: [LEAN-HELP-05] G3 — accept paragraph-collapse is a characterized divergence
+#### Scenario: [LEAN-HELP-05] G3 — accept paragraph-collapse now agrees (Lean fidelity fix)
 
-- **WHEN** the harness runs the fixed [G3] `Doc` with a paragraph whose only content is a `w:ins` wrapping deleted/empty content
-- **THEN** the Lean `accept` drops the paragraph while the TS `acceptAllChanges` keeps an empty `<w:p>`, asserted via the token projection as a documented divergence
+- **WHEN** the harness runs the fixed [G3] `Doc` with a paragraph whose only content is a `w:ins` wrapping deleted/empty content (untracked paragraph mark)
+- **THEN** the Lean `accept` and the TS `acceptAllChanges` both keep the collapsed paragraph as an empty `<w:p>`, asserted via the token projection as agreement — the Lean `accept` is now broadened to never drop paragraphs (`broaden-lean-accept-keep-empty-paragraphs`), matching the already-faithful TS engine, LibreOffice, and Word (the inverse of the G4 engine fix)
 
 #### Scenario: [LEAN-HELP-06] G4 — reject paragraph-collapse now agrees (engine fidelity fix)
 
 - **WHEN** the harness runs the fixed [G4] `Doc` with an `ins`-only paragraph whose paragraph mark is untracked (no surviving content)
 - **THEN** the Lean `reject` and the TS `rejectAllChanges` both keep the collapsed paragraph as an empty `<w:p>`, asserted via the token projection as agreement — the TS engine's reject is now purely mark-based (`make-reject-paragraph-collapse-mark-based`), matching the already-faithful Lean `reject`
+
+#### Scenario: [LEAN-HELP-08] G5 — accept of a del-only paragraph is a characterized divergence
+
+- **WHEN** the harness runs the fixed [G5] `Doc` with a paragraph whose only content is a `w:del` wrapping deleted content and whose paragraph mark is untracked
+- **THEN** the Lean `accept` keeps the collapsed paragraph as an empty `<w:p>` (faithful to LibreOffice/Word) while the TS `acceptAllChanges` drops it via a content-based heuristic, asserted via the token projection as a documented divergence — the symmetric accept-side analog of the pre-`make-reject-paragraph-collapse-mark-based` G4 engine over-deletion, surfaced by broadening Lean `accept`, with the TS accept-side mark-based fix as the deferred successor increment
 
 #### Scenario: [LEAN-HELP-07] A real divergence is caught, not masked
 

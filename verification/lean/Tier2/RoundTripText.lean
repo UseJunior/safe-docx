@@ -46,9 +46,10 @@ named residual axiom to close `inv_rt_001`:
     projection `originalText d` exactly (no normalization needed; `reject` does
     not drop paragraphs).
   * `extractText_accept_normalized` — `extractText (accept d)` equals the
-    revised-side projection `revisedText d` *after* `normalizeText`. They differ
-    only by the empty entries `accept` drops (`AcceptReject.lean:44`), which
-    `normalizeText` removes. This empty-paragraph absorption is the reason
+    revised-side projection `revisedText d` *after* `normalizeText`. `accept`
+    keeps every paragraph (a body that collapses to empty leaves an empty text
+    entry); `normalizeText` drops those blank entries from both aligned sides via
+    its `if normLine t != []` branch. This blank-entry absorption is the reason
     `inv_rt_001` is stated post-`normalizeText`.
 -/
 import Tier2.AcceptReject
@@ -101,8 +102,8 @@ theorem extractText_cons (p : Paragraph) (ps : Doc) :
     extractText (p :: ps) = paraTextBlocks p.body :: extractText ps := rfl
 
 /-- The revised-side text projection: the per-paragraph text of `acceptBlocks`
-    (drop `del`/`moveFrom`, unwrap `ins`/`moveTo`), WITHOUT `accept`'s
-    empty-paragraph drop. -/
+    (drop `del`/`moveFrom`, unwrap `ins`/`moveTo`). One entry per paragraph,
+    matching `extractText (accept d)` now that `accept` keeps every paragraph. -/
 def revisedText (d : Doc) : List Line :=
   d.map fun p => paraTextBlocks (acceptBlocks p.body)
 
@@ -190,25 +191,16 @@ theorem extractText_reject (d : Doc) : extractText (reject d) = originalText d :
 /-! ### Accept-side round-trip lemma -/
 
 /-- **Accept-side round-trip lemma.** `extractText (accept d)` equals the
-    revised-side projection after `normalizeText`. They differ only by the
-    empty entries `accept` drops, which `normalizeText` removes. -/
+    revised-side projection after `normalizeText`. `accept` now preserves every
+    paragraph (an empty body yields an empty text entry), and `normalizeText`
+    absorbs that empty entry via the `if normLine t != []` branch of
+    `normalizeText_cons`, so both sides stay aligned entrywise. -/
 theorem extractText_accept_normalized (d : Doc) :
     normalizeText (extractText (accept d)) = normalizeText (revisedText d) := by
   induction d with
   | nil => rfl
   | cons p ps ih =>
     simp only [accept]
-    split
-    · next hb =>
-      have hnil : acceptBlocks p.body = [] := by simpa using hb
-      show normalizeText (extractText (accept ps)) = normalizeText (revisedText (p :: ps))
-      rw [revisedText_cons, hnil]
-      simp only [paraTextBlocks]
-      rw [normalizeText_cons_empty]
-      exact ih
-    · next hb =>
-      show normalizeText (extractText (⟨p.pPr, acceptBlocks p.body⟩ :: accept ps))
-        = normalizeText (revisedText (p :: ps))
-      rw [extractText_cons, revisedText_cons, normalizeText_cons, normalizeText_cons, ih]
+    rw [extractText_cons, revisedText_cons, normalizeText_cons, normalizeText_cons, ih]
 
 end Tier2.RoundTripText
