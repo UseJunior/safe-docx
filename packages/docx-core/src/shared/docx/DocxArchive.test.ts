@@ -175,24 +175,15 @@ describe('DocxArchive', () => {
 describe('DocxArchive with real files', () => {
   const fixturesDir = path.join(__dirname, '../../testing/fixtures');
 
-  test.skip('loads and round-trips a real DOCX', async ({ given, when, then }: AllureBddContext) => {
-    // This test requires a real DOCX file in fixtures
-    const docxPath = path.join(fixturesDir, 'simple.docx');
+  test('loads and round-trips a real DOCX', async ({ given, when, then }: AllureBddContext) => {
+    // Reuse the existing committed real-DOCX fixture rather than a duplicate.
+    const docxPath = path.join(fixturesDir, 'simple-word-change/original.docx');
     let archive: DocxArchive;
     let docXml: string;
 
     await given('a real DOCX file in fixtures', async () => {
-      try {
-        const buffer = await fs.readFile(docxPath);
-        archive = await DocxArchive.load(buffer);
-      } catch (error) {
-        // Skip if fixture doesn't exist
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          console.log('Skipping: simple.docx not found in fixtures');
-          return;
-        }
-        throw error;
-      }
+      const buffer = await fs.readFile(docxPath);
+      archive = await DocxArchive.load(buffer);
     });
 
     await when('the archive is round-tripped', async () => {
