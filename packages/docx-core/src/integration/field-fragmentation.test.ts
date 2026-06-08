@@ -107,6 +107,20 @@ function assertFieldStructureSurvives(combined: string): void {
   ).toBe(true);
 }
 
+function countTag(combined: string, tag: string): number {
+  const doc = new DOMParser().parseFromString(combined, 'application/xml');
+  return doc.getElementsByTagName(tag).length;
+}
+
+// Guards against a vacuous pass: assertNoFldCharInside + validateFieldStructure
+// also hold when the comparator emits zero tracked changes (e.g., the whole edit
+// is silently absorbed). These scenarios are only meaningful if del/ins are
+// actually present, so assert that the fragmentation path ran at all.
+function assertEmitsTrackedChanges(combined: string): void {
+  expect(countTag(combined, 'w:del'), 'expected at least one <w:del>').toBeGreaterThan(0);
+  expect(countTag(combined, 'w:ins'), 'expected at least one <w:ins>').toBeGreaterThan(0);
+}
+
 function makeField(instr: string, result: string): string {
   return (
     fldChar('begin') +
@@ -115,6 +129,34 @@ function makeField(instr: string, result: string): string {
     resultText(result) +
     fldChar('end')
   );
+}
+
+// A nested field — the canonical { IF { <inner> } = 1 "<result>" } shape, where
+// the inner field lives inside the outer instruction region. ECMA-376 §17.16.5.1
+// permits arbitrarily nested fields; both the inner and outer fldChar pairs must
+// stay unwrapped on the deletion side.
+function makeNestedField(innerInstr: string, result: string): string {
+  return (
+    fldChar('begin') +
+    instrText(' IF ', { preserve: true }) +
+    fldChar('begin') +
+    instrText(innerInstr, { preserve: true }) +
+    fldChar('separate') +
+    resultText('1') +
+    fldChar('end') +
+    instrText(' = 1 ', { preserve: true }) +
+    fldChar('separate') +
+    resultText(result) +
+    fldChar('end')
+  );
+}
+
+// A separator-less field — begin/instr/end with no `separate` marker. ECMA-376
+// §17.16.5.1 permits this (the field carries no cached result). The classifier
+// must still recognize the begin/end pair as a field boundary so the fldChar
+// markers are emitted unwrapped on the deletion side.
+function makeSeparatorlessField(instr: string): string {
+  return fldChar('begin') + instrText(instr, { preserve: true }) + fldChar('end');
 }
 
 // =============================================================================
@@ -356,22 +398,100 @@ describe('Field fragmentation — whole-field deletion', () => {
 // =============================================================================
 
 describe('Field fragmentation — edge cases', () => {
-  test.skip(
-    'nested field modification: outer field unchanged, inner instr modified — TODO Phase 2 if classifier supports',
-    async () => {
-      // Placeholder: nested-field correlation through the collapsed-field
-      // atomizer needs Phase 1.5 classifier work to verify. Re-enable once
-      // classification covers this.
+  test(
+    'nested whole-field replacement (IF { PAGE } … → IF { NUMPAGES } …): both inner and outer fldChar runs stay unwrapped',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given(
+        'an original IF field wrapping a PAGE field (result "first") and a revised one wrapping NUMPAGES (result "second")',
+        async () => {
+          // Because the whole collapsed-field atom changes, the engine emits a
+          // whole-field deletion + whole-field insertion (NOT a surgical
+          // inner-only edit). This still exercises the property under test: with
+          // nested fields, neither the inner nor the outer fldChar pair may be
+          // wrapped on the deletion side. (Per the engine note above, a pure
+          // instr-only edit would be absorbed, so the inner instr change is
+          // paired with a result change to force del/ins emission.)
+          const original = await buildDocxFromBodyXml(
+            `<w:p><w:r><w:t>Page check: </w:t></w:r>${makeNestedField(' PAGE ', 'first')}</w:p>`,
+          );
+          const revised = await buildDocxFromBodyXml(
+            `<w:p><w:r><w:t>Page check: </w:t></w:r>${makeNestedField(' NUMPAGES ', 'second')}</w:p>`,
+          );
+          combined = await compareInplace(original, revised);
+        },
+      );
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then(
+        'tracked changes are emitted; no fldChar (inner or outer) is inside <w:del>; old content is wrapped and new content inserted; field structure validates',
+        () => {
+          assertEmitsTrackedChanges(combined);
+          assertNoFldCharInside(combined, 'w:del');
+          // Both nested field marker pairs survive as fldChar runs (2 fields ×
+          // begin/separate/end, on both the deleted and inserted sides = 12).
+          expect(countTag(combined, 'w:fldChar'), 'all six markers preserved on both sides').toBe(
+            12,
+          );
+          // Deleted (original) field payloads are wrapped as del-text.
+          expect(combined).toContain('<w:delInstrText');
+          expect(combined).toMatch(/<w:delInstrText[^>]*> PAGE <\/w:delInstrText>/);
+          expect(combined).toMatch(/<w:delText>first<\/w:delText>/);
+          // Revised field content lands on the insertion side, unwrapped.
+          expect(combined).toMatch(/<w:instrText[^>]*> NUMPAGES <\/w:instrText>/);
+          expect(combined).toContain('second');
+          assertFieldStructureSurvives(combined);
+        },
+      );
     },
   );
 
-  test.skip(
-    'field without separator (deferred-result field): instr modification fragments correctly',
-    async () => {
-      // Placeholder: ECMA-376 permits a field without a separator (the result
-      // appears at the end side). Currently rare in safe-docx fixtures; revisit
-      // post-Phase 2 to ensure the classifier doesn't false-classify these as
-      // non-fields.
+  test(
+    'field without separator (deferred-result field) deleted: fldChar runs stay unwrapped',
+    async ({ given, when, then }: AllureBddContext) => {
+      let combined: string;
+
+      await given(
+        'an original document containing a separator-less AUTONUM field and a revised document with the field removed',
+        async () => {
+          // ECMA-376 permits a field with no `separate` marker, hence no cached
+          // result text. An instr-only edit on such a field is absorbed (no
+          // visible delta), so whole-field deletion is used to drive the
+          // deletion-side fragmentation path: the begin/end markers must be
+          // emitted unwrapped while only the delInstrText payload is wrapped.
+          const original = await buildDocxFromBodyXml(
+            `<w:p><w:r><w:t>Item </w:t></w:r>${makeSeparatorlessField(' AUTONUM ')}<w:r><w:t> done.</w:t></w:r></w:p>`,
+          );
+          const revised = await buildDocxFromBodyXml(
+            `<w:p><w:r><w:t>Item  done.</w:t></w:r></w:p>`,
+          );
+          combined = await compareInplace(original, revised);
+        },
+      );
+
+      await when('the inplace combined output is produced', async () => {});
+
+      await then(
+        'tracked changes are emitted; the field is begin/end only (no separate); instr is wrapped as delInstrText; no fldChar inside <w:del>; field structure validates',
+        () => {
+          assertEmitsTrackedChanges(combined);
+          assertNoFldCharInside(combined, 'w:del');
+          // Separator-less shape preserved: exactly the begin/end pair, no
+          // `separate` marker is synthesized by the engine.
+          const doc = new DOMParser().parseFromString(combined, 'application/xml');
+          const types: string[] = [];
+          const markers = doc.getElementsByTagName('w:fldChar');
+          for (let i = 0; i < markers.length; i++) {
+            types.push(markers[i]?.getAttribute('w:fldCharType') ?? '');
+          }
+          expect(types).toEqual(['begin', 'end']);
+          // The instruction payload is the wrapped deletion content.
+          expect(combined).toMatch(/<w:delInstrText[^>]*> AUTONUM <\/w:delInstrText>/);
+          assertFieldStructureSurvives(combined);
+        },
+      );
     },
   );
 });
