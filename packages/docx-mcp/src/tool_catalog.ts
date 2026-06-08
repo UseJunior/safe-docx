@@ -312,14 +312,14 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'compare_documents',
     description:
-      'Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original.',
+      'Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX supports both modes; ODF (.odt) supports two-file mode at paragraph granularity (a modified paragraph counts as one deletion plus one insertion).',
     input: z.object({
-      original_file_path: z.string().optional().describe('Path to the original DOCX file.'),
-      revised_file_path: z.string().optional().describe('Path to the revised DOCX file.'),
+      original_file_path: z.string().optional().describe('Path to the original DOCX or .odt file.'),
+      revised_file_path: z.string().optional().describe('Path to the revised DOCX or .odt file.'),
       ...FILE_FIELD_OPTIONAL,
-      save_to_local_path: z.string().describe('Path to save the tracked-changes DOCX output.'),
-      author: z.string().optional().describe("Author name for track changes. Default: 'Comparison'."),
-      engine: z.enum(['auto', 'atomizer']).optional().describe("Comparison engine. Default: 'auto'."),
+      save_to_local_path: z.string().describe('Path to save the tracked-changes output (DOCX or .odt).'),
+      author: z.string().optional().describe("Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF)."),
+      engine: z.enum(['auto', 'atomizer']).optional().describe("Comparison engine (DOCX only). Default: 'auto'."),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },

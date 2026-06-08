@@ -260,19 +260,19 @@ Delete a comment and all its threaded replies from the document. Cascade-deletes
 
 ## `compare_documents`
 
-Compare two DOCX documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original.
+Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX supports both modes; ODF (.odt) supports two-file mode at paragraph granularity (a modified paragraph counts as one deletion plus one insertion).
 
 - readOnly: `true`
 - destructive: `false`
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `original_file_path` | `string` | no | Path to the original DOCX file. |
-| `revised_file_path` | `string` | no | Path to the revised DOCX file. |
+| `original_file_path` | `string` | no | Path to the original DOCX or .odt file. |
+| `revised_file_path` | `string` | no | Path to the revised DOCX or .odt file. |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
-| `save_to_local_path` | `string` | yes | Path to save the tracked-changes DOCX output. |
-| `author` | `string` | no | Author name for track changes. Default: 'Comparison'. |
-| `engine` | `enum("auto", "atomizer")` | no | Comparison engine. Default: 'auto'. |
+| `save_to_local_path` | `string` | yes | Path to save the tracked-changes output (DOCX or .odt). |
+| `author` | `string` | no | Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF). |
+| `engine` | `enum("auto", "atomizer")` | no | Comparison engine (DOCX only). Default: 'auto'. |
 
 ## `get_footnotes`
 

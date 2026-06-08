@@ -14,7 +14,8 @@
 import { parseXml, serializeXml } from '@usejunior/docx-core';
 
 import { ODF_NS } from './shared/odf/namespaces.js';
-import { ELEMENT_NODE, buildSegments, isAnnotationSubtree, isTextBlock } from './shared/odf/text_segments.js';
+import { buildSegments } from './shared/odf/text_segments.js';
+import { collectBlocks } from './shared/odf/blocks.js';
 import { addAnnotation, readAnnotations, type AddAnnotationResult, type OdfComment } from './comments.js';
 
 export type OdfParagraph = {
@@ -60,25 +61,8 @@ export class OdfDocument {
   static fromContentXml(contentXml: string): OdfDocument {
     const doc = parseXml(contentXml);
     const blocks: Element[] = [];
-    OdfDocument.collectBlocks(doc.documentElement, blocks);
+    collectBlocks(doc.documentElement, blocks);
     return new OdfDocument(doc, blocks);
-  }
-
-  /** Depth-first, document-order collection of `text:p` / `text:h` blocks. */
-  private static collectBlocks(node: Node | null, out: Element[]): void {
-    if (!node) return;
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      if (child.nodeType !== ELEMENT_NODE) continue;
-      const el = child as Element;
-      // An annotation carries its own `text:p` comment body; never enumerate it as a block.
-      if (isAnnotationSubtree(el)) continue;
-      if (isTextBlock(el)) {
-        out.push(el);
-        // Block-level text elements are not nested inside one another in ODF, but
-        // continue traversal in case of unusual structures (cost is negligible).
-      }
-      OdfDocument.collectBlocks(el, out);
-    }
   }
 
   private idForIndex(index: number): string {
@@ -193,7 +177,7 @@ export class OdfDocument {
 
     // Rebuild the structural block index; positional IDs shift accordingly.
     const blocks: Element[] = [];
-    OdfDocument.collectBlocks(this.doc.documentElement, blocks);
+    collectBlocks(this.doc.documentElement, blocks);
     this.blocks = blocks;
 
     const newIds = newEls.map((el) => this.idForIndex(blocks.indexOf(el)));

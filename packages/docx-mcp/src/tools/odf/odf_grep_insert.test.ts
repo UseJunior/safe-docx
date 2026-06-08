@@ -126,9 +126,8 @@ describe('ODF grep + insert_paragraph lane', () => {
         await firstId(manager, filePath);
       });
       await when('a still-unsupported tool targets the .odt path', async () => {
-        result = await dispatchToolCall(manager, 'compare_documents', {
+        result = await dispatchToolCall(manager, 'extract_revisions', {
           file_path: filePath,
-          save_to_local_path: '/tmp/should-be-rejected.odt',
         });
       });
       await then('the provider guard returns UNSUPPORTED_FOR_ODF', () => {
@@ -229,16 +228,19 @@ describe('ODF grep + insert branch coverage', () => {
     expect((res.new_paragraph_ids as string[]).length).toBe(2);
   });
 
-  it('compare_documents with .odt input paths returns UNSUPPORTED_FOR_ODF (two-file form)', async () => {
+  it('compare_documents with two .odt input paths now routes to the ODF handler (two-file form)', async () => {
+    // Two-file .odt compare became supported in add-odf-compare; the prior guard was flipped.
+    // (Session-mode .odt compare remains unsupported — covered by odf_compare.test.ts OPCD-04.)
     const manager = new SessionManager();
     const original = await copyFixture('orig.odt');
     const revised = await copyFixture('rev.odt');
     const res = await dispatchToolCall(manager, 'compare_documents', {
       original_file_path: original,
       revised_file_path: revised,
-      save_to_local_path: path.join(path.dirname(original), 'redline.docx'),
+      save_to_local_path: path.join(path.dirname(original), 'redline.odt'),
     });
-    assertError(res, 'UNSUPPORTED_FOR_ODF');
+    assertSuccess(res, 'compare_documents (two .odt)');
+    expect(res.provider).toBe('odf');
   });
 
   it('two unsupported tools on the same .odt path name the correct tool (no stale pending replay)', async () => {
