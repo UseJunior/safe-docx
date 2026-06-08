@@ -26,6 +26,16 @@ export function isAnnotationSubtree(el: { namespaceURI?: string | null; localNam
   return el.namespaceURI === ODF_NS.OFFICE && (el.localName === 'annotation' || el.localName === 'annotation-end');
 }
 
+/**
+ * True for a `text:tracked-changes` container. It holds change DEFINITIONS — including deleted
+ * paragraphs stored out-of-line inside `text:deletion` — which are NOT body content: they must
+ * not be walked as a host paragraph's visible text nor enumerated as paragraph blocks. Callers
+ * skip this subtree (the deletion-storage analogue of `isAnnotationSubtree`).
+ */
+export function isTrackedChangesSubtree(el: { namespaceURI?: string | null; localName?: string | null }): boolean {
+  return el.namespaceURI === ODF_NS.TEXT && el.localName === 'tracked-changes';
+}
+
 /** A contiguous slice of a paragraph's visible text and where it came from. */
 export type Segment =
   | { kind: 'text'; node: { data: string }; visStart: number; length: number }
@@ -55,6 +65,8 @@ export function buildSegments(block: Element): { segments: Segment[]; visible: s
       const el = child as Element;
       // Skip annotation subtrees: their body text is a comment, not the host paragraph's content.
       if (isAnnotationSubtree(el)) continue;
+      // Skip tracked-changes storage: deleted paragraphs live out-of-line here, not in the body.
+      if (isTrackedChangesSubtree(el)) continue;
       if (el.namespaceURI === ODF_NS.TEXT && el.localName === 's') {
         const countRaw = el.getAttributeNS(ODF_NS.TEXT, 'c') ?? el.getAttribute('text:c');
         const count = Math.max(1, Number.parseInt(countRaw ?? '1', 10) || 1);

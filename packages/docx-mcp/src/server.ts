@@ -203,10 +203,24 @@ export async function dispatchToolCall(
       return await deleteComment(sessions, args as Parameters<typeof deleteComment>[1]);
     case 'compare_documents':
       // compare_documents resolves its inputs via original_file_path / revised_file_path
-      // (not file_path), so the shared resolver's .odt chokepoint can't see them. Guard
-      // here: a .odt on any input path is UNSUPPORTED_FOR_ODF (compare is Phase-2b ODF work).
-      if (isOdfRequest(args) || hasOdfInputPath(args, ['original_file_path', 'revised_file_path'])) {
-        return checkOdfSupport('compare_documents')!;
+      // (not file_path), so the shared resolver's .odt chokepoint can't see them. Route here:
+      //  - two `.odt` inputs → the stateless ODF handler directly (it loads both files itself; it
+      //    CANNOT go through dispatchOdf, whose resolveOdfSessionForTool requires a file_path);
+      //  - a `.odt` session file_path → UNSUPPORTED_FOR_ODF (session-mode compare is a later slice);
+      //  - otherwise the DOCX tool.
+      if (hasOdfInputPath(args, ['original_file_path', 'revised_file_path'])) {
+        const { odfCompareDocuments } = await import('./tools/odf/compare_documents.js');
+        return await odfCompareDocuments(sessions, args as Parameters<typeof odfCompareDocuments>[1]);
+      }
+      if (isOdfRequest(args)) {
+        return {
+          success: false,
+          error: {
+            code: 'UNSUPPORTED_FOR_ODF',
+            message: 'Session-mode compare_documents is not yet supported for ODF (.odt) files.',
+            hint: 'Provide original_file_path and revised_file_path to compare two .odt files.',
+          },
+        };
       }
       return await compareDocuments_tool(sessions, args as Parameters<typeof compareDocuments_tool>[1]);
     case 'get_footnotes':

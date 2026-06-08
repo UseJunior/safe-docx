@@ -31,5 +31,5 @@ re-reads before its next edit.
 - **THEN** a new paragraph is inserted before/after the anchor, the response returns the new positional paragraph ID(s) and ID-invalidation fields, and re-reading reflects the inserted text
 
 #### Scenario: [OPLR-08] Still-unsupported tools remain guarded
-- **WHEN** a tool outside the ODF supported set (e.g. `compare_documents`) is invoked against a `.odt` path or ODF session
+- **WHEN** a tool outside the ODF supported set (e.g. `extract_revisions`) is invoked against a `.odt` path or ODF session
 - **THEN** an `UNSUPPORTED_FOR_ODF` error is returned and no DOCX logic runs

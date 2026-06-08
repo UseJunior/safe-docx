@@ -13,6 +13,8 @@ export const ODF_NS = {
   MANIFEST: 'urn:oasis:names:tc:opendocument:xmlns:manifest:1.0',
   // Dublin Core — carries annotation/change author (`dc:creator`) and date (`dc:date`).
   DC: 'http://purl.org/dc/elements/1.1/',
+  // W3C XML namespace — carries `xml:id` on `text:changed-region` for tracked changes.
+  XML: 'http://www.w3.org/XML/1998/namespace',
 } as const;
 
 /** The mimetype value an OpenDocument text package declares. */
