@@ -59,6 +59,11 @@ export default defineConfig({
         'src/**/*.allure.test.ts',
         'src/testing/**',
         'src/benchmark/**',
+        // Local-only LibreOffice accept/reject oracle driver: its core (driving headless
+        // LibreOffice via an injected macro) cannot run in CI, which installs no LibreOffice, so it
+        // would otherwise sink package coverage. The gated voter exercises it locally; see
+        // src/integration/lean-differential-helpers.test.ts ([LEAN-HELP-09..11]).
+        'src/integration/libreoffice-oracle.ts',
         // Optional/legacy baselines that are not part of default runtime engine selection.
         'src/baselines/wmlcomparer/**',
         'src/baselines/atomizer/trackChangesAcceptor.ts',
