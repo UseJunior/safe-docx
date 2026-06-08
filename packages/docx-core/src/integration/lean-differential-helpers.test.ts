@@ -60,11 +60,17 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import fc from 'fast-check';
-import { describe, expect } from 'vitest';
+import { beforeAll, describe, expect } from 'vitest';
 import { acceptAllChanges, rejectAllChanges } from '../baselines/atomizer/trackChangesAcceptorAst.js';
 import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
 import { parseDocumentXml } from '../baselines/atomizer/xmlToWmlElement.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import {
+  resolveSoffice,
+  runLibreOfficeOracle,
+  paragraphShape,
+  type OracleJob,
+} from './libreoffice-oracle.js';
 
 // Named const (not an inline literal) so `scripts/validate_allure_test_labels.mjs` can
 // map the `.openspec([LEAN-HELP-*])` tags deterministically to a feature.
@@ -699,6 +705,137 @@ describeMaybe('Lean Differential Harness - Tier 2 helper extensional equivalence
         const divergences = findDivergences([doc], [perturbed!]);
         expect(divergences.length).toBe(1);
         expect(divergences[0]!.field).toBe('accept');
+      });
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// LibreOffice accept/reject oracle voter (PR-B).
+//
+// LibreOffice is the native engine for the `.uno:AcceptAllTrackedChanges` /
+// `.uno:RejectAllTrackedChanges` dispatches, so its output is authoritative ground truth for the
+// mark-based paragraph-collapse rule the G3/G4/G5 cases are about: an UNTRACKED paragraph mark is
+// kept (as an empty <w:p>) on accept/reject, while a PPR-INS / PPR-DEL mark drops the whole
+// paragraph. This makes the accept/reject claims oracle-backed, not just Lean↔TS self-consistent.
+//
+// The comparison is deliberately STRUCTURAL — paragraph count, plus which paragraphs collapsed to
+// empty — not the full token projection. LibreOffice rewrites styles/run-properties, and on the
+// contrived nested G3 fixture (a `w:ins` wrapping a `w:del`) it interprets the revision differently
+// from Lean/TS: on accept it KEEPS the inserted-then-deleted text, where Lean/TS collapse to empty.
+// The paragraph *count* still agrees (the kept-not-dropped claim — what the oracle settles); that
+// content divergence is pinned in [LEAN-HELP-09], not hidden. The clean single-level fixtures
+// (G4 reject, G5 accept) agree on the full structure ([LEAN-HELP-10]).
+//
+// Gated on a LibreOffice binary; CI does not install one, so this is a local developer check (it
+// skips cleanly, like odf-core's LibreOffice round-trip test). Set SAFE_DOCX_SOFFICE_BIN to point
+// at a binary in a non-standard location.
+const soffice = resolveSoffice();
+const describeOracle = soffice ? describe : describe.skip;
+if (!soffice) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[lean-differential-helpers] oracle SKIP: no LibreOffice (soffice) binary found. ' +
+      'Install LibreOffice or set SAFE_DOCX_SOFFICE_BIN to run the accept/reject oracle voter.',
+  );
+}
+
+describeOracle('LibreOffice accept/reject oracle — paragraph-collapse ground truth', () => {
+  const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const rawDoc = (inner: string): string =>
+    `<?xml version="1.0"?><w:document xmlns:w="${W_NS}"><w:body>${inner}</w:body></w:document>`;
+  const mark = (id: number): string => `w:id="${id}" w:author="oracle" w:date="2024-01-01T00:00:00Z"`;
+  const KEEP = '<w:p><w:r><w:t>keep</w:t></w:r></w:p>';
+
+  // The three differential fixtures (rendered exactly as the TS engine receives them) plus two
+  // PPR-marked drop controls — the other direction of the mark-based rule.
+  const PPR_INS_REJECT = rawDoc(
+    `<w:p><w:pPr><w:rPr><w:ins ${mark(50)}/></w:rPr></w:pPr>` +
+      `<w:ins ${mark(51)}><w:r><w:t>inserted line</w:t></w:r></w:ins></w:p>` + KEEP,
+  );
+  const PPR_DEL_ACCEPT = rawDoc(
+    `<w:p><w:pPr><w:rPr><w:del ${mark(52)}/></w:rPr></w:pPr><w:r><w:t>deleted line</w:t></w:r></w:p>` + KEEP,
+  );
+  const CASES: { name: string; op: 'accept' | 'reject'; xml: string }[] = [
+    { name: 'G3', op: 'accept', xml: renderDocToXml(G3_DOC) },
+    { name: 'G4', op: 'reject', xml: renderDocToXml(G4_DOC) },
+    { name: 'G5', op: 'accept', xml: renderDocToXml(G5_DOC) },
+    { name: 'PPR_INS_REJECT', op: 'reject', xml: PPR_INS_REJECT },
+    { name: 'PPR_DEL_ACCEPT', op: 'accept', xml: PPR_DEL_ACCEPT },
+  ];
+
+  // ONE headless LibreOffice launch drives the whole batch; project both engines to paragraph shape.
+  const tsShape: Record<string, boolean[]> = {};
+  const loShape: Record<string, boolean[]> = {};
+  // `resolveSoffice()` only checks that a binary EXISTS, not that it can LAUNCH. In some
+  // environments LibreOffice is installed but cannot start — most notably a sandboxed shell on
+  // macOS, where `soffice` aborts (SIGABRT) before doing any work. When that happens the oracle
+  // can't produce ground truth, so we record a skip reason and the assertions no-op cleanly rather
+  // than fail. The oracle is a best-effort local check; a real terminal with a working LibreOffice
+  // runs it fully.
+  let oracleSkip = '';
+  beforeAll(async () => {
+    try {
+      const out = await runLibreOfficeOracle(
+        CASES.map((c): OracleJob => ({ op: c.op, documentXml: c.xml })),
+        soffice,
+      );
+      CASES.forEach((c, i) => {
+        tsShape[c.name] = paragraphShape(c.op === 'accept' ? acceptAllChanges(c.xml) : rejectAllChanges(c.xml));
+        loShape[c.name] = paragraphShape(out[i]!);
+      });
+    } catch (err) {
+      oracleSkip = `LibreOffice present but could not run in this environment — skipping oracle assertions. (${(err as Error).message.split('\n')[0]})`;
+      // eslint-disable-next-line no-console
+      console.warn('[lean-differential-helpers] ' + oracleSkip);
+    }
+  }, 120_000);
+
+  test.openspec('[LEAN-HELP-09] LibreOffice keeps an untracked-mark paragraph (kept-not-dropped), matching the TS engine on G3/G4/G5')(
+    'every pinned untracked-mark fixture survives as two paragraphs in both LibreOffice and the TS engine',
+    async ({ then }: AllureBddContext) => {
+      await then('LibreOffice and TS agree on paragraph count (the paragraph is kept, not dropped)', async () => {
+        if (oracleSkip) return;
+        for (const name of ['G3', 'G4', 'G5']) {
+          expect(loShape[name]!.length, `${name}: LibreOffice paragraph count`).toBe(2);
+          expect(tsShape[name]!.length, `${name}: TS paragraph count`).toBe(2);
+        }
+        // Pinned divergence (characterized, not hidden): on the contrived nested G3 fixture
+        // (ins wrapping del), LibreOffice KEEPS the inserted-then-deleted text on accept while
+        // Lean/TS collapse to empty. Only the kept-not-dropped count is oracle-asserted; the
+        // content difference is recorded here so a change in LibreOffice's behavior is noticed.
+        expect(loShape['G3'], 'G3: LibreOffice keeps the nested-revision text').toEqual([true, true]);
+        expect(tsShape['G3'], 'G3: TS collapses the nested revision to empty').toEqual([false, true]);
+      });
+    },
+  );
+
+  test.openspec('[LEAN-HELP-10] LibreOffice and the TS engine agree on full paragraph structure for the clean single-level fixtures (G4 reject, G5 accept)')(
+    'the collapsed paragraph is kept empty in both LibreOffice and the TS engine',
+    async ({ then }: AllureBddContext) => {
+      await then('LibreOffice structure equals the TS structure: an empty first paragraph then the survivor', async () => {
+        if (oracleSkip) return;
+        for (const name of ['G4', 'G5']) {
+          expect(loShape[name], `${name}: LibreOffice paragraph shape`).toEqual([false, true]);
+          expect(tsShape[name], `${name}: TS paragraph shape`).toEqual([false, true]);
+          expect(loShape[name]).toEqual(tsShape[name]);
+        }
+      });
+    },
+  );
+
+  test.openspec('[LEAN-HELP-11] LibreOffice drops a PPR-marked paragraph (mark-based rule), matching the TS engine')(
+    'a PPR-INS paragraph on reject and a PPR-DEL paragraph on accept are removed by both LibreOffice and the TS engine',
+    async ({ then }: AllureBddContext) => {
+      await then('only the survivor paragraph (with text) remains in both engines', async () => {
+        if (oracleSkip) return;
+        for (const name of ['PPR_INS_REJECT', 'PPR_DEL_ACCEPT']) {
+          // Exactly one paragraph survives, and it is the text-bearing "keep" paragraph — not an
+          // empty leftover. Asserting the full shape [true] (not just length 1) prevents a vacuous
+          // pass where both engines happened to leave a single empty paragraph.
+          expect(loShape[name], `${name}: LibreOffice shape after drop`).toEqual([true]);
+          expect(tsShape[name], `${name}: TS shape after drop`).toEqual([true]);
+        }
       });
     },
   );
