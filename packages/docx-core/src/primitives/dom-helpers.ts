@@ -42,12 +42,21 @@ export function getLeafText(el: Element): string | undefined {
 /**
  * Set the direct text content of a leaf element. Replaces or creates
  * the first text child node.
+ *
+ * NOTE: We must update BOTH `data` and `nodeValue` on the text node.
+ * In @xmldom/xmldom, `CharacterData` stores text in two separate plain
+ * properties: `data` (read by XMLSerializer) and `nodeValue` (read by
+ * `textContent` getter). All CharacterData mutation methods keep them
+ * in sync, but a direct `child.nodeValue = text` assignment only updates
+ * `nodeValue`, leaving the stale original value in `data`. This causes
+ * XMLSerializer to output the old text. Using `replaceData` (which sets
+ * both atomically) is the correct W3C-compliant approach.
  */
 export function setLeafText(el: Element, text: string): void {
   for (let i = 0; i < el.childNodes.length; i++) {
     const child = el.childNodes[i]!;
     if (child.nodeType === NODE_TYPE.TEXT) {
-      child.nodeValue = text;
+      (child as CharacterData).replaceData(0, (child as CharacterData).length, text);
       return;
     }
   }
