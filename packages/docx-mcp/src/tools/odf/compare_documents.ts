@@ -21,7 +21,7 @@ function resolveAuthor(explicit?: string): string {
 }
 
 /**
- * ODF `compare_documents` — paragraph-granularity TWO-FILE mode.
+ * ODF `compare_documents` — inline granularity (issue #356), TWO-FILE mode.
  *
  * Stateless (mirrors the DOCX `compareDocuments_tool`): it does its own loading and takes no
  * resolved session, because two-file compare carries no `file_path` and so cannot route through
@@ -103,12 +103,12 @@ export async function odfCompareDocuments(
       saved_to: savePath,
       size_bytes: buffer.length,
       author,
-      granularity: 'paragraph',
+      granularity: 'inline',
       stats: result.stats,
       message:
         `Redline comparing '${originalLoaded.filename}' vs '${revisedLoaded.filename}' saved to ${savePath}. ` +
-        'Changes are tracked at the whole-paragraph level (a modified paragraph counts as one ' +
-        'deletion plus one insertion), so insertion/deletion counts may run higher than the DOCX path.',
+        'Stats count changed-regions: a modified paragraph counts once in modifications with each ' +
+        'changed span inside it counted in insertions/deletions; added or removed paragraphs count one each.',
     });
   } catch (e: unknown) {
     if (String(errorCode(e) ?? '').toUpperCase() === 'EACCES') {
@@ -193,12 +193,12 @@ export async function odfCompareDocumentsSession(
       saved_to: savePath,
       size_bytes: buffer.length,
       author,
-      granularity: 'paragraph',
+      granularity: 'inline',
       stats: result.stats,
       message:
         `Redline of session edits to '${session.filename}' saved to ${savePath}. ` +
-        'Changes are tracked at the whole-paragraph level (a modified paragraph counts as one ' +
-        'deletion plus one insertion), so insertion/deletion counts may run higher than the DOCX path.',
+        'Stats count changed-regions: a modified paragraph counts once in modifications with each ' +
+        'changed span inside it counted in insertions/deletions; added or removed paragraphs count one each.',
       ...metadata,
     });
   } catch (e: unknown) {

@@ -136,18 +136,23 @@ describe('ODF compare_documents session mode', () => {
           });
         });
       });
-      await then('a paragraph-granularity session redline is written', async () => {
+      await then('an inline-granularity session redline is written', async () => {
         assertSuccess(result, 'compare_documents');
         expect(result.provider).toBe('odf');
         expect(result.mode).toBe('session');
-        expect(result.granularity).toBe('paragraph');
+        expect(result.granularity).toBe('inline');
         const stats = result.stats as { insertions: number; deletions: number; modifications: number };
+        // The edited paragraph is similar to its original, so it pairs as one modification with
+        // its changed spans counted in insertions/deletions (inline granularity, issue #356).
         expect(stats.insertions).toBeGreaterThanOrEqual(1);
         expect(stats.deletions).toBeGreaterThanOrEqual(1);
-        expect(stats.modifications).toBe(0);
+        expect(stats.modifications).toBe(1);
         const content = await readContentXml(out);
         expect(content).toContain('tracked-changes');
-        expect(content).toContain('Globex Corporation');
+        // Inline granularity brackets each replaced word, so change markers sit between the two
+        // inserted words in the raw XML — assert them individually, not as one substring.
+        expect(content).toContain('Globex');
+        expect(content).toContain('Corporation');
       });
     },
   );

@@ -89,7 +89,7 @@ async function buildOriginalAndRevised(dir: string): Promise<{ original: string;
   return { original, revised };
 }
 
-describe('ODF compare_documents lane (two-file, paragraph granularity)', () => {
+describe('ODF compare_documents lane (two-file)', () => {
   test.openspec('[OPCD-01] Two-file `.odt` compare produces a redline')(
     'compare_documents routes to the ODF handler and writes a tracked-changes .odt',
     async ({ given, when, then }: AllureBddContext) => {
@@ -107,11 +107,11 @@ describe('ODF compare_documents lane (two-file, paragraph granularity)', () => {
         });
       });
       await when('the comparison runs', () => {});
-      await then('the ODF handler writes a paragraph-granularity redline .odt', async () => {
+      await then('the ODF handler writes an inline-granularity redline .odt', async () => {
         assertSuccess(result, 'compare_documents');
         expect(result.provider).toBe('odf');
         expect(result.mode).toBe('two_file');
-        expect(result.granularity).toBe('paragraph');
+        expect(result.granularity).toBe('inline');
         const stat = await fs.stat(out);
         expect(stat.size).toBeGreaterThan(0);
       });
@@ -119,12 +119,26 @@ describe('ODF compare_documents lane (two-file, paragraph granularity)', () => {
   );
 
   test.openspec('[OPCD-02] Inserted and deleted paragraphs are counted')(
-    'a modified paragraph counts as one deletion and one insertion (modifications 0)',
+    'a wholly-replaced (dissimilar) paragraph counts as one deletion and one insertion (modifications 0)',
     async ({ given, then }: AllureBddContext) => {
       let stats: { insertions: number; deletions: number; modifications: number } = { insertions: 0, deletions: 0, modifications: 0 };
-      await given('a compare of an original vs a one-paragraph-modified revision', async () => {
+      await given('a compare of an original vs a revision whose paragraph was replaced wholesale', async () => {
         const dir = await tmpdir();
-        const { original, revised } = await buildOriginalAndRevised(dir);
+        // A replacement sharing no words stays below the similarity threshold, so it keeps the
+        // whole-paragraph delete+insert shape (similar edits now pair as `modifications`).
+        const original = await copyFixtureTo(dir, 'original.odt');
+        const revised = await copyFixtureTo(dir, 'revised.odt');
+        const mgr = new SessionManager();
+        const edit = await dispatchToolCall(mgr, 'replace_text', {
+          file_path: revised,
+          target_paragraph_id: 'p2',
+          old_string: 'Third paragraph mentions Acme Manufacturing.',
+          new_string: 'Zebras graze quietly under moonlit skies tonight.',
+          instruction: 'Replace the third paragraph wholesale.',
+        });
+        assertSuccess(edit, 'replace_text');
+        const saved = await dispatchToolCall(mgr, 'save', { file_path: revised, save_to_local_path: revised, allow_overwrite: true });
+        assertSuccess(saved, 'save');
         const result = await dispatchToolCall(new SessionManager(), 'compare_documents', {
           original_file_path: original,
           revised_file_path: revised,
