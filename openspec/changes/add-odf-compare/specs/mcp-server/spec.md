@@ -25,8 +25,9 @@ The ODF handler SHALL apply the same output-path safety as the DOCX tool: it SHA
 `save_to_local_path` resolves to either source file, and SHALL enforce the write-path policy
 before writing the redline.
 
-ODF **session-mode** `compare_documents` (a `.odt` on `file_path`) is not yet supported and
-SHALL return `UNSUPPORTED_FOR_ODF` rather than silently degrading.
+ODF **session-mode** `compare_documents` (a `.odt` on `file_path`) is specified by the
+`add-odf-compare-session` change; tools still outside the ODF supported set SHALL continue to
+return `UNSUPPORTED_FOR_ODF`.
 
 #### Scenario: [OPCD-01] Two-file `.odt` compare produces a redline
 - **WHEN** `compare_documents` is invoked with `.odt` `original_file_path` and `revised_file_path` that differ by whole paragraphs, plus `save_to_local_path`
@@ -40,8 +41,8 @@ SHALL return `UNSUPPORTED_FOR_ODF` rather than silently degrading.
 - **WHEN** `compare_documents` is invoked with two `.docx` paths
 - **THEN** the existing DOCX comparison runs and returns its DOCX response shape (including `engine`), and no ODF logic runs
 
-#### Scenario: [OPCD-04] ODF session-mode compare is unsupported
-- **WHEN** `compare_documents` is invoked with a `.odt` `file_path` (session mode)
+#### Scenario: [OPCD-04] Still-unsupported tools remain guarded for ODF sessions
+- **WHEN** a tool outside the ODF supported set (e.g. `accept_changes`) is invoked against an open `.odt` session
 - **THEN** an `UNSUPPORTED_FOR_ODF` error is returned and no DOCX logic runs
 
 #### Scenario: [OPCD-05] The redline reopens with the changes preserved

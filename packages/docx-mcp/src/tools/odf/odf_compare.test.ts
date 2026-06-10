@@ -164,17 +164,23 @@ describe('ODF compare_documents lane (two-file, paragraph granularity)', () => {
     },
   );
 
-  test.openspec('[OPCD-04] ODF session-mode compare is unsupported')(
-    'a .odt file_path (session mode) returns UNSUPPORTED_FOR_ODF',
-    async ({ given, then }: AllureBddContext) => {
+  test.openspec('[OPCD-04] Still-unsupported tools remain guarded for ODF sessions')(
+    'accept_changes against an open .odt session returns UNSUPPORTED_FOR_ODF',
+    async ({ given, when, then }: AllureBddContext) => {
+      // Session-mode .odt compare became supported in add-odf-compare-session; this scenario was
+      // re-pointed at a still-unsupported tool (the same flip OPLR-08 got when two-file compare
+      // landed). Session-mode compare coverage lives in odf_compare_session.test.ts (OPCS-*).
       let result: Record<string, unknown> = {};
-      await given('a .odt session file_path', async () => {
+      const manager = new SessionManager();
+      let odt = '';
+      await given('an open .odt session', async () => {
         const dir = await tmpdir();
-        const odt = await copyFixtureTo(dir, 'session.odt');
-        result = await dispatchToolCall(new SessionManager(), 'compare_documents', {
-          file_path: odt,
-          save_to_local_path: path.join(dir, 'out.odt'),
-        });
+        odt = await copyFixtureTo(dir, 'session.odt');
+        const read = await dispatchToolCall(manager, 'read_file', { file_path: odt });
+        assertSuccess(read, 'read_file');
+      });
+      await when('a still-unsupported tool targets the session', async () => {
+        result = await dispatchToolCall(manager, 'accept_changes', { file_path: odt });
       });
       await then('UNSUPPORTED_FOR_ODF is returned', () => {
         assertError(result, 'UNSUPPORTED_FOR_ODF');
