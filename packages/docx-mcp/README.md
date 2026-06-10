@@ -6,7 +6,7 @@
 
 **Install via the canonical package:** `npx -y @usejunior/safe-docx` — [see setup guide](../../README.md)
 
-Local MCP server for surgical editing of existing Microsoft Word `.docx` files with coding agents.
+Local MCP server for surgical editing of existing Microsoft Word `.docx` files with coding agents. The same tool surface also services OpenDocument `.odt` files — including `compare_documents` redlines (two files, or a live session against its original) written as native ODF tracked changes at paragraph granularity.
 
 Safe Docx is built for brownfield paperwork workflows: apply accepted AI edits to real Word documents while preserving formatting and review semantics.
 

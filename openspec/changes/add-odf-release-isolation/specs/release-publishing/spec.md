@@ -1,66 +1,62 @@
 ## ADDED Requirements
 
-### Requirement: ODF packages release independently of the DOCX suite
+### Requirement: ODF core publishes with the DOCX suite release
 
-The system SHALL version and publish ODF packages (`@usejunior/odf-core` and any
-future ODF package) on a release track that is decoupled from the DOCX suite
-release tag. ODF versions SHALL NOT be required to match the DOCX suite version,
-and an ODF version change SHALL NOT force a version bump or re-publish of any
-DOCX suite package (`docx-core`, `docx-mcp`, `google-docs-core`, `safe-docx`,
-`safe-docx-mcpb`).
+The system SHALL version and publish `@usejunior/odf-core` as part of the suite release:
+its version SHALL match the suite lockstep version (and therefore the `v*.*.*` release
+tag), and `release.yml` SHALL include it in the version-pin, duplicate-publish, dry-run
+pack, and publish lists, publishing in dependency order (after `@usejunior/docx-core`,
+before `@usejunior/docx-mcp`).
 
-This isolation guarantee covers the **version-pin and publish** behavior of the
-DOCX release. It does NOT cover ordinary monorepo CI: the DOCX release preflight
-runs all-workspace build/test/lint, so an ODF package must keep CI green like any
-other workspace member. That is build health, not version/publish coupling.
+`@usejunior/docx-mcp` SHALL declare `@usejunior/odf-core` as a regular dependency so a
+production install resolves it and `.odt` tools work out of the box; the dynamic
+`loadOdfCore()` loader remains as defense in depth and degrades to a clear
+`MISSING_DEPENDENCY` error if the package is somehow absent.
 
-The DOCX suite release SHALL continue to trigger on `v*.*.*` push tags. The
-future independent ODF release track SHALL own the `odf-v*` tag namespace, which
-does not match the DOCX `v*.*.*` push trigger.
+*(Revision note: this replaces the original independent-track design — `odf-v*` tags and
+`release-odf.yml` are retired unused. See the proposal's 2026-06-10 revision for why.)*
 
-#### Scenario: [ORP-01] ODF version bump does not bump or republish the DOCX suite
-- **WHEN** an ODF package version is changed
-- **THEN** no DOCX suite package version changes and the DOCX version-pin/publish preflight does not require any ODF package to match the tag
+#### Scenario: [ORP-01] Suite tag publishes odf-core with the suite
+- **WHEN** a `v*.*.*` release tag is pushed
+- **THEN** the preflight requires `packages/odf-core` to match the tag version and the publish step publishes `@usejunior/odf-core` after `docx-core` and before `docx-mcp`
 
-#### Scenario: [ORP-02] DOCX release tag ignores ODF packages
-- **WHEN** a `v*.*.*` DOCX release tag is pushed
-- **THEN** the suite-version preflight checks only the DOCX list and does not require any ODF package to match the tag
+#### Scenario: [ORP-02] Production installs get ODF support out of the box
+- **WHEN** the published `@usejunior/docx-mcp` (or the `@usejunior/safe-docx` wrapper) is installed from npm
+- **THEN** `@usejunior/odf-core` is installed as a dependency and `.odt` tool calls do not fail with `MISSING_DEPENDENCY`
 
-#### Scenario: [ORP-03] ODF push tag does not trigger the DOCX release
-- **WHEN** a future `odf-v*` tag is pushed for an ODF release
-- **THEN** it does not match the `v*.*.*` push trigger and does not start the DOCX `release.yml` workflow
+### Requirement: Release lists are snapshot-guarded against surface drift
 
-#### Scenario: [ORP-04] Manual dispatch of an ODF tag fails safely
-- **WHEN** the DOCX `release.yml` is manually dispatched with an `odf-v*` tag
-- **THEN** preflight fails the suite-version check (the tag matches no DOCX package version) before anything is published
+The system SHALL enforce, in CI, that the hardcoded suite package lists in
+`release.yml` (the version-pin list, the duplicate-publish guard list, the dry-run pack
+list, and the publish list) each equal a fixed expected set that includes
+`odf-core`. If any list gains or loses a package, the guard SHALL fail until the
+expected snapshot is deliberately updated alongside `release.yml`. This protects the
+actual release mechanism (membership in a release list) so the publish surface can only
+change on purpose.
 
-### Requirement: ODF packages must be private until their release track exists
+#### Scenario: [ORP-03] Changing a release list fails the guard until the snapshot is updated
+- **WHEN** a package name is added to or removed from any of the hardcoded suite lists in `release.yml` without updating the guard's expected snapshot
+- **THEN** the guard exits non-zero, naming the list and the unexpected or missing package
 
-The system SHALL require every workspace package whose name matches `odf` to be
-marked `private: true`. ODF packages SHALL remain `private: true` until the
-independent ODF release track (`release-odf.yml`) exists and passes its own
-preflight; only that future change may set an ODF package `private: false`. A
-`private: true` package builds, tests, and is consumed across the workspace
-normally; npm refuses to publish it.
+### Requirement: Publish-list packages must be publishable
 
-#### Scenario: [ORP-05] ODF core is private until its own publish gate
-- **WHEN** `packages/odf-core` exists before the ODF release track is built
-- **THEN** its `package.json` has `"private": true` and it is not published by the DOCX release
+The system SHALL require every package on the npm publish list to NOT be marked
+`private: true`. A private package on the publish surface would fail the release at tag
+time; the guard SHALL catch it at PR time with the offending package path and remedy.
 
-#### Scenario: [ORP-06] A non-private ODF package fails CI
-- **WHEN** a workspace package whose name matches `odf` is not marked `private: true`
-- **THEN** the release-isolation guard exits non-zero and the PR check fails with the offending package name
+#### Scenario: [ORP-04] A private package on the publish list fails CI
+- **WHEN** a package on the publish list sets `"private": true`
+- **THEN** the release-surface guard exits non-zero, naming the package and the remedy
 
-### Requirement: Release lists are snapshot-guarded against new packages
+### Requirement: First publish of a new suite package is a manual bootstrap
 
-The system SHALL enforce, in CI, that the hardcoded DOCX package lists in
-`release.yml` (the version-pin list, the duplicate-publish guard list, the
-dry-run pack list, and the publish list) each equal a fixed expected DOCX set.
-If any list gains an unexpected package — ODF or otherwise — the guard SHALL
-fail. This protects the actual coupling mechanism (membership in a release list)
-directly, rather than inferring it from a package's `private` flag, and so does
-not depend on the private-ness of packages that are on no release list.
+The system SHALL bootstrap a newly added suite package by a one-time manual publish at
+the current suite version (npm trusted publishing can only be configured for an
+already-existing package), followed by configuring the package's trusted publisher to
+match the existing suite packages; subsequent suite tags publish it via OIDC like the
+rest. The duplicate-publish guard SHALL treat the manually published version as already
+released and skip it without failing.
 
-#### Scenario: [ORP-07] Adding a package to a DOCX release list fails the guard
-- **WHEN** a package name is added to any of the four hardcoded DOCX lists in `release.yml`
-- **THEN** the guard exits non-zero, naming the list and the unexpected package
+#### Scenario: [ORP-05] Manual bootstrap version is skipped, next tag publishes via OIDC
+- **WHEN** a new suite package was manually published at version X and a suite tag for version Y > X is later pushed
+- **THEN** the duplicate-publish guard passes (Y is unpublished) and the workflow publishes version Y via trusted publishing

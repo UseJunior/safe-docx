@@ -75,3 +75,37 @@ break.
   this change does not mark it private or otherwise touch it.
 - Unblocks the ODF workstream: odf-core can be built and merged without any risk
   of coupling to — or churn on — the stable DOCX release.
+
+## Revision (2026-06-10, issue #372)
+
+The deferred independent ODF release track is **not being built**; `@usejunior/odf-core`
+joins the main suite release train instead. The original isolation premise — a rapidly
+churning experimental lane that must not force suite republishes — no longer holds:
+
+- The ODF lane shipped end-to-end (#328, #335, #336, #341, #348, #366): the published
+  `docx-mcp` server loads `odf-core` at runtime for every `.odt` tool call, so the two
+  packages are version-coupled de facto. An independent track would add a cross-track
+  compatibility range to manage while delivering nothing (suite republishes are fully
+  automated and effectively free).
+- Keeping odf-core private makes the shipped ODF features unreachable for npm users:
+  `loadOdfCore()` returns null in a production install and every `.odt` call fails with
+  `MISSING_DEPENDENCY`.
+
+What changes relative to the original proposal:
+
+- `odf-core` drops `private: true`, gains publish metadata, and is added to all four
+  `release.yml` loops (publish ordered after `docx-core`, before `docx-mcp`).
+- `docx-mcp` declares `@usejunior/odf-core` as a regular dependency — ODF works out of
+  the box. (Google Docs stays an optional peer because it needs external OAuth setup;
+  ODF needs nothing.)
+- The guard (`scripts/check-release-isolation.mjs`) keeps assertion A (workflow
+  snapshot, now including odf-core) and replaces the ODF-must-be-private assertion with
+  its inverse for the publish surface: any `private: true` package on the publish list
+  fails CI (it would otherwise fail the release at tag time).
+- The `odf-v*` tag namespace is retired unused; no `release-odf.yml` will be built.
+- Bootstrap: npm trusted publishing can only be configured for an existing package, so
+  the first `@usejunior/odf-core` publish is manual (interactive, at the current suite
+  version), then the package's trusted publisher is configured to mirror the other four
+  and the next suite tag publishes it via OIDC.
+
+The spec delta below reflects the revised policy.

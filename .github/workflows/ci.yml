@@ -307,6 +307,7 @@ jobs:
           pack_dir="$(mktemp -d)"
           run_dir="$(mktemp -d)"
           core_tgz="$(cd packages/docx-core && npm pack --silent --pack-destination "$pack_dir")"
+          odf_tgz="$(cd packages/odf-core && npm pack --silent --pack-destination "$pack_dir")"
           mcp_tgz="$(cd packages/docx-mcp && npm pack --silent --pack-destination "$pack_dir")"
           safe_tgz="$(cd packages/safe-docx && npm pack --silent --pack-destination "$pack_dir")"
           pushd "$run_dir"
@@ -314,7 +315,7 @@ jobs:
           for attempt in 1 2 3; do
             echo "runtime smoke attempt ${attempt}/3"
             rm -rf node_modules package-lock.json
-            if npm install --no-audit --no-fund "$pack_dir/$core_tgz" "$pack_dir/$mcp_tgz" "$pack_dir/$safe_tgz" >/dev/null \
+            if npm install --no-audit --no-fund "$pack_dir/$core_tgz" "$pack_dir/$odf_tgz" "$pack_dir/$mcp_tgz" "$pack_dir/$safe_tgz" >/dev/null \
               && ./node_modules/.bin/safe-docx --help; then
               popd
               rm -rf "$pack_dir" "$run_dir"

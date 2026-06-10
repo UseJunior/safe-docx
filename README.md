@@ -1,4 +1,4 @@
-# Edit Word documents (.docx) with coding agents via MCP
+# Edit Word documents (.docx) with coding agents via MCP — with OpenDocument (.odt) support
 
 <!-- SYNC:badges BEGIN -->
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
@@ -75,7 +75,7 @@ flowchart LR
 ```
 <!-- SYNC:architecture-diagram END -->
 
-Safe Docx is an open-source TypeScript stack for surgical editing of existing Microsoft Word `.docx` files. It is built for workflows where an agent proposes changes and a human still needs reliable, formatting-preserving document edits.
+Safe Docx is an open-source TypeScript stack for surgical editing of existing Microsoft Word `.docx` files — and, through the same tool surface, OpenDocument `.odt` files. It is built for workflows where an agent proposes changes and a human still needs reliable, formatting-preserving document edits.
 
 If you review contracts with AI, the slowest step is often applying accepted recommendations in Word. Safe Docx turns that into deterministic tool calls.
 
@@ -214,6 +214,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 - Comment and footnote workflows
 - Tracked-changes outputs for review (`download`, `compare_documents`)
 - Revision extraction as structured JSON (`extract_revisions`)
+- OpenDocument (`.odt`) sessions: read, search, edit, comment, save, and `compare_documents` redlines (see below)
 
 ## What Safe Docx Is Not Optimized For
 
@@ -222,6 +223,12 @@ Safe Docx is not a from-scratch document generation toolkit.
 If your primary need is generating new `.docx` files from templates/programmatic layout, use packages such as [`docx`](https://www.npmjs.com/package/docx).
 
 The local Safe Docx runtime also intentionally rejects Word template files (`.dotx`) for now. Convert the template to a normal `.docx` document before opening it here.
+
+## OpenDocument (`.odt`) Support
+
+Teams on LibreOffice have the same problem as teams on Word: edits without a record. The core session tools — `read_file`, `grep`, `replace_text`, `insert_paragraph`, `add_comment`, `get_comments`, `save` — work directly on `.odt` files, and `compare_documents` writes a native ODF tracked-changes redline: compare two files, or a live editing session against the original it was opened from.
+
+ODF changes are tracked at the whole-paragraph level (a modified paragraph appears as one deletion plus one insertion). The redline round-trips in LibreOffice: accepting all changes reproduces the edited document, rejecting all restores the original. See the [tool reference](packages/docx-mcp/docs/tool-reference.generated.md) for per-tool format support.
 
 ## Document Families
 
@@ -243,6 +250,7 @@ The local Safe Docx runtime also intentionally rejects Word template files (`.do
 ## Packages
 
 - `@usejunior/docx-core`: primitives + comparison engine for existing `.docx` documents
+- `@usejunior/odf-core`: OpenDocument (`.odt`) primitives + tracked-changes comparison engine
 - `@usejunior/docx-mcp`: MCP server implementation and tool surface
 - `@usejunior/safe-docx`: canonical end-user install name (`npx -y @usejunior/safe-docx`)
 - `@usejunior/safedocx-mcpb`: private MCP bundle wrapper
