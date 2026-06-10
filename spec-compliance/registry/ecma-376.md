@@ -74,6 +74,31 @@ as conventional reserved values via `RESERVED_FOOTNOTE_IDS` in
 (`findReferencesInOrder`, also in `footnotes.ts`) implements the
 reference-vs-display distinction this section establishes.
 
+## [ECMA-PART1-17-16-22] w:hyperlink container preservation under tracked changes
+
+```yaml
+edition: 5
+part: 1
+section: "17.16.22"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink
+verifiedBy:
+```
+
+`w:hyperlink` (CT_Hyperlink) is a run container inside `<w:p>` whose
+`r:id` attribute carries the relationship reference to the link target.
+Its content model (EG_PContent) admits run-level revision wrappers, so
+tracked edits to link text nest as `<w:hyperlink><w:ins>…` /
+`<w:hyperlink><w:del>…`; the reverse nesting is invalid because
+CT_RunTrackChange (the `w:ins` / `w:del` content model) does not admit
+`w:hyperlink`. safe-docx's comparison engine preserves the wrapper and
+its attributes when reconstructing paragraphs that contain hyperlinks,
+and never merges text atoms across a hyperlink boundary. The enforcement
+lives in `packages/docx-core/src/atomizer.ts`
+(`nearestHyperlinkAncestor`) and
+`packages/docx-core/src/baselines/atomizer/documentReconstructor.ts`
+(hyperlink wrapper re-emission).
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the
