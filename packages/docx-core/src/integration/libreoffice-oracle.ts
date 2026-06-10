@@ -126,7 +126,7 @@ const REGMOD = `<?xml version="1.0" encoding="UTF-8"?>
 </oor:items>`;
 
 /** The Basic macro: load each doc Hidden, dispatch accept/reject-all (or, for `identity`,
- *  dispatch nothing at all), save as MS Word 2007 XML. */
+ *  dispatch nothing at all), save with the job's filter. */
 function module1Xba(jobsPath: string, markerPath: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
@@ -140,14 +140,14 @@ Sub RunOracle
     Line Input #iFile, sLine
     If Len(Trim(sLine)) &gt; 0 Then
       parts = Split(sLine, "|")
-      ProcessOne(parts(0), ConvertToURL(parts(1)), ConvertToURL(parts(2)))
+      ProcessOne(parts(0), ConvertToURL(parts(1)), ConvertToURL(parts(2)), parts(3))
     End If
   Loop
   Close #iFile
   StarDesktop.terminate()
 End Sub
 
-Sub ProcessOne(op As String, inUrl As String, outUrl As String)
+Sub ProcessOne(op As String, inUrl As String, outUrl As String, filterName As String)
   Dim oDoc As Object, oFrame As Object, oDisp As Object
   Dim loadArgs(0) As New com.sun.star.beans.PropertyValue
   loadArgs(0).Name = "Hidden" : loadArgs(0).Value = True
@@ -163,7 +163,7 @@ Sub ProcessOne(op As String, inUrl As String, outUrl As String)
   ' op = "identity": no dispatch — a plain load-&gt;save, exposing LibreOffice's own DOCX
   ' import/export of UNRESOLVED tracked changes (the oracle trust-boundary check).
   Dim saveArgs(0) As New com.sun.star.beans.PropertyValue
-  saveArgs(0).Name = "FilterName" : saveArgs(0).Value = "MS Word 2007 XML"
+  saveArgs(0).Name = "FilterName" : saveArgs(0).Value = filterName
   oDoc.storeToURL(outUrl, saveArgs())
   oDoc.close(False)
 End Sub
@@ -173,15 +173,25 @@ End Sub
 /**
  * `accept` / `reject` dispatch the corresponding resolve-all command before saving — the oracle's
  * normal voting mode. `identity` loads and saves WITHOUT any dispatch, so unresolved tracked
- * changes flow through LibreOffice's DOCX import/export: it exists to characterize the oracle's
+ * changes flow through LibreOffice's import/export: it exists to characterize the oracle's
  * trust boundary (LibreOffice's save round-trip mangles some unresolved revision shapes — see
  * libreoffice-oracle-trust-boundary.test.ts), NOT to vote on engine behavior.
+ *
+ * DOCX jobs carry a bare `word/document.xml` (packed into a minimal package and read back out);
+ * ODT jobs carry a complete `.odt` package buffer (ODF packaging — mimetype-first STORED — is
+ * the caller's concern) and return its post-op `content.xml`.
  */
-export type OracleJob = { op: 'accept' | 'reject' | 'identity'; documentXml: string };
+type OracleOp = 'accept' | 'reject' | 'identity';
+export type OracleJob = { op: OracleOp; documentXml: string } | { op: OracleOp; odt: Buffer };
+
+function isOdtJob(job: OracleJob): job is { op: OracleOp; odt: Buffer } {
+  return 'odt' in job;
+}
 
 /**
- * Run LibreOffice over a batch of jobs in ONE headless launch and return the resulting
- * `word/document.xml` of each. Throws if the binary is missing or the macro did not run.
+ * Run LibreOffice over a batch of jobs in ONE headless launch and return each job's resulting
+ * main XML part — `word/document.xml` for DOCX jobs, `content.xml` for ODT jobs. Throws if the
+ * binary is missing or the macro did not run.
  */
 export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveSoffice()): Promise<string[]> {
   if (!soffice) throw new Error('runLibreOfficeOracle: no soffice binary (call resolveSoffice() and skip)');
@@ -201,15 +211,18 @@ export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveS
   try {
     for (const d of [userDir, basicDir, inDir, outDir]) mkdirSync(d, { recursive: true });
 
-    // Pack each job's input .docx and build the jobs file (op|inPath|outPath).
+    // Write each job's input package and build the jobs file (op|inPath|outPath|filter).
     const outPaths: string[] = [];
     const jobLines: string[] = [];
     for (let i = 0; i < jobs.length; i++) {
-      const inPath = path.join(inDir, `job${i}.docx`);
-      const outPath = path.join(outDir, `job${i}.docx`);
-      writeFileSync(inPath, await packMinimalDocx(jobs[i]!.documentXml));
+      const job = jobs[i]!;
+      const ext = isOdtJob(job) ? 'odt' : 'docx';
+      const filter = isOdtJob(job) ? 'writer8' : 'MS Word 2007 XML';
+      const inPath = path.join(inDir, `job${i}.${ext}`);
+      const outPath = path.join(outDir, `job${i}.${ext}`);
+      writeFileSync(inPath, isOdtJob(job) ? new Uint8Array(job.odt) : new Uint8Array(await packMinimalDocx(job.documentXml)));
       outPaths.push(outPath);
-      jobLines.push(`${jobs[i]!.op}|${inPath}|${outPath}`);
+      jobLines.push(`${job.op}|${inPath}|${outPath}|${filter}`);
     }
     writeFileSync(jobsPath, jobLines.join('\n') + '\n');
 
@@ -252,8 +265,13 @@ export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveS
           (keepWork ? `\n(profile kept for debugging at ${work})` : ' (set SAFE_DOCX_ORACLE_DEBUG=1 to keep the profile)'),
       );
     }
-    return Promise.all(outPaths.map(async (p) => {
+    return Promise.all(outPaths.map(async (p, i) => {
       if (!existsSync(p)) throw new Error(`LibreOffice oracle produced no output for ${path.basename(p)}`);
+      if (isOdtJob(jobs[i]!)) {
+        const contentXml = await readZipText(readFileSync(p), 'content.xml');
+        if (contentXml == null) throw new Error(`content.xml not found in oracle output ${path.basename(p)}`);
+        return contentXml;
+      }
       return extractDocumentXml(readFileSync(p));
     }));
   } finally {

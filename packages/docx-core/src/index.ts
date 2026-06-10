@@ -117,3 +117,7 @@ export type {
   RevisionContextOptions,
   RevisionIdState,
 } from './primitives/track-changes-emitter.js';
+
+// Re-export the LibreOffice accept/reject oracle (gated reference voter; callers skip when
+// `resolveSoffice()` is null). odf-core's round-trip tests drive it with `.odt` jobs.
+export { resolveSoffice, runLibreOfficeOracle, type OracleJob } from './integration/libreoffice-oracle.js';
