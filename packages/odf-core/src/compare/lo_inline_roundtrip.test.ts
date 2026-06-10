@@ -85,18 +85,21 @@ describe('LibreOffice accept/reject round-trip of the inline redline', () => {
   );
 
   it(
-    'characterization (issue #367): reject-all of an END-OF-DOCUMENT whole-paragraph replacement merges paragraphs',
+    'issue #367 (fixed): an END-OF-DOCUMENT whole-paragraph replacement round-trips on accept AND reject',
     async () => {
       const soffice = resolveSoffice();
       if (!soffice) {
-        console.warn('[issue #367] soffice not found — skipping characterization (set ODF_SOFFICE_BIN to enable).');
+        console.warn('[issue #367] soffice not found — skipping LibreOffice round-trip (set ODF_SOFFICE_BIN to enable).');
         return;
       }
 
-      // Pre-existing Slice-1 defect: the deletion marker anchors inside the inserted replacement
-      // paragraph while the end-of-document insertion bracket starts in the preceding paragraph;
-      // rejecting both restores the deleted text into the preceding paragraph and leaves an empty
-      // trailing paragraph. Pinned here so a fix for #367 flips this test on purpose.
+      // Formerly a characterization of the pre-existing Slice-1 defect: the deletion marker
+      // anchored inside the inserted replacement paragraph while the end-of-document insertion
+      // bracket started in the preceding paragraph, so reject-all merged the preceding paragraph
+      // with the restored one (and left a trailing empty paragraph). Fixed by anchoring the
+      // deletion BACKWARD — marker at the end of the preceding kept paragraph, before the
+      // insertion's change-start — so this now asserts the true round-trip (see also
+      // lo_paragraph_roundtrip.test.ts, which covers the neighboring EOF compositions).
       const original = ['Stable one.', 'Entirely different clause about apples.'];
       const revised = ['Stable one.', 'Zebras graze quietly under moonlight.'];
       const { contentXml: redline } = compareOdf(await contentXml(original), await contentXml(revised), {
@@ -111,8 +114,8 @@ describe('LibreOffice accept/reject round-trip of the inline redline', () => {
         soffice,
       );
 
-      expect(paragraphTexts(accepted!)).toEqual(revised); // accept-all is correct
-      expect(paragraphTexts(rejected!)).toEqual(['Stable one.Entirely different clause about apples.', '']);
+      expect(paragraphTexts(accepted!)).toEqual(revised);
+      expect(paragraphTexts(rejected!)).toEqual(original);
     },
     180_000,
   );

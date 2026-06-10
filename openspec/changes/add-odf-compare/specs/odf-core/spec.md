@@ -39,6 +39,15 @@ scanning existing ids; `office:change-info` carrying `dc:creator` from `opts.aut
   marker and the insertion's `text:change-start` target the same position (the start of the
   inserted replacement paragraph), the `text:change` (deletion) marker SHALL be emitted BEFORE
   the `text:change-start` (insertion) marker.
+- A deletion run whose following paragraph belongs to an inserted run that itself reaches
+  **end of document** (a whole-paragraph replacement of the LAST paragraph) SHALL anchor
+  **backward** — empty merge artifact first, inline `text:change` marker at the end of the
+  preceding surviving paragraph, BEFORE the insertion's end-anchored `text:change-start` — so
+  the marker stays outside the insertion span and rejecting the insertion cannot remove the
+  deletion's restore point. (A forward marker would sit inside the inserted paragraph, and
+  reject-all would merge the preceding paragraph with the restored one and leave a trailing
+  empty paragraph.) When no preceding paragraph exists (`revisedCursor` 0), the forward
+  placement stands.
 
 `compareOdf` SHALL preserve the unchanged paragraphs' visible text and the rest of the revised
 document (styles, manifest, untouched parts) so the redline round-trips.
@@ -85,3 +94,7 @@ and the visible-text walk SHALL skip the `text:tracked-changes` subtree.
 #### Scenario: [OCMP-10] Modified paragraph orders deletion before insertion markers
 - **WHEN** `compareOdf` emits a modified paragraph whose deletion `text:change` and insertion `text:change-start` target the start of the same replacement paragraph
 - **THEN** the `text:change` (deletion) marker precedes the `text:change-start` (insertion) marker in that paragraph
+
+#### Scenario: [OCMP-11] Replaced last paragraph anchors the deletion backward, outside the insertion bracket
+- **WHEN** `compareOdf` emits a whole-paragraph replacement of the LAST paragraph (a deletion run immediately followed by an inserted run reaching end-of-document)
+- **THEN** the deletion stores the empty merge artifact first and its inline `text:change` marker sits at the end of the preceding surviving paragraph, BEFORE the insertion's end-anchored `text:change-start` (never inside the inserted replacement paragraph), so LibreOffice's reject-all restores the original paragraphs without merging or leaving a trailing empty paragraph

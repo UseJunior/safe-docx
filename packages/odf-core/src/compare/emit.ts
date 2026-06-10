@@ -15,9 +15,14 @@
  *  - Deletion (paragraph-break merge): the deleted paragraphs live out-of-line in a `text:deletion`
  *    region; an inline `text:change` point marker sits in the nearest SURVIVING paragraph — at the
  *    start of the following one (forward) or the end of the preceding one (backward, for a run
- *    reaching end-of-document). Consecutive deletions coalesce into ONE region with all deleted
- *    paragraphs plus one empty merge-artifact paragraph (artifact last for forward, first for
- *    backward). `text:change` is inline and is never a direct block child of `office:text`.
+ *    reaching end-of-document). A run whose following paragraph belongs to an inserted run that
+ *    itself reaches end-of-document (a dissimilar whole-paragraph replacement of the LAST
+ *    paragraph) also anchors BACKWARD: the insertion's bracket is end-anchored there, so a forward
+ *    marker would sit inside the insertion span and rejecting the insertion would remove the
+ *    deletion's restore point (issue #367). Consecutive deletions coalesce into ONE region with
+ *    all deleted paragraphs plus one empty merge-artifact paragraph (artifact last for forward,
+ *    first for backward). `text:change` is inline and is never a direct block child of
+ *    `office:text`.
  *  - Modify pair (intra-paragraph): the revised paragraph stays in place. An inserted span keeps
  *    its content inline bracketed by `text:change-start`/`text:change-end`; a deleted span leaves
  *    one `text:change` point marker and its content is stored out-of-line in a `text:deletion`
@@ -216,7 +221,7 @@ export function emitTrackedChanges(params: EmitParams): EmitResult {
     ...deleteRuns.map((dr) => ({
       id: dr.id,
       build: () => {
-        const forward = dr.revisedCursor < m;
+        const forward = !anchorsBackward(dr, insertRuns, m);
         const deletedPs = dr.originalIndices.map((i) => revisedDoc.importNode(originalBlocks[i]!, true) as Element);
         const artifact = makeEmptyParagraph(revisedDoc, originalBlocks[dr.originalIndices[0]!]!);
         const stored = forward ? [...deletedPs, artifact] : [artifact, ...deletedPs];
@@ -249,12 +254,11 @@ export function emitTrackedChanges(params: EmitParams): EmitResult {
   }
   // --- Place whole-paragraph deletion point markers.
   for (const run of deleteRuns) {
-    const forward = run.revisedCursor < m;
     const marker = makeMarker(revisedDoc, 'change', run.id);
-    if (forward) {
+    if (!anchorsBackward(run, insertRuns, m)) {
       prepend(revisedBlocks[run.revisedCursor]!, marker);
     } else {
-      revisedBlocks[m - 1]!.appendChild(marker);
+      appendOutsideInsertionStart(revisedBlocks[Math.min(run.revisedCursor, m) - 1]!, marker);
     }
   }
   return result;
@@ -317,6 +321,35 @@ function placeModifyMarkers(doc: Document, block: Element, placements: MarkerPla
       point.parent.insertBefore(makeMarker(doc, p.type, p.id), point.before);
     }
   }
+}
+
+/**
+ * Whether a deletion run anchors its point marker BACKWARD (end of the preceding surviving
+ * paragraph). True when the run reaches end-of-document, and ALSO when its forward anchor would
+ * be the first paragraph of an insert run that itself reaches end-of-document: that insertion's
+ * bracket is end-anchored (`text:change-start` at the end of the preceding kept paragraph), so a
+ * forward marker would sit INSIDE the insertion span and rejecting the insertion would remove
+ * the deletion's restore point (issue #367). With no preceding paragraph (`revisedCursor` 0)
+ * there is nothing to anchor backward to, so the forward placement stands.
+ */
+function anchorsBackward(run: DeleteRun, insertRuns: InsertRun[], m: number): boolean {
+  if (run.revisedCursor >= m) return true;
+  if (run.revisedCursor === 0) return false;
+  return insertRuns.some((ins) => ins.a === run.revisedCursor && ins.b === m - 1);
+}
+
+/**
+ * Append `marker` at the end of `anchor`, but BEFORE a co-located end-of-document insertion
+ * `text:change-start` (insertion markers are placed first), keeping the deletion marker outside
+ * the insertion span.
+ */
+function appendOutsideInsertionStart(anchor: Element, marker: Element): void {
+  const last = anchor.lastChild;
+  const ref =
+    last && last.nodeType === 1 && (last as Element).namespaceURI === ODF_NS.TEXT && (last as Element).localName === 'change-start'
+      ? last
+      : null;
+  anchor.insertBefore(marker, ref);
 }
 
 function placeInsertionMarkers(doc: Document, revisedBlocks: Element[], run: InsertRun, m: number): void {
