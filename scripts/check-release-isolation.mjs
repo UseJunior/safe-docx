@@ -1,21 +1,25 @@
 #!/usr/bin/env node
-// Release-isolation guard (OpenSpec change: add-odf-release-isolation).
+// Release-surface guard (OpenSpec change: add-odf-release-isolation, revised
+// 2026-06-10: odf-core now publishes WITH the suite — see the change's
+// proposal addendum and issue #372).
 //
-// Keeps ODF (and any future non-DOCX) packages from being coupled to — or
-// churning — the stable DOCX suite release. Two assertions:
+// Keeps the suite release surface deliberate. The original ODF-must-stay-
+// private assertion was retired when @usejunior/odf-core joined the suite
+// release train (docx-mcp depends on it at runtime, so the two are version-
+// coupled de facto). Two assertions remain:
 //
-//   A. Workflow-snapshot: the hardcoded DOCX package lists in
+//   A. Workflow-snapshot: the hardcoded suite package lists in
 //      .github/workflows/release.yml must equal a fixed expected set. Adding
-//      ANY package (ODF or otherwise) to a release `for` loop fails the guard.
-//      This guards the actual coupling mechanism (membership in a release list)
-//      rather than inferring it from a package's `private` flag, so it is robust
-//      to packages that are non-private yet on no release list (e.g.
-//      allure-test-factory).
+//      or removing ANY package in a release `for` loop fails the guard until
+//      EXPECTED_LOOPS is deliberately updated. This guards the actual release
+//      mechanism (membership in a release list) so the surface can only change
+//      on purpose.
 //
-//   B. ODF-private: every workspace package whose name matches /odf/ must be
-//      `private: true`. ODF packages stay private until the independent ODF
-//      release track (release-odf.yml) exists and passes its own preflight;
-//      only that future change may flip an ODF package to `private: false`.
+//   B. Publish-list-publishable: every `packages/<dir>` on the npm publish
+//      surface must NOT be `private: true` — a private package on the publish
+//      list would fail the release at tag time; catch it at PR time instead.
+//      (This is the inverse of the retired assertion, and is exactly the
+//      bootstrap mistake folding a new package into the train can make.)
 //
 // Pure JSON/text inspection — no network, no build. Wired into the
 // workspace-lint required check. Exits non-zero with an actionable message.
@@ -28,15 +32,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const RELEASE_YML = path.join(REPO_ROOT, '.github', 'workflows', 'release.yml');
 
-// ── Expected snapshot of release.yml's DOCX package loops ──────────────────
+// ── Expected snapshot of release.yml's suite package loops ─────────────────
 // Each entry is the set of package tokens (`@usejunior/*` and/or `packages/*`)
 // that a `for pkg in ...` / `for entry in ...` loop in release.yml may contain.
-// Update this ONLY when intentionally changing the DOCX release surface — never
-// to admit an ODF package (ODF publishes on its own track, not these loops).
+// Update this ONLY when intentionally changing the suite release surface.
 export const EXPECTED_LOOPS = [
   // "Verify tag matches package suite versions" (version-pin)
   [
     'packages/docx-core',
+    'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
     'packages/safe-docx',
@@ -45,6 +49,7 @@ export const EXPECTED_LOOPS = [
   // "Guard against duplicate publish"
   [
     '@usejunior/docx-core',
+    '@usejunior/odf-core',
     '@usejunior/docx-mcp',
     '@usejunior/google-docs-core',
     '@usejunior/safe-docx',
@@ -52,6 +57,7 @@ export const EXPECTED_LOOPS = [
   // "Verify package contents (dry-run)"
   [
     'packages/docx-core',
+    'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
     'packages/safe-docx',
@@ -59,14 +65,27 @@ export const EXPECTED_LOOPS = [
   // "Publish to npm (trusted publishing)" — name:dir pairs
   [
     '@usejunior/docx-core',
+    '@usejunior/odf-core',
     '@usejunior/docx-mcp',
     '@usejunior/google-docs-core',
     '@usejunior/safe-docx',
     'packages/docx-core',
+    'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
     'packages/safe-docx',
   ],
+];
+
+// Suite packages on the npm publish surface (the publish loop's `packages/*`
+// dirs). These must be publishable: `private: true` here would fail the
+// release at tag time.
+export const PUBLISH_DIRS = [
+  'packages/docx-core',
+  'packages/odf-core',
+  'packages/docx-mcp',
+  'packages/google-docs-core',
+  'packages/safe-docx',
 ];
 
 const PKG_TOKEN_RE = /(?:@usejunior\/[a-z0-9.-]+|packages\/[a-z0-9.-]+)/g;
@@ -107,19 +126,19 @@ export function diffWorkflowSnapshot(found, expected = EXPECTED_LOOPS) {
     if (unexpected.length) {
       errors.push(
         `release.yml release loops contain unexpected package(s): ${unexpected.join(', ')}. ` +
-          `ODF and other non-DOCX packages must NOT be added to the DOCX release lists — they publish on their own track.`,
+          `Changing the suite release surface must be deliberate — update EXPECTED_LOOPS (and PUBLISH_DIRS) in this guard alongside release.yml.`,
       );
     }
     if (missing.length) {
       errors.push(
-        `release.yml release loops are missing expected DOCX package(s): ${missing.join(', ')}. ` +
-          `If this is an intentional change to the DOCX surface, update EXPECTED_LOOPS in this guard.`,
+        `release.yml release loops are missing expected suite package(s): ${missing.join(', ')}. ` +
+          `If this is an intentional change to the suite surface, update EXPECTED_LOOPS in this guard.`,
       );
     }
     if (!unexpected.length && !missing.length) {
       errors.push(
         `release.yml package-loop membership drifted from EXPECTED_LOOPS (a token moved between loops). ` +
-          `Re-verify the DOCX release surface and update the guard.`,
+          `Re-verify the suite release surface and update the guard.`,
       );
     }
   }
@@ -135,67 +154,40 @@ function checkWorkflowSnapshot() {
   return diffWorkflowSnapshot(extractReleaseLoops(yml));
 }
 
-// ── Assertion B: ODF packages must be private ─────────────────────────────
-function readWorkspaceGlobs() {
-  const rootPkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
-  const ws = rootPkg.workspaces;
-  if (Array.isArray(ws)) return ws;
-  if (ws && Array.isArray(ws.packages)) return ws.packages;
-  return [];
-}
-
-function expandWorkspacePackages() {
-  const dirs = [];
-  for (const glob of readWorkspaceGlobs()) {
-    if (glob.endsWith('/*')) {
-      const base = path.join(REPO_ROOT, glob.slice(0, -2));
-      if (!fs.existsSync(base)) continue;
-      for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const pkgJson = path.join(base, entry.name, 'package.json');
-        if (fs.existsSync(pkgJson)) dirs.push(pkgJson);
-      }
-    } else {
-      const pkgJson = path.join(REPO_ROOT, glob, 'package.json');
-      if (fs.existsSync(pkgJson)) dirs.push(pkgJson);
-    }
-  }
-  return dirs;
-}
-
-// Pure: given [{name, private, rel}], return errors for non-private ODF pkgs.
-export function diffOdfPrivate(packages) {
+// ── Assertion B: publish-list packages must be publishable ─────────────────
+// Pure: given [{dir, private, rel}], return errors for private publish-list pkgs.
+export function diffPublishListPrivate(packages) {
   const errors = [];
   for (const pkg of packages) {
-    const name = pkg.name ?? '';
-    if (/odf/i.test(name) && pkg.private !== true) {
+    if (pkg.private === true) {
       errors.push(
-        `${pkg.rel} (${name}) must set "private": true. ` +
-          `ODF packages stay private until release-odf.yml exists and passes its own preflight.`,
+        `${pkg.rel} is on the npm publish list but sets "private": true — npm will refuse to publish it ` +
+          `and the release will fail at tag time. Drop "private" (and add publish metadata) or remove it from PUBLISH_DIRS + release.yml.`,
       );
     }
   }
   return errors;
 }
 
-function checkOdfPrivate() {
-  const packages = expandWorkspacePackages().map((pkgJsonPath) => {
+function checkPublishListPrivate() {
+  const packages = PUBLISH_DIRS.map((dir) => {
+    const pkgJsonPath = path.join(REPO_ROOT, dir, 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
-    return { name: pkg.name, private: pkg.private, rel: path.relative(REPO_ROOT, pkgJsonPath) };
+    return { dir, private: pkg.private, rel: path.relative(REPO_ROOT, pkgJsonPath) };
   });
-  return diffOdfPrivate(packages);
+  return diffPublishListPrivate(packages);
 }
 
 // ── Run (only when invoked directly, not when imported by the test) ─────────
 function main() {
-  const errors = [...checkWorkflowSnapshot(), ...checkOdfPrivate()];
+  const errors = [...checkWorkflowSnapshot(), ...checkPublishListPrivate()];
   if (errors.length) {
-    console.error('Release-isolation guard FAILED:\n');
+    console.error('Release-surface guard FAILED:\n');
     for (const e of errors) console.error(`  - ${e}`);
-    console.error('\nSee openspec/changes/add-odf-release-isolation for the rationale.');
+    console.error('\nSee openspec/changes/add-odf-release-isolation (revised) for the rationale.');
     process.exit(1);
   }
-  console.log('Release-isolation guard passed: DOCX release lists match snapshot; no non-private ODF package.');
+  console.log('Release-surface guard passed: suite release lists match snapshot; all publish-list packages are publishable.');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

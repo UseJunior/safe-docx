@@ -1,7 +1,7 @@
 {
   "name": "@usejunior/docx-mcp",
   "version": "0.9.1",
-  "description": "MCP server for reading, editing, and comparing Word documents with tracked changes. For Claude, Gemini CLI, Cursor, and any MCP client. MIT licensed.",
+  "description": "MCP server for reading, editing, and comparing Word (.docx) and OpenDocument (.odt) files with tracked changes. For Claude, Gemini CLI, Cursor, and any MCP client. MIT licensed.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -28,6 +28,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@usejunior/docx-core": "^0.9.1",
+    "@usejunior/odf-core": "^0.9.1",
     "@xmldom/xmldom": "^0.9.10",
     "zod": "^4.3.6"
   },
@@ -99,7 +100,10 @@
     "local-first",
     "offline",
     "diff",
-    "safedocx"
+    "safedocx",
+    "odt",
+    "opendocument",
+    "libreoffice"
   ],
   "homepage": "https://github.com/UseJunior/safe-docx/tree/main/packages/docx-mcp",
   "bugs": {
