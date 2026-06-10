@@ -129,6 +129,68 @@ describe('read_file footnotes', () => {
     });
   });
 
+  test('a footnote reference inside field code is hidden from every text field (#382)', async ({ given, when, then }: AllureBddContext) => {
+    const W_DOC_OPEN = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">';
+    // First paragraph: a footnoteReference between fldChar begin and separate —
+    // field-code content Word never displays. Second paragraph: an ordinary
+    // visible reference. The hidden reference still occupies display slot 1 in
+    // document order, so the visible one renders as [^2].
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      W_DOC_OPEN +
+      `<w:body>` +
+      `<w:p>` +
+      `<w:r><w:t>Before </w:t></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> NOTEREF _Ref1 </w:instrText></w:r>` +
+      `<w:r><w:footnoteReference w:id="1"/></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r><w:t>Visible result</w:t></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+      `<w:r><w:t> After</w:t></w:r>` +
+      `</w:p>` +
+      `<w:p><w:r><w:t>Anchor sentence.</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r></w:p>` +
+      `</w:body></w:document>`;
+    const footnotesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>` +
+      `<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>` +
+      `<w:footnote w:id="1"><w:p><w:r><w:t>Hidden field-code note.</w:t></w:r></w:p></w:footnote>` +
+      `<w:footnote w:id="2"><w:p><w:r><w:t>Visible note.</w:t></w:r></w:p></w:footnote>` +
+      `</w:footnotes>`;
+
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let nodes: Array<{ id: string; text: string; tagged_text: string; clean_text: string }>;
+
+    await given('a document with one field-code-contained and one visible footnote reference', async () => {
+      opened = await openSession([], {
+        xml: documentXml,
+        extraFiles: { 'word/footnotes.xml': footnotesXml },
+      });
+    });
+
+    await when('read_file renders the full document as JSON', async () => {
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath, format: 'json' });
+      assertSuccess(read, 'read_file');
+      nodes = JSON.parse(String(read.content));
+      expect(nodes).toHaveLength(2);
+    });
+
+    await then('the hidden reference surfaces no marker in any field and the visible one exactly one', async () => {
+      // The view skips field-code references; the clean_text suffix pass must
+      // agree, or the fields disagree about whether the footnote exists (#382).
+      const fieldCodeNode = nodes[0]!;
+      expect(fieldCodeNode.text).not.toContain('[^');
+      expect(fieldCodeNode.tagged_text).not.toContain('[^');
+      expect(fieldCodeNode.clean_text).not.toContain('[^');
+
+      const visibleNode = nodes[1]!;
+      expect(visibleNode.text).toBe('Anchor sentence.[^2]');
+      expect(visibleNode.clean_text).toBe('Anchor sentence.[^2]');
+    });
+  });
+
   test('explicit limit disables the first-node overflow warning even when the paragraph has a footnote', async ({ when, then }: AllureBddContext) => {
     const rendered = await when('a caller provides an explicit limit for the oversized first-node read', async () => {
       return readWithOversizedFirstNode({ format: 'toon', limit: 1 });

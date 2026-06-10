@@ -28,20 +28,47 @@ function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
 }
 
+enum FieldState {
+  OUTSIDE_FIELD = 0,
+  IN_FIELD_CODE = 1,
+  IN_FIELD_RESULT = 2,
+}
+
 function collectFootnoteMarkerSuffix(
   paragraphEl: Element,
   displayNumberById: Map<number, number>,
 ): string {
+  // References inside field code (between fldChar begin and separate) are
+  // hidden text and must not surface a marker — the view-level injection
+  // skips them the same way, keeping clean_text and text in agreement on
+  // which footnotes exist. @see #382
   const markers: string[] = [];
-  const refs = paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference);
-  for (let i = 0; i < refs.length; i++) {
-    const ref = refs.item(i) as Element;
-    const rawId = getWAttr(ref, 'id');
-    if (!rawId) continue;
-    const numericId = Number.parseInt(rawId, 10);
-    if (Number.isNaN(numericId)) continue;
-    const display = displayNumberById.get(numericId) ?? numericId;
-    markers.push(`[^${display}]`);
+  let fieldState = FieldState.OUTSIDE_FIELD;
+
+  for (const runEl of Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r))) {
+    for (const child of Array.from(runEl.childNodes)) {
+      if (child.nodeType !== 1) continue;
+      const el = child as Element;
+      if (el.namespaceURI !== OOXML.W_NS) continue;
+
+      if (el.localName === W.fldChar) {
+        const type = getWAttr(el, 'fldCharType') ?? '';
+        if (type === 'begin') fieldState = FieldState.IN_FIELD_CODE;
+        else if (type === 'separate') fieldState = FieldState.IN_FIELD_RESULT;
+        else if (type === 'end') fieldState = FieldState.OUTSIDE_FIELD;
+        continue;
+      }
+
+      if (fieldState === FieldState.IN_FIELD_CODE) continue;
+      if (el.localName !== W.footnoteReference) continue;
+
+      const rawId = getWAttr(el, 'id');
+      if (!rawId) continue;
+      const numericId = Number.parseInt(rawId, 10);
+      if (Number.isNaN(numericId)) continue;
+      const display = displayNumberById.get(numericId) ?? numericId;
+      markers.push(`[^${display}]`);
+    }
   }
   return markers.join('');
 }
@@ -65,12 +92,6 @@ function getCommentAnchorParagraphId(comment: Comment): string | null {
 }
 
 function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
-  enum FieldState {
-    OUTSIDE_FIELD = 0,
-    IN_FIELD_CODE = 1,
-    IN_FIELD_RESULT = 2,
-  }
-
   const runLengths: number[] = [];
   const runElements = Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
   let fieldState = FieldState.OUTSIDE_FIELD;
