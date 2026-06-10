@@ -407,8 +407,15 @@ export function buildNodesForDocumentView(params: {
 
     // Visible clean text (field codes stripped).
     const fullText = getParagraphText(p).replace(/\r/g, '').replace(/\n/g, '').trim();
-    // Preserve empty table cell paragraphs for structural completeness.
-    if (!fullText && !tableContext) continue;
+    // Preserve empty table cell paragraphs for structural completeness, and
+    // text-empty paragraphs that anchor a visible footnote reference — dropping
+    // those loses the footnote from every rendering of the document view.
+    // @see #185
+    if (
+      !fullText &&
+      !tableContext &&
+      getFootnoteMarkersForParagraph(p, footnoteDisplayMap).length === 0
+    ) continue;
 
     // Numbering (auto-numbered) info from numPr.
     let numId: string | null = null;
