@@ -8,7 +8,9 @@
 //
 // Updates: root + all workspace package.json files, mcpb manifest.json,
 // cross-workspace dep ranges, and package-lock.json.
-// After running, commit the changes and merge before tagging.
+// After running, commit the changes and merge to main. The Auto-tag release
+// workflow (.github/workflows/auto-tag-release.yml) then pushes the v<version>
+// tag, and the tag push triggers the release workflow.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
@@ -195,7 +197,8 @@ function bumpVersion(newVersion) {
     console.log('\nNext steps:');
     console.log(`  1. git add -A && git commit -m "chore(release): bump workspace versions to ${newVersion}"`);
     console.log('  2. Open PR, merge to main');
-    console.log(`  3. git tag v${newVersion} && git push origin v${newVersion}`);
+    console.log(`  3. On merge, auto-tag-release.yml pushes v${newVersion}, which triggers release.yml.`);
+    console.log(`     Manual fallback: git tag v${newVersion} && git push origin v${newVersion}`);
   } else {
     console.error('\nVersion sync check failed after bump — investigate manually.');
     process.exit(1);
