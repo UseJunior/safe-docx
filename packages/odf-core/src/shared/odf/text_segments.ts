@@ -39,14 +39,16 @@ export function isTrackedChangesSubtree(el: { namespaceURI?: string | null; loca
 /** A contiguous slice of a paragraph's visible text and where it came from. */
 export type Segment =
   | { kind: 'text'; node: { data: string }; visStart: number; length: number }
-  | { kind: 'virtual'; visStart: number; length: number };
+  | { kind: 'virtual'; node: Element; virtual: 'space' | 'tab' | 'line-break'; visStart: number; length: number };
 
 /**
  * Build the ordered segment list and concatenated visible string for a block.
  * `text:s` (count via `text:c`) expands to spaces, `text:tab` to a tab, and
- * `text:line-break` to a newline — each a "virtual" segment with no single host
- * `#text` node (so a match landing on one cannot be edited in place in Phase 1).
- * `office:annotation` / `office:annotation-end` subtrees are skipped entirely.
+ * `text:line-break` to a newline — each a "virtual" segment whose visible text has no host
+ * `#text` node (so a match landing on one cannot be edited in place via `replaceTextById`);
+ * the generating element itself is carried as `node` so offset-mapping consumers (the compare
+ * emitter) can split or copy it. `office:annotation` / `office:annotation-end` subtrees are
+ * skipped entirely.
  */
 export function buildSegments(block: Element): { segments: Segment[]; visible: string } {
   const segments: Segment[] = [];
@@ -71,17 +73,17 @@ export function buildSegments(block: Element): { segments: Segment[]; visible: s
         const countRaw = el.getAttributeNS(ODF_NS.TEXT, 'c') ?? el.getAttribute('text:c');
         const count = Math.max(1, Number.parseInt(countRaw ?? '1', 10) || 1);
         const spaces = ' '.repeat(count);
-        segments.push({ kind: 'virtual', visStart: visible.length, length: spaces.length });
+        segments.push({ kind: 'virtual', node: el, virtual: 'space', visStart: visible.length, length: spaces.length });
         visible += spaces;
         continue;
       }
       if (el.namespaceURI === ODF_NS.TEXT && el.localName === 'tab') {
-        segments.push({ kind: 'virtual', visStart: visible.length, length: 1 });
+        segments.push({ kind: 'virtual', node: el, virtual: 'tab', visStart: visible.length, length: 1 });
         visible += '\t';
         continue;
       }
       if (el.namespaceURI === ODF_NS.TEXT && el.localName === 'line-break') {
-        segments.push({ kind: 'virtual', visStart: visible.length, length: 1 });
+        segments.push({ kind: 'virtual', node: el, virtual: 'line-break', visStart: visible.length, length: 1 });
         visible += '\n';
         continue;
       }
