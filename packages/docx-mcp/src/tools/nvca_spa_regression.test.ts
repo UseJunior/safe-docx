@@ -17,6 +17,7 @@ import { getParagraphRuns } from '@usejunior/docx-core';
 
 import { SessionManager } from '../session/manager.js';
 import { openDocument } from './open_document.js';
+import { getFootnotes } from './get_footnotes.js';
 import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
@@ -575,6 +576,52 @@ describe('NVCA SPA regression: heading detection (#179)', () => {
 
     await and('every paragraph in the window has a null header style', async () => {
       expect(parsed.every((node) => node.list_metadata.header_style === null)).toBe(true);
+    });
+  });
+});
+
+describe('NVCA SPA regression: footnote anchor surfacing (#185)', () => {
+  test('every anchored NVCA SPA footnote is reachable through the document view', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createMgr>;
+    let filePath: string;
+    let eligible: Array<{ id: number; display_number: number; anchored_paragraph_id: string }>;
+    let nodes: Array<{ id: string; text: string }>;
+
+    await given('the NVCA SPA source document is open and its 109 footnotes are listed', async () => {
+      ({ mgr, filePath } = await openSPA());
+      const notes = await getFootnotes(mgr, { file_path: filePath });
+      assertSuccess(notes, 'get_footnotes');
+      const all = notes.footnotes as Array<{ id: number; display_number: number; text: string; anchored_paragraph_id: string | null }>;
+      expect(all).toHaveLength(109);
+      eligible = all.filter(
+        (n): n is typeof n & { anchored_paragraph_id: string } =>
+          n.display_number > 0 && n.text.trim().length > 0 && n.anchored_paragraph_id !== null,
+      );
+      expect(eligible).toHaveLength(108);
+    });
+
+    await when('read_file renders the full document view as JSON', async () => {
+      const res = await readFile(mgr, { file_path: filePath, format: 'json', offset: 1, limit: 100000 });
+      assertSuccess(res, 'read_file full json walk');
+      nodes = JSON.parse(res.content as string);
+    });
+
+    await then('every eligible footnote anchor paragraph is present in the view', async () => {
+      const viewIds = new Set(nodes.map((n) => n.id));
+      const unsurfaced = eligible.filter((n) => !viewIds.has(n.anchored_paragraph_id));
+      expect(unsurfaced, `footnotes whose anchor paragraph is missing from the view: ${JSON.stringify(unsurfaced.map((n) => ({ id: n.id, display: n.display_number })))}`).toHaveLength(0);
+    });
+
+    await and('the footnote-only paragraph anchoring note 47 renders its [^46] marker', async () => {
+      // Footnote id=47 (display 46) anchors to a paragraph whose only content
+      // is the footnote-reference run; before the #185 fix the view dropped it.
+      const probe = await readFile(mgr, { file_path: filePath, format: 'json', node_ids: ['_bk_6d177a97f7e6'] });
+      assertSuccess(probe, 'read_file node_ids probe');
+      const probed = JSON.parse(probe.content as string) as Array<{ id: string; text: string }>;
+      expect(probed).toHaveLength(1);
+      // Pure-marker node; the optional second [^46] tolerates the pre-existing
+      // marker doubling (#382) without letting zero or triple markers pass.
+      expect(probed[0]!.text).toMatch(/^\[\^46\](?:\[\^46\])?$/);
     });
   });
 });
