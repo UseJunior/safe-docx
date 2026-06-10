@@ -86,6 +86,9 @@ export * from './move-detection.js';
 // Re-export format detection
 export * from './format-detection.js';
 
+// Re-export the formatting-fidelity comparison check
+export * from './baselines/atomizer/formattingFidelity.js';
+
 // Re-export numbering utilities
 export * from './numbering.js';
 
