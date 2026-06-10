@@ -125,7 +125,8 @@ const REGMOD = `<?xml version="1.0" encoding="UTF-8"?>
  <item oor:path="/org.openoffice.Office.Common/Misc"><prop oor:name="FirstRun" oor:op="fuse"><value>false</value></prop></item>
 </oor:items>`;
 
-/** The Basic macro: load each doc Hidden, dispatch accept/reject-all, save as MS Word 2007 XML. */
+/** The Basic macro: load each doc Hidden, dispatch accept/reject-all (or, for `identity`,
+ *  dispatch nothing at all), save as MS Word 2007 XML. */
 function module1Xba(jobsPath: string, markerPath: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd">
@@ -153,14 +154,14 @@ Sub ProcessOne(op As String, inUrl As String, outUrl As String)
   oDoc = StarDesktop.loadComponentFromURL(inUrl, "_blank", 0, loadArgs())
   oFrame = oDoc.getCurrentController().getFrame()
   oDisp = createUnoService("com.sun.star.frame.DispatchHelper")
-  Dim cmd As String
-  If op = "accept" Then
-    cmd = ".uno:AcceptAllTrackedChanges"
-  Else
-    cmd = ".uno:RejectAllTrackedChanges"
-  End If
   Dim noArgs()
-  oDisp.executeDispatch(oFrame, cmd, "", 0, noArgs())
+  If op = "accept" Then
+    oDisp.executeDispatch(oFrame, ".uno:AcceptAllTrackedChanges", "", 0, noArgs())
+  ElseIf op = "reject" Then
+    oDisp.executeDispatch(oFrame, ".uno:RejectAllTrackedChanges", "", 0, noArgs())
+  End If
+  ' op = "identity": no dispatch — a plain load-&gt;save, exposing LibreOffice's own DOCX
+  ' import/export of UNRESOLVED tracked changes (the oracle trust-boundary check).
   Dim saveArgs(0) As New com.sun.star.beans.PropertyValue
   saveArgs(0).Name = "FilterName" : saveArgs(0).Value = "MS Word 2007 XML"
   oDoc.storeToURL(outUrl, saveArgs())
@@ -169,7 +170,14 @@ End Sub
 </script:module>`;
 }
 
-export type OracleJob = { op: 'accept' | 'reject'; documentXml: string };
+/**
+ * `accept` / `reject` dispatch the corresponding resolve-all command before saving — the oracle's
+ * normal voting mode. `identity` loads and saves WITHOUT any dispatch, so unresolved tracked
+ * changes flow through LibreOffice's DOCX import/export: it exists to characterize the oracle's
+ * trust boundary (LibreOffice's save round-trip mangles some unresolved revision shapes — see
+ * libreoffice-oracle-trust-boundary.test.ts), NOT to vote on engine behavior.
+ */
+export type OracleJob = { op: 'accept' | 'reject' | 'identity'; documentXml: string };
 
 /**
  * Run LibreOffice over a batch of jobs in ONE headless launch and return the resulting
