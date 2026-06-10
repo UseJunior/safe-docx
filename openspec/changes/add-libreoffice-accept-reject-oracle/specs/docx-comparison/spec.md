@@ -41,3 +41,49 @@ requirement adds reference-implementation evidence only; it introduces no produc
 - **GIVEN** a paragraph whose mark is `PPR-INS` (reject side) and a paragraph whose mark is `PPR-DEL` (accept side), each followed by a surviving paragraph
 - **WHEN** each is run through LibreOffice and through the TS engine
 - **THEN** both LibreOffice and the TS engine remove the marked paragraph, leaving only the survivor — confirming the other direction of the mark-based rule against the reference implementation
+
+### Requirement: The LibreOffice oracle's trust boundary is characterized — accept/reject is trustworthy, the save round-trip is not, and the projection is formatting-blind
+
+The harness SHALL characterize, as committed gated tests, the boundary of what the LibreOffice oracle can be
+trusted for (vetted on LibreOffice 25.8.7.3, 2026-06):
+
+1. **Trustworthy — resolved accept/reject text and paragraph shape**, including for stacked multi-author
+   revisions (`w:del` + `w:ins` siblings from different authors) and inline `w:del`-nested-in-`w:ins` shapes,
+   whether the nested deletion consumes all or part of the insertion. The oracle dispatches
+   `.uno:AcceptAllTrackedChanges` / `.uno:RejectAllTrackedChanges` BEFORE `storeToURL`, so no unresolved
+   tracked change ever reaches LibreOffice's DOCX save and the save defect below cannot reach the voting path.
+2. **NOT trustworthy — the plain save round-trip for unresolved tracked changes.** For a FULLY-deleted
+   insertion (`<w:ins authorA><w:del authorB>…all of the inserted text…</w:del></w:ins>`, no surviving
+   inserted text) a plain load→save silently drops the `<w:ins>` wrapper, collapsing "inserted then deleted"
+   into "original text deleted". The harness SHALL NOT use the LibreOffice save round-trip to validate
+   fully-deleted-insertion shapes; it SHALL use safe-docx's own deterministic projections instead. The oracle
+   helper SHALL expose an `identity` op (load→save, no dispatch) so the defect stays pinned as a
+   characterization: if a future LibreOffice release fixes it, the test trips and the boundary note is
+   re-vetted.
+3. **Blind — formatting.** The structural projection (`paragraphShape`) records only paragraph count and
+   visible-text presence by design, so the oracle cannot guard formatting fidelity (tracked separately by the
+   formatting-fidelity-oracle work).
+
+#### Scenario: [LO-ORACLE-TRUST-01] LibreOffice resolves a simple insertion and a simple deletion to the expected text on accept and reject, matching the TS engine
+
+- **GIVEN** a paragraph with untracked text plus a single-author `w:ins` (and, separately, a single-author `w:del`)
+- **WHEN** each is resolved via the oracle's accept and reject ops and via the TS engine
+- **THEN** both engines produce the expected resolved text and the same paragraph shape — the baseline the rest of the boundary is measured against
+
+#### Scenario: [LO-ORACLE-TRUST-02] LibreOffice resolves a fully-deleted insertion to a collapse on BOTH accept and reject — the oracle dispatches before saving, so the save defect cannot reach it
+
+- **GIVEN** a paragraph with untracked text plus an insertion whose entire content is consumed by a nested deletion (`<w:ins><w:del>…</w:del></w:ins>`)
+- **WHEN** it is resolved via the oracle's accept and reject ops and via the TS engine
+- **THEN** the inserted-then-deleted text vanishes on accept AND on reject in both engines, and the paragraph keeps its untracked text — demonstrating the oracle's voting path is insulated from the save defect
+
+#### Scenario: [LO-ORACLE-TRUST-03] LibreOffice resolves stacked multi-author revisions correctly: a del+ins stack discriminates accept (NEW) from reject (ORIG), and a partial del-in-ins keeps the surviving inserted text
+
+- **GIVEN** a non-nested multi-author stack (`<w:del A>ORIG</w:del><w:ins B>NEW</w:ins>`) and a partial deletion inside an insertion with surviving inserted text (`AB[CD]EF`)
+- **WHEN** each is resolved via the oracle's accept and reject ops and via the TS engine
+- **THEN** accept yields `NEW` / `ABEF` and reject yields `ORIG` / empty in both engines — a discriminating pair that a silently-failed dispatch could not pass — and the emptied partial-reject paragraph survives per the mark-based rule
+
+#### Scenario: [LO-ORACLE-TRUST-04] LibreOffice save round-trip (no accept/reject) drops the w:ins wrapper of a fully-deleted insertion — characterized defect; stacked and partial shapes round-trip cleanly
+
+- **GIVEN** the fully-deleted-insertion fixture plus the stack and partial fixtures, each run through the oracle's `identity` op (load→save, no dispatch)
+- **WHEN** the saved `word/document.xml` is inspected
+- **THEN** the fully-deleted insertion has lost its `<w:ins>` wrapper (a bare `<w:del>` with the original `delText` remains — the characterized LibreOffice defect), while the stack and partial controls retain both their `w:del` and `w:ins` revisions and their visible text unchanged
