@@ -139,6 +139,25 @@ describe('compareOdf — ODF tracked-changes emission', () => {
     expect(firstTwo).toEqual(['change', 'change-start']); // deletion point BEFORE insertion start
   });
 
+  it('[OCMP-11] replaced LAST paragraph: deletion anchors backward, outside the insertion bracket', () => {
+    // Whole-paragraph replacement at end-of-document (issue #367): the insertion bracket is
+    // end-anchored, so the deletion marker must move to the end of the preceding kept paragraph
+    // (before the change-start) instead of the start of the inserted replacement paragraph.
+    const { contentXml: out, stats } = compareOdf(contentXml(['A', 'B']), contentXml(['A', 'X']));
+    expect(stats).toEqual({ insertions: 1, deletions: 1, modifications: 0 });
+    const ot = officeText(out);
+    const regions = trackedRegions(ot);
+    expect(regions).toHaveLength(2);
+    const delRegion = regions.find((r) => childByName(r, ODF_NS.TEXT, 'deletion'))!;
+    expect(deletionStored(delRegion)).toEqual(['', 'B']); // backward merge: empty artifact first
+    const [pa, px] = bodyParagraphs(ot);
+    // End of kept "A": deletion point marker BEFORE the insertion's change-start.
+    const lastTwo = elementChildren(pa!).slice(-2).map((e) => e.localName);
+    expect(lastTwo).toEqual(['change', 'change-start']);
+    expect(lastElLocal(px!)).toBe('change-end'); // insertion bracket itself is unchanged
+    expect(firstElLocal(px!)).not.toBe('change'); // nothing anchored inside the inserted paragraph
+  });
+
   it('[OCMP-05] change ids are unique across regions', () => {
     const out = compareOdf(contentXml(['A', 'B', 'C']), contentXml(['A', 'X', 'C'])).contentXml;
     const ids = [...out.matchAll(/xml:id="(ct\d+)"/g)].map((m) => m[1]);
