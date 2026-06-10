@@ -775,8 +775,13 @@ export async function compareDocumentsAtomizer(
     contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
   };
 
-  const originalTextForRoundTrip = extractTextWithParagraphs(originalXml);
-  const revisedTextForRoundTrip = extractTextWithParagraphs(revisedXml);
+  // Project each input through the SAME accept/reject operation the candidate is
+  // checked under, so the round-trip comparison is like-for-like even when an
+  // input already carries its own tracked changes (pre-tracked w:ins / w:del,
+  // comment anchors, multi-author stacks). For a clean input these equal the raw
+  // extraction, so behavior on the common case is unchanged. (#347)
+  const originalTextForRoundTrip = extractTextWithParagraphs(rejectAllChanges(originalXml));
+  const revisedTextForRoundTrip = extractTextWithParagraphs(acceptAllChanges(revisedXml));
   const originalBookmarkDiagnostics = collectBookmarkDiagnostics(originalXml);
   const revisedBookmarkDiagnostics = collectBookmarkDiagnostics(revisedXml);
 

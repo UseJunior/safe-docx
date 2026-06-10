@@ -11,6 +11,11 @@
  *     carries one focused tracked-change family:
  *       `w:ins`, `w:del`, paragraph-insert, `pPrChange`, comment-anchor,
  *       footnote-anchor.
+ *     As of #347 the ORIGINAL side spans every family except inline `w:ins`
+ *     (pinned out per #358 — the engine flattens original-side inline
+ *     insertion provenance), and pairs whose pre-tracked-insertion text
+ *     collides with the other side's plain text are filtered per #359; both
+ *     pins carry a characterization test below asserting today's divergence.
  *   - Tier 2 field-bearing clean pairs whose `document.xml` carries a complete
  *     NUMPAGES / PAGE / PAGEREF field and realizes one focused operation:
  *       field-insert, field-delete, field-stable, text-only.
@@ -61,11 +66,13 @@
  *
  * INV-RT-001 tracked-input triage:
  *   - `triage=engine-bug`: accept/reject of `combined` disagrees with the fully
- *     resolved accept/reject views of the input pair.
- *   - `triage=theorem-domain`: accept/reject of `combined` matches the resolved
- *     input views, but not the raw tracked input text surface; this suggests the
- *     Lean theorem may target the wrong observational surface for pre-tracked
- *     documents.
+ *     resolved accept/reject views of the input pair. As of #347 this resolved
+ *     projection-vs-projection surface IS the asserted law (engine, Lean axiom,
+ *     and this file all state it); the former `theorem-domain` category —
+ *     projections agree but the inputs' RAW tracked text does not — collapsed
+ *     into the law, because on a pre-tracked input the raw surface (counting
+ *     both w:t and w:delText) is neither the accept- nor the reject-projection
+ *     and was never a meaningful baseline.
  *   - `triage=inplace-fallback`: the inplace candidate was never emitted.
  *
  * Coverage limitations (intentional for the spike — not bugs):
@@ -342,10 +349,27 @@ const trackedFootnoteAnchorScenarioArb: fc.Arbitrary<FootnoteAnchorScenario> = p
   }),
 );
 
-// Keep `w:del` on the `a` side and `w:ins` / paragraph-insert on the `b` side
-// so tracked-input INV-RT-001 is not falsified by construction.
+// Issue #347: the original side was relaxed from the historical
+// "del-on-a / ins-on-b only" restriction (which kept INV-RT-001 from being
+// falsified by construction under the old raw-text oracle) to the full
+// tracked-change scope the corrected projection oracle claims — paragraph
+// inserts included. The relaxation did its discovery job: it surfaced two
+// genuine engine bug classes, pinned per the bounded-remediation discipline
+// (narrow, named, issue-linked exclusions + the characterization test
+// 'INV-RT-001 pinned engine bugs …' below) rather than fixed here:
+//   - Issue #358: inline run-level pre-tracked `w:ins` ORIGINALS stay excluded
+//     — the engine flattens the original's inline insertion provenance
+//     unconditionally, so reject(combined) keeps text reject(original) drops
+//     for EVERY revised counterpart (probed: matched, deleted, identical,
+//     unrelated). Paragraph-insert originals are INCLUDED: paragraph-MARK
+//     provenance threads correctly (stacked PPR-DEL(Comparison) +
+//     PPR-INS(input-author) marks compose under mark-based accept/reject).
+//   - Issue #359: pairs whose pre-tracked-insertion text collides with the
+//     other side's plain text are excluded via `hasInsProvenanceCollision` on
+//     the pair arbitrary below.
 const trackedOriginalScenarioArb: fc.Arbitrary<TrackedScenario> = fc.oneof(
   trackedDeletionScenarioArb,
+  trackedParagraphInsertScenarioArb,
   trackedParagraphPropertyScenarioArb,
   trackedCommentAnchorScenarioArb,
   trackedFootnoteAnchorScenarioArb,
@@ -359,10 +383,75 @@ const trackedRevisedScenarioArb: fc.Arbitrary<TrackedScenario> = fc.oneof(
   trackedFootnoteAnchorScenarioArb,
 );
 
-const trackedPairArb: fc.Arbitrary<TrackedScenarioPair> = fc.record({
-  originalScenario: trackedOriginalScenarioArb,
-  revisedScenario: trackedRevisedScenarioArb,
-});
+// The raw document.xml paragraph texts a scenario materializes to. Used only
+// by the #359 collision filter: w:del keeps its delText in the raw extraction,
+// and comment/footnote bodies live outside document.xml, so only the `w:ins`
+// splice and the inserted paragraph alter the raw paragraph list.
+function scenarioRawParagraphTexts(scenario: TrackedScenario): string[] {
+  switch (scenario.family) {
+    case 'w:ins': {
+      const paragraphs = [...scenario.paragraphs];
+      const target = paragraphs[scenario.paragraphIndex]!;
+      paragraphs[scenario.paragraphIndex] =
+        target.slice(0, scenario.offset) + scenario.insertedText + target.slice(scenario.offset);
+      return paragraphs;
+    }
+    case 'paragraph-insert':
+      return [...scenario.paragraphs, scenario.newParagraphText];
+    default:
+      return [...scenario.paragraphs];
+  }
+}
+
+// The text a scenario claims as a pre-tracked INSERTION (`w:ins` wrapping run
+// text). comment-anchor / footnote-anchor wrap only reference runs (no run
+// text); pPrChange and w:del claim no inserted text.
+function claimedInsertionTexts(scenario: TrackedScenario): string[] {
+  switch (scenario.family) {
+    case 'w:ins':
+      return [scenario.insertedText];
+    case 'paragraph-insert':
+      return [scenario.newParagraphText];
+    default:
+      return [];
+  }
+}
+
+// Conservative collision proxy for the word-level atomization that produces
+// LCS matches: whitespace tokens, substring containment in either direction
+// (the inplace passes can merge runs across the `w:ins` boundary, so a token
+// of one side matching INSIDE a token of the other can still correlate).
+function textsCollide(claimed: string, otherRawParagraphs: string[]): boolean {
+  const otherRaw = otherRawParagraphs.join('\n');
+  const claimedTokens = claimed.split(/\s+/).filter((token) => token.length > 0);
+  const otherTokens = otherRaw.split(/\s+/).filter((token) => token.length > 0);
+  return (
+    claimedTokens.some((token) => otherRaw.includes(token)) ||
+    otherTokens.some((token) => claimed.includes(token))
+  );
+}
+
+// Issue #359: pre-tracked-insertion content that textually collides with the
+// other input's plain text loses provenance through the comparison (the
+// combined output keeps exactly one lineage's claim), so the global reject
+// projection diverges and the engine falls back — with a law-violating rebuild
+// output in the paragraph-insert shapes. Until #359 lands, exclude exactly the
+// colliding pairs; the characterization test below pins today's behavior.
+function hasInsProvenanceCollision(pair: TrackedScenarioPair): boolean {
+  const originalRaw = scenarioRawParagraphTexts(pair.originalScenario);
+  const revisedRaw = scenarioRawParagraphTexts(pair.revisedScenario);
+  return (
+    claimedInsertionTexts(pair.revisedScenario).some((text) => textsCollide(text, originalRaw)) ||
+    claimedInsertionTexts(pair.originalScenario).some((text) => textsCollide(text, revisedRaw))
+  );
+}
+
+const trackedPairArb: fc.Arbitrary<TrackedScenarioPair> = fc
+  .record({
+    originalScenario: trackedOriginalScenarioArb,
+    revisedScenario: trackedRevisedScenarioArb,
+  })
+  .filter((pair) => !hasInsProvenanceCollision(pair));
 
 const fieldTextShapeArb = fc.record({
   prefix: fc.constantFrom('Total pages ', 'Field value ', 'Reference '),
@@ -1012,12 +1101,15 @@ function roundTripError(
   acceptedCombined: string,
   rejectedCombined: string,
 ): Error {
+  // The asserted surface IS the corrected projection law (#347):
+  // accept(combined) vs accept(revised), reject(combined) vs reject(original).
+  // A mismatch on that surface is an engine bug by definition; the former
+  // `theorem-domain` category (projections agree but the inputs' raw tracked
+  // text does not) collapsed into the law itself. The raw-text comparisons
+  // below survive as diagnostics only.
   const acceptMatchesAcceptedView = acceptedCombined === revisedViews.acceptedText;
   const rejectMatchesRejectedView = rejectedCombined === originalViews.rejectedText;
-  const category =
-    acceptMatchesAcceptedView && rejectMatchesRejectedView
-      ? 'theorem-domain'
-      : 'engine-bug';
+  const category = 'engine-bug';
 
   const hints = [
     revisedViews.rawXml.includes('<w:delText') ? 'revised-raw-contains-w:delText' : null,
@@ -1056,9 +1148,14 @@ async function assertRoundTripInvariant(
   const acceptedCombined = normalizeDocumentXmlText(acceptAllChanges(result.combined));
   const rejectedCombined = normalizeDocumentXmlText(rejectAllChanges(result.combined));
 
+  // The corrected projection law (#347): compare the candidate's accept/reject
+  // projections against the inputs' accept/reject projections — NOT their raw
+  // extracted text, which counts both w:t and w:delText and is neither
+  // projection once an input carries its own tracked changes. For clean inputs
+  // the projections equal the raw extraction, so this is a no-op there.
   if (
-    acceptedCombined !== revisedViews.rawText ||
-    rejectedCombined !== originalViews.rawText
+    acceptedCombined !== revisedViews.acceptedText ||
+    rejectedCombined !== originalViews.rejectedText
   ) {
     throw roundTripError(
       invariant,
@@ -1272,6 +1369,232 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
         }
         assertTrackedScenarioCoverage('INV-RT-001 tracked', coverage);
       });
+    },
+  );
+
+  test(
+    'INV-RT-001: two-author stacked insertion stays inplace and round-trips projection-to-projection (#347)',
+    async ({ given, when, then }: AllureBddContext) => {
+      // Characterization of the committed multi-author semantics behind the
+      // corrected round-trip oracle (#347): accept-all / reject-all are GLOBAL
+      // across all authors (no author-scoped variant exists). The original
+      // carries its own author's insertion (`TRACKED_REVISION_AUTHOR`); the
+      // revised extends that same tracked insertion, so the live comparison
+      // stacks `Comparison`-author markup onto the same paragraph. Under the
+      // pre-#347 RAW baselines this shape forced a spurious inplace→rebuild
+      // fallback (reject projections drop the pre-tracked insertion while the
+      // raw original text keeps it); under the projected baselines it must stay
+      // inplace and satisfy the projection law.
+      let original!: MaterializedTrackedScenario;
+      let revised!: MaterializedTrackedScenario;
+      let result!: CompareBridgeResult;
+
+      await given(
+        'an original pre-tracked with a first-author insertion and a revised that extends the same tracked insertion',
+        async () => {
+          const baseParagraphs = ['Alpha base text.', 'Beta closing text.'];
+          const insertionOffset = 'Alpha base text.'.length;
+          [original, revised] = await Promise.all([
+            materializeTrackedScenario({
+              family: 'w:ins',
+              paragraphs: baseParagraphs,
+              paragraphIndex: 0,
+              offset: insertionOffset,
+              insertedText: ' tracked by first author',
+            }),
+            materializeTrackedScenario({
+              family: 'w:ins',
+              paragraphs: baseParagraphs,
+              paragraphIndex: 0,
+              offset: insertionOffset,
+              insertedText: ' tracked by first author plus a second-author tail',
+            }),
+          ]);
+        },
+      );
+
+      await when(
+        'the live inplace comparison stacks Comparison-author changes on top of the pre-tracked insertion',
+        async () => {
+          result = await compareDocumentBuffers(original.document, revised.document);
+        },
+      );
+
+      await then(
+        'the result stays inplace, carries both authors, and accept/reject projections round-trip',
+        async () => {
+          const context = { fixture: 'two-author-stacked-insertion' };
+          assertInplaceResult('INV-RT-001 two-author stacked insertion', context, result);
+          const hasFirstAuthor = result.combined.includes(
+            `w:author="${TRACKED_REVISION_AUTHOR}"`,
+          );
+          const hasComparisonAuthor = result.combined.includes('w:author="Comparison"');
+          if (!hasFirstAuthor || !hasComparisonAuthor) {
+            throw new Error(
+              `INV-RT-001 two-author stacked insertion: combined output must carry revisions ` +
+                `from both authors for this characterization to be non-vacuous. ` +
+                `hasFirstAuthor=${hasFirstAuthor} hasComparisonAuthor=${hasComparisonAuthor} ` +
+                `context=${JSON.stringify(context)}`,
+            );
+          }
+          await assertRoundTripInvariant('INV-RT-001 two-author stacked insertion', context, result);
+        },
+      );
+    },
+  );
+
+  test(
+    'INV-RT-001 pinned engine bugs: pre-tracked insertion provenance is lost across comparison (#358, #359)',
+    async ({ given, when, then }: AllureBddContext) => {
+      // Characterization of TODAY's behavior for the two engine bug classes the
+      // #347 arbitrary relaxation surfaced (pin + file, fix in their own PRs —
+      // mirroring how [LEAN-HELP-08] pinned G5 before its fix). Each case
+      // asserts the CURRENT divergence precisely so the eventual fixes flip
+      // this test deliberately rather than silently:
+      //   - #358: the original's inline run-level `w:ins` provenance is
+      //     flattened, so reject(combined) keeps text reject(original) drops —
+      //     on BOTH reconstruction paths (the rebuild fallback output violates
+      //     the projection law too, unchecked per #226).
+      //   - #359: pre-tracked-insertion text colliding with the other side's
+      //     plain text keeps exactly one lineage's provenance. The inline shape
+      //     (the #339 flake) is rescued by the rebuild fallback; the
+      //     paragraph-insert shapes ship law-violating output.
+      interface PinnedProvenanceCase {
+        name: string;
+        build: () => Promise<{ original: Buffer; revised: Buffer }>;
+        // Normalized reject projections asserted VERBATIM as they are today.
+        // When they differ, the shipped output violates the projection law.
+        expectedRejectCombined: string;
+        expectedRejectOriginal: string;
+      }
+
+      const cases: PinnedProvenanceCase[] = [
+        {
+          name: '#358 inline-ins original vs clean revised equal to accept(original)',
+          build: async () => ({
+            original: (
+              await materializeTrackedScenario({
+                family: 'w:ins',
+                paragraphs: ['Alpha'],
+                paragraphIndex: 0,
+                offset: 'Alpha'.length,
+                insertedText: ' beta',
+              })
+            ).document,
+            revised: await buildSyntheticDocx({ paragraphs: ['Alpha beta'] }),
+          }),
+          expectedRejectCombined: 'Alpha beta',
+          expectedRejectOriginal: 'Alpha',
+        },
+        {
+          name: '#359 inline-ins revised colliding with a plain original word (#339 shape, rebuild rescues)',
+          build: async () => ({
+            original: await buildSyntheticDocx({ paragraphs: ['!', '!', 'I'] }),
+            revised: (
+              await materializeTrackedScenario({
+                family: 'w:ins',
+                paragraphs: ['6.'],
+                paragraphIndex: 0,
+                offset: 2,
+                insertedText: 'I',
+              })
+            ).document,
+          }),
+          expectedRejectCombined: '!\n!\nI',
+          expectedRejectOriginal: '!\n!\nI',
+        },
+        {
+          name: '#359 paragraph-insert revised colliding with a plain original paragraph',
+          build: async () => ({
+            original: await buildSyntheticDocx({ paragraphs: ['Alpha text.', 'Added para.'] }),
+            revised: (
+              await materializeTrackedScenario({
+                family: 'paragraph-insert',
+                paragraphs: ['Alpha text.'],
+                anchorIndex: 0,
+                relativePosition: 'AFTER',
+                newParagraphText: 'Added para.',
+              })
+            ).document,
+          }),
+          expectedRejectCombined: 'Alpha text.',
+          expectedRejectOriginal: 'Alpha text.\nAdded para.',
+        },
+        {
+          name: '#359 paragraph-insert original appearing plain in the revised',
+          build: async () => ({
+            original: (
+              await materializeTrackedScenario({
+                family: 'paragraph-insert',
+                paragraphs: ['Alpha text.'],
+                anchorIndex: 0,
+                relativePosition: 'AFTER',
+                newParagraphText: 'Added para.',
+              })
+            ).document,
+            revised: await buildSyntheticDocx({ paragraphs: ['Alpha text.', 'Added para.'] }),
+          }),
+          expectedRejectCombined: 'Alpha text.\nAdded para.',
+          expectedRejectOriginal: 'Alpha text.',
+        },
+      ];
+
+      await given(
+        'minimal repro pairs for the #358 and #359 pre-tracked insertion provenance bug classes',
+        async () => {},
+      );
+
+      await when('each pair runs through the live inplace-requested comparison', async () => {});
+
+      await then(
+        'every case falls back on rejectText today, accept projections hold, and the reject divergences match the filed issues verbatim',
+        async () => {
+          for (const pinned of cases) {
+            const { original, revised } = await pinned.build();
+            const result = await compareDocumentBuffers(original, revised);
+
+            if (result.modeUsed === 'inplace') {
+              throw new Error(
+                `${pinned.name}: engine stayed inplace — the pinned bug appears FIXED. ` +
+                  `Re-enable the corresponding generator scope (trackedOriginalScenarioArb / ` +
+                  `hasInsProvenanceCollision) and retire this case alongside the issue.`,
+              );
+            }
+            if (!result.failedChecks.includes('rejectText')) {
+              throw new Error(
+                `${pinned.name}: expected the inplace candidate to fail the rejectText safety ` +
+                  `check, got failedChecks=${JSON.stringify(result.failedChecks)} ` +
+                  `fallbackReason=${result.fallbackReason ?? '(none)'}`,
+              );
+            }
+
+            const [originalViews, revisedViews] = await Promise.all([
+              getDocumentTextViews(original),
+              getDocumentTextViews(revised),
+            ]);
+            const acceptedCombined = normalizeDocumentXmlText(acceptAllChanges(result.combined));
+            const rejectedCombined = normalizeDocumentXmlText(rejectAllChanges(result.combined));
+
+            if (acceptedCombined !== revisedViews.acceptedText) {
+              throw new Error(
+                `${pinned.name}: accept projection unexpectedly diverged. ` +
+                  `acceptedCombined=${JSON.stringify(acceptedCombined)} ` +
+                  `acceptedRevised=${JSON.stringify(revisedViews.acceptedText)}`,
+              );
+            }
+            if (
+              rejectedCombined !== pinned.expectedRejectCombined ||
+              originalViews.rejectedText !== pinned.expectedRejectOriginal
+            ) {
+              throw new Error(
+                `${pinned.name}: pinned reject divergence shifted (engine behavior changed). ` +
+                  `rejectedCombined=${JSON.stringify(rejectedCombined)} (pinned ${JSON.stringify(pinned.expectedRejectCombined)}) ` +
+                  `rejectedOriginal=${JSON.stringify(originalViews.rejectedText)} (pinned ${JSON.stringify(pinned.expectedRejectOriginal)})`,
+              );
+            }
+          }
+        },
+      );
     },
   );
 
@@ -1675,3 +1998,4 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 });
+
