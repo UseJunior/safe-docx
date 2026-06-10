@@ -17,6 +17,25 @@ import {
   NODE_TYPE,
 } from '../../primitives/index.js';
 
+/**
+ * Remove w:hyperlink elements left with no element children after change
+ * resolution. Word drops a hyperlink whose entire content was a resolved
+ * tracked change (all link text deleted + accepted, or all link text
+ * inserted + rejected); keeping the empty wrapper would ship a contentless
+ * `<w:hyperlink r:id=".."/>` husk. Hyperlinks that still hold any element
+ * (runs, bookmarks, range markers) are kept.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/368
+ */
+function removeEmptyHyperlinks(root: Element): void {
+  for (const hyperlink of findAllByTagName(root, 'w:hyperlink')) {
+    if (childElements(hyperlink).length === 0 && hyperlink.parentNode) {
+      hyperlink.parentNode.removeChild(hyperlink);
+    }
+  }
+}
+
 /** xmldom does not implement parentElement; use parentNode with an Element guard. */
 function parentElement(node: Node): Element | undefined {
   const p = node.parentNode;
@@ -403,6 +422,9 @@ export function acceptAllChanges(documentXml: string): string {
     }
   }
 
+  // Drop hyperlink wrappers emptied by the accepted deletions above.
+  removeEmptyHyperlinks(root);
+
   return serializeToXml(root);
 }
 
@@ -481,6 +503,9 @@ export function rejectAllChanges(documentXml: string): string {
 
   // Strip paragraph-level markers now that changes are rejected.
   removeParaMarkers(root);
+
+  // Drop hyperlink wrappers emptied by the rejected insertions above.
+  removeEmptyHyperlinks(root);
 
   return serializeToXml(root);
 }

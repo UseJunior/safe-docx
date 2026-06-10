@@ -106,7 +106,7 @@ safe-docx targets a defined subset of **ECMA-376 5th edition**. The full surface
 (targeted sections, Non-Goals, and verification status) lives at
 [spec-compliance/CONFORMANCE.md](spec-compliance/CONFORMANCE.md).
 
-- **3** sections claimed
+- **4** sections claimed
 - **5** sections explicitly out-of-scope (Non-Goals)
 - **0** known gaps under `@conformance-gap`
 - Vendored normative schemas: `spec-compliance/ecma-376/schemas/`
@@ -228,7 +228,7 @@ The local Safe Docx runtime also intentionally rejects Word template files (`.do
 
 Teams on LibreOffice have the same problem as teams on Word: edits without a record. The core session tools — `read_file`, `grep`, `replace_text`, `insert_paragraph`, `add_comment`, `get_comments`, `save` — work directly on `.odt` files, and `compare_documents` writes a native ODF tracked-changes redline: compare two files, or a live editing session against the original it was opened from.
 
-ODF changes are tracked at the whole-paragraph level (a modified paragraph appears as one deletion plus one insertion). The redline round-trips in LibreOffice: accepting all changes reproduces the edited document, rejecting all restores the original. See the [tool reference](packages/docx-mcp/docs/tool-reference.generated.md) for per-tool format support.
+ODF changes are tracked inline at run level: edits within a paragraph appear as word-level insertions and deletions rather than whole-paragraph replacements. The redline round-trips in LibreOffice: accepting all changes reproduces the edited document, rejecting all restores the original. See the [tool reference](packages/docx-mcp/docs/tool-reference.generated.md) for per-tool format support.
 
 ## Document Families
 

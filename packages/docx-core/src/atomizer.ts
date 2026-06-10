@@ -963,12 +963,35 @@ function runPropertiesEqual(
 }
 
 /**
+ * Find the nearest `w:hyperlink` ancestor of an atom, or null.
+ *
+ * Boundary normalization must never merge text atoms across a hyperlink
+ * boundary: the surviving atom keeps a single ancestor chain, so a
+ * cross-boundary merge either absorbs adjacent plain text into the link
+ * (formatting bleed) or detaches link text from its wrapper.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/368
+ */
+export function nearestHyperlinkAncestor(atom: ComparisonUnitAtom): WmlElement | null {
+  for (let i = atom.ancestorElements.length - 1; i >= 0; i--) {
+    const ancestor = atom.ancestorElements[i]!;
+    if (ancestor.tagName === 'w:hyperlink') return ancestor;
+    // w:hyperlink always sits between the run and its paragraph; once the
+    // walk reaches w:p there is no hyperlink wrapper.
+    if (ancestor.tagName === 'w:p') break;
+  }
+  return null;
+}
+
+/**
  * Check if two atoms can be merged into one.
  *
  * Atoms can be merged if they:
  * - Are both w:t (text) elements
  * - Neither is a collapsed field (fields should stay as separate atoms for finer diff)
  * - Are in the same paragraph
+ * - Are inside the same w:hyperlink wrapper (or both outside one)
  * - Have the same run formatting (w:rPr) OR are in the same run
  * - Have the same revision tracking status
  *
@@ -1006,6 +1029,11 @@ function canMergeAtoms(
   // Different runs - allow cross-run merge only if enabled.
   // (In inplace mode we disable this so each atom stays anchored to a real run.)
   if (!options.mergeAcrossRuns) return false;
+
+  // Never merge across a w:hyperlink boundary — the merged atom keeps only
+  // one side's ancestry, so link text would detach from (or plain text be
+  // absorbed into) the hyperlink wrapper.
+  if (nearestHyperlinkAncestor(a) !== nearestHyperlinkAncestor(b)) return false;
 
   // Different runs - check if they have equivalent formatting
   const aRPr = getRunProperties(a);
@@ -1077,6 +1105,11 @@ function canMergePunctuation(
   // A must end with a word character (not whitespace or punctuation)
   const aText = getLeafText(a.contentElement) ?? '';
   if (!/\w$/.test(aText)) return false;
+
+  // Never merge across a w:hyperlink boundary: punctuation that follows a
+  // link must not inherit the link run's ancestry/formatting (e.g. the
+  // sentence period after a URL turning underlined).
+  if (nearestHyperlinkAncestor(a) !== nearestHyperlinkAncestor(b)) return false;
 
   // If cross-run punctuation merge is disabled, require same run.
   if (!options.mergePunctuationAcrossRuns) {
