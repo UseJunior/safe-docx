@@ -245,6 +245,27 @@ describe('compareOdf — intra-paragraph modify pairs', () => {
     expect(kinds).toEqual(['deletion', 'deletion', 'insertion', 'insertion']);
   });
 
+  it('[OCMPI-14] adjacent word replacements emit one grouped deletion + insertion, not per-word pairs', () => {
+    const original = contentXml(['made by and among Zephyr BioSystems, Inc., a Delaware corporation']);
+    const revised = contentXml(['made by and among Acme Manufacturing, Inc., a Delaware corporation']);
+    const { contentXml: out, stats } = compareOdf(original, revised, OPTS);
+    const ot = officeText(out);
+
+    // One pair of changed-regions covers the whole replacement (issue #378).
+    expect(stats).toEqual({ insertions: 1, deletions: 1, modifications: 1 });
+    const regions = trackedRegions(ot);
+    expect(regions.map((r) => regionInfo(r).kind).sort()).toEqual(['deletion', 'insertion']);
+    const stored = regions.map((r) => regionInfo(r).stored).find((s) => s.length > 0)!;
+    expect(stored.map((b) => buildSegments(b).visible).join('')).toBe('Zephyr BioSystems,');
+
+    // The revised paragraph brackets the full inserted phrase; accept/reject still round-trip.
+    const block = bodyBlocks(ot)[0]!;
+    expect(buildSegments(block).visible).toBe('made by and among Acme Manufacturing, Inc., a Delaware corporation');
+    const markers = flatten(block).filter((e) => e.kind === 'marker');
+    expect(markers.map((m) => (m as { type: string }).type)).toEqual(['change-start', 'change-end', 'change']);
+    expect(rejectText(block, ot)).toBe('made by and among Zephyr BioSystems, Inc., a Delaware corporation');
+  });
+
   it('[OCMPI-10] whitespace-run edits map onto text:s (O6 shape)', () => {
     const original = contentXmlRaw(['<text:p>Word<text:s text:c="5"/>tail</text:p>']);
     const revised = contentXmlRaw(['<text:p>Word<text:s text:c="3"/>tail</text:p>']);

@@ -101,3 +101,7 @@ SHALL NOT appear in `getParagraphs()` or any visible-text walk.
 #### Scenario: [OCMPI-13] LibreOffice accept/reject round-trips the inline redline
 - **WHEN** LibreOffice (when available) runs accept-all and reject-all over a generated redline containing a modify pair plus whole-paragraph changes
 - **THEN** accept-all reproduces the revised document's visible paragraph texts and reject-all reproduces the original's
+
+#### Scenario: [OCMPI-14] Adjacent word replacements group into one deletion and one insertion
+- **WHEN** the intra-paragraph diff processes adjacent replaced words separated only by whitespace that the token LCS matches as equal (e.g. "Zephyr BioSystems" → "Acme Manufacturing")
+- **THEN** the span script contains a single delete+insert pair covering the whole replacement (bridge whitespace absorbed into both sides) rather than interleaved per-word pairs, while delete-only and insert-only runs keep their bridging whitespace as equal
