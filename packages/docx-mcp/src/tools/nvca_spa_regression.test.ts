@@ -619,9 +619,17 @@ describe('NVCA SPA regression: footnote anchor surfacing (#185)', () => {
       assertSuccess(probe, 'read_file node_ids probe');
       const probed = JSON.parse(probe.content as string) as Array<{ id: string; text: string }>;
       expect(probed).toHaveLength(1);
-      // Pure-marker node; the optional second [^46] tolerates the pre-existing
-      // marker doubling (#382) without letting zero or triple markers pass.
-      expect(probed[0]!.text).toMatch(/^\[\^46\](?:\[\^46\])?$/);
+      // Pure-marker node; exactly one [^46] — the view-level injection used to
+      // be doubled by a read_file suffix pass. @see #382
+      expect(probed[0]!.text).toBe('[^46]');
+    });
+
+    await and('no footnote marker anywhere in the walk is doubled', async () => {
+      // Adjacent same-number markers ([^45][^45], with or without intervening
+      // whitespace) are the #382 signature; distinct adjacent references
+      // ([^1][^2]) remain legal.
+      const doubled = nodes.filter((n) => /\[\^(\d+)\]\s*\[\^\1\]/.test(n.text));
+      expect(doubled.map((n) => n.id)).toEqual([]);
     });
   });
 });

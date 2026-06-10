@@ -110,10 +110,9 @@ describe('read_file footnotes', () => {
       const anchorNode = nodes.find((n) => n.id === anchorId);
       expect(anchorNode).toBeDefined();
       // The node is pure marker: the view renders the footnote reference and
-      // nothing else. The optional second [^1] tolerates the pre-existing
-      // marker doubling (view-level injection + read_file suffix, #382)
-      // without letting zero or triple markers pass.
-      expect(anchorNode!.text).toMatch(/^\[\^1\](?:\[\^1\])?$/);
+      // nothing else. Exactly one [^1] — the view-level injection used to be
+      // doubled by a read_file suffix pass. @see #382
+      expect(anchorNode!.text).toBe('[^1]');
       expect(anchorNode!.clean_text).toBe('[^1]');
     });
 

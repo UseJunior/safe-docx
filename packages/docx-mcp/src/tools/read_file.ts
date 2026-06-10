@@ -352,6 +352,12 @@ export async function readFile(
       return map;
     })();
 
+    // Footnote [^N] markers: the document view already injects them into
+    // tagged_text/text at the reference's visible offset (injectFootnoteMarkers
+    // in docx-core's document_view.ts). Only clean_text is enriched here — the
+    // view deliberately keeps it marker-free for core consumers (edit matching,
+    // signature-cluster detection), so the suffix is a read_file output concern.
+    // Appending to all three fields doubled every marker. @see #382
     let enriched = filtered;
     try {
       const footnotes = await session.doc.getFootnotes();
@@ -368,8 +374,6 @@ export async function readFile(
           return {
             ...node,
             clean_text: `${node.clean_text}${markerSuffix}`,
-            tagged_text: `${node.tagged_text}${markerSuffix}`,
-            text: `${node.text}${markerSuffix}`,
           };
         });
       }
