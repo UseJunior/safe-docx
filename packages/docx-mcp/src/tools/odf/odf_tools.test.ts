@@ -155,8 +155,11 @@ describe('ODF MCP provider lane', () => {
   );
 
   test.openspec('[OPLR-04] Unsupported tools are guarded for ODF')(
-    'compare_documents on an .odt session returns UNSUPPORTED_FOR_ODF before DOCX logic',
+    'format_layout on an .odt session returns UNSUPPORTED_FOR_ODF before DOCX logic',
     async ({ given, when, then }: AllureBddContext) => {
+      // Originally exercised via compare_documents, then add_comment — both became supported
+      // (add-odf-compare / add-odf-compare-session / add-odf-comments), so the guard example was
+      // re-pointed at format_layout, which remains DOCX-only.
       let manager: SessionManager;
       let filePath: string;
       let result: Awaited<ReturnType<typeof dispatchToolCall>>;
@@ -167,10 +170,10 @@ describe('ODF MCP provider lane', () => {
         const read = await dispatchToolCall(manager, 'read_file', { file_path: filePath });
         assertSuccess(read, 'read_file');
       });
-      await when('a DOCX-only phase-2 tool targets the .odt path', async () => {
-        result = await dispatchToolCall(manager, 'compare_documents', {
+      await when('a DOCX-only tool targets the .odt path', async () => {
+        result = await dispatchToolCall(manager, 'format_layout', {
           file_path: filePath,
-          save_to_local_path: path.join(path.dirname(filePath), 'redline.docx'),
+          page_size: 'LETTER',
         });
       });
       await then('the provider chokepoint returns UNSUPPORTED_FOR_ODF', () => {

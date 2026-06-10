@@ -230,7 +230,8 @@ describe('ODF grep + insert branch coverage', () => {
 
   it('compare_documents with two .odt input paths now routes to the ODF handler (two-file form)', async () => {
     // Two-file .odt compare became supported in add-odf-compare; the prior guard was flipped.
-    // (Session-mode .odt compare remains unsupported — covered by odf_compare.test.ts OPCD-04.)
+    // (Session-mode .odt compare became supported in add-odf-compare-session — covered by
+    // odf_compare_session.test.ts OPCS-*.)
     const manager = new SessionManager();
     const original = await copyFixture('orig.odt');
     const revised = await copyFixture('rev.odt');
