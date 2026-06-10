@@ -122,6 +122,51 @@ describe('diffInline', () => {
     expect(revised.slice(ins.revStart, ins.revEnd)).toBe('garment');
   });
 
+  it('[OCMPI-14] adjacent replaced words group into one delete+insert pair across the bridging space', () => {
+    const original = 'made by and among Zephyr BioSystems, Inc., a Delaware corporation';
+    const revised = 'made by and among Acme Manufacturing, Inc., a Delaware corporation';
+    const ops = diffInline(original, revised);
+    assertInvariants(ops, original, revised);
+    // One grouped pair, not interleaved per-word pairs around the kept space.
+    expect(ops.map((o) => o.kind)).toEqual(['equal', 'delete', 'insert', 'equal']);
+    const del = ops[1]!;
+    const ins = ops[2]!;
+    expect(original.slice(del.origStart, del.origEnd)).toBe('Zephyr BioSystems,');
+    expect(revised.slice(ins.revStart, ins.revEnd)).toBe('Acme Manufacturing,');
+    expect(del.revStart).toBe(ins.revStart);
+  });
+
+  it('[OCMPI-14] a chain of three replaced words collapses into a single pair', () => {
+    const original = 'start aa bb cc end';
+    const revised = 'start xx yy zz end';
+    const ops = diffInline(original, revised);
+    assertInvariants(ops, original, revised);
+    expect(ops.map((o) => o.kind)).toEqual(['equal', 'delete', 'insert', 'equal']);
+    expect(original.slice(ops[1]!.origStart, ops[1]!.origEnd)).toBe('aa bb cc');
+    expect(revised.slice(ops[2]!.revStart, ops[2]!.revEnd)).toBe('xx yy zz');
+  });
+
+  it('[OCMPI-14] a kept word between two replacements is never absorbed into a window', () => {
+    const original = 'alpha keeps bravo';
+    const revised = 'delta keeps echo';
+    const ops = diffInline(original, revised);
+    assertInvariants(ops, original, revised);
+    // The non-whitespace equal " keeps " separates two independent replacement pairs.
+    expect(ops.map((o) => o.kind)).toEqual(['delete', 'insert', 'equal', 'delete', 'insert']);
+    expect(original.slice(ops[0]!.origStart, ops[0]!.origEnd)).toBe('alpha');
+    expect(original.slice(ops[3]!.origStart, ops[3]!.origEnd)).toBe('bravo');
+  });
+
+  it('[OCMPI-14] delete-only and insert-only windows keep their bridging space as equal', () => {
+    const delOps = diffInline('xx yy', ' ');
+    assertInvariants(delOps, 'xx yy', ' ');
+    expect(delOps.map((o) => o.kind)).toEqual(['delete', 'equal', 'delete']);
+
+    const insOps = diffInline(' ', 'xx yy');
+    assertInvariants(insOps, ' ', 'xx yy');
+    expect(insOps.map((o) => o.kind)).toEqual(['insert', 'equal', 'insert']);
+  });
+
   it('[OCMPI-01] property sweep: random word edits always satisfy the reconstruction invariants', () => {
     const words = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'fox', 'golf'];
     // Deterministic pseudo-random walk (no Date/Math.random in tests for reproducibility).

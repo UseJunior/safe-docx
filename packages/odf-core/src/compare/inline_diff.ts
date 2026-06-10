@@ -11,6 +11,11 @@
  * Order convention mirrors `diffParagraphs`: at a mismatch the deletion branch wins, so a
  * replaced word surfaces as a `delete` immediately followed by an `insert` sharing `revStart`.
  * The emitter relies on that ordering when both anchor at the same offset.
+ *
+ * A grouping post-pass keeps multi-word replacements readable (issue #378): the LCS matches the
+ * space between two replaced words as `equal`, which would otherwise split one logical
+ * replacement into per-word delete/insert pairs. Change windows bridged by whitespace-only
+ * equal spans collapse into a single delete+insert pair whenever both kinds are present.
  */
 
 /**
@@ -114,5 +119,70 @@ export function diffInline(original: string, revised: string): SpanOp[] {
     push('equal', origTokens[origTokens.length - k]!.length, revTokens[revTokens.length - k]!.length);
   }
 
-  return ops;
+  return groupBridgedReplacements(ops, original);
+}
+
+/**
+ * Collapse change windows bridged by whitespace-only `equal` spans into one delete+insert pair.
+ *
+ * Replacing two adjacent words ("Zephyr BioSystems" → "Acme Manufacturing") leaves the space
+ * between them `equal`, splitting the replacement into interleaved per-word pairs — a redline
+ * that reads `Acme ~~Zephyr~~ Manufacturing ~~BioSystems~~`. A window of change spans may absorb
+ * an equal span only when it is whitespace-only AND has change spans on BOTH sides (kept words
+ * never join a window). A window containing at least one delete and one insert is rewritten as a
+ * single pair: the delete covers every original char in the window (bridge whitespace included),
+ * the insert every revised char, preserving the delete-before-insert / shared-`revStart`
+ * convention and the lockstep-offset invariant. Delete-only and insert-only windows are left
+ * alone — striking a kept space just to reinsert it would be noise, not grouping.
+ */
+function groupBridgedReplacements(ops: SpanOp[], original: string): SpanOp[] {
+  const out: SpanOp[] = [];
+  let i = 0;
+  while (i < ops.length) {
+    if (ops[i]!.kind === 'equal') {
+      out.push(ops[i]!);
+      i++;
+      continue;
+    }
+    let end = i + 1;
+    while (end < ops.length) {
+      const op = ops[end]!;
+      if (op.kind !== 'equal') {
+        end++;
+        continue;
+      }
+      const next = ops[end + 1];
+      const bridge = original.slice(op.origStart, op.origEnd);
+      if (/^\s+$/.test(bridge) && next && next.kind !== 'equal') {
+        end += 2;
+        continue;
+      }
+      break;
+    }
+    const window = ops.slice(i, end);
+    const hasDelete = window.some((o) => o.kind === 'delete');
+    const hasInsert = window.some((o) => o.kind === 'insert');
+    if (hasDelete && hasInsert) {
+      const first = window[0]!;
+      const last = window[window.length - 1]!;
+      out.push({
+        kind: 'delete',
+        origStart: first.origStart,
+        origEnd: last.origEnd,
+        revStart: first.revStart,
+        revEnd: first.revStart,
+      });
+      out.push({
+        kind: 'insert',
+        origStart: last.origEnd,
+        origEnd: last.origEnd,
+        revStart: first.revStart,
+        revEnd: last.revEnd,
+      });
+    } else {
+      out.push(...window);
+    }
+    i = end;
+  }
+  return out;
 }

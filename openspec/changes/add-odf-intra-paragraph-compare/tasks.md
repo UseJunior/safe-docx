@@ -5,6 +5,7 @@
 
 ## odf-core
 - [x] `compare/inline_diff.ts`: token-level LCS (`diffInline`) with prefix/suffix trim, char-offset `SpanOp`s, delete-before-insert at ties, coalescing; `inline_diff.test.ts` incl. reconstruction property invariant
+- [x] `compare/inline_diff.ts`: group adjacent replacements bridged by whitespace-only equal spans into one delete+insert pair (issue #378, OCMPI-14); diff-level + emit-level tests
 - [x] `compare/diff.ts`: `modify` EditOp variant + `pairModifications` (order-constrained DP: max pair count then total Jaccard; threshold 0.25 default; deterministic tie-breaks; deletes-then-inserts segment order); extend `diff.test.ts` (threshold pass/fail, 2-deletes+1-insert, empties)
 - [x] `shared/odf/text_segments.ts`: virtual `Segment` gains `node: Element` + `virtual: 'space' | 'tab' | 'line-break'` (additive; `rg buildSegments` confirms no caller breaks)
 - [x] `compare/inline_map.ts`: `resolveOffset` (manual `#text` split, `text:s` rebalance, block-edge points, re-segment per call) + `extractVisibleRange` (clone inline content preserving spans/links, edge trims, whole tab/line-break); `inline_map.test.ts` with serialized-XML assertions
