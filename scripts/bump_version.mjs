@@ -23,6 +23,7 @@ const PACKAGE_JSONS = [
   'packages/allure-test-factory/package.json',
   'packages/docx-core/package.json',
   'packages/docx-mcp/package.json',
+  'packages/odf-core/package.json',
   'packages/google-docs-core/package.json',
   'packages/safe-docx-mcpb/package.json',
   'packages/safe-docx/package.json',
@@ -35,6 +36,7 @@ const SMITHERY_MANIFEST_JSON = 'packages/safe-docx/.smithery/shttp/manifest.json
 // Cross-workspace dependencies (package name → dep specifier pattern)
 const WORKSPACE_DEPS = [
   '@usejunior/docx-core',
+  '@usejunior/odf-core',
   '@usejunior/docx-mcp',
   '@usejunior/google-docs-core',
   '@usejunior/safe-docx',
