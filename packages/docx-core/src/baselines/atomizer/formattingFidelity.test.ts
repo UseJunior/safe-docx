@@ -156,6 +156,33 @@ describe('Formatting-fidelity comparison check', () => {
     },
   );
 
+  humanReadableTest.openspec('namespace declaration placement does not register as formatting divergence')(
+    'Scenario: namespace declaration placement does not register as formatting divergence',
+    (_: AllureBddContext) => {
+      const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+      // inplace-style: r: bound once on the root, inherited by w:headerReference.
+      const expected =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
+        ` xmlns:r="${R_NS}"><w:body>` +
+        `<w:p><w:r><w:t>content</w:t></w:r></w:p>` +
+        `<w:sectPr><w:headerReference r:id="rId8" w:type="default"/></w:sectPr>` +
+        `</w:body></w:document>`;
+      // rebuild-style: the same binding declared inline on the element itself,
+      // with an identical r:id (the false "changed" divergence from #369).
+      const actual = docXml(
+        `<w:p><w:r><w:t>content</w:t></w:r></w:p>` +
+          `<w:sectPr><w:headerReference r:id="rId8" w:type="default" xmlns:r="${R_NS}"/></w:sectPr>`,
+      );
+
+      const report = compareFormattingFidelity(expected, actual);
+
+      expect(report.sectionFormatting.divergent).toBe(0);
+      expect(report.divergences).toEqual([]);
+      expect(report.score).toBe(1);
+    },
+  );
+
   humanReadableTest.openspec('unaligned paragraph content lowers alignment coverage not formatting tallies')(
     'Scenario: unaligned paragraph content lowers alignment coverage not formatting tallies',
     (_: AllureBddContext) => {
