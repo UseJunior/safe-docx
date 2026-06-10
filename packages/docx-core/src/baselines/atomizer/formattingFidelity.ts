@@ -117,11 +117,15 @@ const PPR_EXCLUDED_TAGS = new Set([...REVISION_PROPERTY_TAGS, 'w:sectPr']);
  * Canonical serialization: sorted attributes, children sorted by their own
  * canonical form, revision markup dropped. A comparison key, not output XML —
  * sorting trades element-order semantics for emitter-order independence.
+ * Namespace declarations (`xmlns`, `xmlns:*`) are skipped: they record where
+ * a prefix is bound, not formatting, and emitters legitimately declare the
+ * same binding at different depths (inline vs inherited from the root).
  */
 function canonicalizeElement(el: Element): string {
   const attrs: string[] = [];
   for (let i = 0; i < el.attributes.length; i++) {
     const attr = el.attributes[i]!;
+    if (attr.name === 'xmlns' || attr.name.startsWith('xmlns:')) continue;
     attrs.push(`${attr.name}="${attr.value}"`);
   }
   attrs.sort();

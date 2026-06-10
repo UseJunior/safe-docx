@@ -34,6 +34,11 @@ The system SHALL provide a deterministic, in-engine formatting comparison `compa
 - **WHEN** the actual view carries a `w:sectPr` whose `w:pgSz` differs from the expected view
 - **THEN** a section-scope divergence with property `w:pgSz` and kind "changed" is reported
 
+#### Scenario: namespace declaration placement does not register as formatting divergence
+
+- **WHEN** the actual view serializes a property element with an inline `xmlns:*` declaration while the expected view inherits the same namespace binding from an ancestor, all other attributes being identical
+- **THEN** the score is exactly 1.0 with zero divergences, because namespace declarations record where a prefix is bound rather than formatting
+
 #### Scenario: unaligned paragraph content lowers alignment coverage not formatting tallies
 
 - **WHEN** a paragraph's text differs between the two views so it cannot be content-aligned
