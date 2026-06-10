@@ -106,7 +106,7 @@ safe-docx targets a defined subset of **ECMA-376 5th edition**. The full surface
 (targeted sections, Non-Goals, and verification status) lives at
 [spec-compliance/CONFORMANCE.md](spec-compliance/CONFORMANCE.md).
 
-- **3** sections claimed
+- **4** sections claimed
 - **5** sections explicitly out-of-scope (Non-Goals)
 - **0** known gaps under `@conformance-gap`
 - Vendored normative schemas: `spec-compliance/ecma-376/schemas/`

@@ -23,7 +23,7 @@ import {
   wrapSerializedContentWithIns,
 } from '../../primitives/track-changes-emitter.js';
 import { serializeToXml, cloneElement } from './xmlToWmlElement.js';
-import { EMPTY_PARAGRAPH_TAG, isParagraphLevelLeaf } from '../../atomizer.js';
+import { EMPTY_PARAGRAPH_TAG, isParagraphLevelLeaf, nearestHyperlinkAncestor } from '../../atomizer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
@@ -588,10 +588,13 @@ function buildParagraphXml(
   // entirely (instead of leaving behind a stub <w:p> break).
   if (isEntireParagraphWithStatus(group, CorrelationStatus.Inserted)) {
     const paraId = allocateRevisionId(revState);
-    const insertedRunXml = wrapSerializedContentWithIns(
-      group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
-      revisionCtx,
-    );
+    const insertedRunXml = paragraphHasHyperlinkAtoms(group)
+      ? buildWholeParagraphRevisionContent(group, (runs) =>
+          wrapSerializedContentWithIns(runs, revisionCtx))
+      : wrapSerializedContentWithIns(
+          group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
+          revisionCtx,
+        );
     const pPrChangeEl = buildPPrChangeElement(group.pPr, revisionCtx);
     const parts: string[] = [];
     parts.push('<w:p>');
@@ -610,10 +613,15 @@ function buildParagraphXml(
     parts.push(serializePPrWithParaRevisionMarker(
       group.pPr, 'w:del', paraId, author, dateStr
     ));
-    parts.push(wrapSerializedContentWithDel(
-      group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
-      revisionCtx,
-    ));
+    parts.push(
+      paragraphHasHyperlinkAtoms(group)
+        ? buildWholeParagraphRevisionContent(group, (runs) =>
+            wrapSerializedContentWithDel(runs, revisionCtx))
+        : wrapSerializedContentWithDel(
+            group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
+            revisionCtx,
+          )
+    );
     parts.push('</w:p>');
     return parts.join('');
   }
@@ -648,10 +656,16 @@ function buildParagraphXml(
     parts.push(serializeToXml(group.pPr));
   }
 
-  // Add run groups with track changes
-  for (const runGroup of group.runGroups) {
-    const runXml = buildRunGroupXml(runGroup, author, dateStr, revState);
-    parts.push(runXml);
+  // Add run groups with track changes, restoring w:hyperlink wrappers when
+  // the paragraph contains hyperlink atoms (issue #368). Hyperlink-free
+  // paragraphs keep the legacy per-group emission byte-identical.
+  if (paragraphHasHyperlinkAtoms(group)) {
+    parts.push(buildRunGroupsWithHyperlinks(group.runGroups, author, dateStr, revState));
+  } else {
+    for (const runGroup of group.runGroups) {
+      const runXml = buildRunGroupXml(runGroup, author, dateStr, revState);
+      parts.push(runXml);
+    }
   }
 
   parts.push('</w:p>');
@@ -887,6 +901,249 @@ function subGroupByRPr(atoms: ComparisonUnitAtom[]): { rPr: Element | null; atom
 
   result.push({ rPr: currentRPr, atoms: currentAtoms });
   return result;
+}
+
+// =============================================================================
+// Hyperlink Wrapper Re-emission
+// =============================================================================
+
+/**
+ * A resolved hyperlink wrapper for a contiguous segment of atoms.
+ *
+ * `element` is the w:hyperlink whose attributes get re-emitted. `fromOriginal`
+ * records whether that element comes from the original document tree — the
+ * rebuild output package is cloned from the original archive, so only
+ * original-tree `r:id` values are guaranteed to resolve against the shipped
+ * relationships part.
+ */
+interface ResolvedHyperlink {
+  element: Element;
+  key: string;
+  fromOriginal: boolean;
+}
+
+/**
+ * Attribute fingerprint of a w:hyperlink element, used to recognize "the
+ * same" hyperlink across the original and revised trees (equal/deleted atoms
+ * reference the original tree's element, inserted atoms the revised tree's).
+ */
+function hyperlinkKey(el: Element): string {
+  const parts: string[] = [];
+  for (let i = 0; i < el.attributes.length; i++) {
+    const attr = el.attributes.item(i)!;
+    if (attr.name.startsWith('xmlns')) continue;
+    parts.push(`${attr.name}=${attr.value}`);
+  }
+  return parts.sort().join(' ');
+}
+
+/**
+ * Resolve the hyperlink wrapper an atom belongs to, preferring the
+ * original-tree element so the re-emitted r:id resolves against the
+ * original-based rebuild package: deleted atoms carry original ancestry
+ * directly; equal atoms (revised tree) reach it via comparisonUnitAtomBefore.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/368
+ */
+function resolveHyperlinkForAtom(atom: ComparisonUnitAtom): ResolvedHyperlink | null {
+  const own = nearestHyperlinkAncestor(atom);
+  if (!own) return null;
+  if (atom.sourceDocument === 'original') {
+    return { element: own, key: hyperlinkKey(own), fromOriginal: true };
+  }
+  const before = atom.comparisonUnitAtomBefore;
+  const beforeHyperlink = before ? nearestHyperlinkAncestor(before) : null;
+  // Attribute to the original wrapper only when both trees agree on the
+  // hyperlink's attributes. When they differ (e.g. the revision retargeted
+  // the link to a new r:id), emitting the original wrapper would pin the
+  // still-equal link text to the STALE target in the accepted document —
+  // worse than dropping the wrapper. Such atoms fall through to the
+  // revised-only policy below instead.
+  // TODO(#376): the faithful tracked representation of a retargeted link
+  // is delete-old-link + insert-new-link (what Word emits), which needs the
+  // hyperlink fingerprint in atom identity so the LCS stops matching text
+  // across different link targets.
+  if (beforeHyperlink && hyperlinkKey(beforeHyperlink) === hyperlinkKey(own)) {
+    return { element: beforeHyperlink, key: hyperlinkKey(beforeHyperlink), fromOriginal: true };
+  }
+  // Revised-only attribution (purely inserted hyperlink). Emitting its r:id
+  // would dangle against the original-based package, so the caller only
+  // wraps when the hyperlink carries no relationship reference (anchor-only).
+  return { element: own, key: hyperlinkKey(own), fromOriginal: false };
+}
+
+/**
+ * Whether a resolved hyperlink is safe to re-emit. Original-attributed
+ * wrappers always are; revised-only wrappers are safe only without an r:id
+ * (internal anchor links), because the rebuild package ships the ORIGINAL
+ * document.xml.rels and a revised-only r:id would be a dangling reference
+ * (Word treats those as a corrupt package). Revised-only r:id hyperlinks
+ * keep today's behavior — content emitted unwrapped.
+ */
+function isEmittableHyperlink(resolved: ResolvedHyperlink): boolean {
+  return resolved.fromOriginal || resolved.element.getAttribute('r:id') === null;
+}
+
+/**
+ * True when any atom in the paragraph sits inside a w:hyperlink. Gates the
+ * hyperlink-aware emission paths so hyperlink-free paragraphs keep the
+ * byte-identical legacy output.
+ */
+function paragraphHasHyperlinkAtoms(group: ParagraphGroup): boolean {
+  return group.runGroups.some((rg) =>
+    rg.atoms.some((atom) => nearestHyperlinkAncestor(atom) !== null)
+  );
+}
+
+/**
+ * A hyperlink-pure slice of a RunGroup: every atom resolves to the same
+ * emittable hyperlink wrapper (or to none).
+ */
+interface HyperlinkSegment {
+  group: RunGroup;
+  hyperlink: ResolvedHyperlink | null;
+}
+
+/**
+ * Split a RunGroup into contiguous hyperlink-pure sub-groups.
+ *
+ * Moved groups are returned whole: splitting them would emit
+ * moveFromRangeStart/End once per slice, corrupting the move ranges. A move
+ * spanning a hyperlink keeps today's unwrapped emission.
+ */
+function splitRunGroupByHyperlink(group: RunGroup): HyperlinkSegment[] {
+  if (
+    group.status === CorrelationStatus.MovedSource ||
+    group.status === CorrelationStatus.MovedDestination
+  ) {
+    return [{ group, hyperlink: null }];
+  }
+
+  const segments: HyperlinkSegment[] = [];
+  let current: HyperlinkSegment | null = null;
+
+  for (const atom of group.atoms) {
+    // Emit-ability is decided per merged bucket, not per atom: an inserted
+    // atom inside an otherwise-original hyperlink folds into the adjacent
+    // original-attributed bucket via the shared key.
+    const resolved = resolveHyperlinkForAtom(atom);
+    const key = resolved?.key ?? null;
+
+    if (current && (current.hyperlink?.key ?? null) === key) {
+      current.group.atoms.push(atom);
+      // Prefer an original-attributed representative within the segment.
+      if (resolved?.fromOriginal && current.hyperlink && !current.hyperlink.fromOriginal) {
+        current.hyperlink = resolved;
+      }
+    } else {
+      current = {
+        group: { ...group, atoms: [atom] },
+        hyperlink: resolved,
+      };
+      segments.push(current);
+    }
+  }
+
+  return segments;
+}
+
+/**
+ * Serialize the opening tag of a re-emitted w:hyperlink wrapper, copying the
+ * source element's attributes verbatim (r:id, w:anchor, w:history, ...).
+ */
+function serializeHyperlinkOpenTag(el: Element): string {
+  const attrs: string[] = [];
+  for (let i = 0; i < el.attributes.length; i++) {
+    const attr = el.attributes.item(i)!;
+    if (attr.name.startsWith('xmlns')) continue;
+    attrs.push(` ${attr.name}="${escapeXmlAttr(attr.value)}"`);
+  }
+  return `<w:hyperlink${attrs.join('')}>`;
+}
+
+/**
+ * Merge adjacent segments that resolve to the same hyperlink fingerprint, so
+ * an equal/deleted/inserted sequence inside one link shares one wrapper.
+ */
+function mergeAdjacentHyperlinkSegments(
+  segments: HyperlinkSegment[]
+): Array<{ hyperlink: ResolvedHyperlink | null; groups: RunGroup[] }> {
+  const buckets: Array<{ hyperlink: ResolvedHyperlink | null; groups: RunGroup[] }> = [];
+  for (const segment of segments) {
+    const last = buckets[buckets.length - 1];
+    if (last && (last.hyperlink?.key ?? null) === (segment.hyperlink?.key ?? null)) {
+      last.groups.push(segment.group);
+      if (segment.hyperlink?.fromOriginal && last.hyperlink && !last.hyperlink.fromOriginal) {
+        last.hyperlink = segment.hyperlink;
+      }
+    } else {
+      buckets.push({ hyperlink: segment.hyperlink, groups: [segment.group] });
+    }
+  }
+  return buckets;
+}
+
+/**
+ * Emit a paragraph's run groups with w:hyperlink wrappers restored around the
+ * runs whose atoms came from inside a hyperlink. Track-change wrappers nest
+ * INSIDE the hyperlink (`<w:hyperlink><w:ins>…`): CT_Hyperlink admits
+ * EG_RunLevelElts (w:ins / w:del / range markers), while CT_RunTrackChange
+ * does not admit w:hyperlink.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/368
+ */
+function buildRunGroupsWithHyperlinks(
+  runGroups: RunGroup[],
+  author: string,
+  dateStr: string,
+  revState: RevisionIdState
+): string {
+  const buckets = mergeAdjacentHyperlinkSegments(
+    runGroups.flatMap(splitRunGroupByHyperlink)
+  );
+
+  const parts: string[] = [];
+  for (const bucket of buckets) {
+    const content = bucket.groups
+      .map((g) => buildRunGroupXml(g, author, dateStr, revState))
+      .join('');
+    if (!content) continue;
+    parts.push(
+      bucket.hyperlink && isEmittableHyperlink(bucket.hyperlink)
+        ? `${serializeHyperlinkOpenTag(bucket.hyperlink.element)}${content}</w:hyperlink>`
+        : content
+    );
+  }
+  return parts.join('');
+}
+
+/**
+ * Whole-paragraph insert/delete emission with hyperlink wrappers restored.
+ * Each bucket gets its own revision wrapper so the hyperlink can stay
+ * OUTSIDE the w:ins / w:del (see buildRunGroupsWithHyperlinks).
+ */
+function buildWholeParagraphRevisionContent(
+  group: ParagraphGroup,
+  wrap: (content: string) => string
+): string {
+  const buckets = mergeAdjacentHyperlinkSegments(
+    group.runGroups.flatMap(splitRunGroupByHyperlink)
+  );
+
+  const parts: string[] = [];
+  for (const bucket of buckets) {
+    const runs = bucket.groups.map((g) => buildRunContentAsPlainRun(g)).join('');
+    if (!runs) continue;
+    const wrapped = wrap(runs);
+    parts.push(
+      bucket.hyperlink && isEmittableHyperlink(bucket.hyperlink)
+        ? `${serializeHyperlinkOpenTag(bucket.hyperlink.element)}${wrapped}</w:hyperlink>`
+        : wrapped
+    );
+  }
+  return parts.join('');
 }
 
 /**
