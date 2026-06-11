@@ -863,6 +863,12 @@ describe('empty paragraph context hashing', () => {
     }).atoms.filter((atom) => atom.contentElement.tagName === EMPTY_PARAGRAPH_TAG);
   }
 
+  function defaultEmptyAtoms(document: Element): ReturnType<typeof atomizeTree>['atoms'] {
+    return atomizeTree(document, [], mockPart).atoms.filter(
+      (atom) => atom.contentElement.tagName === EMPTY_PARAGRAPH_TAG
+    );
+  }
+
   test('keeps empty paragraph hashes stable when preceding run text is merged', async ({ given, when, then }: AllureBddContext) => {
     let splitBody: Element;
     let mergedBody: Element;
@@ -1005,6 +1011,7 @@ describe('empty paragraph context hashing', () => {
     let baselineHash: string;
     let bookmarkHash: string;
     let proofErrHash: string;
+    let proofErrEmptyCount: number;
 
     await given('empty paragraphs after content-transparent marker-only paragraphs', () => {
       baselineBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph()]);
@@ -1023,18 +1030,89 @@ describe('empty paragraph context hashing', () => {
     await when('the bodies are atomized with paragraph-level markers enabled', () => {
       const baselineEmpty = emptyAtoms(baselineBody)[0];
       const bookmarkEmpty = emptyAtoms(bookmarkBody)[0];
-      const proofErrEmpty = emptyAtoms(proofErrBody)[0];
+      const proofErrEmpties = emptyAtoms(proofErrBody);
+      const proofErrEmpty = proofErrEmpties[0];
       assertDefined(baselineEmpty, 'baseline empty paragraph atom');
       assertDefined(bookmarkEmpty, 'bookmark-context empty paragraph atom');
       assertDefined(proofErrEmpty, 'proofErr-context empty paragraph atom');
       baselineHash = baselineEmpty.sha1Hash;
       bookmarkHash = bookmarkEmpty.sha1Hash;
       proofErrHash = proofErrEmpty.sha1Hash;
+      proofErrEmptyCount = proofErrEmpties.length;
     });
 
     await then('the following empty paragraph hashes match the baseline', () => {
+      expect(proofErrEmptyCount).toBe(2);
       expect(bookmarkHash).toBe(baselineHash);
       expect(proofErrHash).toBe(baselineHash);
+    });
+  });
+
+  test('proofErr-only paragraphs hash like stripped empty paragraphs', async ({ given, when, then }: AllureBddContext) => {
+    let bareProofErrBody: Element;
+    let bareStrippedBody: Element;
+    let pPrProofErrBody: Element;
+    let pPrStrippedBody: Element;
+    let bareProofErrHash: string;
+    let bareStrippedHash: string;
+    let pPrProofErrHash: string;
+    let pPrStrippedHash: string;
+
+    await given('proofErr-only paragraphs and matching stripped empty paragraphs', () => {
+      const pPr = () => el('w:pPr', {}, [el('w:spacing', { 'w:after': '0' })]);
+      const proofErr = () => el('w:proofErr', { 'w:type': 'spellStart' });
+      bareProofErrBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph([proofErr()])]);
+      bareStrippedBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph()]);
+      pPrProofErrBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph([pPr(), proofErr()])]);
+      pPrStrippedBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph([pPr()])]);
+    });
+
+    await when('the bodies are atomized with paragraph-level markers enabled', () => {
+      const bareProofErr = emptyAtoms(bareProofErrBody)[0];
+      const bareStripped = emptyAtoms(bareStrippedBody)[0];
+      const pPrProofErr = emptyAtoms(pPrProofErrBody)[0];
+      const pPrStripped = emptyAtoms(pPrStrippedBody)[0];
+      assertDefined(bareProofErr, 'bare proofErr empty atom');
+      assertDefined(bareStripped, 'bare stripped empty atom');
+      assertDefined(pPrProofErr, 'pPr proofErr empty atom');
+      assertDefined(pPrStripped, 'pPr stripped empty atom');
+      bareProofErrHash = bareProofErr.sha1Hash;
+      bareStrippedHash = bareStripped.sha1Hash;
+      pPrProofErrHash = pPrProofErr.sha1Hash;
+      pPrStrippedHash = pPrStripped.sha1Hash;
+    });
+
+    await then('proofErr anchors do not affect empty-paragraph hashes', () => {
+      expect(bareProofErrHash).toBe(bareStrippedHash);
+      expect(pPrProofErrHash).toBe(pPrStrippedHash);
+    });
+  });
+
+  test('proofErr-only paragraphs atomize as empty paragraphs with default options', async ({ given, when, then }: AllureBddContext) => {
+    let proofErrBody: Element;
+    let strippedBody: Element;
+    let proofErrHash: string;
+    let strippedHash: string;
+
+    await given('a proofErr-only paragraph and its stripped counterpart', () => {
+      proofErrBody = el('w:body', {}, [
+        textParagraph('alpha'),
+        emptyParagraph([el('w:proofErr', { 'w:type': 'gramStart' })]),
+      ]);
+      strippedBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph()]);
+    });
+
+    await when('the bodies are atomized with default options', () => {
+      const proofErrEmpty = defaultEmptyAtoms(proofErrBody)[0];
+      const strippedEmpty = defaultEmptyAtoms(strippedBody)[0];
+      assertDefined(proofErrEmpty, 'default proofErr empty atom');
+      assertDefined(strippedEmpty, 'default stripped empty atom');
+      proofErrHash = proofErrEmpty.sha1Hash;
+      strippedHash = strippedEmpty.sha1Hash;
+    });
+
+    await then('their empty-paragraph hashes match', () => {
+      expect(proofErrHash).toBe(strippedHash);
     });
   });
 });

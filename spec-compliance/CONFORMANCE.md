@@ -15,6 +15,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | --- | --- | --- | --- | --- | --- | --- |
 | `ECMA-PART4-17-16-5` | w:delInstrText and w:fldChar placement in tracked deletions | 5 | 4 | 17.16.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText` | — |
 | `ECMA-PART1-17-13-5` | Paragraph-level OOXML markers | 5 | 1 | 17.13.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | — |
+| `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | — |
 | `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | — |
 | `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | — |
 | `ECMA-PART1-17-6-17` | w:sectPr document-final section properties | 5 | 1 | 17.6.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | — |
@@ -107,6 +108,19 @@ wrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but
 never inside `<w:r>`. safe-docx's rebuild reconstructor emits them as
 siblings of `<w:r>`, not as leaves wrapped in a synthetic run. The
 authoritative list lives in `packages/docx-core/src/atomizer.ts`.
+
+### ECMA-PART1-17-13-8-1 — Proofing error anchors
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.8.1
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr`
+
+`w:proofErr` anchors mark spelling or grammar proofing state. They are
+consumer-rewritable metadata and carry no document content, so safe-docx
+treats a paragraph whose only children are proofing anchors as an empty
+paragraph for comparison. Rebuild reconstruction does not re-emit those
+anchors.
 
 ### ECMA-PART1-17-11-14 — w:footnoteReference identifier vs display number
 

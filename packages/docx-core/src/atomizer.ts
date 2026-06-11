@@ -389,18 +389,25 @@ export function createComparisonUnitAtom(
 // =============================================================================
 
 /**
- * Check if a paragraph element is empty (has no content, only properties).
+ * Check if a paragraph element is empty (has no content-bearing children).
  *
- * Empty paragraphs have only w:pPr children, no w:r (run) elements.
+ * Empty paragraphs have only paragraph properties, or proofing-error anchors.
+ * `w:proofErr` marks spelling/grammar proofing state and carries no document
+ * content, so a paragraph containing only those anchors is empty for
+ * comparison.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.8.1
+ * @see https://github.com/UseJunior/safe-docx/issues/456
  */
+const EMPTY_PARAGRAPH_TRANSPARENT_TAGS = new Set(['w:pPr', 'w:proofErr']);
+
 function isEmptyParagraph(node: WmlElement): boolean {
   if (node.tagName !== 'w:p') return false;
   const kids = childElements(node);
   if (kids.length === 0) return true;
 
-  // Check if all children are w:pPr (no runs)
   for (const child of kids) {
-    if (child.tagName !== 'w:pPr') {
+    if (!EMPTY_PARAGRAPH_TRANSPARENT_TAGS.has(child.tagName)) {
       return false;
     }
   }
