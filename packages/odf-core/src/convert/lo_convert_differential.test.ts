@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { describe, it, expect } from 'vitest';
-import { resolveSoffice, runLibreOfficeOracle } from '@usejunior/docx-core';
+import { probeSofficeUsable, resolveSoffice, runLibreOfficeOracle } from '@usejunior/docx-core';
 
 import { convertDocxToOdt } from './docx_to_odt.js';
 import { OdfArchive } from '../shared/odf/OdfArchive.js';
@@ -48,15 +48,8 @@ describe('convertDocxToOdt — LibreOffice differential oracle', () => {
         console.warn('[CONV-13] soffice not found — skipping differential test (set ODF_SOFFICE_BIN to enable).');
         return;
       }
-      // Preflight probe: soffice can resolve yet be unusable (observed: `Abort trap: 6` under
-      // macOS Launch Constraints). A broken oracle must SKIP this differential, not fail it.
-      try {
-        await runLibreOfficeOracle(
-          [{ op: 'identity', documentXml: '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>probe</w:t></w:r></w:p></w:body></w:document>' }],
-          soffice,
-        );
-      } catch (err) {
-        console.warn(`[CONV-13] soffice present but unusable — skipping differential test: ${(err as Error).message.split('\n')[0]}`);
+      if (!(await probeSofficeUsable(soffice))) {
+        console.warn('[CONV-13] soffice present but unusable (aborts on launch) — skipping differential test.');
         return;
       }
 

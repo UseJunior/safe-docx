@@ -1,29 +1,18 @@
 import { execFile } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { describe, it, expect } from 'vitest';
+import { probeSofficeUsable, resolveSoffice } from '@usejunior/docx-core';
 
 import { OdfArchive } from './shared/odf/OdfArchive.js';
 import { OdfDocument } from './document.js';
 
 const execFileAsync = promisify(execFile);
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtures__/sample.odt');
-
-/** Resolve a LibreOffice binary, or null if none is available (test skips). */
-function resolveSoffice(): string | null {
-  const candidates = [
-    process.env.ODF_SOFFICE_BIN,
-    '/opt/homebrew/bin/soffice',
-    '/usr/bin/soffice',
-    '/usr/local/bin/soffice',
-    '/Applications/LibreOffice.app/Contents/MacOS/soffice',
-  ].filter(Boolean) as string[];
-  return candidates.find((c) => existsSync(c)) ?? null;
-}
 
 describe('ODF round trip', () => {
   it('[ORTS-01] open → replace_text → save → reopen yields the edited text, others unchanged', async () => {
@@ -59,6 +48,10 @@ describe('ODF round trip', () => {
     const soffice = resolveSoffice();
     if (!soffice) {
       console.warn('[ORTS-02] soffice not found — skipping LibreOffice open smoke (set ODF_SOFFICE_BIN to enable).');
+      return;
+    }
+    if (!(await probeSofficeUsable(soffice))) {
+      console.warn('[ORTS-02] soffice present but unusable (aborts on launch) — skipping LibreOffice open smoke.');
       return;
     }
 
