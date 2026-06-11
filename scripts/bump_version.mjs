@@ -86,6 +86,18 @@ function checkVersionSync() {
     console.error('  server.json packages[0].version mismatch');
     ok = false;
   }
+  // The official MCP registry rejects publishes whose description exceeds
+  // 100 chars (422 at publish time, after npm has already shipped). Gate it
+  // here: --check runs at bump time and in the auto-tag workflow, before the
+  // release tag exists.
+  const REGISTRY_DESCRIPTION_MAX = 100;
+  if ((serverJson.description ?? '').length > REGISTRY_DESCRIPTION_MAX) {
+    console.error(
+      `  server.json description is ${serverJson.description.length} chars; ` +
+        `the MCP registry caps it at ${REGISTRY_DESCRIPTION_MAX}`,
+    );
+    ok = false;
+  }
 
   const uniqueVersions = new Set(versions.values());
   if (uniqueVersions.size === 1) {
