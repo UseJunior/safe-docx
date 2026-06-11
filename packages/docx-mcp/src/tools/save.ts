@@ -14,7 +14,7 @@ import {
   type CompareResult,
 } from '@usejunior/docx-core';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
-import { aiRevisionDiagnosticKey, getAiRevisionBaseline } from './ai_revision_guard.js';
+import { getAiRevisionBaseline, splitIntroducedDiagnostics } from './ai_revision_guard.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
@@ -254,10 +254,7 @@ export async function save(
       let demoted: typeof unattributed = [];
       if (unattributed.length > 0) {
         const baseline = await getAiRevisionBaseline(session);
-        introduced = unattributed.filter((e) => !baseline.has(aiRevisionDiagnosticKey(e)));
-        demoted = unattributed
-          .filter((e) => baseline.has(aiRevisionDiagnosticKey(e)))
-          .map((e) => ({ ...e, severity: 'warning' as const }));
+        ({ introduced, demoted } = splitIntroducedDiagnostics(unattributed, baseline));
       }
       const failing = [...attributed, ...introduced];
       aiRevisionValidation = {

@@ -45,20 +45,61 @@ export function aiRevisionDiagnosticKey(d: AiRevisionDiagnostic): string {
   return [d.code, d.part ?? '', d.element ?? '', d.id ?? '', d.author ?? '', d.message].join('|');
 }
 
-const sessionBaselineDiagnostics = new WeakMap<DocxSession, Promise<Set<string>>>();
+/**
+ * Multiset of diagnostic fingerprints. Counts matter: structural diagnostics
+ * (field-structure, package invariants) carry no per-instance location, so a
+ * plain Set would let N newly-introduced instances hide behind one
+ * pre-existing instance of the same finding.
+ */
+export function diagnosticCountMap(diagnostics: AiRevisionDiagnostic[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const d of diagnostics) {
+    const key = aiRevisionDiagnosticKey(d);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
 
 /**
- * Error fingerprints already present in the originally-loaded file. Documents
- * arrive from the wild with anomalies (unbalanced fields, odd foreign markup)
- * that no AI operation introduced; those must never hard-fail a write or save.
+ * Splits errors into those exceeding the pre-existing count for their
+ * fingerprint (introduced — must fail) and those covered by it (demoted to
+ * warnings). Consumes counts so duplicates beyond the baseline count fail.
  */
-export function getAiRevisionBaseline(session: DocxSession): Promise<Set<string>> {
+export function splitIntroducedDiagnostics(
+  errors: AiRevisionDiagnostic[],
+  preExisting: Map<string, number>,
+): { introduced: AiRevisionDiagnostic[]; demoted: AiRevisionDiagnostic[] } {
+  const remaining = new Map(preExisting);
+  const introduced: AiRevisionDiagnostic[] = [];
+  const demoted: AiRevisionDiagnostic[] = [];
+  for (const e of errors) {
+    const key = aiRevisionDiagnosticKey(e);
+    const count = remaining.get(key) ?? 0;
+    if (count > 0) {
+      remaining.set(key, count - 1);
+      demoted.push({ ...e, severity: 'warning' as const });
+    } else {
+      introduced.push(e);
+    }
+  }
+  return { introduced, demoted };
+}
+
+const sessionBaselineDiagnostics = new WeakMap<DocxSession, Promise<Map<string, number>>>();
+
+/**
+ * Error-fingerprint counts already present in the originally-loaded file.
+ * Documents arrive from the wild with anomalies (unbalanced fields, odd
+ * foreign markup) that no AI operation introduced; those must never
+ * hard-fail a write or save.
+ */
+export function getAiRevisionBaseline(session: DocxSession): Promise<Map<string, number>> {
   let promise = sessionBaselineDiagnostics.get(session);
   if (!promise) {
     promise = (async () => {
       const originalDoc = await DocxDocument.load(session.originalBuffer);
       const validation = await originalDoc.validateAiRevisions(session.aiAuthor ?? '');
-      return new Set([...validation.errors, ...validation.warnings].map(aiRevisionDiagnosticKey));
+      return diagnosticCountMap(validation.errors);
     })();
     sessionBaselineDiagnostics.set(session, promise);
   }
@@ -89,11 +130,10 @@ export async function preflightAiRevisionMutation(
   let demoted: AiRevisionDiagnostic[] = [];
   if (unattributed.length > 0) {
     const preMutation = await session.doc.validateAiRevisions(session.aiAuthor, touched);
-    const preExisting = new Set(preMutation.errors.map(aiRevisionDiagnosticKey));
-    introduced = unattributed.filter((e) => !preExisting.has(aiRevisionDiagnosticKey(e)));
-    demoted = unattributed
-      .filter((e) => preExisting.has(aiRevisionDiagnosticKey(e)))
-      .map((e) => ({ ...e, severity: 'warning' as const }));
+    ({ introduced, demoted } = splitIntroducedDiagnostics(
+      unattributed,
+      diagnosticCountMap(preMutation.errors),
+    ));
   }
   const failing = [...attributed, ...introduced];
   if (failing.length === 0) return null;

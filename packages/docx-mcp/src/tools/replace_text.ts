@@ -169,6 +169,11 @@ export async function replaceText(
     font_size?: number;
     font_name?: string;
     color?: string;
+    /**
+     * Internal (not exposed in the MCP tool schema): set by apply_plan, which
+     * preflights the whole step sequence once instead of per step.
+     */
+    skip_ai_revision_preflight?: boolean;
   },
   ctx?: RevisionContext,
 ): Promise<ToolResponse> {
@@ -291,7 +296,9 @@ export async function replaceText(
       doc.mergeRunsOnly({ preserveRsidIdentity: true });
     };
 
-    const revisionPreflight = await preflightAiRevisionMutation(session, revisionCtx, mutate);
+    const revisionPreflight = params.skip_ai_revision_preflight
+      ? null
+      : await preflightAiRevisionMutation(session, revisionCtx, mutate);
     if (revisionPreflight) return revisionPreflight;
 
     mutate(session.doc, revisionCtx);

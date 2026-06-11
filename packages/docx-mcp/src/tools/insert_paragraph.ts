@@ -122,6 +122,11 @@ export async function insertParagraph(
     position?: string; // BEFORE|AFTER
     style_source_id?: string;
     target_style?: string;
+    /**
+     * Internal (not exposed in the MCP tool schema): set by apply_plan, which
+     * preflights the whole step sequence once instead of per step.
+     */
+    skip_ai_revision_preflight?: boolean;
   },
   ctx?: RevisionContext,
 ): Promise<ToolResponse> {
@@ -203,11 +208,13 @@ export async function insertParagraph(
       return res;
     };
 
-    const revisionPreflight = await preflightAiRevisionMutation(
-      session,
-      revisionCtx,
-      (doc, activeCtx) => { mutate(doc, activeCtx); },
-    );
+    const revisionPreflight = params.skip_ai_revision_preflight
+      ? null
+      : await preflightAiRevisionMutation(
+          session,
+          revisionCtx,
+          (doc, activeCtx) => { mutate(doc, activeCtx); },
+        );
     if (revisionPreflight) return revisionPreflight;
 
     const res = mutate(session.doc, revisionCtx);

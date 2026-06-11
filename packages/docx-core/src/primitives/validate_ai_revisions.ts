@@ -134,10 +134,16 @@ function isIntegerString(value: string | null): boolean {
   return value !== null && /^(?:0|[1-9]\d*)$/.test(value);
 }
 
+/**
+ * OOXML ST_DateTime is xsd:dateTime — full date-time with optional fractional
+ * seconds and timezone. Date.parse alone is too lax (it accepts "2026" and
+ * RFC 1123 dates, which Word rejects).
+ */
+const XSD_DATETIME_PATTERN = /^-?\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/;
+
 function isValidDate(value: string | null): boolean {
   if (!value) return false;
-  const time = Date.parse(value);
-  return Number.isFinite(time);
+  return XSD_DATETIME_PATTERN.test(value) && Number.isFinite(Date.parse(value));
 }
 
 function checkRevisionMetadata(
@@ -220,23 +226,38 @@ function checkRangePairs(
   touchedRangeIds: Set<string>,
   diagnostics: AiRevisionDiagnostic[],
 ): void {
+  const collect = (
+    localName: string,
+    into: Map<string, Element[]>,
+  ): void => {
+    for (const el of allW(story.doc, localName)) {
+      const id = getWAttr(el, 'id');
+      if (!id || !isIntegerString(id)) {
+        const author = getWAttr(el, 'author');
+        push(diagnostics, {
+          severity: author === aiAuthor || (id !== null && touchedRangeIds.has(id)) ? 'error' : 'warning',
+          code: id === null ? 'RANGE_MARKER_ID_MISSING' : 'RANGE_MARKER_ID_INVALID',
+          message: id === null
+            ? `<w:${localName}> missing required w:id`
+            : `<w:${localName}> has non-integer w:id`,
+          part: story.part,
+          element: `w:${localName}`,
+          id: id ?? undefined,
+          author,
+        });
+      }
+      if (!id) continue;
+      const list = into.get(id) ?? [];
+      list.push(el);
+      into.set(id, list);
+    }
+  };
+
   for (const pair of RANGE_PAIRS) {
     const starts = new Map<string, Element[]>();
     const ends = new Map<string, Element[]>();
-    for (const start of allW(story.doc, pair.start)) {
-      const id = getWAttr(start, 'id');
-      if (!id) continue;
-      const list = starts.get(id) ?? [];
-      list.push(start);
-      starts.set(id, list);
-    }
-    for (const end of allW(story.doc, pair.end)) {
-      const id = getWAttr(end, 'id');
-      if (!id) continue;
-      const list = ends.get(id) ?? [];
-      list.push(end);
-      ends.set(id, list);
-    }
+    collect(pair.start, starts);
+    collect(pair.end, ends);
 
     const ids = new Set([...starts.keys(), ...ends.keys()]);
     for (const id of ids) {

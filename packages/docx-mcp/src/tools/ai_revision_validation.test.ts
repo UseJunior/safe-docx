@@ -283,6 +283,51 @@ describe('AI revision validation guard', () => {
     await expect(fs.access(outPath)).resolves.toBeUndefined();
   });
 
+  test('introduced instances of a pre-existing structural error still fail (count-based baseline)', async () => {
+    const { splitIntroducedDiagnostics } = await import('./ai_revision_guard.js');
+    const diag = (msg: string) => ({
+      severity: 'error' as const,
+      code: 'TEXT_INSIDE_DELETION',
+      message: msg,
+      part: 'word/document.xml',
+      element: 'w:t',
+    });
+    const baseline = new Map([[
+      'TEXT_INSIDE_DELETION|word/document.xml|w:t|||same message',
+      1,
+    ]]);
+    const { introduced, demoted } = splitIntroducedDiagnostics(
+      [diag('same message'), diag('same message'), diag('same message')],
+      baseline,
+    );
+    expect(demoted).toHaveLength(1);
+    expect(introduced).toHaveLength(2);
+  });
+
+  test('apply_plan plan-level preflight rejects invalid markup despite skipped per-step preflights', async () => {
+    const { applyPlan } = await import('./apply_plan.js');
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        `<w:p><w:r><w:t>Alpha Beta</w:t></w:r>` +
+        `<w:ins w:id="12" w:author="${AI}"><w:r><w:t>Bad</w:t></w:r></w:ins></w:p>`,
+      ),
+    });
+
+    const result = await applyPlan(opened.mgr, {
+      file_path: opened.filePath,
+      steps: [{
+        step_id: 's1',
+        operation: 'replace_text',
+        target_paragraph_id: opened.firstParaId,
+        old_string: 'Beta',
+        new_string: 'Gamma',
+        instruction: 'replace Beta',
+      }],
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
   test('every tool that obtains an AI revision context preflights AI revision mutations', async () => {
     const toolsDir = path.dirname(new URL(import.meta.url).pathname);
     const entries = await fs.readdir(toolsDir);

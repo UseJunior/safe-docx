@@ -306,6 +306,7 @@ async function executeSteps(
         new_string: step.fields.new_string as string,
         instruction: step.fields.instruction as string,
         normalize_first: step.fields.normalize_first as boolean | undefined,
+        skip_ai_revision_preflight: true,
       }, ctx);
     } else {
       result = await insertParagraph(manager, {
@@ -315,6 +316,7 @@ async function executeSteps(
         instruction: step.fields.instruction as string,
         position: step.fields.position as string | undefined,
         style_source_id: step.fields.style_source_id as string | undefined,
+        skip_ai_revision_preflight: true,
       }, ctx);
     }
 

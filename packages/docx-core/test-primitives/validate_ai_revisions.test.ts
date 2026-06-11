@@ -211,6 +211,22 @@ describe('validateAiRevisions', () => {
     });
   });
 
+  test('w:date must be xsd:dateTime, not merely JS-parseable', async () => {
+    const result = await validateBody(
+      `<w:p><w:ins w:id="30" w:author="${AI}" w:date="04 Dec 1995 00:12:00 GMT"><w:r><w:t>X</w:t></w:r></w:ins>` +
+      `<w:ins w:id="31" w:author="${AI}" w:date="2026"><w:r><w:t>Y</w:t></w:r></w:ins></w:p>`,
+    );
+    expect(result.errors.filter((e) => e.code === 'REVISION_DATE_INVALID')).toHaveLength(2);
+  });
+
+  test('AI-touched range markers require integer w:id', async () => {
+    const result = await validateBody(
+      `<w:p><w:commentRangeStart w:id="abc"/><w:r><w:t>Span</w:t></w:r><w:commentRangeEnd w:id="abc"/></w:p>`,
+      { rangeIds: ['abc'] },
+    );
+    expect(result.errors.some((e) => e.code === 'RANGE_MARKER_ID_INVALID')).toBe(true);
+  });
+
   test('range-end milestones require only w:id, not author/date', async () => {
     const result = await validateBody(
       `<w:p>` +
