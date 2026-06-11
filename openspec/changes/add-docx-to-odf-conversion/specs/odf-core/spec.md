@@ -66,7 +66,7 @@ rectangular grid.
 
 #### Scenario: [CONV-12] A real contract document converts end-to-end
 - **WHEN** the bundled NVCA `.docx` fixture (and the open-agreements NDA fixtures) are converted
-- **THEN** each output passes `validateOdfArchiveSafety`, reopens via `OdfDocument`, and its visible text matches the source's plaintext serialization
+- **THEN** each output passes `validateOdfArchiveSafety`, reopens via `OdfDocument`, and its visible text matches the source document view's visible text
 
 #### Scenario: [CONV-13] Output structurally agrees with a LibreOffice-converted reference
 - **WHEN** LibreOffice is available and usable (a trivial preflight oracle job succeeds) and the same `.docx` is converted both natively and via the LibreOffice oracle
