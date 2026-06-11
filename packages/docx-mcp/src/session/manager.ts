@@ -47,6 +47,7 @@ export type SaveCacheEntry = {
   trackedFallbackDiagnostics?: ReconstructionFallbackDiagnostics;
   bookmarksRemoved: number;
   blocksRestored: number;
+  trackedBlocksRestored: number;
   exportedAtUtc: string;
   cachedAtIso: string;
 };

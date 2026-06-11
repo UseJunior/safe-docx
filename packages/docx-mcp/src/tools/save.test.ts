@@ -1,7 +1,10 @@
 import { describe, expect } from 'vitest';
+import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { save } from './save.js';
 import { openDocument } from './open_document.js';
+import { grep } from './grep.js';
+import { replaceText } from './replace_text.js';
 import {
   assertSuccess,
   assertFailure,
@@ -10,6 +13,7 @@ import {
   createTrackedTempDir,
 } from '../testing/session-test-utils.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
+import { DocxZip, parseXml } from '@usejunior/docx-core';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -27,6 +31,26 @@ const RELS_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 function xmlEscape(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+const serializer = new XMLSerializer();
+type SerializableXmlNode = Parameters<XMLSerializer['serializeToString']>[0];
+
+async function documentXmlFromDocx(pathToDocx: string): Promise<string> {
+  const zip = await DocxZip.load(await fs.readFile(pathToDocx) as Buffer);
+  return zip.readText('word/document.xml');
+}
+
+async function zipText(pathToDocx: string, partPath: string): Promise<string> {
+  const zip = await DocxZip.load(await fs.readFile(pathToDocx) as Buffer);
+  return zip.readText(partPath);
+}
+
+function paragraphXml(documentXml: string, index: number): string {
+  const doc = parseXml(documentXml);
+  const paragraph = doc.getElementsByTagName('w:p').item(index);
+  if (!paragraph) throw new Error(`Missing paragraph ${index}`);
+  return serializer.serializeToString(paragraph as unknown as SerializableXmlNode);
 }
 
 describe('save', () => {
@@ -76,6 +100,7 @@ describe('save', () => {
 
     const fileSize = (await fs.stat(outPath)).size;
     expect(fileSize).toBeGreaterThan(0);
+    expect((result as Record<string, unknown>).tracked_blocks_restored).toBe(0);
   });
 
   test('tracked save includes comparison with baseline', async () => {
@@ -96,6 +121,79 @@ describe('save', () => {
     assertSuccess(result, 'tracked save');
   });
 
+  test('tracked save restores untouched body blocks without stripping new revisions', async () => {
+    const mgr = createTestSessionManager();
+    const tmpDir = await createTrackedTempDir('save-tracked-minimal-');
+    const originalDocumentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
+      `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ` +
+      `xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+      `<w:body>` +
+      `<w:p w14:paraId="11111111"><w:r><w:t>Alpha target text</w:t></w:r></w:p>` +
+      `<w:p w14:paraId="22222222" w:rsidR="00AA00AA">` +
+      `<w:r w:rsidR="00AA00AA"><w:t>Untouched</w:t></w:r>` +
+      `<w:hyperlink r:id="rIdHyperlink"><w:r><w:t>link</w:t></w:r></w:hyperlink>` +
+      `<w:proofErr w:type="spellStart"/>` +
+      `<w:r w:rsidR="00BB00BB"><w:t xml:space="preserve"> paragraph</w:t></w:r>` +
+      `<w:proofErr w:type="spellEnd"/>` +
+      `</w:p>` +
+      `</w:body></w:document>`;
+    const buf = await makeDocxWithDocumentXml(originalDocumentXml, {
+      '[Content_Types].xml': CONTENT_TYPES_XML,
+      '_rels/.rels': RELS_XML,
+      'word/_rels/document.xml.rels':
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rIdHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" ` +
+        `Target="https://example.com/original" TargetMode="External"/>` +
+        `</Relationships>`,
+    });
+    const inputPath = path.join(tmpDir, 'minimal-redline-source.docx');
+    const trackedPath = path.join(tmpDir, 'minimal-redline-output.docx');
+    await fs.writeFile(inputPath, new Uint8Array(buf));
+
+    const opened = await openDocument(mgr, { file_path: inputPath });
+    assertSuccess(opened, 'open');
+    const grepRes = await grep(mgr, {
+      file_path: inputPath,
+      patterns: ['target'],
+      max_results: 1,
+    });
+    assertSuccess(grepRes, 'grep');
+    const match = ((grepRes as Record<string, unknown>).matches as Array<{ para_id: string }>)[0];
+    expect(match).toBeDefined();
+    const editRes = await replaceText(mgr, {
+      file_path: inputPath,
+      target_paragraph_id: match!.para_id,
+      old_string: 'target',
+      new_string: 'replacement',
+      instruction: 'Replace target with replacement',
+    });
+    assertSuccess(editRes, 'replace');
+
+    const result = await save(mgr, {
+      file_path: inputPath,
+      save_to_local_path: trackedPath,
+      save_format: 'tracked',
+      tracked_changes_author: 'Test Author',
+    });
+    assertSuccess(result, 'tracked save');
+
+    const trackedXml = await documentXmlFromDocx(trackedPath);
+    const trackedRels = await zipText(trackedPath, 'word/_rels/document.xml.rels');
+    expect((result as Record<string, unknown>).tracked_blocks_restored).toBeGreaterThan(0);
+    expect(paragraphXml(trackedXml, 1)).toBe(paragraphXml(originalDocumentXml, 1));
+    expect(trackedRels).toContain('Id="rIdHyperlink"');
+    expect(trackedRels).toContain('https://example.com/original');
+
+    const editedParagraph = paragraphXml(trackedXml, 0);
+    expect(editedParagraph).toContain('<w:ins');
+    expect(editedParagraph).toContain('<w:del');
+    expect(editedParagraph).toContain('w:author="Test Author"');
+    expect(editedParagraph).toContain('replacement');
+  });
+
   test('both-mode generates two files', async () => {
     const { mgr, tmpDir, inputPath } = await openTestDoc();
     const outPath = path.join(tmpDir, 'output.docx');
@@ -110,6 +208,8 @@ describe('save', () => {
     // Clean file should exist
     const exists = await fs.stat(outPath).then(() => true).catch(() => false);
     expect(exists).toBe(true);
+    expect((result as Record<string, unknown>).blocks_restored).toBeGreaterThan(0);
+    expect((result as Record<string, unknown>).tracked_blocks_restored).toBeGreaterThan(0);
   });
 
   test('reports stats (insertions/deletions/modifications)', async () => {
