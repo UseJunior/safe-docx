@@ -123,3 +123,24 @@ describe('hasHighlightTags', () => {
     });
   });
 });
+
+describe('attributed highlight form (full-mode TOON)', () => {
+  test('hasHighlightTags and stripHighlightTags accept <highlight color="...">', async ({ given, when, then, and }: AllureBddContext) => {
+    let input: string;
+    let stripped: string;
+    await given('full-mode text with an attributed highlight open tag', async () => {
+      input = `some <${HIGHLIGHT_TAG} color="green">highlighted</${HIGHLIGHT_TAG}> text`;
+    });
+    await when('the highlight helpers run', async () => {
+      stripped = stripHighlightTags(input);
+    });
+    await then('the attributed form is detected and stripped', async () => {
+      expect(hasHighlightTags(input!)).toBe(true);
+      expect(stripped!).toBe('some highlighted text');
+    });
+    await and('literal <highlighting...> words like "highlighting" in prose stay intact', async () => {
+      // \b in the stripper must not let <highlight...> eat <highlighting> differently than before.
+      expect(stripHighlightTags('keep <highlighting>x</highlighting> y')).toBe('keep x y');
+    });
+  });
+});

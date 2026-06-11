@@ -105,7 +105,7 @@ export class ListDomBuilder {
     private readonly parent: Element,
   ) {}
 
-  item(level: number, styleName: string): Element {
+  item(level: number, styleName: string, paragraphStyleName = 'Standard'): Element {
     const lvl = Math.max(0, level);
     while (this.stack.length > 0 && this.stack[this.stack.length - 1]!.level > lvl) {
       this.stack.pop();
@@ -133,7 +133,7 @@ export class ListDomBuilder {
     const item = this.doc.createElementNS(ODF_NS.TEXT, 'text:list-item');
     top!.list.appendChild(item);
     const p = this.doc.createElementNS(ODF_NS.TEXT, 'text:p');
-    p.setAttributeNS(ODF_NS.TEXT, 'text:style-name', 'Standard');
+    p.setAttributeNS(ODF_NS.TEXT, 'text:style-name', paragraphStyleName);
     item.appendChild(p);
     return p;
   }

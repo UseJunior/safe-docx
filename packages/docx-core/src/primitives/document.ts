@@ -20,6 +20,7 @@ import { serializeToMarkdown, type SerializeMarkdownOptions } from './serialize_
 import { serializeToHtml, type SerializeHtmlOptions } from './serialize_html.js';
 import { serializeToPlainText, type SerializePlainTextOptions } from './serialize_plaintext.js';
 import type { FormattingMode } from './formatting_tags.js';
+import { parseStylesXml, type StylesModel } from './styles.js';
 import { parseNumberingXml, type NumberingModel } from './numbering.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
@@ -615,6 +616,15 @@ export class DocxDocument {
    */
   getNumberingModel(): NumberingModel | null {
     return this.numberingXml ? parseNumberingXml(this.numberingXml) : null;
+  }
+
+  /**
+   * Parsed named-style model of the loaded document (empty when the package has no
+   * `word/styles.xml`). Semantic converters (DOCX → ODT) resolve heading/body style chains
+   * through it to seed their own style templates from the source's definitions.
+   */
+  getStylesModel(): StylesModel {
+    return parseStylesXml(this.stylesXml);
   }
 
   buildDocumentView(opts?: { includeSemanticTags?: boolean; showFormatting?: boolean; formattingMode?: FormattingMode }): { nodes: DocumentViewNode[]; styles: DocumentStyles } {

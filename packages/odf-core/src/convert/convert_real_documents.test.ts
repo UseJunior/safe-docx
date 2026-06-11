@@ -33,10 +33,21 @@ describe('convertDocxToOdt — real contract documents', () => {
     async () => {
       for (const { rel, abs } of FIXTURES) {
         const docx = readFileSync(abs);
-        const { odt } = await convertDocxToOdt(docx);
+        const { odt, lossiness } = await convertDocxToOdt(docx);
 
         const safety = await validateOdfArchiveSafety(odt);
         expect(safety.ok, `${rel}: archive safety`).toBe(true);
+
+        // Phase 3 acceptance (#406): the in-scope style classes report zero loss on the
+        // bundled real fixtures. Only merged-cell grid gaps (out of scope) may remain.
+        const inScope = [
+          'font-formatting-dropped',
+          'unsurfaced-paragraphs-dropped',
+          'unknown-highlight-color',
+          'unmappable-font-color',
+        ];
+        const offending = lossiness.filter((e) => inScope.includes(e.construct));
+        expect(offending, `${rel}: in-scope lossiness`).toEqual([]);
 
         // Expected text comes from the same semantic view the converter consumes.
         const source = await DocxDocument.load(docx);

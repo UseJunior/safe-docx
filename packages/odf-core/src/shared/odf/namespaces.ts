@@ -19,6 +19,8 @@ export const ODF_NS = {
   FO: 'urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0',
   // XLink — carries `xlink:href` on `text:a` hyperlinks.
   XLINK: 'http://www.w3.org/1999/xlink',
+  // SVG-compatible properties (`svg:font-family` on `style:font-face` declarations).
+  SVG: 'urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0',
   // ODF meta elements (`meta:generator`) in `meta.xml`.
   META: 'urn:oasis:names:tc:opendocument:xmlns:meta:1.0',
 } as const;

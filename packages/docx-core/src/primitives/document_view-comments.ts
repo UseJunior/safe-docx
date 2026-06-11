@@ -15,7 +15,7 @@ type DocumentViewCommentWithRuntime = DocumentViewComment & {
 };
 
 // Matches the exact set of TOON inline formatting tags that emitFormattingTags() can emit:
-//   <b>, </b>, <i>, </i>, <u>, </u>, <highlight>, </highlight>,
+//   <b>, </b>, <i>, </i>, <u>, </u>, <highlight>, <highlight color="...">, </highlight>,
 //   <a href="...">, </a>, <font ATTR=...>, </font>
 // Anything else in the form `<...>` is literal document text (e.g., `<Borrower>` placeholders
 // in legal templates, or stylesheet samples like `<font>`) and must be counted as visible
@@ -24,8 +24,9 @@ type DocumentViewCommentWithRuntime = DocumentViewComment & {
 // Note the opening `a`/`font` alternative requires `\s[^>]*` (mandatory attributes), because
 // the formatter only emits `<a href="...">` and `<font ATTR=...>` — never bare `<a>` or
 // `<font>`. Allowing the bare forms would cause literal `<a>` / `<font>` in document text to
-// be silently skipped, shifting marker positions.
-export const TOON_INLINE_TAG_RE = /^(?:<\/?(?:b|i|u|highlight)>|<\/(?:a|font)>|<(?:a|font)\s[^>]*>)/;
+// be silently skipped, shifting marker positions. `<highlight>` appears both bare (compact
+// mode) and attributed (full mode carries the source w:highlight value).
+export const TOON_INLINE_TAG_RE = /^(?:<\/?(?:b|i|u|highlight)>|<\/(?:a|font)>|<(?:a|font|highlight)\s[^>]*>)/;
 
 /**
  * Split a TOON inline-tag string (`DocumentViewNode.tagged_text` produced with
