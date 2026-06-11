@@ -466,6 +466,7 @@ describe('SessionManager.markEdited', () => {
       trackedStats: null,
       bookmarksRemoved: 0,
       blocksRestored: 0,
+      trackedBlocksRestored: 0,
       exportedAtUtc: new Date().toISOString(),
       cachedAtIso: new Date().toISOString(),
     });
@@ -567,6 +568,7 @@ describe('SessionManager save cache', () => {
       trackedStats: null,
       bookmarksRemoved: 0,
       blocksRestored: 0,
+      trackedBlocksRestored: 0,
       exportedAtUtc: new Date().toISOString(),
       cachedAtIso: new Date().toISOString(),
     };

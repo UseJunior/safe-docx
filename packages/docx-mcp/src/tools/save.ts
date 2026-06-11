@@ -3,7 +3,15 @@ import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
-import { DocxZip, compareDocuments, parseXml, type CompareOptions, type CompareResult } from '@usejunior/docx-core';
+import {
+  DocxZip,
+  compareDocuments,
+  parseXml,
+  restoreUntouchedBlocks,
+  serializeXml,
+  type CompareOptions,
+  type CompareResult,
+} from '@usejunior/docx-core';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
@@ -100,6 +108,32 @@ async function collectAiRevisionSummary(
   };
 }
 
+async function restoreTrackedUntouchedBlocks(
+  trackedBuffer: Buffer,
+  originalBuffer: Buffer,
+): Promise<{ buffer: Buffer; blocksRestored: number }> {
+  try {
+    const [trackedZip, originalZip] = await Promise.all([
+      DocxZip.load(trackedBuffer),
+      DocxZip.load(originalBuffer),
+    ]);
+    const [trackedXml, originalXml] = await Promise.all([
+      trackedZip.readText('word/document.xml'),
+      originalZip.readText('word/document.xml'),
+    ]);
+    const trackedDoc = parseXml(trackedXml);
+    const blocksRestored = restoreUntouchedBlocks(trackedDoc, originalXml);
+    if (blocksRestored === 0) {
+      return { buffer: trackedBuffer, blocksRestored };
+    }
+
+    trackedZip.writeText('word/document.xml', serializeXml(trackedDoc));
+    return { buffer: await trackedZip.toBuffer(), blocksRestored };
+  } catch {
+    return { buffer: trackedBuffer, blocksRestored: 0 };
+  }
+}
+
 export async function save(
   manager: SessionManager,
   params: {
@@ -185,6 +219,7 @@ export async function save(
     let trackedFallbackDiagnostics: CompareResult['fallbackDiagnostics'];
     let bookmarksRemoved: number;
     let blocksRestored: number;
+    let trackedBlocksRestored: number;
     let exportTimestamp: string;
 
     // Run implicit validation before producing save artifacts.
@@ -199,6 +234,7 @@ export async function save(
       trackedFallbackDiagnostics = cached.trackedFallbackDiagnostics;
       bookmarksRemoved = cached.bookmarksRemoved;
       blocksRestored = cached.blocksRestored;
+      trackedBlocksRestored = cached.trackedBlocksRestored;
       exportTimestamp = cached.exportedAtUtc;
     } else {
       // The clean artifact is the minimal one: untouched body blocks are
@@ -214,6 +250,7 @@ export async function save(
       trackedFallbackReason = undefined;
       trackedFallbackDiagnostics = undefined;
       exportTimestamp = formatUtcTimestamp(new Date());
+      trackedBlocksRestored = 0;
 
       if (format === 'tracked' || format === 'both') {
         // Lazily generate comparison baselines if not yet available.
@@ -233,7 +270,9 @@ export async function save(
             reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
           }),
         );
-        trackedBuffer = trackedRes.document;
+        const restoredTracked = await restoreTrackedUntouchedBlocks(trackedRes.document, session.originalBuffer);
+        trackedBuffer = restoredTracked.buffer;
+        trackedBlocksRestored = restoredTracked.blocksRestored;
         trackedStats = trackedRes.stats;
         trackedReconstructionMode = trackedRes.reconstructionModeUsed;
         trackedFallbackReason = trackedRes.fallbackReason;
@@ -264,6 +303,7 @@ export async function save(
         trackedFallbackDiagnostics,
         bookmarksRemoved: clean ? bookmarksRemoved : 0,
         blocksRestored,
+        trackedBlocksRestored,
         exportedAtUtc: exportTimestamp,
         cachedAtIso: new Date().toISOString(),
       });
@@ -345,6 +385,7 @@ export async function save(
       exported_at_utc: exportTimestamp,
       bookmarks_removed: clean ? bookmarksRemoved : 0,
       blocks_restored: blocksRestored,
+      tracked_blocks_restored: trackedBlocksRestored,
       returned_variants: returnedVariants,
       available_variants: ['clean', 'redline'],
       cache_hit: cacheHit,
