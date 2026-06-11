@@ -420,6 +420,307 @@ The NUMPAGES instruction follows the same emission discipline as PAGE
 (` NUMPAGES `, preserved spacing, cached result required), giving
 "Page X of Y" footers structurally correct field pairs.
 
+## [ECMA-PART1-17-4-37] w:tbl table emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.37"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tbl
+verifiedBy:
+```
+
+Tables compile as `w:tbl` with table properties, the column grid, and rows
+in schema order. The emitter lives in
+`packages/docx-core/src/generation/emit/table.ts`; cells dispatch back into
+the shared block emitters so nested tables reuse the same path.
+
+## [ECMA-PART1-17-4-59] w:tblPr table-properties emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.59"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPr
+verifiedBy:
+```
+
+Table-level properties are collected into a map and appended through the
+`TBLPR_ORDER` table, which the ordering-schema test cross-checks against
+`CT_TblPrBase` in the vendored transitional schema.
+
+## [ECMA-PART1-17-4-63] w:tblW preferred-width consistency
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.63"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblW
+verifiedBy:
+```
+
+`w:tblW` is always emitted in `dxa` units as the sum of the declared grid
+column widths, so the preferred table width and the grid never disagree —
+readers that honor one or the other render the same layout.
+
+## [ECMA-PART1-17-4-52] w:tblLayout explicit layout algorithm
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.52"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblLayout
+verifiedBy:
+```
+
+The layout algorithm is always written explicitly (`fixed` by default)
+because autofit is the reader-side default when the element is omitted and
+silently reflows fixed designs.
+
+## [ECMA-PART1-17-4-38] w:tblBorders table border collection
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.38"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblBorders
+verifiedBy:
+```
+
+Declared table borders emit as a `w:tblBorders` collection whose edges
+appear in the `CT_TblBorders` sequence (top, left, bottom, right, insideH,
+insideV) with explicit size/space/color on every edge.
+
+## [ECMA-PART1-17-4-48] w:tblGrid table grid emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.48"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGrid
+verifiedBy:
+```
+
+Every generated table carries a `w:tblGrid` with one `w:gridCol` per
+declared column width; spec validation rejects any row whose effective
+span arithmetic diverges from this grid.
+
+## [ECMA-PART1-17-4-16] w:gridCol grid-column definition
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.16"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:gridCol
+verifiedBy:
+```
+
+Grid columns carry their width in twentieths of a point, matching the
+spec's `columnWidthsTwips` verbatim — widths are never redistributed or
+normalized by the compiler.
+
+## [ECMA-PART1-17-4-78] w:tr table-row emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.78"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tr
+verifiedBy:
+```
+
+Rows emit as `w:tr` with optional row properties followed by cells. Cell
+grid offsets are tracked during emission so unspecified cell widths can be
+derived from the columns each cell actually spans.
+
+## [ECMA-PART1-17-4-81] w:trPr row-properties ordering
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.81"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPr
+verifiedBy:
+```
+
+Row properties are appended through the `TRPR_ORDER` table
+(`trHeight` before `tblHeader`), cross-checked against `CT_TrPrBase` by
+the ordering-schema test.
+
+## [ECMA-PART1-17-4-80] w:trHeight row height
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.80"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trHeight
+verifiedBy:
+```
+
+A declared row height emits `w:trHeight` with an explicit `w:hRule`
+(`atLeast` unless the spec says `exact`), avoiding the reader-divergent
+default when the rule attribute is omitted.
+
+## [ECMA-PART1-17-4-49] w:tblHeader repeating header row
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.49"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblHeader
+verifiedBy:
+```
+
+Rows marked as header rows emit `w:tblHeader` so the row repeats at the
+top of every page the table spans.
+
+## [ECMA-PART1-17-4-65] w:tc table-cell emission and trailing paragraph
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.65"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tc
+verifiedBy:
+```
+
+Cells emit their properties then their block content, and the emitter
+guarantees by construction that every cell ends with a `w:p` — an empty
+cell or one whose last block is a nested table receives a closing empty
+paragraph. The structural validator independently re-checks this invariant
+(and that the document body never ends with a table) over the parsed
+output.
+
+## [ECMA-PART1-17-4-69] w:tcPr cell-properties ordering
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.69"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPr
+verifiedBy:
+```
+
+Cell properties are appended through the `TCPR_ORDER` table
+(tcW, gridSpan, vMerge, tcBorders, shd, tcMar, vAlign), cross-checked
+against `CT_TcPrBase` by the ordering-schema test.
+
+## [ECMA-PART1-17-4-71] w:tcW preferred cell width
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.71"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcW
+verifiedBy:
+```
+
+Every cell carries an explicit `w:tcW` in `dxa` units: the declared
+width when given, otherwise the sum of the grid columns the cell spans —
+cell widths are deterministic, never left to reader inference.
+
+## [ECMA-PART1-17-4-17] w:gridSpan horizontal cell span
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.17"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:gridSpan
+verifiedBy:
+```
+
+Cells spanning multiple grid columns emit `w:gridSpan`; validation
+rejects rows whose summed spans diverge from the declared grid with a
+typed `grid_mismatch` error before any XML is produced.
+
+## [ECMA-PART1-17-4-84] w:vMerge vertical cell merge
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.84"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:vMerge
+verifiedBy:
+```
+
+Merge starts emit `w:vMerge w:val="restart"`; continuations emit the
+bare element form Word itself writes. Validation requires each
+continuation to sit at exactly the grid position and span of a merge cell
+in the previous row.
+
+## [ECMA-PART1-17-4-32] w:shd table-cell shading
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.32"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:shd
+verifiedBy:
+```
+
+Cell shading emits as `w:shd w:val="clear"` with an explicit fill color
+from the spec's six-digit hex value; the pattern value is never omitted.
+
+## [ECMA-PART1-17-4-83] w:vAlign cell vertical alignment
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.83"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:vAlign
+verifiedBy:
+```
+
+Declared cell vertical alignment emits `w:vAlign` with the literal
+top/center/bottom value at its `CT_TcPrBase` position.
+
+## [ECMA-PART1-17-4-68] w:tcMar single-cell margins
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.68"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcMar
+verifiedBy:
+```
+
+Per-cell margins emit a `w:tcMar` collection in schema edge order with
+explicit `dxa` widths; only the edges the spec declares are written.
+
+## [ECMA-PART1-17-4-66] w:tcBorders cell border collection
+
+```yaml
+edition: 5
+part: 1
+section: "17.4.66"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcBorders
+verifiedBy:
+```
+
+Declared cell borders emit as a `w:tcBorders` collection in the
+`CT_TcBorders` sequence with explicit size/space/color per edge, sitting
+between `w:vMerge` and `w:shd` in the cell-property order.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the

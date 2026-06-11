@@ -11,13 +11,25 @@
  *
  * Shipped so far: formatted text/tab/break runs, five-part PAGE/NUMPAGES
  * fields, paragraph formatting, named styles + styles.xml, multi-section
- * documents with per-section page setup, page numbering, break types, and
- * default/first/even headers and footers.
- * Still rejected: numbering, tables, drafting notes.
+ * documents with per-section page setup, page numbering, break types,
+ * default/first/even headers and footers, and tables (grid, spans, vertical
+ * merges, cell decoration, nesting).
+ * Still rejected: numbering, drafting notes.
  */
 
 import { GenerationSpecError } from './errors.js';
-import type { DocumentSpec, InlineSpec, ParagraphSpec, RunProps, SectionSpec, StyleSpec } from './types.js';
+import type {
+  BlockSpec,
+  BorderSpec,
+  DocumentSpec,
+  InlineSpec,
+  ParagraphSpec,
+  RunProps,
+  SectionSpec,
+  StyleSpec,
+  TableBorders,
+  TableSpec,
+} from './types.js';
 
 const COLOR_HEX_RE = /^[0-9A-Fa-f]{6}$/;
 
@@ -92,9 +104,7 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
         throw new GenerationSpecError('invalid_value', `${slotPath}/blocks`, 'Header/footer blocks must be a non-empty array');
       }
       content.blocks.forEach((block, blockIndex) => {
-        const blockPath = `${slotPath}/blocks/${blockIndex}`;
-        if (block.kind === 'table') unsupported(blockPath, 'tables');
-        validateParagraph(block, blockPath, styleIds);
+        validateBlock(block, `${slotPath}/blocks/${blockIndex}`, styleIds);
       });
     }
   }
@@ -116,10 +126,113 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
     throw new GenerationSpecError('invalid_value', `${path}/blocks`, 'Section blocks must be an array');
   }
   section.blocks.forEach((block, blockIndex) => {
-    const blockPath = `${path}/blocks/${blockIndex}`;
-    if (block.kind === 'table') unsupported(blockPath, 'tables');
-    validateParagraph(block, blockPath, styleIds);
+    validateBlock(block, `${path}/blocks/${blockIndex}`, styleIds);
   });
+}
+
+function validateBlock(block: BlockSpec, path: string, styleIds: Set<string>): void {
+  if (block.kind === 'table') validateTable(block, path, styleIds);
+  else validateParagraph(block, path, styleIds);
+}
+
+/**
+ * Table shape and grid arithmetic. Every row's effective column count
+ * (the sum of its cells' gridSpans) must equal the declared grid, and a
+ * vertical-merge continuation must sit at exactly the grid position and
+ * span of a merge cell in the previous row — otherwise readers either show
+ * a recovery dialog or silently reflow the table.
+ */
+function validateTable(table: TableSpec, path: string, styleIds: Set<string>): void {
+  if (!Array.isArray(table.columnWidthsTwips) || table.columnWidthsTwips.length === 0) {
+    throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips`, 'Tables require at least one column width');
+  }
+  table.columnWidthsTwips.forEach((width, i) => {
+    if (!(width > 0) || !Number.isFinite(width)) {
+      throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips/${i}`, 'Column widths must be positive finite twips');
+    }
+  });
+  if (table.borders) validateBorders(table.borders, `${path}/borders`);
+  if (!Array.isArray(table.rows) || table.rows.length === 0) {
+    throw new GenerationSpecError('invalid_value', `${path}/rows`, 'Tables require at least one row');
+  }
+
+  const columnCount = table.columnWidthsTwips.length;
+  // Grid start → span of every merge-participating cell in the previous row.
+  let previousMerges = new Map<number, number>();
+  table.rows.forEach((row, rowIndex) => {
+    const rowPath = `${path}/rows/${rowIndex}`;
+    if (!Array.isArray(row.cells) || row.cells.length === 0) {
+      throw new GenerationSpecError('invalid_value', `${rowPath}/cells`, 'Rows require at least one cell');
+    }
+    if (row.heightTwips !== undefined && (!(row.heightTwips > 0) || !Number.isFinite(row.heightTwips))) {
+      throw new GenerationSpecError('invalid_value', `${rowPath}/heightTwips`, 'Row height must be positive finite twips');
+    }
+
+    const currentMerges = new Map<number, number>();
+    let gridOffset = 0;
+    row.cells.forEach((cell, cellIndex) => {
+      const cellPath = `${rowPath}/cells/${cellIndex}`;
+      if (cell.gridSpan !== undefined && (!Number.isInteger(cell.gridSpan) || cell.gridSpan < 1)) {
+        throw new GenerationSpecError('invalid_value', `${cellPath}/gridSpan`, 'gridSpan must be a positive integer');
+      }
+      const span = cell.gridSpan ?? 1;
+      if (cell.vMerge === 'continue') {
+        if (rowIndex === 0) {
+          throw new GenerationSpecError('grid_mismatch', `${cellPath}/vMerge`, 'A vertical merge cannot continue in the first row');
+        }
+        if (previousMerges.get(gridOffset) !== span) {
+          throw new GenerationSpecError(
+            'grid_mismatch',
+            `${cellPath}/vMerge`,
+            `vMerge continuation at grid column ${gridOffset} (span ${span}) has no matching merge cell in the previous row`,
+          );
+        }
+      }
+      if (cell.vMerge !== undefined) currentMerges.set(gridOffset, span);
+      if (cell.widthTwips !== undefined && (!(cell.widthTwips > 0) || !Number.isFinite(cell.widthTwips))) {
+        throw new GenerationSpecError('invalid_value', `${cellPath}/widthTwips`, 'Cell width must be positive finite twips');
+      }
+      if (cell.borders) validateBorders(cell.borders, `${cellPath}/borders`);
+      if (cell.shadingHex !== undefined && !COLOR_HEX_RE.test(cell.shadingHex)) {
+        throw new GenerationSpecError('invalid_value', `${cellPath}/shadingHex`, `shadingHex must be six hex digits without '#', got '${cell.shadingHex}'`);
+      }
+      if (cell.marginsTwips) {
+        for (const [key, value] of Object.entries(cell.marginsTwips)) {
+          if (value !== undefined && (typeof value !== 'number' || value < 0 || !Number.isFinite(value))) {
+            throw new GenerationSpecError('invalid_value', `${cellPath}/marginsTwips/${key}`, 'Cell margins must be non-negative finite twips');
+          }
+        }
+      }
+      if (!Array.isArray(cell.blocks)) {
+        throw new GenerationSpecError('invalid_value', `${cellPath}/blocks`, 'Cell blocks must be an array (empty allowed; an empty cell compiles to an empty paragraph)');
+      }
+      cell.blocks.forEach((block, blockIndex) => {
+        validateBlock(block, `${cellPath}/blocks/${blockIndex}`, styleIds);
+      });
+      gridOffset += span;
+    });
+
+    if (gridOffset !== columnCount) {
+      throw new GenerationSpecError(
+        'grid_mismatch',
+        rowPath,
+        `Row spans ${gridOffset} grid column(s) but the table declares ${columnCount}`,
+      );
+    }
+    previousMerges = currentMerges;
+  });
+}
+
+function validateBorders(borders: TableBorders, path: string): void {
+  for (const [edge, spec] of Object.entries(borders) as Array<[string, BorderSpec | undefined]>) {
+    if (!spec) continue;
+    if (spec.colorHex !== undefined && !COLOR_HEX_RE.test(spec.colorHex)) {
+      throw new GenerationSpecError('invalid_value', `${path}/${edge}/colorHex`, `colorHex must be six hex digits without '#', got '${spec.colorHex}'`);
+    }
+    if (spec.sizeEighthPt !== undefined && (!(spec.sizeEighthPt > 0) || !Number.isFinite(spec.sizeEighthPt))) {
+      throw new GenerationSpecError('invalid_value', `${path}/${edge}/sizeEighthPt`, 'Border size must be positive finite eighth-points');
+    }
+  }
 }
 
 function validateParagraph(paragraph: ParagraphSpec, path: string, styleIds: Set<string>): void {

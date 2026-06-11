@@ -24,7 +24,8 @@ export type StructuralIssue = {
     | 'relationship_target'
     | 'rid_resolution'
     | 'sectpr'
-    | 'field_pairing';
+    | 'field_pairing'
+    | 'table';
   part: string;
   message: string;
 };
@@ -50,6 +51,7 @@ export async function checkGeneratedPackage(buffer: Buffer): Promise<StructuralC
     ...checkRidResolution(contents),
     ...checkSectPr(contents),
     ...checkFieldPairing(contents),
+    ...checkTables(contents),
   ];
   return { ok: issues.length === 0, issues };
 }
@@ -275,6 +277,50 @@ function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
     if (doc.documentElement) visit(doc.documentElement);
     if (state !== 'idle') {
       issues.push({ check: 'field_pairing', part: name, message: 'Unclosed field at end of story part' });
+    }
+  }
+  return issues;
+}
+
+/**
+ * Table invariants readers actually enforce: every cell ends with a w:p,
+ * and the document body never ends with a table (the element preceding the
+ * body-level sectPr, or the last body child, must not be w:tbl).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.65
+ */
+function checkTables(contents: Map<string, string>): StructuralIssue[] {
+  const issues: StructuralIssue[] = [];
+  for (const [name, text] of contents) {
+    if (!isStoryPart(name)) continue;
+    const doc = parseXml(text);
+
+    for (const tc of Array.from(doc.getElementsByTagName('w:tc'))) {
+      let last: Element | null = null;
+      for (let child = tc.firstChild; child; child = child.nextSibling) {
+        if (child.nodeType === NODE_TYPE.ELEMENT) last = child as Element;
+      }
+      if (!last || last.tagName !== 'w:p') {
+        issues.push({
+          check: 'table',
+          part: name,
+          message: `Table cell ends with <${last?.tagName ?? 'nothing'}> instead of a w:p`,
+        });
+      }
+    }
+
+    if (name !== 'word/document.xml') continue;
+    const body = doc.getElementsByTagName('w:body').item(0);
+    if (!body) continue;
+    let lastContent: Element | null = null;
+    for (let child = body.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType !== NODE_TYPE.ELEMENT) continue;
+      const el = child as Element;
+      if (el.tagName === 'w:sectPr') continue;
+      lastContent = el;
+    }
+    if (lastContent && lastContent.tagName === 'w:tbl') {
+      issues.push({ check: 'table', part: name, message: 'Document body ends with a w:tbl' });
     }
   }
   return issues;

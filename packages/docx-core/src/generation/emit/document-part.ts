@@ -13,8 +13,8 @@ import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml } from '../../primitives/xml.js';
 import { GenerationInternalError } from '../errors.js';
 import type { DocumentSpec } from '../types.js';
-import { buildParagraph } from './paragraph.js';
 import { buildSectPr, type SectionHeaderFooterRefs } from './section.js';
+import { buildBlock } from './table.js';
 
 export const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
@@ -39,17 +39,20 @@ export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterR
 
   spec.sections.forEach((section, index) => {
     for (const block of section.blocks) {
-      if (block.kind !== 'paragraph') {
-        throw new GenerationInternalError(
-          `Block kind '${block.kind}' reached the document emitter without a shipped emitter`,
-        );
-      }
-      body.appendChild(buildParagraph(doc, block));
+      body.appendChild(buildBlock(doc, block));
     }
 
     const sectPr = buildSectPr(doc, section, refs?.[index]);
     const isFinal = index === spec.sections.length - 1;
     if (isFinal) {
+      // The body must not end with a table (readers treat it as truncated);
+      // a final trailing table gets a closing empty paragraph before the
+      // body-level sectPr binds. Non-final sections already end with their
+      // dedicated break paragraph.
+      const lastBlock = section.blocks[section.blocks.length - 1];
+      if (lastBlock && lastBlock.kind === 'table') {
+        body.appendChild(createWmlElement(doc, W.p));
+      }
       body.appendChild(sectPr);
     } else {
       const breakParagraph = createWmlElement(doc, W.p);

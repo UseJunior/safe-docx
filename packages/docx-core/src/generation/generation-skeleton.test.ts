@@ -84,13 +84,15 @@ describe('Traceability: from-scratch generation skeleton', () => {
   test.openspec('[SDX-GEN-003] unimplemented spec features are rejected loudly')(
     'Scenario: unimplemented spec features are rejected loudly',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
-      let tableSpec!: DocumentSpec;
+      let noteSpec!: DocumentSpec;
       let listSpec!: DocumentSpec;
-      await given('specs using declared features whose emitters have not shipped (table block, numbered list)', async () => {
-        tableSpec = {
+      await given('specs using declared features whose emitters have not shipped (drafting note, numbered list)', async () => {
+        noteSpec = {
           sections: [
             {
-              blocks: [{ kind: 'table', columnWidthsTwips: [4680, 4680], rows: [] }],
+              blocks: [
+                { kind: 'paragraph', note: { text: 'flag this clause' }, runs: [{ kind: 'text', text: 'clause' }] },
+              ],
             },
           ],
         };
@@ -105,10 +107,10 @@ describe('Traceability: from-scratch generation skeleton', () => {
         };
       });
 
-      let tableError: unknown;
+      let noteError: unknown;
       let listError: unknown;
       await when('generateDocx compiles each spec', async () => {
-        tableError = await generateDocx(tableSpec).then(
+        noteError = await generateDocx(noteSpec).then(
           () => null,
           (err: unknown) => err,
         );
@@ -119,13 +121,13 @@ describe('Traceability: from-scratch generation skeleton', () => {
       });
 
       await then('each compilation fails with a typed error naming the feature and its spec path', async () => {
-        expect(tableError).toBeInstanceOf(GenerationSpecError);
-        expect((tableError as GenerationSpecError).code).toBe('unsupported_feature');
-        expect((tableError as GenerationSpecError).path).toBe('/sections/0/blocks/0');
+        expect(noteError).toBeInstanceOf(GenerationSpecError);
+        expect((noteError as GenerationSpecError).code).toBe('unsupported_feature');
+        expect((noteError as GenerationSpecError).path).toBe('/sections/0/blocks/0/note');
         expect(listError).toBeInstanceOf(GenerationSpecError);
         expect((listError as GenerationSpecError).path).toBe('/sections/0/blocks/0/list');
         await attachPrettyJson('rejections', {
-          table: { code: (tableError as GenerationSpecError).code, path: (tableError as GenerationSpecError).path },
+          note: { code: (noteError as GenerationSpecError).code, path: (noteError as GenerationSpecError).path },
           list: { code: (listError as GenerationSpecError).code, path: (listError as GenerationSpecError).path },
         });
       });

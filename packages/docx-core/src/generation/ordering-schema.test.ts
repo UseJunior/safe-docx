@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { PPR_ORDER, RPR_ORDER, SECTPR_ORDER, TBLPR_ORDER, TCPR_ORDER } from './ordering.js';
+import { PPR_ORDER, RPR_ORDER, SECTPR_ORDER, TBLPR_ORDER, TCPR_ORDER, TRPR_ORDER } from './ordering.js';
 
 const TEST_FEATURE = 'add-docx-generation';
 const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
@@ -70,6 +70,7 @@ describe('Traceability: property-order tables vs vendored schema', () => {
           // EG_SectPrContents group that holds the property sequence.
           sectPr: ['headerReference', 'footerReference', ...schemaChildOrder(xsd, 'group', 'EG_SectPrContents')],
           tblPr: schemaChildOrder(xsd, 'complexType', 'CT_TblPrBase'),
+          trPr: schemaChildOrder(xsd, 'complexType', 'CT_TrPrBase'),
           tcPr: schemaChildOrder(xsd, 'complexType', 'CT_TcPrBase'),
         };
         await attachPrettyJson('schema-declared-orders', orders);
@@ -80,6 +81,7 @@ describe('Traceability: property-order tables vs vendored schema', () => {
         expectSubsequence(RPR_ORDER, orders.rPr!, 'RPR_ORDER');
         expectSubsequence(SECTPR_ORDER, orders.sectPr!, 'SECTPR_ORDER');
         expectSubsequence(TBLPR_ORDER, orders.tblPr!, 'TBLPR_ORDER');
+        expectSubsequence(TRPR_ORDER, orders.trPr!, 'TRPR_ORDER');
         expectSubsequence(TCPR_ORDER, orders.tcPr!, 'TCPR_ORDER');
       });
     },
