@@ -721,6 +721,215 @@ Declared cell borders emit as a `w:tcBorders` collection in the
 `CT_TcBorders` sequence with explicit size/space/color per edge, sitting
 between `w:vMerge` and `w:shd` in the cell-property order.
 
+## [ECMA-PART1-17-9-16] w:numbering numbering-definitions part emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.16"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numbering
+verifiedBy:
+```
+
+Declared numbering definitions compile to a word/numbering.xml part whose
+root holds every abstract definition before every instance, per the
+CT_Numbering sequence. The emitter lives in
+`packages/docx-core/src/generation/emit/numbering-part.ts`.
+
+## [ECMA-PART1-17-9-1] w:abstractNum abstract numbering definition
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNum
+verifiedBy:
+```
+
+Each NumberingSpec becomes one abstract definition with sequential
+`abstractNumId` values assigned in declaration order — ids are
+deterministic compile output, never random.
+
+## [ECMA-PART1-17-9-2] w:abstractNumId abstract definition reference
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNumId
+verifiedBy:
+```
+
+Every emitted instance references its abstract definition through
+`w:abstractNumId`; the pairing is 1:1 by construction so the reference can
+never dangle.
+
+## [ECMA-PART1-17-9-15] w:num numbering definition instance
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.15"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num
+verifiedBy:
+```
+
+Instances carry sequential numeric `w:numId` values (starting at 1) in
+declaration order; the spec-level string handle → numeric id map is what
+paragraph references bind through.
+
+## [ECMA-PART1-17-9-18] w:numId numbering instance reference
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.18"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId
+verifiedBy:
+```
+
+List paragraphs reference their instance via `w:numId` inside `w:numPr`;
+spec validation rejects handles with no declared definition
+(`dangling_numbering_reference`) before any XML is produced.
+
+## [ECMA-PART1-17-9-3] w:ilvl numbering level reference
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.3"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl
+verifiedBy:
+```
+
+The paragraph's level reference is emitted before `w:numId` per the
+CT_NumPr sequence, and validation requires the referenced level to exist
+in the bound definition.
+
+## [ECMA-PART1-17-9-6] w:lvl numbering level definition
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.6"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl
+verifiedBy:
+```
+
+Level definitions follow the CT_Lvl child sequence (start, numFmt, suff,
+lvlText, lvlJc, pPr, rPr); level indents emit through `w:pPr`/`w:ind` and
+level run properties reuse the shared rPr builder.
+
+## [ECMA-PART1-17-9-17] w:numFmt numbering format
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.17"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt
+verifiedBy:
+```
+
+Each level carries its declared format verbatim (decimal, letter, roman,
+bullet, none); the generated formats round-trip through the read-side
+label computation in `packages/docx-core/src/primitives/numbering.ts`.
+
+## [ECMA-PART1-17-9-11] w:lvlText numbering level text
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.11"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlText
+verifiedBy:
+```
+
+The level text pattern (e.g. `%1.` / `%1.%2` / a literal bullet glyph) is
+emitted verbatim from the spec; validation requires a non-empty pattern on
+every level.
+
+## [ECMA-PART1-17-9-25] w:start numbering level starting value
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.25"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:start
+verifiedBy:
+```
+
+The starting value is always emitted explicitly (declared value or 1) so
+readers never fall back to divergent defaults.
+
+## [ECMA-PART1-17-9-28] w:suff content between numbering symbol and text
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.28"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:suff
+verifiedBy:
+```
+
+A declared suffix (tab/space/nothing) emits at its CT_Lvl position; when
+absent the element is omitted and readers apply the spec default (tab),
+matching the read-side parser's assumption.
+
+## [ECMA-PART1-17-9-12] w:multiLevelType abstract definition type
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.12"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:multiLevelType
+verifiedBy:
+```
+
+Abstract definitions declare `multilevel` when more than one level exists
+and `singleLevel` otherwise, so single-level bullet definitions don't
+advertise unused depth.
+
+## [ECMA-PART1-17-9-7] w:lvlJc numbering level justification
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.7"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc
+verifiedBy:
+```
+
+Level justification is always emitted (`left`) for determinism — omission
+leaves the alignment to reader defaults.
+
+## [ECMA-PART1-17-3-1-19] w:numPr paragraph numbering reference
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.19"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr
+verifiedBy:
+```
+
+List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot
+via the PPR_ORDER table; the numeric id comes from the numbering part's
+deterministic handle map.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the
