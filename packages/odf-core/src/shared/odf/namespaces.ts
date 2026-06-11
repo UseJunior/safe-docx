@@ -15,6 +15,12 @@ export const ODF_NS = {
   DC: 'http://purl.org/dc/elements/1.1/',
   // W3C XML namespace — carries `xml:id` on `text:changed-region` for tracked changes.
   XML: 'http://www.w3.org/XML/1998/namespace',
+  // XSL-FO-compatible properties (`fo:font-weight`, `fo:font-style`, …) used by style definitions.
+  FO: 'urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0',
+  // XLink — carries `xlink:href` on `text:a` hyperlinks.
+  XLINK: 'http://www.w3.org/1999/xlink',
+  // ODF meta elements (`meta:generator`) in `meta.xml`.
+  META: 'urn:oasis:names:tc:opendocument:xmlns:meta:1.0',
 } as const;
 
 /** The mimetype value an OpenDocument text package declares. */

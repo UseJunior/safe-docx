@@ -154,6 +154,19 @@ Export a document to a portable rendering (Markdown, semantic HTML, or plain tex
 | `allow_overwrite` | `boolean` | no | Overwrite output_path if it already exists. Default: false. |
 | `include_markdown` | `boolean` | no | Include the rendered content (under `content`) in the response. Default: true; set false for large documents. |
 
+## `convert_to_odt`
+
+Convert a DOCX document to OpenDocument Text (.odt) using the native model-to-model converter (no LibreOffice involved). Writes the .odt (default: source path with the .odt extension), validates ODF packaging safety before writing, and returns the output path plus a `lossiness` summary itemizing every downgraded construct. Conversion is semantic and intentionally lossy: text, headings, bold/italic/underline, hyperlinks, lists, and tables are mapped; richer styling, tracked changes, comments, and headers/footers are not. DOCX in, ODT out — Google Docs and .odt inputs are not supported.
+
+- readOnly: `false`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `output_path` | `string` | no | Where to write the .odt. Defaults to the source path with the .odt extension. |
+| `allow_overwrite` | `boolean` | no | Overwrite output_path if it already exists. Default: false. |
+
 ## `format_layout`
 
 Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only.

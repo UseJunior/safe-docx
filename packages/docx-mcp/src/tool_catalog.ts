@@ -202,6 +202,23 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
+    name: 'convert_to_odt',
+    description:
+      'Convert a DOCX document to OpenDocument Text (.odt) using the native model-to-model converter (no LibreOffice involved). Writes the .odt (default: source path with the .odt extension), validates ODF packaging safety before writing, and returns the output path plus a `lossiness` summary itemizing every downgraded construct. Conversion is semantic and intentionally lossy: text, headings, bold/italic/underline, hyperlinks, lists, and tables are mapped; richer styling, tracked changes, comments, and headers/footers are not. DOCX in, ODT out — Google Docs and .odt inputs are not supported.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      output_path: z
+        .string()
+        .optional()
+        .describe('Where to write the .odt. Defaults to the source path with the .odt extension.'),
+      allow_overwrite: z
+        .boolean()
+        .optional()
+        .describe('Overwrite output_path if it already exists. Default: false.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: false },
+  },
+  {
     name: 'format_layout',
     description: 'Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only.',
     input: z.object({
