@@ -19,6 +19,7 @@ import type {
   ReconstructionFallbackReason,
   ReconstructionIdDelta,
   ReconstructionIdDeltaSummary,
+  ReconstructionRebuildSafetyDiagnostics,
   ReconstructionSafetyFailureSummary,
   ReconstructionSafetyFailureDetails,
   ReconstructionSafetyCheckName,
@@ -988,6 +989,24 @@ export async function compareDocumentsAtomizer(
     );
   }
 
+  // Rebuild output gets the same safety screening as inplace attempts, whether
+  // rebuild was requested directly or reached via inplace fallback. Rebuild is
+  // the terminal strategy, so failures are surfaced in diagnostics rather than
+  // blocking the output.
+  // @see https://github.com/UseJunior/safe-docx/issues/226
+  let rebuildSafetyDiagnostics: ReconstructionRebuildSafetyDiagnostics | undefined;
+  if (comparisonResult.outputMode === 'rebuild') {
+    const safety = evaluateRoundTripSafety(comparisonResult.newDocumentXml);
+    if (!safety.safe) {
+      rebuildSafetyDiagnostics = {
+        checks: safety.checks,
+        failedChecks: safety.failedChecks,
+        failureDetails: safety.failureDetails,
+        firstDiffSummary: safety.failureSummary,
+      };
+    }
+  }
+
   const { mergedAtoms, newDocumentXml } = comparisonResult;
 
   // Step 12: Clone appropriate archive and update document.xml.
@@ -1031,6 +1050,7 @@ export async function compareDocumentsAtomizer(
     reconstructionModeUsed: comparisonResult.outputMode,
     fallbackReason,
     fallbackDiagnostics,
+    rebuildSafetyDiagnostics,
   };
 }
 
