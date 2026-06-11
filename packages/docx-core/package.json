@@ -64,6 +64,7 @@
   "license": "MIT",
   "bin": {
     "docx-comparison": "dist/cli/index.js",
-    "safe-docx-compare": "dist/cli/index.js"
+    "safe-docx-compare": "dist/cli/index.js",
+    "safe-docx-conformance-adapter": "dist/cli/conformance-adapter.js"
   }
 }
