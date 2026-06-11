@@ -19,6 +19,7 @@ import {
   type Comment,
   type DocumentViewComment,
   type DocumentViewNode,
+  type Footnote,
 } from '@usejunior/docx-core';
 import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -234,6 +235,33 @@ function attachParagraphComments(
   });
 }
 
+type InlineFootnote = { id: number; display_number: number; text: string };
+
+function attachParagraphFootnotes(
+  nodes: readonly Record<string, unknown>[],
+  footnotes: readonly Footnote[],
+): Record<string, unknown>[] {
+  const footnotesByParagraph = new Map<string, InlineFootnote[]>();
+  for (const footnote of footnotes) {
+    // Eligibility (#158): bootstrap scaffolding (display_number 0 / empty
+    // body) and orphaned notes (no anchored paragraph) never attach inline.
+    // get_footnotes stays the authoritative whole-document enumeration that
+    // still returns them.
+    if (footnote.displayNumber <= 0 || footnote.text.trim().length === 0) continue;
+    if (!footnote.anchoredParagraphId) continue;
+    const anchored = footnotesByParagraph.get(footnote.anchoredParagraphId) ?? [];
+    anchored.push({ id: footnote.id, display_number: footnote.displayNumber, text: footnote.text });
+    footnotesByParagraph.set(footnote.anchoredParagraphId, anchored);
+  }
+
+  return nodes.map((node) => {
+    const nodeFootnotes = footnotesByParagraph.get(String(node.id));
+    return nodeFootnotes && nodeFootnotes.length > 0
+      ? { ...node, footnotes: nodeFootnotes }
+      : node;
+  });
+}
+
 function collectSimpleCommentSuffixes(
   comments: readonly DocumentViewComment[],
   parentId?: number,
@@ -268,6 +296,7 @@ export async function readFile(
     show_formatting?: boolean;
     comment_rendering?: string;
     include_fingerprint?: boolean;
+    include_footnotes?: boolean;
   },
 ): Promise<ToolResponse> {
   try {
@@ -387,6 +416,28 @@ export async function readFile(
       });
     }
 
+    // Opt-in inline footnote bodies (#158), JSON-only in v1. Attachment runs
+    // on the already-windowed slice, so pagination semantics come for free:
+    // a footnote appears exactly on the page whose slice contains its anchor
+    // paragraph. Attaching BEFORE the budget renderers means the payload
+    // counts toward the same token budget as the rest of the node — no
+    // exemption. Mirrors the comment_load_error contract: a footnote part
+    // that fails to parse degrades to metadata, never fails the read.
+    let footnoteLoadError: string | null = null;
+    if (params.include_footnotes && format === 'json') {
+      try {
+        // ODT and Google Doc sessions have no footnote primitive; the flag
+        // no-ops there (same contract as include_fingerprint) instead of
+        // reporting a missing-method as a load error.
+        if (typeof session.doc.getFootnotes === 'function') {
+          const footnotes = await session.doc.getFootnotes();
+          jsonNodes = attachParagraphFootnotes(jsonNodes, footnotes);
+        }
+      } catch (e: unknown) {
+        footnoteLoadError = errorMessage(e);
+      }
+    }
+
     let content: string;
     let paragraphsReturned: number;
 
@@ -422,6 +473,7 @@ export async function readFile(
         ...(result.warnings ? { warnings: result.warnings } : {}),
         ...paginationMeta,
         ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
+        ...(footnoteLoadError != null ? { footnote_load_error: footnoteLoadError } : {}),
       }, metadata));
     }
 
@@ -434,6 +486,7 @@ export async function readFile(
       paragraphs_returned: paragraphsReturned,
       ...paginationMeta,
       ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
+      ...(footnoteLoadError != null ? { footnote_load_error: footnoteLoadError } : {}),
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);

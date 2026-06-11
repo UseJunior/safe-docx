@@ -58,6 +58,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .describe(
           'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
         ),
+      include_footnotes: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true and format="json", attach a `footnotes` array ({id, display_number, text}) to each paragraph node for the footnotes anchored to it. Windowed to the returned slice (a paginated walk returns each footnote exactly once) and counted toward the read token budget. Footnotes with an empty body or no anchored paragraph are excluded — use get_footnotes for the authoritative full enumeration. No effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false.',
+        ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
