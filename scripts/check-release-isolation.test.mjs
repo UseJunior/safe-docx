@@ -58,7 +58,7 @@ test('odf-core is on every release loop and the publish surface', () => {
 
 test('snapshot flags a wrong loop count', () => {
   const errors = diffWorkflowSnapshot(EXPECTED_LOOPS.slice(0, 3));
-  assert.ok(errors.some((e) => /package loop\(s\); expected 4/.test(e)));
+  assert.ok(errors.some((e) => /package loop\(s\); expected 5/.test(e)));
 });
 
 // ── diffPublishListPrivate ──────────────────────────────────────────────────
