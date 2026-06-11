@@ -34,45 +34,6 @@ enum FieldState {
   IN_FIELD_RESULT = 2,
 }
 
-function collectFootnoteMarkerSuffix(
-  paragraphEl: Element,
-  displayNumberById: Map<number, number>,
-): string {
-  // References inside field code (between fldChar begin and separate) are
-  // hidden text and must not surface a marker — the view-level injection
-  // skips them the same way, keeping clean_text and text in agreement on
-  // which footnotes exist. @see #382
-  const markers: string[] = [];
-  let fieldState = FieldState.OUTSIDE_FIELD;
-
-  for (const runEl of Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r))) {
-    for (const child of Array.from(runEl.childNodes)) {
-      if (child.nodeType !== 1) continue;
-      const el = child as Element;
-      if (el.namespaceURI !== OOXML.W_NS) continue;
-
-      if (el.localName === W.fldChar) {
-        const type = getWAttr(el, 'fldCharType') ?? '';
-        if (type === 'begin') fieldState = FieldState.IN_FIELD_CODE;
-        else if (type === 'separate') fieldState = FieldState.IN_FIELD_RESULT;
-        else if (type === 'end') fieldState = FieldState.OUTSIDE_FIELD;
-        continue;
-      }
-
-      if (fieldState === FieldState.IN_FIELD_CODE) continue;
-      if (el.localName !== W.footnoteReference) continue;
-
-      const rawId = getWAttr(el, 'id');
-      if (!rawId) continue;
-      const numericId = Number.parseInt(rawId, 10);
-      if (Number.isNaN(numericId)) continue;
-      const display = displayNumberById.get(numericId) ?? numericId;
-      markers.push(`[^${display}]`);
-    }
-  }
-  return markers.join('');
-}
-
 function escapeCommentSuffixText(text: string): string {
   return text
     .replaceAll('\r\n', '\\n')
@@ -361,8 +322,8 @@ export async function readFile(
     }
 
     // Build a single paragraph-element index up front. All downstream enrichment
-    // passes (footnote markers, comment inline markers, content_fingerprint) consult
-    // this map instead of calling getParagraphElementById() per node, which would be
+    // passes (comment inline markers, content_fingerprint) consult this map
+    // instead of calling getParagraphElementById() per node, which would be
     // a linear scan and turn the read into O(N^2) on large documents.
     const paragraphElementsById = (() => {
       const map = new Map<string, Element>();
@@ -374,33 +335,22 @@ export async function readFile(
     })();
 
     // Footnote [^N] markers: the document view already injects them into
-    // tagged_text/text at the reference's visible offset (injectFootnoteMarkers
-    // in docx-core's document_view.ts). Only clean_text is enriched here — the
-    // view deliberately keeps it marker-free for core consumers (edit matching,
-    // signature-cluster detection), so the suffix is a read_file output concern.
-    // Appending to all three fields doubled every marker. @see #382
-    let enriched = filtered;
-    try {
-      const footnotes = await session.doc.getFootnotes();
-      if (footnotes.length > 0) {
-        const displayById = new Map<number, number>();
-        for (const note of footnotes) {
-          displayById.set(note.id, note.displayNumber > 0 ? note.displayNumber : note.id);
-        }
-        enriched = filtered.map((node) => {
-          const paragraphEl = paragraphElementsById.get(node.id);
-          if (!paragraphEl) return node;
-          const markerSuffix = collectFootnoteMarkerSuffix(paragraphEl, displayById);
-          if (!markerSuffix) return node;
-          return {
-            ...node,
-            clean_text: `${node.clean_text}${markerSuffix}`,
-          };
-        });
-      }
-    } catch {
-      enriched = filtered;
-    }
+    // tagged_text/text at the reference's visible offset AND exposes the same
+    // derivation as node.footnote_refs — one fldChar walk, one numbering
+    // authority, so the fields cannot disagree about which footnotes exist
+    // (#382's failure shape). @see #393. Only clean_text is enriched here —
+    // the view deliberately keeps it marker-free for core consumers (edit
+    // matching, signature-cluster detection), so the suffix is a read_file
+    // output concern. Appending to all three fields doubled every marker.
+    // @see #382
+    let enriched = filtered.map((node) => {
+      if (!node.footnote_refs || node.footnote_refs.length === 0) return node;
+      const markerSuffix = node.footnote_refs.map(({ display }) => `[^${display}]`).join('');
+      return {
+        ...node,
+        clean_text: `${node.clean_text}${markerSuffix}`,
+      };
+    });
 
     // When comment loading fails after add_comment ran (e.g., a third-party docx ships a
     // comments.xml lacking xmlns:w14 and our writer wrote w14:paraId into it — see #154),

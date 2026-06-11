@@ -126,6 +126,18 @@ export type DocumentViewNode = {
   paragraph_indents_pt: { left: number; first_line: number };
   numbering: { num_id: string | null; ilvl: number | null; is_auto_numbered: boolean };
   heading?: HeadingValue;
+  /**
+   * Footnote references this paragraph visibly anchors, in document order, each
+   * with the display number assigned by the view's numbering authority (the
+   * sequential scan of `document.xml` references, reserved separator IDs
+   * skipped). References inside field code (between `w:fldChar` begin and
+   * separate) are hidden text and excluded. This is the single derivation of
+   * "which footnotes does this paragraph reference" — consumers render from it
+   * instead of re-walking the paragraph DOM. Omitted when empty, matching the
+   * `heading` convention.
+   * @see #393
+   */
+  footnote_refs?: Array<{ id: number; display: number }>;
   header_formatting: HeaderFormatting | null;
   body_run_formatting: RunFormatting | null;
   table_context?: TableContext;

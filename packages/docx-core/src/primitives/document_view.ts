@@ -217,9 +217,18 @@ function buildFootnoteDisplayMap(documentXml: Document, footnotesXml: Document |
 }
 
 /**
- * Compute footnote marker insertion points for a paragraph.
- * Returns an array of { offset, marker } sorted by offset descending
- * for safe right-to-left insertion into the text string.
+ * A footnote reference a paragraph visibly anchors: the referenced footnote's
+ * numeric ID, its display number, and the reference's visible-character offset
+ * within the paragraph text.
+ */
+type ParagraphFootnoteRef = { offset: number; id: number; display: number };
+
+/**
+ * Compute the footnote references a paragraph visibly anchors, in document
+ * order. This is the single derivation of "which footnotes does this paragraph
+ * reference, and with what display number" — the view injects [^N] markers
+ * from it AND exposes it as DocumentViewNode.footnote_refs so consumers
+ * (read_file's clean_text suffix) never re-walk the DOM. @see #393
  *
  * Self-contained: only inspects the paragraph DOM for w:footnoteReference
  * elements. Does NOT modify getParagraphRuns or getParagraphText.
@@ -227,13 +236,13 @@ function buildFootnoteDisplayMap(documentXml: Document, footnotesXml: Document |
 function getFootnoteMarkersForParagraph(
   p: Element,
   displayMap: Map<number, number>,
-): Array<{ offset: number; marker: string }> {
+): ParagraphFootnoteRef[] {
   if (displayMap.size === 0) return [];
 
   // Walk through direct children (and hyperlink children) to find w:r elements
   // and their visible text, tracking position. When we find a footnoteReference,
   // record its position.
-  const markers: Array<{ offset: number; marker: string }> = [];
+  const markers: ParagraphFootnoteRef[] = [];
   let visibleOffset = 0;
 
   // We need to iterate runs in paragraph order. Use the same approach as getParagraphRuns
@@ -280,7 +289,8 @@ function getFootnoteMarkersForParagraph(
       if (displayNum != null) {
         markers.push({
           offset: visibleOffset + runVisibleLen,
-          marker: `[^${displayNum}]`,
+          id: footnoteId,
+          display: displayNum,
         });
       }
     }
@@ -288,8 +298,6 @@ function getFootnoteMarkersForParagraph(
     visibleOffset += runVisibleLen;
   }
 
-  // Sort descending by offset for safe right-to-left insertion
-  markers.sort((a, b) => b.offset - a.offset);
   return markers;
 }
 
@@ -347,8 +355,9 @@ function paragraphHasAnchoringContent(p: Element): boolean {
 }
 
 /**
- * Inject footnote markers into a text string at the given offsets.
- * Markers must be sorted descending by offset.
+ * Inject [^N] footnote markers into a text string at the given offsets.
+ * Markers arrive in document order; insertion happens right-to-left (offset
+ * descending) so earlier offsets stay valid as text grows.
  *
  * Offsets are *visible*-character offsets (they count document text, not the inline
  * formatting tags emitted by `emitFormattingTags`). When `text` carries formatting tags
@@ -358,13 +367,14 @@ function paragraphHasAnchoringContent(p: Element): boolean {
  */
 function injectFootnoteMarkers(
   text: string,
-  markers: Array<{ offset: number; marker: string }>,
+  markers: ParagraphFootnoteRef[],
 ): string {
   if (markers.length === 0) return text;
+  const descending = [...markers].sort((a, b) => b.offset - a.offset);
   let result = text;
-  for (const { offset, marker } of markers) {
+  for (const { offset, display } of descending) {
     const insertionIndex = findTaggedTextInsertionIndex(result, offset);
-    result = result.slice(0, insertionIndex) + marker + result.slice(insertionIndex);
+    result = result.slice(0, insertionIndex) + `[^${display}]` + result.slice(insertionIndex);
   }
   return result;
 }
@@ -460,6 +470,9 @@ export function buildNodesForDocumentView(params: {
 
     // Visible clean text (field codes stripped).
     const fullText = getParagraphText(p).replace(/\r/g, '').replace(/\n/g, '').trim();
+    // Computed once per paragraph: gates the empty-paragraph skip below, drives
+    // the [^N] marker injection, and is exposed as node.footnote_refs.
+    const fnMarkers = getFootnoteMarkersForParagraph(p, footnoteDisplayMap);
     // Preserve empty table cell paragraphs for structural completeness, and
     // text-empty paragraphs that carry anchoring content — a visible footnote
     // reference (its [^N] marker renders via the injection pass below), an
@@ -472,7 +485,7 @@ export function buildNodesForDocumentView(params: {
     if (
       !fullText &&
       !tableContext &&
-      getFootnoteMarkersForParagraph(p, footnoteDisplayMap).length === 0 &&
+      fnMarkers.length === 0 &&
       !paragraphHasAnchoringContent(p)
     ) continue;
 
@@ -690,7 +703,6 @@ export function buildNodesForDocumentView(params: {
     }
 
     // Inject footnote [^N] markers into view text (view-only, not shared text primitives)
-    const fnMarkers = getFootnoteMarkersForParagraph(p, footnoteDisplayMap);
     if (fnMarkers.length > 0) {
       tagged = injectFootnoteMarkers(tagged, fnMarkers);
     }
@@ -729,6 +741,9 @@ export function buildNodesForDocumentView(params: {
       body_run_formatting: bodyFmt,
     };
     if (heading) node.heading = heading;
+    if (fnMarkers.length > 0) {
+      node.footnote_refs = fnMarkers.map(({ id: fnId, display }) => ({ id: fnId, display }));
+    }
     if (tableContext) node.table_context = tableContext;
     nodes.push(node);
   }
