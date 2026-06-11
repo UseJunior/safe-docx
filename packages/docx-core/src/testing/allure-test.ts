@@ -9,7 +9,8 @@ export { xmlToDocPreviewRuns } from './allure-preview-helpers.js';
 export type { DocPreviewRun } from './allure-preview-helpers.js';
 
 type EpicName =
-  | 'Document Comparison';
+  | 'Document Comparison'
+  | 'Document Generation';
 
 export type AllureRuntime = SharedAllureRuntime;
 export type AllureStepContext = SharedAllureStepContext;

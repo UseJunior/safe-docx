@@ -1,6 +1,6 @@
-import { parseXml } from '../primitives/xml.js';
-import { childElements } from '../primitives/dom-helpers.js';
-import { OOXML } from '../primitives/namespaces.js';
+import { parseXml } from './xml.js';
+import { childElements } from './dom-helpers.js';
+import { OOXML } from './namespaces.js';
 
 export type SectPrIssueType =
   | 'missing_body'

@@ -68,11 +68,14 @@ export class DocxZip {
 
 export async function createZipBuffer(
   files: Record<string, string | Buffer | Uint8Array>,
-  opts?: { compression?: ZipCompression; compressionLevel?: number },
+  opts?: { compression?: ZipCompression; compressionLevel?: number; fileDate?: Date },
 ): Promise<Buffer> {
   const zip = new JSZip();
   for (const [name, value] of Object.entries(files)) {
-    zip.file(name, value);
+    // JSZip stamps each entry with the current time by default, which makes
+    // otherwise-identical archives differ byte-for-byte across runs; callers
+    // needing deterministic output pass a fixed fileDate.
+    zip.file(name, value, opts?.fileDate ? { date: opts.fileDate } : undefined);
   }
   const out = await zip.generateAsync({
     type: 'nodebuffer',

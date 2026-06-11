@@ -88,6 +88,11 @@ export const W = {
   w: 'w',
   type: 'type',
 
+  // Sections + page setup (generation emitters)
+  sectPr: 'sectPr',
+  pgSz: 'pgSz',
+  pgMar: 'pgMar',
+
   // Fields + special runs
   fldChar: 'fldChar',
   instrText: 'instrText',
