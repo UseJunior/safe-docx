@@ -5,6 +5,8 @@ export interface SyntheticDocxOptions {
   paragraphs: string[];
   footnoteOnParagraph?: number;
   footnoteText?: string;
+  endnoteOnParagraph?: number;
+  endnoteText?: string;
   commentOnParagraph?: number;
   commentText?: string;
   commentAuthor?: string;
@@ -51,10 +53,22 @@ export interface SyntheticDocxOptions {
    * Mutually exclusive with commentOnParagraph and commentSpanParagraphs.
    */
   siblingCommentRange?: { startBeforeParagraph: number; endAfterParagraph: number };
+  /**
+   * Pre-existing tracked move with explicit in-paragraph range markers.
+   * paragraphs[from]'s text is wrapped in <w:moveFrom> (as w:delText)
+   * bracketed by w:moveFromRangeStart/End; paragraphs[to]'s text is wrapped
+   * in <w:moveTo> bracketed by w:moveToRangeStart/End. All four markers are
+   * direct children of their <w:p>, sharing the given w:name. Callers should
+   * pass identical text for paragraphs[from] and paragraphs[to] so the shape
+   * matches what Word produces for a real tracked move. Used to verify
+   * explicit move-range marker reconstruction (issue #110).
+   */
+  trackedMove?: { from: number; to: number; name: string; author?: string; firstId?: number };
 }
 
 export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Buffer> {
   const hasFootnote = opts.footnoteOnParagraph != null;
+  const hasEndnote = opts.endnoteOnParagraph != null;
   const hasComment = opts.commentOnParagraph != null;
   const hasCommentSpan = opts.commentSpanParagraphs != null;
   const hasBookmark = opts.bookmarkOnParagraph != null;
@@ -71,6 +85,10 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const siblingBookmarkId = opts.siblingBookmarkBefore?.id ?? 200;
   const spanStart = opts.commentSpanParagraphs?.start;
   const spanEnd = opts.commentSpanParagraphs?.end;
+  const hasTrackedMove = opts.trackedMove != null;
+  const moveAuthor = opts.trackedMove?.author ?? 'Mover';
+  const moveBaseId = opts.trackedMove?.firstId ?? 300;
+  const moveDate = '2025-01-01T00:00:00Z';
 
   const paragraphParts: string[] = opts.paragraphs.map((text, idx) => {
     const escaped = text
@@ -81,6 +99,10 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
 
     if (hasFootnote && idx === opts.footnoteOnParagraph) {
       extra += `<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>`;
+    }
+
+    if (hasEndnote && idx === opts.endnoteOnParagraph) {
+      extra += `<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="1"/></w:r>`;
     }
 
     if (hasComment && idx === opts.commentOnParagraph) {
@@ -99,6 +121,34 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
           `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r>`
         : '';
       return `<w:p>${before}<w:r><w:t>${escaped}</w:t></w:r>${after}${extra}</w:p>`;
+    }
+
+    if (hasTrackedMove && idx === opts.trackedMove!.from) {
+      const name = opts.trackedMove!.name;
+      return (
+        `<w:p>` +
+        `<w:moveFromRangeStart w:id="${moveBaseId}" w:name="${name}" w:author="${moveAuthor}" w:date="${moveDate}"/>` +
+        `<w:moveFrom w:id="${moveBaseId + 1}" w:author="${moveAuthor}" w:date="${moveDate}">` +
+        `<w:r><w:delText>${escaped}</w:delText></w:r>` +
+        `</w:moveFrom>` +
+        `<w:moveFromRangeEnd w:id="${moveBaseId}"/>` +
+        extra +
+        `</w:p>`
+      );
+    }
+
+    if (hasTrackedMove && idx === opts.trackedMove!.to) {
+      const name = opts.trackedMove!.name;
+      return (
+        `<w:p>` +
+        `<w:moveToRangeStart w:id="${moveBaseId + 2}" w:name="${name}" w:author="${moveAuthor}" w:date="${moveDate}"/>` +
+        `<w:moveTo w:id="${moveBaseId + 3}" w:author="${moveAuthor}" w:date="${moveDate}">` +
+        `<w:r><w:t>${escaped}</w:t></w:r>` +
+        `</w:moveTo>` +
+        `<w:moveToRangeEnd w:id="${moveBaseId + 2}"/>` +
+        extra +
+        `</w:p>`
+      );
     }
 
     if (hasBookmark && idx === opts.bookmarkOnParagraph!.paragraph) {
@@ -145,7 +195,9 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
-    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
+    ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
+    ` mc:Ignorable="w14">` +
     `<w:body>${paragraphsXml}<w:sectPr/></w:body></w:document>`;
 
   const contentTypeParts: string[] = [
@@ -173,6 +225,25 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     rIdCounter++;
     docRelEntries.push(
       `<Relationship Id="rId${rIdCounter}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>`
+    );
+  }
+
+  if (hasEndnote) {
+    const enText = opts.endnoteText ?? 'Test endnote';
+    const endnotesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>` +
+      `<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>` +
+      `<w:endnote w:id="1"><w:p><w:r><w:t>${enText}</w:t></w:r></w:p></w:endnote>` +
+      `</w:endnotes>`;
+    zip.file('word/endnotes.xml', endnotesXml);
+    contentTypeParts.push(
+      `<Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/>`
+    );
+    rIdCounter++;
+    docRelEntries.push(
+      `<Relationship Id="rId${rIdCounter}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/>`
     );
   }
 
@@ -302,7 +373,9 @@ export async function buildDocxFromParts(opts: DocxPartsOptions): Promise<Buffer
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
     ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
-    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"` +
+    ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
+    ` mc:Ignorable="w14">` +
     `<w:body>${opts.bodyXml}<w:sectPr/></w:body></w:document>`;
 
   const overrides = [

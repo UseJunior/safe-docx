@@ -741,6 +741,108 @@ describe('atomizeTree', () => {
   });
 });
 
+describe('move-range marker atomization (issue #110)', () => {
+  const mockPart: OpcPart = {
+    uri: 'word/document.xml',
+    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
+  };
+
+  function paragraphWithTrackedMove(): Element {
+    return el('w:p', {}, [
+      el('w:moveFromRangeStart', {
+        'w:id': '300',
+        'w:name': 'userMove1',
+        'w:author': 'Mover',
+        'w:date': '2025-01-01T00:00:00Z',
+      }),
+      el('w:moveFrom', { 'w:id': '301', 'w:author': 'Mover', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'moved')]),
+      ]),
+      el('w:moveFromRangeEnd', { 'w:id': '300' }),
+      el('w:moveToRangeStart', {
+        'w:id': '302',
+        'w:name': 'userMove1',
+        'w:author': 'Mover',
+        'w:date': '2025-01-01T00:00:00Z',
+      }),
+      el('w:moveTo', { 'w:id': '303', 'w:author': 'Mover', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'moved')]),
+      ]),
+      el('w:moveToRangeEnd', { 'w:id': '302' }),
+    ]);
+  }
+
+  test('move-range markers inside w:p become atoms when atomizeParagraphLevelMarkers is true', async ({ given, when, then }: AllureBddContext) => {
+    let body: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('a body whose paragraph carries an explicit tracked move with range markers', () => {
+      body = el('w:body', {}, [paragraphWithTrackedMove()]);
+    });
+
+    await when('the tree is atomized with paragraph-level markers enabled', () => {
+      ({ atoms } = atomizeTree(body, [], mockPart, { atomizeParagraphLevelMarkers: true }));
+    });
+
+    await then('all four move-range marker kinds appear as atoms', () => {
+      const tags = atoms.map((a) => a.contentElement.tagName);
+      expect(tags).toContain('w:moveFromRangeStart');
+      expect(tags).toContain('w:moveFromRangeEnd');
+      expect(tags).toContain('w:moveToRangeStart');
+      expect(tags).toContain('w:moveToRangeEnd');
+    });
+  });
+
+  test('move-range markers are NOT atomized when atomizeParagraphLevelMarkers is false', async ({ given, when, then }: AllureBddContext) => {
+    let body: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('a body whose paragraph carries an explicit tracked move with range markers', () => {
+      body = el('w:body', {}, [paragraphWithTrackedMove()]);
+    });
+
+    await when('the tree is atomized with default options', () => {
+      ({ atoms } = atomizeTree(body, [], mockPart));
+    });
+
+    await then('no move-range marker atoms enter the stream', () => {
+      const tags = atoms.map((a) => a.contentElement.tagName);
+      expect(tags).not.toContain('w:moveFromRangeStart');
+      expect(tags).not.toContain('w:moveFromRangeEnd');
+      expect(tags).not.toContain('w:moveToRangeStart');
+      expect(tags).not.toContain('w:moveToRangeEnd');
+    });
+  });
+
+  test('body-level move-range markers stay out of the atom stream', async ({ given, when, then }: AllureBddContext) => {
+    let body: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('move-range markers that are siblings of w:p at body level', () => {
+      body = el('w:body', {}, [
+        el('w:moveFromRangeStart', {
+          'w:id': '300',
+          'w:name': 'userMove1',
+          'w:author': 'Mover',
+          'w:date': '2025-01-01T00:00:00Z',
+        }),
+        el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'text')])]),
+        el('w:moveFromRangeEnd', { 'w:id': '300' }),
+      ]);
+    });
+
+    await when('the tree is atomized with paragraph-level markers enabled', () => {
+      ({ atoms } = atomizeTree(body, [], mockPart, { atomizeParagraphLevelMarkers: true }));
+    });
+
+    await then('only the paragraph content is atomized — markers are scaffold-handled', () => {
+      const tags = atoms.map((a) => a.contentElement.tagName);
+      expect(tags).not.toContain('w:moveFromRangeStart');
+      expect(tags).not.toContain('w:moveFromRangeEnd');
+    });
+  });
+});
+
 describe('empty paragraph context hashing', () => {
   const mockPart: OpcPart = {
     uri: 'word/document.xml',
@@ -759,6 +861,12 @@ describe('empty paragraph context hashing', () => {
     return atomizeTree(document, [], mockPart, {
       atomizeParagraphLevelMarkers: true,
     }).atoms.filter((atom) => atom.contentElement.tagName === EMPTY_PARAGRAPH_TAG);
+  }
+
+  function defaultEmptyAtoms(document: Element): ReturnType<typeof atomizeTree>['atoms'] {
+    return atomizeTree(document, [], mockPart).atoms.filter(
+      (atom) => atom.contentElement.tagName === EMPTY_PARAGRAPH_TAG
+    );
   }
 
   test('keeps empty paragraph hashes stable when preceding run text is merged', async ({ given, when, then }: AllureBddContext) => {
@@ -903,6 +1011,7 @@ describe('empty paragraph context hashing', () => {
     let baselineHash: string;
     let bookmarkHash: string;
     let proofErrHash: string;
+    let proofErrEmptyCount: number;
 
     await given('empty paragraphs after content-transparent marker-only paragraphs', () => {
       baselineBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph()]);
@@ -921,18 +1030,89 @@ describe('empty paragraph context hashing', () => {
     await when('the bodies are atomized with paragraph-level markers enabled', () => {
       const baselineEmpty = emptyAtoms(baselineBody)[0];
       const bookmarkEmpty = emptyAtoms(bookmarkBody)[0];
-      const proofErrEmpty = emptyAtoms(proofErrBody)[0];
+      const proofErrEmpties = emptyAtoms(proofErrBody);
+      const proofErrEmpty = proofErrEmpties[0];
       assertDefined(baselineEmpty, 'baseline empty paragraph atom');
       assertDefined(bookmarkEmpty, 'bookmark-context empty paragraph atom');
       assertDefined(proofErrEmpty, 'proofErr-context empty paragraph atom');
       baselineHash = baselineEmpty.sha1Hash;
       bookmarkHash = bookmarkEmpty.sha1Hash;
       proofErrHash = proofErrEmpty.sha1Hash;
+      proofErrEmptyCount = proofErrEmpties.length;
     });
 
     await then('the following empty paragraph hashes match the baseline', () => {
+      expect(proofErrEmptyCount).toBe(2);
       expect(bookmarkHash).toBe(baselineHash);
       expect(proofErrHash).toBe(baselineHash);
+    });
+  });
+
+  test('proofErr-only paragraphs hash like stripped empty paragraphs', async ({ given, when, then }: AllureBddContext) => {
+    let bareProofErrBody: Element;
+    let bareStrippedBody: Element;
+    let pPrProofErrBody: Element;
+    let pPrStrippedBody: Element;
+    let bareProofErrHash: string;
+    let bareStrippedHash: string;
+    let pPrProofErrHash: string;
+    let pPrStrippedHash: string;
+
+    await given('proofErr-only paragraphs and matching stripped empty paragraphs', () => {
+      const pPr = () => el('w:pPr', {}, [el('w:spacing', { 'w:after': '0' })]);
+      const proofErr = () => el('w:proofErr', { 'w:type': 'spellStart' });
+      bareProofErrBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph([proofErr()])]);
+      bareStrippedBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph()]);
+      pPrProofErrBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph([pPr(), proofErr()])]);
+      pPrStrippedBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph([pPr()])]);
+    });
+
+    await when('the bodies are atomized with paragraph-level markers enabled', () => {
+      const bareProofErr = emptyAtoms(bareProofErrBody)[0];
+      const bareStripped = emptyAtoms(bareStrippedBody)[0];
+      const pPrProofErr = emptyAtoms(pPrProofErrBody)[0];
+      const pPrStripped = emptyAtoms(pPrStrippedBody)[0];
+      assertDefined(bareProofErr, 'bare proofErr empty atom');
+      assertDefined(bareStripped, 'bare stripped empty atom');
+      assertDefined(pPrProofErr, 'pPr proofErr empty atom');
+      assertDefined(pPrStripped, 'pPr stripped empty atom');
+      bareProofErrHash = bareProofErr.sha1Hash;
+      bareStrippedHash = bareStripped.sha1Hash;
+      pPrProofErrHash = pPrProofErr.sha1Hash;
+      pPrStrippedHash = pPrStripped.sha1Hash;
+    });
+
+    await then('proofErr anchors do not affect empty-paragraph hashes', () => {
+      expect(bareProofErrHash).toBe(bareStrippedHash);
+      expect(pPrProofErrHash).toBe(pPrStrippedHash);
+    });
+  });
+
+  test('proofErr-only paragraphs atomize as empty paragraphs with default options', async ({ given, when, then }: AllureBddContext) => {
+    let proofErrBody: Element;
+    let strippedBody: Element;
+    let proofErrHash: string;
+    let strippedHash: string;
+
+    await given('a proofErr-only paragraph and its stripped counterpart', () => {
+      proofErrBody = el('w:body', {}, [
+        textParagraph('alpha'),
+        emptyParagraph([el('w:proofErr', { 'w:type': 'gramStart' })]),
+      ]);
+      strippedBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph()]);
+    });
+
+    await when('the bodies are atomized with default options', () => {
+      const proofErrEmpty = defaultEmptyAtoms(proofErrBody)[0];
+      const strippedEmpty = defaultEmptyAtoms(strippedBody)[0];
+      assertDefined(proofErrEmpty, 'default proofErr empty atom');
+      assertDefined(strippedEmpty, 'default stripped empty atom');
+      proofErrHash = proofErrEmpty.sha1Hash;
+      strippedHash = strippedEmpty.sha1Hash;
+    });
+
+    await then('their empty-paragraph hashes match', () => {
+      expect(proofErrHash).toBe(strippedHash);
     });
   });
 });

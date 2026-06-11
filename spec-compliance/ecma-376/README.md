@@ -37,6 +37,12 @@ schemas/
                  Kept for completeness but not used by the conformance lint.
 ```
 
+A sibling `validation/` directory (NOT part of ECMA-376) holds the
+safe-docx-authored entry schema used by the emitted-document schema gate
+(`scripts/check_emitted_document_schema.mjs`), plus a vendored copy of the
+W3C `xml.xsd` that the ECMA-376 schemas import without a schemaLocation.
+Nothing under `schemas/` is modified to make validation work.
+
 ## Why XSDs and not PDFs?
 
 The XSDs encode the **machine-readable** structural rules of ECMA-376 —

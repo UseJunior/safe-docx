@@ -13,6 +13,7 @@
  */
 
 import { createZipBuffer } from '../primitives/zip.js';
+import { maybeCaptureEmittedDocumentXml } from '../primitives/schema-corpus-capture.js';
 import { CompileContext } from './context.js';
 import { emitCommentsPartsIfNeeded } from './emit/comments-part.js';
 import { DraftingNoteCollector } from './emit/emit-context.js';
@@ -42,7 +43,9 @@ export async function generateDocx(spec: DocumentSpec, opts?: GenerateDocxOption
   const numberingIds = emitNumberingPartIfNeeded(spec, ctx);
   const headerFooterRefs = emitHeaderFooterParts(spec, ctx, { numberingIds });
   const notes = notesEnabled ? new DraftingNoteCollector() : undefined;
-  ctx.setFileContent('word/document.xml', emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes }));
+  const documentPartXml = emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes });
+  maybeCaptureEmittedDocumentXml(documentPartXml);
+  ctx.setFileContent('word/document.xml', documentPartXml);
   if (notes) emitCommentsPartsIfNeeded(spec, ctx, notes);
   emitStylesPart(spec, ctx);
   emitSettingsPartIfNeeded(spec, ctx);

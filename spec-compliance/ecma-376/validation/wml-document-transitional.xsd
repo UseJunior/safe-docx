@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Validation entry schema for emitted word/document.xml.
+
+  The vendored Transitional WML schema (../schemas/transitional/wml.xsd)
+  imports the XML namespace (xml:space, xml:lang) without a schemaLocation,
+  so xmllint (run with its "nonet" option) cannot compile it. This wrapper loads
+  the vendored W3C xml.xsd for that namespace first, then pulls in wml.xsd;
+  by the time wml.xsd's namespace-only import is processed, the namespace is
+  already resolved locally.
+
+  This file is safe-docx-authored plumbing, NOT part of ECMA-376. The files
+  under ../schemas/ remain unmodified normative copies.
+
+  Used by: scripts/check_emitted_document_schema.mjs (issue #214 CI gate).
+-->
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            elementFormDefault="qualified">
+  <xsd:import namespace="http://www.w3.org/XML/1998/namespace"
+              schemaLocation="w3c/xml.xsd"/>
+  <xsd:import namespace="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              schemaLocation="../schemas/transitional/wml.xsd"/>
+</xsd:schema>
