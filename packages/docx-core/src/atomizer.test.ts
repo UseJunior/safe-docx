@@ -10,6 +10,7 @@ import {
   createComparisonUnitAtom,
   atomizeTree,
   getAncestors,
+  EMPTY_PARAGRAPH_TAG,
 } from './atomizer.js';
 import { CorrelationStatus, OpcPart } from './core-types.js';
 import { assertDefined } from './testing/test-utils.js';
@@ -736,6 +737,202 @@ describe('atomizeTree', () => {
       expect(atom0.contentElement.tagName).toBe('w:t');
       expect(atom1.contentElement.tagName).toBe('w:br');
       expect(atom2.contentElement.tagName).toBe('w:t');
+    });
+  });
+});
+
+describe('empty paragraph context hashing', () => {
+  const mockPart: OpcPart = {
+    uri: 'word/document.xml',
+    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
+  };
+
+  function textParagraph(text: string): Element {
+    return el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, text)])]);
+  }
+
+  function emptyParagraph(children: Element[] = []): Element {
+    return el('w:p', {}, children);
+  }
+
+  function emptyAtoms(document: Element): ReturnType<typeof atomizeTree>['atoms'] {
+    return atomizeTree(document, [], mockPart, {
+      atomizeParagraphLevelMarkers: true,
+    }).atoms.filter((atom) => atom.contentElement.tagName === EMPTY_PARAGRAPH_TAG);
+  }
+
+  test('keeps empty paragraph hashes stable when preceding run text is merged', async ({ given, when, then }: AllureBddContext) => {
+    let splitBody: Element;
+    let mergedBody: Element;
+    let splitEmptyHash: string;
+    let mergedEmptyHash: string;
+
+    await given('two bodies whose preceding paragraph has identical text with different w:t boundaries', () => {
+      splitBody = el('w:body', {}, [
+        el('w:p', {}, [
+          el('w:r', {}, [el('w:t', {}, undefined, 'of ')]),
+          el('w:r', {}, [el('w:t', {}, undefined, 'Disclosure.')]),
+        ]),
+        emptyParagraph(),
+      ]);
+      mergedBody = el('w:body', {}, [
+        el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'of Disclosure.')])]),
+        emptyParagraph(),
+      ]);
+    });
+
+    await when('both bodies are atomized', () => {
+      const splitEmpty = emptyAtoms(splitBody)[0];
+      const mergedEmpty = emptyAtoms(mergedBody)[0];
+      assertDefined(splitEmpty, 'split empty paragraph atom');
+      assertDefined(mergedEmpty, 'merged empty paragraph atom');
+      splitEmptyHash = splitEmpty.sha1Hash;
+      mergedEmptyHash = mergedEmpty.sha1Hash;
+    });
+
+    await then('the empty paragraph hashes match', () => {
+      expect(splitEmptyHash).toBe(mergedEmptyHash);
+    });
+  });
+
+  test('disambiguates consecutive empty paragraphs after the same content', async ({ given, when, then }: AllureBddContext) => {
+    let body: Element;
+    let empties: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('two consecutive empty paragraphs after a content paragraph', () => {
+      body = el('w:body', {}, [textParagraph('alpha'), emptyParagraph(), emptyParagraph()]);
+    });
+
+    await when('the body is atomized', () => {
+      empties = emptyAtoms(body);
+    });
+
+    await then('the empty paragraph hashes differ', () => {
+      expect(empties).toHaveLength(2);
+      expect(empties[0]?.sha1Hash).not.toBe(empties[1]?.sha1Hash);
+    });
+  });
+
+  test('pins shallow paragraph property hashing for empty paragraphs', async ({ given, when, then }: AllureBddContext) => {
+    let noPPrHash: string;
+    let barePPrHash: string;
+    let attributedPPrHash: string;
+    let childPPrHash: string;
+
+    await given('empty paragraphs with absent, bare, attributed, and child-bearing pPr', () => {});
+
+    await when('each empty paragraph is atomized after identical content', () => {
+      const hashFor = (paragraph: Element) => {
+        const atom = emptyAtoms(el('w:body', {}, [textParagraph('alpha'), paragraph]))[0];
+        assertDefined(atom, 'empty paragraph atom');
+        return atom.sha1Hash;
+      };
+
+      noPPrHash = hashFor(emptyParagraph());
+      barePPrHash = hashFor(emptyParagraph([el('w:pPr')]));
+      attributedPPrHash = hashFor(emptyParagraph([el('w:pPr', { 'w:rsidR': '00112233' })]));
+      childPPrHash = hashFor(emptyParagraph([el('w:pPr', {}, [el('w:rPr', {}, [el('w:b')])])]));
+    });
+
+    await then('pPr presence and attributes matter, while pPr children are ignored', () => {
+      expect(noPPrHash).not.toBe(barePPrHash);
+      expect(barePPrHash).not.toBe(attributedPPrHash);
+      expect(barePPrHash).toBe(childPPrHash);
+    });
+  });
+
+  test('keeps later empty paragraph hashes stable after an inserted empty paragraph elsewhere', async ({ given, when, then }: AllureBddContext) => {
+    let originalBody: Element;
+    let revisedBody: Element;
+    let originalLaterEmptyHash: string;
+    let revisedLaterEmptyHash: string;
+
+    await given('one body has a new empty paragraph before unchanged later content', () => {
+      originalBody = el('w:body', {}, [textParagraph('one'), textParagraph('two'), emptyParagraph()]);
+      revisedBody = el('w:body', {}, [
+        textParagraph('one'),
+        emptyParagraph(),
+        textParagraph('two'),
+        emptyParagraph(),
+      ]);
+    });
+
+    await when('both bodies are atomized', () => {
+      const originalEmpty = emptyAtoms(originalBody)[0];
+      const revisedEmpties = emptyAtoms(revisedBody);
+      assertDefined(originalEmpty, 'original later empty paragraph atom');
+      assertDefined(revisedEmpties[1], 'revised later empty paragraph atom');
+      originalLaterEmptyHash = originalEmpty.sha1Hash;
+      revisedLaterEmptyHash = revisedEmpties[1].sha1Hash;
+    });
+
+    await then('the later unchanged empty paragraph hashes match', () => {
+      expect(originalLaterEmptyHash).toBe(revisedLaterEmptyHash);
+    });
+  });
+
+  test('keeps non-text leaf context distinctions', async ({ given, when, then }: AllureBddContext) => {
+    let tabBody: Element;
+    let breakBody: Element;
+    let tabEmptyHash: string;
+    let breakEmptyHash: string;
+
+    await given('empty paragraphs following tab-only and break-only paragraphs', () => {
+      tabBody = el('w:body', {}, [el('w:p', {}, [el('w:r', {}, [el('w:tab')])]), emptyParagraph()]);
+      breakBody = el('w:body', {}, [el('w:p', {}, [el('w:r', {}, [el('w:br')])]), emptyParagraph()]);
+    });
+
+    await when('both bodies are atomized', () => {
+      const tabEmpty = emptyAtoms(tabBody)[0];
+      const breakEmpty = emptyAtoms(breakBody)[0];
+      assertDefined(tabEmpty, 'tab-context empty paragraph atom');
+      assertDefined(breakEmpty, 'break-context empty paragraph atom');
+      tabEmptyHash = tabEmpty.sha1Hash;
+      breakEmptyHash = breakEmpty.sha1Hash;
+    });
+
+    await then('the empty paragraph hashes differ', () => {
+      expect(tabEmptyHash).not.toBe(breakEmptyHash);
+    });
+  });
+
+  test('treats marker-only and proofErr-only paragraphs as content-transparent', async ({ given, when, then }: AllureBddContext) => {
+    let baselineBody: Element;
+    let bookmarkBody: Element;
+    let proofErrBody: Element;
+    let baselineHash: string;
+    let bookmarkHash: string;
+    let proofErrHash: string;
+
+    await given('empty paragraphs after content-transparent marker-only paragraphs', () => {
+      baselineBody = el('w:body', {}, [textParagraph('alpha'), emptyParagraph()]);
+      bookmarkBody = el('w:body', {}, [
+        textParagraph('alpha'),
+        el('w:p', {}, [el('w:bookmarkStart', { 'w:id': '7', 'w:name': 'marker' })]),
+        emptyParagraph(),
+      ]);
+      proofErrBody = el('w:body', {}, [
+        textParagraph('alpha'),
+        el('w:p', {}, [el('w:proofErr', { 'w:type': 'spellStart' })]),
+        emptyParagraph(),
+      ]);
+    });
+
+    await when('the bodies are atomized with paragraph-level markers enabled', () => {
+      const baselineEmpty = emptyAtoms(baselineBody)[0];
+      const bookmarkEmpty = emptyAtoms(bookmarkBody)[0];
+      const proofErrEmpty = emptyAtoms(proofErrBody)[0];
+      assertDefined(baselineEmpty, 'baseline empty paragraph atom');
+      assertDefined(bookmarkEmpty, 'bookmark-context empty paragraph atom');
+      assertDefined(proofErrEmpty, 'proofErr-context empty paragraph atom');
+      baselineHash = baselineEmpty.sha1Hash;
+      bookmarkHash = bookmarkEmpty.sha1Hash;
+      proofErrHash = proofErrEmpty.sha1Hash;
+    });
+
+    await then('the following empty paragraph hashes match the baseline', () => {
+      expect(bookmarkHash).toBe(baselineHash);
+      expect(proofErrHash).toBe(baselineHash);
     });
   });
 });

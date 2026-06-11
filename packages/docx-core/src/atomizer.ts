@@ -404,8 +404,9 @@ function isEmptyParagraph(node: WmlElement): boolean {
  * These atoms represent empty paragraphs that have no text content,
  * ensuring they are preserved during document reconstruction.
  *
- * The hash includes the previous content hash to ensure empty paragraphs
- * only match if they're at the same logical position in the document.
+ * The hash includes a paragraph-level content signature for the previous
+ * content-bearing paragraph and a consecutive-empty index. Text fragment
+ * boundaries are ignored, while non-text leaves contribute stable tokens.
  *
  * @param paragraphElement - The w:p element
  * @param ancestors - Ancestor elements from root to parent
@@ -427,15 +428,10 @@ function createEmptyParagraphAtomWithContext(
   // Determine initial correlation status
   const correlationStatus = getStatusFromRevisionTracking(revTrackElement);
 
-  // Create a hash that uniquely identifies this empty paragraph
-  // Include:
-  // 1. pPr content for paragraph properties
-  // 2. lastContentHash for context (what content precedes this empty paragraph)
-  // 3. emptyParagraphCount for consecutive empty paragraphs with same context
   const pPr = findChildByTagName(paragraphElement, 'w:pPr');
   const pPrHash = pPr ? hashElement(pPr) : 'no-pPr';
   const contextHash = state.lastContentHash || 'document-start';
-  const hashContent = `empty-paragraph:${contextHash}:${state.emptyParagraphCount}:${pPrHash}`;
+  const hashContent = `empty-paragraph:${contextHash}:${state.consecutiveEmptyIndex}:${pPrHash}`;
 
   return {
     contentElement: virtualElement,
@@ -454,10 +450,41 @@ function createEmptyParagraphAtomWithContext(
  * State for tracking context during atomization.
  */
 interface AtomizationState {
-  /** Counter for empty paragraphs (ensures unique hashes) */
+  /** Total empty paragraph count for reporting. */
   emptyParagraphCount: number;
+  /** Index among consecutive empty paragraphs after the same content context. */
+  consecutiveEmptyIndex: number;
   /** Hash of the last non-empty content for context-aware matching */
   lastContentHash: string;
+}
+
+function updateParagraphContentContext(
+  node: WmlElement,
+  atoms: ComparisonUnitAtom[],
+  state: AtomizationState
+): void {
+  if (node.tagName !== 'w:p') {
+    return;
+  }
+
+  const contentAtoms = atoms.filter(
+    (atom) => !PARAGRAPH_LEVEL_TAGS.has(atom.contentElement.tagName)
+  );
+  if (contentAtoms.length === 0) {
+    return;
+  }
+
+  const signature = contentAtoms
+    .map((atom) => {
+      if (atom.contentElement.tagName === 'w:t') {
+        return getLeafText(atom.contentElement) ?? '';
+      }
+      return `\u0000${atom.contentElement.tagName}:${atom.sha1Hash}\u0000`;
+    })
+    .join('');
+
+  state.lastContentHash = sha1(`para-content:${signature}`);
+  state.consecutiveEmptyIndex = 0;
 }
 
 /**
@@ -479,8 +506,6 @@ function atomizeTreeInternal(
       part,
     });
     atoms.push(atom);
-    // Update last content hash for context-aware empty paragraph matching
-    state.lastContentHash = atom.sha1Hash;
   } else if (
     options.atomizeParagraphLevelMarkers &&
     isParagraphLevelLeaf(node) &&
@@ -498,15 +523,16 @@ function atomizeTreeInternal(
       part,
     });
     atoms.push(atom);
-    state.lastContentHash = atom.sha1Hash;
   } else if (isEmptyParagraph(node)) {
     // Create empty paragraph atom with context-aware hash
     atoms.push(createEmptyParagraphAtomWithContext(node, ancestors, part, state));
     state.emptyParagraphCount++;
+    state.consecutiveEmptyIndex++;
   } else {
     for (const child of childElements(node)) {
       atoms.push(...atomizeTreeInternal(child, [...ancestors, node], part, state, options));
     }
+    updateParagraphContentContext(node, atoms, state);
   }
 
   return atoms;
@@ -539,6 +565,7 @@ export function atomizeTree(
 
   const state: AtomizationState = {
     emptyParagraphCount: 0,
+    consecutiveEmptyIndex: 0,
     lastContentHash: '',
   };
   const rawAtoms = atomizeTreeInternal(node, ancestors, part, state, normalizedOptions);
