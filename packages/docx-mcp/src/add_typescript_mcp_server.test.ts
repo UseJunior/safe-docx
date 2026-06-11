@@ -85,7 +85,7 @@ describe('TypeScript MCP server behavior', () => {
     const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf-8')) as PackageJsonMetadata;
     expect(pkg.types).toBe('dist/index.d.ts');
     expect(pkg.repository?.url?.toLowerCase()).toContain('github.com/usejunior/safe-docx');
-    expect(pkg.license).toBe('MIT');
+    expect(pkg.license).toBe('Apache-2.0');
   });
 
   humanReadableTest.openspec('Read-only tools annotated correctly')('Scenario: Read-only tools annotated correctly', async () => {

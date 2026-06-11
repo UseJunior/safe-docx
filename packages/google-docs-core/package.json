@@ -37,7 +37,8 @@
     "access": "public"
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "keywords": [
     "google-docs",
@@ -46,5 +47,5 @@
     "mcp",
     "anchor-management"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

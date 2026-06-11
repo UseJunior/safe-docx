@@ -47,7 +47,8 @@
     "url": "https://github.com/UseJunior/safe-docx/issues"
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "keywords": [
     "docx",
@@ -61,7 +62,7 @@
     "edge",
     "vercel"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "bin": {
     "docx-comparison": "dist/cli/index.js",
     "safe-docx-compare": "dist/cli/index.js",

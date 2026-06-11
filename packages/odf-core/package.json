@@ -38,7 +38,8 @@
     "access": "public"
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "keywords": [
     "odf",
@@ -50,5 +51,5 @@
     "document-editing",
     "mcp"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

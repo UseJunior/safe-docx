@@ -25,7 +25,7 @@ export default [
   },
   {
     q: 'Is it free?',
-    a: 'Yes. Safe DOCX is MIT-licensed. You can read every line of source, fork it, or vendor it into your own project. No usage metering, no black-box service calls.',
+    a: 'Yes. Safe DOCX is Apache-2.0-licensed. You can read every line of source, fork it, or vendor it into your own project. No usage metering, no black-box service calls.',
   },
   {
     q: 'Does it need LibreOffice or Microsoft Word installed?',

@@ -1,7 +1,7 @@
 {
   "name": "@usejunior/safe-docx",
   "version": "0.11.0",
-  "description": "Edit Word (.docx) and OpenDocument (.odt) files with tracked changes, redlines, and formatting preservation. Built for AI coding agents. MIT licensed, 100% local processing.",
+  "description": "Edit Word (.docx) and OpenDocument (.odt) files with tracked changes, redlines, and formatting preservation. Built for AI coding agents. Apache-2.0 licensed, 100% local processing.",
   "mcpName": "io.github.UseJunior/safe-docx",
   "type": "module",
   "main": "./index.js",
@@ -42,9 +42,10 @@
     "index.js",
     "index.d.ts",
     "README.md",
-    "server.json"
+    "server.json",
+    "NOTICE"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "mcp",
     "mcp-server",
