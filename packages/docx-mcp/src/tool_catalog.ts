@@ -58,6 +58,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .describe(
           'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
         ),
+      include_footnotes: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true and format="json", attach a `footnotes` array ({id, display_number, text}) to each paragraph node for the footnotes anchored to it. Windowed to the returned slice (a paginated walk returns each footnote exactly once) and counted toward the read token budget. Footnotes with an empty body or no anchored paragraph are excluded — use get_footnotes for the authoritative full enumeration. No effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false.',
+        ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
@@ -310,7 +316,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'get_comments',
     description:
-      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.',
+      'Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Range-anchored DOCX comments also expose optional end_paragraph_id, start_run_index, start_char_offset, end_run_index, and end_char_offset fields describing the covered span. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.',
     input: z.object({
       ...FILE_FIELD,
     }),

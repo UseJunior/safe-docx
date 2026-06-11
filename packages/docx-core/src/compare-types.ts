@@ -173,6 +173,21 @@ export interface ReconstructionFallbackDiagnostics {
   attempts: ReconstructionAttemptDiagnostics[];
 }
 
+/**
+ * Round-trip safety evaluation of rebuild output. Rebuild is the terminal
+ * reconstruction strategy — there is no further fallback — so a failed check
+ * cannot reroute the pipeline. The document is returned anyway and the
+ * failures are surfaced here as a caller-visible warning.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/226
+ */
+export interface ReconstructionRebuildSafetyDiagnostics {
+  checks: ReconstructionSafetyChecks;
+  failedChecks: ReconstructionSafetyCheckName[];
+  failureDetails?: ReconstructionSafetyFailureDetails;
+  firstDiffSummary?: ReconstructionSafetyFailureSummary;
+}
+
 export interface CompareResult {
   /** The resulting DOCX with track changes */
   document: Buffer;
@@ -198,4 +213,10 @@ export interface CompareResult {
    * Present only when atomizer falls back.
    */
   fallbackDiagnostics?: ReconstructionFallbackDiagnostics;
+  /**
+   * Safety-check failures observed on rebuild output — whether rebuild was
+   * requested explicitly (the default mode) or reached via inplace fallback.
+   * Present only when at least one check failed.
+   */
+  rebuildSafetyDiagnostics?: ReconstructionRebuildSafetyDiagnostics;
 }

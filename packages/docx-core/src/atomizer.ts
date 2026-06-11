@@ -202,7 +202,8 @@ const LEAF_NODE_TAGS = new Set([
   'w:endnoteReference', // Endnote reference
   'w:commentReference', // Comment reference anchor (run-level child).
   // Note: w:commentRangeStart / w:commentRangeEnd / w:bookmarkStart /
-  // w:bookmarkEnd / w:permStart / w:permEnd are paragraph-level markers
+  // w:bookmarkEnd / w:moveFromRangeStart/End / w:moveToRangeStart/End /
+  // w:permStart / w:permEnd are paragraph-level markers
   // (siblings of <w:r>, not children). They are
   // tracked in PARAGRAPH_LEVEL_TAGS below and atomized via a separate branch in
   // atomizeTreeInternal so the reconstructor can emit them outside synthetic
@@ -224,18 +225,26 @@ const LEAF_NODE_TAGS = new Set([
  * rebuild reconstructor emits them as siblings of <w:r>, not leaves wrapped in
  * a synthetic run.
  *
- * Scope: commentRange, bookmark, and range-permission (permStart / permEnd)
- * markers. moveFromRange / moveToRange are deferred to a follow-up issue —
- * moveRange collides with the synthetic emission in wrapWithMoveFrom and
- * wrapWithMoveTo.
+ * Scope: commentRange, bookmark, moveFromRange / moveToRange, and
+ * range-permission (permStart / permEnd) markers. Explicit move-range markers
+ * coexist with the synthetic emission in wrapWithMoveFrom and wrapWithMoveTo:
+ * the reconstructor suppresses synthesis for paragraphs whose atom stream
+ * already carries explicit markers of the same kind, so the two paths never
+ * double-emit.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @see https://github.com/UseJunior/safe-docx/issues/110
+ * @see https://github.com/UseJunior/safe-docx/issues/111
  */
 export const PARAGRAPH_LEVEL_TAGS = new Set([
   'w:commentRangeStart',
   'w:commentRangeEnd',
   'w:bookmarkStart',
   'w:bookmarkEnd',
+  'w:moveFromRangeStart',
+  'w:moveFromRangeEnd',
+  'w:moveToRangeStart',
+  'w:moveToRangeEnd',
   'w:permStart',
   'w:permEnd',
 ]);
@@ -278,9 +287,9 @@ export interface AtomizeTreeOptions {
    */
   splitTextIntoWords?: boolean;
   /**
-   * Atomize paragraph-level markers (commentRangeStart/End, bookmarkStart/End,
-   * permStart/End) so the rebuild reconstructor can re-emit them as siblings
-   * of <w:r>.
+   * Atomize paragraph-level markers (commentRange*, bookmark*, moveFromRange*,
+   * moveToRange*, perm* — see PARAGRAPH_LEVEL_TAGS) so the rebuild
+   * reconstructor can re-emit them as siblings of <w:r>.
    *
    * MUST be false for inplace mode. Inplace handlers are run-anchored and
    * silently no-op on atoms with no sourceRunElement, but inplace's bookmark
@@ -307,9 +316,9 @@ export function isLeafNode(element: WmlElement): boolean {
 /**
  * Check if an element is a paragraph-level OOXML marker.
  *
- * Paragraph-level markers (commentRangeStart/End, bookmarkStart/End,
- * permStart/End) are atomized only when they sit inside a <w:p> ancestor —
- * body/table-sibling
+ * Paragraph-level markers (PARAGRAPH_LEVEL_TAGS: commentRange*, bookmark*,
+ * moveFromRange*, moveToRange*, perm*) are
+ * atomized only when they sit inside a <w:p> ancestor — body/table-sibling
  * placements stay out of the atom stream and are handled by the scaffold-strip
  * block in the reconstructor.
  */
@@ -385,18 +394,25 @@ export function createComparisonUnitAtom(
 // =============================================================================
 
 /**
- * Check if a paragraph element is empty (has no content, only properties).
+ * Check if a paragraph element is empty (has no content-bearing children).
  *
- * Empty paragraphs have only w:pPr children, no w:r (run) elements.
+ * Empty paragraphs have only paragraph properties, or proofing-error anchors.
+ * `w:proofErr` marks spelling/grammar proofing state and carries no document
+ * content, so a paragraph containing only those anchors is empty for
+ * comparison.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.8.1
+ * @see https://github.com/UseJunior/safe-docx/issues/456
  */
+const EMPTY_PARAGRAPH_TRANSPARENT_TAGS = new Set(['w:pPr', 'w:proofErr']);
+
 function isEmptyParagraph(node: WmlElement): boolean {
   if (node.tagName !== 'w:p') return false;
   const kids = childElements(node);
   if (kids.length === 0) return true;
 
-  // Check if all children are w:pPr (no runs)
   for (const child of kids) {
-    if (child.tagName !== 'w:pPr') {
+    if (!EMPTY_PARAGRAPH_TRANSPARENT_TAGS.has(child.tagName)) {
       return false;
     }
   }

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ilpa-orphaned-ppr-close",
+    "issue": "#450",
+    "match": "not well-formed: Opening and ending tag mismatch: \"w:body\" != \"w:pPr\"",
+    "reason": "ILPA-pair comparison drops the opening <w:p><w:pPr> of a paragraph-mark sectPr paragraph, leaving orphaned close tags at body level"
+  },
+  {
+    "id": "duplicate-rprchange-in-rpr",
+    "issue": "#451",
+    "match": "}rPrChange': This element is not expected.",
+    "reason": "comparison stacks duplicate w:rPrChange children in a single w:rPr; CT_RPr allows at most one"
+  },
+  {
+    "id": "duplicate-para-mark-ins",
+    "issue": "#452",
+    "match": "}ins': This element is not expected.",
+    "reason": "tracked paragraph insertion emits two paragraph-mark w:ins markers in w:pPr/w:rPr; CT_ParaRPr allows at most one"
+  },
+  {
+    "id": "synthetic-table-missing-tblgrid",
+    "issue": "#453",
+    "match": "}tr': This element is not expected.",
+    "reason": "synthetic table fixtures omit the required w:tblGrid, and the engine faithfully preserves the gap into emitted output"
+  }
+]

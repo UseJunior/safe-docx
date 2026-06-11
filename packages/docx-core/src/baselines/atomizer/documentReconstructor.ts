@@ -439,8 +439,14 @@ function shouldStartNewRunGroup(
     return true;
   }
 
-  // Skip rPr splitting for MovedSource/MovedDestination to avoid
-  // duplicate move range markers (moveFromRangeStart/End)
+  // Skip rPr splitting for MovedSource/MovedDestination: every moved run
+  // group is wrapped by wrapWithMoveFrom/wrapWithMoveTo, so splitting one
+  // move into several groups would emit moveFromRangeStart/End (resp.
+  // moveToRangeStart/End) once per slice with the same w:name and range ids.
+  // This stays required now that explicit move-range markers atomize: the
+  // synthetic-range suppression keyed off those markers is per paragraph, so
+  // a detected move in a marker-free paragraph still synthesizes one range
+  // pair per moved run group.
   if (currentGroup.status === CorrelationStatus.MovedSource ||
       currentGroup.status === CorrelationStatus.MovedDestination) {
     return false;
@@ -539,6 +545,46 @@ function isEmptyParagraphGroup(group: ParagraphGroup): boolean {
     }
   }
   return group.runGroups.length > 0;
+}
+
+/**
+ * Which explicit move-range marker kinds a paragraph's atom stream already
+ * carries. Computed once per paragraph and threaded into buildRunGroupXml so
+ * wrapWithMoveFrom / wrapWithMoveTo suppress their synthetic
+ * moveFromRangeStart/End (resp. moveToRangeStart/End) emission instead of
+ * doubling the explicit markers that buildRunContentWithParagraphMarkers
+ * re-emits from the atom stream.
+ *
+ * Granularity is the paragraph, keyed by marker kind. Explicit markers carry
+ * their own w:name from the source document while detected moves get
+ * synthetic names ("move1", ...), so pairing an explicit marker pair with a
+ * specific moved run group is not possible. A paragraph that mixes an
+ * explicit-marker move with a second, independently detected move of the same
+ * kind keeps the explicit pair and loses the synthetic one.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/110
+ */
+interface ExplicitMoveMarkers {
+  moveFrom: boolean;
+  moveTo: boolean;
+}
+
+const NO_EXPLICIT_MOVE_MARKERS: ExplicitMoveMarkers = { moveFrom: false, moveTo: false };
+
+function collectExplicitMoveMarkers(group: ParagraphGroup): ExplicitMoveMarkers {
+  let moveFrom = false;
+  let moveTo = false;
+  for (const runGroup of group.runGroups) {
+    for (const atom of runGroup.atoms) {
+      const tag = atom.contentElement.tagName;
+      if (tag === 'w:moveFromRangeStart' || tag === 'w:moveFromRangeEnd') {
+        moveFrom = true;
+      } else if (tag === 'w:moveToRangeStart' || tag === 'w:moveToRangeEnd') {
+        moveTo = true;
+      }
+    }
+  }
+  return { moveFrom, moveTo };
 }
 
 /**
@@ -659,11 +705,12 @@ function buildParagraphXml(
   // Add run groups with track changes, restoring w:hyperlink wrappers when
   // the paragraph contains hyperlink atoms (issue #368). Hyperlink-free
   // paragraphs keep the legacy per-group emission byte-identical.
+  const explicitMoveMarkers = collectExplicitMoveMarkers(group);
   if (paragraphHasHyperlinkAtoms(group)) {
-    parts.push(buildRunGroupsWithHyperlinks(group.runGroups, author, dateStr, revState));
+    parts.push(buildRunGroupsWithHyperlinks(group.runGroups, author, dateStr, revState, explicitMoveMarkers));
   } else {
     for (const runGroup of group.runGroups) {
-      const runXml = buildRunGroupXml(runGroup, author, dateStr, revState);
+      const runXml = buildRunGroupXml(runGroup, author, dateStr, revState, explicitMoveMarkers);
       parts.push(runXml);
     }
   }
@@ -795,12 +842,17 @@ function buildRunContentAsPlainRun(group: RunGroup): string {
 
 /**
  * Build XML for a run group with appropriate track changes wrapper.
+ *
+ * `explicitMoveMarkers` reports whether the surrounding paragraph's atom
+ * stream already carries explicit moveFromRange / moveToRange markers; moved
+ * groups then skip synthetic range emission (see ExplicitMoveMarkers).
  */
 function buildRunGroupXml(
   group: RunGroup,
   author: string,
   dateStr: string,
-  revState: RevisionIdState
+  revState: RevisionIdState,
+  explicitMoveMarkers: ExplicitMoveMarkers = NO_EXPLICIT_MOVE_MARKERS
 ): string {
   const runContent = buildRunContent(group);
 
@@ -827,7 +879,8 @@ function buildRunGroupXml(
         author,
         dateStr,
         group.moveName || 'move1',
-        revState
+        revState,
+        explicitMoveMarkers.moveFrom
       );
 
     case CorrelationStatus.MovedDestination:
@@ -836,7 +889,8 @@ function buildRunGroupXml(
         author,
         dateStr,
         group.moveName || 'move1',
-        revState
+        revState,
+        explicitMoveMarkers.moveTo
       );
 
     case CorrelationStatus.FormatChanged:
@@ -1098,7 +1152,8 @@ function buildRunGroupsWithHyperlinks(
   runGroups: RunGroup[],
   author: string,
   dateStr: string,
-  revState: RevisionIdState
+  revState: RevisionIdState,
+  explicitMoveMarkers: ExplicitMoveMarkers = NO_EXPLICIT_MOVE_MARKERS
 ): string {
   const buckets = mergeAdjacentHyperlinkSegments(
     runGroups.flatMap(splitRunGroupByHyperlink)
@@ -1107,7 +1162,7 @@ function buildRunGroupsWithHyperlinks(
   const parts: string[] = [];
   for (const bucket of buckets) {
     const content = bucket.groups
-      .map((g) => buildRunGroupXml(g, author, dateStr, revState))
+      .map((g) => buildRunGroupXml(g, author, dateStr, revState, explicitMoveMarkers))
       .join('');
     if (!content) continue;
     parts.push(
@@ -1148,7 +1203,8 @@ function buildWholeParagraphRevisionContent(
 
 /**
  * Returns true when any atom in the group is a paragraph-level marker
- * (commentRange / bookmark / perm) that must be emitted outside <w:r>.
+ * (commentRange / bookmark / moveFromRange / moveToRange / perm) that must
+ * be emitted outside <w:r>.
  */
 function groupHasParagraphLevelAtoms(group: RunGroup): boolean {
   for (const atom of group.atoms) {
@@ -1349,14 +1405,28 @@ function wrapWithDel(
 
 /**
  * Wrap content with w:moveFrom elements.
+ *
+ * When `suppressRangeMarkers` is true the paragraph's atom stream already
+ * carries explicit w:moveFromRangeStart/End markers (re-emitted by
+ * buildRunContentWithParagraphMarkers), so only the w:moveFrom wrapper is
+ * synthesized — emitting a second range pair would corrupt the move ranges.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/110
  */
 function wrapWithMoveFrom(
   content: string,
   author: string,
   dateStr: string,
   moveName: string,
-  revState: RevisionIdState
+  revState: RevisionIdState,
+  suppressRangeMarkers = false
 ): string {
+  if (suppressRangeMarkers) {
+    const moveId = allocateRevisionId(revState);
+    const delContent = convertSerializedDeletionContent(content);
+    return `<w:moveFrom w:id="${moveId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">${delContent}</w:moveFrom>`;
+  }
+
   const ids = getMoveRangeIds(revState, moveName);
   const moveId = allocateRevisionId(revState);
 
@@ -1371,14 +1441,24 @@ function wrapWithMoveFrom(
 
 /**
  * Wrap content with w:moveTo elements.
+ *
+ * When `suppressRangeMarkers` is true the paragraph's atom stream already
+ * carries explicit w:moveToRangeStart/End markers, so only the w:moveTo
+ * wrapper is synthesized (see wrapWithMoveFrom).
  */
 function wrapWithMoveTo(
   content: string,
   author: string,
   dateStr: string,
   moveName: string,
-  revState: RevisionIdState
+  revState: RevisionIdState,
+  suppressRangeMarkers = false
 ): string {
+  if (suppressRangeMarkers) {
+    const moveId = allocateRevisionId(revState);
+    return `<w:moveTo w:id="${moveId}" w:author="${escapeXmlAttr(author)}" w:date="${dateStr}">${content}</w:moveTo>`;
+  }
+
   const ids = getMoveRangeIds(revState, moveName);
   const moveId = allocateRevisionId(revState);
 
@@ -1613,16 +1693,41 @@ function buildDocumentPreservingStructure(
     slot.parent.removeChild(slot.element);
   }
 
-  // Strip inter-paragraph bookmark/comment/permission range markers from the
-  // scaffold. These are bookmarkStart/End, commentRangeStart/End,
-  // permStart/End elements that were siblings of <w:p> in the original body.
-  // The paragraph rebuilder handles its own bookmark logic, so keeping these
-  // orphaned markers causes unmatched bookmark IDs.
+  // Strip inter-paragraph bookmark/comment/move-range/permission markers from
+  // the scaffold. These are bookmarkStart/End, commentRangeStart/End,
+  // moveFromRange*/moveToRange*, and permStart/End elements that were siblings
+  // of <w:p> in the original body. The paragraph rebuilder handles its own
+  // bookmark logic, so keeping these orphaned markers causes unmatched
+  // bookmark IDs. Body-level move-range markers are likewise scaffold
+  // remnants: in-paragraph markers travel through the atom stream, and
+  // detected moves synthesize fresh range pairs inside the reconstructed
+  // paragraphs, so a leftover body-level pair would either dangle or double an
+  // emitted range.
+  //
+  // Comment range markers are treated differently: a sibling-level
+  // commentRangeStart/End is the legitimate shape for a comment range that
+  // spans whole paragraphs, and such markers never enter the atom stream
+  // (see isParagraphLevelLeaf in atomizer.ts), so nothing re-emits them.
+  // Stripping them unconditionally destroys multi-paragraph comment ranges
+  // (issue #103). Instead, strip a sibling-level comment range marker only
+  // when its counterpart (same w:id) is absent from the rebuilt body —
+  // i.e., it is a genuinely orphaned scaffold remnant.
   const SCAFFOLD_STRIP_TAGS = new Set([
     'w:bookmarkStart', 'w:bookmarkEnd',
     'w:commentRangeStart', 'w:commentRangeEnd',
+    'w:moveFromRangeStart', 'w:moveFromRangeEnd',
+    'w:moveToRangeStart', 'w:moveToRangeEnd',
     'w:permStart', 'w:permEnd',
   ]);
+  const COMMENT_RANGE_TAGS = new Set(['w:commentRangeStart', 'w:commentRangeEnd']);
+  const commentRangeStartIds = new Set<string>();
+  const commentRangeEndIds = new Set<string>();
+  for (const el of Array.from(body.getElementsByTagName('*'))) {
+    const id = (el as Element).getAttribute('w:id');
+    if (id == null) continue;
+    if (el.tagName === 'w:commentRangeStart') commentRangeStartIds.add(id);
+    else if (el.tagName === 'w:commentRangeEnd') commentRangeEndIds.add(id);
+  }
   const toRemove: Element[] = [];
   for (const el of Array.from(body.getElementsByTagName('*'))) {
     if (SCAFFOLD_STRIP_TAGS.has(el.tagName) && el.parentNode) {
@@ -1636,9 +1741,15 @@ function buildDocumentPreservingStructure(
         }
         ancestor = ancestor.parentNode;
       }
-      if (!insideParagraph) {
-        toRemove.push(el as Element);
+      if (insideParagraph) continue;
+      if (COMMENT_RANGE_TAGS.has(el.tagName)) {
+        const id = (el as Element).getAttribute('w:id');
+        const counterpartIds = el.tagName === 'w:commentRangeStart'
+          ? commentRangeEndIds
+          : commentRangeStartIds;
+        if (id != null && counterpartIds.has(id)) continue;
       }
+      toRemove.push(el as Element);
     }
   }
   for (const el of toRemove) {

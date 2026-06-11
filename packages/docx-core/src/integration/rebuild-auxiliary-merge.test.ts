@@ -15,7 +15,8 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { compareDocuments } from '../index.js';
-import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
+import { buildSyntheticDocx, buildDocxFromParts, getResultParts } from './synthetic-docx-fixture.js';
+import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { parseXml } from '../primitives/xml.js';
 
 /**
@@ -577,6 +578,274 @@ describe('Paragraph-level marker reconstruction on rebuild (issue #106)', () => 
         // inplace output must contain the comment anchor; the full span survives
         // because the markers are already present in the revised archive.
         expect(parts.documentXml).toContain('w:commentReference');
+      });
+    });
+  });
+});
+
+describe('Multi-paragraph sibling comment ranges on rebuild (issue #103)', () => {
+  describe('Body-level comment range wrapping whole paragraphs', () => {
+    test('rebuild preserves matched sibling-level commentRangeStart/End markers', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('both sides have a comment range whose markers sit outside any <w:p>, wrapping the first two paragraphs', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph', 'Third paragraph'],
+          siblingCommentRange: { startBeforeParagraph: 0, endAfterParagraph: 1 },
+          commentText: 'Spanning comment',
+          commentAuthor: 'Reviewer',
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph revised', 'Third paragraph'],
+          siblingCommentRange: { startBeforeParagraph: 0, endAfterParagraph: 1 },
+          commentText: 'Spanning comment',
+          commentAuthor: 'Reviewer',
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('both range markers survive at body level with matching ids and the anchor is intact', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        const starts = inspectElements(parts.documentXml, 'w:commentRangeStart');
+        const ends = inspectElements(parts.documentXml, 'w:commentRangeEnd');
+        expect(starts.length).toBe(1);
+        expect(ends.length).toBe(1);
+        expect(starts[0]!.idAttr).toBe(ends[0]!.idAttr);
+
+        // The markers wrap whole paragraphs, so they must stay siblings of
+        // <w:p>, not get pulled inside a reconstructed paragraph.
+        for (const m of [...starts, ...ends]) {
+          expect(m.ancestors).not.toContain('w:p');
+          expect(m.parent).toBe('w:body');
+        }
+
+        // The comment anchor and definition must still be present.
+        expect(parts.documentXml).toContain('w:commentReference');
+        expect(parts.commentsXml).toContain('Spanning comment');
+      });
+    });
+  });
+
+  describe('Orphaned body-level comment range remnant', () => {
+    test('a sibling commentRangeStart with no matching end is still stripped', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('both sides carry an unmatched body-level commentRangeStart between two paragraphs', async () => {
+        const bodyXml = (textA: string) =>
+          `<w:p><w:r><w:t>${textA}</w:t></w:r></w:p>` +
+          `<w:commentRangeStart w:id="7"/>` +
+          `<w:p><w:r><w:t>Para B</w:t></w:r></w:p>`;
+        original = await buildDocxFromBodyXml(bodyXml('Para A'));
+        revised = await buildDocxFromBodyXml(bodyXml('Para A revised'));
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the orphaned marker does not survive into the rebuilt document', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        expect(parts.documentXml).not.toContain('w:commentRangeStart');
+      });
+    });
+  });
+});
+
+describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
+  /**
+   * No-doubling invariant for one move-range kind: every start id is unique
+   * (a doubled emission repeats the id), every start has a matching end, and
+   * no marker sits inside a <w:r>. Pass expectedPairs when the scenario pins
+   * the exact number of ranges.
+   */
+  function expectUndoubledRanges(xml: string, kind: 'moveFromRange' | 'moveToRange', expectedPairs?: number) {
+    const starts = inspectElements(xml, `w:${kind}Start`);
+    const ends = inspectElements(xml, `w:${kind}End`);
+    const startIds = starts.map((s) => s.idAttr);
+    expect(new Set(startIds).size).toBe(startIds.length);
+    expect(ends.length).toBe(starts.length);
+    expect(new Set(startIds)).toEqual(new Set(ends.map((e) => e.idAttr)));
+    if (expectedPairs !== undefined) {
+      expect(starts.length).toBe(expectedPairs);
+    }
+    for (const m of [...starts, ...ends]) {
+      expect(m.ancestors).not.toContain('w:r');
+    }
+    return { starts, ends };
+  }
+
+  describe('Explicit in-paragraph markers on the revised side', () => {
+    test('rebuild emits each move-range marker exactly once — no synthetic doubling', async ({ given, when, then, and }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original is plain and revised carries a tracked move with explicit range markers', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['The quick brown fox jumps over the dog', 'Middle paragraph stays put'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: [
+            'The quick brown fox jumps over the dog',
+            'Middle paragraph stays put',
+            'The quick brown fox jumps over the dog',
+          ],
+          trackedMove: { from: 0, to: 2, name: 'userMove1' },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('every range id is emitted exactly once per kind — nothing is doubled', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        // Move detection may additionally re-detect the move and synthesize
+        // its own "move1" pair; the invariant is that no pair (explicit or
+        // synthetic) is ever emitted twice.
+        expectUndoubledRanges(parts.documentXml, 'moveFromRange');
+        expectUndoubledRanges(parts.documentXml, 'moveToRange');
+      });
+
+      await and('the explicit markers survive exactly once each, name intact', async () => {
+        const parts = await getResultParts(result.document);
+        const fromStarts = inspectElements(parts.documentXml, 'w:moveFromRangeStart');
+        const toStarts = inspectElements(parts.documentXml, 'w:moveToRangeStart');
+        expect(fromStarts.filter((m) => m.idAttr === '300').length).toBe(1);
+        expect(toStarts.filter((m) => m.idAttr === '302').length).toBe(1);
+        // One w:name on the explicit moveFromRangeStart + one on the explicit
+        // moveToRangeStart. Before issue #110 these markers were dropped from
+        // rebuilt paragraphs entirely (not atomized), so this count was 0.
+        expect(parts.documentXml.match(/w:name="userMove1"/g)?.length).toBe(2);
+      });
+    });
+
+    test('inplace mode preserves explicit move-range markers without duplication', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original is plain and revised carries a tracked move with explicit range markers', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['The quick brown fox jumps over the dog', 'Middle paragraph stays put'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: [
+            'The quick brown fox jumps over the dog',
+            'Middle paragraph stays put',
+            'The quick brown fox jumps over the dog',
+          ],
+          trackedMove: { from: 0, to: 2, name: 'userMove1' },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in inplace mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+      });
+
+      await then('whichever mode is used, the explicit markers survive exactly once each', async () => {
+        const parts = await getResultParts(result.document);
+        // Only the explicit markers are asserted here: inplace's own synthetic
+        // emission duplicates range pairs per moved run (one identical-id pair
+        // per wrapped <w:r>) — a pre-existing engine bug independent of the
+        // explicit-marker reconstruction this suite covers.
+        // See https://github.com/UseJunior/safe-docx/issues/446
+        const fromStarts = inspectElements(parts.documentXml, 'w:moveFromRangeStart');
+        const fromEnds = inspectElements(parts.documentXml, 'w:moveFromRangeEnd');
+        const toStarts = inspectElements(parts.documentXml, 'w:moveToRangeStart');
+        const toEnds = inspectElements(parts.documentXml, 'w:moveToRangeEnd');
+        expect(fromStarts.filter((m) => m.idAttr === '300').length).toBe(1);
+        expect(fromEnds.filter((m) => m.idAttr === '300').length).toBe(1);
+        expect(toStarts.filter((m) => m.idAttr === '302').length).toBe(1);
+        expect(toEnds.filter((m) => m.idAttr === '302').length).toBe(1);
+      });
+    });
+  });
+
+  describe('Synthetic emission path (no explicit markers)', () => {
+    test('a detected move still synthesizes exactly one range pair per side', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('revised moves a whole paragraph with no pre-existing markers', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: [
+            'The quick brown fox jumps over the lazy dog today',
+            'Middle paragraph stays put',
+            'Final paragraph also stays',
+          ],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: [
+            'Middle paragraph stays put',
+            'Final paragraph also stays',
+            'The quick brown fox jumps over the lazy dog today',
+          ],
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('synthetic moveFromRange/moveToRange pairs are emitted once each with a shared name', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        expectUndoubledRanges(parts.documentXml, 'moveFromRange', 1);
+        expectUndoubledRanges(parts.documentXml, 'moveToRange', 1);
+        const names = [...parts.documentXml.matchAll(/<w:move(?:From|To)RangeStart [^>]*w:name="([^"]+)"/g)].map((m) => m[1]);
+        expect(names.length).toBe(2);
+        expect(names[0]).toBe(names[1]);
+      });
+    });
+  });
+
+  describe('Body-level move-range scaffold remnants', () => {
+    test('sibling-of-paragraph move-range markers are stripped on rebuild', async ({ given, when, then }: AllureBddContext) => {
+      const bodyLevelMarkers =
+        `<w:moveFromRangeStart w:id="900" w:name="orphanMove" w:author="Mover" w:date="2025-01-01T00:00:00Z"/>` +
+        `<w:moveFromRangeEnd w:id="900"/>`;
+      const makeBody = (firstParaText: string) =>
+        `<w:p><w:r><w:t>${firstParaText}</w:t></w:r></w:p>` +
+        bodyLevelMarkers +
+        `<w:p><w:r><w:t>Second paragraph</w:t></w:r></w:p>`;
+
+      let original: Buffer, revised: Buffer;
+      await given('both sides have a body-level move-range pair between two paragraphs', async () => {
+        original = await buildDocxFromParts({ bodyXml: makeBody('First paragraph') });
+        revised = await buildDocxFromParts({ bodyXml: makeBody('First paragraph revised') });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the body-level markers do not survive as scaffold remnants', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        expect(inspectElements(parts.documentXml, 'w:moveFromRangeStart').length).toBe(0);
+        expect(inspectElements(parts.documentXml, 'w:moveFromRangeEnd').length).toBe(0);
       });
     });
   });

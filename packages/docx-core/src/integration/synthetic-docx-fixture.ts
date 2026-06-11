@@ -5,6 +5,8 @@ export interface SyntheticDocxOptions {
   paragraphs: string[];
   footnoteOnParagraph?: number;
   footnoteText?: string;
+  endnoteOnParagraph?: number;
+  endnoteText?: string;
   commentOnParagraph?: number;
   commentText?: string;
   commentAuthor?: string;
@@ -41,6 +43,28 @@ export interface SyntheticDocxOptions {
    */
   siblingBookmarkBefore?: { index: number; name: string; id?: number };
   /**
+   * Multi-paragraph comment range with body-level markers: the
+   * commentRangeStart is emitted as a sibling of <w:p> before
+   * paragraphs[startBeforeParagraph] and the commentRangeEnd as a sibling
+   * after paragraphs[endAfterParagraph]. The commentReference run is
+   * appended inside paragraphs[endAfterParagraph]. This is the issue #103
+   * shape: range markers spanning whole paragraphs sit outside any <w:p>.
+   *
+   * Mutually exclusive with commentOnParagraph and commentSpanParagraphs.
+   */
+  siblingCommentRange?: { startBeforeParagraph: number; endAfterParagraph: number };
+  /**
+   * Pre-existing tracked move with explicit in-paragraph range markers.
+   * paragraphs[from]'s text is wrapped in <w:moveFrom> (as w:delText)
+   * bracketed by w:moveFromRangeStart/End; paragraphs[to]'s text is wrapped
+   * in <w:moveTo> bracketed by w:moveToRangeStart/End. All four markers are
+   * direct children of their <w:p>, sharing the given w:name. Callers should
+   * pass identical text for paragraphs[from] and paragraphs[to] so the shape
+   * matches what Word produces for a real tracked move. Used to verify
+   * explicit move-range marker reconstruction (issue #110).
+   */
+  trackedMove?: { from: number; to: number; name: string; author?: string; firstId?: number };
+  /**
    * Range permission spanning paragraphs. permStart opens at the start of
    * paragraphs[start] and permEnd closes at the end of paragraphs[end].
    * start === end yields a single-paragraph span around that paragraph's run.
@@ -56,23 +80,31 @@ export interface SyntheticDocxOptions {
 
 export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Buffer> {
   const hasFootnote = opts.footnoteOnParagraph != null;
+  const hasEndnote = opts.endnoteOnParagraph != null;
   const hasComment = opts.commentOnParagraph != null;
   const hasCommentSpan = opts.commentSpanParagraphs != null;
   const hasBookmark = opts.bookmarkOnParagraph != null;
   const hasSiblingBookmark = opts.siblingBookmarkBefore != null;
+  const hasSiblingCommentRange = opts.siblingCommentRange != null;
   const hasPermSpan = opts.permSpanParagraphs != null;
   const hasSiblingPerm = opts.siblingPermBefore != null;
 
-  if (hasComment && hasCommentSpan) {
-    throw new Error('commentOnParagraph and commentSpanParagraphs are mutually exclusive');
+  if ([hasComment, hasCommentSpan, hasSiblingCommentRange].filter(Boolean).length > 1) {
+    throw new Error(
+      'commentOnParagraph, commentSpanParagraphs and siblingCommentRange are mutually exclusive'
+    );
   }
 
   const bookmarkId = opts.bookmarkOnParagraph?.id ?? 100;
   const siblingBookmarkId = opts.siblingBookmarkBefore?.id ?? 200;
   const spanStart = opts.commentSpanParagraphs?.start;
   const spanEnd = opts.commentSpanParagraphs?.end;
-  const permId = opts.permSpanParagraphs?.id ?? 300;
-  const siblingPermId = opts.siblingPermBefore?.id ?? 400;
+  const hasTrackedMove = opts.trackedMove != null;
+  const moveAuthor = opts.trackedMove?.author ?? 'Mover';
+  const moveBaseId = opts.trackedMove?.firstId ?? 300;
+  const moveDate = '2025-01-01T00:00:00Z';
+  const permId = opts.permSpanParagraphs?.id ?? 500;
+  const siblingPermId = opts.siblingPermBefore?.id ?? 600;
   const permSpanStart = opts.permSpanParagraphs?.start;
   const permSpanEnd = opts.permSpanParagraphs?.end;
 
@@ -85,6 +117,10 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
 
     if (hasFootnote && idx === opts.footnoteOnParagraph) {
       extra += `<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>`;
+    }
+
+    if (hasEndnote && idx === opts.endnoteOnParagraph) {
+      extra += `<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="1"/></w:r>`;
     }
 
     if (hasComment && idx === opts.commentOnParagraph) {
@@ -103,6 +139,34 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
           `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r>`
         : '';
       return `<w:p>${before}<w:r><w:t>${escaped}</w:t></w:r>${after}${extra}</w:p>`;
+    }
+
+    if (hasTrackedMove && idx === opts.trackedMove!.from) {
+      const name = opts.trackedMove!.name;
+      return (
+        `<w:p>` +
+        `<w:moveFromRangeStart w:id="${moveBaseId}" w:name="${name}" w:author="${moveAuthor}" w:date="${moveDate}"/>` +
+        `<w:moveFrom w:id="${moveBaseId + 1}" w:author="${moveAuthor}" w:date="${moveDate}">` +
+        `<w:r><w:delText>${escaped}</w:delText></w:r>` +
+        `</w:moveFrom>` +
+        `<w:moveFromRangeEnd w:id="${moveBaseId}"/>` +
+        extra +
+        `</w:p>`
+      );
+    }
+
+    if (hasTrackedMove && idx === opts.trackedMove!.to) {
+      const name = opts.trackedMove!.name;
+      return (
+        `<w:p>` +
+        `<w:moveToRangeStart w:id="${moveBaseId + 2}" w:name="${name}" w:author="${moveAuthor}" w:date="${moveDate}"/>` +
+        `<w:moveTo w:id="${moveBaseId + 3}" w:author="${moveAuthor}" w:date="${moveDate}">` +
+        `<w:r><w:t>${escaped}</w:t></w:r>` +
+        `</w:moveTo>` +
+        `<w:moveToRangeEnd w:id="${moveBaseId + 2}"/>` +
+        extra +
+        `</w:p>`
+      );
     }
 
     if (hasBookmark && idx === opts.bookmarkOnParagraph!.paragraph) {
@@ -138,6 +202,20 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     paragraphParts.splice(index, 0, sibling);
   }
 
+  // Inject body-level comment range markers around whole paragraphs (the
+  // issue #103 shape). The range markers are siblings of <w:p>; only the
+  // commentReference run anchors inside the last spanned paragraph. End is
+  // spliced before start so the start index is not shifted.
+  if (hasSiblingCommentRange) {
+    const { startBeforeParagraph, endAfterParagraph } = opts.siblingCommentRange!;
+    paragraphParts[endAfterParagraph] = paragraphParts[endAfterParagraph]!.replace(
+      '</w:p>',
+      `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r></w:p>`
+    );
+    paragraphParts.splice(endAfterParagraph + 1, 0, `<w:commentRangeEnd w:id="1"/>`);
+    paragraphParts.splice(startBeforeParagraph, 0, `<w:commentRangeStart w:id="1"/>`);
+  }
+
   // Inject a body-level (sibling of <w:p>) permStart/permEnd pair before
   // paragraphs[index], mirroring the sibling-bookmark scaffold shape above.
   if (hasSiblingPerm) {
@@ -153,7 +231,9 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
-    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
+    ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
+    ` mc:Ignorable="w14">` +
     `<w:body>${paragraphsXml}<w:sectPr/></w:body></w:document>`;
 
   const contentTypeParts: string[] = [
@@ -184,7 +264,26 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     );
   }
 
-  if (hasComment || hasCommentSpan) {
+  if (hasEndnote) {
+    const enText = opts.endnoteText ?? 'Test endnote';
+    const endnotesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>` +
+      `<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>` +
+      `<w:endnote w:id="1"><w:p><w:r><w:t>${enText}</w:t></w:r></w:p></w:endnote>` +
+      `</w:endnotes>`;
+    zip.file('word/endnotes.xml', endnotesXml);
+    contentTypeParts.push(
+      `<Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/>`
+    );
+    rIdCounter++;
+    docRelEntries.push(
+      `<Relationship Id="rId${rIdCounter}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/>`
+    );
+  }
+
+  if (hasComment || hasCommentSpan || hasSiblingCommentRange) {
     const cText = opts.commentText ?? 'Test comment';
     const cAuthor = opts.commentAuthor ?? 'Author';
     const hasReply = opts.replyText != null;
@@ -310,7 +409,9 @@ export async function buildDocxFromParts(opts: DocxPartsOptions): Promise<Buffer
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
     ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
-    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"` +
+    ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
+    ` mc:Ignorable="w14">` +
     `<w:body>${opts.bodyXml}<w:sectPr/></w:body></w:document>`;
 
   const overrides = [

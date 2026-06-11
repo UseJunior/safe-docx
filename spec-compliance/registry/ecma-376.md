@@ -53,6 +53,23 @@ never inside `<w:r>`. safe-docx's rebuild reconstructor emits them as
 siblings of `<w:r>`, not as leaves wrapped in a synthetic run. The
 authoritative list lives in `packages/docx-core/src/atomizer.ts`.
 
+## [ECMA-PART1-17-13-8-1] Proofing error anchors
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.8.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr
+verifiedBy:
+```
+
+`w:proofErr` anchors mark spelling or grammar proofing state. They are
+consumer-rewritable metadata and carry no document content, so safe-docx
+treats a paragraph whose only children are proofing anchors as an empty
+paragraph for comparison. Rebuild reconstruction does not re-emit those
+anchors.
+
 ## [ECMA-PART1-17-11-14] w:footnoteReference identifier vs display number
 
 ```yaml

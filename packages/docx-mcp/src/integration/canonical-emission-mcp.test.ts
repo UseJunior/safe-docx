@@ -31,7 +31,7 @@ function createManager(aiAuthor: string = AI_AUTHOR): SessionManager {
 function makeDocXml(bodyXml: string): string {
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<w:document xmlns:w="${W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+    `<w:document xmlns:w="${W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">` +
     `<w:body>${bodyXml}<w:sectPr/></w:body>` +
     `</w:document>`
   );
