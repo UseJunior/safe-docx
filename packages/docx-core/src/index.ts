@@ -121,3 +121,13 @@ export type {
 // Re-export the LibreOffice accept/reject oracle (gated reference voter; callers skip when
 // `resolveSoffice()` is null). odf-core's round-trip tests drive it with `.odt` jobs.
 export { resolveSoffice, runLibreOfficeOracle, type OracleJob } from './integration/libreoffice-oracle.js';
+
+// Synthetic-DOCX fixture builders re-exported for downstream packages' test suites
+// (odf-core's DOCX→ODT conversion tests build their inputs with these). They live under
+// `integration/` because `src/testing/**` is excluded from the package build.
+export {
+  buildSyntheticDocx,
+  buildDocxFromParts,
+  type SyntheticDocxOptions,
+  type DocxPartsOptions,
+} from './integration/synthetic-docx-fixture.js';

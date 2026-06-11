@@ -248,6 +248,74 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
 }
 
+/** Parts for {@link buildDocxFromParts}. Only the body XML is required. */
+export interface DocxPartsOptions {
+  /** Raw `<w:body>` children (paragraphs/tables), without the `<w:body>` wrapper. */
+  bodyXml: string;
+  /** Full `word/styles.xml` content. */
+  stylesXml?: string;
+  /** Full `word/numbering.xml` content. */
+  numberingXml?: string;
+  /** Extra `<Relationship …/>` entries for `word/_rels/document.xml.rels` (e.g. hyperlinks). */
+  documentRelEntries?: string[];
+}
+
+/**
+ * Build a loadable DOCX from raw part XML. The `testing/ooxml-fixtures.ts`
+ * `buildDocxFromBodyXml` covers the body-only case for docx-core's own tests, but it lives
+ * in the build-excluded testing tree; this builder is exported from the package root for
+ * downstream suites (odf-core's DOCX→ODT conversion tests) and additionally accepts the
+ * optional styles/numbering/relationship parts those tests exercise.
+ */
+export async function buildDocxFromParts(opts: DocxPartsOptions): Promise<Buffer> {
+  const zip = new JSZip();
+
+  const documentXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
+    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
+    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<w:body>${opts.bodyXml}<w:sectPr/></w:body></w:document>`;
+
+  const overrides = [
+    `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>`,
+    ...(opts.stylesXml
+      ? [`<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>`]
+      : []),
+    ...(opts.numberingXml
+      ? [`<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>`]
+      : []),
+  ];
+  const contentTypesXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+    `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+    `<Default Extension="xml" ContentType="application/xml"/>` +
+    overrides.join('') +
+    `</Types>`;
+
+  const rootRelsXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+    `</Relationships>`;
+
+  const docRelsXml =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    (opts.documentRelEntries ?? []).join('') +
+    `</Relationships>`;
+
+  zip.file('[Content_Types].xml', contentTypesXml);
+  zip.file('_rels/.rels', rootRelsXml);
+  zip.file('word/document.xml', documentXml);
+  zip.file('word/_rels/document.xml.rels', docRelsXml);
+  if (opts.stylesXml) zip.file('word/styles.xml', opts.stylesXml);
+  if (opts.numberingXml) zip.file('word/numbering.xml', opts.numberingXml);
+
+  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+}
+
 export interface SyntheticResultParts {
   documentXml: string;
   footnotesXml: string | null;

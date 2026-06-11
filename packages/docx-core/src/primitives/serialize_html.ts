@@ -68,7 +68,7 @@ function renderTextWithFootnotes(raw: string, refs?: FootnoteRefs): string {
  * otherwise pass through and execute on click. Relative URLs and fragments (no scheme) are kept.
  */
 const SAFE_URL_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
-function isSafeHref(href: string): boolean {
+export function isSafeHref(href: string): boolean {
   // Strip whitespace/control chars browsers ignore (e.g. `java\tscript:`) before scheme-matching.
   const v = href.replace(/[\u0000-\u0020]/g, '').toLowerCase();
   const scheme = /^([a-z][a-z0-9+.-]*):/.exec(v);

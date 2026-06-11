@@ -20,6 +20,7 @@ import { serializeToMarkdown, type SerializeMarkdownOptions } from './serialize_
 import { serializeToHtml, type SerializeHtmlOptions } from './serialize_html.js';
 import { serializeToPlainText, type SerializePlainTextOptions } from './serialize_plaintext.js';
 import type { FormattingMode } from './formatting_tags.js';
+import { parseNumberingXml, type NumberingModel } from './numbering.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
 import {
@@ -604,6 +605,16 @@ export class DocxDocument {
     }
     const endIdx = typeof limit === 'number' ? Math.min(total, startIdx + limit) : total;
     return { paragraphs: all.slice(startIdx, endIdx), totalParagraphs: total };
+  }
+
+  /**
+   * Parsed `word/numbering.xml` model (abstract numberings + instances), or null when the
+   * document has no numbering part. The document view's `numbering` field only carries
+   * `num_id`/`ilvl`; semantic converters (DOCX → ODT) need `numFmt`/`lvlText`/`start` to
+   * synthesize target-format list styles, so the full model is exposed here.
+   */
+  getNumberingModel(): NumberingModel | null {
+    return this.numberingXml ? parseNumberingXml(this.numberingXml) : null;
   }
 
   buildDocumentView(opts?: { includeSemanticTags?: boolean; showFormatting?: boolean; formattingMode?: FormattingMode }): { nodes: DocumentViewNode[]; styles: DocumentStyles } {
