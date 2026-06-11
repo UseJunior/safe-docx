@@ -1618,10 +1618,28 @@ function buildDocumentPreservingStructure(
   // siblings of <w:p> in the original body. The paragraph rebuilder handles
   // its own bookmark logic, so keeping these orphaned markers causes
   // unmatched bookmark IDs.
+  //
+  // Comment range markers are treated differently: a sibling-level
+  // commentRangeStart/End is the legitimate shape for a comment range that
+  // spans whole paragraphs, and such markers never enter the atom stream
+  // (see isParagraphLevelLeaf in atomizer.ts), so nothing re-emits them.
+  // Stripping them unconditionally destroys multi-paragraph comment ranges
+  // (issue #103). Instead, strip a sibling-level comment range marker only
+  // when its counterpart (same w:id) is absent from the rebuilt body —
+  // i.e., it is a genuinely orphaned scaffold remnant.
   const SCAFFOLD_STRIP_TAGS = new Set([
     'w:bookmarkStart', 'w:bookmarkEnd',
     'w:commentRangeStart', 'w:commentRangeEnd',
   ]);
+  const COMMENT_RANGE_TAGS = new Set(['w:commentRangeStart', 'w:commentRangeEnd']);
+  const commentRangeStartIds = new Set<string>();
+  const commentRangeEndIds = new Set<string>();
+  for (const el of Array.from(body.getElementsByTagName('*'))) {
+    const id = (el as Element).getAttribute('w:id');
+    if (id == null) continue;
+    if (el.tagName === 'w:commentRangeStart') commentRangeStartIds.add(id);
+    else if (el.tagName === 'w:commentRangeEnd') commentRangeEndIds.add(id);
+  }
   const toRemove: Element[] = [];
   for (const el of Array.from(body.getElementsByTagName('*'))) {
     if (SCAFFOLD_STRIP_TAGS.has(el.tagName) && el.parentNode) {
@@ -1635,9 +1653,15 @@ function buildDocumentPreservingStructure(
         }
         ancestor = ancestor.parentNode;
       }
-      if (!insideParagraph) {
-        toRemove.push(el as Element);
+      if (insideParagraph) continue;
+      if (COMMENT_RANGE_TAGS.has(el.tagName)) {
+        const id = (el as Element).getAttribute('w:id');
+        const counterpartIds = el.tagName === 'w:commentRangeStart'
+          ? commentRangeEndIds
+          : commentRangeStartIds;
+        if (id != null && counterpartIds.has(id)) continue;
       }
+      toRemove.push(el as Element);
     }
   }
   for (const el of toRemove) {
