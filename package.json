@@ -65,6 +65,7 @@
     "generate:conformance-doc": "node scripts/generate_conformance_doc.mjs",
     "check:conformance-citations": "node scripts/check_conformance_citations.mjs",
     "check:conformance-doc": "node scripts/check_conformance_doc.mjs",
+    "check:emitted-schema": "node scripts/check_emitted_document_schema.mjs --self-test --known-failures coverage/emitted-schema-known-failures.json",
     "generate:tests-corpus-schema": "npm run build -w @usejunior/test-narrative && node scripts/generate_tests_corpus_schema.mjs",
     "check:tests-corpus-schema": "npm run build -w @usejunior/test-narrative && node scripts/check_tests_corpus_schema.mjs",
     "build:tests-corpus": "npm run build -w @usejunior/test-narrative && node scripts/build_tests_corpus.mjs",
