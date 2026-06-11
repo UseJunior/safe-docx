@@ -11,7 +11,7 @@
  * Declining with 2 is mandatory for operations outside the implemented
  * set — the suite's design treats honest gaps as data, never approximate.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { DocxDocument } from '../primitives/document.js';
 import { getParagraphText, replaceParagraphTextRange } from '../primitives/text.js';
@@ -96,7 +96,9 @@ export async function runConformanceAdapter(argv: string[]): Promise<number> {
   return 0;
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+// realpathSync: when invoked through the node_modules/.bin symlink,
+// process.argv[1] is the symlink while import.meta.url is the real file.
+if (process.argv[1] && pathToFileURL(realpathSync(process.argv[1])).href === import.meta.url) {
   runConformanceAdapter(process.argv.slice(2))
     .then((code) => process.exit(code))
     .catch((err) => {
