@@ -1,4 +1,4 @@
-# Word-Dokumente (.docx) mit Programmier-Agenten via MCP bearbeiten
+# Word-Dokumente (.docx) mit Programmier-Agenten via MCP bearbeiten — mit OpenDocument- (.odt-) Unterstützung
 
 <!-- SYNC:badges BEGIN -->
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
@@ -77,7 +77,7 @@ flowchart LR
 ```
 <!-- SYNC:architecture-diagram END -->
 
-Safe Docx ist ein Open-Source-TypeScript-Stack für die chirurgische Bearbeitung bestehender Microsoft Word `.docx`-Dateien. Es wurde für Workflows entwickelt, in denen ein Agent Änderungen vorschlägt und ein Mensch weiterhin zuverlässige, formatierungserhaltende Dokumentenbearbeitungen benötigt.
+Safe Docx ist ein Open-Source-TypeScript-Stack für die chirurgische Bearbeitung bestehender Microsoft Word `.docx`-Dateien — und, über dieselbe Tool-Oberfläche, OpenDocument- `.odt`-Dateien. Es wurde für Workflows entwickelt, in denen ein Agent Änderungen vorschlägt und ein Mensch weiterhin zuverlässige, formatierungserhaltende Dokumentenbearbeitungen benötigt.
 
 Wenn du Verträge mit KI prüfst, ist der langsamste Schritt oft das Anwenden akzeptierter Empfehlungen in Word. Safe Docx verwandelt das in deterministische Tool-Aufrufe.
 
@@ -210,11 +210,23 @@ Füge zu `~/Library/Application Support/Claude/claude_desktop_config.json` (macO
 - Nachverfolgte Ausgaben zur Überprüfung (`download`, `compare_documents`)
 - Revisionsextraktion als strukturiertes JSON (`extract_revisions`)
 
+## Erstellung von Grund auf
+
+`@usejunior/docx-core` erzeugt auch neue `.docx`-Dateien aus einer deklarativen, JSON-serialisierbaren `DocumentSpec`: Abschnitte mit Kopf-/Fußzeilen und PAGE-/NUMPAGES-Feldern, benannte Stile, Tabellen, mehrstufige Nummerierung, juristische Dokumentrezepte (`coverTermsTable`, `signatureBlock`) und eine trennbare Entwurfsnotiz-Ebene, die zu OOXML-Kommentaren kompiliert wird. Die Erzeugung ist deterministisch (identische Specs erzeugen byte-identische Pakete) und unterliegt derselben ECMA-376-Konformitätsdisziplin wie der Bearbeitungspfad:
+
+```ts
+import { generateDocx } from '@usejunior/docx-core';
+
+const buffer = await generateDocx({
+  sections: [{ blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Hello' }] }] }],
+});
+```
+
+Die Erzeugung ist derzeit eine Library-API; der MCP-Server stellt noch kein `generate_document`-Tool bereit.
+
 ## Wofür Safe Docx nicht optimiert ist
 
-Safe Docx ist kein Toolkit zur Dokumentenerstellung von Grund auf.
-
-Wenn dein Hauptbedarf die Erstellung neuer `.docx`-Dateien aus Vorlagen oder programmatischem Layout ist, verwende Pakete wie [`docx`](https://www.npmjs.com/package/docx).
+Die lokale Safe-Docx-Laufzeit weist Word-Vorlagendateien (`.dotx`) derzeit bewusst zurück. Wandle die Vorlage in ein normales `.docx`-Dokument um, bevor du sie hier öffnest. Safe Docx macht außerdem keine Rendering-, Layout- oder Paginierungsgarantien — erzeugte und bearbeitete Dokumente werden strukturell und gegen ECMA-376 validiert, nicht pixelgenau.
 
 ## Dokumentenfamilien
 
@@ -236,6 +248,7 @@ Wenn dein Hauptbedarf die Erstellung neuer `.docx`-Dateien aus Vorlagen oder pro
 ## Pakete
 
 - `@usejunior/docx-core`: Primitive und Vergleichs-Engine für bestehende `.docx`-Dokumente
+- `@usejunior/odf-core`: OpenDocument- (`.odt`) Primitive und Vergleichs-Engine mit Änderungsnachverfolgung
 - `@usejunior/docx-mcp`: MCP-Server-Implementierung und Tool-Oberfläche
 - `@usejunior/safe-docx`: Kanonischer Installationsname für Endbenutzer (`npx -y @usejunior/safe-docx`)
 - `@usejunior/safedocx-mcpb`: Privater MCP-Bundle-Wrapper
@@ -263,7 +276,7 @@ Nein. Die unterstützte Laufzeitnutzung ist JavaScript/TypeScript mit `jszip` + 
 
 ### Kann man damit Verträge von Grund auf erstellen?
 
-Nicht der Hauptfokus. Für die Erstellung von Grund auf verwende Pakete wie [`docx`](https://www.npmjs.com/package/docx).
+Ja. `@usejunior/docx-core` liefert `generateDocx(spec)` — einen deklarativen DocumentSpec-Compiler für Abschnitte, Kopf-/Fußzeilen, Felder, Stile, Tabellen, mehrstufige Nummerierung, juristische Rezepte (Cover-Terms-Tabellen, Signaturblöcke) und eine trennbare Entwurfsnotiz-Ebene. Brownfield-Bearbeitung bestehender Dokumente bleibt der Hauptfokus; die Erzeugung nutzt dieselbe Konformitäts- und Validierungsinfrastruktur.
 
 ### Welche Dokumenttypen wurden in den Repository-Fixtures getestet?
 

@@ -1,4 +1,4 @@
-# 使用编程代理通过 MCP 编辑 Word 文档 (.docx)
+# 使用编程代理通过 MCP 编辑 Word 文档 (.docx) — 支持 OpenDocument (.odt)
 
 <!-- SYNC:badges BEGIN -->
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
@@ -77,7 +77,7 @@ flowchart LR
 ```
 <!-- SYNC:architecture-diagram END -->
 
-Safe Docx 是一套开源 TypeScript 技术栈，用于对现有 Microsoft Word `.docx` 文件进行精确编辑。它专为代理提出更改建议、人工仍需可靠且保留格式的文档编辑场景而构建。
+Safe Docx 是一套开源 TypeScript 技术栈，用于对现有 Microsoft Word `.docx` 文件进行精确编辑，并通过同一套工具表面支持 OpenDocument `.odt` 文件。它专为代理提出更改建议、人工仍需可靠且保留格式的文档编辑场景而构建。
 
 如果你使用 AI 审阅合同，最慢的步骤往往是在 Word 中应用已接受的建议。Safe Docx 将其转化为确定性工具调用。
 
@@ -207,11 +207,23 @@ claude mcp add safe-docx -- npx -y @usejunior/safe-docx
 - 带修订标记的输出供审阅（`download`、`compare_documents`）
 - 将修订提取为结构化 JSON（`extract_revisions`）
 
+## 从零开始生成
+
+`@usejunior/docx-core` 也可以从声明式、JSON 可序列化的 `DocumentSpec` 生成新的 `.docx` 文件：带页眉/页脚和 PAGE/NUMPAGES 字段的节、命名样式、表格、多级编号、法律文档配方（`coverTermsTable`、`signatureBlock`），以及可分离的起草说明层（编译为 OOXML 批注）。生成是确定性的（相同 spec 产生字节相同的包），并遵循与编辑路径相同的 ECMA-376 合规纪律：
+
+```ts
+import { generateDocx } from '@usejunior/docx-core';
+
+const buffer = await generateDocx({
+  sections: [{ blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Hello' }] }] }],
+});
+```
+
+生成能力目前是库 API；MCP 服务器尚未暴露 `generate_document` 工具。
+
 ## Safe Docx 不擅长什么
 
-Safe Docx 不是从零开始的文档生成工具包。
-
-如果你的主要需求是从模板或程序化布局生成新 `.docx` 文件，请使用 [`docx`](https://www.npmjs.com/package/docx) 等包。
+本地 Safe Docx 运行时目前会有意拒绝 Word 模板文件（`.dotx`）。请先将模板转换为普通 `.docx` 文档再在这里打开。Safe Docx 也不保证渲染、版式或分页效果；生成和编辑后的文档会按结构和 ECMA-376 验证，而不是逐像素验证。
 
 ## 文档类别
 
@@ -233,6 +245,7 @@ Safe Docx 不是从零开始的文档生成工具包。
 ## 包
 
 - `@usejunior/docx-core`：现有 `.docx` 文档的原语和比较引擎
+- `@usejunior/odf-core`：OpenDocument (`.odt`) 原语和带修订比较引擎
 - `@usejunior/docx-mcp`：MCP 服务器实现和工具表面
 - `@usejunior/safe-docx`：规范的终端用户安装名（`npx -y @usejunior/safe-docx`）
 - `@usejunior/safedocx-mcpb`：私有 MCP 打包封装
@@ -260,7 +273,7 @@ Safe Docx 不是从零开始的文档生成工具包。
 
 ### 能从零开始生成合同吗？
 
-这不是主要关注点。从零生成请使用 [`docx`](https://www.npmjs.com/package/docx) 等包。
+可以。`@usejunior/docx-core` 提供 `generateDocx(spec)`：一个声明式 DocumentSpec 编译器，覆盖节、页眉/页脚、字段、样式、表格、多级编号、法律配方（封面条款表、签名块）以及可分离的起草说明层。对现有文档的棕地编辑仍是主要关注点；生成能力共享同一套合规和验证机制。
 
 ### 本仓库测试文件中测试了哪些文档类型？
 

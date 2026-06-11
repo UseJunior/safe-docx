@@ -1,4 +1,4 @@
-# Edite documentos do Word (.docx) com agentes de programação via MCP
+# Edite documentos do Word (.docx) com agentes de programação via MCP — com suporte a OpenDocument (.odt)
 
 <!-- SYNC:badges BEGIN -->
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
@@ -77,7 +77,7 @@ flowchart LR
 ```
 <!-- SYNC:architecture-diagram END -->
 
-Safe Docx é um stack TypeScript de código aberto para edição cirúrgica de arquivos Microsoft Word `.docx` existentes. Foi construído para fluxos de trabalho onde um agente propõe alterações e um humano ainda precisa de edições de documentos confiáveis que preservem a formatação.
+Safe Docx é um stack TypeScript de código aberto para edição cirúrgica de arquivos Microsoft Word `.docx` existentes e, pela mesma superfície de ferramentas, arquivos OpenDocument `.odt`. Foi construído para fluxos de trabalho onde um agente propõe alterações e um humano ainda precisa de edições de documentos confiáveis que preservem a formatação.
 
 Se você revisa contratos com IA, a etapa mais lenta geralmente é aplicar as recomendações aceitas no Word. Safe Docx transforma isso em chamadas de ferramentas determinísticas.
 
@@ -209,11 +209,23 @@ Adicione a `~/Library/Application Support/Claude/claude_desktop_config.json` (ma
 - Saídas com controle de alterações para revisão (`download`, `compare_documents`)
 - Extração de revisões como JSON estruturado (`extract_revisions`)
 
+## Geração do zero
+
+`@usejunior/docx-core` também gera novos arquivos `.docx` a partir de uma `DocumentSpec` declarativa e serializável como JSON: seções com cabeçalhos/rodapés e campos PAGE/NUMPAGES, estilos nomeados, tabelas, numeração multinível, receitas de documentos jurídicos (`coverTermsTable`, `signatureBlock`) e uma camada separável de notas de minuta compilada para comentários OOXML. A geração é determinística (specs idênticas produzem pacotes byte-idênticos) e segue a mesma disciplina de conformidade ECMA-376 do caminho de edição:
+
+```ts
+import { generateDocx } from '@usejunior/docx-core';
+
+const buffer = await generateDocx({
+  sections: [{ blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Hello' }] }] }],
+});
+```
+
+A geração atualmente é uma API de biblioteca; o servidor MCP ainda não expõe uma ferramenta `generate_document`.
+
 ## Para que o Safe Docx não é otimizado
 
-Safe Docx não é um toolkit de geração de documentos do zero.
-
-Se sua necessidade principal é gerar novos arquivos `.docx` a partir de templates ou layout programático, use pacotes como [`docx`](https://www.npmjs.com/package/docx).
+O runtime local do Safe Docx rejeita intencionalmente arquivos de template do Word (`.dotx`) por enquanto. Converta o template em um documento `.docx` normal antes de abri-lo aqui. O Safe Docx também não oferece garantias de renderização, layout ou paginação — documentos gerados e editados são validados estruturalmente e contra a ECMA-376, não pixel a pixel.
 
 ## Famílias de documentos
 
@@ -235,6 +247,7 @@ Se sua necessidade principal é gerar novos arquivos `.docx` a partir de templat
 ## Pacotes
 
 - `@usejunior/docx-core`: primitivas e motor de comparação para documentos `.docx` existentes
+- `@usejunior/odf-core`: primitivas OpenDocument (`.odt`) e motor de comparação com controle de alterações
 - `@usejunior/docx-mcp`: implementação do servidor MCP e superfície de ferramentas
 - `@usejunior/safe-docx`: nome canônico de instalação para o usuário final (`npx -y @usejunior/safe-docx`)
 - `@usejunior/safedocx-mcpb`: wrapper privado de bundle MCP
@@ -262,7 +275,7 @@ Não. O uso suportado em tempo de execução é JavaScript/TypeScript com `jszip
 
 ### Pode gerar contratos do zero?
 
-Não é o foco principal. Para geração do zero, use pacotes como [`docx`](https://www.npmjs.com/package/docx).
+Sim. `@usejunior/docx-core` inclui `generateDocx(spec)`: um compilador declarativo de DocumentSpec que cobre seções, cabeçalhos/rodapés, campos, estilos, tabelas, numeração multinível, receitas jurídicas (tabelas de termos de capa, blocos de assinatura) e uma camada separável de notas de minuta. A edição brownfield de documentos existentes continua sendo o foco principal; a geração compartilha a infraestrutura de conformidade e validação.
 
 ### Quais tipos de documentos foram testados nos fixtures do repositório?
 
