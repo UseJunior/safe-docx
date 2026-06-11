@@ -122,8 +122,36 @@ describe('diffmatch xml parser (xmldom)', () => {
     await then('the body parts and sectPr are correctly separated', () => {
       expect(parts.beforeBody).toContain('<w:body>');
       expect(parts.afterBody).toContain('</w:body>');
-      expect(extracted.content).toContain('<w:p>');
-      expect(extracted.sectPr).toContain('<w:sectPr>');
+      expect(extracted.content).toContain('<w:p');
+      expect(extracted.content).toContain('<w:t>A</w:t>');
+      expect(extracted.sectPr).toContain('<w:sectPr');
+      expect(extracted.sectPr).toContain('<w:pgSz');
+    });
+  });
+
+  test('does not extract a paragraph-mark sectPr as a body-level sectPr', async ({ given, when, then }: AllureBddContext) => {
+    let parts: ReturnType<typeof getBodyContent>;
+    let extracted: ReturnType<typeof extractSectPr>;
+
+    await given('a body ending with a paragraph whose pPr contains sectPr and run content', () => {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>A</w:t></w:r></w:p>
+    <w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>
+  </w:body>
+</w:document>`;
+      parts = getBodyContent(xml);
+    });
+
+    await when('sectPr is extracted for document reconstruction', () => {
+      extracted = extractSectPr(parts.bodyContent);
+    });
+
+    await then('the paragraph remains intact and no body-level sectPr is returned', () => {
+      expect(extracted.sectPr).toBeNull();
+      expect(extracted.content).toContain('<w:pPr><w:sectPr>');
+      expect(extracted.content).toContain('</w:pPr><w:r>');
     });
   });
 });

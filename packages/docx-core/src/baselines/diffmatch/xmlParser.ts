@@ -210,17 +210,21 @@ export function extractSectPr(bodyContent: string): {
   content: string;
   sectPr: string | null;
 } {
-  // Find the last w:sectPr in the body
-  const sectPrMatch = bodyContent.match(/<w:sectPr[^>]*>[\s\S]*?<\/w:sectPr>\s*$/);
+  const trimmed = bodyContent.trimEnd();
+  if (!trimmed.endsWith('</w:sectPr>')) return { content: bodyContent, sectPr: null };
 
-  if (!sectPrMatch) {
-    return { content: bodyContent, sectPr: null };
-  }
+  const sectPrStart = trimmed.lastIndexOf('<w:sectPr');
+  if (sectPrStart < 0) return { content: bodyContent, sectPr: null };
 
-  const sectPrStart = bodyContent.lastIndexOf(sectPrMatch[0]);
+  const beforeSectPr = trimmed.slice(0, sectPrStart);
+  const lastParagraphOpen = beforeSectPr.lastIndexOf('<w:p');
+  const lastParagraphClose = beforeSectPr.lastIndexOf('</w:p>');
+  if (lastParagraphOpen > lastParagraphClose) return { content: bodyContent, sectPr: null };
+
+  const trailingWhitespace = bodyContent.slice(trimmed.length);
   return {
-    content: bodyContent.slice(0, sectPrStart),
-    sectPr: sectPrMatch[0],
+    content: bodyContent.slice(0, sectPrStart) + trailingWhitespace,
+    sectPr: trimmed.slice(sectPrStart),
   };
 }
 
