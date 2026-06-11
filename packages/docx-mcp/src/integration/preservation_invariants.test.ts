@@ -33,7 +33,7 @@ function createManager(): SessionManager {
 function makeDocXml(bodyXml: string): string {
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<w:document xmlns:w="${W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+    `<w:document xmlns:w="${W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">` +
     `<w:body>${bodyXml}</w:body>` +
     `</w:document>`
   );
@@ -99,6 +99,7 @@ describe('OOXML preservation invariants: brownfield mutations preserve what the 
       const bodyXml =
         `<w:p><w:r><w:t>Anchor.</w:t></w:r></w:p>` +
         `<w:tbl>` +
+        `<w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>` +
         `<w:tblGrid><w:gridCol w:w="2500"/><w:gridCol w:w="2500"/></w:tblGrid>` +
         `<w:tr>` +
         `<w:tc><w:p><w:r><w:t>cellA1</w:t></w:r></w:p></w:tc>` +

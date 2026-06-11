@@ -128,7 +128,7 @@ describe('save', () => {
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
       `xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ` +
-      `xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+      `xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">` +
       `<w:body>` +
       `<w:p w14:paraId="11111111"><w:r><w:t>Alpha target text</w:t></w:r></w:p>` +
       `<w:p w14:paraId="22222222" w:rsidR="00AA00AA">` +
