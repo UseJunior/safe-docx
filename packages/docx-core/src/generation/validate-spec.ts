@@ -9,11 +9,11 @@
  *     with a typed error naming the feature and its path — never be silently
  *     dropped (scenario SDX-GEN-003).
  *
- * Shipped so far: plain/formatted text runs (RunProps), paragraph formatting
- * (style references, alignment, spacing, indentation, tabs, keepNext,
- * pageBreakBefore), named styles + styles.xml, single-section page setup.
- * Still rejected: numbering, multi-section, headers/footers, fields,
- * tab/break runs, tables, drafting notes.
+ * Shipped so far: formatted text/tab/break runs, five-part PAGE/NUMPAGES
+ * fields, paragraph formatting, named styles + styles.xml, multi-section
+ * documents with per-section page setup, page numbering, break types, and
+ * default/first/even headers and footers.
+ * Still rejected: numbering, tables, drafting notes.
  */
 
 import { GenerationSpecError } from './errors.js';
@@ -36,7 +36,6 @@ export function validateSpec(spec: DocumentSpec): void {
   }
 
   if (spec.numbering && spec.numbering.length > 0) unsupported('/numbering', 'numbering');
-  if (spec.sections.length > 1) unsupported('/sections', 'multiple sections');
 
   const declaredStyleIds = validateStyles(spec.styles ?? []);
 
@@ -77,11 +76,28 @@ function validateStyles(styles: StyleSpec[]): Set<string> {
 }
 
 function validateSection(section: SectionSpec, path: string, styleIds: Set<string>): void {
-  if (section.breakType) unsupported(`${path}/breakType`, 'section break type');
-  if (section.pageNumbering) unsupported(`${path}/pageNumbering`, 'page numbering');
-  if (section.titlePg) unsupported(`${path}/titlePg`, 'title page header/footer');
-  if (section.headers) unsupported(`${path}/headers`, 'headers');
-  if (section.footers) unsupported(`${path}/footers`, 'footers');
+  if (section.pageNumbering?.start !== undefined) {
+    const start = section.pageNumbering.start;
+    if (!Number.isInteger(start) || start < 1) {
+      throw new GenerationSpecError('invalid_value', `${path}/pageNumbering/start`, 'Page numbering start must be a positive integer');
+    }
+  }
+  for (const [kind, set] of [['headers', section.headers], ['footers', section.footers]] as const) {
+    if (!set) continue;
+    for (const slot of ['default', 'first', 'even'] as const) {
+      const content = set[slot];
+      if (!content) continue;
+      const slotPath = `${path}/${kind}/${slot}`;
+      if (!Array.isArray(content.blocks) || content.blocks.length === 0) {
+        throw new GenerationSpecError('invalid_value', `${slotPath}/blocks`, 'Header/footer blocks must be a non-empty array');
+      }
+      content.blocks.forEach((block, blockIndex) => {
+        const blockPath = `${slotPath}/blocks/${blockIndex}`;
+        if (block.kind === 'table') unsupported(blockPath, 'tables');
+        validateParagraph(block, blockPath, styleIds);
+      });
+    }
+  }
 
   const size = section.page?.sizeTwips;
   if (size && (!(size.w > 0) || !(size.h > 0))) {
@@ -134,9 +150,18 @@ function validateParagraph(paragraph: ParagraphSpec, path: string, styleIds: Set
 }
 
 function validateInline(run: InlineSpec, path: string): void {
-  if (run.kind === 'field') unsupported(path, 'field codes');
-  if (run.kind === 'tab') unsupported(path, 'tab runs');
-  if (run.kind === 'break') unsupported(path, 'break runs');
+  if (run.kind === 'tab' || run.kind === 'break') return;
+  if (run.kind === 'field') {
+    if (typeof run.cachedResult !== 'string' || run.cachedResult.length === 0) {
+      throw new GenerationSpecError(
+        'invalid_value',
+        `${path}/cachedResult`,
+        'Fields require a non-empty cachedResult — the no-recovery-dialog guarantee is unrepresentable-by-omission',
+      );
+    }
+    validateRunProps(run, path);
+    return;
+  }
 
   if (typeof run.text !== 'string') {
     throw new GenerationSpecError('invalid_value', `${path}/text`, 'Text runs must carry a string');

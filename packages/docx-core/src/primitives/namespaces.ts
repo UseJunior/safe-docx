@@ -92,6 +92,14 @@ export const W = {
   sectPr: 'sectPr',
   pgSz: 'pgSz',
   pgMar: 'pgMar',
+  pgNumType: 'pgNumType',
+  headerReference: 'headerReference',
+  footerReference: 'footerReference',
+  titlePg: 'titlePg',
+  hdr: 'hdr',
+  ftr: 'ftr',
+  settings: 'settings',
+  evenAndOddHeaders: 'evenAndOddHeaders',
 
   // Styles part + paragraph/run formatting (generation emitters)
   docDefaults: 'docDefaults',

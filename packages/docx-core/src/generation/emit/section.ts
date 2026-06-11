@@ -1,13 +1,14 @@
 /**
  * Section-properties emitter.
  *
- * PR 1 scope: page size and margins for the document-final section. Header /
- * footer references, break types, page numbering, and title-page switches land
- * with the multi-section phase.
+ * Shipped: page size/margins, page numbering, section break type, title-page
+ * switch, and header/footer references. The reference rIds come from the
+ * header/footer part allocation pass (emit/header-footer-part.ts), which runs
+ * before the document part so the sectPr can bind them.
  */
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
-import { W } from '../../primitives/namespaces.js';
+import { OOXML, W } from '../../primitives/namespaces.js';
 import { appendInOrder, SECTPR_ORDER } from '../ordering.js';
 import type { SectionSpec } from '../types.js';
 
@@ -25,21 +26,79 @@ const DEFAULT_MARGINS = {
   gutter: 0,
 } as const;
 
+/** Header/footer part references for one section, allocated by the parts pass. */
+export type SectionHeaderFooterRefs = {
+  headers: Partial<Record<'default' | 'first' | 'even', string>>;
+  footers: Partial<Record<'default' | 'first' | 'even', string>>;
+};
+
 /**
  * Build the w:sectPr element for a section.
  *
  * Width/height are always emitted explicitly (never reader defaults); a
- * landscape request swaps the dimensions and sets w:orient.
+ * landscape request swaps the dimensions and sets w:orient. Header/footer
+ * references lead the child sequence; w:titlePg is implied whenever a
+ * first-page header or footer is present.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.6
  */
-export function buildSectPr(doc: Document, section: SectionSpec): Element {
+export function buildSectPr(doc: Document, section: SectionSpec, refs?: SectionHeaderFooterRefs): Element {
   const sectPr = createWmlElement(doc, W.sectPr);
   const props = new Map<string, Element | Element[]>();
+
+  if (refs) {
+    const headerRefs = buildReferences(doc, W.headerReference, refs.headers);
+    const footerRefs = buildReferences(doc, W.footerReference, refs.footers);
+    if (headerRefs.length > 0) props.set(W.headerReference, headerRefs);
+    if (footerRefs.length > 0) props.set(W.footerReference, footerRefs);
+  }
+
+  if (section.breakType !== undefined) {
+    props.set(W.type, createWmlElement(doc, W.type, { 'w:val': section.breakType }));
+  }
   props.set(W.pgSz, buildPgSz(doc, section));
   props.set(W.pgMar, buildPgMar(doc, section));
+  if (section.pageNumbering) {
+    const attrs: Record<string, string> = {};
+    if (section.pageNumbering.start !== undefined) attrs['w:start'] = String(section.pageNumbering.start);
+    if (section.pageNumbering.format !== undefined) attrs['w:fmt'] = section.pageNumbering.format;
+    props.set(W.pgNumType, createWmlElement(doc, W.pgNumType, attrs));
+  }
+  if (titlePgImplied(section)) {
+    props.set(W.titlePg, createWmlElement(doc, W.titlePg));
+  }
+
   appendInOrder(sectPr, props, SECTPR_ORDER);
   return sectPr;
+}
+
+export function titlePgImplied(section: SectionSpec): boolean {
+  return Boolean(section.titlePg || section.headers?.first || section.footers?.first);
+}
+
+/**
+ * One reference element per declared header/footer slot, in a fixed
+ * first/default/even emission order so output is deterministic.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ */
+function buildReferences(
+  doc: Document,
+  localName: string,
+  slots: Partial<Record<'default' | 'first' | 'even', string>>,
+): Element[] {
+  const out: Element[] = [];
+  for (const type of ['first', 'default', 'even'] as const) {
+    const rId = slots[type];
+    if (!rId) continue;
+    const el = createWmlElement(doc, localName, { 'w:type': type });
+    el.setAttributeNS(OOXML.R_NS, 'r:id', rId);
+    out.push(el);
+  }
+  return out;
 }
 
 function buildPgSz(doc: Document, section: SectionSpec): Element {

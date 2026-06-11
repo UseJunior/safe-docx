@@ -8,12 +8,13 @@
  * the structural validator asserts every part starts with one.
  */
 
-import { OOXML } from '../../primitives/namespaces.js';
+import { createWmlElement } from '../../primitives/dom-helpers.js';
+import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml } from '../../primitives/xml.js';
 import { GenerationInternalError } from '../errors.js';
 import type { DocumentSpec } from '../types.js';
 import { buildParagraph } from './paragraph.js';
-import { buildSectPr } from './section.js';
+import { buildSectPr, type SectionHeaderFooterRefs } from './section.js';
 
 export const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
@@ -22,19 +23,21 @@ const DOCUMENT_SKELETON =
   `<w:body/></w:document>`;
 
 /**
- * Compile the body: each section's blocks in order, with the final section's
- * properties bound as the body's last child. Multi-section emission (a
- * dedicated break paragraph whose pPr holds the ending section's sectPr)
- * lands in the multi-section phase.
+ * Compile the body: each section's blocks in order. Every non-final section
+ * ends with a dedicated break paragraph whose pPr contains only that
+ * section's sectPr (what Word itself emits on Insert → Section Break; it
+ * also sidesteps the trailing-table case), and the final section's
+ * properties bind as the body's last child.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
  */
-export function emitDocumentPart(spec: DocumentSpec): string {
+export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterRefs[]): string {
   const doc = parseXml(DOCUMENT_SKELETON);
   const body = doc.getElementsByTagName('w:body').item(0);
   if (!body) throw new GenerationInternalError('document skeleton lost its w:body');
 
-  for (const section of spec.sections) {
+  spec.sections.forEach((section, index) => {
     for (const block of section.blocks) {
       if (block.kind !== 'paragraph') {
         throw new GenerationInternalError(
@@ -43,10 +46,19 @@ export function emitDocumentPart(spec: DocumentSpec): string {
       }
       body.appendChild(buildParagraph(doc, block));
     }
-  }
 
-  const finalSection = spec.sections[spec.sections.length - 1]!;
-  body.appendChild(buildSectPr(doc, finalSection));
+    const sectPr = buildSectPr(doc, section, refs?.[index]);
+    const isFinal = index === spec.sections.length - 1;
+    if (isFinal) {
+      body.appendChild(sectPr);
+    } else {
+      const breakParagraph = createWmlElement(doc, W.p);
+      const pPr = createWmlElement(doc, W.pPr);
+      pPr.appendChild(sectPr);
+      breakParagraph.appendChild(pPr);
+      body.appendChild(breakParagraph);
+    }
+  });
 
   return XML_DECL + serializeXml(doc);
 }
