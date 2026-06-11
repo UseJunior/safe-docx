@@ -1,11 +1,5 @@
 [
   {
-    "id": "duplicate-rprchange-in-rpr",
-    "issue": "#451",
-    "match": "}rPrChange': This element is not expected.",
-    "reason": "comparison stacks duplicate w:rPrChange children in a single w:rPr; CT_RPr allows at most one"
-  },
-  {
     "id": "duplicate-para-mark-ins",
     "issue": "#452",
     "match": "}ins': This element is not expected.",
