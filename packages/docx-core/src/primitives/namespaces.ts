@@ -93,6 +93,20 @@ export const W = {
   pgSz: 'pgSz',
   pgMar: 'pgMar',
 
+  // Styles part + paragraph/run formatting (generation emitters)
+  docDefaults: 'docDefaults',
+  pPrDefault: 'pPrDefault',
+  rPrDefault: 'rPrDefault',
+  next: 'next',
+  qFormat: 'qFormat',
+  bCs: 'bCs',
+  iCs: 'iCs',
+  caps: 'caps',
+  smallCaps: 'smallCaps',
+  keepNext: 'keepNext',
+  pageBreakBefore: 'pageBreakBefore',
+  tabs: 'tabs',
+
   // Fields + special runs
   fldChar: 'fldChar',
   instrText: 'instrText',

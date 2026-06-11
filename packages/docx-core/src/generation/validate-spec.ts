@@ -9,23 +9,17 @@
  *     with a typed error naming the feature and its path — never be silently
  *     dropped (scenario SDX-GEN-003).
  *
- * As phase PRs land emitters, their features move from the rejection list to
- * the supported set in the same PR.
+ * Shipped so far: plain/formatted text runs (RunProps), paragraph formatting
+ * (style references, alignment, spacing, indentation, tabs, keepNext,
+ * pageBreakBefore), named styles + styles.xml, single-section page setup.
+ * Still rejected: numbering, multi-section, headers/footers, fields,
+ * tab/break runs, tables, drafting notes.
  */
 
 import { GenerationSpecError } from './errors.js';
-import type { DocumentSpec, InlineSpec, ParagraphSpec, RunProps, SectionSpec } from './types.js';
+import type { DocumentSpec, InlineSpec, ParagraphSpec, RunProps, SectionSpec, StyleSpec } from './types.js';
 
-const RUN_PROP_KEYS: ReadonlyArray<keyof RunProps> = [
-  'bold',
-  'italic',
-  'underline',
-  'colorHex',
-  'font',
-  'sizePt',
-  'caps',
-  'smallCaps',
-];
+const COLOR_HEX_RE = /^[0-9A-Fa-f]{6}$/;
 
 function unsupported(path: string, feature: string): never {
   throw new GenerationSpecError(
@@ -41,16 +35,48 @@ export function validateSpec(spec: DocumentSpec): void {
     throw new GenerationSpecError('empty_sections', '/sections', 'DocumentSpec.sections must contain at least one section');
   }
 
-  if (spec.styles && spec.styles.length > 0) unsupported('/styles', 'styles');
   if (spec.numbering && spec.numbering.length > 0) unsupported('/numbering', 'numbering');
   if (spec.sections.length > 1) unsupported('/sections', 'multiple sections');
 
+  const declaredStyleIds = validateStyles(spec.styles ?? []);
+
   spec.sections.forEach((section, sectionIndex) => {
-    validateSection(section, `/sections/${sectionIndex}`);
+    validateSection(section, `/sections/${sectionIndex}`, declaredStyleIds);
   });
 }
 
-function validateSection(section: SectionSpec, path: string): void {
+/** Returns the set of resolvable style ids (declared styles + implicit Normal). */
+function validateStyles(styles: StyleSpec[]): Set<string> {
+  const ids = new Set<string>(['Normal']);
+  styles.forEach((style, index) => {
+    const path = `/styles/${index}`;
+    if (!style.styleId || !style.name) {
+      throw new GenerationSpecError('invalid_value', path, 'StyleSpec requires styleId and name');
+    }
+    if (ids.has(style.styleId)) {
+      throw new GenerationSpecError('invalid_value', `${path}/styleId`, `Duplicate styleId '${style.styleId}'`);
+    }
+    ids.add(style.styleId);
+    if (style.run) validateRunProps(style.run, `${path}/run`);
+  });
+  // basedOn / next must resolve against the full declared set (forward refs allowed).
+  styles.forEach((style, index) => {
+    const path = `/styles/${index}`;
+    for (const key of ['basedOn', 'next'] as const) {
+      const ref = style[key];
+      if (ref !== undefined && !ids.has(ref)) {
+        throw new GenerationSpecError(
+          'dangling_style_reference',
+          `${path}/${key}`,
+          `Style '${style.styleId}' references undeclared style '${ref}' via ${key}`,
+        );
+      }
+    }
+  });
+  return ids;
+}
+
+function validateSection(section: SectionSpec, path: string, styleIds: Set<string>): void {
   if (section.breakType) unsupported(`${path}/breakType`, 'section break type');
   if (section.pageNumbering) unsupported(`${path}/pageNumbering`, 'page numbering');
   if (section.titlePg) unsupported(`${path}/titlePg`, 'title page header/footer');
@@ -76,20 +102,28 @@ function validateSection(section: SectionSpec, path: string): void {
   section.blocks.forEach((block, blockIndex) => {
     const blockPath = `${path}/blocks/${blockIndex}`;
     if (block.kind === 'table') unsupported(blockPath, 'tables');
-    validateParagraph(block, blockPath);
+    validateParagraph(block, blockPath, styleIds);
   });
 }
 
-function validateParagraph(paragraph: ParagraphSpec, path: string): void {
-  if (paragraph.styleId !== undefined) unsupported(`${path}/styleId`, 'named paragraph styles');
-  if (paragraph.alignment !== undefined) unsupported(`${path}/alignment`, 'paragraph alignment');
-  if (paragraph.spacing !== undefined) unsupported(`${path}/spacing`, 'paragraph spacing');
-  if (paragraph.indent !== undefined) unsupported(`${path}/indent`, 'paragraph indentation');
+function validateParagraph(paragraph: ParagraphSpec, path: string, styleIds: Set<string>): void {
   if (paragraph.list !== undefined) unsupported(`${path}/list`, 'numbered lists');
-  if (paragraph.pageBreakBefore !== undefined) unsupported(`${path}/pageBreakBefore`, 'page break before');
-  if (paragraph.keepNext !== undefined) unsupported(`${path}/keepNext`, 'keep with next');
-  if (paragraph.tabs !== undefined) unsupported(`${path}/tabs`, 'tab stops');
   if (paragraph.note !== undefined) unsupported(`${path}/note`, 'drafting notes');
+
+  if (paragraph.styleId !== undefined && !styleIds.has(paragraph.styleId)) {
+    throw new GenerationSpecError(
+      'dangling_style_reference',
+      `${path}/styleId`,
+      `Paragraph references undeclared style '${paragraph.styleId}'`,
+    );
+  }
+  if (paragraph.tabs) {
+    paragraph.tabs.forEach((stop, i) => {
+      if (!(stop.posTwips >= 0) || !Number.isFinite(stop.posTwips)) {
+        throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/posTwips`, 'Tab stop position must be a non-negative finite twips value');
+      }
+    });
+  }
 
   if (!Array.isArray(paragraph.runs)) {
     throw new GenerationSpecError('invalid_value', `${path}/runs`, 'Paragraph runs must be an array');
@@ -107,7 +141,14 @@ function validateInline(run: InlineSpec, path: string): void {
   if (typeof run.text !== 'string') {
     throw new GenerationSpecError('invalid_value', `${path}/text`, 'Text runs must carry a string');
   }
-  for (const key of RUN_PROP_KEYS) {
-    if (run[key] !== undefined) unsupported(`${path}/${key}`, `run formatting '${key}'`);
+  validateRunProps(run, path);
+}
+
+function validateRunProps(props: RunProps, path: string): void {
+  if (props.colorHex !== undefined && !COLOR_HEX_RE.test(props.colorHex)) {
+    throw new GenerationSpecError('invalid_value', `${path}/colorHex`, `colorHex must be six hex digits without '#', got '${props.colorHex}'`);
+  }
+  if (props.sizePt !== undefined && (!(props.sizePt > 0) || !Number.isFinite(props.sizePt))) {
+    throw new GenerationSpecError('invalid_value', `${path}/sizePt`, 'sizePt must be a positive finite number');
   }
 }

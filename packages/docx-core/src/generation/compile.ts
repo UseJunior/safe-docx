@@ -11,6 +11,7 @@ import { createZipBuffer } from '../primitives/zip.js';
 import { CompileContext } from './context.js';
 import { emitDocumentPart } from './emit/document-part.js';
 import { emitPackageParts } from './emit/package-parts.js';
+import { emitStylesPart } from './emit/styles-part.js';
 import type { DocumentSpec } from './types.js';
 import { validateSpec } from './validate-spec.js';
 
@@ -28,6 +29,7 @@ export async function generateDocx(spec: DocumentSpec, _opts?: GenerateDocxOptio
 
   const ctx = new CompileContext();
   ctx.setFileContent('word/document.xml', emitDocumentPart(spec));
+  emitStylesPart(spec, ctx);
   emitPackageParts(spec, ctx);
 
   return createZipBuffer(ctx.toFileRecord(), { fileDate: ZIP_EPOCH });
