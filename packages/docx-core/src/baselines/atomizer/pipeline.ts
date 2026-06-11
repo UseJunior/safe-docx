@@ -73,6 +73,12 @@ import {
   DEFAULT_NUMBERING_OPTIONS,
 } from './numberingIntegration.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
+import {
+  AUXILIARY_PARTS,
+  parseEntries,
+  renumberCollidingAuxiliaryIds,
+  type AuxiliaryPartDescriptor,
+} from './auxiliaryIdCollision.js';
 
 /**
  * Options for the atomizer pipeline.
@@ -736,6 +742,13 @@ export async function compareDocumentsAtomizer(
   const originalArchive = await DocxArchive.load(original);
   const revisedArchive = await DocxArchive.load(revised);
 
+  // Step 1b: Resolve auxiliary ID collisions (issue #107). When both sides
+  // define different content under the same comment/footnote/endnote w:id,
+  // renumber the revised side so no anchor in the merged output can bind to
+  // the other document's definition. Must run before any document.xml
+  // extraction so every downstream step sees the renumbered archive.
+  await renumberCollidingAuxiliaryIds(originalArchive, revisedArchive);
+
   // Step 2: Extract document.xml
   const originalXml = await originalArchive.getDocumentXml();
   const revisedXml = await revisedArchive.getDocumentXml();
@@ -1033,7 +1046,10 @@ export async function compareDocumentsAtomizer(
   // Gated on root comment IDs in the *result* document (not on what the
   // generic merge appended), so the pass runs even when the original already
   // contains the root and revised only adds replies under it (issue #108).
-  const rootCommentIds = collectReferenceIds(newDocumentXml, 'w:commentReference');
+  // Comments anchored on footnote/endnote text count as roots too.
+  const rootCommentIds = await collectStoryReferenceIds(
+    resultArchive, newDocumentXml, 'w:commentReference', null
+  );
   if (rootCommentIds.size > 0) {
     await mergeCommentAncillaryParts(mergeSourceArchive, resultArchive, rootCommentIds);
   }
@@ -1064,50 +1080,33 @@ export async function compareDocumentsAtomizer(
 // definitions). Step 12 in the pipeline picks the correct source per mode.
 // =============================================================================
 
-interface AuxiliaryPartDescriptor {
-  label: string;
-  partPath: string;
-  referenceTag: string;
-  entryTag: string;
-  rootTag: string;
-  contentType: string;
-  relationshipType: string;
-}
-
 export interface AuxiliaryMergeResult {
   mergedIds: Set<string>;
   createdPart: boolean;
 }
 
-const AUXILIARY_PARTS: AuxiliaryPartDescriptor[] = [
-  {
-    label: 'footnote',
-    partPath: 'word/footnotes.xml',
-    referenceTag: 'w:footnoteReference',
-    entryTag: 'w:footnote',
-    rootTag: 'w:footnotes',
-    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml',
-    relationshipType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes',
-  },
-  {
-    label: 'endnote',
-    partPath: 'word/endnotes.xml',
-    referenceTag: 'w:endnoteReference',
-    entryTag: 'w:endnote',
-    rootTag: 'w:endnotes',
-    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml',
-    relationshipType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes',
-  },
-  {
-    label: 'comment',
-    partPath: 'word/comments.xml',
-    referenceTag: 'w:commentReference',
-    entryTag: 'w:comment',
-    rootTag: 'w:comments',
-    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml',
-    relationshipType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
-  },
-];
+/**
+ * Collect reference IDs across every result story that can host anchors: the
+ * merged document.xml plus the result archive's footnote/endnote parts (Word
+ * allows comments anchored on note text). `excludePartPath` skips the part
+ * whose own definitions are being merged — entries can't reference
+ * themselves.
+ */
+async function collectStoryReferenceIds(
+  resultArchive: DocxArchive,
+  documentXml: string,
+  referenceTag: string,
+  excludePartPath: string | null,
+): Promise<Set<string>> {
+  const ids = collectReferenceIds(documentXml, referenceTag);
+  for (const storyPath of ['word/footnotes.xml', 'word/endnotes.xml']) {
+    if (storyPath === excludePartPath) continue;
+    const storyXml = await resultArchive.getFile(storyPath);
+    if (!storyXml) continue;
+    for (const id of collectReferenceIds(storyXml, referenceTag)) ids.add(id);
+  }
+  return ids;
+}
 
 /**
  * Collect reference IDs from document.xml using DOM parsing.
@@ -1121,21 +1120,6 @@ function collectReferenceIds(documentXml: string, referenceTag: string): Set<str
     if (id) ids.add(id);
   }
   return ids;
-}
-
-/**
- * Parse an auxiliary part and extract entry elements by ID.
- */
-function parseEntries(xml: string, entryTag: string): { doc: Document; entries: Map<string, Element> } {
-  const doc = parseXml(xml);
-  const entries = new Map<string, Element>();
-  const elements = doc.getElementsByTagName(entryTag);
-  for (let i = 0; i < elements.length; i++) {
-    const el = elements[i] as Element;
-    const id = el.getAttribute('w:id');
-    if (id) entries.set(id, el);
-  }
-  return { doc, entries };
 }
 
 /**
@@ -1153,7 +1137,13 @@ async function mergeAuxiliaryPartDefinitions(
 ): Promise<AuxiliaryMergeResult> {
   const result: AuxiliaryMergeResult = { mergedIds: new Set(), createdPart: false };
 
-  const referencedIds = collectReferenceIds(documentXml, descriptor.referenceTag);
+  // Anchors may live in the merged body or on note text in the result's
+  // footnote/endnote stories. AUXILIARY_PARTS merges notes before comments,
+  // so by the comment pass the note stories already carry any merged-in
+  // comment anchors.
+  const referencedIds = await collectStoryReferenceIds(
+    resultArchive, documentXml, descriptor.referenceTag, descriptor.partPath
+  );
   if (referencedIds.size === 0) return result;
 
   const sourcePartXml = await sourceArchive.getFile(descriptor.partPath);
@@ -1511,6 +1501,7 @@ const COMMENTS_EXTENDED_DESCRIPTOR: AuxiliaryPartDescriptor = {
   rootTag: 'w15:commentsEx',
   contentType: 'application/vnd.ms-word.commentsExtended+xml',
   relationshipType: 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended',
+  idBearingTags: [], // keyed by w15:paraId, not w:id
 };
 
 const PEOPLE_DESCRIPTOR: AuxiliaryPartDescriptor = {
@@ -1521,6 +1512,7 @@ const PEOPLE_DESCRIPTOR: AuxiliaryPartDescriptor = {
   rootTag: 'w15:people',
   contentType: 'application/vnd.ms-word.people+xml',
   relationshipType: 'http://schemas.microsoft.com/office/2011/relationships/people',
+  idBearingTags: [], // keyed by w15:author, not w:id
 };
 
 async function mergePeople(
