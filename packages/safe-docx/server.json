@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.UseJunior/safe-docx",
   "title": "Safe Docx",
-  "description": "AI-native surgical editing of existing Word .docx and OpenDocument .odt files with formatting preservation",
+  "description": "AI-native surgical editing of Word .docx and OpenDocument .odt files with formatting preservation",
   "version": "0.10.0",
   "websiteUrl": "https://usejunior.com/developer-tools/safe-docx",
   "icons": [
