@@ -813,6 +813,39 @@ describe('inPlaceModifier', () => {
         expect(insMarker).toBeDefined();
       });
     });
+
+    test('reuses an existing paragraph-mark insertion and normalizes revision context', async ({ given, when, then }: AllureBddContext) => {
+      let pPr: Element, p: Element;
+      let state: ReturnType<typeof createRevisionIdState>;
+
+      await given('a paragraph with a pre-existing paragraph-mark w:ins from a bypass path', () => {
+        pPr = el('w:pPr', {}, [
+          el('w:rPr', {}, [
+            el('w:ins', {
+              'w:id': '99',
+              'w:author': 'Bypass',
+              'w:date': '2020-01-01T00:00:00Z',
+            }),
+          ]),
+        ]);
+        p = el('w:p', {}, [pPr, el('w:r', {}, [el('w:t', {}, undefined, 'text')])]);
+        state = createRevisionIdState();
+      });
+
+      await when('wrapParagraphAsInserted applies the comparison revision context', () => {
+        wrapParagraphAsInserted(p, author, dateStr, state);
+      });
+
+      await then('only one paragraph-mark w:ins remains with the comparison author and date', () => {
+        const markers = childElements(pPr)
+          .filter((c) => c.tagName === 'w:rPr')
+          .flatMap((rPr) => childElements(rPr).filter((c) => c.tagName === 'w:ins'));
+        expect(markers).toHaveLength(1);
+        expect(markers[0]!.getAttribute('w:id')).toBe('99');
+        expect(markers[0]!.getAttribute('w:author')).toBe(author);
+        expect(markers[0]!.getAttribute('w:date')).toBe(dateStr);
+      });
+    });
   });
 
   describe('addParagraphPropertyChange', () => {

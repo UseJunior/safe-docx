@@ -181,6 +181,8 @@ export function addParagraphMarkRevisionMarker(
     paragraph.insertBefore(pPr, paragraph.firstChild);
   }
 
+  const existingMarker = findParagraphMarkRevisionMarker(pPr, markerTag);
+
   // Find or create rPr within pPr (paragraph mark properties).
   let rPr = findChildByTagName(pPr, 'w:rPr');
   if (!rPr) {
@@ -197,8 +199,17 @@ export function addParagraphMarkRevisionMarker(
     }
   }
 
-  // Avoid duplicating markers.
-  if (findChildByTagName(rPr, markerTag)) return;
+  // Avoid duplicating markers. A legacy/bypass path may already have put the
+  // paragraph-mark marker in another w:rPr under the same pPr; keep that marker
+  // and normalize its revision context instead of adding a second CT_ParaRPr child.
+  if (existingMarker) {
+    existingMarker.setAttribute('w:author', author);
+    existingMarker.setAttribute('w:date', dateStr);
+    if (!existingMarker.getAttribute('w:id')) {
+      existingMarker.setAttribute('w:id', String(allocateRevisionId(state)));
+    }
+    return;
+  }
 
   const id = allocateRevisionId(state);
   const marker = createEl(markerTag, {
@@ -209,6 +220,18 @@ export function addParagraphMarkRevisionMarker(
 
   // Insert marker at the start of rPr for consistency with Aspose/Word patterns.
   rPr.insertBefore(marker, rPr.firstChild);
+}
+
+function findParagraphMarkRevisionMarker(
+  pPr: Element,
+  markerTag: 'w:ins' | 'w:del'
+): Element | null {
+  for (const child of childElements(pPr)) {
+    if (child.tagName !== 'w:rPr') continue;
+    const marker = findChildByTagName(child, markerTag);
+    if (marker) return marker;
+  }
+  return null;
 }
 
 // @lean-segment: field-wrapper-emission
