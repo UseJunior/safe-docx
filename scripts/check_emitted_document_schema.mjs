@@ -141,10 +141,10 @@ const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
  *   - resolve mc:AlternateContent to its mc:Fallback content
  *
  * Returns the input unchanged when no mc markup is present, so plain
- * documents are validated byte-for-byte as emitted.
+ * documents are validated byte-for-byte as emitted. The decision is made on
+ * the parsed DOM (namespace-aware), never on substring probing.
  */
 function applyMcePreprocessing(xml) {
-  if (!xml.includes(MC_NS)) return { xml };
   let doc;
   try {
     doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -165,6 +165,7 @@ function applyMcePreprocessing(xml) {
     }
   }
 
+  let changed = false;
   const visit = (element) => {
     if (element.namespaceURI === MC_NS && element.localName === 'AlternateContent') {
       const fallback = Array.from(element.childNodes).find(
@@ -178,15 +179,18 @@ function applyMcePreprocessing(xml) {
         }
       }
       parent.removeChild(element);
+      changed = true;
       return;
     }
     if (element.namespaceURI && ignorableNs.has(element.namespaceURI)) {
       element.parentNode.removeChild(element);
+      changed = true;
       return;
     }
     for (const attr of Array.from(element.attributes ?? [])) {
       if (attr.namespaceURI === MC_NS || (attr.namespaceURI && ignorableNs.has(attr.namespaceURI))) {
         element.removeAttributeNode(attr);
+        changed = true;
       }
     }
     for (const child of Array.from(element.childNodes)) {
@@ -194,6 +198,7 @@ function applyMcePreprocessing(xml) {
     }
   };
   visit(root);
+  if (!changed) return { xml };
   return { xml: new XMLSerializer().serializeToString(doc) };
 }
 
