@@ -48,6 +48,7 @@ export type SaveCacheEntry = {
   bookmarksRemoved: number;
   blocksRestored: number;
   trackedBlocksRestored: number;
+  trackedRestoreError?: string;
   exportedAtUtc: string;
   cachedAtIso: string;
 };

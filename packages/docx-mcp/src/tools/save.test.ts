@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { save } from './save.js';
+import { restoreTrackedUntouchedBlocks, save } from './save.js';
 import { openDocument } from './open_document.js';
 import { grep } from './grep.js';
 import { replaceText } from './replace_text.js';
@@ -192,6 +192,21 @@ describe('save', () => {
     expect(editedParagraph).toContain('<w:del');
     expect(editedParagraph).toContain('w:author="Test Author"');
     expect(editedParagraph).toContain('replacement');
+    expect((result as Record<string, unknown>).tracked_restore_error).toBeUndefined();
+  });
+
+  test('tracked restore post-pass surfaces failure instead of swallowing it', async () => {
+    // Not a zip at all — DocxZip.load must throw, exercising the catch path.
+    const garbage = Buffer.from('not a zip archive');
+    const restored = await restoreTrackedUntouchedBlocks(garbage, garbage);
+
+    // Degrades to the unrestored artifact: the input buffer passes through
+    // untouched, but the failure is reported rather than reading as the
+    // benign "nothing to restore".
+    expect(restored.buffer).toBe(garbage);
+    expect(restored.blocksRestored).toBe(0);
+    expect(typeof restored.restoreError).toBe('string');
+    expect(restored.restoreError!.length).toBeGreaterThan(0);
   });
 
   test('both-mode generates two files', async () => {
