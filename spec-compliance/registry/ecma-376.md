@@ -930,6 +930,84 @@ List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot
 via the PPR_ORDER table; the numeric id comes from the numbering part's
 deterministic handle map.
 
+## [ECMA-PART1-17-13-4-6] w:comments comment-collection part emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.4.6"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments
+verifiedBy:
+```
+
+Drafting notes compile to a word/comments.xml part holding one
+`w:comment` per note, alongside the Word-extension commentsExtended and
+people parts (content/relationship types matching what Word itself
+writes, cross-checked against the Open XML SDK part constants). The
+emitter lives in `packages/docx-core/src/generation/emit/comments-part.ts`.
+
+## [ECMA-PART1-17-13-4-2] w:comment comment content emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.4.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment
+verifiedBy:
+```
+
+Each comment carries deterministic metadata: sequential ids in document
+order, author falling back note.author → meta.author → 'safe-docx' with
+derived initials, dates only from DraftingNoteSpec.dateIso or
+meta.createdIso (never the clock), and a `w14:paraId` derived from the
+comment id so commentsExtended entries pair up by construction.
+
+## [ECMA-PART1-17-13-4-4] w:commentRangeStart comment anchor opening
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.4.4"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart
+verifiedBy:
+```
+
+A noted paragraph opens its comment range before its first run; range
+ids always match an emitted comment, and the disabled-notes compile emits
+no anchors at all, keeping the body byte-identical to a never-noted spec.
+
+## [ECMA-PART1-17-13-4-3] w:commentRangeEnd comment anchor closing
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.4.3"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd
+verifiedBy:
+```
+
+The comment range closes after the paragraph's last run, before the
+reference run, so the anchored extent is exactly the paragraph content.
+
+## [ECMA-PART1-17-13-4-5] w:commentReference comment reference mark
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.4.5"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference
+verifiedBy:
+```
+
+The trailing reference run carries `w:commentReference` with the same id
+as its range anchors; the existing deleteComment editing path removes the
+trio cleanly, which the strip scenario verifies on generated output.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the

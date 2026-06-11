@@ -70,6 +70,11 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-12` | w:multiLevelType abstract definition type | 5 | 1 | 17.9.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:multiLevelType` | — |
 | `ECMA-PART1-17-9-7` | w:lvlJc numbering level justification | 5 | 1 | 17.9.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc` | — |
 | `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | — |
+| `ECMA-PART1-17-13-4-6` | w:comments comment-collection part emission | 5 | 1 | 17.13.4.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments` | — |
+| `ECMA-PART1-17-13-4-2` | w:comment comment content emission | 5 | 1 | 17.13.4.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment` | — |
+| `ECMA-PART1-17-13-4-4` | w:commentRangeStart comment anchor opening | 5 | 1 | 17.13.4.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart` | — |
+| `ECMA-PART1-17-13-4-3` | w:commentRangeEnd comment anchor closing | 5 | 1 | 17.13.4.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd` | — |
+| `ECMA-PART1-17-13-4-5` | w:commentReference comment reference mark | 5 | 1 | 17.13.4.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference` | — |
 
 ### ECMA-PART4-17-16-5 — w:delInstrText and w:fldChar placement in tracked deletions
 
@@ -760,6 +765,64 @@ leaves the alignment to reader defaults.
 List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot
 via the PPR_ORDER table; the numeric id comes from the numbering part's
 deterministic handle map.
+
+### ECMA-PART1-17-13-4-6 — w:comments comment-collection part emission
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.4.6
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments`
+
+Drafting notes compile to a word/comments.xml part holding one
+`w:comment` per note, alongside the Word-extension commentsExtended and
+people parts (content/relationship types matching what Word itself
+writes, cross-checked against the Open XML SDK part constants). The
+emitter lives in `packages/docx-core/src/generation/emit/comments-part.ts`.
+
+### ECMA-PART1-17-13-4-2 — w:comment comment content emission
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.4.2
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment`
+
+Each comment carries deterministic metadata: sequential ids in document
+order, author falling back note.author → meta.author → 'safe-docx' with
+derived initials, dates only from DraftingNoteSpec.dateIso or
+meta.createdIso (never the clock), and a `w14:paraId` derived from the
+comment id so commentsExtended entries pair up by construction.
+
+### ECMA-PART1-17-13-4-4 — w:commentRangeStart comment anchor opening
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.4.4
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart`
+
+A noted paragraph opens its comment range before its first run; range
+ids always match an emitted comment, and the disabled-notes compile emits
+no anchors at all, keeping the body byte-identical to a never-noted spec.
+
+### ECMA-PART1-17-13-4-3 — w:commentRangeEnd comment anchor closing
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.4.3
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd`
+
+The comment range closes after the paragraph's last run, before the
+reference run, so the anchored extent is exactly the paragraph content.
+
+### ECMA-PART1-17-13-4-5 — w:commentReference comment reference mark
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.4.5
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference`
+
+The trailing reference run carries `w:commentReference` with the same id
+as its range anchors; the existing deleteComment editing path removes the
+trio cleanly, which the strip scenario verifies on generated output.
 
 ## Non-Goals
 
