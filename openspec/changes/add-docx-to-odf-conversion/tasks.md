@@ -26,4 +26,4 @@
 - [x] `convert_real_documents.test.ts` (CONV-12): NVCA + open-agreements fixtures → safety → reopen → visible-text equivalence
 - [x] `lo_convert_differential.test.ts` (CONV-13): preflight-probe gate (skip when soffice absent or unusable), text + structure diff vs LibreOffice reference
 - [x] `add_docx_to_odf_conversion.test.ts` (docx-mcp): `TEST_FEATURE = 'add-docx-to-odf-conversion'`, single-line `.openspec()` tags for OCNV-01..05
-- [ ] Full local gates: `npm run build && npm run test:run && npm run preflight:ci`; document-shaped smoke (convert real NVCA `.docx`, open `.odt` in LibreOffice)
+- [x] Full local gates: `npm run build && npm run test:run && npm run preflight:ci`; document-shaped smoke (convert real NVCA `.docx`, open `.odt` in LibreOffice)
