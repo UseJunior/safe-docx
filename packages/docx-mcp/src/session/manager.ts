@@ -5,6 +5,8 @@ import fs from 'node:fs/promises';
 import {
   DocxDocument,
   DocxZip,
+  REVISION_ID_ELEMENT_NAME_SET,
+  enumerateRevisionStoryPartPaths,
   createRevisionContext,
   createRevisionIdState,
   parseXml,
@@ -128,49 +130,6 @@ const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml
  * `<w:comment w:id>`, `<w:footnote w:id>`, `<w:bookmarkStart w:id>`) from
  * spuriously inflating the starting revision-id counter.
  */
-const REVISION_ID_ELEMENT_LOCAL_NAMES = new Set<string>([
-  'ins',
-  'del',
-  'moveFrom',
-  'moveTo',
-  'moveFromRangeStart',
-  'moveFromRangeEnd',
-  'moveToRangeStart',
-  'moveToRangeEnd',
-  'pPrChange',
-  'rPrChange',
-  'tblPrChange',
-  'trPrChange',
-  'tcPrChange',
-  'sectPrChange',
-  'cellIns',
-  'cellDel',
-  'cellMerge',
-  'customXmlInsRangeStart',
-  'customXmlInsRangeEnd',
-  'customXmlDelRangeStart',
-  'customXmlDelRangeEnd',
-  'customXmlMoveFromRangeStart',
-  'customXmlMoveFromRangeEnd',
-  'customXmlMoveToRangeStart',
-  'customXmlMoveToRangeEnd',
-]);
-
-/**
- * Fixed package paths that can carry package-wide revision attributes.
- * `commentsExtended.xml` and `people.xml` are intentionally excluded — they
- * use `w15:paraId` / `w15:author` identifiers, not revision `w:id` values.
- */
-const FIXED_REVISION_ID_SEED_PARTS = [
-  'word/comments.xml',
-  'word/footnotes.xml',
-  'word/endnotes.xml',
-  'word/glossary/document.xml',
-] as const;
-
-/** Matches numbered header/footer parts such as `word/header1.xml`. */
-const NUMBERED_HEADER_FOOTER_RE = /^word\/(header|footer)\d*\.xml$/;
-
 function normalizeAiAuthor(author: string | null | undefined): string | null {
   if (typeof author !== 'string') return null;
   const trimmed = author.trim();
@@ -205,7 +164,7 @@ export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdSta
   for (const doc of docs) {
     for (const node of Array.from(doc.getElementsByTagName('*'))) {
       const localName = node.localName ?? '';
-      if (!REVISION_ID_ELEMENT_LOCAL_NAMES.has(localName)) continue;
+      if (!REVISION_ID_ELEMENT_NAME_SET.has(localName)) continue;
       if (node.namespaceURI && node.namespaceURI !== WORDPROCESSING_ML_NS) continue;
       const value = getWordIdValue(node);
       if (value !== null && value > maxId) {
@@ -217,7 +176,7 @@ export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdSta
   return createRevisionIdState(maxId + 1);
 }
 
-async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> {
+export async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> {
   const docs: Document[] = [];
 
   let zip: DocxZip;
@@ -227,12 +186,7 @@ async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> 
     return docs;
   }
 
-  const seedPaths = new Set<string>(FIXED_REVISION_ID_SEED_PARTS);
-  for (const entry of zip.listFiles()) {
-    if (NUMBERED_HEADER_FOOTER_RE.test(entry)) seedPaths.add(entry);
-  }
-
-  for (const partPath of seedPaths) {
+  for (const partPath of enumerateRevisionStoryPartPaths(zip)) {
     if (!zip.hasFile(partPath)) continue;
     let xml: string | null;
     try {

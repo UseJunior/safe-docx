@@ -1,5 +1,10 @@
 import fs from 'node:fs/promises';
-import { findUniqueSubstringMatch, type RevisionContext } from '@usejunior/docx-core';
+import {
+  DocxDocument,
+  findUniqueSubstringMatch,
+  replaceParagraphTextRange,
+  type RevisionContext,
+} from '@usejunior/docx-core';
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorMessage } from '../error_utils.js';
 import { err, ok, type ToolResponse } from './types.js';
@@ -7,6 +12,7 @@ import { enforceReadPathPolicy } from './path_policy.js';
 import { replaceText, stripSearchTags } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { resolveSessionForTool } from './session_resolution.js';
+import { preflightAiRevisionMutation } from './ai_revision_guard.js';
 
 // ---------------------------------------------------------------------------
 // Known fields per operation — only these are extracted during normalization.
@@ -330,6 +336,50 @@ async function executeSteps(
   return { completed_step_ids: completedStepIds, step_results: stepResults };
 }
 
+function invalidateDocumentCaches(doc: unknown): void {
+  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
+  mutableDoc.dirty = true;
+  mutableDoc.documentViewCache = null;
+}
+
+function executeStepOnDoc(doc: DocxDocument, step: NormalizedStep, ctx?: RevisionContext): void {
+  if (step.operation === 'replace_text') {
+    const targetParagraphId = step.fields.target_paragraph_id as string;
+    const oldString = stripSearchTags(step.fields.old_string as string);
+    const newString = step.fields.new_string as string;
+    if (step.fields.normalize_first) {
+      doc.mergeRunsOnly();
+    }
+    const pEl = doc.getParagraphElementById(targetParagraphId);
+    if (!pEl) throw new Error(`Paragraph ID ${targetParagraphId} not found in document`);
+    const text = doc.getParagraphTextById(targetParagraphId) ?? '';
+    const match = findUniqueSubstringMatch(text, oldString);
+    if (match.status !== 'unique') {
+      throw new Error(`replace_text preview failed for paragraph ${targetParagraphId}`);
+    }
+    if (ctx) {
+      replaceParagraphTextRange(pEl, match.start, match.end, newString, ctx);
+      invalidateDocumentCaches(doc);
+    } else {
+      doc.replaceText({ targetParagraphId, findText: match.matchedText, replaceText: newString });
+    }
+    return;
+  }
+
+  doc.insertParagraph({
+    positionalAnchorNodeId: step.fields.positional_anchor_node_id as string,
+    relativePosition: (step.fields.position as 'BEFORE' | 'AFTER' | undefined) ?? 'AFTER',
+    newText: step.fields.new_string as string,
+    styleSourceId: step.fields.style_source_id as string | undefined,
+  }, ctx);
+}
+
+function executeStepsOnDoc(doc: DocxDocument, steps: NormalizedStep[], ctx?: RevisionContext): void {
+  for (const step of steps) {
+    executeStepOnDoc(doc, step, ctx);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main tool entry point
 // ---------------------------------------------------------------------------
@@ -408,6 +458,13 @@ export async function applyPlan(
 
     // Apply phase — execute steps sequentially
     const ctx = await getRevisionContextForSession(session);
+    const revisionPreflight = await preflightAiRevisionMutation(
+      session,
+      ctx,
+      (previewDoc, previewCtx) => executeStepsOnDoc(previewDoc, steps, previewCtx),
+    );
+    if (revisionPreflight) return revisionPreflight;
+
     const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
 
     if (result.failed_step_id !== undefined) {
