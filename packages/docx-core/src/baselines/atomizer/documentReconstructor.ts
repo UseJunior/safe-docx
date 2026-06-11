@@ -1148,7 +1148,7 @@ function buildWholeParagraphRevisionContent(
 
 /**
  * Returns true when any atom in the group is a paragraph-level marker
- * (commentRange / bookmark) that must be emitted outside <w:r>.
+ * (commentRange / bookmark / perm) that must be emitted outside <w:r>.
  */
 function groupHasParagraphLevelAtoms(group: RunGroup): boolean {
   for (const atom of group.atoms) {
@@ -1613,14 +1613,15 @@ function buildDocumentPreservingStructure(
     slot.parent.removeChild(slot.element);
   }
 
-  // Strip inter-paragraph bookmark/comment range markers from the scaffold.
-  // These are bookmarkStart/End, commentRangeStart/End elements that were
-  // siblings of <w:p> in the original body. The paragraph rebuilder handles
-  // its own bookmark logic, so keeping these orphaned markers causes
-  // unmatched bookmark IDs.
+  // Strip inter-paragraph bookmark/comment/permission range markers from the
+  // scaffold. These are bookmarkStart/End, commentRangeStart/End,
+  // permStart/End elements that were siblings of <w:p> in the original body.
+  // The paragraph rebuilder handles its own bookmark logic, so keeping these
+  // orphaned markers causes unmatched bookmark IDs.
   const SCAFFOLD_STRIP_TAGS = new Set([
     'w:bookmarkStart', 'w:bookmarkEnd',
     'w:commentRangeStart', 'w:commentRangeEnd',
+    'w:permStart', 'w:permEnd',
   ]);
   const toRemove: Element[] = [];
   for (const el of Array.from(body.getElementsByTagName('*'))) {
