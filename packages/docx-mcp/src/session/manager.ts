@@ -46,6 +46,7 @@ export type SaveCacheEntry = {
   trackedFallbackReason?: ReconstructionFallbackReason;
   trackedFallbackDiagnostics?: ReconstructionFallbackDiagnostics;
   bookmarksRemoved: number;
+  blocksRestored: number;
   exportedAtUtc: string;
   cachedAtIso: string;
 };
@@ -476,10 +477,12 @@ export class SessionManager {
     const doc = await DocxDocument.load(session.originalBuffer);
     doc.normalize();
     doc.insertParagraphBookmarks('_baseline');
-    const [clean, bookmarked] = await Promise.all([
-      doc.toBuffer({ cleanBookmarks: true }),
-      doc.toBuffer({ cleanBookmarks: false }),
-    ]);
+    // Sequential on purpose: toBuffer() temporarily swaps document.xml inside
+    // the shared zip, so concurrent calls on one document race on that state.
+    // Baselines stay fully normalized (no minimalReserialization) — the
+    // comparison pipeline expects normalized-vs-normalized inputs.
+    const clean = await doc.toBuffer({ cleanBookmarks: true });
+    const bookmarked = await doc.toBuffer({ cleanBookmarks: false });
     session.comparisonBaseline = clean.buffer;
     session.comparisonBaselineWithBookmarks = bookmarked.buffer;
   }
@@ -616,7 +619,8 @@ export class SessionManager {
   }
 
   async saveTo(session: DocxSession, savePath: string, opts?: { cleanBookmarks?: boolean }): Promise<void> {
-    const { buffer } = await session.doc.toBuffer({ cleanBookmarks: opts?.cleanBookmarks ?? true });
+    const cleanBookmarks = opts?.cleanBookmarks ?? true;
+    const { buffer } = await session.doc.toBuffer({ cleanBookmarks, minimalReserialization: cleanBookmarks });
     await fs.writeFile(savePath, new Uint8Array(buffer));
   }
 

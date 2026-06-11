@@ -41,6 +41,7 @@ import {
   type ExtractTablesResult,
 } from './tables.js';
 import { mergeRuns, type MergeRunsOptions, type MergeRunsResult } from './merge_runs.js';
+import { restoreUntouchedBlocks } from './minimal_save.js';
 import { simplifyRedlines } from './simplify_redlines.js';
 import { preventDoubleElevation } from './prevent_double_elevation.js';
 import { validateDocument, type ValidateDocumentResult } from './validate_document.js';
@@ -388,8 +389,14 @@ export class DocxDocument {
   private relsMap: RelsMap;
   private dirty: boolean;
   private documentViewCache: { includeSemanticTags: boolean; showFormatting: boolean; formattingMode: FormattingMode; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
+  /**
+   * Raw document.xml text as loaded, before normalize()/edits mutate the DOM.
+   * Reference for minimal re-serialization in toBuffer(); null for instances
+   * not created via load().
+   */
+  private originalDocumentXmlText: string | null;
 
-  private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap) {
+  private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap, originalDocumentXmlText: string | null = null) {
     this.zip = zip;
     this.documentXml = documentXml;
     this.stylesXml = stylesXml;
@@ -398,6 +405,7 @@ export class DocxDocument {
     this.relsMap = relsMap;
     this.dirty = false;
     this.documentViewCache = null;
+    this.originalDocumentXmlText = originalDocumentXmlText;
   }
 
   static async load(buffer: Buffer): Promise<DocxDocument> {
@@ -419,7 +427,7 @@ export class DocxDocument {
     const relsText = await zip.readTextOrNull('word/_rels/document.xml.rels');
     const relsMap = relsText ? parseDocumentRels(parseXml(relsText)) : new Map<string, string>();
 
-    return new DocxDocument(zip, doc, stylesXml, numberingXml, footnotesXml, relsMap);
+    return new DocxDocument(zip, doc, stylesXml, numberingXml, footnotesXml, relsMap, xml);
   }
 
   getParagraphs(): Element[] {
@@ -1195,7 +1203,20 @@ export class DocxDocument {
     return parseXml(commentsText);
   }
 
-  async toBuffer(opts?: { cleanBookmarks?: boolean }): Promise<{ buffer: Buffer; bookmarksRemoved: number }> {
+  /**
+   * Serialize the document to a .docx buffer.
+   *
+   * With `minimalReserialization` (requires `cleanBookmarks`), top-level body
+   * blocks that no edit touched are restored element-for-element from the
+   * original document.xml instead of carrying the open-time normalization
+   * (proofErr stripping, run merging) to disk — so output diffs reflect the
+   * actual edit blast radius. Edited/inserted blocks are emitted as-is.
+   * Falls back to full re-serialization (blocksRestored: 0) when no original
+   * text was captured or reconciliation fails.
+   *
+   * @see https://github.com/UseJunior/safe-docx/issues/408
+   */
+  async toBuffer(opts?: { cleanBookmarks?: boolean; minimalReserialization?: boolean }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
     // Always write the latest document.xml when saving.
     // Important: when cleanBookmarks=true (download), we must NOT mutate session state.
     const xmlWithBookmarks = serializeXml(this.documentXml);
@@ -1204,16 +1225,26 @@ export class DocxDocument {
     if (opts?.cleanBookmarks) {
       const cloned = parseXml(xmlWithBookmarks);
       const bookmarksRemoved = cleanupInternalBookmarks(cloned);
+      let blocksRestored = 0;
+      if (opts.minimalReserialization && this.originalDocumentXmlText !== null) {
+        try {
+          blocksRestored = restoreUntouchedBlocks(cloned, this.originalDocumentXmlText);
+        } catch {
+          // Reconciliation is best-effort; the fully re-serialized DOM is
+          // always a correct (if non-minimal) save.
+          blocksRestored = 0;
+        }
+      }
       const cleanedXml = serializeXml(cloned);
 
       // Temporarily swap document.xml in the zip for output, then restore.
       this.zip.writeText('word/document.xml', cleanedXml);
       const buffer = await this.zip.toBuffer();
       this.zip.writeText('word/document.xml', xmlWithBookmarks);
-      return { buffer, bookmarksRemoved };
+      return { buffer, bookmarksRemoved, blocksRestored };
     }
 
     const buffer = await this.zip.toBuffer();
-    return { buffer, bookmarksRemoved: 0 };
+    return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
   }
 }

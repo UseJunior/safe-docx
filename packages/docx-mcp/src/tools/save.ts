@@ -184,6 +184,7 @@ export async function save(
     let trackedFallbackReason: CompareResult['fallbackReason'];
     let trackedFallbackDiagnostics: CompareResult['fallbackDiagnostics'];
     let bookmarksRemoved: number;
+    let blocksRestored: number;
     let exportTimestamp: string;
 
     // Run implicit validation before producing save artifacts.
@@ -197,11 +198,16 @@ export async function save(
       trackedFallbackReason = cached.trackedFallbackReason;
       trackedFallbackDiagnostics = cached.trackedFallbackDiagnostics;
       bookmarksRemoved = cached.bookmarksRemoved;
+      blocksRestored = cached.blocksRestored;
       exportTimestamp = cached.exportedAtUtc;
     } else {
-      const revised = await session.doc.toBuffer({ cleanBookmarks: clean });
+      // The clean artifact is the minimal one: untouched body blocks are
+      // restored element-for-element from the original document.xml so the
+      // on-disk diff matches the edit's actual blast radius.
+      const revised = await session.doc.toBuffer({ cleanBookmarks: clean, minimalReserialization: clean });
       revisedBuffer = revised.buffer;
       bookmarksRemoved = revised.bookmarksRemoved;
+      blocksRestored = revised.blocksRestored;
       trackedBuffer = null;
       trackedStats = null;
       trackedReconstructionMode = undefined;
@@ -213,8 +219,15 @@ export async function save(
         // Lazily generate comparison baselines if not yet available.
         await manager.ensureBaselines(session);
         const baselineBuffer = session.comparisonBaseline ?? session.originalBuffer;
+        // The comparison input must stay fully normalized: the baseline is
+        // normalized, and the atomizer compares normalized-vs-normalized.
+        // Generated sequentially — toBuffer() swaps shared zip state, so
+        // concurrent calls on one document are unsafe.
+        const comparisonRevisedBuffer = clean
+          ? (await session.doc.toBuffer({ cleanBookmarks: clean })).buffer
+          : revisedBuffer;
         const trackedRes = await runWithoutConsoleLog(() =>
-          compareDocuments(baselineBuffer, revisedBuffer, {
+          compareDocuments(baselineBuffer, comparisonRevisedBuffer, {
             author,
             engine: trackedEngine,
             reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
@@ -250,6 +263,7 @@ export async function save(
         trackedFallbackReason,
         trackedFallbackDiagnostics,
         bookmarksRemoved: clean ? bookmarksRemoved : 0,
+        blocksRestored,
         exportedAtUtc: exportTimestamp,
         cachedAtIso: new Date().toISOString(),
       });
@@ -330,6 +344,7 @@ export async function save(
       revisions,
       exported_at_utc: exportTimestamp,
       bookmarks_removed: clean ? bookmarksRemoved : 0,
+      blocks_restored: blocksRestored,
       returned_variants: returnedVariants,
       available_variants: ['clean', 'redline'],
       cache_hit: cacheHit,
