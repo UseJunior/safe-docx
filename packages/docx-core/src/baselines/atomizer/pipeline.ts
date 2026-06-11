@@ -1021,7 +1021,7 @@ export async function compareDocumentsAtomizer(
 
   // Step 13: Save result and compute stats
   const resultBuffer = await resultArchive.save();
-  const stats = computeStats(mergedAtoms);
+  const stats = computeAtomizerStats(mergedAtoms);
 
   return {
     document: resultBuffer,
@@ -1567,52 +1567,92 @@ async function mergePeople(
   await ensureOpcMetadata(resultArchive, PEOPLE_DESCRIPTOR);
 }
 
+interface ParagraphChangeFlags {
+  hasDeleted: boolean;
+  hasInserted: boolean;
+}
+
+const fallbackParagraphStatsKeys = new WeakMap<Element, string>();
+let nextFallbackParagraphStatsKey = 0;
+
+function paragraphStatsKey(atom: ComparisonUnitAtom): string | undefined {
+  if (atom.paragraphIndex !== undefined) {
+    return `${atom.part.uri}:${atom.paragraphIndex}`;
+  }
+
+  const pAncestor = atom.ancestorElements.find((a) => a.tagName === 'w:p');
+  if (!pAncestor) return undefined;
+
+  let key = fallbackParagraphStatsKeys.get(pAncestor);
+  if (!key) {
+    key = `${atom.part.uri}:paragraph-ref:${nextFallbackParagraphStatsKey++}`;
+    fallbackParagraphStatsKeys.set(pAncestor, key);
+  }
+  return key;
+}
+
 /**
  * Compute comparison statistics from merged atoms.
+ *
+ * Range counts are contiguous same-status runs in the merged atom stream, scoped
+ * to a paragraph. Atom counts remain available under explicit names for callers
+ * that need the old granular benchmark signal.
  */
-function computeStats(mergedAtoms: ComparisonUnitAtom[]): CompareStats {
+export function computeAtomizerStats(mergedAtoms: ComparisonUnitAtom[]): CompareStats {
   const reconstructionStats = computeReconstructionStats(mergedAtoms);
 
-  // Count unique paragraphs for modifications
-  // A modification is when we have both deleted and inserted atoms in the same paragraph
-  const modifiedParagraphs = new Set<string>();
-
-  let currentParagraph = '';
-  let hasDeleted = false;
-  let hasInserted = false;
+  let insertedRanges = 0;
+  let deletedRanges = 0;
+  let formatChanges = 0;
+  let previousRangeStatus: CorrelationStatus.Inserted | CorrelationStatus.Deleted | CorrelationStatus.FormatChanged | null = null;
+  let previousRangeParagraph: string | undefined;
+  const paragraphs = new Map<string, ParagraphChangeFlags>();
 
   for (const atom of mergedAtoms) {
-    // Detect paragraph boundaries
-    const pAncestor = atom.ancestorElements.find((a) => a.tagName === 'w:p');
-    const paragraphId = pAncestor
-      ? `${atom.part.uri}:${atom.ancestorElements.indexOf(pAncestor)}`
-      : '';
+    const paragraphKey = paragraphStatsKey(atom);
+    const status = atom.correlationStatus;
+    const rangeStatus =
+      status === CorrelationStatus.Inserted ||
+      status === CorrelationStatus.Deleted ||
+      status === CorrelationStatus.FormatChanged
+        ? status
+        : null;
 
-    if (paragraphId !== currentParagraph) {
-      // Check previous paragraph
-      if (currentParagraph && hasDeleted && hasInserted) {
-        modifiedParagraphs.add(currentParagraph);
+    if (rangeStatus) {
+      if (rangeStatus !== previousRangeStatus || paragraphKey !== previousRangeParagraph) {
+        if (rangeStatus === CorrelationStatus.Inserted) insertedRanges++;
+        if (rangeStatus === CorrelationStatus.Deleted) deletedRanges++;
+        if (rangeStatus === CorrelationStatus.FormatChanged) formatChanges++;
       }
-      currentParagraph = paragraphId;
-      hasDeleted = false;
-      hasInserted = false;
+      previousRangeStatus = rangeStatus;
+      previousRangeParagraph = paragraphKey;
+    } else {
+      previousRangeStatus = null;
+      previousRangeParagraph = undefined;
     }
 
-    if (atom.correlationStatus === CorrelationStatus.Deleted) {
-      hasDeleted = true;
-    } else if (atom.correlationStatus === CorrelationStatus.Inserted) {
-      hasInserted = true;
+    if (paragraphKey && (status === CorrelationStatus.Deleted || status === CorrelationStatus.Inserted)) {
+      const flags = paragraphs.get(paragraphKey) ?? { hasDeleted: false, hasInserted: false };
+      if (status === CorrelationStatus.Deleted) flags.hasDeleted = true;
+      if (status === CorrelationStatus.Inserted) flags.hasInserted = true;
+      paragraphs.set(paragraphKey, flags);
     }
   }
 
-  // Check last paragraph
-  if (currentParagraph && hasDeleted && hasInserted) {
-    modifiedParagraphs.add(currentParagraph);
-  }
+  const modifiedParagraphs = Array.from(paragraphs.values()).filter(
+    (flags) => flags.hasDeleted && flags.hasInserted
+  ).length;
 
   return {
-    insertions: reconstructionStats.insertions,
-    deletions: reconstructionStats.deletions,
-    modifications: modifiedParagraphs.size + reconstructionStats.formatChanges,
+    insertions: insertedRanges,
+    deletions: deletedRanges,
+    modifications: modifiedParagraphs,
+    insertedRanges,
+    deletedRanges,
+    insertedAtoms: reconstructionStats.insertions,
+    deletedAtoms: reconstructionStats.deletions,
+    modifiedParagraphs,
+    formatChanges,
+    formatChangeAtoms: reconstructionStats.formatChanges,
   };
 }

@@ -35,9 +35,35 @@ export interface CompareOptions {
 }
 
 export interface CompareStats {
+  /**
+   * Human-facing inserted change ranges. This counts contiguous inserted atom
+   * runs, matching the coalesced w:ins regions emitted in OOXML.
+   */
   insertions: number;
+  /**
+   * Human-facing deleted change ranges. This counts contiguous deleted atom
+   * runs, matching the coalesced w:del regions emitted in OOXML.
+   */
   deletions: number;
+  /**
+   * Paragraphs containing both inserted and deleted content. Format-only
+   * changes are reported separately in formatChanges.
+   */
   modifications: number;
+  /** Same value as insertions, exposed with explicit range-level semantics. */
+  insertedRanges: number;
+  /** Same value as deletions, exposed with explicit range-level semantics. */
+  deletedRanges: number;
+  /** Atom-level inserted units for granular/benchmark consumers. */
+  insertedAtoms: number;
+  /** Atom-level deleted units for granular/benchmark consumers. */
+  deletedAtoms: number;
+  /** Same value as modifications, exposed without overloading the term. */
+  modifiedParagraphs: number;
+  /** Contiguous format-only change ranges. */
+  formatChanges: number;
+  /** Atom-level format-only units for granular/benchmark consumers. */
+  formatChangeAtoms: number;
 }
 
 export type ReconstructionMode = 'rebuild' | 'inplace';

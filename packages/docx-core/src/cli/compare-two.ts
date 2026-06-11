@@ -4,7 +4,9 @@ import { compareDocuments, type CompareOptions } from '../index.js';
 
 const USAGE =
   'Usage: docx-comparison <original.docx> <revised.docx> [output.docx] ' +
-  '[--engine atomizer|auto] [--mode inplace|rebuild] [--author "Name"] [--premerge-runs true|false]';
+  '[--engine atomizer|auto] [--mode inplace|rebuild] [--author "Name"] [--premerge-runs true|false]\n' +
+  'Stats: insertions/deletions count contiguous revision ranges; insertedAtoms/deletedAtoms count granular word atoms; ' +
+  'modifications counts modified paragraphs and formatChanges is separate.';
 
 export interface ParsedCompareCliArgs {
   originalPath: string;

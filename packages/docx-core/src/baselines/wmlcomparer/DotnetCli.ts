@@ -121,6 +121,13 @@ export async function compareWithDotnet(
       insertions: revisionCount,
       deletions: 0, // Would need to parse output to get this
       modifications: 0,
+      insertedRanges: revisionCount,
+      deletedRanges: 0,
+      insertedAtoms: revisionCount,
+      deletedAtoms: 0,
+      modifiedParagraphs: 0,
+      formatChanges: 0,
+      formatChangeAtoms: 0,
     };
 
     return {
