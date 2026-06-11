@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/%40usejunior%2Fdocx-core)](https://www.npmjs.com/package/@usejunior/docx-core)
 [![CI](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
 
 Core Safe Docx library for brownfield editing and comparison of existing `.docx` files.
 
@@ -98,4 +98,4 @@ npm run lint -w @usejunior/docx-core
 
 ## License
 
-MIT
+Apache-2.0

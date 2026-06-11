@@ -7,7 +7,7 @@ description: >-
   "add a comment to the docx," "read this Word file," or "mark up the agreement."
   From-scratch generation lives in the @usejunior/docx-core library API
   (generateDocx), not in this MCP server.
-license: MIT
+license: Apache-2.0
 compatibility: >-
   Works with any MCP-compatible agent. Requires Node.js >=18.0.0 and npm
   (for npx) on the host machine. The MCP server runs locally as a stdio
@@ -34,7 +34,7 @@ Safe-DOCX is a local MCP server for surgically editing existing `.docx` files. I
 
 ## Source Code and Audit
 
-Safe-DOCX is fully open source (MIT license). Review the complete source before installing:
+Safe-DOCX is fully open source (Apache-2.0 license). Review the complete source before installing:
 
 - **GitHub**: https://github.com/UseJunior/safe-docx
 - **npm registry**: https://www.npmjs.com/package/@usejunior/safe-docx

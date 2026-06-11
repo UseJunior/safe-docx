@@ -125,4 +125,4 @@ If you change a fundamental OOXML invariant or repo orientation listed in `syste
 
 ## License
 
-By contributing, you agree your contributions are licensed under the MIT License.
+By contributing, you agree your contributions are licensed under the Apache License 2.0 (inbound = outbound, per its §5).

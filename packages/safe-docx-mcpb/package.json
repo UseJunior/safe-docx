@@ -31,5 +31,5 @@
     "type": "git",
     "url": "git+https://github.com/usejunior/safe-docx.git"
   },
-  "license": "MIT"
+  "license": "Apache-2.0"
 }
