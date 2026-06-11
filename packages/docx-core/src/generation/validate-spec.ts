@@ -12,9 +12,10 @@
  * Shipped so far: formatted text/tab/break runs, five-part PAGE/NUMPAGES
  * fields, paragraph formatting, named styles + styles.xml, multi-section
  * documents with per-section page setup, page numbering, break types,
- * default/first/even headers and footers, and tables (grid, spans, vertical
- * merges, cell decoration, nesting).
- * Still rejected: numbering, drafting notes.
+ * default/first/even headers and footers, tables (grid, spans, vertical
+ * merges, cell decoration, nesting), and multi-level numbering with
+ * w:numPr list references.
+ * Still rejected: drafting notes.
  */
 
 import { GenerationSpecError } from './errors.js';
@@ -23,6 +24,7 @@ import type {
   BorderSpec,
   DocumentSpec,
   InlineSpec,
+  NumberingSpec,
   ParagraphSpec,
   RunProps,
   SectionSpec,
@@ -47,13 +49,49 @@ export function validateSpec(spec: DocumentSpec): void {
     throw new GenerationSpecError('empty_sections', '/sections', 'DocumentSpec.sections must contain at least one section');
   }
 
-  if (spec.numbering && spec.numbering.length > 0) unsupported('/numbering', 'numbering');
-
   const declaredStyleIds = validateStyles(spec.styles ?? []);
+  const numbering = validateNumbering(spec.numbering ?? []);
 
   spec.sections.forEach((section, sectionIndex) => {
-    validateSection(section, `/sections/${sectionIndex}`, declaredStyleIds);
+    validateSection(section, `/sections/${sectionIndex}`, declaredStyleIds, numbering);
   });
+}
+
+/** Returns numId handle → set of declared levels, for list-reference checks. */
+function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number>> {
+  const declared = new Map<string, Set<number>>();
+  definitions.forEach((definition, index) => {
+    const path = `/numbering/${index}`;
+    if (!definition.numId) {
+      throw new GenerationSpecError('invalid_value', `${path}/numId`, 'NumberingSpec requires a numId handle');
+    }
+    if (declared.has(definition.numId)) {
+      throw new GenerationSpecError('invalid_value', `${path}/numId`, `Duplicate numbering handle '${definition.numId}'`);
+    }
+    if (!Array.isArray(definition.levels) || definition.levels.length === 0) {
+      throw new GenerationSpecError('invalid_value', `${path}/levels`, 'Numbering definitions require at least one level');
+    }
+    const levels = new Set<number>();
+    definition.levels.forEach((level, levelIndex) => {
+      const levelPath = `${path}/levels/${levelIndex}`;
+      if (!Number.isInteger(level.ilvl) || level.ilvl < 0 || level.ilvl > 8) {
+        throw new GenerationSpecError('invalid_value', `${levelPath}/ilvl`, 'ilvl must be an integer between 0 and 8');
+      }
+      if (levels.has(level.ilvl)) {
+        throw new GenerationSpecError('invalid_value', `${levelPath}/ilvl`, `Duplicate ilvl ${level.ilvl} in numbering '${definition.numId}'`);
+      }
+      levels.add(level.ilvl);
+      if (typeof level.lvlText !== 'string' || level.lvlText.length === 0) {
+        throw new GenerationSpecError('invalid_value', `${levelPath}/lvlText`, 'Numbering levels require a lvlText pattern');
+      }
+      if (level.start !== undefined && (!Number.isInteger(level.start) || level.start < 0)) {
+        throw new GenerationSpecError('invalid_value', `${levelPath}/start`, 'Level start must be a non-negative integer');
+      }
+      if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
+    });
+    declared.set(definition.numId, levels);
+  });
+  return declared;
 }
 
 /** Returns the set of resolvable style ids (declared styles + implicit Normal). */
@@ -87,7 +125,7 @@ function validateStyles(styles: StyleSpec[]): Set<string> {
   return ids;
 }
 
-function validateSection(section: SectionSpec, path: string, styleIds: Set<string>): void {
+function validateSection(section: SectionSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>): void {
   if (section.pageNumbering?.start !== undefined) {
     const start = section.pageNumbering.start;
     if (!Number.isInteger(start) || start < 1) {
@@ -104,7 +142,7 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
         throw new GenerationSpecError('invalid_value', `${slotPath}/blocks`, 'Header/footer blocks must be a non-empty array');
       }
       content.blocks.forEach((block, blockIndex) => {
-        validateBlock(block, `${slotPath}/blocks/${blockIndex}`, styleIds);
+        validateBlock(block, `${slotPath}/blocks/${blockIndex}`, styleIds, numbering);
       });
     }
   }
@@ -126,13 +164,13 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
     throw new GenerationSpecError('invalid_value', `${path}/blocks`, 'Section blocks must be an array');
   }
   section.blocks.forEach((block, blockIndex) => {
-    validateBlock(block, `${path}/blocks/${blockIndex}`, styleIds);
+    validateBlock(block, `${path}/blocks/${blockIndex}`, styleIds, numbering);
   });
 }
 
-function validateBlock(block: BlockSpec, path: string, styleIds: Set<string>): void {
-  if (block.kind === 'table') validateTable(block, path, styleIds);
-  else validateParagraph(block, path, styleIds);
+function validateBlock(block: BlockSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>): void {
+  if (block.kind === 'table') validateTable(block, path, styleIds, numbering);
+  else validateParagraph(block, path, styleIds, numbering);
 }
 
 /**
@@ -142,7 +180,7 @@ function validateBlock(block: BlockSpec, path: string, styleIds: Set<string>): v
  * span of a merge cell in the previous row — otherwise readers either show
  * a recovery dialog or silently reflow the table.
  */
-function validateTable(table: TableSpec, path: string, styleIds: Set<string>): void {
+function validateTable(table: TableSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>): void {
   if (!Array.isArray(table.columnWidthsTwips) || table.columnWidthsTwips.length === 0) {
     throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips`, 'Tables require at least one column width');
   }
@@ -207,7 +245,7 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>): v
         throw new GenerationSpecError('invalid_value', `${cellPath}/blocks`, 'Cell blocks must be an array (empty allowed; an empty cell compiles to an empty paragraph)');
       }
       cell.blocks.forEach((block, blockIndex) => {
-        validateBlock(block, `${cellPath}/blocks/${blockIndex}`, styleIds);
+        validateBlock(block, `${cellPath}/blocks/${blockIndex}`, styleIds, numbering);
       });
       gridOffset += span;
     });
@@ -235,9 +273,26 @@ function validateBorders(borders: TableBorders, path: string): void {
   }
 }
 
-function validateParagraph(paragraph: ParagraphSpec, path: string, styleIds: Set<string>): void {
-  if (paragraph.list !== undefined) unsupported(`${path}/list`, 'numbered lists');
+function validateParagraph(paragraph: ParagraphSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>): void {
   if (paragraph.note !== undefined) unsupported(`${path}/note`, 'drafting notes');
+
+  if (paragraph.list !== undefined) {
+    const levels = numbering.get(paragraph.list.numId);
+    if (!levels) {
+      throw new GenerationSpecError(
+        'dangling_numbering_reference',
+        `${path}/list/numId`,
+        `Paragraph references undeclared numbering '${paragraph.list.numId}'`,
+      );
+    }
+    if (!levels.has(paragraph.list.ilvl)) {
+      throw new GenerationSpecError(
+        'dangling_numbering_reference',
+        `${path}/list/ilvl`,
+        `Numbering '${paragraph.list.numId}' declares no level ${paragraph.list.ilvl}`,
+      );
+    }
+  }
 
   if (paragraph.styleId !== undefined && !styleIds.has(paragraph.styleId)) {
     throw new GenerationSpecError(

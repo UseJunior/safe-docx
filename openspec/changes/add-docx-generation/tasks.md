@@ -32,9 +32,9 @@ and `openspec validate add-docx-generation --strict`.
 - [x] 4.2 Grid-arithmetic validation (gridSpan/vMerge); table structural checks; registry entries
 
 ## 5. Numbering + recipes (PR 5, after PR 4) — SDX-GEN-060..062, 070, 071
-- [ ] 5.1 `emit/numbering-part.ts` (abstractNum/num, numeric id assignment); `w:numPr` wiring
-- [ ] 5.2 Label round-trip against the read-side list-label computation
-- [ ] 5.3 `recipes.ts` (`coverTermsTable`, `signatureBlock`) + recipe artifacts; registry entries
+- [x] 5.1 `emit/numbering-part.ts` (abstractNum/num, numeric id assignment); `w:numPr` wiring
+- [x] 5.2 Label round-trip against the read-side list-label computation
+- [x] 5.3 `recipes.ts` (`coverTermsTable`, `signatureBlock`) + recipe artifacts; registry entries
 
 ## 6. Drafting-note layer (PR 6) — SDX-GEN-080..083
 - [ ] 6.1 `emit/comments-part.ts` + anchors + `includeDraftingNotes` switch; deterministic ids/dates

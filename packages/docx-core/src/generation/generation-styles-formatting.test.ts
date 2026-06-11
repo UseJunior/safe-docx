@@ -66,14 +66,25 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
     'Scenario: dangling references are rejected before emission',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let spec!: DocumentSpec;
-      await given('a paragraph referencing a styleId absent from the declared styles', async () => {
+      let listSpec!: DocumentSpec;
+      await given('paragraphs referencing a styleId and a numId absent from the document-level definitions', async () => {
         spec = styledSpec();
         spec.sections[0]!.blocks.push({ kind: 'paragraph', styleId: 'GhostStyle', runs: [{ kind: 'text', text: 'x' }] });
+        listSpec = {
+          sections: [
+            { blocks: [{ kind: 'paragraph', list: { numId: 'ghostList', ilvl: 0 }, runs: [{ kind: 'text', text: 'x' }] }] },
+          ],
+        };
       });
 
       let error: unknown;
-      await when('generateDocx compiles the spec', async () => {
+      let numberingError: unknown;
+      await when('generateDocx compiles each spec', async () => {
         error = await generateDocx(spec).then(
+          () => null,
+          (err: unknown) => err,
+        );
+        numberingError = await generateDocx(listSpec).then(
           () => null,
           (err: unknown) => err,
         );
@@ -85,7 +96,14 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
         expect(specError.code).toBe('dangling_style_reference');
         expect(specError.path).toBe('/sections/0/blocks/2/styleId');
         expect(specError.message).toContain('GhostStyle');
-        await attachPrettyJson('rejection', { code: specError.code, path: specError.path });
+        expect(numberingError).toBeInstanceOf(GenerationSpecError);
+        const numError = numberingError as GenerationSpecError;
+        expect(numError.code).toBe('dangling_numbering_reference');
+        expect(numError.path).toBe('/sections/0/blocks/0/list/numId');
+        await attachPrettyJson('rejections', {
+          style: { code: specError.code, path: specError.path },
+          numbering: { code: numError.code, path: numError.path },
+        });
       });
     },
   );

@@ -16,6 +16,7 @@ import { createZipBuffer } from '../primitives/zip.js';
 import { CompileContext } from './context.js';
 import { emitDocumentPart } from './emit/document-part.js';
 import { emitHeaderFooterParts } from './emit/header-footer-part.js';
+import { emitNumberingPartIfNeeded } from './emit/numbering-part.js';
 import { emitPackageParts } from './emit/package-parts.js';
 import { emitSettingsPartIfNeeded } from './emit/settings-part.js';
 import { emitStylesPart } from './emit/styles-part.js';
@@ -35,8 +36,9 @@ export async function generateDocx(spec: DocumentSpec, _opts?: GenerateDocxOptio
   validateSpec(spec);
 
   const ctx = new CompileContext();
-  const headerFooterRefs = emitHeaderFooterParts(spec, ctx);
-  ctx.setFileContent('word/document.xml', emitDocumentPart(spec, headerFooterRefs));
+  const numberingIds = emitNumberingPartIfNeeded(spec, ctx);
+  const headerFooterRefs = emitHeaderFooterParts(spec, ctx, numberingIds);
+  ctx.setFileContent('word/document.xml', emitDocumentPart(spec, headerFooterRefs, numberingIds));
   emitStylesPart(spec, ctx);
   emitSettingsPartIfNeeded(spec, ctx);
   emitPackageParts(spec, ctx);

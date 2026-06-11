@@ -16,6 +16,7 @@ import { parseXml, serializeXml } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
 import type { DocumentSpec, HeaderFooterSpec, SectionSpec } from '../types.js';
 import { XML_DECL } from './document-part.js';
+import type { NumberingIdMap } from './numbering-part.js';
 import { buildBlock } from './table.js';
 import type { SectionHeaderFooterRefs } from './section.js';
 
@@ -31,27 +32,27 @@ const SLOT_ORDER = ['first', 'default', 'even'] as const;
  * reference maps for the sectPr emitter. Runs before the document part so
  * relationship ids exist when sections bind their references.
  */
-export function emitHeaderFooterParts(spec: DocumentSpec, ctx: CompileContext): SectionHeaderFooterRefs[] {
-  return spec.sections.map((section) => emitForSection(section, ctx));
+export function emitHeaderFooterParts(spec: DocumentSpec, ctx: CompileContext, numberingIds?: NumberingIdMap): SectionHeaderFooterRefs[] {
+  return spec.sections.map((section) => emitForSection(section, ctx, numberingIds));
 }
 
-function emitForSection(section: SectionSpec, ctx: CompileContext): SectionHeaderFooterRefs {
+function emitForSection(section: SectionSpec, ctx: CompileContext, numberingIds?: NumberingIdMap): SectionHeaderFooterRefs {
   const refs: SectionHeaderFooterRefs = { headers: {}, footers: {} };
   for (const slot of SLOT_ORDER) {
     const header = section.headers?.[slot];
     if (header) {
-      refs.headers[slot] = emitPart(header, ctx, 'header');
+      refs.headers[slot] = emitPart(header, ctx, 'header', numberingIds);
     }
     const footer = section.footers?.[slot];
     if (footer) {
-      refs.footers[slot] = emitPart(footer, ctx, 'footer');
+      refs.footers[slot] = emitPart(footer, ctx, 'footer', numberingIds);
     }
   }
   return refs;
 }
 
 /** @conformance ECMA-376 edition 5, Part 1 § 17.10.3 */
-function emitPart(content: HeaderFooterSpec, ctx: CompileContext, kind: 'header' | 'footer'): string {
+function emitPart(content: HeaderFooterSpec, ctx: CompileContext, kind: 'header' | 'footer', numberingIds?: NumberingIdMap): string {
   const isHeader = kind === 'header';
   const partName = isHeader ? ctx.allocateHeaderPartName() : ctx.allocateFooterPartName();
   const part = ctx.registerPart(
@@ -64,7 +65,7 @@ function emitPart(content: HeaderFooterSpec, ctx: CompileContext, kind: 'header'
   const doc = parseXml(`<${rootTag} xmlns:w="${OOXML.W_NS}" xmlns:r="${OOXML.R_NS}"/>`);
   const root = doc.documentElement!;
   for (const block of content.blocks) {
-    root.appendChild(buildBlock(doc, block));
+    root.appendChild(buildBlock(doc, block, numberingIds));
   }
 
   ctx.setFileContent(partName, XML_DECL + serializeXml(doc));
