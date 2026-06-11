@@ -223,18 +223,25 @@ const LEAF_NODE_TAGS = new Set([
  * rebuild reconstructor emits them as siblings of <w:r>, not leaves wrapped in
  * a synthetic run.
  *
- * Scope: commentRange and bookmark only. moveFromRange / moveToRange and
- * permStart / permEnd are deferred to follow-up issues — moveRange collides
- * with the synthetic emission in wrapWithMoveFrom and wrapWithMoveTo, and
- * permStart / permEnd needs fixture coverage.
+ * Scope: commentRange, bookmark, and moveFromRange / moveToRange. Explicit
+ * move-range markers coexist with the synthetic emission in wrapWithMoveFrom
+ * and wrapWithMoveTo: the reconstructor suppresses synthesis for paragraphs
+ * whose atom stream already carries explicit markers of the same kind, so the
+ * two paths never double-emit. permStart / permEnd is deferred to a follow-up
+ * issue — it needs fixture coverage.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
+ * @see https://github.com/UseJunior/safe-docx/issues/110
  */
 export const PARAGRAPH_LEVEL_TAGS = new Set([
   'w:commentRangeStart',
   'w:commentRangeEnd',
   'w:bookmarkStart',
   'w:bookmarkEnd',
+  'w:moveFromRangeStart',
+  'w:moveFromRangeEnd',
+  'w:moveToRangeStart',
+  'w:moveToRangeEnd',
 ]);
 
 /**
@@ -275,8 +282,9 @@ export interface AtomizeTreeOptions {
    */
   splitTextIntoWords?: boolean;
   /**
-   * Atomize paragraph-level markers (commentRangeStart/End, bookmarkStart/End)
-   * so the rebuild reconstructor can re-emit them as siblings of <w:r>.
+   * Atomize paragraph-level markers (commentRange*, bookmark*, moveFromRange*,
+   * moveToRange* — see PARAGRAPH_LEVEL_TAGS) so the rebuild reconstructor can
+   * re-emit them as siblings of <w:r>.
    *
    * MUST be false for inplace mode. Inplace handlers are run-anchored and
    * silently no-op on atoms with no sourceRunElement, but inplace's bookmark
@@ -303,7 +311,8 @@ export function isLeafNode(element: WmlElement): boolean {
 /**
  * Check if an element is a paragraph-level OOXML marker.
  *
- * Paragraph-level markers (commentRangeStart/End, bookmarkStart/End) are
+ * Paragraph-level markers (PARAGRAPH_LEVEL_TAGS: commentRange*, bookmark*,
+ * moveFromRange*, moveToRange*) are
  * atomized only when they sit inside a <w:p> ancestor — body/table-sibling
  * placements stay out of the atom stream and are handled by the scaffold-strip
  * block in the reconstructor.
