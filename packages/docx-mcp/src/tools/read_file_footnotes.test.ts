@@ -110,10 +110,9 @@ describe('read_file footnotes', () => {
       const anchorNode = nodes.find((n) => n.id === anchorId);
       expect(anchorNode).toBeDefined();
       // The node is pure marker: the view renders the footnote reference and
-      // nothing else. The optional second [^1] tolerates the pre-existing
-      // marker doubling (view-level injection + read_file suffix, #382)
-      // without letting zero or triple markers pass.
-      expect(anchorNode!.text).toMatch(/^\[\^1\](?:\[\^1\])?$/);
+      // nothing else. Exactly one [^1] — the view-level injection used to be
+      // doubled by a read_file suffix pass. @see #382
+      expect(anchorNode!.text).toBe('[^1]');
       expect(anchorNode!.clean_text).toBe('[^1]');
     });
 
@@ -127,6 +126,68 @@ describe('read_file footnotes', () => {
       const probed = JSON.parse(String(probe.content));
       expect(probed).toHaveLength(1);
       expect(probed[0].id).toBe(anchorId);
+    });
+  });
+
+  test('a footnote reference inside field code is hidden from every text field (#382)', async ({ given, when, then }: AllureBddContext) => {
+    const W_DOC_OPEN = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">';
+    // First paragraph: a footnoteReference between fldChar begin and separate —
+    // field-code content Word never displays. Second paragraph: an ordinary
+    // visible reference. The hidden reference still occupies display slot 1 in
+    // document order, so the visible one renders as [^2].
+    const documentXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      W_DOC_OPEN +
+      `<w:body>` +
+      `<w:p>` +
+      `<w:r><w:t>Before </w:t></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+      `<w:r><w:instrText xml:space="preserve"> NOTEREF _Ref1 </w:instrText></w:r>` +
+      `<w:r><w:footnoteReference w:id="1"/></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+      `<w:r><w:t>Visible result</w:t></w:r>` +
+      `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+      `<w:r><w:t> After</w:t></w:r>` +
+      `</w:p>` +
+      `<w:p><w:r><w:t>Anchor sentence.</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r></w:p>` +
+      `</w:body></w:document>`;
+    const footnotesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>` +
+      `<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>` +
+      `<w:footnote w:id="1"><w:p><w:r><w:t>Hidden field-code note.</w:t></w:r></w:p></w:footnote>` +
+      `<w:footnote w:id="2"><w:p><w:r><w:t>Visible note.</w:t></w:r></w:p></w:footnote>` +
+      `</w:footnotes>`;
+
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let nodes: Array<{ id: string; text: string; tagged_text: string; clean_text: string }>;
+
+    await given('a document with one field-code-contained and one visible footnote reference', async () => {
+      opened = await openSession([], {
+        xml: documentXml,
+        extraFiles: { 'word/footnotes.xml': footnotesXml },
+      });
+    });
+
+    await when('read_file renders the full document as JSON', async () => {
+      const read = await readFile(opened.mgr, { file_path: opened.inputPath, format: 'json' });
+      assertSuccess(read, 'read_file');
+      nodes = JSON.parse(String(read.content));
+      expect(nodes).toHaveLength(2);
+    });
+
+    await then('the hidden reference surfaces no marker in any field and the visible one exactly one', async () => {
+      // The view skips field-code references; the clean_text suffix pass must
+      // agree, or the fields disagree about whether the footnote exists (#382).
+      const fieldCodeNode = nodes[0]!;
+      expect(fieldCodeNode.text).not.toContain('[^');
+      expect(fieldCodeNode.tagged_text).not.toContain('[^');
+      expect(fieldCodeNode.clean_text).not.toContain('[^');
+
+      const visibleNode = nodes[1]!;
+      expect(visibleNode.text).toBe('Anchor sentence.[^2]');
+      expect(visibleNode.clean_text).toBe('Anchor sentence.[^2]');
     });
   });
 
