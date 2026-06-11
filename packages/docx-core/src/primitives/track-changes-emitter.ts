@@ -1,5 +1,6 @@
-import { parseXml } from './xml.js';
+import { parseXml, serializeXml } from './xml.js';
 import { childElements, createWmlElement, renameElement } from './dom-helpers.js';
+import { OOXML } from './namespaces.js';
 
 const SYNTHETIC_DOC = parseXml(
   '<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
@@ -278,13 +279,67 @@ export function wrapSerializedContentWithDel(content: string, ctx: RevisionConte
 }
 
 /**
+ * Matches a `<w:t>` or `<w:instrText>` open tag (including the self-closing
+ * form). Used as a fast path: content with no convertible tags is returned
+ * byte-for-byte unchanged, skipping the parse/serialize round-trip.
+ */
+const CONVERTIBLE_TEXT_TAG = /<w:(?:t|instrText)[\s/>]/;
+
+/**
  * Convert serialized run content from insertion-style text tags to deletion
  * equivalents (`w:t` -> `w:delText`, `w:instrText` -> `w:delInstrText`).
+ *
+ * The fragment is parsed into a DOM and renamed via the same traversal as
+ * `prepareElementForDeletion`, so attribute order is preserved and shapes a
+ * regex sweep mishandles (self-closing `<w:t/>`, attribute values containing
+ * `>`) convert correctly. Namespace prefixes the fragment uses without an
+ * inline declaration are bound on a temporary wrapper root that is stripped
+ * from the returned serialization.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/102
  */
 export function convertSerializedDeletionContent(content: string): string {
-  return content
-    .replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, '<w:delText$1>$2</w:delText>')
-    .replace(/<w:instrText([^>]*)>([^<]*)<\/w:instrText>/g, '<w:delInstrText$1>$2</w:delInstrText>');
+  if (!CONVERTIBLE_TEXT_TAG.test(content)) {
+    return content;
+  }
+
+  const doc = parseXml(`<root${declareContentPrefixes(content)}>${content}</root>`);
+  for (const child of childElements(doc.documentElement)) {
+    normalizeDeletionElement(child);
+  }
+
+  // Strip the wrapper root: everything between the end of its open tag and
+  // the start of its close tag. Safe because the declared URIs contain no '>'.
+  const serialized = serializeXml(doc);
+  return serialized.slice(serialized.indexOf('>') + 1, serialized.lastIndexOf('<'));
+}
+
+/**
+ * Matches a `prefix:` occurrence in markup context — after `<`, `</`, or
+ * whitespace (attribute position). May over-match inside text content, which
+ * is harmless: it only yields an unused declaration on the wrapper root.
+ */
+const PREFIX_SCAN = /[<\s]\/?([A-Za-z_][A-Za-z0-9_.-]*):/g;
+
+/**
+ * Build `xmlns` declarations for every namespace prefix a serialized fragment
+ * uses, so the fragment parses under a wrapper root (xmldom rejects
+ * undeclared prefixes). `w` binds to the real WordprocessingML namespace —
+ * the deletion rename produces elements in that namespace — while unknown
+ * prefixes get placeholder URIs. The wrapper root carrying these declarations
+ * is stripped after serialization, so placeholders never reach the output;
+ * fragments serialized from a real document carry their own inline
+ * declarations, which take precedence over the wrapper's.
+ */
+function declareContentPrefixes(content: string): string {
+  const declarations = new Map<string, string>([['w', OOXML.W_NS]]);
+  for (const match of content.matchAll(PREFIX_SCAN)) {
+    const prefix = match[1]!;
+    if (prefix !== 'xml' && prefix !== 'xmlns' && !declarations.has(prefix)) {
+      declarations.set(prefix, `urn:safe-docx:undeclared-prefix:${prefix}`);
+    }
+  }
+  return [...declarations].map(([prefix, uri]) => ` xmlns:${prefix}="${uri}"`).join('');
 }
 
 function getOwnerDocument(element: Element | null): Document {
