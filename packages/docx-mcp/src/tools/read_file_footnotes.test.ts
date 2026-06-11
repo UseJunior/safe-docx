@@ -84,7 +84,7 @@ describe('read_file footnotes', () => {
 
     let opened: Awaited<ReturnType<typeof openSession>>;
     let anchorId: string;
-    let nodes: Array<{ id: string; text: string; clean_text: string }>;
+    let nodes: Array<{ id: string; text: string; clean_text: string; footnote_refs?: Array<{ id: number; display: number }> }>;
 
     await given('a document whose middle paragraph contains only a footnote reference run', async () => {
       opened = await openSession([], {
@@ -114,6 +114,9 @@ describe('read_file footnotes', () => {
       // doubled by a read_file suffix pass. @see #382
       expect(anchorNode!.text).toBe('[^1]');
       expect(anchorNode!.clean_text).toBe('[^1]');
+      // The marker and the metadata come from the same derivation, so the
+      // node also carries the reference it anchors. @see #393
+      expect(anchorNode!.footnote_refs).toEqual([{ id: 1, display: 1 }]);
     });
 
     await and('a node_ids probe for the anchor paragraph resolves it', async () => {
@@ -161,7 +164,7 @@ describe('read_file footnotes', () => {
       `</w:footnotes>`;
 
     let opened: Awaited<ReturnType<typeof openSession>>;
-    let nodes: Array<{ id: string; text: string; tagged_text: string; clean_text: string }>;
+    let nodes: Array<{ id: string; text: string; tagged_text: string; clean_text: string; footnote_refs?: Array<{ id: number; display: number }> }>;
 
     await given('a document with one field-code-contained and one visible footnote reference', async () => {
       opened = await openSession([], {
@@ -184,10 +187,17 @@ describe('read_file footnotes', () => {
       expect(fieldCodeNode.text).not.toContain('[^');
       expect(fieldCodeNode.tagged_text).not.toContain('[^');
       expect(fieldCodeNode.clean_text).not.toContain('[^');
+      // footnote_refs is the derivation the rendered fields come from, so the
+      // hidden reference must be absent there too (omitted-when-empty). @see #393
+      expect(fieldCodeNode.footnote_refs).toBeUndefined();
 
       const visibleNode = nodes[1]!;
       expect(visibleNode.text).toBe('Anchor sentence.[^2]');
       expect(visibleNode.clean_text).toBe('Anchor sentence.[^2]');
+      // The hidden reference still occupies display slot 1, so the metadata
+      // reports display 2 for footnote id 2 — same numbering authority as the
+      // injected marker. @see #393
+      expect(visibleNode.footnote_refs).toEqual([{ id: 2, display: 2 }]);
     });
   });
 
