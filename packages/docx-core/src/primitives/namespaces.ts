@@ -70,6 +70,8 @@ export const W = {
   abstractNumId: 'abstractNumId',
   lvlOverride: 'lvlOverride',
   startOverride: 'startOverride',
+  lvlJc: 'lvlJc',
+  multiLevelType: 'multiLevelType',
 
   // Tables + layout
   tbl: 'tbl',

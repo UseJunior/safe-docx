@@ -10,13 +10,12 @@
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
-import { parseXml, serializeXml } from '../../primitives/xml.js';
+import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import { GenerationInternalError } from '../errors.js';
 import type { DocumentSpec } from '../types.js';
+import type { NumberingIdMap } from './numbering-part.js';
 import { buildSectPr, type SectionHeaderFooterRefs } from './section.js';
 import { buildBlock } from './table.js';
-
-export const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
 const DOCUMENT_SKELETON =
   `<w:document xmlns:w="${OOXML.W_NS}" xmlns:r="${OOXML.R_NS}" xmlns:w14="${OOXML.W14_NS}">` +
@@ -32,14 +31,14 @@ const DOCUMENT_SKELETON =
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
  */
-export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterRefs[]): string {
+export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterRefs[], numberingIds?: NumberingIdMap): string {
   const doc = parseXml(DOCUMENT_SKELETON);
   const body = doc.getElementsByTagName('w:body').item(0);
   if (!body) throw new GenerationInternalError('document skeleton lost its w:body');
 
   spec.sections.forEach((section, index) => {
     for (const block of section.blocks) {
-      body.appendChild(buildBlock(doc, block));
+      body.appendChild(buildBlock(doc, block, numberingIds));
     }
 
     const sectPr = buildSectPr(doc, section, refs?.[index]);

@@ -11,10 +11,9 @@
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
-import { parseXml, serializeXml } from '../../primitives/xml.js';
+import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
 import type { DocumentSpec, StyleSpec } from '../types.js';
-import { XML_DECL } from './document-part.js';
 import { buildParagraphPropsElement, buildRunPropsElement, styleParagraphProps } from './properties.js';
 
 export const STYLES_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml';

@@ -85,8 +85,8 @@ describe('Traceability: from-scratch generation skeleton', () => {
     'Scenario: unimplemented spec features are rejected loudly',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let noteSpec!: DocumentSpec;
-      let listSpec!: DocumentSpec;
-      await given('specs using declared features whose emitters have not shipped (drafting note, numbered list)', async () => {
+      let cellNoteSpec!: DocumentSpec;
+      await given('specs using the declared drafting-note feature, whose emitter has not shipped (body and table-cell anchors)', async () => {
         noteSpec = {
           sections: [
             {
@@ -96,11 +96,25 @@ describe('Traceability: from-scratch generation skeleton', () => {
             },
           ],
         };
-        listSpec = {
+        cellNoteSpec = {
           sections: [
             {
               blocks: [
-                { kind: 'paragraph', list: { numId: 'main', ilvl: 0 }, runs: [{ kind: 'text', text: 'item' }] },
+                {
+                  kind: 'table',
+                  columnWidthsTwips: [9360],
+                  rows: [
+                    {
+                      cells: [
+                        {
+                          blocks: [
+                            { kind: 'paragraph', note: { text: 'check this cell' }, runs: [{ kind: 'text', text: 'cell' }] },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
               ],
             },
           ],
@@ -108,13 +122,13 @@ describe('Traceability: from-scratch generation skeleton', () => {
       });
 
       let noteError: unknown;
-      let listError: unknown;
+      let cellNoteError: unknown;
       await when('generateDocx compiles each spec', async () => {
         noteError = await generateDocx(noteSpec).then(
           () => null,
           (err: unknown) => err,
         );
-        listError = await generateDocx(listSpec).then(
+        cellNoteError = await generateDocx(cellNoteSpec).then(
           () => null,
           (err: unknown) => err,
         );
@@ -124,11 +138,11 @@ describe('Traceability: from-scratch generation skeleton', () => {
         expect(noteError).toBeInstanceOf(GenerationSpecError);
         expect((noteError as GenerationSpecError).code).toBe('unsupported_feature');
         expect((noteError as GenerationSpecError).path).toBe('/sections/0/blocks/0/note');
-        expect(listError).toBeInstanceOf(GenerationSpecError);
-        expect((listError as GenerationSpecError).path).toBe('/sections/0/blocks/0/list');
+        expect(cellNoteError).toBeInstanceOf(GenerationSpecError);
+        expect((cellNoteError as GenerationSpecError).path).toBe('/sections/0/blocks/0/rows/0/cells/0/blocks/0/note');
         await attachPrettyJson('rejections', {
           note: { code: (noteError as GenerationSpecError).code, path: (noteError as GenerationSpecError).path },
-          list: { code: (listError as GenerationSpecError).code, path: (listError as GenerationSpecError).path },
+          cellNote: { code: (cellNoteError as GenerationSpecError).code, path: (cellNoteError as GenerationSpecError).path },
         });
       });
     },

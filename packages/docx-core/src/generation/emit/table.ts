@@ -16,6 +16,7 @@ import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { W } from '../../primitives/namespaces.js';
 import { appendInOrder, TBLPR_ORDER, TCPR_ORDER, TRPR_ORDER } from '../ordering.js';
 import type { BlockSpec, BorderSpec, TableBorders, TableCellSpec, TableRowSpec, TableSpec } from '../types.js';
+import type { NumberingIdMap } from './numbering-part.js';
 import { buildParagraph } from './paragraph.js';
 
 /**
@@ -25,12 +26,12 @@ import { buildParagraph } from './paragraph.js';
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.59
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.48
  */
-export function buildTable(doc: Document, table: TableSpec): Element {
+export function buildTable(doc: Document, table: TableSpec, numberingIds?: NumberingIdMap): Element {
   const tbl = createWmlElement(doc, W.tbl);
   tbl.appendChild(buildTblPr(doc, table));
   tbl.appendChild(buildTblGrid(doc, table));
   for (const row of table.rows) {
-    tbl.appendChild(buildRow(doc, table, row));
+    tbl.appendChild(buildRow(doc, table, row, numberingIds));
   }
   return tbl;
 }
@@ -74,7 +75,7 @@ function buildTblGrid(doc: Document, table: TableSpec): Element {
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.80
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.49
  */
-function buildRow(doc: Document, table: TableSpec, row: TableRowSpec): Element {
+function buildRow(doc: Document, table: TableSpec, row: TableRowSpec, numberingIds?: NumberingIdMap): Element {
   const tr = createWmlElement(doc, W.tr);
 
   const props = new Map<string, Element | Element[]>();
@@ -99,7 +100,7 @@ function buildRow(doc: Document, table: TableSpec, row: TableRowSpec): Element {
   let gridOffset = 0;
   for (const cell of row.cells) {
     const span = cell.gridSpan ?? 1;
-    tr.appendChild(buildCell(doc, table, cell, gridOffset));
+    tr.appendChild(buildCell(doc, table, cell, gridOffset, numberingIds));
     gridOffset += span;
   }
   return tr;
@@ -119,7 +120,7 @@ function buildRow(doc: Document, table: TableSpec, row: TableRowSpec): Element {
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.83
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.68
  */
-function buildCell(doc: Document, table: TableSpec, cell: TableCellSpec, gridOffset: number): Element {
+function buildCell(doc: Document, table: TableSpec, cell: TableCellSpec, gridOffset: number, numberingIds?: NumberingIdMap): Element {
   const tc = createWmlElement(doc, W.tc);
   const tcPr = createWmlElement(doc, W.tcPr);
   const props = new Map<string, Element | Element[]>();
@@ -153,7 +154,7 @@ function buildCell(doc: Document, table: TableSpec, cell: TableCellSpec, gridOff
   tc.appendChild(tcPr);
 
   for (const block of cell.blocks) {
-    tc.appendChild(buildBlock(doc, block));
+    tc.appendChild(buildBlock(doc, block, numberingIds));
   }
   // A cell must end with a paragraph: readers reject a cell that is empty or
   // whose last block is a table.
@@ -165,8 +166,8 @@ function buildCell(doc: Document, table: TableSpec, cell: TableCellSpec, gridOff
 }
 
 /** Dispatch a block-level spec node to its emitter (cells hold both kinds). */
-export function buildBlock(doc: Document, block: BlockSpec): Element {
-  return block.kind === 'table' ? buildTable(doc, block) : buildParagraph(doc, block);
+export function buildBlock(doc: Document, block: BlockSpec, numberingIds?: NumberingIdMap): Element {
+  return block.kind === 'table' ? buildTable(doc, block, numberingIds) : buildParagraph(doc, block, numberingIds);
 }
 
 /**

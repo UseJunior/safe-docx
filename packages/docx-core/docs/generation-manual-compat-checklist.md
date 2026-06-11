@@ -31,6 +31,7 @@ Artifacts land under `packages/docx-core/src/testing/outputs/`.
 | `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | PR 2 | — | — | — | — |
 | `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | PR 3 | — | — | — | — |
 | `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | PR 4 | — | — | — | — |
+| `generation-phase5-numbering-recipes.docx` (three-level legal numbering, cover-terms recipe table, signature blocks) | PR 5 | — | — | — | — |
 
 ## Per-reader notes
 
