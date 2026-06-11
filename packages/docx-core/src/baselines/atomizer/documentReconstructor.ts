@@ -934,7 +934,7 @@ function hyperlinkKey(el: Element): string {
     if (attr.name.startsWith('xmlns')) continue;
     parts.push(`${attr.name}=${attr.value}`);
   }
-  return parts.sort().join(' ');
+  return parts.sort().join('\u0000');
 }
 
 /**

@@ -71,6 +71,8 @@ jobs:
         run: npm run lint:workspaces
       - name: Check for import cycles
         run: npm run check:cycles
+      - name: Check for raw control bytes in source
+        run: npm run check:control-bytes
       - name: Check release isolation (ODF decoupling guard)
         run: npm run check:release-isolation
       - name: Test release-isolation guard
