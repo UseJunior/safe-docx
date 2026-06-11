@@ -79,6 +79,7 @@ import {
   renumberCollidingAuxiliaryIds,
   type AuxiliaryPartDescriptor,
 } from './auxiliaryIdCollision.js';
+import { maybeCaptureEmittedDocumentXml } from '../../primitives/schema-corpus-capture.js';
 
 /**
  * Options for the atomizer pipeline.
@@ -1032,6 +1033,7 @@ export async function compareDocumentsAtomizer(
   // auxiliary part that the revised side introduced (issue #94).
   const mergeSourceArchive = comparisonResult.outputMode === 'inplace' ? originalArchive : revisedArchive;
   const resultArchive = await baseArchive.clone();
+  maybeCaptureEmittedDocumentXml(newDocumentXml);
   resultArchive.setDocumentXml(newDocumentXml);
 
   // Step 12b: Merge auxiliary part definitions (footnotes, endnotes, comments).

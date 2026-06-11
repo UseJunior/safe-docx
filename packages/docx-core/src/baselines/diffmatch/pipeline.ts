@@ -31,6 +31,7 @@ interface BaselineBResult {
   engine: 'diffmatch';
 }
 import { extractParagraphs } from './xmlParser.js';
+import { maybeCaptureEmittedDocumentXml } from '../../primitives/schema-corpus-capture.js';
 import { alignParagraphs, classifyAlignment } from './paragraphAlignment.js';
 import { resetRevisionIds } from './trackChangesRenderer.js';
 import {
@@ -105,6 +106,7 @@ export async function compareDocumentsBaselineB(
 
   // 8. Clone original archive and update document.xml
   const resultArchive = await originalArchive.clone();
+  maybeCaptureEmittedDocumentXml(newDocumentXml);
   resultArchive.setDocumentXml(newDocumentXml);
 
   // 9. Save result and compute stats

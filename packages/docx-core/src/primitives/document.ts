@@ -1,5 +1,6 @@
 import { DocxZip } from './zip.js';
 import { parseXml, serializeXml } from './xml.js';
+import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
 import { createWmlElement, isW, getDirectChildrenByName } from './dom-helpers.js';
 import {
@@ -1220,6 +1221,7 @@ export class DocxDocument {
     // Always write the latest document.xml when saving.
     // Important: when cleanBookmarks=true (download), we must NOT mutate session state.
     const xmlWithBookmarks = serializeXml(this.documentXml);
+    maybeCaptureEmittedDocumentXml(xmlWithBookmarks);
     this.zip.writeText('word/document.xml', xmlWithBookmarks);
 
     if (opts?.cleanBookmarks) {
@@ -1238,6 +1240,7 @@ export class DocxDocument {
       const cleanedXml = serializeXml(cloned);
 
       // Temporarily swap document.xml in the zip for output, then restore.
+      maybeCaptureEmittedDocumentXml(cleanedXml);
       this.zip.writeText('word/document.xml', cleanedXml);
       const buffer = await this.zip.toBuffer();
       this.zip.writeText('word/document.xml', xmlWithBookmarks);
