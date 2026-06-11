@@ -148,6 +148,35 @@ export type RunFormatting = {
   colorHex: string | null;
 };
 
+/**
+ * Tri-state run formatting resolved from a named style's `basedOn` chain: `null` means no
+ * chain member specifies the property (distinct from an explicit `w:val="0"` → `false`).
+ * Consumers seeding their own style templates (e.g. the DOCX → ODT converter's `styles.xml`)
+ * use `null` to fall back to template defaults instead of overriding them.
+ */
+export type StyleRunFormatting = {
+  bold: boolean | null;
+  italic: boolean | null;
+  fontName: string | null;
+  fontSizePt: number | null;
+  colorHex: string | null;
+};
+
+/** Resolve a named style's effective run formatting through its `basedOn` chain. */
+export function extractStyleRunFormatting(
+  styles: StylesModel,
+  styleId: string | null,
+): StyleRunFormatting {
+  const rPrs = resolveStyleChain(styles, styleId).map((s) => s.rPr);
+  return {
+    bold: firstNonNull(rPrs.map((rPr) => parseBoolProp(rPr, W.b))),
+    italic: firstNonNull(rPrs.map((rPr) => parseBoolProp(rPr, W.i))),
+    fontName: firstNonNull(rPrs.map(parseFontName)),
+    fontSizePt: firstNonNull(rPrs.map(parseFontSizePt)),
+    colorHex: firstNonNull(rPrs.map(parseColorHex)),
+  };
+}
+
 function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null {
   if (!parent) return null;
   const el = getFirstChild(parent, OOXML.W_NS, tagLocal);

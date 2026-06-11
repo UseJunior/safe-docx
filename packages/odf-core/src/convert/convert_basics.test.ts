@@ -50,13 +50,13 @@ describe('convertDocxToOdt — package validity, text, headings, runs', () => {
       `<w:p><w:r><w:t xml:space="preserve">Alpha  beta   gamma</w:t></w:r>` +
       `<w:r><w:tab/><w:t xml:space="preserve">after tab</w:t></w:r></w:p>` +
       p('Second paragraph') +
-      '<w:p/>'; // text-empty paragraph: unsurfaced by the document view, reported as lossiness
+      '<w:p/>'; // text-empty paragraph: unsurfaced by the document view, preserved as spacing (CONV-19)
     const docx = await buildDocxFromParts({ bodyXml });
     const { odt, lossiness } = await convertDocxToOdt(docx);
 
     const texts = (await reopen(odt)).getParagraphs().map((b) => b.text);
-    expect(texts).toEqual(['Alpha  beta   gamma\tafter tab', 'Second paragraph']);
-    expect(lossiness.some((e) => e.construct === 'unsurfaced-paragraphs-dropped')).toBe(true);
+    expect(texts).toEqual(['Alpha  beta   gamma\tafter tab', 'Second paragraph', '']);
+    expect(lossiness.some((e) => e.construct === 'unsurfaced-paragraphs-dropped')).toBe(false);
   });
 
   it('[CONV-03] Word-style headings become text:h with the mapped outline level; plain text stays text:p', async () => {
@@ -150,15 +150,27 @@ describe('convertDocxToOdt — package validity, text, headings, runs', () => {
   });
 
   it('[CONV-10] dropped constructs are reported in the lossiness summary, never silently', async () => {
-    const bodyXml = `<w:p><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>red text</w:t></w:r></w:p>`;
+    // Font/color runs map since phase 3 (CONV-14); grid gaps remain a genuinely
+    // unmappable downgrade and must be reported.
+    const bodyXml =
+      `<w:tbl><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p><w:p/></w:tc>` +
+      `<w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc></w:tr>` +
+      `<w:tr><w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc></w:tr>` +
+      `</w:tbl>` +
+      `<w:p><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>red text</w:t></w:r></w:p>`;
     const docx = await buildDocxFromParts({ bodyXml });
     const { odt, lossiness } = await convertDocxToOdt(docx);
 
-    const fontDrop = lossiness.find((e) => e.construct === 'font-formatting-dropped');
-    expect(fontDrop).toBeDefined();
-    expect(fontDrop!.count).toBeGreaterThanOrEqual(1);
+    // Each one-cell row leaves the second grid column empty — filled and reported.
+    const gridGaps = lossiness.find((e) => e.construct === 'table-grid-gaps-filled');
+    expect(gridGaps).toBeDefined();
+    expect(gridGaps!.count).toBeGreaterThanOrEqual(1);
+    // Font formatting is mapped now, never reported as dropped.
+    expect(lossiness.some((e) => e.construct === 'font-formatting-dropped')).toBe(false);
     // The text itself is preserved.
-    expect((await reopen(odt)).getParagraphs().map((b) => b.text)).toEqual(['red text']);
+    const texts = (await reopen(odt)).getParagraphs().map((b) => b.text).filter((t) => t !== '');
+    expect(texts).toEqual(['A1', 'A2', 'B1', 'red text']);
   });
 
   it('[CONV-11] converted output reopens through odf-core with matching visible text', async () => {

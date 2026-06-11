@@ -636,7 +636,7 @@ export function buildNodesForDocumentView(params: {
 
       // Emit formatting tags from run-level metadata.
       const paraFontBaseline = computeParagraphFontBaseline(bodyRuns, { formattingMode });
-      tagged = emitFormattingTags({ runs: bodyRuns, baseline: docBaseline, fontBaseline: paraFontBaseline });
+      tagged = emitFormattingTags({ runs: bodyRuns, baseline: docBaseline, fontBaseline: paraFontBaseline, formattingMode });
       tagged = mergeAdjacentTags(tagged);
 
     } else if (includeSemantic) {

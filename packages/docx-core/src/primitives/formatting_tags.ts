@@ -192,7 +192,9 @@ type ActiveTags = {
   bold: boolean;
   italic: boolean;
   underline: boolean;
-  highlighting: boolean;
+  // The source w:highlight value (e.g. "green"), or null when unhighlighted. Compact mode
+  // emits the value-less <highlight> regardless; full mode carries it as a color attribute.
+  highlightVal: string | null;
   color: string | null;
   fontSize: number | null; // points (display units)
   fontName: string | null;
@@ -204,7 +206,7 @@ function tagsEqual(a: ActiveTags, b: ActiveTags): boolean {
     a.bold === b.bold &&
     a.italic === b.italic &&
     a.underline === b.underline &&
-    a.highlighting === b.highlighting &&
+    a.highlightVal === b.highlightVal &&
     a.color === b.color &&
     a.fontSize === b.fontSize &&
     a.fontName === b.fontName
@@ -224,7 +226,7 @@ function hasFontAttrs(tags: ActiveTags): boolean {
 }
 
 function closeTags(out: string[], tags: ActiveTags): void {
-  if (tags.highlighting) out.push(`</${HIGHLIGHT_TAG}>`);
+  if (tags.highlightVal !== null) out.push(`</${HIGHLIGHT_TAG}>`);
   if (tags.underline) out.push('</u>');
   if (tags.italic) out.push('</i>');
   if (tags.bold) out.push('</b>');
@@ -245,7 +247,7 @@ export function escapeHtmlAttribute(value: string): string {
     .replaceAll('>', '&gt;');
 }
 
-function openTags(out: string[], tags: ActiveTags): void {
+function openTags(out: string[], tags: ActiveTags, mode: FormattingMode): void {
   if (tags.hyperlinkUrl !== null) {
     out.push(`<a href="${escapeHtmlAttribute(tags.hyperlinkUrl)}">`);
   }
@@ -254,7 +256,15 @@ function openTags(out: string[], tags: ActiveTags): void {
   if (tags.bold) out.push('<b>');
   if (tags.italic) out.push('<i>');
   if (tags.underline) out.push('<u>');
-  if (tags.highlighting) out.push(`<${HIGHLIGHT_TAG}>`);
+  if (tags.highlightVal !== null) {
+    // Only full mode carries the source w:highlight value; compact mode stays byte-identical
+    // to the historical value-less form (mergeAdjacentTags collapses adjacent pairs there).
+    out.push(
+      mode === 'full'
+        ? `<${HIGHLIGHT_TAG} color="${escapeHtmlAttribute(tags.highlightVal)}">`
+        : `<${HIGHLIGHT_TAG}>`,
+    );
+  }
 }
 
 function desiredTagsForRun(
@@ -265,12 +275,12 @@ function desiredTagsForRun(
   if (run.isHeaderRun) {
     return {
       hyperlinkUrl: null,
-      bold: false, italic: false, underline: false, highlighting: false,
+      bold: false, italic: false, underline: false, highlightVal: null,
       color: null, fontSize: null, fontName: null,
     };
   }
 
-  const highlighting = !!run.formatting.highlightVal;
+  const highlightVal = run.formatting.highlightVal;
 
   // BIU
   let bold: boolean;
@@ -322,7 +332,7 @@ function desiredTagsForRun(
 
   return {
     hyperlinkUrl: run.hyperlinkUrl,
-    bold, italic, underline, highlighting,
+    bold, italic, underline, highlightVal,
     color, fontSize, fontName,
   };
 }
@@ -331,14 +341,16 @@ export function emitFormattingTags(params: {
   runs: AnnotatedRun[];
   baseline: FormattingBaseline;
   fontBaseline?: FontBaseline | null;
+  formattingMode?: FormattingMode;
 }): string {
   const { runs, baseline, fontBaseline } = params;
+  const mode = params.formattingMode ?? 'compact';
   if (runs.length === 0) return '';
 
   const out: string[] = [];
   let active: ActiveTags = {
     hyperlinkUrl: null,
-    bold: false, italic: false, underline: false, highlighting: false,
+    bold: false, italic: false, underline: false, highlightVal: null,
     color: null, fontSize: null, fontName: null,
   };
 
@@ -347,7 +359,7 @@ export function emitFormattingTags(params: {
     const desired = desiredTagsForRun(run, baseline, fontBaseline ?? null);
     if (!tagsEqual(active, desired)) {
       closeTags(out, active);
-      openTags(out, desired);
+      openTags(out, desired, mode);
       active = desired;
     }
     out.push(run.text);

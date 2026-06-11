@@ -131,7 +131,9 @@ export function inlineTagsToHtml(text: string, refs?: FootnoteRefs): string {
       continue;
     }
     const tag = token.value;
-    if (tag === '<highlight>') out += '<mark>';
+    // The serializer renders compact-mode views, but tolerate the full-mode attributed form
+    // (<highlight color="...">) so a full-mode tagged_text can't leak raw markup into HTML.
+    if (tag === '<highlight>' || tag.startsWith('<highlight ')) out += '<mark>';
     else if (tag === '</highlight>') out += '</mark>';
     else if (tag.startsWith('<font ')) out += fontTagToSpan(tag);
     else if (tag === '</font>') out += '</span>';
