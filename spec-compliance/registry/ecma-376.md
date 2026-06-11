@@ -99,6 +99,98 @@ lives in `packages/docx-core/src/atomizer.ts`
 `packages/docx-core/src/baselines/atomizer/documentReconstructor.ts`
 (hyperlink wrapper re-emission).
 
+## [ECMA-PART1-17-6-17] w:sectPr document-final section properties
+
+```yaml
+edition: 5
+part: 1
+section: "17.6.17"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr
+verifiedBy:
+```
+
+The final section of a document binds its properties through a `w:sectPr`
+that is a direct child of `w:body`, positioned after all block-level
+content. From-scratch generation always emits exactly one body-level
+`w:sectPr` as the body's last child, and the generation structural
+validator (`packages/docx-core/src/generation/structural-checks.ts`)
+rejects packages where it is missing, duplicated, or not last —
+complementing `auditSectPr`, which tolerates the zero-sectPr case for
+parsed third-party documents.
+
+## [ECMA-PART1-17-6-13] w:pgSz page size emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.6.13"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz
+verifiedBy:
+```
+
+`w:pgSz` carries the page width/height in twentieths of a point and an
+optional orientation. The generation section emitter
+(`packages/docx-core/src/generation/emit/section.ts`) emits explicit
+`w:w`/`w:h` for every section (defaulting to US Letter) and sets
+`w:orient="landscape"` with swapped dimensions when the spec requests
+landscape, so readers never fall back to printer-driver defaults.
+
+## [ECMA-PART1-17-6-11] w:pgMar page margin emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.6.11"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar
+verifiedBy:
+```
+
+`w:pgMar` declares the page margins plus header/footer offsets and
+gutter for a section, all in twips. The generation section emitter
+always emits the full attribute set (top, right, bottom, left, header,
+footer, gutter) because readers diverge in their defaults when
+attributes are omitted; spec values fill in unspecified members from
+the standard one-inch/half-inch defaults.
+
+## [ECMA-PART1-17-3-1-26] w:pPr child-element ordering
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.26"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr
+verifiedBy:
+```
+
+`w:pPr` (CT_PPr) declares its children as an ordered sequence; readers
+that validate against the schema reject out-of-order properties. The
+generation property-ordering discipline
+(`packages/docx-core/src/generation/ordering.ts`) encodes the emitted
+subset of that sequence as `PPR_ORDER` and routes every paragraph
+property through `appendInOrder`, which throws on any property name
+missing from the table so new properties force a conscious ordering
+decision.
+
+## [ECMA-PART1-17-3-2-28] w:rPr child-element ordering
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.2.28"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr
+verifiedBy:
+```
+
+`w:rPr` (CT_RPr) likewise declares an ordered property sequence. The
+generation discipline encodes the emitted subset as `RPR_ORDER` in
+`packages/docx-core/src/generation/ordering.ts`, enforced through the
+same `appendInOrder` mechanism as paragraph properties.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the
