@@ -85,8 +85,8 @@ describe('Traceability: from-scratch generation skeleton', () => {
     'Scenario: unimplemented spec features are rejected loudly',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let tableSpec!: DocumentSpec;
-      let fieldSpec!: DocumentSpec;
-      await given('specs using declared features whose emitters have not shipped (table block, field run)', async () => {
+      let listSpec!: DocumentSpec;
+      await given('specs using declared features whose emitters have not shipped (table block, numbered list)', async () => {
         tableSpec = {
           sections: [
             {
@@ -94,11 +94,11 @@ describe('Traceability: from-scratch generation skeleton', () => {
             },
           ],
         };
-        fieldSpec = {
+        listSpec = {
           sections: [
             {
               blocks: [
-                { kind: 'paragraph', runs: [{ kind: 'field', field: 'PAGE', cachedResult: '1' }] },
+                { kind: 'paragraph', list: { numId: 'main', ilvl: 0 }, runs: [{ kind: 'text', text: 'item' }] },
               ],
             },
           ],
@@ -106,13 +106,13 @@ describe('Traceability: from-scratch generation skeleton', () => {
       });
 
       let tableError: unknown;
-      let fieldError: unknown;
+      let listError: unknown;
       await when('generateDocx compiles each spec', async () => {
         tableError = await generateDocx(tableSpec).then(
           () => null,
           (err: unknown) => err,
         );
-        fieldError = await generateDocx(fieldSpec).then(
+        listError = await generateDocx(listSpec).then(
           () => null,
           (err: unknown) => err,
         );
@@ -122,11 +122,11 @@ describe('Traceability: from-scratch generation skeleton', () => {
         expect(tableError).toBeInstanceOf(GenerationSpecError);
         expect((tableError as GenerationSpecError).code).toBe('unsupported_feature');
         expect((tableError as GenerationSpecError).path).toBe('/sections/0/blocks/0');
-        expect(fieldError).toBeInstanceOf(GenerationSpecError);
-        expect((fieldError as GenerationSpecError).path).toBe('/sections/0/blocks/0/runs/0');
+        expect(listError).toBeInstanceOf(GenerationSpecError);
+        expect((listError as GenerationSpecError).path).toBe('/sections/0/blocks/0/list');
         await attachPrettyJson('rejections', {
           table: { code: (tableError as GenerationSpecError).code, path: (tableError as GenerationSpecError).path },
-          field: { code: (fieldError as GenerationSpecError).code, path: (fieldError as GenerationSpecError).path },
+          list: { code: (listError as GenerationSpecError).code, path: (listError as GenerationSpecError).path },
         });
       });
     },

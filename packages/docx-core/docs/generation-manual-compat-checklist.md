@@ -29,6 +29,7 @@ Artifacts land under `packages/docx-core/src/testing/outputs/`.
 |---|---|---|---|---|---|
 | `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | PR 1 | — | — | — | clean (identity + PDF probes, automated) |
 | `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | PR 2 | — | — | — | — |
+| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | PR 3 | — | — | — | — |
 
 ## Per-reader notes
 

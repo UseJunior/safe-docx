@@ -22,10 +22,10 @@ and `openspec validate add-docx-generation --strict`.
 - [x] 2.3 XSD relative-order cross-check test; registry entries for styles/rPr/pPr sections
 
 ## 3. Sections, headers/footers, fields, page numbering (PR 3) — SDX-GEN-021..024, 030..032
-- [ ] 3.1 `emit/header-footer-part.ts` + reference wiring + content types + `w:titlePg`
-- [ ] 3.2 Mid-document section-break paragraphs; `w:pgNumType`; settings.xml for even headers
-- [ ] 3.3 `FieldSpec` (PAGE/NUMPAGES, required cachedResult); cross-story field-pairing structural check
-- [ ] 3.4 Cover→body acceptance fixture; registry entries for sectPr/header/field sections
+- [x] 3.1 `emit/header-footer-part.ts` + reference wiring + content types + `w:titlePg`
+- [x] 3.2 Mid-document section-break paragraphs; `w:pgNumType`; settings.xml for even headers
+- [x] 3.3 `FieldSpec` (PAGE/NUMPAGES, required cachedResult); cross-story field-pairing structural check
+- [x] 3.4 Cover→body acceptance fixture; registry entries for sectPr/header/field sections
 
 ## 4. Tables (PR 4) — SDX-GEN-050..053
 - [ ] 4.1 `emit/table.ts`: tblPr/tblGrid/trPr/tcPr per schema order; blocks-in-cells with trailing `w:p`
