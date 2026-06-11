@@ -62,6 +62,15 @@ export const EXPECTED_LOOPS = [
     'packages/google-docs-core',
     'packages/safe-docx',
   ],
+  // "Isolated package runtime smoke test" — pack every publishable so
+  // same-version workspace deps resolve from local tarballs (issue #395)
+  [
+    'packages/docx-core',
+    'packages/odf-core',
+    'packages/docx-mcp',
+    'packages/google-docs-core',
+    'packages/safe-docx',
+  ],
   // "Publish to npm (trusted publishing)" — name:dir pairs
   [
     '@usejunior/docx-core',
