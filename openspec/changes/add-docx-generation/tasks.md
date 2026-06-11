@@ -42,10 +42,10 @@ and `openspec validate add-docx-generation --strict`.
 - [x] 6.3 Body-identical-with/without test; post-hoc strip test via `deleteComment`
 
 ## 7. Compatibility sign-off + repositioning (PR 7, closes #280) — SDX-GEN-092
-- [ ] 7.1 Full manual matrix recorded for all artifact classes; public export from `src/index.ts`
-- [ ] 7.2 Repositioning sweep: README, site FAQ, docx-editing skill, AGENTS.md, LLM-gate prompt, conformance-registry prose
-- [ ] 7.3 Flip `check:spec-coverage-generation` to `--strict` on its own explicit invocation
-- [ ] 7.4 Follow-up issues: translated READMEs; ODT generation parity (odf-core)
+- [x] 7.1 Full manual matrix recorded for all artifact classes; public export from `src/index.ts`
+- [x] 7.2 Repositioning sweep: README, site FAQ, docx-editing skill, AGENTS.md, LLM-gate prompt, conformance-registry prose
+- [x] 7.3 Flip `check:spec-coverage-generation` to `--strict` on its own explicit invocation
+- [x] 7.4 Follow-up issues: translated READMEs; ODT generation parity (odf-core)
 
 ## 8. Post-deploy
 - [ ] 8.1 `openspec archive add-docx-generation --yes` (separate PR); fix stale package names in `openspec/project.md` opportunistically

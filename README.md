@@ -216,13 +216,23 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 - Revision extraction as structured JSON (`extract_revisions`)
 - OpenDocument (`.odt`) sessions: read, search, edit, comment, save, and `compare_documents` redlines (see below)
 
+## From-Scratch Generation
+
+`@usejunior/docx-core` also generates new `.docx` files from a declarative, JSON-serializable `DocumentSpec` — sections with headers/footers and PAGE/NUMPAGES fields, named styles, tables, multi-level numbering, plus legal-document recipes (`coverTermsTable`, `signatureBlock`) and a separable drafting-note layer compiled to OOXML comments. Generation is deterministic (identical specs produce byte-identical packages) and held to the same ECMA-376 conformance discipline as the editing path:
+
+```ts
+import { generateDocx } from '@usejunior/docx-core';
+
+const buffer = await generateDocx({
+  sections: [{ blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Hello' }] }] }],
+});
+```
+
+Generation is currently a library API; the MCP server does not yet expose a `generate_document` tool.
+
 ## What Safe Docx Is Not Optimized For
 
-Safe Docx is not a from-scratch document generation toolkit.
-
-If your primary need is generating new `.docx` files from templates/programmatic layout, use packages such as [`docx`](https://www.npmjs.com/package/docx).
-
-The local Safe Docx runtime also intentionally rejects Word template files (`.dotx`) for now. Convert the template to a normal `.docx` document before opening it here.
+The local Safe Docx runtime intentionally rejects Word template files (`.dotx`) for now. Convert the template to a normal `.docx` document before opening it here. Safe Docx also makes no rendering, layout, or pagination guarantees — generated and edited documents are validated structurally and against ECMA-376, not pixel-by-pixel.
 
 ## OpenDocument (`.odt`) Support
 
@@ -279,7 +289,7 @@ No. Supported runtime usage is JavaScript/TypeScript with `jszip` + `@xmldom/xml
 
 ### Can this generate contracts from scratch?
 
-Not the primary focus. For from-scratch generation, use packages such as [`docx`](https://www.npmjs.com/package/docx).
+Yes. `@usejunior/docx-core` ships `generateDocx(spec)` — a declarative DocumentSpec compiler covering sections, headers/footers, fields, styles, tables, multi-level numbering, legal recipes (cover-terms tables, signature blocks), and a separable drafting-note layer. Brownfield editing of existing documents remains the primary focus; generation shares its conformance and validation machinery.
 
 ### What document types has this been tested on in-repo fixtures?
 

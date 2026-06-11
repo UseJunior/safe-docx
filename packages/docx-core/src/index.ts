@@ -131,3 +131,44 @@ export {
   type SyntheticDocxOptions,
   type DocxPartsOptions,
 } from './integration/synthetic-docx-fixture.js';
+
+// From-scratch generation (OpenSpec capability: docx-generation). Public as of
+// the final phase of add-docx-generation: compatibility matrix recorded, all
+// scenario coverage enforced strictly in CI.
+export {
+  generateDocx,
+  type GenerateDocxOptions,
+  GenerationSpecError,
+  GenerationInternalError,
+  type GenerationSpecErrorCode,
+  checkGeneratedPackage,
+  type StructuralCheckResult,
+  type StructuralIssue,
+  coverTermsTable,
+  signatureBlock,
+  type CoverTermsOptions,
+  type SignatureBlockOptions,
+} from './generation/index.js';
+export type {
+  BlockSpec,
+  BorderSpec,
+  BreakSpec,
+  DocumentMetaSpec,
+  DocumentSpec,
+  DraftingNoteSpec,
+  FieldSpec,
+  HeaderFooterSet,
+  HeaderFooterSpec,
+  InlineSpec,
+  NumberingSpec,
+  ParagraphSpec,
+  RunProps,
+  RunSpec,
+  SectionSpec,
+  StyleSpec,
+  TableBorders,
+  TableCellSpec,
+  TableRowSpec,
+  TableSpec,
+  TabSpec,
+} from './generation/index.js';
