@@ -16,6 +16,7 @@ export * from './xml.js';
 export * from './dom-helpers.js';
 export * from './zip.js';
 export * from './merge_runs.js';
+export * from './minimal_save.js';
 export * from './simplify_redlines.js';
 export * from './validate_document.js';
 export * from './accept_changes.js';
