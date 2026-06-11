@@ -5,13 +5,14 @@ Safe DOCX Suite is a TypeScript monorepo for safe, formatting-preserving `.docx`
 
 It ships a package family:
 
-1. `@usejunior/docx-primitives` - DOM and OOXML primitives (parse/edit/serialize, bookmarks, layout mutators)
-2. `@usejunior/docx-comparison` - document comparison and tracked-changes generation
-3. `@usejunior/safe-docx` - local MCP server + CLI for document editing workflows
-4. `safedocx` - unscoped alias package for easier install/use
+1. `@usejunior/docx-core` - OOXML primitives, comparison/tracked-changes engine, and from-scratch generation (`generateDocx` over a declarative DocumentSpec)
+2. `@usejunior/docx-mcp` - local MCP server exposing the editing operations as tools
+3. `@usejunior/safe-docx` - CLI + npx entry point for document editing workflows
+4. `@usejunior/odf-core` - OpenDocument (`.odt`) sessions and native DOCX→ODT conversion
 5. `@usejunior/safedocx-mcpb` - private MCP bundle wrapper for desktop distribution
+6. `@usejunior/allure-test-factory`, `@usejunior/test-narrative`, `@usejunior/google-docs-core` - supporting packages (test tooling, Google Docs core)
 
-The core product goal is local-first legal-document editing with deterministic behavior, stable paragraph anchors, and strong round-trip safety guarantees.
+The core product goal is local-first legal-document editing with deterministic behavior, stable paragraph anchors, and strong round-trip safety guarantees; from-scratch generation shares the same conformance machinery.
 
 ## Tech Stack
 - TypeScript (ESM) on Node.js (`>=20` at repo root; package minimum currently `>=18`)
@@ -34,8 +35,8 @@ The core product goal is local-first legal-document editing with deterministic b
 
 ### Architecture Patterns
 - Monorepo package layering:
-  - `safe-docx` depends on `docx-primitives` + `docx-comparison`
-  - `safedocx` re-exports `safe-docx`
+  - `docx-mcp` depends on `docx-core` (and `odf-core` for `.odt` sessions)
+  - `safe-docx` wraps the MCP server as a CLI/npx entry point
   - `safedocx-mcpb` bundles the server for MCP desktop distribution
 - Paragraph identity is bookmark-based (`_bk_*`) and treated as canonical anchor identity. IDs are deterministic and byte-identical across reopens/machines for identical stored DOCX/OOXML bytes.
 - Session-first editing model with file-first entry support (`session_id` or `file_path`).
@@ -46,7 +47,7 @@ The core product goal is local-first legal-document editing with deterministic b
 - Unit tests for OOXML primitives and comparison algorithms.
 - Integration tests for MCP tools and editing workflows.
 - Allure-tagged scenario tests for OpenSpec traceability.
-- Conformance harness (`packages/safe-docx/conformance/`) for deterministic fixture evidence.
+- Conformance registry + citation gates (`spec-compliance/`) for deterministic ECMA-376 evidence.
 - CI gates include:
   - `npm run build`
   - `npm run test`
@@ -60,10 +61,10 @@ The core product goal is local-first legal-document editing with deterministic b
 - Release pipeline is tag-driven via GitHub Actions (`.github/workflows/release.yml`).
 - npm publishing uses Trusted Publishing (OIDC), not long-lived npm tokens.
 - Package publish order matters for dependency graph:
-  1. `@usejunior/docx-primitives`
-  2. `@usejunior/docx-comparison`
-  3. `@usejunior/safe-docx`
-  4. `safedocx`
+  1. `@usejunior/docx-core`
+  2. `@usejunior/odf-core`
+  3. `@usejunior/docx-mcp`
+  4. `@usejunior/safe-docx`
 
 ## Domain Context
 - `.docx` is OOXML in ZIP containers; Word commonly splits visible text across many runs.

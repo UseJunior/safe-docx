@@ -48,4 +48,4 @@ and `openspec validate add-docx-generation --strict`.
 - [x] 7.4 Follow-up issues: translated READMEs; ODT generation parity (odf-core)
 
 ## 8. Post-deploy
-- [ ] 8.1 `openspec archive add-docx-generation --yes` (separate PR); fix stale package names in `openspec/project.md` opportunistically
+- [x] 8.1 `openspec archive add-docx-generation --yes` (separate PR); fix stale package names in `openspec/project.md` opportunistically
