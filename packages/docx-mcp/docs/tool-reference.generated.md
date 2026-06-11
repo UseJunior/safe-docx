@@ -250,7 +250,7 @@ Add a comment or threaded reply to a document. Provide target_paragraph_id + anc
 
 ## `get_comments`
 
-Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.
+Get all comments from the document with IDs, authors, dates, text, and anchored paragraph IDs. Range-anchored DOCX comments also expose optional end_paragraph_id, start_run_index, start_char_offset, end_run_index, and end_char_offset fields describing the covered span. Includes threaded replies (DOCX). Supports DOCX and ODT. Read-only.
 
 - readOnly: `true`
 - destructive: `false`
