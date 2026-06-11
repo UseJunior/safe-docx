@@ -108,10 +108,24 @@ async function collectAiRevisionSummary(
   };
 }
 
-async function restoreTrackedUntouchedBlocks(
+/**
+ * Restoration is best-effort: on any failure the tracked artifact degrades to
+ * the unrestored comparison output (the pre-restore behavior), which is valid
+ * — just fully re-serialized. The error is returned rather than thrown so the
+ * save still succeeds, but callers must surface it: a swallowed error is
+ * indistinguishable from "document fully edited, nothing to restore"
+ * (`blocksRestored: 0` reads as benign), so a restore-path regression would
+ * otherwise go dark.
+ *
+ * Exported for direct testing of the failure path; production callers go
+ * through `save`.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/436
+ */
+export async function restoreTrackedUntouchedBlocks(
   trackedBuffer: Buffer,
   originalBuffer: Buffer,
-): Promise<{ buffer: Buffer; blocksRestored: number }> {
+): Promise<{ buffer: Buffer; blocksRestored: number; restoreError?: string }> {
   try {
     const [trackedZip, originalZip] = await Promise.all([
       DocxZip.load(trackedBuffer),
@@ -129,8 +143,8 @@ async function restoreTrackedUntouchedBlocks(
 
     trackedZip.writeText('word/document.xml', serializeXml(trackedDoc));
     return { buffer: await trackedZip.toBuffer(), blocksRestored };
-  } catch {
-    return { buffer: trackedBuffer, blocksRestored: 0 };
+  } catch (e: unknown) {
+    return { buffer: trackedBuffer, blocksRestored: 0, restoreError: errorMessage(e) };
   }
 }
 
@@ -220,6 +234,7 @@ export async function save(
     let bookmarksRemoved: number;
     let blocksRestored: number;
     let trackedBlocksRestored: number;
+    let trackedRestoreError: string | undefined;
     let exportTimestamp: string;
 
     // Run implicit validation before producing save artifacts.
@@ -235,6 +250,7 @@ export async function save(
       bookmarksRemoved = cached.bookmarksRemoved;
       blocksRestored = cached.blocksRestored;
       trackedBlocksRestored = cached.trackedBlocksRestored;
+      trackedRestoreError = cached.trackedRestoreError;
       exportTimestamp = cached.exportedAtUtc;
     } else {
       // The clean artifact is the minimal one: untouched body blocks are
@@ -251,6 +267,7 @@ export async function save(
       trackedFallbackDiagnostics = undefined;
       exportTimestamp = formatUtcTimestamp(new Date());
       trackedBlocksRestored = 0;
+      trackedRestoreError = undefined;
 
       if (format === 'tracked' || format === 'both') {
         // Lazily generate comparison baselines if not yet available.
@@ -273,6 +290,7 @@ export async function save(
         const restoredTracked = await restoreTrackedUntouchedBlocks(trackedRes.document, session.originalBuffer);
         trackedBuffer = restoredTracked.buffer;
         trackedBlocksRestored = restoredTracked.blocksRestored;
+        trackedRestoreError = restoredTracked.restoreError;
         trackedStats = trackedRes.stats;
         trackedReconstructionMode = trackedRes.reconstructionModeUsed;
         trackedFallbackReason = trackedRes.fallbackReason;
@@ -304,6 +322,7 @@ export async function save(
         bookmarksRemoved: clean ? bookmarksRemoved : 0,
         blocksRestored,
         trackedBlocksRestored,
+        trackedRestoreError,
         exportedAtUtc: exportTimestamp,
         cachedAtIso: new Date().toISOString(),
       });
@@ -386,6 +405,7 @@ export async function save(
       bookmarks_removed: clean ? bookmarksRemoved : 0,
       blocks_restored: blocksRestored,
       tracked_blocks_restored: trackedBlocksRestored,
+      tracked_restore_error: trackedRestoreError,
       returned_variants: returnedVariants,
       available_variants: ['clean', 'redline'],
       cache_hit: cacheHit,
