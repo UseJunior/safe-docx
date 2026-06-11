@@ -273,7 +273,7 @@ Delete a comment and all its threaded replies from the document. Cascade-deletes
 
 ## `compare_documents`
 
-Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes; ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).
+Compare two documents and produce a tracked-changes output document. Provide original_file_path + revised_file_path for standalone comparison, or file_path to compare session edits against the original. DOCX and ODF (.odt) support both modes. DOCX stats count insertions/deletions as contiguous ranges, expose atom totals as insertedAtoms/deletedAtoms, and report formatChanges separately from modifiedParagraphs. ODF compares at inline granularity (a modified paragraph is marked up in place — only the changed spans are struck or inserted).
 
 - readOnly: `true`
 - destructive: `false`
