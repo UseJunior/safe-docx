@@ -20,6 +20,7 @@
     "lint:workspaces": "npm run lint --workspaces --if-present && npm run lint:allure-imports",
     "lint:allure-imports": "eslint \"packages/**/*.test.ts\" --ignore-pattern \"packages/google-docs-core/**\" --ignore-pattern \"packages/odf-core/**\"",
     "check:cycles": "madge --circular --extensions ts packages/*/src",
+    "check:control-bytes": "node scripts/check_control_bytes.mjs",
     "test": "npm run test --workspaces --if-present",
     "test:run": "npm run test:run --workspaces --if-present",
     "test:baseline": "npm run test:baseline -w @usejunior/docx-core",
