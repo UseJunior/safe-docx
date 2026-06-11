@@ -5,6 +5,8 @@ export interface SyntheticDocxOptions {
   paragraphs: string[];
   footnoteOnParagraph?: number;
   footnoteText?: string;
+  endnoteOnParagraph?: number;
+  endnoteText?: string;
   commentOnParagraph?: number;
   commentText?: string;
   commentAuthor?: string;
@@ -55,6 +57,7 @@ export interface SyntheticDocxOptions {
 
 export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Buffer> {
   const hasFootnote = opts.footnoteOnParagraph != null;
+  const hasEndnote = opts.endnoteOnParagraph != null;
   const hasComment = opts.commentOnParagraph != null;
   const hasCommentSpan = opts.commentSpanParagraphs != null;
   const hasBookmark = opts.bookmarkOnParagraph != null;
@@ -81,6 +84,10 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
 
     if (hasFootnote && idx === opts.footnoteOnParagraph) {
       extra += `<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="1"/></w:r>`;
+    }
+
+    if (hasEndnote && idx === opts.endnoteOnParagraph) {
+      extra += `<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="1"/></w:r>`;
     }
 
     if (hasComment && idx === opts.commentOnParagraph) {
@@ -173,6 +180,25 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     rIdCounter++;
     docRelEntries.push(
       `<Relationship Id="rId${rIdCounter}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>`
+    );
+  }
+
+  if (hasEndnote) {
+    const enText = opts.endnoteText ?? 'Test endnote';
+    const endnotesXml =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+      `<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>` +
+      `<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>` +
+      `<w:endnote w:id="1"><w:p><w:r><w:t>${enText}</w:t></w:r></w:p></w:endnote>` +
+      `</w:endnotes>`;
+    zip.file('word/endnotes.xml', endnotesXml);
+    contentTypeParts.push(
+      `<Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/>`
+    );
+    rIdCounter++;
+    docRelEntries.push(
+      `<Relationship Id="rId${rIdCounter}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/>`
     );
   }
 
