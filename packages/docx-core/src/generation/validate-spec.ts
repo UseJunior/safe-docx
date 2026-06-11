@@ -13,9 +13,14 @@
  * fields, paragraph formatting, named styles + styles.xml, multi-section
  * documents with per-section page setup, page numbering, break types,
  * default/first/even headers and footers, tables (grid, spans, vertical
- * merges, cell decoration, nesting), and multi-level numbering with
- * w:numPr list references.
- * Still rejected: drafting notes.
+ * merges, cell decoration, nesting), multi-level numbering with w:numPr
+ * list references, and drafting notes compiled to anchored comments (body
+ * story only — header/footer paragraphs cannot carry notes).
+ *
+ * Every declared feature now has an emitter; the loud-rejection contract
+ * (SDX-GEN-003) lives on as runtime guards against unrecognized block and
+ * inline kinds, which protect callers handing in JSON that the TypeScript
+ * surface never saw.
  */
 
 import { GenerationSpecError } from './errors.js';
@@ -142,7 +147,7 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
         throw new GenerationSpecError('invalid_value', `${slotPath}/blocks`, 'Header/footer blocks must be a non-empty array');
       }
       content.blocks.forEach((block, blockIndex) => {
-        validateBlock(block, `${slotPath}/blocks/${blockIndex}`, styleIds, numbering);
+        validateBlock(block, `${slotPath}/blocks/${blockIndex}`, styleIds, numbering, 'headerFooter');
       });
     }
   }
@@ -164,13 +169,23 @@ function validateSection(section: SectionSpec, path: string, styleIds: Set<strin
     throw new GenerationSpecError('invalid_value', `${path}/blocks`, 'Section blocks must be an array');
   }
   section.blocks.forEach((block, blockIndex) => {
-    validateBlock(block, `${path}/blocks/${blockIndex}`, styleIds, numbering);
+    validateBlock(block, `${path}/blocks/${blockIndex}`, styleIds, numbering, 'body');
   });
 }
 
-function validateBlock(block: BlockSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>): void {
-  if (block.kind === 'table') validateTable(block, path, styleIds, numbering);
-  else validateParagraph(block, path, styleIds, numbering);
+/** Story kind: drafting notes may only anchor in the body story. */
+type StoryContext = 'body' | 'headerFooter';
+
+function validateBlock(
+  block: BlockSpec,
+  path: string,
+  styleIds: Set<string>,
+  numbering: Map<string, Set<number>>,
+  story: StoryContext,
+): void {
+  if (block.kind === 'table') validateTable(block, path, styleIds, numbering, story);
+  else if (block.kind === 'paragraph') validateParagraph(block, path, styleIds, numbering, story);
+  else unsupported(path, `block kind '${(block as { kind: string }).kind}'`);
 }
 
 /**
@@ -180,7 +195,7 @@ function validateBlock(block: BlockSpec, path: string, styleIds: Set<string>, nu
  * span of a merge cell in the previous row — otherwise readers either show
  * a recovery dialog or silently reflow the table.
  */
-function validateTable(table: TableSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>): void {
+function validateTable(table: TableSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>, story: StoryContext): void {
   if (!Array.isArray(table.columnWidthsTwips) || table.columnWidthsTwips.length === 0) {
     throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips`, 'Tables require at least one column width');
   }
@@ -245,7 +260,7 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
         throw new GenerationSpecError('invalid_value', `${cellPath}/blocks`, 'Cell blocks must be an array (empty allowed; an empty cell compiles to an empty paragraph)');
       }
       cell.blocks.forEach((block, blockIndex) => {
-        validateBlock(block, `${cellPath}/blocks/${blockIndex}`, styleIds, numbering);
+        validateBlock(block, `${cellPath}/blocks/${blockIndex}`, styleIds, numbering, story);
       });
       gridOffset += span;
     });
@@ -273,8 +288,25 @@ function validateBorders(borders: TableBorders, path: string): void {
   }
 }
 
-function validateParagraph(paragraph: ParagraphSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>): void {
-  if (paragraph.note !== undefined) unsupported(`${path}/note`, 'drafting notes');
+function validateParagraph(
+  paragraph: ParagraphSpec,
+  path: string,
+  styleIds: Set<string>,
+  numbering: Map<string, Set<number>>,
+  story: StoryContext,
+): void {
+  if (paragraph.note !== undefined) {
+    if (story === 'headerFooter') {
+      throw new GenerationSpecError(
+        'invalid_value',
+        `${path}/note`,
+        'Drafting notes anchor as document-story comments and cannot live in headers or footers',
+      );
+    }
+    if (typeof paragraph.note.text !== 'string' || paragraph.note.text.length === 0) {
+      throw new GenerationSpecError('invalid_value', `${path}/note/text`, 'Drafting notes require non-empty text');
+    }
+  }
 
   if (paragraph.list !== undefined) {
     const levels = numbering.get(paragraph.list.numId);
@@ -318,6 +350,9 @@ function validateParagraph(paragraph: ParagraphSpec, path: string, styleIds: Set
 }
 
 function validateInline(run: InlineSpec, path: string): void {
+  if (run.kind !== 'tab' && run.kind !== 'break' && run.kind !== 'field' && run.kind !== 'text') {
+    unsupported(path, `inline kind '${(run as { kind: string }).kind}'`);
+  }
   if (run.kind === 'tab' || run.kind === 'break') return;
   if (run.kind === 'field') {
     if (typeof run.cachedResult !== 'string' || run.cachedResult.length === 0) {

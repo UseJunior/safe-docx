@@ -22,7 +22,7 @@ ignored.
 - **THEN** the output SHALL be byte-identical to compiling the original spec
 
 #### Scenario: [SDX-GEN-003] unimplemented spec features are rejected loudly
-- **GIVEN** a `DocumentSpec` using a declared spec feature whose emitter has not shipped
+- **GIVEN** a `DocumentSpec` using a spec feature without a shipped emitter — a declared feature whose phase has not landed yet, or an unrecognized block/inline kind arriving from a JSON caller
 - **WHEN** `generateDocx(spec)` is called
 - **THEN** compilation SHALL fail with a typed error naming the unsupported feature and its path in the spec
 

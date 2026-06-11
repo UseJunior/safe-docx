@@ -14,6 +14,8 @@
 
 import { createZipBuffer } from '../primitives/zip.js';
 import { CompileContext } from './context.js';
+import { emitCommentsPartsIfNeeded } from './emit/comments-part.js';
+import { DraftingNoteCollector } from './emit/emit-context.js';
 import { emitDocumentPart } from './emit/document-part.js';
 import { emitHeaderFooterParts } from './emit/header-footer-part.js';
 import { emitNumberingPartIfNeeded } from './emit/numbering-part.js';
@@ -32,13 +34,16 @@ export type GenerateDocxOptions = {
 };
 
 /** Compile a DocumentSpec into a complete DOCX package. */
-export async function generateDocx(spec: DocumentSpec, _opts?: GenerateDocxOptions): Promise<Buffer> {
+export async function generateDocx(spec: DocumentSpec, opts?: GenerateDocxOptions): Promise<Buffer> {
   validateSpec(spec);
 
+  const notesEnabled = opts?.includeDraftingNotes ?? spec.options?.includeDraftingNotes ?? true;
   const ctx = new CompileContext();
   const numberingIds = emitNumberingPartIfNeeded(spec, ctx);
-  const headerFooterRefs = emitHeaderFooterParts(spec, ctx, numberingIds);
-  ctx.setFileContent('word/document.xml', emitDocumentPart(spec, headerFooterRefs, numberingIds));
+  const headerFooterRefs = emitHeaderFooterParts(spec, ctx, { numberingIds });
+  const notes = notesEnabled ? new DraftingNoteCollector() : undefined;
+  ctx.setFileContent('word/document.xml', emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes }));
+  if (notes) emitCommentsPartsIfNeeded(spec, ctx, notes);
   emitStylesPart(spec, ctx);
   emitSettingsPartIfNeeded(spec, ctx);
   emitPackageParts(spec, ctx);

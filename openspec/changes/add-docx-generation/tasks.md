@@ -37,9 +37,9 @@ and `openspec validate add-docx-generation --strict`.
 - [x] 5.3 `recipes.ts` (`coverTermsTable`, `signatureBlock`) + recipe artifacts; registry entries
 
 ## 6. Drafting-note layer (PR 6) — SDX-GEN-080..083
-- [ ] 6.1 `emit/comments-part.ts` + anchors + `includeDraftingNotes` switch; deterministic ids/dates
-- [ ] 6.2 Resolve ancillary-part and content-type sub-decisions against a Word-authored document
-- [ ] 6.3 Body-identical-with/without test; post-hoc strip test via `deleteComment`
+- [x] 6.1 `emit/comments-part.ts` + anchors + `includeDraftingNotes` switch; deterministic ids/dates
+- [x] 6.2 Resolve ancillary-part and content-type sub-decisions against a Word-authored document
+- [x] 6.3 Body-identical-with/without test; post-hoc strip test via `deleteComment`
 
 ## 7. Compatibility sign-off + repositioning (PR 7, closes #280) — SDX-GEN-092
 - [ ] 7.1 Full manual matrix recorded for all artifact classes; public export from `src/index.ts`
