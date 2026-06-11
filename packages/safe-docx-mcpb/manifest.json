@@ -57,6 +57,10 @@
       "description": "Export a document to a portable Markdown rendering on disk (lossy; DOCX only)."
     },
     {
+      "name": "convert_to_odt",
+      "description": "Convert a DOCX document to OpenDocument Text (.odt) on disk (semantic, intentionally lossy; DOCX only)."
+    },
+    {
       "name": "format_layout",
       "description": "Apply deterministic paragraph/table layout formatting controls."
     },
