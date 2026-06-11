@@ -191,6 +191,59 @@ generation discipline encodes the emitted subset as `RPR_ORDER` in
 `packages/docx-core/src/generation/ordering.ts`, enforced through the
 same `appendInOrder` mechanism as paragraph properties.
 
+## [ECMA-PART1-17-7-4-18] w:styles style-definitions part emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.7.4.18"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles
+verifiedBy:
+```
+
+`w:styles` is the root of the style-definitions part. From-scratch
+generation always emits `word/styles.xml` — document defaults, a default
+`Normal` paragraph style, and every declared named style — wired through a
+content-type override and a styles relationship from the main document
+part. The emitter lives at
+`packages/docx-core/src/generation/emit/styles-part.ts`.
+
+## [ECMA-PART1-17-7-4-17] w:style style-definition emission
+
+```yaml
+edition: 5
+part: 1
+section: "17.7.4.17"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style
+verifiedBy:
+```
+
+Each declared `StyleSpec` becomes a `w:style` carrying `w:type`,
+`w:styleId`, `w:name`, optional `w:basedOn`/`w:next` links, and `w:pPr` /
+`w:rPr` built by the same shared property builders the body emitters use —
+so a style definition and direct formatting can never serialize a property
+differently. Dangling `basedOn`/`next`/paragraph references are rejected
+at spec validation, before any XML is built.
+
+## [ECMA-PART1-17-7-5-1] w:docDefaults document-default properties
+
+```yaml
+edition: 5
+part: 1
+section: "17.7.5.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults
+verifiedBy:
+```
+
+`w:docDefaults` carries the document-wide default run and paragraph
+properties that styles and direct formatting layer over. Generation emits
+explicit defaults (font bound across ascii/hAnsi/cs script ranges plus an
+explicit size) rather than relying on reader fallbacks, which diverge
+between Word, LibreOffice, and Google Docs import.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the

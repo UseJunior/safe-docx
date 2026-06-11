@@ -17,9 +17,9 @@ and `openspec validate add-docx-generation --strict`.
 - [x] 1.9 PR 1 tests (`TEST_FEATURE = 'add-docx-generation'`) + `docs/generation-manual-compat-checklist.md` + review artifacts
 
 ## 2. Run/paragraph formatting + styles emission (PR 2) — SDX-GEN-004, 040..043
-- [ ] 2.1 `emit/styles-part.ts` (docDefaults, Normal, StyleSpec[])
-- [ ] 2.2 Full RunProps via `RPR_ORDER`; paragraph pPr (alignment/spacing/indent/tabs) via `PPR_ORDER`
-- [ ] 2.3 XSD relative-order cross-check test; registry entries for styles/rPr/pPr sections
+- [x] 2.1 `emit/styles-part.ts` (docDefaults, Normal, StyleSpec[])
+- [x] 2.2 Full RunProps via `RPR_ORDER`; paragraph pPr (alignment/spacing/indent/tabs) via `PPR_ORDER`
+- [x] 2.3 XSD relative-order cross-check test; registry entries for styles/rPr/pPr sections
 
 ## 3. Sections, headers/footers, fields, page numbering (PR 3) — SDX-GEN-021..024, 030..032
 - [ ] 3.1 `emit/header-footer-part.ts` + reference wiring + content types + `w:titlePg`
