@@ -40,6 +40,17 @@ export interface SyntheticDocxOptions {
    * markers do not leak into reconstructed paragraphs.
    */
   siblingBookmarkBefore?: { index: number; name: string; id?: number };
+  /**
+   * Multi-paragraph comment range with body-level markers: the
+   * commentRangeStart is emitted as a sibling of <w:p> before
+   * paragraphs[startBeforeParagraph] and the commentRangeEnd as a sibling
+   * after paragraphs[endAfterParagraph]. The commentReference run is
+   * appended inside paragraphs[endAfterParagraph]. This is the issue #103
+   * shape: range markers spanning whole paragraphs sit outside any <w:p>.
+   *
+   * Mutually exclusive with commentOnParagraph and commentSpanParagraphs.
+   */
+  siblingCommentRange?: { startBeforeParagraph: number; endAfterParagraph: number };
 }
 
 export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Buffer> {
@@ -48,9 +59,12 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const hasCommentSpan = opts.commentSpanParagraphs != null;
   const hasBookmark = opts.bookmarkOnParagraph != null;
   const hasSiblingBookmark = opts.siblingBookmarkBefore != null;
+  const hasSiblingCommentRange = opts.siblingCommentRange != null;
 
-  if (hasComment && hasCommentSpan) {
-    throw new Error('commentOnParagraph and commentSpanParagraphs are mutually exclusive');
+  if ([hasComment, hasCommentSpan, hasSiblingCommentRange].filter(Boolean).length > 1) {
+    throw new Error(
+      'commentOnParagraph, commentSpanParagraphs and siblingCommentRange are mutually exclusive'
+    );
   }
 
   const bookmarkId = opts.bookmarkOnParagraph?.id ?? 100;
@@ -112,6 +126,20 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     paragraphParts.splice(index, 0, sibling);
   }
 
+  // Inject body-level comment range markers around whole paragraphs (the
+  // issue #103 shape). The range markers are siblings of <w:p>; only the
+  // commentReference run anchors inside the last spanned paragraph. End is
+  // spliced before start so the start index is not shifted.
+  if (hasSiblingCommentRange) {
+    const { startBeforeParagraph, endAfterParagraph } = opts.siblingCommentRange!;
+    paragraphParts[endAfterParagraph] = paragraphParts[endAfterParagraph]!.replace(
+      '</w:p>',
+      `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r></w:p>`
+    );
+    paragraphParts.splice(endAfterParagraph + 1, 0, `<w:commentRangeEnd w:id="1"/>`);
+    paragraphParts.splice(startBeforeParagraph, 0, `<w:commentRangeStart w:id="1"/>`);
+  }
+
   const paragraphsXml = paragraphParts.join('\n    ');
 
   const documentXml =
@@ -148,7 +176,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     );
   }
 
-  if (hasComment || hasCommentSpan) {
+  if (hasComment || hasCommentSpan || hasSiblingCommentRange) {
     const cText = opts.commentText ?? 'Test comment';
     const cAuthor = opts.commentAuthor ?? 'Author';
     const hasReply = opts.replyText != null;

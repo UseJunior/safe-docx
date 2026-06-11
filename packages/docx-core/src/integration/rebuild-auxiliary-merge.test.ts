@@ -16,6 +16,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { compareDocuments } from '../index.js';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
+import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { parseXml } from '../primitives/xml.js';
 
 /**
@@ -577,6 +578,86 @@ describe('Paragraph-level marker reconstruction on rebuild (issue #106)', () => 
         // inplace output must contain the comment anchor; the full span survives
         // because the markers are already present in the revised archive.
         expect(parts.documentXml).toContain('w:commentReference');
+      });
+    });
+  });
+});
+
+describe('Multi-paragraph sibling comment ranges on rebuild (issue #103)', () => {
+  describe('Body-level comment range wrapping whole paragraphs', () => {
+    test('rebuild preserves matched sibling-level commentRangeStart/End markers', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('both sides have a comment range whose markers sit outside any <w:p>, wrapping the first two paragraphs', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph', 'Third paragraph'],
+          siblingCommentRange: { startBeforeParagraph: 0, endAfterParagraph: 1 },
+          commentText: 'Spanning comment',
+          commentAuthor: 'Reviewer',
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph revised', 'Third paragraph'],
+          siblingCommentRange: { startBeforeParagraph: 0, endAfterParagraph: 1 },
+          commentText: 'Spanning comment',
+          commentAuthor: 'Reviewer',
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('both range markers survive at body level with matching ids and the anchor is intact', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        const starts = inspectElements(parts.documentXml, 'w:commentRangeStart');
+        const ends = inspectElements(parts.documentXml, 'w:commentRangeEnd');
+        expect(starts.length).toBe(1);
+        expect(ends.length).toBe(1);
+        expect(starts[0]!.idAttr).toBe(ends[0]!.idAttr);
+
+        // The markers wrap whole paragraphs, so they must stay siblings of
+        // <w:p>, not get pulled inside a reconstructed paragraph.
+        for (const m of [...starts, ...ends]) {
+          expect(m.ancestors).not.toContain('w:p');
+          expect(m.parent).toBe('w:body');
+        }
+
+        // The comment anchor and definition must still be present.
+        expect(parts.documentXml).toContain('w:commentReference');
+        expect(parts.commentsXml).toContain('Spanning comment');
+      });
+    });
+  });
+
+  describe('Orphaned body-level comment range remnant', () => {
+    test('a sibling commentRangeStart with no matching end is still stripped', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('both sides carry an unmatched body-level commentRangeStart between two paragraphs', async () => {
+        const bodyXml = (textA: string) =>
+          `<w:p><w:r><w:t>${textA}</w:t></w:r></w:p>` +
+          `<w:commentRangeStart w:id="7"/>` +
+          `<w:p><w:r><w:t>Para B</w:t></w:r></w:p>`;
+        original = await buildDocxFromBodyXml(bodyXml('Para A'));
+        revised = await buildDocxFromBodyXml(bodyXml('Para A revised'));
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the orphaned marker does not survive into the rebuilt document', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        expect(parts.documentXml).not.toContain('w:commentRangeStart');
       });
     });
   });
