@@ -19,10 +19,9 @@
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
-import { parseXml, serializeXml } from '../../primitives/xml.js';
+import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
 import type { DocumentSpec, NumberingSpec } from '../types.js';
-import { XML_DECL } from './document-part.js';
 import { buildRunPropsElement } from './properties.js';
 
 export const NUMBERING_CONTENT_TYPE =

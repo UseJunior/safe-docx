@@ -8,10 +8,9 @@
  */
 
 import { OOXML } from '../../primitives/namespaces.js';
-import { parseXml, serializeXml } from '../../primitives/xml.js';
+import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
 import type { DocumentSpec } from '../types.js';
-import { XML_DECL } from './document-part.js';
 
 export const CONTENT_TYPES = {
   document: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',

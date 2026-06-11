@@ -10,14 +10,12 @@
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
-import { parseXml, serializeXml } from '../../primitives/xml.js';
+import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import { GenerationInternalError } from '../errors.js';
 import type { DocumentSpec } from '../types.js';
 import type { NumberingIdMap } from './numbering-part.js';
 import { buildSectPr, type SectionHeaderFooterRefs } from './section.js';
 import { buildBlock } from './table.js';
-
-export const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
 const DOCUMENT_SKELETON =
   `<w:document xmlns:w="${OOXML.W_NS}" xmlns:r="${OOXML.R_NS}" xmlns:w14="${OOXML.W14_NS}">` +
