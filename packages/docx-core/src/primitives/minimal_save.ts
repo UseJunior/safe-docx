@@ -26,6 +26,7 @@
 import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
+import { childElements } from './dom-helpers.js';
 import { mergeRuns } from './merge_runs.js';
 import { simplifyRedlines } from './simplify_redlines.js';
 
@@ -38,20 +39,17 @@ import { simplifyRedlines } from './simplify_redlines.js';
  */
 const RECURSABLE_CONTAINER_LOCALS = new Set<string>([W.tbl, W.tr, W.tc]);
 
-/** Element children of a node (whitespace text nodes skipped). */
-function elementChildren(parent: Node): Element[] {
-  const out: Element[] = [];
-  let child = parent.firstChild;
-  while (child) {
-    if (child.nodeType === 1) out.push(child as Element);
-    child = child.nextSibling;
-  }
-  return out;
-}
-
 function bodyElement(doc: Document): Element | null {
   return doc.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0) as Element | null;
 }
+
+/**
+ * DP cell budget (~16 MB of Int32). Edits touch few blocks, so the common
+ * prefix/suffix trim below collapses the DP to roughly the edited span;
+ * only a document with massive scattered edits exceeds this, and those
+ * blocks then simply stay normalized (conservative, never wrong).
+ */
+const MAX_LCS_DP_CELLS = 4_000_000;
 
 /**
  * Order-preserving alignment of two sequences by longest common subsequence,
@@ -64,14 +62,6 @@ function bodyElement(doc: Document): Element | null {
  * backtrack below matches from the tail, so untouched trailing duplicates
  * pair with their own originals.
  */
-/**
- * DP cell budget (~16 MB of Int32). Edits touch few blocks, so the common
- * prefix/suffix trim below collapses the DP to roughly the edited span;
- * only a document with massive scattered edits exceeds this, and those
- * blocks then simply stay normalized (conservative, never wrong).
- */
-const MAX_LCS_DP_CELLS = 4_000_000;
-
 function lcsPairs(a: string[], b: string[]): Array<[number, number]> {
   if (a.length === 0 || b.length === 0) return [];
 
@@ -164,9 +154,9 @@ function reconcileChildren(
   cur: Element,
   ownerDoc: Document,
 ): number {
-  const origChildren = elementChildren(orig);
-  const normChildren = elementChildren(norm);
-  const curChildren = elementChildren(cur);
+  const origChildren = childElements(orig);
+  const normChildren = childElements(norm);
+  const curChildren = childElements(cur);
   if (origChildren.length !== normChildren.length) return 0;
   if (origChildren.length === 0 || curChildren.length === 0) return 0;
 
