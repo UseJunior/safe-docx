@@ -51,6 +51,17 @@ export interface SyntheticDocxOptions {
    * Mutually exclusive with commentOnParagraph and commentSpanParagraphs.
    */
   siblingCommentRange?: { startBeforeParagraph: number; endAfterParagraph: number };
+  /**
+   * Pre-existing tracked move with explicit in-paragraph range markers.
+   * paragraphs[from]'s text is wrapped in <w:moveFrom> (as w:delText)
+   * bracketed by w:moveFromRangeStart/End; paragraphs[to]'s text is wrapped
+   * in <w:moveTo> bracketed by w:moveToRangeStart/End. All four markers are
+   * direct children of their <w:p>, sharing the given w:name. Callers should
+   * pass identical text for paragraphs[from] and paragraphs[to] so the shape
+   * matches what Word produces for a real tracked move. Used to verify
+   * explicit move-range marker reconstruction (issue #110).
+   */
+  trackedMove?: { from: number; to: number; name: string; author?: string; firstId?: number };
 }
 
 export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Buffer> {
@@ -71,6 +82,10 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const siblingBookmarkId = opts.siblingBookmarkBefore?.id ?? 200;
   const spanStart = opts.commentSpanParagraphs?.start;
   const spanEnd = opts.commentSpanParagraphs?.end;
+  const hasTrackedMove = opts.trackedMove != null;
+  const moveAuthor = opts.trackedMove?.author ?? 'Mover';
+  const moveBaseId = opts.trackedMove?.firstId ?? 300;
+  const moveDate = '2025-01-01T00:00:00Z';
 
   const paragraphParts: string[] = opts.paragraphs.map((text, idx) => {
     const escaped = text
@@ -99,6 +114,34 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
           `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="1"/></w:r>`
         : '';
       return `<w:p>${before}<w:r><w:t>${escaped}</w:t></w:r>${after}${extra}</w:p>`;
+    }
+
+    if (hasTrackedMove && idx === opts.trackedMove!.from) {
+      const name = opts.trackedMove!.name;
+      return (
+        `<w:p>` +
+        `<w:moveFromRangeStart w:id="${moveBaseId}" w:name="${name}" w:author="${moveAuthor}" w:date="${moveDate}"/>` +
+        `<w:moveFrom w:id="${moveBaseId + 1}" w:author="${moveAuthor}" w:date="${moveDate}">` +
+        `<w:r><w:delText>${escaped}</w:delText></w:r>` +
+        `</w:moveFrom>` +
+        `<w:moveFromRangeEnd w:id="${moveBaseId}"/>` +
+        extra +
+        `</w:p>`
+      );
+    }
+
+    if (hasTrackedMove && idx === opts.trackedMove!.to) {
+      const name = opts.trackedMove!.name;
+      return (
+        `<w:p>` +
+        `<w:moveToRangeStart w:id="${moveBaseId + 2}" w:name="${name}" w:author="${moveAuthor}" w:date="${moveDate}"/>` +
+        `<w:moveTo w:id="${moveBaseId + 3}" w:author="${moveAuthor}" w:date="${moveDate}">` +
+        `<w:r><w:t>${escaped}</w:t></w:r>` +
+        `</w:moveTo>` +
+        `<w:moveToRangeEnd w:id="${moveBaseId + 2}"/>` +
+        extra +
+        `</w:p>`
+      );
     }
 
     if (hasBookmark && idx === opts.bookmarkOnParagraph!.paragraph) {

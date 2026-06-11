@@ -741,6 +741,108 @@ describe('atomizeTree', () => {
   });
 });
 
+describe('move-range marker atomization (issue #110)', () => {
+  const mockPart: OpcPart = {
+    uri: 'word/document.xml',
+    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
+  };
+
+  function paragraphWithTrackedMove(): Element {
+    return el('w:p', {}, [
+      el('w:moveFromRangeStart', {
+        'w:id': '300',
+        'w:name': 'userMove1',
+        'w:author': 'Mover',
+        'w:date': '2025-01-01T00:00:00Z',
+      }),
+      el('w:moveFrom', { 'w:id': '301', 'w:author': 'Mover', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:delText', {}, undefined, 'moved')]),
+      ]),
+      el('w:moveFromRangeEnd', { 'w:id': '300' }),
+      el('w:moveToRangeStart', {
+        'w:id': '302',
+        'w:name': 'userMove1',
+        'w:author': 'Mover',
+        'w:date': '2025-01-01T00:00:00Z',
+      }),
+      el('w:moveTo', { 'w:id': '303', 'w:author': 'Mover', 'w:date': '2025-01-01T00:00:00Z' }, [
+        el('w:r', {}, [el('w:t', {}, undefined, 'moved')]),
+      ]),
+      el('w:moveToRangeEnd', { 'w:id': '302' }),
+    ]);
+  }
+
+  test('move-range markers inside w:p become atoms when atomizeParagraphLevelMarkers is true', async ({ given, when, then }: AllureBddContext) => {
+    let body: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('a body whose paragraph carries an explicit tracked move with range markers', () => {
+      body = el('w:body', {}, [paragraphWithTrackedMove()]);
+    });
+
+    await when('the tree is atomized with paragraph-level markers enabled', () => {
+      ({ atoms } = atomizeTree(body, [], mockPart, { atomizeParagraphLevelMarkers: true }));
+    });
+
+    await then('all four move-range marker kinds appear as atoms', () => {
+      const tags = atoms.map((a) => a.contentElement.tagName);
+      expect(tags).toContain('w:moveFromRangeStart');
+      expect(tags).toContain('w:moveFromRangeEnd');
+      expect(tags).toContain('w:moveToRangeStart');
+      expect(tags).toContain('w:moveToRangeEnd');
+    });
+  });
+
+  test('move-range markers are NOT atomized when atomizeParagraphLevelMarkers is false', async ({ given, when, then }: AllureBddContext) => {
+    let body: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('a body whose paragraph carries an explicit tracked move with range markers', () => {
+      body = el('w:body', {}, [paragraphWithTrackedMove()]);
+    });
+
+    await when('the tree is atomized with default options', () => {
+      ({ atoms } = atomizeTree(body, [], mockPart));
+    });
+
+    await then('no move-range marker atoms enter the stream', () => {
+      const tags = atoms.map((a) => a.contentElement.tagName);
+      expect(tags).not.toContain('w:moveFromRangeStart');
+      expect(tags).not.toContain('w:moveFromRangeEnd');
+      expect(tags).not.toContain('w:moveToRangeStart');
+      expect(tags).not.toContain('w:moveToRangeEnd');
+    });
+  });
+
+  test('body-level move-range markers stay out of the atom stream', async ({ given, when, then }: AllureBddContext) => {
+    let body: Element;
+    let atoms: ReturnType<typeof atomizeTree>['atoms'];
+
+    await given('move-range markers that are siblings of w:p at body level', () => {
+      body = el('w:body', {}, [
+        el('w:moveFromRangeStart', {
+          'w:id': '300',
+          'w:name': 'userMove1',
+          'w:author': 'Mover',
+          'w:date': '2025-01-01T00:00:00Z',
+        }),
+        el('w:p', {}, [el('w:r', {}, [el('w:t', {}, undefined, 'text')])]),
+        el('w:moveFromRangeEnd', { 'w:id': '300' }),
+      ]);
+    });
+
+    await when('the tree is atomized with paragraph-level markers enabled', () => {
+      ({ atoms } = atomizeTree(body, [], mockPart, { atomizeParagraphLevelMarkers: true }));
+    });
+
+    await then('only the paragraph content is atomized — markers are scaffold-handled', () => {
+      const tags = atoms.map((a) => a.contentElement.tagName);
+      expect(tags).not.toContain('w:moveFromRangeStart');
+      expect(tags).not.toContain('w:moveFromRangeEnd');
+    });
+  });
+});
+
 describe('empty paragraph context hashing', () => {
   const mockPart: OpcPart = {
     uri: 'word/document.xml',
