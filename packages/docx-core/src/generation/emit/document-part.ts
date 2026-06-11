@@ -13,7 +13,7 @@ import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import { GenerationInternalError } from '../errors.js';
 import type { DocumentSpec } from '../types.js';
-import type { NumberingIdMap } from './numbering-part.js';
+import type { BlockEmitContext } from './emit-context.js';
 import { buildSectPr, type SectionHeaderFooterRefs } from './section.js';
 import { buildBlock } from './table.js';
 
@@ -31,14 +31,14 @@ const DOCUMENT_SKELETON =
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
  * @conformance ECMA-376 edition 5, Part 1 § 17.6.17
  */
-export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterRefs[], numberingIds?: NumberingIdMap): string {
+export function emitDocumentPart(spec: DocumentSpec, refs?: SectionHeaderFooterRefs[], ctx?: BlockEmitContext): string {
   const doc = parseXml(DOCUMENT_SKELETON);
   const body = doc.getElementsByTagName('w:body').item(0);
   if (!body) throw new GenerationInternalError('document skeleton lost its w:body');
 
   spec.sections.forEach((section, index) => {
     for (const block of section.blocks) {
-      body.appendChild(buildBlock(doc, block, numberingIds));
+      body.appendChild(buildBlock(doc, block, ctx));
     }
 
     const sectPr = buildSectPr(doc, section, refs?.[index]);

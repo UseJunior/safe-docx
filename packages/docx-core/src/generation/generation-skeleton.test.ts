@@ -84,65 +84,40 @@ describe('Traceability: from-scratch generation skeleton', () => {
   test.openspec('[SDX-GEN-003] unimplemented spec features are rejected loudly')(
     'Scenario: unimplemented spec features are rejected loudly',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
-      let noteSpec!: DocumentSpec;
-      let cellNoteSpec!: DocumentSpec;
-      await given('specs using the declared drafting-note feature, whose emitter has not shipped (body and table-cell anchors)', async () => {
-        noteSpec = {
-          sections: [
-            {
-              blocks: [
-                { kind: 'paragraph', note: { text: 'flag this clause' }, runs: [{ kind: 'text', text: 'clause' }] },
-              ],
-            },
-          ],
-        };
-        cellNoteSpec = {
-          sections: [
-            {
-              blocks: [
-                {
-                  kind: 'table',
-                  columnWidthsTwips: [9360],
-                  rows: [
-                    {
-                      cells: [
-                        {
-                          blocks: [
-                            { kind: 'paragraph', note: { text: 'check this cell' }, runs: [{ kind: 'text', text: 'cell' }] },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        };
+      let unknownBlockSpec!: DocumentSpec;
+      let unknownInlineSpec!: DocumentSpec;
+      await given('specs using kinds without a shipped emitter (an unrecognized block kind and inline kind, as a JSON caller could send)', async () => {
+        unknownBlockSpec = JSON.parse(
+          '{"sections":[{"blocks":[{"kind":"contentControl","runs":[]}]}]}',
+        ) as DocumentSpec;
+        unknownInlineSpec = JSON.parse(
+          '{"sections":[{"blocks":[{"kind":"paragraph","runs":[{"kind":"footnote","text":"x"}]}]}]}',
+        ) as DocumentSpec;
       });
 
-      let noteError: unknown;
-      let cellNoteError: unknown;
+      let blockError: unknown;
+      let inlineError: unknown;
       await when('generateDocx compiles each spec', async () => {
-        noteError = await generateDocx(noteSpec).then(
+        blockError = await generateDocx(unknownBlockSpec).then(
           () => null,
           (err: unknown) => err,
         );
-        cellNoteError = await generateDocx(cellNoteSpec).then(
+        inlineError = await generateDocx(unknownInlineSpec).then(
           () => null,
           (err: unknown) => err,
         );
       });
 
       await then('each compilation fails with a typed error naming the feature and its spec path', async () => {
-        expect(noteError).toBeInstanceOf(GenerationSpecError);
-        expect((noteError as GenerationSpecError).code).toBe('unsupported_feature');
-        expect((noteError as GenerationSpecError).path).toBe('/sections/0/blocks/0/note');
-        expect(cellNoteError).toBeInstanceOf(GenerationSpecError);
-        expect((cellNoteError as GenerationSpecError).path).toBe('/sections/0/blocks/0/rows/0/cells/0/blocks/0/note');
+        expect(blockError).toBeInstanceOf(GenerationSpecError);
+        expect((blockError as GenerationSpecError).code).toBe('unsupported_feature');
+        expect((blockError as GenerationSpecError).path).toBe('/sections/0/blocks/0');
+        expect(inlineError).toBeInstanceOf(GenerationSpecError);
+        expect((inlineError as GenerationSpecError).code).toBe('unsupported_feature');
+        expect((inlineError as GenerationSpecError).path).toBe('/sections/0/blocks/0/runs/0');
         await attachPrettyJson('rejections', {
-          note: { code: (noteError as GenerationSpecError).code, path: (noteError as GenerationSpecError).path },
-          cellNote: { code: (cellNoteError as GenerationSpecError).code, path: (cellNoteError as GenerationSpecError).path },
+          block: { code: (blockError as GenerationSpecError).code, path: (blockError as GenerationSpecError).path },
+          inline: { code: (inlineError as GenerationSpecError).code, path: (inlineError as GenerationSpecError).path },
         });
       });
     },

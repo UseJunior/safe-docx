@@ -22,15 +22,13 @@ import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
 import type { DocumentSpec, NumberingSpec } from '../types.js';
+import type { NumberingIdMap } from './emit-context.js';
 import { buildRunPropsElement } from './properties.js';
 
 export const NUMBERING_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml';
 export const NUMBERING_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering';
-
-/** Spec-level numbering handle → numeric w:numId value. */
-export type NumberingIdMap = ReadonlyMap<string, number>;
 
 const NUMBERING_SKELETON = `<w:numbering xmlns:w="${OOXML.W_NS}"/>`;
 
