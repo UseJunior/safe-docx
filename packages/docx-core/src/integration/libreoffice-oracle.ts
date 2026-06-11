@@ -180,12 +180,23 @@ End Sub
  * DOCX jobs carry a bare `word/document.xml` (packed into a minimal package and read back out);
  * ODT jobs carry a complete `.odt` package buffer (ODF packaging — mimetype-first STORED — is
  * the caller's concern) and return its post-op `content.xml`.
+ *
+ * CONVERSION jobs (`docx` + `saveAs: 'odt'`) carry a complete `.docx` package buffer and save
+ * through LibreOffice's `writer8` filter, returning the converted `content.xml` — the reference
+ * path for differential-testing odf-core's native DOCX→ODT converter (issue #331).
  */
 type OracleOp = 'accept' | 'reject' | 'identity';
-export type OracleJob = { op: OracleOp; documentXml: string } | { op: OracleOp; odt: Buffer };
+export type OracleJob =
+  | { op: OracleOp; documentXml: string }
+  | { op: OracleOp; odt: Buffer }
+  | { op: OracleOp; docx: Buffer; saveAs: 'odt' };
 
 function isOdtJob(job: OracleJob): job is { op: OracleOp; odt: Buffer } {
   return 'odt' in job;
+}
+
+function isConvertJob(job: OracleJob): job is { op: OracleOp; docx: Buffer; saveAs: 'odt' } {
+  return 'docx' in job;
 }
 
 /**
@@ -216,11 +227,19 @@ export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveS
     const jobLines: string[] = [];
     for (let i = 0; i < jobs.length; i++) {
       const job = jobs[i]!;
-      const ext = isOdtJob(job) ? 'odt' : 'docx';
-      const filter = isOdtJob(job) ? 'writer8' : 'MS Word 2007 XML';
-      const inPath = path.join(inDir, `job${i}.${ext}`);
-      const outPath = path.join(outDir, `job${i}.${ext}`);
-      writeFileSync(inPath, isOdtJob(job) ? new Uint8Array(job.odt) : new Uint8Array(await packMinimalDocx(job.documentXml)));
+      const inExt = isOdtJob(job) ? 'odt' : 'docx';
+      const outExt = isOdtJob(job) || isConvertJob(job) ? 'odt' : 'docx';
+      const filter = isOdtJob(job) || isConvertJob(job) ? 'writer8' : 'MS Word 2007 XML';
+      const inPath = path.join(inDir, `job${i}.${inExt}`);
+      const outPath = path.join(outDir, `job${i}.${outExt}`);
+      writeFileSync(
+        inPath,
+        isOdtJob(job)
+          ? new Uint8Array(job.odt)
+          : isConvertJob(job)
+            ? new Uint8Array(job.docx)
+            : new Uint8Array(await packMinimalDocx(job.documentXml)),
+      );
       outPaths.push(outPath);
       jobLines.push(`${job.op}|${inPath}|${outPath}|${filter}`);
     }
@@ -267,7 +286,7 @@ export async function runLibreOfficeOracle(jobs: OracleJob[], soffice = resolveS
     }
     return Promise.all(outPaths.map(async (p, i) => {
       if (!existsSync(p)) throw new Error(`LibreOffice oracle produced no output for ${path.basename(p)}`);
-      if (isOdtJob(jobs[i]!)) {
+      if (isOdtJob(jobs[i]!) || isConvertJob(jobs[i]!)) {
         const contentXml = await readZipText(readFileSync(p), 'content.xml');
         if (contentXml == null) throw new Error(`content.xml not found in oracle output ${path.basename(p)}`);
         return contentXml;
