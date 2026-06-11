@@ -114,4 +114,16 @@ export const W = {
   footnoteRef: 'footnoteRef',
   separator: 'separator',
   continuationSeparator: 'continuationSeparator',
+
+  // Endnotes
+  endnoteReference: 'endnoteReference',
+
+  // Embedded visual content (run-level children)
+  drawing: 'drawing',
+  pict: 'pict',
+  object: 'object',
+
+  // Revision wrappers
+  del: 'del',
+  moveFrom: 'moveFrom',
 } as const;

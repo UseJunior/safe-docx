@@ -294,6 +294,59 @@ function getFootnoteMarkersForParagraph(
 }
 
 /**
+ * Paragraph content that makes a text-empty paragraph meaningful on its own:
+ * an endnote or comment anchored to the paragraph (the comment range markers
+ * are what `getComments` resolves `anchored_paragraph_id`/`end_paragraph_id`
+ * from, so dropping their paragraph leaves a dangling anchor ID no node_ids
+ * probe can resolve), or embedded visual content (DrawingML drawing, VML
+ * picture, embedded object). Dropping such a paragraph from the document view
+ * severs the anchored note/comment from every read surface and silently
+ * hides images.
+ *
+ * Footnote references are handled separately via the display map so their
+ * [^N] markers render; the shapes here only need the node to exist.
+ * @see #383
+ */
+const ANCHORING_CONTENT = [
+  W.endnoteReference,
+  W.commentReference,
+  W.commentRangeStart,
+  W.commentRangeEnd,
+  W.drawing,
+  W.pict,
+  W.object,
+] as const;
+
+/**
+ * True when `el` sits inside a `w:del` or `w:moveFrom` revision wrapper below
+ * the paragraph. Deleted/moved-from content is invisible to the view's text
+ * extraction (`getParagraphText` reads `w:t`, never `w:delText`), so an
+ * anchor that only survives inside a tracked deletion — e.g. the
+ * `w:commentReference` a tracked comment-delete leaves under `w:del` — must
+ * not resurrect its paragraph as a blank visible node.
+ */
+function isInsideRemovedRevisionWrapper(el: Element, paragraph: Element): boolean {
+  let cur = el.parentNode as Element | null;
+  while (cur && cur !== paragraph) {
+    if (cur.namespaceURI === OOXML.W_NS && (cur.localName === W.del || cur.localName === W.moveFrom)) {
+      return true;
+    }
+    cur = cur.parentNode as Element | null;
+  }
+  return false;
+}
+
+function paragraphHasAnchoringContent(p: Element): boolean {
+  return ANCHORING_CONTENT.some((localName) => {
+    const els = p.getElementsByTagNameNS(OOXML.W_NS, localName);
+    for (let i = 0; i < els.length; i++) {
+      if (!isInsideRemovedRevisionWrapper(els.item(i) as Element, p)) return true;
+    }
+    return false;
+  });
+}
+
+/**
  * Inject footnote markers into a text string at the given offsets.
  * Markers must be sorted descending by offset.
  *
@@ -408,13 +461,19 @@ export function buildNodesForDocumentView(params: {
     // Visible clean text (field codes stripped).
     const fullText = getParagraphText(p).replace(/\r/g, '').replace(/\n/g, '').trim();
     // Preserve empty table cell paragraphs for structural completeness, and
-    // text-empty paragraphs that anchor a visible footnote reference — dropping
-    // those loses the footnote from every rendering of the document view.
-    // @see #185
+    // text-empty paragraphs that carry anchoring content — a visible footnote
+    // reference (its [^N] marker renders via the injection pass below), an
+    // endnote reference, a comment reference or comment range marker, or an
+    // embedded drawing/picture/object. Dropping those loses the anchored
+    // note/comment/image from every rendering of the document view. Anchors
+    // that survive only inside a tracked deletion don't count, and paragraphs
+    // that are empty for spacing only are still skipped.
+    // @see #185, #383
     if (
       !fullText &&
       !tableContext &&
-      getFootnoteMarkersForParagraph(p, footnoteDisplayMap).length === 0
+      getFootnoteMarkersForParagraph(p, footnoteDisplayMap).length === 0 &&
+      !paragraphHasAnchoringContent(p)
     ) continue;
 
     // Numbering (auto-numbered) info from numPr.
