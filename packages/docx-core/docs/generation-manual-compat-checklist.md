@@ -11,7 +11,7 @@ artifact class, and refreshed in any PR that changes an emitter.
 ## How to regenerate the artifacts
 
 ```bash
-SDX_WRITE_OUTPUT_FIXTURES=1 npm run test:run -w @usejunior/docx-core -- src/integration/generation-package-structure.test.ts
+SDX_WRITE_OUTPUT_FIXTURES=1 npm run test:run -w @usejunior/docx-core -- src/generation src/integration/generation-package-structure.test.ts
 ```
 
 Artifacts land under `packages/docx-core/src/testing/outputs/`.
@@ -30,6 +30,7 @@ Artifacts land under `packages/docx-core/src/testing/outputs/`.
 | `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | PR 1 | — | — | — | clean (identity + PDF probes, automated) |
 | `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | PR 2 | — | — | — | — |
 | `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | PR 3 | — | — | — | — |
+| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | PR 4 | — | — | — | — |
 
 ## Per-reader notes
 

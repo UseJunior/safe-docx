@@ -28,8 +28,8 @@ and `openspec validate add-docx-generation --strict`.
 - [x] 3.4 Cover→body acceptance fixture; registry entries for sectPr/header/field sections
 
 ## 4. Tables (PR 4) — SDX-GEN-050..053
-- [ ] 4.1 `emit/table.ts`: tblPr/tblGrid/trPr/tcPr per schema order; blocks-in-cells with trailing `w:p`
-- [ ] 4.2 Grid-arithmetic validation (gridSpan/vMerge); table structural checks; registry entries
+- [x] 4.1 `emit/table.ts`: tblPr/tblGrid/trPr/tcPr per schema order; blocks-in-cells with trailing `w:p`
+- [x] 4.2 Grid-arithmetic validation (gridSpan/vMerge); table structural checks; registry entries
 
 ## 5. Numbering + recipes (PR 5, after PR 4) — SDX-GEN-060..062, 070, 071
 - [ ] 5.1 `emit/numbering-part.ts` (abstractNum/num, numeric id assignment); `w:numPr` wiring

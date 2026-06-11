@@ -13,11 +13,10 @@
 
 import { OOXML } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml } from '../../primitives/xml.js';
-import { GenerationInternalError } from '../errors.js';
 import type { CompileContext } from '../context.js';
 import type { DocumentSpec, HeaderFooterSpec, SectionSpec } from '../types.js';
 import { XML_DECL } from './document-part.js';
-import { buildParagraph } from './paragraph.js';
+import { buildBlock } from './table.js';
 import type { SectionHeaderFooterRefs } from './section.js';
 
 const HEADER_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml';
@@ -65,12 +64,7 @@ function emitPart(content: HeaderFooterSpec, ctx: CompileContext, kind: 'header'
   const doc = parseXml(`<${rootTag} xmlns:w="${OOXML.W_NS}" xmlns:r="${OOXML.R_NS}"/>`);
   const root = doc.documentElement!;
   for (const block of content.blocks) {
-    if (block.kind !== 'paragraph') {
-      throw new GenerationInternalError(
-        `Header/footer block kind '${block.kind}' reached the emitter without a shipped emitter`,
-      );
-    }
-    root.appendChild(buildParagraph(doc, block));
+    root.appendChild(buildBlock(doc, block));
   }
 
   ctx.setFileContent(partName, XML_DECL + serializeXml(doc));

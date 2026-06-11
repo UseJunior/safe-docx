@@ -81,6 +81,13 @@ export const TBLPR_ORDER = [
   'tblLook',
 ] as const;
 
+/**
+ * Child order for w:trPr (CT_TrPrBase). Subset actually emitted.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.81
+ */
+export const TRPR_ORDER = ['trHeight', 'tblHeader'] as const;
+
 /** Child order for w:tcPr (CT_TcPr). */
 export const TCPR_ORDER = [
   'tcW',
