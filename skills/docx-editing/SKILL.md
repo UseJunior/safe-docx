@@ -5,7 +5,8 @@ description: >-
   and tracked changes via the Safe-DOCX MCP server. Use when user says "edit this
   docx," "change the contract," "redline the document," "compare these Word files,"
   "add a comment to the docx," "read this Word file," or "mark up the agreement."
-  Not for from-scratch document generation.
+  From-scratch generation lives in the @usejunior/docx-core library API
+  (generateDocx), not in this MCP server.
 license: MIT
 compatibility: >-
   Works with any MCP-compatible agent. Requires Node.js >=18.0.0 and npm
@@ -144,7 +145,7 @@ Use Safe-DOCX when you need to:
 
 ## Not for From-Scratch Generation
 
-Safe-DOCX edits already-existing `.docx` files — it does not create documents from blank. For new document generation, use a template-filling workflow (e.g. OpenAgreements). Safe-DOCX can refine generated docs downstream.
+This MCP server edits already-existing `.docx` files — it does not expose a generation tool. From-scratch generation is available in the `@usejunior/docx-core` library (`generateDocx` over a declarative DocumentSpec); generate there (or via a template-filling workflow such as OpenAgreements), then refine the result with these tools.
 
 ## Quick Start
 

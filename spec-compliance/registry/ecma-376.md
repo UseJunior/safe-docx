@@ -1014,10 +1014,12 @@ Sections explicitly **out of scope** for safe-docx. Each entry below carries the
 same spec section and vendored-schema binding as a targeted section, so "we do
 not target this" is a first-class, reviewable statement rather than silence.
 
-Beyond the enumerated sections, safe-docx is not a from-scratch document
-generator, rejects Word template packages (`.dotx`), and makes no rendering,
-layout, pagination, or cross-editor-fidelity guarantees. Those boundaries have no
-single ECMA-376 section; they are described under
+Beyond the enumerated sections, safe-docx rejects Word template packages
+(`.dotx`) and makes no rendering, layout, pagination, or
+cross-editor-fidelity guarantees. (From-scratch generation, formerly a
+non-goal, ships in `packages/docx-core/src/generation/` under the
+`docx-generation` capability.) Those boundaries have no single ECMA-376
+section; they are described under
 [“What Safe Docx Is Not Optimized For”](/README.md#what-safe-docx-is-not-optimized-for)
 in the root README.
 

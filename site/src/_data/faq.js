@@ -21,7 +21,7 @@ export default [
   },
   {
     q: 'Why focus on existing documents instead of generating new ones?',
-    a: 'Safe DOCX is optimized for brownfield editing of real-world .docx files where formatting and review semantics matter. For from-scratch generation, use a generation-first library such as <code>docx</code>.',
+    a: 'Brownfield editing of real-world .docx files — where formatting and review semantics matter — is the primary focus. Safe DOCX also generates new documents from scratch: the <code>@usejunior/docx-core</code> library compiles a declarative DocumentSpec (sections, styles, tables, numbering, signature blocks, drafting notes) into a deterministic .docx through the same conformance machinery.',
   },
   {
     q: 'Is it free?',

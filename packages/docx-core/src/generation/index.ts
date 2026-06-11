@@ -1,10 +1,9 @@
 /**
- * From-scratch DOCX generation (OpenSpec change: add-docx-generation).
+ * From-scratch DOCX generation (OpenSpec capability: docx-generation).
  *
- * Module-internal surface for now: this index is deliberately NOT re-exported
- * from the package root until the cross-reader compatibility matrix is signed
- * off in the final phase of the change. Tests and in-repo consumers import
- * from this path directly.
+ * Re-exported from the package root since the final phase of the
+ * add-docx-generation change, with the cross-reader compatibility matrix
+ * recorded in docs/generation-manual-compat-checklist.md.
  */
 
 export { generateDocx, type GenerateDocxOptions } from './compile.js';
