@@ -16,7 +16,18 @@ import type { AlignmentResult } from '../../shared/ooxml/types.js';
 /** Local result type to avoid importing from index.ts (which no longer exports diffmatch). */
 interface BaselineBResult {
   document: Buffer;
-  stats: { insertions: number; deletions: number; modifications: number };
+  stats: {
+    insertions: number;
+    deletions: number;
+    modifications: number;
+    insertedRanges: number;
+    deletedRanges: number;
+    insertedAtoms: number;
+    deletedAtoms: number;
+    modifiedParagraphs: number;
+    formatChanges: number;
+    formatChangeAtoms: number;
+  };
   engine: 'diffmatch';
 }
 import { extractParagraphs } from './xmlParser.js';
@@ -137,5 +148,12 @@ function computeStats(
     insertions,
     deletions,
     modifications,
+    insertedRanges: insertions,
+    deletedRanges: deletions,
+    insertedAtoms: insertions,
+    deletedAtoms: deletions,
+    modifiedParagraphs: modifications,
+    formatChanges: 0,
+    formatChangeAtoms: 0,
   };
 }

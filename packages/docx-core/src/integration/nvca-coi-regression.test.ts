@@ -68,10 +68,11 @@ describe('NVCA COI Regression', () => {
     });
 
     await and('stats are within expected ranges', async () => {
-      // Before fix: 949 insertions (rebuild fallback with phantom changes)
-      // After fix: ~202 insertions (correct inplace)
+      // Range counts stay bounded for the human-facing summary; atom totals
+      // retain the old granular signal for this large legal-document diff.
       expect(res.stats.insertions).toBeLessThan(500);
-      expect(res.stats.deletions).toBeGreaterThan(5000);
+      expect(res.stats.deletions).toBeLessThan(500);
+      expect(res.stats.deletedAtoms).toBeGreaterThan(5000);
     });
 
     await and('accept-all text matches revised document', async () => {
