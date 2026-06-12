@@ -268,6 +268,8 @@ describe('Tool integration through SessionManager: canonical revision emission',
         xml: makeDocXml(
           '<w:p><w:r><w:t>Spacing paragraph.</w:t></w:r></w:p>' +
             '<w:tbl>' +
+            '<w:tblPr/>' +
+            '<w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid>' +
             '<w:tr>' +
             '<w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc>' +
             '<w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc>' +

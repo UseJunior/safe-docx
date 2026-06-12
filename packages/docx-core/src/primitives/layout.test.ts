@@ -143,56 +143,61 @@ describe('layout tracked-change emission', () => {
     });
   });
 
-  test('setTableCellPadding emits tcPrChange with the prior cell properties snapshot', async ({ given, when, then }: AllureBddContext) => {
-    let doc: Document;
-    let tcMar: Element;
-    let left: Element;
-    let tcPrChange: Element;
-    let previousTcMar: Element;
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.68' })(
+      'setTableCellPadding emits tcPrChange with the prior cell properties snapshot',
+      async ({ given, when, then }: AllureBddContext) => {
+        let doc: Document;
+        let tcMar: Element;
+        let left: Element;
+        let tcPrChange: Element;
+        let previousTcMar: Element;
 
-    await given('a table cell that already has top padding', () => {
-      doc = makeDocument(
-        `<w:tbl><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
-      );
-    });
+        await given('a table cell that already has top padding', () => {
+          doc = makeDocument(
+            `<w:tbl><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
+          );
+        });
 
-    await when('tracked left padding is added', () => {
-      const result = setTableCellPadding(
-        doc,
-        { tableIndexes: [0], leftDxa: 240 },
-        createRevisionContext({
-          author: 'SafeDocX AI',
-          date: '2026-05-03T14:15:16Z',
-          idState: createRevisionIdState(),
-        }),
-      );
-      expect(result).toEqual({
-        affectedCells: 1,
-        missingTableIndexes: [],
-        missingRowIndexes: [],
-        missingCellIndexes: [],
-      });
+        await when('tracked left padding is added', () => {
+          const result = setTableCellPadding(
+            doc,
+            { tableIndexes: [0], leftDxa: 240 },
+            createRevisionContext({
+              author: 'SafeDocX AI',
+              date: '2026-05-03T14:15:16Z',
+              idState: createRevisionIdState(),
+            }),
+          );
+          expect(result).toEqual({
+            affectedCells: 1,
+            missingTableIndexes: [],
+            missingRowIndexes: [],
+            missingCellIndexes: [],
+          });
 
-      const table = doc.getElementsByTagNameNS(W_NS, W.tbl).item(0) as Element;
-      const row = firstDirectChild(table, W.tr);
-      const cell = firstDirectChild(row, W.tc);
-      const tcPr = firstDirectChild(cell, W.tcPr);
-      tcMar = firstDirectChild(tcPr, W.tcMar);
-      left = firstDirectChild(tcMar, W.left);
-      tcPrChange = firstDirectChild(tcPr, 'tcPrChange');
-      previousTcMar = firstDirectChild(firstDirectChild(tcPrChange, W.tcPr), W.tcMar);
-    });
+          const table = doc.getElementsByTagNameNS(W_NS, W.tbl).item(0) as Element;
+          const row = firstDirectChild(table, W.tr);
+          const cell = firstDirectChild(row, W.tc);
+          const tcPr = firstDirectChild(cell, W.tcPr);
+          tcMar = firstDirectChild(tcPr, W.tcMar);
+          left = firstDirectChild(tcMar, W.left);
+          tcPrChange = firstDirectChild(tcPr, 'tcPrChange');
+          previousTcMar = firstDirectChild(firstDirectChild(tcPrChange, W.tcPr), W.tcMar);
+        });
 
-    await then('the outer cell properties are updated while the inner tcPr snapshot preserves the old padding', () => {
-      expect(wordAttr(tcPrChange, 'author')).toBe('SafeDocX AI');
-      expect(wordAttr(tcPrChange, 'date')).toBe('2026-05-03T14:15:16Z');
-      expect(revisionId(tcPrChange)).toBe(1);
-      expect(wordAttr(left, 'w')).toBe('240');
-      expect(wordAttr(left, 'type')).toBe('dxa');
-      expect(getDirectChildrenByName(previousTcMar, W.left)).toHaveLength(0);
-      expect(firstDirectChild(previousTcMar, W.top)).toBeDefined();
-    });
-  });
+        await then('the outer cell properties are updated while the inner tcPr snapshot preserves the old padding', () => {
+          expect(wordAttr(tcPrChange, 'author')).toBe('SafeDocX AI');
+          expect(wordAttr(tcPrChange, 'date')).toBe('2026-05-03T14:15:16Z');
+          expect(revisionId(tcPrChange)).toBe(1);
+          expect(Array.from(tcMar.children).map((child) => child.localName)).toEqual([W.top, W.left]);
+          expect(wordAttr(left, 'w')).toBe('240');
+          expect(wordAttr(left, 'type')).toBe('dxa');
+          expect(getDirectChildrenByName(previousTcMar, W.left)).toHaveLength(0);
+          expect(firstDirectChild(previousTcMar, W.top)).toBeDefined();
+        });
+      },
+    );
 
   test('layout primitives preserve legacy mutation behavior when revision context is omitted', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
