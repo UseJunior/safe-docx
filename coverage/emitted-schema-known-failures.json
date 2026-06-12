@@ -1,11 +1,5 @@
 [
   {
-    "id": "ilpa-orphaned-ppr-close",
-    "issue": "#450",
-    "match": "not well-formed: Opening and ending tag mismatch: \"w:body\" != \"w:pPr\"",
-    "reason": "ILPA-pair comparison drops the opening <w:p><w:pPr> of a paragraph-mark sectPr paragraph, leaving orphaned close tags at body level"
-  },
-  {
     "id": "duplicate-rprchange-in-rpr",
     "issue": "#451",
     "match": "}rPrChange': This element is not expected.",
