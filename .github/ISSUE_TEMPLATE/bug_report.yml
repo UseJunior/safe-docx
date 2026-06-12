@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a reproducible problem in safe-docx.
+title: "fix(scope): "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough detail for a maintainer to reproduce the behavior.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: Describe the observed behavior and why it is incorrect.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide commands, a small fixture, or a minimal code sample.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected package
+      options:
+        - packages/docx-core
+        - packages/docx-mcp
+        - packages/safe-docx-mcpb
+        - spec-compliance
+        - openspec
+        - CI / release
+        - unknown / multiple
+    validations:
+      required: true
+  - type: textarea
+    id: conformance
+    attributes:
+      label: ECMA-376 / OOXML impact
+      description: If this touches OOXML behavior, cite the relevant ECMA-376 section or explain why none is known.
+      placeholder: "ECMA-376 5th edition, Part ..., section ..."
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or artifacts
+      description: Paste relevant logs, failing test output, screenshots, or attach a DOCX fixture if appropriate.
+      render: shell
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Node/npm versions, OS, package version, and any relevant runtime details.
+      placeholder: |
+        node --version:
+        npm --version:
+        OS:

@@ -1,0 +1,64 @@
+name: Feature or change request
+description: Propose a new capability, behavior change, or repo improvement.
+title: "feat(scope): "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For new capabilities, breaking changes, architecture shifts, or substantial performance/security work, include an OpenSpec change proposal.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or maintainer problem should this solve?
+      placeholder: Describe the use case and current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior or change.
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected area
+      options:
+        - packages/docx-core
+        - packages/docx-mcp
+        - packages/safe-docx-mcpb
+        - spec-compliance
+        - openspec
+        - CI / release
+        - docs
+        - unknown / multiple
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches were considered?
+  - type: checkboxes
+    id: change-type
+    attributes:
+      label: Change type
+      options:
+        - label: This introduces a new capability or behavior shift and needs an OpenSpec proposal.
+        - label: This may affect ECMA-376 / OOXML conformance.
+        - label: This is a minor tweak that should not require OpenSpec.
+  - type: textarea
+    id: conformance
+    attributes:
+      label: ECMA-376 / OOXML notes
+      description: If applicable, cite targeted sections or explain conformance risks.
+      placeholder: "ECMA-376 5th edition, Part ..., section ..."
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add links, examples, fixtures, or related issues.
