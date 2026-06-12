@@ -215,7 +215,7 @@ describe('Canonical emission catalog', () => {
     await given('a table row with a prior height definition', async () => {
       const { doc } = await loadIndexedDoc(
         await makeMinimalDocx(
-          '<w:tbl><w:tr><w:trPr><w:trHeight w:val="360" w:hRule="atLeast"/></w:trPr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+          '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="360" w:hRule="atLeast"/></w:trPr><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
         ),
       );
 
@@ -240,7 +240,7 @@ describe('Canonical emission catalog', () => {
     await given('a table cell with prior padding properties', async () => {
       const { doc } = await loadIndexedDoc(
         await makeMinimalDocx(
-          '<w:tbl><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+          '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
         ),
       );
 

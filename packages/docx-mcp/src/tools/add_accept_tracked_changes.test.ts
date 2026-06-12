@@ -161,7 +161,7 @@ describe('Traceability: Accept Tracked Changes', () => {
         `<w:pPr><w:pStyle w:val="Heading1"/><w:pPrChange w:id="10" w:author="A"><w:pPr/></w:pPrChange></w:pPr>` +
         `<w:r><w:rPr><w:b/><w:rPrChange w:id="11" w:author="A"><w:rPr/></w:rPrChange></w:rPr><w:t>bold text</w:t></w:r>` +
         `</w:p>` +
-        `<w:tbl><w:tblPr><w:tblPrChange w:id="12" w:author="A"><w:tblPr/></w:tblPrChange></w:tblPr>` +
+        `<w:tbl><w:tblPr><w:tblPrChange w:id="12" w:author="A"><w:tblPr/></w:tblPrChange></w:tblPr><w:tblGrid><w:gridCol/></w:tblGrid>` +
         `<w:tr><w:tc><w:tcPr><w:tcPrChange w:id="13" w:author="A"><w:tcPr/></w:tcPrChange></w:tcPr>` +
         `<w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
       const filePath = await writeTestDocx(dir, 'prchange.docx', bodyXml);

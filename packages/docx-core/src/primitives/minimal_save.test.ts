@@ -193,7 +193,7 @@ describe('minimal re-serialization on save (issue #408)', () => {
       `<w:p><w:proofErr w:type="spellStart"/><w:r w:rsidR="00CC0001"><w:t>cell</w:t></w:r>` +
       `<w:proofErr w:type="spellEnd"/><w:r w:rsidR="00CC0002"><w:t xml:space="preserve"> text</w:t></w:r></w:p>`;
     const TBL = (cellP: string) =>
-      `<w:tbl><w:tr><w:tc>${cellP}</w:tc></w:tr></w:tbl>`;
+      `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc>${cellP}</w:tc></w:tr></w:tbl>`;
     let untouched: { originalXml: string; savedXml: string };
     let modified: { originalXml: string; savedXml: string };
 
@@ -240,10 +240,10 @@ describe('minimal re-serialization on save (issue #408)', () => {
     // proofErr/rsid-bearing paragraph in the table must keep its original
     // XML — issue #408's repro document is almost entirely tables.
     const cellP = (id: string, marker: string) =>
-      `<w:p w14:paraId="${id}"><w:proofErr w:type="spellStart"/><w:r w:rsidR="00${marker}01"><w:t>${marker}</w:t></w:r>` +
-      `<w:proofErr w:type="spellEnd"/><w:r w:rsidR="00${marker}02"><w:t xml:space="preserve"> tail</w:t></w:r></w:p>`;
+      `<w:p w14:paraId="${id}"><w:proofErr w:type="spellStart"/><w:r w:rsidR="0000${marker}01"><w:t>${marker}</w:t></w:r>` +
+      `<w:proofErr w:type="spellEnd"/><w:r w:rsidR="0000${marker}02"><w:t xml:space="preserve"> tail</w:t></w:r></w:p>`;
     const tableBody =
-      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>` +
+      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid>` +
       `<w:tr><w:tc>${cellP('00000A01', 'AA')}${cellP('00000A02', 'AB')}</w:tc><w:tc>${cellP('00000B01', 'BA')}</w:tc></w:tr>` +
       `<w:tr><w:tc>${cellP('00000C01', 'CA')}</w:tc><w:tc>${cellP('00000D01', 'DA')}</w:tc></w:tr>` +
       `</w:tbl>`;

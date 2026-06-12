@@ -799,7 +799,7 @@ describe('extract_revisions tool', () => {
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
         `<w:document xmlns:w="${W_NS}">` +
         `<w:body>` +
-          `<w:tbl><w:tr><w:tc>` +
+          `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc>` +
             `<w:p><w:r><w:t>Cell </w:t></w:r>` +
             `<w:ins w:author="X"><w:r><w:t>edited</w:t></w:r></w:ins></w:p>` +
           `</w:tc></w:tr></w:tbl>` +
