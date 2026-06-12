@@ -27,7 +27,14 @@
  * their anchors still match as unchanged content (no duplicate definitions),
  * which keeps the common derived-document case byte-stable.
  *
+ * Comment ancillary parts have a second collision axis: commentsExtended.xml
+ * and commentsIds.xml are keyed by the w14:paraId on comment-content
+ * paragraphs, not by w:id. We restamp colliding revised-side comment paraIds
+ * before comparison for the same reason: merged ancillary rows must never bind
+ * to the other document's comment paragraph.
+ *
  * @see https://github.com/UseJunior/safe-docx/issues/107
+ * @see https://github.com/UseJunior/safe-docx/issues/448
  */
 
 import { XMLSerializer } from '@xmldom/xmldom';
@@ -141,19 +148,32 @@ class LazyArchiveXml {
     return this.parsed;
   }
 
-  /** Rewrite `w:id` on every `tag` element per `idMap`. */
-  applyIdMap(tags: string[], idMap: Map<string, string>): void {
+  /** Rewrite matching attributes on every `tag` element per `valueMap`. */
+  applyAttributeMap(
+    tags: string[],
+    attrName: string,
+    valueMap: Map<string, string>,
+    normalizeKey: (value: string) => string = (value) => value,
+  ): void {
+    if (valueMap.size === 0) return;
     for (const tag of tags) {
       const elements = this.doc().getElementsByTagName(tag);
       for (let i = 0; i < elements.length; i++) {
         const el = elements[i] as Element;
-        const id = el.getAttribute('w:id');
-        if (id !== null && idMap.has(id)) {
-          el.setAttribute('w:id', idMap.get(id)!);
+        const value = el.getAttribute(attrName);
+        if (value === null) continue;
+        const replacement = valueMap.get(normalizeKey(value));
+        if (replacement) {
+          el.setAttribute(attrName, replacement);
           this.dirty = true;
         }
       }
     }
+  }
+
+  /** Rewrite `w:id` on every `tag` element per `idMap`. */
+  applyIdMap(tags: string[], idMap: Map<string, string>): void {
+    this.applyAttributeMap(tags, 'w:id', idMap);
   }
 
   flush(): void {
@@ -277,4 +297,188 @@ export async function renumberCollidingAuxiliaryIds(
   for (const file of rewriteFiles.values()) file.flush();
 
   return renumbered;
+}
+
+export interface RestampedCommentParaId {
+  fromParaId: string;
+  toParaId: string;
+}
+
+function normalizeParaId(value: string): string {
+  return value.toUpperCase();
+}
+
+function collectCommentParaIdOwners(xml: string | null): Map<string, Element[]> {
+  const owners = new Map<string, Element[]>();
+  if (!xml) return owners;
+
+  const doc = parseXml(xml);
+  const comments = doc.getElementsByTagName('w:comment');
+  for (let i = 0; i < comments.length; i++) {
+    const comment = comments[i] as Element;
+    const seenInComment = new Set<string>();
+    const paragraphs = comment.getElementsByTagName('w:p');
+    for (let j = 0; j < paragraphs.length; j++) {
+      const paraId = (paragraphs[j] as Element).getAttribute('w14:paraId');
+      if (!paraId) continue;
+      const normalized = normalizeParaId(paraId);
+      if (seenInComment.has(normalized)) continue;
+      seenInComment.add(normalized);
+      const entries = owners.get(normalized);
+      if (entries) entries.push(comment);
+      else owners.set(normalized, [comment]);
+    }
+  }
+  return owners;
+}
+
+function collectAttributeValues(xml: string | null, tag: string, attrNames: string[]): Set<string> {
+  const values = new Set<string>();
+  if (!xml) return values;
+
+  const doc = parseXml(xml);
+  const elements = doc.getElementsByTagName(tag);
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i] as Element;
+    for (const attrName of attrNames) {
+      const value = el.getAttribute(attrName);
+      if (value) values.add(normalizeParaId(value));
+    }
+  }
+  return values;
+}
+
+function collectUsedParaIds(xml: string | null, used: Set<string>): void {
+  if (!xml) return;
+  const paraIdAttrPattern =
+    /(?:w14:paraId|w15:paraId|w15:paraIdParent|w16cid:paraId)\s*=\s*["']([0-9A-Fa-f]{1,8})["']/g;
+  for (const match of xml.matchAll(paraIdAttrPattern)) {
+    used.add(normalizeParaId(match[1]!));
+  }
+}
+
+/**
+ * Restamp revised-side comment paragraph paraIds when they collide with
+ * original-side comment paraIds that belong to different comment content.
+ *
+ * This pass intentionally matches literal Word prefixes (`w14`, `w15`, and
+ * `w16cid`) for both DOM lookup and raw allocation scans, consistent with the
+ * rest of this module's prefix-literal auxiliary part handling. Mutates
+ * `revisedArchive` in place and returns the applied restamps.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/448
+ */
+export async function restampCollidingCommentParaIds(
+  originalArchive: DocxArchive,
+  revisedArchive: DocxArchive,
+): Promise<RestampedCommentParaId[]> {
+  const [
+    originalCommentsXml,
+    revisedCommentsXml,
+    revisedCommentsExtendedXml,
+    revisedCommentsIdsXml,
+  ] = await Promise.all([
+    originalArchive.getFile('word/comments.xml'),
+    revisedArchive.getFile('word/comments.xml'),
+    revisedArchive.getFile('word/commentsExtended.xml'),
+    revisedArchive.getFile('word/commentsIds.xml'),
+  ]);
+
+  if (!originalCommentsXml) return [];
+
+  const originalOwners = collectCommentParaIdOwners(originalCommentsXml);
+  if (originalOwners.size === 0) return [];
+
+  const revisedOwners = collectCommentParaIdOwners(revisedCommentsXml);
+  const collidingParaIds = new Set<string>();
+  for (const [paraId, revisedOwnerEntries] of revisedOwners) {
+    const originalOwnerEntries = originalOwners.get(paraId);
+    if (!originalOwnerEntries) continue;
+
+    if (
+      originalOwnerEntries.length === 1 &&
+      revisedOwnerEntries.length === 1 &&
+      serializer.serializeToString(originalOwnerEntries[0]!) ===
+        serializer.serializeToString(revisedOwnerEntries[0]!)
+    ) {
+      continue;
+    }
+
+    collidingParaIds.add(paraId);
+  }
+
+  const revisedBackedParaIds = new Set(revisedOwners.keys());
+  const revisedAncillaryParaIds = new Set<string>();
+  for (const value of collectAttributeValues(
+    revisedCommentsExtendedXml,
+    'w15:commentEx',
+    ['w15:paraId', 'w15:paraIdParent'],
+  )) {
+    revisedAncillaryParaIds.add(value);
+  }
+  for (const value of collectAttributeValues(
+    revisedCommentsIdsXml,
+    'w16cid:commentId',
+    ['w16cid:paraId'],
+  )) {
+    revisedAncillaryParaIds.add(value);
+  }
+
+  for (const paraId of revisedAncillaryParaIds) {
+    if (!revisedBackedParaIds.has(paraId) && originalOwners.has(paraId)) {
+      collidingParaIds.add(paraId);
+    }
+  }
+
+  if (collidingParaIds.size === 0) return [];
+
+  const usedParaIds = new Set<string>();
+  const allocationScanPaths = [
+    'word/comments.xml',
+    'word/commentsExtended.xml',
+    'word/commentsIds.xml',
+    'word/document.xml',
+  ];
+  for (const archive of [originalArchive, revisedArchive]) {
+    await Promise.all(
+      allocationScanPaths.map(async (path) => {
+        collectUsedParaIds(await archive.getFile(path), usedParaIds);
+      }),
+    );
+  }
+
+  const valueMap = new Map<string, string>();
+  let next = 1;
+  for (const fromParaId of [...collidingParaIds].sort()) {
+    let toParaId: string;
+    do {
+      toParaId = next.toString(16).toUpperCase().padStart(8, '0');
+      next++;
+    } while (usedParaIds.has(toParaId) || toParaId === '00000000');
+    usedParaIds.add(toParaId);
+    valueMap.set(fromParaId, toParaId);
+  }
+
+  const rewriteFiles = new Map<string, LazyArchiveXml>();
+  for (const path of ['word/comments.xml', 'word/commentsExtended.xml', 'word/commentsIds.xml']) {
+    const xml = await revisedArchive.getFile(path);
+    if (xml) rewriteFiles.set(path, new LazyArchiveXml(revisedArchive, path, xml));
+  }
+
+  rewriteFiles
+    .get('word/comments.xml')
+    ?.applyAttributeMap(['w:p'], 'w14:paraId', valueMap, normalizeParaId);
+  rewriteFiles
+    .get('word/commentsExtended.xml')
+    ?.applyAttributeMap(['w15:commentEx'], 'w15:paraId', valueMap, normalizeParaId);
+  rewriteFiles
+    .get('word/commentsExtended.xml')
+    ?.applyAttributeMap(['w15:commentEx'], 'w15:paraIdParent', valueMap, normalizeParaId);
+  rewriteFiles
+    .get('word/commentsIds.xml')
+    ?.applyAttributeMap(['w16cid:commentId'], 'w16cid:paraId', valueMap, normalizeParaId);
+
+  for (const file of rewriteFiles.values()) file.flush();
+
+  return [...valueMap].map(([fromParaId, toParaId]) => ({ fromParaId, toParaId }));
 }

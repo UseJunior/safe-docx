@@ -459,6 +459,7 @@ export interface SyntheticResultParts {
   endnotesXml: string | null;
   commentsXml: string | null;
   commentsExtendedXml: string | null;
+  commentsIdsXml: string | null;
   peopleXml: string | null;
   contentTypesXml: string | null;
   relsXml: string | null;
@@ -472,6 +473,7 @@ export async function getResultParts(resultBuffer: Buffer): Promise<SyntheticRes
     endnotesXml: await archive.getFile('word/endnotes.xml'),
     commentsXml: await archive.getFile('word/comments.xml'),
     commentsExtendedXml: await archive.getFile('word/commentsExtended.xml'),
+    commentsIdsXml: await archive.getFile('word/commentsIds.xml'),
     peopleXml: await archive.getFile('word/people.xml'),
     contentTypesXml: await archive.getFile('[Content_Types].xml'),
     relsXml: await archive.getFile('word/_rels/document.xml.rels'),

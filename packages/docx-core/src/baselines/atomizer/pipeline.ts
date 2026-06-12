@@ -77,6 +77,7 @@ import {
   AUXILIARY_PARTS,
   parseEntries,
   renumberCollidingAuxiliaryIds,
+  restampCollidingCommentParaIds,
   type AuxiliaryPartDescriptor,
 } from './auxiliaryIdCollision.js';
 import { maybeCaptureEmittedDocumentXml } from '../../primitives/schema-corpus-capture.js';
@@ -743,12 +744,14 @@ export async function compareDocumentsAtomizer(
   const originalArchive = await DocxArchive.load(original);
   const revisedArchive = await DocxArchive.load(revised);
 
-  // Step 1b: Resolve auxiliary ID collisions (issue #107). When both sides
-  // define different content under the same comment/footnote/endnote w:id,
-  // renumber the revised side so no anchor in the merged output can bind to
-  // the other document's definition. Must run before any document.xml
-  // extraction so every downstream step sees the renumbered archive.
+  // Step 1b: Resolve auxiliary ID collisions. When both sides define
+  // different content under the same comment/footnote/endnote w:id or the
+  // same comment paraId, rewrite the revised side so no anchor or ancillary
+  // row in the merged output can bind to the other document's definition.
+  // Must run before any document.xml extraction so every downstream step sees
+  // the rewritten archive.
   await renumberCollidingAuxiliaryIds(originalArchive, revisedArchive);
+  await restampCollidingCommentParaIds(originalArchive, revisedArchive);
 
   // Step 2: Extract document.xml
   const originalXml = await originalArchive.getDocumentXml();
