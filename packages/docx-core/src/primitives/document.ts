@@ -46,6 +46,15 @@ import { restoreUntouchedBlocks } from './minimal_save.js';
 import { simplifyRedlines } from './simplify_redlines.js';
 import { preventDoubleElevation } from './prevent_double_elevation.js';
 import { validateDocument, type ValidateDocumentResult } from './validate_document.js';
+import {
+  validateAiRevisions as validateAiRevisionsImpl,
+  type AiRevisionValidationTouchedContext,
+  type ValidateAiRevisionsResult,
+} from './validate_ai_revisions.js';
+import {
+  enumerateRevisionStoryPartPaths,
+  REVISION_STORY_PART_PATHS,
+} from './revision-parts.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
 import {
@@ -76,12 +85,6 @@ export type NormalizationResult = {
   wrappersConsolidated: number;
   doubleElevationsFixed: number;
 };
-
-const REVISION_STORY_PART_PATHS = [
-  'word/footnotes.xml',
-  'word/endnotes.xml',
-  'word/comments.xml',
-] as const;
 
 function emptyAcceptChangesResult(): AcceptChangesResult {
   return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
@@ -489,6 +492,25 @@ export class DocxDocument {
    */
   validate(): ValidateDocumentResult {
     return validateDocument(this.documentXml);
+  }
+
+  async validateAiRevisions(
+    aiAuthor: string,
+    touched?: AiRevisionValidationTouchedContext,
+  ): Promise<ValidateAiRevisionsResult> {
+    const stories = [{ part: 'word/document.xml', doc: this.documentXml }];
+    for (const partPath of enumerateRevisionStoryPartPaths(this.zip)) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (!xml) continue;
+      stories.push({ part: partPath, doc: parseXml(xml) });
+    }
+
+    return validateAiRevisionsImpl({
+      aiAuthor,
+      stories,
+      packageZip: this.zip,
+      touched,
+    });
   }
 
   /**

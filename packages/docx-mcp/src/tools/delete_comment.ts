@@ -2,6 +2,13 @@ import { SessionManager, getRevisionContextForSession } from '../session/manager
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
+import { DocxDocument, type RevisionContext } from '@usejunior/docx-core';
+import { preflightAiRevisionMutation } from './ai_revision_guard.js';
+
+const COMMENT_TOUCHED_CONTEXT = {
+  relationshipParts: ['word/_rels/document.xml.rels'],
+  sideParts: ['word/comments.xml', 'word/commentsExtended.xml', 'word/people.xml'],
+};
 
 export async function deleteComment(
   manager: SessionManager,
@@ -20,7 +27,13 @@ export async function deleteComment(
   }
 
   try {
-    await session.doc.deleteComment({ commentId: params.comment_id }, ctx);
+    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) =>
+      doc.deleteComment({ commentId: params.comment_id! }, activeCtx);
+
+    const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, COMMENT_TOUCHED_CONTEXT);
+    if (revisionPreflight) return revisionPreflight;
+
+    await mutate(session.doc, ctx);
 
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({

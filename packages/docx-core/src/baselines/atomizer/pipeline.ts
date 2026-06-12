@@ -73,6 +73,16 @@ import {
   DEFAULT_NUMBERING_OPTIONS,
 } from './numberingIntegration.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
+export {
+  hasFldCharInsideDel,
+  validateFieldStructure,
+  type FieldStory,
+} from '../../shared/field-structure.js';
+import {
+  hasFldCharInsideDel,
+  validateFieldStructure,
+  type FieldStory,
+} from '../../shared/field-structure.js';
 import {
   AUXILIARY_PARTS,
   parseEntries,
@@ -356,19 +366,6 @@ function buildFailureSummary(
 const serializer = new XMLSerializer();
 
 /**
- * One story (a self-contained complex-field state machine): the main document
- * body, an individual footnote entry, or an individual endnote entry. `label`
- * is for diagnostics only; `xml` is the serialized fragment that gets parsed
- * and walked.
- *
- * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
- */
-export interface FieldStory {
-  label: string;
-  xml: string;
-}
-
-/**
  * Split a docx into per-story XML fragments for field-closure validation.
  *
  * Each footnote/endnote entry is treated as an isolated story: a complex
@@ -423,154 +420,6 @@ export function splitStories(
   collectEntries(endnotesXmls, 'w:endnote', 'endnote');
 
   return stories;
-}
-
-/**
- * Validate field structure integrity across one or more document stories.
- *
- * Enforces three constraints on complex fields **per story**:
- *   1. `w:fldChar` begin/end count balance within the story.
- *   2. Every `w:instrText` AND `w:delInstrText` sits inside an open field body
- *      (between `begin` and `separate`). Orphaned instruction text renders as
- *      literal text in Word.
- *   3. `w:delInstrText` is nested inside a `<w:del>` ancestor (DeletedFieldCode
- *      schema constraint), and conversely `w:fldChar` is NEVER inside `<w:del>`
- *      (Word treats this as fatal and discards the field state machine).
- *
- * Called on both pre-accept/reject combined XML (with track-change wrappers)
- * and on post-accept/reject XML (wrappers removed). Both cases must satisfy the
- * field placement check; constraint (3) is vacuous post-accept/reject.
- *
- * Accepts either a single XML string (legacy single-story call) or an array of
- * `FieldStory` fragments. Stories are validated independently and short-circuit
- * on the first failure.
- *
- * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
- */
-/**
- * Targeted check for one of the constraints above: `w:fldChar` MUST NOT appear
- * inside any `<w:del>` element. Word treats this violation as fatal — the
- * field state machine is discarded and the field renders as literal-text
- * fallback.
- *
- * Used as a combined-output safety gate alongside the per-projection
- * `validateFieldStructure` checks. Kept narrower than the full structural
- * validation so that legacy shapes (e.g. `delInstrText` inside `<w:moveFrom>`)
- * don't trigger fallback when the inplace candidate is otherwise sound on its
- * accept/reject projections.
- *
- * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
- * @see https://github.com/UseJunior/safe-docx/issues/217
- */
-export function hasFldCharInsideDel(documentXml: string): boolean {
-  const root = parseDocumentXml(documentXml);
-  let insideDelDepth = 0;
-  let violation = false;
-
-  function scan(node: Element): void {
-    if (violation) return;
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      if (child.nodeType !== 1) continue;
-      const el = child as Element;
-      const tag = el.tagName;
-      if (tag === 'w:del') {
-        insideDelDepth++;
-        scan(el);
-        insideDelDepth--;
-        if (violation) return;
-        continue;
-      }
-      if (tag === 'w:fldChar' && insideDelDepth > 0) {
-        violation = true;
-        return;
-      }
-      scan(el);
-      if (violation) return;
-    }
-  }
-  scan(root);
-  return violation;
-}
-
-export function validateFieldStructure(input: string | FieldStory[]): boolean {
-  if (typeof input === 'string') {
-    return validateFieldStructureForStory(input);
-  }
-  for (const story of input) {
-    if (!validateFieldStructureForStory(story.xml)) return false;
-  }
-  return true;
-}
-
-function validateFieldStructureForStory(documentXml: string): boolean {
-  const root = parseDocumentXml(documentXml);
-
-  const allFldChars = findAllByTagName(root, 'w:fldChar');
-  const allInstrTexts = findAllByTagName(root, 'w:instrText');
-  const allDelInstrTexts = findAllByTagName(root, 'w:delInstrText');
-
-  // Constraint (1): global fldChar begin/end balance.
-  let begins = 0;
-  let ends = 0;
-  for (const fc of allFldChars) {
-    const type = fc.getAttribute('w:fldCharType');
-    if (type === 'begin') begins++;
-    else if (type === 'end') ends++;
-  }
-  if (begins !== ends) return false;
-
-  if (
-    allFldChars.length === 0 &&
-    allInstrTexts.length === 0 &&
-    allDelInstrTexts.length === 0
-  ) {
-    return true;
-  }
-
-  // Depth-first scan tracking field nesting (for constraint 2) and <w:del>
-  // ancestor nesting (for constraint 3).
-  let depth = 0;
-  const pastSeparatorAtDepth: number[] = [];
-  let insideDelDepth = 0;
-
-  function scan(node: Element): boolean {
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      if (child.nodeType !== 1) continue;
-      const el = child as Element;
-      const tag = el.tagName;
-
-      if (tag === 'w:del') {
-        insideDelDepth++;
-        const ok = scan(el);
-        insideDelDepth--;
-        if (!ok) return false;
-        continue;
-      }
-
-      if (tag === 'w:fldChar') {
-        if (insideDelDepth > 0) return false;
-        const type = el.getAttribute('w:fldCharType');
-        if (type === 'begin') {
-          depth++;
-          pastSeparatorAtDepth[depth] = 0;
-        } else if (type === 'separate') {
-          if (depth > 0) pastSeparatorAtDepth[depth] = 1;
-        } else if (type === 'end') {
-          if (depth > 0) depth--;
-        }
-      } else if (tag === 'w:instrText') {
-        if (depth === 0 || pastSeparatorAtDepth[depth]) return false;
-      } else if (tag === 'w:delInstrText') {
-        if (insideDelDepth === 0) return false;
-        if (depth === 0 || pastSeparatorAtDepth[depth]) return false;
-      }
-
-      if (!scan(el)) return false;
-    }
-    return true;
-  }
-
-  return scan(root);
 }
 
 function evaluateSafetyChecks(
