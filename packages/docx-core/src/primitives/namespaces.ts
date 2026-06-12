@@ -100,6 +100,7 @@ export const W = {
   bottom: 'bottom',
   left: 'left',
   right: 'right',
+  end: 'end',
   val: 'val',
   hRule: 'hRule',
   w: 'w',
