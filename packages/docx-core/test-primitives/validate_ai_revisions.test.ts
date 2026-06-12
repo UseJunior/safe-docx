@@ -231,7 +231,7 @@ describe('validateAiRevisions', () => {
     const result = await validateBody(
       `<w:p>` +
       `<w:moveFromRangeStart w:id="21" w:author="${AI}" w:date="2026-01-01T00:00:00Z" w:name="move1"/>` +
-      `<w:moveFrom w:id="22" w:author="${AI}" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Moved</w:t></w:r></w:moveFrom>` +
+      `<w:moveFrom w:id="22" w:author="${AI}" w:date="2026-01-01T00:00:00Z"><w:r><w:delText>Moved</w:delText></w:r></w:moveFrom>` +
       `<w:moveFromRangeEnd w:id="21"/>` +
       `</w:p>`,
       { revisionIds: ['21', '22'] },

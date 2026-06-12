@@ -66,8 +66,21 @@ export function collectFieldStructureIssues(input: string | FieldStory[]): Field
   return issues;
 }
 
+/**
+ * Text-placement rules added for the AI revision validator. They are NOT part
+ * of `validateFieldStructure`: that boolean is pinned extensionally against
+ * the Lean model (`Tier2.FieldStructure.validateFieldStructure`) by the Lean
+ * differential harness, so its rule set must not grow.
+ */
+const TEXT_PLACEMENT_ISSUE_CODES = new Set([
+  'TEXT_INSIDE_DELETION',
+  'DELETED_TEXT_OUTSIDE_DELETION',
+]);
+
 export function validateFieldStructure(input: string | FieldStory[]): boolean {
-  return collectFieldStructureIssues(input).length === 0;
+  return collectFieldStructureIssues(input)
+    .filter((issue) => !TEXT_PLACEMENT_ISSUE_CODES.has(issue.code))
+    .length === 0;
 }
 
 function collectFieldStructureIssuesForStory(documentXml: string, story: string): FieldStructureIssue[] {
@@ -107,6 +120,10 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
   let depth = 0;
   const pastSeparatorAtDepth: number[] = [];
   let insideDelDepth = 0;
+  // Move-sources (w:moveFrom) carry deletion-flavored content (w:delText)
+  // per the OOXML revision model; the text-placement rules treat them as
+  // deletion contexts. The Lean-pinned field rules above use only w:del.
+  let insideMoveFromDepth = 0;
 
   function push(code: string, message: string, element: string): void {
     issues.push({ code, message, story, element });
@@ -121,6 +138,13 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
         insideDelDepth++;
         scan(el);
         insideDelDepth--;
+        continue;
+      }
+
+      if (isW(el, 'moveFrom')) {
+        insideMoveFromDepth++;
+        scan(el);
+        insideMoveFromDepth--;
         continue;
       }
 
@@ -148,10 +172,10 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
         if (depth === 0 || pastSeparatorAtDepth[depth]) {
           push('DELETED_INSTRUCTION_TEXT_OUTSIDE_FIELD_CODE', 'w:delInstrText must appear inside an open field code region', 'w:delInstrText');
         }
-      } else if (isW(el, 't') && insideDelDepth > 0) {
-        push('TEXT_INSIDE_DELETION', 'w:t must not appear inside w:del; use w:delText', 'w:t');
-      } else if (isW(el, 'delText') && insideDelDepth === 0) {
-        push('DELETED_TEXT_OUTSIDE_DELETION', 'w:delText must appear inside w:del', 'w:delText');
+      } else if (isW(el, 't') && (insideDelDepth > 0 || insideMoveFromDepth > 0)) {
+        push('TEXT_INSIDE_DELETION', 'w:t must not appear inside w:del or w:moveFrom; use w:delText', 'w:t');
+      } else if (isW(el, 'delText') && insideDelDepth === 0 && insideMoveFromDepth === 0) {
+        push('DELETED_TEXT_OUTSIDE_DELETION', 'w:delText must appear inside w:del or w:moveFrom', 'w:delText');
       }
 
       scan(el);

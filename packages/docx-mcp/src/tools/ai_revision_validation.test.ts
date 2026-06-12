@@ -162,8 +162,12 @@ describe('AI revision validation guard', () => {
       openSession([], {
         mgr: manager(),
         xml: documentXml(
+          // Schema-valid but validator-flagged: w:date is optional in the OOXML
+          // schema yet required by the AI revision validator, so the missing
+          // date is a foreign warning without polluting the emitted-XML
+          // schema corpus captured in CI.
           `<w:p><w:r><w:t>Alpha</w:t></w:r>` +
-          `<w:del w:id="foreign" w:author="Human" w:date="bad-date"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+          `<w:del w:id="901" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
         ),
       }),
     );
@@ -224,9 +228,11 @@ describe('AI revision validation guard', () => {
       openSession([], {
         mgr: manager(),
         xml: documentXml(
+          // Foreign del intentionally lacks w:date (schema-valid, validator
+          // warning) — see comment in the foreign-anomalies write test.
           `<w:p>` +
           `<w:ins w:id="5" w:author="${AI}" w:date="2026-01-01T00:00:00Z"><w:r><w:t>AI</w:t></w:r></w:ins>` +
-          `<w:del w:id="bad" w:author="Human" w:date="bad-date"><w:r><w:delText>Human</w:delText></w:r></w:del>` +
+          `<w:del w:id="902" w:author="Human"><w:r><w:delText>Human</w:delText></w:r></w:del>` +
           `</w:p>`,
         ),
       }),
