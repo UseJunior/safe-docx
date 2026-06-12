@@ -1,5 +1,5 @@
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
-import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
+import { beginGuardedAiWrite, rollbackGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -115,7 +115,8 @@ export async function addComment(
       file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
-    if (guard) await guard.rollback();
+    const guardFailure = await rollbackGuardedAiWrite(guard, e);
+    if (guardFailure) return guardFailure;
     return err('COMMENT_ERROR', errorMessage(e));
   }
 }

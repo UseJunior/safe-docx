@@ -8,4 +8,5 @@
 - [x] 1.7 Add save-time revision validation gate.
 - [x] 1.8 Add focused validator and rollback tests.
 - [x] 1.9 Update SUPPORT.md and conformance registry citations as needed.
-- [ ] 1.10 Run OpenSpec validation, build, lint, tests, and conformance checks.
+- [x] 1.10 Run OpenSpec validation, build, lint, tests, and conformance checks.
+- [x] 1.11 Peer-review fixes: baseline-first marker severity (comment/perm id spaces), core post-write asserts on every RevisionContext-bearing write method, per-family positive/negative validator coverage, instrText field-state check, document-wide id uniqueness, corpus dry-run.

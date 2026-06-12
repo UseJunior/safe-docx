@@ -1,6 +1,7 @@
 import {
   createRevisionIdState,
   partitionRevisionValidationIssues,
+  RevisionValidationError,
   validateRevisions,
   type RevisionIdState,
   type RevisionValidationIssue,
@@ -35,6 +36,25 @@ export type AiWriteGuard = {
   rollback(): Promise<void>;
 };
 
+/**
+ * Roll back a guarded write after a thrown error. Returns a
+ * REVISION_VALIDATION_FAILED response when the throw came from the core
+ * post-write revision assert, so tools surface the same error code whether
+ * validation fails in docx-core or in the MCP guard; returns null for other
+ * errors so the tool's own error mapping applies.
+ */
+export async function rollbackGuardedAiWrite(guard: AiWriteGuard | null, e: unknown): Promise<ToolResponse | null> {
+  if (guard) await guard.rollback();
+  if (e instanceof RevisionValidationError) {
+    return err(
+      'REVISION_VALIDATION_FAILED',
+      `AI-emitted revision validation failed: ${summarizeIssues(e.issues)}`,
+      'The attempted edit was rolled back; the session remains usable.',
+    );
+  }
+  return null;
+}
+
 export async function beginGuardedAiWrite(session: DocxSession): Promise<AiWriteGuard> {
   const documentSnapshot = await session.doc.createSnapshot();
   const revisionIdStateSnapshot = cloneRevisionIdState(session.revisionIdState);
@@ -53,19 +73,13 @@ export async function beginGuardedAiWrite(session: DocxSession): Promise<AiWrite
     rollback,
     async verify(): Promise<ToolResponse | null> {
       if (!session.revisionIdState || !session.aiAuthor) return null;
-      const parts = await session.doc.getRevisionValidationParts();
-      const issues = validateRevisions(parts, {
+      const scope = {
         sessionStartId: session.revisionIdState.startId,
         expectedAuthor: session.aiAuthor,
-      });
-      const severity = partitionRevisionValidationIssues(
-        issues,
-        {
-          sessionStartId: session.revisionIdState.startId,
-          expectedAuthor: session.aiAuthor,
-        },
-        session.validationBaseline,
-      );
+      };
+      const parts = await session.doc.getRevisionValidationParts();
+      const issues = validateRevisions(parts, scope);
+      const severity = partitionRevisionValidationIssues(issues, scope, session.validationBaseline);
       if (severity.errors.length === 0) return null;
       await rollback();
       return err(

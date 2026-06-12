@@ -243,18 +243,12 @@ export async function save(
     const validation = session.doc.validate();
     let revisionValidationWarning: string | undefined;
     if (session.revisionIdState && session.aiAuthor) {
-      const revisionIssues = validateRevisions(await session.doc.getRevisionValidationParts(), {
+      const revisionScope = {
         sessionStartId: session.revisionIdState.startId,
         expectedAuthor: session.aiAuthor,
-      });
-      const severity = partitionRevisionValidationIssues(
-        revisionIssues,
-        {
-          sessionStartId: session.revisionIdState.startId,
-          expectedAuthor: session.aiAuthor,
-        },
-        session.validationBaseline,
-      );
+      };
+      const revisionIssues = validateRevisions(await session.doc.getRevisionValidationParts(), revisionScope);
+      const severity = partitionRevisionValidationIssues(revisionIssues, revisionScope, session.validationBaseline);
       if (severity.errors.length > 0) {
         const preview = severity.errors
           .slice(0, 5)

@@ -14,6 +14,7 @@ export const REVISION_ID_ELEMENT_LOCAL_NAMES = new Set<string>([
   'pPrChange',
   'rPrChange',
   'tblPrChange',
+  'tblPrExChange',
   'tblGridChange',
   'trPrChange',
   'tcPrChange',
@@ -54,13 +55,16 @@ export const REVISION_ELEMENT_RULES: Readonly<Record<string, RevisionRule>> = {
   pPrChange: { requiredAttrs: TRACK_CHANGE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
   rPrChange: { requiredAttrs: TRACK_CHANGE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
   tblPrChange: { requiredAttrs: TRACK_CHANGE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
+  tblPrExChange: { requiredAttrs: TRACK_CHANGE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
   trPrChange: { requiredAttrs: TRACK_CHANGE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
   tcPrChange: { requiredAttrs: TRACK_CHANGE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
-  sectPrChange: { requiredAttrs: TRACK_CHANGE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
-  cellIns: { requiredAttrs: TRACK_CHANGE_WITH_DATE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
-  cellDel: { requiredAttrs: TRACK_CHANGE_WITH_DATE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
-  cellMerge: { requiredAttrs: TRACK_CHANGE_WITH_DATE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
-  numberingChange: { requiredAttrs: TRACK_CHANGE_WITH_DATE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true },
+  // sectPrChange's sectPr child is schema-optional; the cell/numbering markers
+  // are empty elements by schema (their revision payload is attribute-only).
+  sectPrChange: { requiredAttrs: TRACK_CHANGE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true, allowEmpty: true },
+  cellIns: { requiredAttrs: TRACK_CHANGE_WITH_DATE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true, allowEmpty: true },
+  cellDel: { requiredAttrs: TRACK_CHANGE_WITH_DATE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true, allowEmpty: true },
+  cellMerge: { requiredAttrs: TRACK_CHANGE_WITH_DATE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true, allowEmpty: true },
+  numberingChange: { requiredAttrs: TRACK_CHANGE_WITH_DATE_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true, allowEmpty: true },
   tblGridChange: { requiredAttrs: MARKUP_ATTRS },
   moveFromRangeStart: { requiredAttrs: MOVE_BOOKMARK_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true, range: 'start', pairWith: 'moveFromRangeEnd', allowEmpty: true },
   moveToRangeStart: { requiredAttrs: MOVE_BOOKMARK_ATTRS, requiresAuthorMatch: true, requiresDatePolicy: true, range: 'start', pairWith: 'moveToRangeEnd', allowEmpty: true },
@@ -93,6 +97,18 @@ const RANGE_END_LOCAL_NAMES = new Set(
     .map(([localName]) => localName),
 );
 
+/**
+ * Marker families whose `w:id` values are allocated from the session
+ * RevisionIdState. Comment ranges and permission ranges use independent id
+ * spaces (deliberately excluded from the revision-id seed), so their ids must
+ * never be attributed to the session by numeric range.
+ */
+const REVISION_ID_SPACE_MARKER_LOCAL_NAMES = new Set<string>(
+  Object.entries(REVISION_ELEMENT_RULES)
+    .filter(([, rule]) => rule.range !== undefined)
+    .map(([localName]) => localName),
+);
+
 export type RevisionValidationIssue = {
   code: string;
   message: string;
@@ -107,8 +123,13 @@ export type RevisionValidationIssue = {
 };
 
 export type AiRevisionScope = {
+  /**
+   * First session-owned revision id. MUST be seeded above every revision id
+   * already present in the document (see inferStartingRevisionIdState in
+   * @usejunior/docx-mcp): the severity model attributes any revision-element
+   * id >= sessionStartId to the session.
+   */
   sessionStartId: number;
-  sessionEndId?: number;
   expectedAuthor?: string | null;
 };
 
@@ -176,7 +197,10 @@ function isRevisionPropertyMark(element: Element): boolean {
   const parent = element.parentNode;
   if (!parent || parent.nodeType !== 1) return false;
   const parentElement = parent as Element;
-  return parentElement.namespaceURI === WORD_NS && parentElement.localName === W.rPr;
+  if (parentElement.namespaceURI !== WORD_NS) return false;
+  // Empty by design: paragraph-mark revisions inside w:rPr and row
+  // insertion/deletion markers inside w:trPr.
+  return parentElement.localName === W.rPr || parentElement.localName === 'trPr';
 }
 
 function issue(
@@ -201,9 +225,14 @@ function getElements(doc: Document): Element[] {
   return Array.from(doc.getElementsByTagName('*'));
 }
 
-function validateRevisionElements(part: RevisionValidationPart, scope?: AiRevisionScope): RevisionValidationIssue[] {
+function validateRevisionElements(
+  part: RevisionValidationPart,
+  scope: AiRevisionScope | undefined,
+  // Revision ids are allocated from one counter spanning document.xml and
+  // side-story parts, so uniqueness is checked document-wide.
+  seenUniqueIds: Map<number, string>,
+): RevisionValidationIssue[] {
   const issues: RevisionValidationIssue[] = [];
-  const seenUniqueIds = new Map<number, string>();
 
   for (const element of getElements(part.doc)) {
     if (element.namespaceURI && element.namespaceURI !== WORD_NS) continue;
@@ -313,9 +342,20 @@ function validateBalancedRanges(part: RevisionValidationPart): RevisionValidatio
 function validateFieldStructure(part: RevisionValidationPart): RevisionValidationIssue[] {
   const issues: RevisionValidationIssue[] = [];
   let depth = 0;
+  let instrTextOutsideField = false;
 
-  for (const fldChar of Array.from(part.doc.getElementsByTagNameNS(WORD_NS, W.fldChar))) {
-    const type = getWAttr(fldChar, 'fldCharType');
+  // Single document-order walk tracks complex-field state, so instruction
+  // text can be checked against the field state machine (OOXML § 17.16.5:
+  // instrText belongs between a begin fldChar and its separate/end).
+  for (const element of getElements(part.doc)) {
+    if (element.namespaceURI && element.namespaceURI !== WORD_NS) continue;
+    const localName = element.localName ?? '';
+    if (localName === 'instrText' || localName === 'delInstrText') {
+      if (depth === 0) instrTextOutsideField = true;
+      continue;
+    }
+    if (localName !== 'fldChar') continue;
+    const type = getWAttr(element, 'fldCharType');
     if (type === 'begin') {
       depth++;
     } else if (type === 'end') {
@@ -330,6 +370,15 @@ function validateFieldStructure(part: RevisionValidationPart): RevisionValidatio
         depth = 0;
       }
     }
+  }
+
+  if (instrTextOutsideField) {
+    issues.push(issue('INSTRTEXT_OUTSIDE_FIELD', 'instruction text appears outside any fldChar begin/end sequence', {
+      partName: part.partName,
+      element: 'w:instrText',
+      markerId: 'field',
+      localName: 'instrText',
+    }));
   }
 
   if (depth > 0) {
@@ -387,9 +436,10 @@ export function validateRevisions(
   scope?: AiRevisionScope,
 ): RevisionValidationIssue[] {
   const issues: RevisionValidationIssue[] = [];
+  const seenUniqueIds = new Map<number, string>();
   for (const part of parts) {
     issues.push(
-      ...validateRevisionElements(part, scope),
+      ...validateRevisionElements(part, scope, seenUniqueIds),
       ...validateBalancedRanges(part),
       ...validateFieldStructure(part),
       ...validateElementTypeRules(part),
@@ -422,7 +472,7 @@ export function partitionRevisionValidationIssues(
   for (const validationIssue of issues) {
     const id = validationIssue.context?.id;
     if (scope && id !== undefined) {
-      if (id >= scope.sessionStartId && (scope.sessionEndId === undefined || id < scope.sessionEndId)) {
+      if (id >= scope.sessionStartId) {
         errors.push(validationIssue);
       } else {
         warnings.push(validationIssue);
@@ -431,22 +481,34 @@ export function partitionRevisionValidationIssues(
     }
 
     const markerId = validationIssue.context?.markerId;
-    if (scope && markerId && /^\d+$/.test(markerId)) {
+
+    // Baseline taint/fingerprint outranks session-range attribution: comment
+    // and permission marker ids live in id spaces that are NOT seeded into
+    // RevisionIdState, so a pre-existing marker id can numerically fall inside
+    // the session id range without being session-emitted.
+    if (baseline) {
+      const tainted = markerId ? baseline.taintedMarkerIds.has(markerId) : false;
+      if (tainted || baseline.issueFingerprints.has(validationIssue.fingerprint)) {
+        warnings.push(validationIssue);
+      } else {
+        errors.push(validationIssue);
+      }
+      continue;
+    }
+
+    // No baseline (core post-write assert path): attribute marker defects to
+    // the session only for marker families whose ids are allocated from the
+    // revision id space.
+    const localName = validationIssue.context?.localName;
+    if (
+      scope && markerId && /^\d+$/.test(markerId)
+      && localName && REVISION_ID_SPACE_MARKER_LOCAL_NAMES.has(localName)
+    ) {
       const numericMarkerId = Number.parseInt(markerId, 10);
-      if (numericMarkerId >= scope.sessionStartId && (scope.sessionEndId === undefined || numericMarkerId < scope.sessionEndId)) {
+      if (numericMarkerId >= scope.sessionStartId) {
         errors.push(validationIssue);
         continue;
       }
-    }
-
-    if (baseline) {
-      const tainted = markerId ? baseline.taintedMarkerIds.has(markerId) : false;
-      if (!tainted && !baseline.issueFingerprints.has(validationIssue.fingerprint)) {
-        errors.push(validationIssue);
-      } else {
-        warnings.push(validationIssue);
-      }
-      continue;
     }
 
     warnings.push(validationIssue);

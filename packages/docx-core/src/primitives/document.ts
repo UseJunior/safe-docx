@@ -538,7 +538,6 @@ export class DocxDocument {
     if (!ctx) return;
     assertValidAiRevisions(await this.getRevisionValidationParts(), {
       sessionStartId: ctx.idState.startId,
-      sessionEndId: ctx.idState.nextId,
       expectedAuthor: ctx.author,
     });
   }
@@ -547,7 +546,6 @@ export class DocxDocument {
     if (!ctx) return;
     assertValidAiRevisions([{ partName: 'word/document.xml', doc: this.documentXml }], {
       sessionStartId: ctx.idState.startId,
-      sessionEndId: ctx.idState.nextId,
       expectedAuthor: ctx.author,
     });
   }
@@ -1053,6 +1051,7 @@ export class DocxDocument {
     if (result.affectedParagraphs > 0) {
       this.dirty = true;
       this.documentViewCache = null;
+      this.assertDocumentXmlRevisionsValid(ctx);
     }
     return result;
   }
@@ -1065,6 +1064,7 @@ export class DocxDocument {
     if (result.affectedRows > 0) {
       this.dirty = true;
       this.documentViewCache = null;
+      this.assertDocumentXmlRevisionsValid(ctx);
     }
     return result;
   }
@@ -1077,6 +1077,7 @@ export class DocxDocument {
     if (result.affectedCells > 0) {
       this.dirty = true;
       this.documentViewCache = null;
+      this.assertDocumentXmlRevisionsValid(ctx);
     }
     return result;
   }
@@ -1133,6 +1134,7 @@ export class DocxDocument {
 
     this.dirty = true;
     this.documentViewCache = null;
+    await this.assertPostWriteRevisionsValid(ctx);
     return result;
   }
 
@@ -1158,6 +1160,7 @@ export class DocxDocument {
 
     this.dirty = true;
     this.documentViewCache = null;
+    await this.assertPostWriteRevisionsValid(ctx);
     return result;
   }
 
@@ -1173,6 +1176,7 @@ export class DocxDocument {
     await deleteCommentImpl(this.documentXml, this.zip, params, ctx);
     this.dirty = true;
     this.documentViewCache = null;
+    await this.assertPostWriteRevisionsValid(ctx);
   }
 
   // ── Footnote methods ──────────────────────────────────────────────────
@@ -1258,6 +1262,7 @@ export class DocxDocument {
     await this.refreshFootnotesXml();
     this.dirty = true;
     this.documentViewCache = null;
+    await this.assertPostWriteRevisionsValid(ctx);
     return result;
   }
 
@@ -1269,6 +1274,7 @@ export class DocxDocument {
     await this.refreshFootnotesXml();
     this.dirty = true;
     this.documentViewCache = null;
+    await this.assertPostWriteRevisionsValid(ctx);
   }
 
   /**
@@ -1279,6 +1285,7 @@ export class DocxDocument {
     await this.refreshFootnotesXml();
     this.dirty = true;
     this.documentViewCache = null;
+    await this.assertPostWriteRevisionsValid(ctx);
   }
 
   /**

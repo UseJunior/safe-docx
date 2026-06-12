@@ -394,7 +394,10 @@ describe('DocxDocument.insertParagraph tracked-change emission', () => {
         createRevisionContext({
           author: 'SafeDocX AI',
           date: '2026-05-03T22:30:00Z',
-          idState: createRevisionIdState(),
+          // Seeded above the fixture's stale ids (900-903), matching the
+          // session invariant that startId exceeds every pre-existing
+          // revision id (inferStartingRevisionIdState).
+          idState: createRevisionIdState(904),
         }),
       );
       const insertedId = paragraphOrder(document)[1]!;

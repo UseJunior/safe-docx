@@ -7,7 +7,7 @@ import {
   type ReplacementPart,
 } from '@usejunior/docx-core';
 import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
-import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
+import { beginGuardedAiWrite, rollbackGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { RESULT_PREVIEW_CHARS, previewText } from './preview.js';
@@ -219,7 +219,8 @@ export async function insertParagraph(
     }
     return ok(mergeSessionResolutionMetadata(responseData, metadata));
   } catch (e: unknown) {
-    if (guard) await guard.rollback();
+    const guardFailure = await rollbackGuardedAiWrite(guard, e);
+    if (guardFailure) return guardFailure;
     return err('INSERT_ERROR', `Failed to insert paragraph: ${errorMessage(e)}`);
   }
 }

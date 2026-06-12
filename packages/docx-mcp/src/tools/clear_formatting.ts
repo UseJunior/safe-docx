@@ -1,5 +1,5 @@
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
-import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
+import { beginGuardedAiWrite, rollbackGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { ok, err, type ToolResponse } from './types.js';
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import {
@@ -146,7 +146,8 @@ export async function clearFormatting(
       paragraphs_modified: modifiedCount,
     }, metadata));
   } catch (e: any) {
-    if (guard) await guard.rollback();
+    const guardFailure = await rollbackGuardedAiWrite(guard, e);
+    if (guardFailure) return guardFailure;
     return err('CLEAR_FORMATTING_ERROR', `Failed to clear formatting: ${e.message}`);
   }
 }

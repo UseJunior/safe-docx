@@ -1,5 +1,5 @@
 import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
-import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
+import { beginGuardedAiWrite, rollbackGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { ERROR_PREVIEW_CHARS, RESULT_PREVIEW_CHARS, previewText } from './preview.js';
@@ -250,6 +250,7 @@ export async function replaceText(
       if (revisionCtx) {
         replaceParagraphTextRange(pEl, matchStart, matchEnd, replaceText, revisionCtx);
         invalidateDocumentCaches(session.doc);
+        await session.doc.validateAfterExternalRevisionWrite(revisionCtx);
       } else {
         session.doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText });
       }
@@ -282,6 +283,7 @@ export async function replaceText(
         if (revisionCtx) {
           replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, revisionCtx);
           invalidateDocumentCaches(session.doc);
+          await session.doc.validateAfterExternalRevisionWrite(revisionCtx);
         } else {
           session.doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
         }
@@ -307,7 +309,8 @@ export async function replaceText(
       after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
     }, metadata));
   } catch (e: unknown) {
-    if (guard) await guard.rollback();
+    const guardFailure = await rollbackGuardedAiWrite(guard, e);
+    if (guardFailure) return guardFailure;
     const msg = errorMessage(e);
     return err('EDIT_ERROR', `Failed to edit document: ${msg}`);
   }

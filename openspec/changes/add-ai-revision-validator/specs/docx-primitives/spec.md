@@ -19,3 +19,14 @@ The docx-primitives library SHALL validate AI-emitted WordprocessingML revision 
 - **WHEN** the validator scans revision-bearing WordprocessingML elements
 - **THEN** it SHALL recognize insertion, deletion, move, property-change, cell-change, table-grid-change, numbering-change, and customXml revision marker elements
 - **AND** range-end marker elements SHALL be paired by `w:id` rather than rejected for lacking author/date metadata
+
+#### Scenario: every revision element family has positive and negative validation coverage
+- **WHEN** a schema-valid fixture for each revision element family is validated
+- **THEN** the validator SHALL report no issues
+- **AND** removing a required attribute from each family's fixture SHALL report a missing-attribute issue
+
+#### Scenario: pre-existing non-revision marker defects are never attributed to the session
+- **GIVEN** a comment or permission range marker whose numeric id falls inside the session revision-id range
+- **AND** the marker defect existed when the session baseline was computed
+- **WHEN** revision validation issues are partitioned by severity
+- **THEN** the defect SHALL remain a warning, because comment and permission marker ids are allocated outside the revision id space

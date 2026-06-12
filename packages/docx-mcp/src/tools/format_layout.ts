@@ -1,5 +1,5 @@
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
-import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
+import { beginGuardedAiWrite, rollbackGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -462,7 +462,8 @@ export async function formatLayout(
         : 'No document nodes matched the provided selectors.',
     }, metadata));
   } catch (e: unknown) {
-    if (guard) await guard.rollback();
+    const guardFailure = await rollbackGuardedAiWrite(guard, e);
+    if (guardFailure) return guardFailure;
     const message = errorMessage(e);
     return err('FORMAT_LAYOUT_ERROR', `Failed to apply layout formatting: ${message}`, 'Check selector inputs and retry.');
   }
