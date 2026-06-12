@@ -64,6 +64,18 @@ export interface SyntheticDocxOptions {
    * explicit move-range marker reconstruction (issue #110).
    */
   trackedMove?: { from: number; to: number; name: string; author?: string; firstId?: number };
+  /**
+   * Range permission spanning paragraphs. permStart opens at the start of
+   * paragraphs[start] and permEnd closes at the end of paragraphs[end].
+   * start === end yields a single-paragraph span around that paragraph's run.
+   */
+  permSpanParagraphs?: { start: number; end: number; id?: number };
+  /**
+   * Body-level (sibling of <w:p>) permStart/permEnd pair inserted between
+   * paragraphs[index - 1] and paragraphs[index]. Used to verify scaffold
+   * perm markers do not leak into reconstructed paragraphs.
+   */
+  siblingPermBefore?: { index: number; id?: number };
 }
 
 export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Buffer> {
@@ -74,6 +86,8 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const hasBookmark = opts.bookmarkOnParagraph != null;
   const hasSiblingBookmark = opts.siblingBookmarkBefore != null;
   const hasSiblingCommentRange = opts.siblingCommentRange != null;
+  const hasPermSpan = opts.permSpanParagraphs != null;
+  const hasSiblingPerm = opts.siblingPermBefore != null;
 
   if ([hasComment, hasCommentSpan, hasSiblingCommentRange].filter(Boolean).length > 1) {
     throw new Error(
@@ -89,6 +103,10 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const moveAuthor = opts.trackedMove?.author ?? 'Mover';
   const moveBaseId = opts.trackedMove?.firstId ?? 300;
   const moveDate = '2025-01-01T00:00:00Z';
+  const permId = opts.permSpanParagraphs?.id ?? 500;
+  const siblingPermId = opts.siblingPermBefore?.id ?? 600;
+  const permSpanStart = opts.permSpanParagraphs?.start;
+  const permSpanEnd = opts.permSpanParagraphs?.end;
 
   const paragraphParts: string[] = opts.paragraphs.map((text, idx) => {
     const escaped = text
@@ -163,6 +181,14 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
       );
     }
 
+    if (hasPermSpan && (idx === permSpanStart || idx === permSpanEnd)) {
+      const before = idx === permSpanStart
+        ? `<w:permStart w:id="${permId}" w:edGrp="everyone"/>`
+        : '';
+      const after = idx === permSpanEnd ? `<w:permEnd w:id="${permId}"/>` : '';
+      return `<w:p>${before}<w:r><w:t>${escaped}</w:t></w:r>${after}${extra}</w:p>`;
+    }
+
     return `<w:p><w:r><w:t>${escaped}</w:t></w:r>${extra}</w:p>`;
   });
 
@@ -188,6 +214,16 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     );
     paragraphParts.splice(endAfterParagraph + 1, 0, `<w:commentRangeEnd w:id="1"/>`);
     paragraphParts.splice(startBeforeParagraph, 0, `<w:commentRangeStart w:id="1"/>`);
+  }
+
+  // Inject a body-level (sibling of <w:p>) permStart/permEnd pair before
+  // paragraphs[index], mirroring the sibling-bookmark scaffold shape above.
+  if (hasSiblingPerm) {
+    const { index } = opts.siblingPermBefore!;
+    const sibling =
+      `<w:permStart w:id="${siblingPermId}" w:edGrp="everyone"/>` +
+      `<w:permEnd w:id="${siblingPermId}"/>`;
+    paragraphParts.splice(index, 0, sibling);
   }
 
   const paragraphsXml = paragraphParts.join('\n    ');

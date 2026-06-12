@@ -201,8 +201,10 @@ const LEAF_NODE_TAGS = new Set([
   'w:footnoteReference', // Footnote reference
   'w:endnoteReference', // Endnote reference
   'w:commentReference', // Comment reference anchor (run-level child).
-  // Note: w:commentRangeStart / w:commentRangeEnd / w:bookmarkStart / w:bookmarkEnd
-  // are paragraph-level markers (siblings of <w:r>, not children). They are
+  // Note: w:commentRangeStart / w:commentRangeEnd / w:bookmarkStart /
+  // w:bookmarkEnd / w:moveFromRangeStart/End / w:moveToRangeStart/End /
+  // w:permStart / w:permEnd are paragraph-level markers
+  // (siblings of <w:r>, not children). They are
   // tracked in PARAGRAPH_LEVEL_TAGS below and atomized via a separate branch in
   // atomizeTreeInternal so the reconstructor can emit them outside synthetic
   // <w:r> wrappers.
@@ -223,15 +225,16 @@ const LEAF_NODE_TAGS = new Set([
  * rebuild reconstructor emits them as siblings of <w:r>, not leaves wrapped in
  * a synthetic run.
  *
- * Scope: commentRange, bookmark, and moveFromRange / moveToRange. Explicit
- * move-range markers coexist with the synthetic emission in wrapWithMoveFrom
- * and wrapWithMoveTo: the reconstructor suppresses synthesis for paragraphs
- * whose atom stream already carries explicit markers of the same kind, so the
- * two paths never double-emit. permStart / permEnd is deferred to a follow-up
- * issue — it needs fixture coverage.
+ * Scope: commentRange, bookmark, moveFromRange / moveToRange, and
+ * range-permission (permStart / permEnd) markers. Explicit move-range markers
+ * coexist with the synthetic emission in wrapWithMoveFrom and wrapWithMoveTo:
+ * the reconstructor suppresses synthesis for paragraphs whose atom stream
+ * already carries explicit markers of the same kind, so the two paths never
+ * double-emit.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5
  * @see https://github.com/UseJunior/safe-docx/issues/110
+ * @see https://github.com/UseJunior/safe-docx/issues/111
  */
 export const PARAGRAPH_LEVEL_TAGS = new Set([
   'w:commentRangeStart',
@@ -242,6 +245,8 @@ export const PARAGRAPH_LEVEL_TAGS = new Set([
   'w:moveFromRangeEnd',
   'w:moveToRangeStart',
   'w:moveToRangeEnd',
+  'w:permStart',
+  'w:permEnd',
 ]);
 
 /**
@@ -283,8 +288,8 @@ export interface AtomizeTreeOptions {
   splitTextIntoWords?: boolean;
   /**
    * Atomize paragraph-level markers (commentRange*, bookmark*, moveFromRange*,
-   * moveToRange* — see PARAGRAPH_LEVEL_TAGS) so the rebuild reconstructor can
-   * re-emit them as siblings of <w:r>.
+   * moveToRange*, perm* — see PARAGRAPH_LEVEL_TAGS) so the rebuild
+   * reconstructor can re-emit them as siblings of <w:r>.
    *
    * MUST be false for inplace mode. Inplace handlers are run-anchored and
    * silently no-op on atoms with no sourceRunElement, but inplace's bookmark
@@ -312,7 +317,7 @@ export function isLeafNode(element: WmlElement): boolean {
  * Check if an element is a paragraph-level OOXML marker.
  *
  * Paragraph-level markers (PARAGRAPH_LEVEL_TAGS: commentRange*, bookmark*,
- * moveFromRange*, moveToRange*) are
+ * moveFromRange*, moveToRange*, perm*) are
  * atomized only when they sit inside a <w:p> ancestor — body/table-sibling
  * placements stay out of the atom stream and are handled by the scaffold-strip
  * block in the reconstructor.
@@ -527,8 +532,9 @@ function atomizeTreeInternal(
     isParagraphLevelLeaf(node) &&
     ancestors.some((a) => a.tagName === 'w:p')
   ) {
-    // Paragraph-level markers (commentRange*, bookmark*) inside a <w:p> become
-    // atoms so the rebuild reconstructor can re-emit them as siblings of <w:r>.
+    // Paragraph-level markers (commentRange*, bookmark*, perm*) inside a <w:p>
+    // become atoms so the rebuild reconstructor can re-emit them as siblings
+    // of <w:r>.
     // Body/table-sibling placements are intentionally skipped — they are
     // already handled by the scaffold-strip block in the reconstructor and
     // would otherwise misattach to the previous paragraph in

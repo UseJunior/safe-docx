@@ -1203,8 +1203,8 @@ function buildWholeParagraphRevisionContent(
 
 /**
  * Returns true when any atom in the group is a paragraph-level marker
- * (commentRange / bookmark / moveFromRange / moveToRange) that must be
- * emitted outside <w:r>.
+ * (commentRange / bookmark / moveFromRange / moveToRange / perm) that must
+ * be emitted outside <w:r>.
  */
 function groupHasParagraphLevelAtoms(group: RunGroup): boolean {
   for (const atom of group.atoms) {
@@ -1693,15 +1693,16 @@ function buildDocumentPreservingStructure(
     slot.parent.removeChild(slot.element);
   }
 
-  // Strip inter-paragraph bookmark/comment/move-range markers from the
-  // scaffold. These are bookmarkStart/End, commentRangeStart/End, and
-  // moveFromRange*/moveToRange* elements that were siblings of <w:p> in the
-  // original body. The paragraph rebuilder handles its own bookmark logic, so
-  // keeping these orphaned markers causes unmatched bookmark IDs. Body-level
-  // move-range markers are likewise scaffold remnants: in-paragraph markers
-  // travel through the atom stream, and detected moves synthesize fresh range
-  // pairs inside the reconstructed paragraphs, so a leftover body-level pair
-  // would either dangle or double an emitted range.
+  // Strip inter-paragraph bookmark/comment/move-range/permission markers from
+  // the scaffold. These are bookmarkStart/End, commentRangeStart/End,
+  // moveFromRange*/moveToRange*, and permStart/End elements that were siblings
+  // of <w:p> in the original body. The paragraph rebuilder handles its own
+  // bookmark logic, so keeping these orphaned markers causes unmatched
+  // bookmark IDs. Body-level move-range markers are likewise scaffold
+  // remnants: in-paragraph markers travel through the atom stream, and
+  // detected moves synthesize fresh range pairs inside the reconstructed
+  // paragraphs, so a leftover body-level pair would either dangle or double an
+  // emitted range.
   //
   // Comment range markers are treated differently: a sibling-level
   // commentRangeStart/End is the legitimate shape for a comment range that
@@ -1716,6 +1717,7 @@ function buildDocumentPreservingStructure(
     'w:commentRangeStart', 'w:commentRangeEnd',
     'w:moveFromRangeStart', 'w:moveFromRangeEnd',
     'w:moveToRangeStart', 'w:moveToRangeEnd',
+    'w:permStart', 'w:permEnd',
   ]);
   const COMMENT_RANGE_TAGS = new Set(['w:commentRangeStart', 'w:commentRangeEnd']);
   const commentRangeStartIds = new Set<string>();

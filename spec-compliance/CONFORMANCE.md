@@ -102,7 +102,8 @@ section.
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange`
 
 Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,
-`w:bookmarkStart`, `w:bookmarkEnd`, and the `pPrChange`/`rPrChange`
+`w:bookmarkStart`, `w:bookmarkEnd`, `w:permStart`, `w:permEnd`, and the
+`pPrChange`/`rPrChange`
 revision markers) are valid as direct children of `<w:p>` (and of revision
 wrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but
 never inside `<w:r>`. safe-docx's rebuild reconstructor emits them as

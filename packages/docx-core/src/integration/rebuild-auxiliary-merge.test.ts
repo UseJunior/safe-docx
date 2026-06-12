@@ -850,3 +850,118 @@ describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
     });
   });
 });
+
+describe('Range-permission marker reconstruction on rebuild (issue #111)', () => {
+  describe('Cross-paragraph permission span', () => {
+    test('rebuild keeps permStart and permEnd in their respective paragraphs', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has two plain paragraphs and revised adds a permission range spanning both', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+          permSpanParagraphs: { start: 0, end: 1 },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('start and end markers survive rebuild at paragraph level with matching ids', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        // Perm markers are paragraph-level; rebuild must NOT wrap them in <w:r>
+        expect(parts.documentXml).not.toMatch(/<w:r\b[^>]*>\s*<w:permStart\b/);
+        expect(parts.documentXml).not.toMatch(/<w:r\b[^>]*>\s*<w:permEnd\b/);
+
+        const starts = inspectElements(parts.documentXml, 'w:permStart');
+        const ends = inspectElements(parts.documentXml, 'w:permEnd');
+        expect(starts.length).toBe(1);
+        expect(ends.length).toBe(1);
+        expect(starts[0]!.idAttr).toBe(ends[0]!.idAttr);
+
+        const validParents = new Set(['w:p', 'w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
+        for (const m of [...starts, ...ends]) {
+          expect(m.ancestors).not.toContain('w:r');
+          expect(validParents.has(m.parent)).toBe(true);
+        }
+      });
+    });
+  });
+
+  describe('Sibling-style scaffold perm markers', () => {
+    test('body-level perm markers are stripped on rebuild and do not leak into reconstructed paragraphs', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('both sides have a sibling-style perm range between two paragraphs', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['Para A', 'Para B'],
+          siblingPermBefore: { index: 1, id: 999 },
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['Para A revised', 'Para B'],
+          siblingPermBefore: { index: 1, id: 999 },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the body-level perm markers are stripped from the rebuilt body', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        // Scaffold-strip removes body-level perm markers entirely — unlike
+        // bookmarks, nothing re-synthesizes perm recovery markers afterwards.
+        const starts = inspectElements(parts.documentXml, 'w:permStart').filter(
+          (m) => m.idAttr === '999'
+        );
+        const ends = inspectElements(parts.documentXml, 'w:permEnd').filter(
+          (m) => m.idAttr === '999'
+        );
+        expect(starts.length).toBe(0);
+        expect(ends.length).toBe(0);
+      });
+    });
+  });
+
+  describe('Inplace regression — permission span', () => {
+    test('inplace mode succeeds with a cross-paragraph permission span on the revised side', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has plain paragraphs and revised adds a spanning permission range', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+          permSpanParagraphs: { start: 0, end: 1 },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in inplace mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+      });
+
+      await then('inplace mode is used (no fallback) and output is loadable', async () => {
+        expect(result.reconstructionModeUsed).toBe('inplace');
+        const parts = await getResultParts(result.document);
+        expect(parts.documentXml).toContain('<w:body');
+      });
+    });
+  });
+});
