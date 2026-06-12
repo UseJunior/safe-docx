@@ -25,6 +25,7 @@ import {
 import { serializeToXml, cloneElement } from './xmlToWmlElement.js';
 import { EMPTY_PARAGRAPH_TAG, isParagraphLevelLeaf, nearestHyperlinkAncestor } from '../../atomizer.js';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
+import { placeParagraphMarkRevisionMarker } from './inPlaceModifier-wrappers.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
 
@@ -751,13 +752,20 @@ function serializePPrWithParaRevisionMarker(
     }
   }
 
-  // Insert revision marker at start of rPr.
-  const marker = createEl(markerTag, {
-    'w:id': String(id),
-    'w:author': author,
-    'w:date': dateStr,
-  });
-  rPr.insertBefore(marker, rPr.firstChild);
+  // Reuse a pre-existing paragraph-mark marker of the same kind cloned from the
+  // source pPr (issue #452): CT_ParaRPr allows at most one of each tracked-change
+  // child, and the source revision's metadata (author/date/id) outranks a
+  // synthetic duplicate. Either way the marker is placed in its schema-correct
+  // slot ahead of formatting children.
+  const existingMarker = findChildByTagName(rPr, markerTag);
+  const marker =
+    existingMarker ??
+    createEl(markerTag, {
+      'w:id': String(id),
+      'w:author': author,
+      'w:date': dateStr,
+    });
+  placeParagraphMarkRevisionMarker(rPr, marker, markerTag);
 
   // Append pPrChange at end if provided.
   if (pPrChangeEl) {

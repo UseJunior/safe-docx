@@ -1,11 +1,5 @@
 [
   {
-    "id": "duplicate-para-mark-ins",
-    "issue": "#452",
-    "match": "}ins': This element is not expected.",
-    "reason": "tracked paragraph insertion emits two paragraph-mark w:ins markers in w:pPr/w:rPr; CT_ParaRPr allows at most one"
-  },
-  {
     "id": "synthetic-table-missing-tblgrid",
     "issue": "#453",
     "match": "}tr': This element is not expected.",

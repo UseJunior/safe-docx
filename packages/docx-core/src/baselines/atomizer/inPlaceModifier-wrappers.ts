@@ -181,6 +181,8 @@ export function addParagraphMarkRevisionMarker(
     paragraph.insertBefore(pPr, paragraph.firstChild);
   }
 
+  const existingMarker = findParagraphMarkRevisionMarker(pPr, markerTag);
+
   // Find or create rPr within pPr (paragraph mark properties).
   let rPr = findChildByTagName(pPr, 'w:rPr');
   if (!rPr) {
@@ -197,8 +199,20 @@ export function addParagraphMarkRevisionMarker(
     }
   }
 
-  // Avoid duplicating markers.
-  if (findChildByTagName(rPr, markerTag)) return;
+  // Avoid duplicating markers. A legacy/bypass path may already have put the
+  // paragraph-mark marker in another w:rPr under the same pPr; keep that marker
+  // and normalize its revision context instead of adding a second CT_ParaRPr child.
+  if (existingMarker) {
+    existingMarker.setAttribute('w:author', author);
+    existingMarker.setAttribute('w:date', dateStr);
+    if (!existingMarker.getAttribute('w:id')) {
+      existingMarker.setAttribute('w:id', String(allocateRevisionId(state)));
+    }
+    // The bypass path may have left the marker mid-sequence (or in another
+    // w:rPr); move it to the schema-correct slot in the canonical rPr.
+    placeParagraphMarkRevisionMarker(rPr, existingMarker, markerTag);
+    return;
+  }
 
   const id = allocateRevisionId(state);
   const marker = createEl(markerTag, {
@@ -207,8 +221,42 @@ export function addParagraphMarkRevisionMarker(
     'w:date': dateStr,
   });
 
-  // Insert marker at the start of rPr for consistency with Aspose/Word patterns.
-  rPr.insertBefore(marker, rPr.firstChild);
+  placeParagraphMarkRevisionMarker(rPr, marker, markerTag);
+}
+
+/**
+ * Position a paragraph-mark revision marker in its schema-correct rPr slot.
+ *
+ * CT_ParaRPr ordering: the tracked-change group (w:ins, w:del, w:moveFrom,
+ * w:moveTo — in that order) comes before every formatting child (w:rStyle,
+ * w:rFonts, ...). So w:ins always goes first, and w:del goes right after a
+ * w:ins sibling when one exists, else first.
+ */
+export function placeParagraphMarkRevisionMarker(
+  rPr: Element,
+  marker: Element,
+  markerTag: 'w:ins' | 'w:del'
+): void {
+  const insSibling = markerTag === 'w:del' ? findChildByTagName(rPr, 'w:ins') : null;
+  if (insSibling) {
+    if (insSibling.nextSibling !== marker) {
+      insertAfterElement(insSibling, marker);
+    }
+  } else if (rPr.firstChild !== marker) {
+    rPr.insertBefore(marker, rPr.firstChild);
+  }
+}
+
+function findParagraphMarkRevisionMarker(
+  pPr: Element,
+  markerTag: 'w:ins' | 'w:del'
+): Element | null {
+  for (const child of childElements(pPr)) {
+    if (child.tagName !== 'w:rPr') continue;
+    const marker = findChildByTagName(child, markerTag);
+    if (marker) return marker;
+  }
+  return null;
 }
 
 // @lean-segment: field-wrapper-emission
