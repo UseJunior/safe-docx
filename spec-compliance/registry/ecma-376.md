@@ -1026,6 +1026,46 @@ The trailing reference run carries `w:commentReference` with the same id
 as its range anchors; the existing deleteComment editing path removes the
 trio cleanly, which the strip scenario verifies on generated output.
 
+## [ECMA-PART1-17-13-5-15] Deleted paragraph mark (w:del under w:pPr/w:rPr)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.15"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del
+verifiedBy:
+```
+
+ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked
+deletion of the *paragraph mark* (the glyph ending the paragraph), not of the
+paragraph's contents. Accepting the revision removes the paragraph break, so
+the paragraph's remaining content merges into the following paragraph; the
+contents themselves are deleted only where they carry their own run-level
+`w:del` wrappers. safe-docx's accept paths implement this merge in
+`packages/docx-core/src/primitives/accept_changes.ts` and
+`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+
+## [ECMA-PART1-17-13-5-20] Inserted paragraph mark (w:ins under w:pPr/w:rPr)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.20"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
+verifiedBy:
+```
+
+ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked
+insertion of the *paragraph mark*, not of the paragraph's contents. Rejecting
+the revision removes the inserted paragraph break, so the paragraph's
+surviving content merges into the following paragraph; the contents disappear
+only where they carry their own run-level `w:ins` wrappers. safe-docx's reject
+paths implement this merge in
+`packages/docx-core/src/primitives/reject_changes.ts` and
+`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the
