@@ -421,6 +421,15 @@ export function addFormatChange(
     run.insertBefore(rPr, run.firstChild);
   }
 
+  // CT_RPr permits at most one w:rPrChange. Comparison can visit multiple
+  // format-changed atoms from the same split run, so keep the latest snapshot
+  // instead of stacking invalid siblings.
+  for (const child of childElements(rPr)) {
+    if (child.tagName === 'w:rPrChange') {
+      rPr.removeChild(child);
+    }
+  }
+
   // Create rPrChange
   const id = allocateRevisionId(state);
   const rPrChange = createEl('w:rPrChange', {

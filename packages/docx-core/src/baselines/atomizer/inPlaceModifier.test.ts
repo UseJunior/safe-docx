@@ -1653,6 +1653,33 @@ describe('inPlaceModifier', () => {
         expect(childElements(innerRPr)).toHaveLength(3);
       });
     });
+
+    test('replaces an existing rPrChange instead of stacking duplicates', async ({ given, when, then }: AllureBddContext) => {
+      let r: Element;
+      let firstOldRPr: Element;
+      let secondOldRPr: Element;
+      let state: ReturnType<typeof createRevisionIdState>;
+
+      await given('a run whose formatting is visited twice by split format-changed atoms', () => {
+        r = el('w:r', {}, [el('w:rPr', {}, [el('w:b')]), el('w:t', {}, undefined, 'text')]);
+        firstOldRPr = el('w:rPr', {}, [el('w:i')]);
+        secondOldRPr = el('w:rPr', {}, [el('w:color', { 'w:val': 'FF0000' })]);
+        state = createRevisionIdState();
+      });
+
+      await when('addFormatChange is called twice for the same run', () => {
+        addFormatChange(r, firstOldRPr, author, dateStr, state);
+        addFormatChange(r, secondOldRPr, author, dateStr, state);
+      });
+
+      await then('the current rPr contains one replacement rPrChange snapshot', () => {
+        const rPr = childElements(r).find((c) => c.tagName === 'w:rPr')!;
+        const rPrChanges = childElements(rPr).filter((c) => c.tagName === 'w:rPrChange');
+        expect(rPrChanges).toHaveLength(1);
+        const innerRPr = childElements(rPrChanges[0]!).find((c) => c.tagName === 'w:rPr')!;
+        expect(childElements(innerRPr).map((c) => c.tagName)).toEqual(['w:color']);
+      });
+    });
   });
 
   // ── Branch coverage: preSplitMixedStatusRuns ──────────────────────
