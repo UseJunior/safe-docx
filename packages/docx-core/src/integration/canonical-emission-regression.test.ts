@@ -556,7 +556,7 @@ describe('Round-trip with comparison', () => {
     });
   });
 
-  test('insert_paragraph round-trip retains the original AI paragraph-mark insertion alongside comparison output', async ({
+  test('insert_paragraph round-trip keeps SafeDocX paragraph-mark insertion metadata normalized', async ({
     given,
     when,
     then,
@@ -585,9 +585,10 @@ describe('Round-trip with comparison', () => {
       });
     });
 
-    await then('comparison output keeps the original SafeDocX paragraph-mark metadata and avoids Comparison', () => {
+    await then('comparison output keeps SafeDocX metadata, avoids Comparison, and replaces the stale fixed date', () => {
       expectNoComparisonAuthor(comparedDocumentXml);
-      expect(comparedDocumentXml).toContain(`w:date="${FIXED_DATE}"`);
+      expect(comparedDocumentXml).not.toContain(`w:date="${FIXED_DATE}"`);
+      expect(revisionTuples(comparedDocumentXml, AI_AUTHOR).length).toBeGreaterThan(0);
       expect(comparedDocumentXml).toContain('Inserted paragraph');
     });
   });

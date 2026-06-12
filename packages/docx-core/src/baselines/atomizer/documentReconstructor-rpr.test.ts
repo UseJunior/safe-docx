@@ -14,7 +14,7 @@ import {
   rejectAllChanges,
 } from './trackChangesAcceptorAst.js';
 import { parseDocumentXml } from './xmlToWmlElement.js';
-import { findAllByTagName, findChildByTagName } from '../../primitives/index.js';
+import { childElements, findAllByTagName, findChildByTagName } from '../../primitives/index.js';
 import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
 import type { ComparisonUnitAtom, OpcPart } from '../../core-types.js';
 import { CorrelationStatus } from '../../core-types.js';
@@ -533,6 +533,63 @@ describe('Step 7: Rebuild path emits pPrChange for inserted paragraphs', () => {
       // Inner pPr should have no child elements (empty snapshot)
       const innerChildren = Array.from(innerPPr!.childNodes).filter(n => n.nodeType === 1);
       expect(innerChildren.length).toBe(0);
+    });
+  });
+
+  test('whole-paragraph insertion reuses and reorders an existing paragraph-mark w:ins', async ({ given, when, then }: AllureBddContext) => {
+    let atom: ComparisonUnitAtom;
+    let result: string;
+
+    await given('an inserted atom whose source pPr already has a paragraph-mark insertion after w:del', () => {
+      const existingIns = el('w:ins', {
+        'w:id': '77',
+        'w:author': 'Source Author',
+        'w:date': '2020-01-01T00:00:00Z',
+      });
+      const rPr = el('w:rPr', {}, [
+        el('w:del', {
+          'w:id': '88',
+          'w:author': 'Delete Author',
+          'w:date': '2020-01-02T00:00:00Z',
+        }),
+        existingIns,
+      ]);
+      const pPrEl = el('w:pPr', {}, [rPr]);
+      const textEl = el('w:t', {}, undefined, 'preserved inserted paragraph');
+      const run = el('w:r', {}, [textEl]);
+      const paragraph = el('w:p', {}, [pPrEl, run]);
+
+      atom = {
+        sha1Hash: 'hash-existing-ins',
+        correlationStatus: CorrelationStatus.Inserted,
+        contentElement: textEl,
+        ancestorElements: [paragraph, run],
+        ancestorUnids: [],
+        part: PART,
+        paragraphIndex: 0,
+        rPr: null,
+      };
+    });
+
+    await when('reconstructDocument serializes the paragraph-mark insertion', () => {
+      result = reconstructDocument([atom], MINIMAL_DOCXML, OPTS);
+    });
+
+    await then('the output has one normalized w:ins before w:del in pPr/rPr', () => {
+      const root = parseDocumentXml(result);
+      const pPr = findAllByTagName(root, 'w:pPr').find((candidate) => {
+        const rPr = findChildByTagName(candidate, 'w:rPr');
+        return !!rPr && !!findChildByTagName(rPr, 'w:ins');
+      });
+      expect(pPr).toBeDefined();
+
+      const rPr = findChildByTagName(pPr!, 'w:rPr')!;
+      const markers = findAllByTagName(pPr!, 'w:ins');
+      expect(markers).toHaveLength(1);
+      expect(markers[0]!.getAttribute('w:id')).toBe('77');
+      expect(markers[0]!.getAttribute('w:author')).toBe('Test');
+      expect(markers[0]!.getAttribute('w:date')).toBe('2025-01-01T00:00:00Z');
+      expect(childElements(rPr).map((child) => child.tagName)).toEqual(['w:ins', 'w:del']);
     });
   });
 });

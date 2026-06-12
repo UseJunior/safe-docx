@@ -247,7 +247,7 @@ export function placeParagraphMarkRevisionMarker(
   }
 }
 
-function findParagraphMarkRevisionMarker(
+export function findParagraphMarkRevisionMarker(
   pPr: Element,
   markerTag: 'w:ins' | 'w:del'
 ): Element | null {
