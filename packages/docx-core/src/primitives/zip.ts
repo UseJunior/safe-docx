@@ -50,6 +50,10 @@ export class DocxZip {
     this.zip.file(path, text, { createFolders: false });
   }
 
+  remove(path: string): void {
+    this.zip.remove(path);
+  }
+
   hasFile(path: string): boolean {
     return this.zip.file(path) !== null;
   }

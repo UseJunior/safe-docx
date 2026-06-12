@@ -1,4 +1,5 @@
 import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
+import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { ERROR_PREVIEW_CHARS, RESULT_PREVIEW_CHARS, previewText } from './preview.js';
@@ -170,6 +171,7 @@ export async function replaceText(
   },
   ctx?: RevisionContext,
 ): Promise<ToolResponse> {
+  let guard: AiWriteGuard | null = null;
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'replace_text' });
     if (!resolved.ok) return resolved.response;
@@ -226,6 +228,8 @@ export async function replaceText(
     let replaceText: string | ReplacementPart[] = newStr;
     const hasMarkup = hasAnyMarkupTags(newStr);
     
+    guard = revisionCtx ? await beginGuardedAiWrite(session) : null;
+
     if (hasMarkup) {
       let segs: ReturnType<typeof splitTaggedText>;
       try {
@@ -289,6 +293,8 @@ export async function replaceText(
       }
       // else: text is identical after normalization — no-op
     }
+    const validationFailure = guard ? await guard.verify() : null;
+    if (validationFailure) return validationFailure;
     manager.markEdited(session);
 
     return ok(mergeSessionResolutionMetadata({
@@ -301,6 +307,7 @@ export async function replaceText(
       after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
     }, metadata));
   } catch (e: unknown) {
+    if (guard) await guard.rollback();
     const msg = errorMessage(e);
     return err('EDIT_ERROR', `Failed to edit document: ${msg}`);
   }

@@ -1,4 +1,5 @@
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
+import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -14,20 +15,25 @@ export async function deleteComment(
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
   const ctx = await getRevisionContextForSession(session);
+  let guard: AiWriteGuard | null = null;
 
   if (params.comment_id == null) {
     return err('MISSING_PARAMETER', 'comment_id is required.', 'Provide the comment ID to delete.');
   }
 
   try {
+    guard = ctx ? await beginGuardedAiWrite(session) : null;
     await session.doc.deleteComment({ commentId: params.comment_id }, ctx);
 
+    const validationFailure = guard ? await guard.verify() : null;
+    if (validationFailure) return validationFailure;
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({
       comment_id: params.comment_id,
       file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
+    if (guard) await guard.rollback();
     const msg = errorMessage(e);
     if (msg.includes('not found')) {
       return err('COMMENT_NOT_FOUND', msg, 'Use get_comments to list available comments.');

@@ -6,9 +6,11 @@ import { err, ok, type ToolResponse } from './types.js';
 import {
   DocxZip,
   compareDocuments,
+  partitionRevisionValidationIssues,
   parseXml,
   restoreUntouchedBlocks,
   serializeXml,
+  validateRevisions,
   type CompareOptions,
   type CompareResult,
 } from '@usejunior/docx-core';
@@ -239,6 +241,35 @@ export async function save(
 
     // Run implicit validation before producing save artifacts.
     const validation = session.doc.validate();
+    let revisionValidationWarning: string | undefined;
+    if (session.revisionIdState && session.aiAuthor) {
+      const revisionIssues = validateRevisions(await session.doc.getRevisionValidationParts(), {
+        sessionStartId: session.revisionIdState.startId,
+        expectedAuthor: session.aiAuthor,
+      });
+      const severity = partitionRevisionValidationIssues(
+        revisionIssues,
+        {
+          sessionStartId: session.revisionIdState.startId,
+          expectedAuthor: session.aiAuthor,
+        },
+        session.validationBaseline,
+      );
+      if (severity.errors.length > 0) {
+        const preview = severity.errors
+          .slice(0, 5)
+          .map((issue) => issue.message)
+          .join('; ');
+        return err(
+          'REVISION_VALIDATION_FAILED',
+          `AI-emitted revision validation failed; save aborted: ${preview}`,
+          'Fix or reject the malformed session revision before saving.',
+        );
+      }
+      if (!session.validationBaseline && revisionIssues.length > 0) {
+        revisionValidationWarning = 'Revision validation baseline was unavailable; pre-existing global revision issues were reported as warnings only.';
+      }
+    }
 
     if (cached) {
       revisedBuffer = cached.revisedBuffer;
@@ -411,8 +442,13 @@ export async function save(
       cache_hit: cacheHit,
       format_source: formatSource,
       parameter_warning: parameterWarning,
-      validation: validation.warnings.length > 0
-        ? { warnings: validation.warnings.map(w => ({ code: w.code, message: w.message })) }
+      validation: validation.warnings.length > 0 || revisionValidationWarning
+        ? {
+          ...(validation.warnings.length > 0
+            ? { warnings: validation.warnings.map(w => ({ code: w.code, message: w.message })) }
+            : {}),
+          ...(revisionValidationWarning ? { revision_warning: revisionValidationWarning } : {}),
+        }
         : { valid: true },
       message:
         (trackedReconstructionMode === 'rebuild' ? 'WARNING: Tracked output used REBUILD mode which may alter table structure and fonts. Verify tables in Word. ' : '') +

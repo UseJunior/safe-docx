@@ -1,4 +1,5 @@
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
+import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -16,6 +17,7 @@ export async function addFootnote(
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
   const ctx = await getRevisionContextForSession(session);
+  let guard: AiWriteGuard | null = null;
 
   if (!params.target_paragraph_id) {
     return err('MISSING_PARAMETER', 'target_paragraph_id is required.', 'Provide the _bk_* ID of the paragraph to anchor the footnote to.');
@@ -31,12 +33,15 @@ export async function addFootnote(
   }
 
   try {
+    guard = ctx ? await beginGuardedAiWrite(session) : null;
     const result = await session.doc.addFootnote({
       paragraphId: pid,
       afterText: params.after_text,
       text: params.text,
     }, ctx);
 
+    const validationFailure = guard ? await guard.verify() : null;
+    if (validationFailure) return validationFailure;
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({
       note_id: result.noteId,
@@ -45,6 +50,7 @@ export async function addFootnote(
       file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
+    if (guard) await guard.rollback();
     const msg = errorMessage(e);
     if (msg.includes('not found in paragraph')) {
       return err('TEXT_NOT_FOUND', msg, 'Verify after_text is present in the target paragraph.');

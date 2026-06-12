@@ -1,4 +1,5 @@
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
+import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -251,6 +252,7 @@ export async function formatLayout(
   manager: SessionManager,
   params: FormatLayoutParams,
 ): Promise<ToolResponse> {
+  let guard: AiWriteGuard | null = null;
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'format_layout' });
     if (!resolved.ok) return resolved.response;
@@ -354,6 +356,7 @@ export async function formatLayout(
 
     const paragraphCountBefore = session.doc.getParagraphs().length;
     const warnings: string[] = [];
+    guard = ctx ? await beginGuardedAiWrite(session) : null;
 
     const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
     const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight, ctx) : null;
@@ -361,6 +364,7 @@ export async function formatLayout(
 
     const paragraphCountAfter = session.doc.getParagraphs().length;
     if (paragraphCountAfter !== paragraphCountBefore) {
+      if (guard) await guard.rollback();
       return err(
         'INVARIANT_VIOLATION',
         `Layout formatting changed paragraph count (${paragraphCountBefore} -> ${paragraphCountAfter}).`,
@@ -371,6 +375,7 @@ export async function formatLayout(
     if (paragraphSpacingResult && paragraphSpacingResult.missingParagraphIds.length > 0) {
       const message = `paragraph_spacing skipped missing paragraph IDs: ${paragraphSpacingResult.missingParagraphIds.join(', ')}`;
       if (strict) {
+        if (guard) await guard.rollback();
         return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
       }
       warnings.push(message);
@@ -378,35 +383,50 @@ export async function formatLayout(
     if (rowHeightResult) {
       if (rowHeightResult.missingTableIndexes.length > 0) {
         const message = `row_height missing table indexes: ${rowHeightResult.missingTableIndexes.join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        if (strict) {
+          if (guard) await guard.rollback();
+          return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        }
         warnings.push(message);
       }
       if (rowHeightResult.missingRowIndexes.length > 0) {
         const message = `row_height missing row indexes: ${rowHeightResult.missingRowIndexes
           .map((x) => `${x.tableIndex}:${x.rowIndex}`)
           .join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        if (strict) {
+          if (guard) await guard.rollback();
+          return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        }
         warnings.push(message);
       }
     }
     if (cellPaddingResult) {
       if (cellPaddingResult.missingTableIndexes.length > 0) {
         const message = `cell_padding missing table indexes: ${cellPaddingResult.missingTableIndexes.join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        if (strict) {
+          if (guard) await guard.rollback();
+          return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        }
         warnings.push(message);
       }
       if (cellPaddingResult.missingRowIndexes.length > 0) {
         const message = `cell_padding missing row indexes: ${cellPaddingResult.missingRowIndexes
           .map((x) => `${x.tableIndex}:${x.rowIndex}`)
           .join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        if (strict) {
+          if (guard) await guard.rollback();
+          return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        }
         warnings.push(message);
       }
       if (cellPaddingResult.missingCellIndexes.length > 0) {
         const message = `cell_padding missing cell indexes: ${cellPaddingResult.missingCellIndexes
           .map((x) => `${x.tableIndex}:${x.rowIndex}:${x.cellIndex}`)
           .join(', ')}`;
-        if (strict) return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        if (strict) {
+          if (guard) await guard.rollback();
+          return err('INVALID_SELECTOR', message, 'Set strict=false to allow best-effort application.');
+        }
         warnings.push(message);
       }
     }
@@ -416,6 +436,8 @@ export async function formatLayout(
     const affectedCells = cellPaddingResult?.affectedCells ?? 0;
     const totalAffected = affectedParagraphs + affectedRows + affectedCells;
     if (totalAffected > 0) {
+      const validationFailure = guard ? await guard.verify() : null;
+      if (validationFailure) return validationFailure;
       manager.markEdited(session);
     }
     manager.touch(session);
@@ -440,6 +462,7 @@ export async function formatLayout(
         : 'No document nodes matched the provided selectors.',
     }, metadata));
   } catch (e: unknown) {
+    if (guard) await guard.rollback();
     const message = errorMessage(e);
     return err('FORMAT_LAYOUT_ERROR', `Failed to apply layout formatting: ${message}`, 'Check selector inputs and retry.');
   }

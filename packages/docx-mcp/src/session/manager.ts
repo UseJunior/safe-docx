@@ -7,7 +7,10 @@ import {
   DocxZip,
   createRevisionContext,
   createRevisionIdState,
+  createRevisionValidationBaseline,
   parseXml,
+  REVISION_ID_ELEMENT_LOCAL_NAMES,
+  validateRevisions,
   type NormalizationResult,
   type ParagraphRevision,
   type ReconstructionMode,
@@ -15,6 +18,7 @@ import {
   type ReconstructionFallbackDiagnostics,
   type RevisionContext,
   type RevisionIdState,
+  type RevisionValidationBaseline,
 } from '@usejunior/docx-core';
 // NOTE: @usejunior/odf-core is an OPTIONAL provider (private/unpublished, like
 // @usejunior/google-docs-core) and is intentionally NOT imported here. A static
@@ -80,6 +84,7 @@ export type DocxSession = {
   doc: DocxDocument;
   aiAuthor: string | null;
   revisionIdState: RevisionIdState | null;
+  validationBaseline: RevisionValidationBaseline | null;
   editCount: number;
   editRevision: number;
   saveCache: Map<string, SaveCacheEntry>;
@@ -121,40 +126,6 @@ export type OdfSession = {
 export type Session = DocxSession | GDocsSession | OdfSession;
 
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-
-/**
- * WordprocessingML elements that carry package-wide revision `w:id` attributes.
- * Limiting the seed scan to these elements prevents non-revision IDs (e.g.,
- * `<w:comment w:id>`, `<w:footnote w:id>`, `<w:bookmarkStart w:id>`) from
- * spuriously inflating the starting revision-id counter.
- */
-const REVISION_ID_ELEMENT_LOCAL_NAMES = new Set<string>([
-  'ins',
-  'del',
-  'moveFrom',
-  'moveTo',
-  'moveFromRangeStart',
-  'moveFromRangeEnd',
-  'moveToRangeStart',
-  'moveToRangeEnd',
-  'pPrChange',
-  'rPrChange',
-  'tblPrChange',
-  'trPrChange',
-  'tcPrChange',
-  'sectPrChange',
-  'cellIns',
-  'cellDel',
-  'cellMerge',
-  'customXmlInsRangeStart',
-  'customXmlInsRangeEnd',
-  'customXmlDelRangeStart',
-  'customXmlDelRangeEnd',
-  'customXmlMoveFromRangeStart',
-  'customXmlMoveFromRangeEnd',
-  'customXmlMoveToRangeStart',
-  'customXmlMoveToRangeEnd',
-]);
 
 /**
  * Fixed package paths that can carry package-wide revision attributes.
@@ -376,6 +347,7 @@ export class SessionManager {
       doc,
       aiAuthor: this.defaultAiAuthor,
       revisionIdState: null,
+      validationBaseline: null,
       editCount: 0,
       editRevision: 0,
       saveCache: new Map<string, SaveCacheEntry>(),
@@ -450,6 +422,9 @@ export class SessionManager {
       session.normalizationStats = session.doc.normalize();
     }
     const info = session.doc.insertParagraphBookmarks(`mcp_${session.sessionId}`);
+    session.validationBaseline = createRevisionValidationBaseline(
+      validateRevisions(await session.doc.getRevisionValidationParts()),
+    );
     // Baselines are lazily generated — skip the two toBuffer() calls here
     this.touch(session);
     return { normalizationStats: session.normalizationStats, paragraphCount: info.paragraphCount };

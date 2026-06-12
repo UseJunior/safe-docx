@@ -1,4 +1,5 @@
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
+import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { ok, err, type ToolResponse } from './types.js';
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import {
@@ -67,6 +68,7 @@ export async function clearFormatting(
   },
   ctx?: RevisionContext,
 ): Promise<ToolResponse> {
+  let guard: AiWriteGuard | null = null;
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'clear_formatting' });
     if (!resolved.ok) return resolved.response;
@@ -76,6 +78,7 @@ export async function clearFormatting(
     const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
     const pids = params.paragraph_ids ?? nodes.map((n) => n.id);
     let modifiedCount = 0;
+    guard = revisionCtx ? await beginGuardedAiWrite(session) : null;
 
     for (const pid of pids) {
       const pEl = session.doc.getParagraphElementById(pid);
@@ -132,6 +135,8 @@ export async function clearFormatting(
 
     if (modifiedCount > 0) {
       invalidateDocumentCaches(session.doc);
+      const validationFailure = guard ? await guard.verify() : null;
+      if (validationFailure) return validationFailure;
       manager.markEdited(session);
     }
 
@@ -141,6 +146,7 @@ export async function clearFormatting(
       paragraphs_modified: modifiedCount,
     }, metadata));
   } catch (e: any) {
+    if (guard) await guard.rollback();
     return err('CLEAR_FORMATTING_ERROR', `Failed to clear formatting: ${e.message}`);
   }
 }

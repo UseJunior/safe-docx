@@ -1,0 +1,11 @@
+## 1. Implementation
+- [x] 1.1 Add core revision validator, rule table, severity partitioning, and validation error type.
+- [x] 1.2 Add `RevisionIdState.startId` and share revision element vocabulary with id seeding.
+- [x] 1.3 Add `DocxZip.remove` and `DocxDocument` snapshot/restore APIs.
+- [x] 1.4 Compute session validation baseline after session finalization.
+- [x] 1.5 Add MCP post-write guard with rollback and revision-id rewind.
+- [x] 1.6 Integrate guard into AI write tools and leave `apply_plan` step-level transactional.
+- [x] 1.7 Add save-time revision validation gate.
+- [x] 1.8 Add focused validator and rollback tests.
+- [x] 1.9 Update SUPPORT.md and conformance registry citations as needed.
+- [ ] 1.10 Run OpenSpec validation, build, lint, tests, and conformance checks.

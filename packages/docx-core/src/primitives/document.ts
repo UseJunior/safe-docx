@@ -46,6 +46,13 @@ import { restoreUntouchedBlocks } from './minimal_save.js';
 import { simplifyRedlines } from './simplify_redlines.js';
 import { preventDoubleElevation } from './prevent_double_elevation.js';
 import { validateDocument, type ValidateDocumentResult } from './validate_document.js';
+import {
+  assertValidAiRevisions,
+  validateRevisions,
+  type AiRevisionScope,
+  type RevisionValidationIssue,
+  type RevisionValidationPart,
+} from './validate_revisions.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
 import {
@@ -82,6 +89,24 @@ const REVISION_STORY_PART_PATHS = [
   'word/endnotes.xml',
   'word/comments.xml',
 ] as const;
+
+const DOCX_SNAPSHOT_PART_PATHS = [
+  'word/footnotes.xml',
+  'word/comments.xml',
+  'word/commentsExtended.xml',
+  'word/people.xml',
+  'word/_rels/document.xml.rels',
+  '[Content_Types].xml',
+] as const;
+
+export type DocxDocumentSnapshot = {
+  documentXml: Document;
+  parts: Map<string, string | null>;
+  footnotesXml: Document | null;
+  relsMap: RelsMap;
+  dirty: boolean;
+  documentViewCache: unknown;
+};
 
 function emptyAcceptChangesResult(): AcceptChangesResult {
   return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
@@ -491,6 +516,72 @@ export class DocxDocument {
     return validateDocument(this.documentXml);
   }
 
+  async getRevisionValidationParts(opts?: { includeCommentsForAiChecks?: boolean }): Promise<RevisionValidationPart[]> {
+    const parts: RevisionValidationPart[] = [
+      { partName: 'word/document.xml', doc: this.documentXml },
+    ];
+    const includeComments = opts?.includeCommentsForAiChecks ?? false;
+    for (const partPath of REVISION_STORY_PART_PATHS) {
+      if (partPath === 'word/comments.xml' && !includeComments) continue;
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (!xml) continue;
+      parts.push({ partName: partPath, doc: parseXml(xml) });
+    }
+    return parts;
+  }
+
+  async validateRevisions(scope?: AiRevisionScope): Promise<RevisionValidationIssue[]> {
+    return validateRevisions(await this.getRevisionValidationParts(), scope);
+  }
+
+  private async assertPostWriteRevisionsValid(ctx?: RevisionContext): Promise<void> {
+    if (!ctx) return;
+    assertValidAiRevisions(await this.getRevisionValidationParts(), {
+      sessionStartId: ctx.idState.startId,
+      sessionEndId: ctx.idState.nextId,
+      expectedAuthor: ctx.author,
+    });
+  }
+
+  private assertDocumentXmlRevisionsValid(ctx?: RevisionContext): void {
+    if (!ctx) return;
+    assertValidAiRevisions([{ partName: 'word/document.xml', doc: this.documentXml }], {
+      sessionStartId: ctx.idState.startId,
+      sessionEndId: ctx.idState.nextId,
+      expectedAuthor: ctx.author,
+    });
+  }
+
+  async createSnapshot(): Promise<DocxDocumentSnapshot> {
+    const parts = new Map<string, string | null>();
+    for (const partPath of DOCX_SNAPSHOT_PART_PATHS) {
+      parts.set(partPath, await this.zip.readTextOrNull(partPath));
+    }
+    return {
+      documentXml: this.documentXml.cloneNode(true) as Document,
+      parts,
+      footnotesXml: this.footnotesXml ? this.footnotesXml.cloneNode(true) as Document : null,
+      relsMap: new Map(this.relsMap),
+      dirty: this.dirty,
+      documentViewCache: this.documentViewCache,
+    };
+  }
+
+  restoreFromSnapshot(snapshot: DocxDocumentSnapshot): void {
+    this.documentXml = snapshot.documentXml.cloneNode(true) as Document;
+    for (const [partPath, xml] of snapshot.parts) {
+      if (xml === null) {
+        this.zip.remove(partPath);
+      } else {
+        this.zip.writeText(partPath, xml);
+      }
+    }
+    this.footnotesXml = snapshot.footnotesXml ? snapshot.footnotesXml.cloneNode(true) as Document : null;
+    this.relsMap = new Map(snapshot.relsMap);
+    this.dirty = snapshot.dirty;
+    this.documentViewCache = snapshot.documentViewCache as typeof this.documentViewCache;
+  }
+
   /**
    * Accept all tracked changes in document.xml plus supported revisionable
    * side-story parts, producing clean XML with no revision markup.
@@ -692,6 +783,10 @@ export class DocxDocument {
     replaceParagraphTextRange(p, match.start, match.end, replaceText);
     this.dirty = true;
     this.documentViewCache = null;
+  }
+
+  async validateAfterExternalRevisionWrite(ctx?: RevisionContext): Promise<void> {
+    await this.assertPostWriteRevisionsValid(ctx);
   }
 
   /**
@@ -946,6 +1041,7 @@ export class DocxDocument {
       newParagraphIds: insertedIds,
     };
     if (styleSourceFallback) result.styleSourceFallback = true;
+    this.assertDocumentXmlRevisionsValid(ctx);
     return result;
   }
 

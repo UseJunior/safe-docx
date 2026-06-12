@@ -22,6 +22,7 @@ const EXCLUDED_RPR_CHANGE_CHILDREN = new Set(['w:rPrChange']);
  * and destination IDs for move ranges while sharing the same counter.
  */
 export interface RevisionIdState {
+  readonly startId: number;
   nextId: number;
   moveRangeIds: Map<string, { sourceRangeId: number; destRangeId: number }>;
 }
@@ -33,6 +34,7 @@ export interface RevisionIdState {
  */
 export function createRevisionIdState(startId: number = 1): RevisionIdState {
   return {
+    startId,
     nextId: startId,
     moveRangeIds: new Map(),
   };

@@ -7,6 +7,7 @@ import {
   type ReplacementPart,
 } from '@usejunior/docx-core';
 import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
+import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { RESULT_PREVIEW_CHARS, previewText } from './preview.js';
@@ -123,6 +124,7 @@ export async function insertParagraph(
   },
   ctx?: RevisionContext,
 ): Promise<ToolResponse> {
+  let guard: AiWriteGuard | null = null;
   try {
     const resolved = await resolveSessionForTool(manager, params, { toolName: 'insert_paragraph' });
     if (!resolved.ok) return resolved.response;
@@ -171,6 +173,7 @@ export async function insertParagraph(
     }
     const plainParagraphs = paragraphInputs.map((p) => stripAllInlineTags(p));
 
+    guard = revisionCtx ? await beginGuardedAiWrite(session) : null;
     const res = session.doc.insertParagraph({
       positionalAnchorNodeId: params.positional_anchor_node_id,
       relativePosition: positionUpper as 'BEFORE' | 'AFTER',
@@ -197,6 +200,8 @@ export async function insertParagraph(
       session.doc.replaceText({ targetParagraphId: newPid, findText: plainText, replaceText: replacementParts });
     }
 
+    const validationFailure = guard ? await guard.verify() : null;
+    if (validationFailure) return validationFailure;
     manager.markEdited(session);
 
     const responseData: Record<string, unknown> = {
@@ -214,6 +219,7 @@ export async function insertParagraph(
     }
     return ok(mergeSessionResolutionMetadata(responseData, metadata));
   } catch (e: unknown) {
+    if (guard) await guard.rollback();
     return err('INSERT_ERROR', `Failed to insert paragraph: ${errorMessage(e)}`);
   }
 }

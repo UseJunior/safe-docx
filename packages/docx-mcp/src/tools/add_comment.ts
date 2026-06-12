@@ -1,4 +1,5 @@
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
+import { beginGuardedAiWrite, type AiWriteGuard } from '../session/post_write_guard.js';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
@@ -20,16 +21,20 @@ export async function addComment(
   if (!resolved.ok) return resolved.response;
   const { session, metadata } = resolved;
   const ctx = await getRevisionContextForSession(session);
+  let guard: AiWriteGuard | null = null;
 
   try {
     // Reply mode: parent_comment_id provided
     if (params.parent_comment_id != null) {
+      guard = ctx ? await beginGuardedAiWrite(session) : null;
       const result = await session.doc.addCommentReply({
         parentCommentId: params.parent_comment_id,
         author: params.author,
         text: params.text,
         initials: params.initials,
       }, ctx);
+      const validationFailure = guard ? await guard.verify() : null;
+      if (validationFailure) return validationFailure;
       manager.markEdited(session);
       return ok(mergeSessionResolutionMetadata({
         comment_id: result.commentId,
@@ -89,6 +94,7 @@ export async function addComment(
       end = paraText.length;
     }
 
+    guard = ctx ? await beginGuardedAiWrite(session) : null;
     const result = await session.doc.addComment({
       paragraphId: pid,
       start,
@@ -98,6 +104,8 @@ export async function addComment(
       initials: params.initials,
     }, ctx);
 
+    const validationFailure = guard ? await guard.verify() : null;
+    if (validationFailure) return validationFailure;
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({
       comment_id: result.commentId,
@@ -107,6 +115,7 @@ export async function addComment(
       file_path: manager.normalizePath(session.originalPath),
     }, metadata));
   } catch (e: unknown) {
+    if (guard) await guard.rollback();
     return err('COMMENT_ERROR', errorMessage(e));
   }
 }
