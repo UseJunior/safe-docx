@@ -819,8 +819,11 @@ describe('inPlaceModifier', () => {
       let state: ReturnType<typeof createRevisionIdState>;
 
       await given('a paragraph with a pre-existing paragraph-mark w:ins from a bypass path', () => {
+        // The bypass marker sits AFTER a formatting child — an invalid
+        // CT_ParaRPr sequence that reuse must repair, not preserve.
         pPr = el('w:pPr', {}, [
           el('w:rPr', {}, [
+            el('w:b'),
             el('w:ins', {
               'w:id': '99',
               'w:author': 'Bypass',
@@ -836,7 +839,7 @@ describe('inPlaceModifier', () => {
         wrapParagraphAsInserted(p, author, dateStr, state);
       });
 
-      await then('only one paragraph-mark w:ins remains with the comparison author and date', () => {
+      await then('only one paragraph-mark w:ins remains, first in rPr, with the comparison author and date', () => {
         const markers = childElements(pPr)
           .filter((c) => c.tagName === 'w:rPr')
           .flatMap((rPr) => childElements(rPr).filter((c) => c.tagName === 'w:ins'));
@@ -844,6 +847,39 @@ describe('inPlaceModifier', () => {
         expect(markers[0]!.getAttribute('w:id')).toBe('99');
         expect(markers[0]!.getAttribute('w:author')).toBe(author);
         expect(markers[0]!.getAttribute('w:date')).toBe(dateStr);
+
+        // CT_ParaRPr puts the tracked-change group before formatting children,
+        // so the reused w:ins must be moved to the front of rPr.
+        const rPr = childElements(pPr).find((c) => c.tagName === 'w:rPr');
+        expect(childElements(rPr!).map((c) => c.tagName)).toEqual(['w:ins', 'w:b']);
+      });
+    });
+
+    test('keeps the paragraph-mark w:del after w:ins per CT_ParaRPr order', async ({ given, when, then }: AllureBddContext) => {
+      let pPr: Element, p: Element;
+      let state: ReturnType<typeof createRevisionIdState>;
+
+      await given('a paragraph whose mark already carries a w:ins marker', () => {
+        pPr = el('w:pPr', {}, [
+          el('w:rPr', {}, [
+            el('w:ins', {
+              'w:id': '7',
+              'w:author': 'Bypass',
+              'w:date': '2020-01-01T00:00:00Z',
+            }),
+          ]),
+        ]);
+        p = el('w:p', {}, [pPr, el('w:r', {}, [el('w:t', {}, undefined, 'text')])]);
+        state = createRevisionIdState();
+      });
+
+      await when('wrapParagraphAsDeleted marks the paragraph mark as deleted', () => {
+        wrapParagraphAsDeleted(p, author, dateStr, state);
+      });
+
+      await then('rPr orders the tracked-change group w:ins then w:del', () => {
+        const rPr = childElements(pPr).find((c) => c.tagName === 'w:rPr');
+        expect(childElements(rPr!).map((c) => c.tagName)).toEqual(['w:ins', 'w:del']);
       });
     });
   });
