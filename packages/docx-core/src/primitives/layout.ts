@@ -98,7 +98,7 @@ function ensureChild(parent: Element, localName: string): Element {
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.68
  */
 function reorderCellMarginEdges(tcMar: Element): void {
-  const orderedNames = [W.top, W.left, W.bottom, W.right];
+  const orderedNames = [W.top, W.start, W.left, W.bottom, W.end, W.right];
   const ordered = orderedNames.flatMap((name) => getDirectChildrenByName(tcMar, name));
   for (const child of ordered) {
     tcMar.appendChild(child);

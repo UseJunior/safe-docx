@@ -199,6 +199,40 @@ describe('layout tracked-change emission', () => {
       },
     );
 
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.68' })(
+      'setTableCellPadding keeps logical start/end margins in the CT_TcMar sequence',
+      async ({ given, when, then }: AllureBddContext) => {
+        let doc: Document;
+        let tcMar: Element;
+
+        await given('a table cell whose margins use logical start/end directions', () => {
+          doc = makeDocument(
+            `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/><w:start w:w="80" w:type="dxa"/><w:end w:w="80" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
+          );
+        });
+
+        await when('left and bottom padding are added', () => {
+          const result = setTableCellPadding(doc, { tableIndexes: [0], leftDxa: 240, bottomDxa: 60 });
+          expect(result.affectedCells).toBe(1);
+
+          const table = doc.getElementsByTagNameNS(W_NS, W.tbl).item(0) as Element;
+          const cell = firstDirectChild(firstDirectChild(table, W.tr), W.tc);
+          tcMar = firstDirectChild(firstDirectChild(cell, W.tcPr), W.tcMar);
+        });
+
+        await then('the pre-existing start/end margins stay interleaved per the schema sequence', () => {
+          expect(Array.from(tcMar.children).map((child) => child.localName)).toEqual([
+            W.top,
+            W.start,
+            W.left,
+            W.bottom,
+            W.end,
+          ]);
+        });
+      },
+    );
+
   test('layout primitives preserve legacy mutation behavior when revision context is omitted', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let paragraphId: string;
