@@ -9,6 +9,10 @@
 [![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
 <!-- SYNC:badges END -->
 
+<!-- SYNC:issue-quick-links BEGIN -->
+[Report Bug](https://github.com/usejunior/safe-docx/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/usejunior/safe-docx/issues/new?template=feature_request.yml)
+<!-- SYNC:issue-quick-links END -->
+
 <!-- SYNC:lang-nav BEGIN -->
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
 <!-- SYNC:lang-nav END -->
