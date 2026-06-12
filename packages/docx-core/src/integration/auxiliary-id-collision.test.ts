@@ -644,6 +644,8 @@ describe('Comment paraId collisions (issue #448)', () => {
             `</w16cid:commentsIds>`
         );
         const contentTypes = await zip.file('[Content_Types].xml')!.async('string');
+        // [MS-DOCX] defines the commentsIds OPC part with this content type and
+        // relationship type; no shared test fixture currently carries the part.
         zip.file(
           '[Content_Types].xml',
           contentTypes.replace(
