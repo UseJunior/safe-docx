@@ -83,8 +83,8 @@ function warnOnPinMismatch(): void {
 describeMaybe('Cross-implementation conformance suite self-check', () => {
   test
     .openspec('[XIMPL-01] Suite checkout present and safe-docx agrees')
-    .openspec('[XIMPL-02] Suite checkout absent skips with a logged warning')
-    .openspec('[XIMPL-03] Checkout ahead of the pin warns and still runs')
+    .openspec('[XIMPL-02] Suite checkout absent')
+    .openspec('[XIMPL-03] Checkout ahead of the pin')
     .openspec('[XIMPL-04] acceptAllTrackedChanges round-trip through the adapter')(
     'safe-docx adapter passes every docx-platform-tests scenario',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
@@ -145,7 +145,7 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
 });
 
 describe('Conformance adapter protocol behavior', () => {
-  test.openspec('[XIMPL-05] Unknown operation declined honestly with exit code 2')(
+  test.openspec('[XIMPL-05] Unknown operation declined honestly')(
     'unknown operations exit 2 with a one-line reason and no output',
     async ({ given, when, then }: AllureBddContext) => {
       const workDir = mkdtempSync(join(tmpdir(), 'ximpl-proto-'));
