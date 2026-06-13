@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import { errorCode, errorMessage } from "../error_utils.js";
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
@@ -6,10 +6,11 @@ import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session
 
 function createPlanContextId(): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const bytes = randomBytes(12);
   let suffix = '';
   for (let i = 0; i < 12; i += 1) {
-    suffix += alphabet[bytes[i]! % alphabet.length];
+    // randomInt gives a uniform value in [0, alphabet.length); avoids the
+    // modulo bias of randomBytes()[i] % alphabet.length (256 % 62 != 0).
+    suffix += alphabet[randomInt(alphabet.length)];
   }
   return `plctx_${suffix}`;
 }

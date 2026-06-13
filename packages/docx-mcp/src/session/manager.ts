@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
@@ -292,10 +292,11 @@ export class SessionManager {
   private newSessionId(): string {
     // Format: ses_[12 alphanumeric] — kept for temp dir naming only.
     const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const bytes = randomBytes(12);
     let out = '';
     for (let i = 0; i < 12; i++) {
-      out += alphabet[bytes[i] % alphabet.length];
+      // randomInt gives a uniform value in [0, alphabet.length); avoids the
+      // modulo bias of randomBytes()[i] % alphabet.length (256 % 62 != 0).
+      out += alphabet[randomInt(alphabet.length)];
     }
     return `ses_${out}`;
   }
