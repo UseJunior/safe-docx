@@ -32,22 +32,30 @@ observation of the new package shape.
 
 | Artifact | Emitter revision | Word for Mac | Pages | Google Docs import | LibreOffice |
 |---|---|---|---|---|---|
-| `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | #482 (+ ancillary parts) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | #482 (+ ancillary parts) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | #482 (+ ancillary parts) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | #482 (+ ancillary parts) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase5-numbering-recipes.docx` (three-level legal numbering, cover-terms recipe table, signature blocks) | #482 (+ ancillary parts) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | #482 (+ ancillary parts) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase5-numbering-recipes.docx` (three-level legal numbering, cover-terms recipe table, signature blocks) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
 
 ## Per-reader notes
 
 ### Word for Mac
-- #482 (2026-06-13): artifacts regenerated with the three standard ancillary
-  parts (`theme/theme1.xml`, `fontTable.xml`, `webSettings.xml`) so the package
-  shape matches a Word-authored document. The "if Word repairs" hypothesis behind
-  #482 still needs a human to open each regenerated `generation-phase*.docx` in
-  Word for Mac and confirm no repair/recovery dialog appears — that cannot be
-  observed from CI/headless. Cells stay `—` until that manual pass.
+- #482 (2026-06-13, Microsoft Word for Mac 16.x): all six artifact classes open
+  **clean — no repair/recovery dialog**. Verified two ways: (1) programmatically,
+  by opening each `generation-phase*.docx` via `open -a "Microsoft Word"` and
+  asserting via System Events that the document registers (`count documents` = 1)
+  with zero alert sheets / `AXDialog` windows on the Word process; (2) visually,
+  via full-screen `screencapture` of each — plain text, the bordered/shaded table,
+  three-level numbering, the signature blocks, and the two anchored comments all
+  render as specified. This settles the "if Word repairs" hypothesis: with the
+  ancillary parts present, Word for Mac does not repair.
+- Follow-up (not a #482 defect): Word opens the documents in **Compatibility
+  Mode** because generation does not emit a `w:compat` →
+  `compatibilityMode=15` `compatSetting` in `word/settings.xml`. Emitting that
+  (always, in a baseline settings part) would clear the legacy-format banner.
+  Tracked separately from the theme/fontTable/webSettings work here.
 
 ### Pages
 _(none yet — needs a manual open of the #482 artifacts)_
