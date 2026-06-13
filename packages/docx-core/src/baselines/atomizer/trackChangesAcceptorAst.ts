@@ -127,6 +127,116 @@ function paragraphContentStartIndex(paragraph: Element): number {
   return idx;
 }
 
+// Marker-ish elements that may sit between two paragraphs at block level
+// without ending the search for a merge target: the full EG_RangeMarkupElements
+// schema group (wml.xsd), plus permStart/permEnd range markers and proofErr
+// proofing anchors.
+const RANGE_MARKUP_BLOCK_SIBLING_TAGS = new Set([
+  'w:bookmarkStart', 'w:bookmarkEnd',
+  'w:commentRangeStart', 'w:commentRangeEnd',
+  'w:moveFromRangeStart', 'w:moveFromRangeEnd',
+  'w:moveToRangeStart', 'w:moveToRangeEnd',
+  'w:customXmlInsRangeStart', 'w:customXmlInsRangeEnd',
+  'w:customXmlDelRangeStart', 'w:customXmlDelRangeEnd',
+  'w:customXmlMoveFromRangeStart', 'w:customXmlMoveFromRangeEnd',
+  'w:customXmlMoveToRangeStart', 'w:customXmlMoveToRangeEnd',
+  'w:permStart', 'w:permEnd',
+  'w:proofErr',
+]);
+
+/**
+ * Find the next sibling paragraph a paragraph-mark revision can merge into,
+ * skipping block-level range/annotation markers. Returns undefined when the
+ * next block is not a paragraph (table, sdt, sectPr, end of parent).
+ */
+function findFollowingSiblingParagraph(p: Element): Element | undefined {
+  const parent = parentElement(p);
+  if (!parent) return undefined;
+  const siblings = childElements(parent);
+  const idx = siblings.indexOf(p);
+  if (idx < 0) return undefined;
+  for (let i = idx + 1; i < siblings.length; i++) {
+    const sibling = siblings[i]!;
+    if (sibling.tagName === 'w:p') return sibling;
+    if (RANGE_MARKUP_BLOCK_SIBLING_TAGS.has(sibling.tagName)) continue;
+    return undefined;
+  }
+  return undefined;
+}
+
+/** True iff the paragraph still holds content beyond w:pPr and bare annotation markers. */
+function paragraphHasContent(p: Element): boolean {
+  return childElements(p).some(
+    (c) => c.tagName !== 'w:pPr' && !RANGE_MARKUP_BLOCK_SIBLING_TAGS.has(c.tagName)
+  );
+}
+
+/**
+ * True iff removing an emptied mark-revised paragraph keeps its parent
+ * structurally valid for Word: the parent must retain at least one block
+ * element, must not end on a w:tbl (a trailing table needs a following
+ * paragraph), and two tables must not become adjacent (Word merges
+ * back-to-back tables). w:sectPr is ignored — a trailing body sectPr is not a
+ * block element.
+ */
+function canSafelyRemoveEmptyParagraph(p: Element): boolean {
+  const parent = parentElement(p);
+  if (!parent) return false;
+  const siblings = childElements(parent).filter(
+    (c) => !RANGE_MARKUP_BLOCK_SIBLING_TAGS.has(c.tagName) && c.tagName !== 'w:sectPr'
+  );
+  const idx = siblings.indexOf(p);
+  if (idx < 0) return false;
+  const prev = siblings[idx - 1];
+  const next = siblings[idx + 1];
+  if (!prev && !next) return false;
+  if (prev?.tagName === 'w:tbl' && !next) return false;
+  if (prev?.tagName === 'w:tbl' && next?.tagName === 'w:tbl') return false;
+  return true;
+}
+
+/**
+ * Resolve a paragraph whose paragraph MARK revision was applied (deleted mark
+ * accepted, or inserted mark rejected): the paragraph break disappears, so the
+ * paragraph's remaining content merges into the FOLLOWING paragraph. The
+ * surviving (following) paragraph keeps its own w:pPr — formatting follows the
+ * surviving paragraph mark — and the merged-away paragraph's w:pPr is dropped.
+ *
+ * The revision targets only the mark, never the paragraph's contents, so the
+ * contents must not be dropped wholesale (they are removed only via their own
+ * run-level w:del / w:ins wrappers). When no following sibling paragraph
+ * exists (last block, or the next block is a table), there is no break to
+ * remove into: content-bearing paragraphs are kept, and emptied ones are
+ * removed only where removal keeps the parent structurally valid
+ * (canSafelyRemoveEmptyParagraph).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @see https://github.com/UseJunior/safe-docx/issues/431
+ */
+function resolveParagraphMarkRevision(p: Element): void {
+  const parent = p.parentNode;
+  if (!parent) return;
+
+  const target = findFollowingSiblingParagraph(p);
+  if (!target) {
+    if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
+      parent.removeChild(p);
+    }
+    return;
+  }
+
+  // The merged content precedes the target's own content in document order.
+  let insertIndex = paragraphContentStartIndex(target);
+  for (const child of childElements(p)) {
+    if (child.tagName === 'w:pPr') continue;
+    p.removeChild(child);
+    insertChildAt(target, child, insertIndex);
+    insertIndex++;
+  }
+  parent.removeChild(p);
+}
+
 function moveBookmarkMarker(
   marker: Element,
   targetParagraph: Element,
@@ -287,6 +397,13 @@ function preserveCrossParagraphBookmarksForReject(
         continue;
       }
 
+      if (parentElement(start) === paragraph && findFollowingSiblingParagraph(paragraph)) {
+        // A direct child of a merging paragraph rides the Step-3 merge in
+        // document order; pre-moving it here would reorder the boundary
+        // relative to the surviving untracked content.
+        continue;
+      }
+
       const id = start.getAttribute('w:id');
       if (!id) {
         continue;
@@ -321,6 +438,13 @@ function preserveCrossParagraphBookmarksForReject(
 
     for (const end of findAllByTagName(paragraph, 'w:bookmarkEnd')) {
       if (!end.parentNode || !endTarget) {
+        continue;
+      }
+
+      if (parentElement(end) === paragraph && findFollowingSiblingParagraph(paragraph)) {
+        // A direct child of a merging paragraph rides the Step-3 merge in
+        // document order; pre-moving it here would reorder the boundary
+        // relative to the surviving untracked content.
         continue;
       }
 
@@ -372,21 +496,23 @@ function preserveCrossParagraphBookmarksForReject(
 export function acceptAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
-  // Remove a paragraph on Accept All iff its paragraph MARK is a tracked deletion
-  // (<w:pPr><w:rPr><w:del .../></w:rPr>) — the paragraph break itself was deleted, so accepting
-  // the deletion removes the whole paragraph. This is the Word/LibreOffice-faithful, purely
-  // mark-based rule (the accept-side mirror of rejectAllChanges).
+  // Merge a paragraph on Accept All iff its paragraph MARK is a tracked deletion
+  // (<w:pPr><w:rPr><w:del .../></w:rPr>) — the paragraph BREAK itself was deleted, so accepting
+  // the deletion merges the paragraph's surviving content into the following paragraph
+  // (resolveParagraphMarkRevision). The contents are deleted only via their own run-level
+  // w:del wrappers. This is the Word/LibreOffice-faithful, purely mark-based rule (the
+  // accept-side mirror of rejectAllChanges).
   //
-  // We deliberately do NOT drop a paragraph based on content (e.g. "all runs are inside w:del"
+  // We deliberately do NOT touch a paragraph based on content (e.g. "all runs are inside w:del"
   // or "w:moveFrom"). A run-level deletion under an UNTRACKED paragraph mark means text was
   // deleted from a pre-existing paragraph; Word and LibreOffice both keep that paragraph (empty)
   // on accept, and a content-based drop over-deletes it. safe-docx's own deleted paragraphs
   // always carry the PPR-DEL mark (wrapParagraphAsDeleted), so the mark-based rule covers them
   // without the old content heuristic.
-  const paragraphsToRemove = new Set<Element>();
+  const markDeletedParagraphs: Element[] = [];
   for (const p of findAllByTagName(root, 'w:p')) {
     if (paragraphHasParaMarker(p, 'w:del')) {
-      paragraphsToRemove.add(p);
+      markDeletedParagraphs.push(p);
     }
   }
 
@@ -415,11 +541,11 @@ export function acceptAllChanges(documentXml: string): string {
   // Strip paragraph-level markers now that changes are accepted.
   removeParaMarkers(root);
 
-  // Remove the PPR-DEL-marked paragraphs (their paragraph mark was deleted).
-  for (const p of paragraphsToRemove) {
-    if (p.parentNode) {
-      p.parentNode.removeChild(p);
-    }
+  // Resolve the PPR-DEL-marked paragraphs (their paragraph mark was deleted):
+  // merge each into its following paragraph (document order, so consecutive
+  // mark-deleted paragraphs cascade forward into the first surviving one).
+  for (const p of markDeletedParagraphs) {
+    resolveParagraphMarkRevision(p);
   }
 
   // Drop hyperlink wrappers emptied by the accepted deletions above.
@@ -442,34 +568,40 @@ export function acceptAllChanges(documentXml: string): string {
 export function rejectAllChanges(documentXml: string): string {
   const root = parseDocumentXml(documentXml);
 
-  // Step 1: Remove a paragraph on Reject All iff its paragraph MARK is a tracked
+  // Step 1: Merge a paragraph on Reject All iff its paragraph MARK is a tracked
   // insertion (<w:pPr><w:rPr><w:ins .../></w:rPr>) — i.e. the paragraph break itself
-  // was inserted, so rejecting the insertion removes the whole paragraph. This is the
+  // was inserted, so rejecting the insertion merges the paragraph's surviving content
+  // into the following paragraph (resolveParagraphMarkRevision). The contents
+  // disappear only via their own run-level w:ins wrappers. This is the
   // Word/LibreOffice-faithful, purely mark-based rule.
   //
-  // We deliberately do NOT drop a paragraph based on content (e.g. "all runs are inside
+  // We deliberately do NOT touch a paragraph based on content (e.g. "all runs are inside
   // w:ins"). A run-level insertion under an UNTRACKED paragraph mark means text was
   // inserted into a pre-existing paragraph; Word and LibreOffice both keep that
   // paragraph (empty) on reject, and a content-based drop over-deletes it. safe-docx's
   // own inserted paragraphs always carry the PPR-INS mark now (wrapParagraphAsInserted),
   // so the mark-based rule covers them without the old content heuristic.
-  const paragraphsToRemove = new Set<Element>();
+  const markInsertedParagraphs = new Set<Element>();
   for (const p of findAllByTagName(root, 'w:p')) {
     if (paragraphHasParaMarker(p, 'w:ins')) {
-      paragraphsToRemove.add(p);
+      markInsertedParagraphs.add(p);
     }
   }
 
-  preserveCrossParagraphBookmarksForReject(root, paragraphsToRemove);
+  // Bookmarks nested inside w:ins content are dropped with Step 2's wrapper
+  // removal, so boundaries whose counterpart lives in a kept paragraph must
+  // move out first. (Direct-child bookmarks would survive the Step-3 merge.)
+  preserveCrossParagraphBookmarksForReject(root, markInsertedParagraphs);
 
   // Step 2: Remove w:ins elements entirely (inserted content disappears)
   removeAllByTagName(root, 'w:ins');
 
-  // Step 3: Remove the PPR-INS-marked paragraphs (their paragraph mark was inserted)
-  for (const p of paragraphsToRemove) {
-    if (p.parentNode) {
-      p.parentNode.removeChild(p);
-    }
+  // Step 3: Resolve the PPR-INS-marked paragraphs (their paragraph mark was
+  // inserted): merge each into its following paragraph (document order, so
+  // consecutive mark-inserted paragraphs cascade forward into the first
+  // surviving one).
+  for (const p of markInsertedParagraphs) {
+    resolveParagraphMarkRevision(p);
   }
 
   // Remove w:moveTo elements entirely
