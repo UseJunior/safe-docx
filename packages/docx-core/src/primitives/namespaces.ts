@@ -171,4 +171,10 @@ export const W = {
   // Revision wrappers
   del: 'del',
   moveFrom: 'moveFrom',
+
+  // Font table (word/fontTable.xml)
+  font: 'font',
+  charset: 'charset',
+  family: 'family',
+  pitch: 'pitch',
 } as const;
