@@ -301,5 +301,14 @@ export function xmlToDocPreviewRuns(xmlString: string): DocPreviewRun[] {
  * Strips all XML tags and returns trimmed text content.
  */
 function extractRawText(xml: string): string {
-  return xml.replace(/<[^>]+>/g, '').trim();
+  // Strip tags repeatedly until the string stops changing: a single pass can
+  // leave behind a freshly-formed "<...>" when angle brackets are nested or
+  // adjacent (e.g. "<<b>>"), which a one-shot replace would miss.
+  let out = xml;
+  let prev: string;
+  do {
+    prev = out;
+    out = out.replace(/<[^>]+>/g, '');
+  } while (out !== prev);
+  return out.trim();
 }
