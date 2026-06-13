@@ -88,8 +88,7 @@
   },
   "overrides": {
     "@vitest/runner": "4.1.8",
-    "uuid": "^11.1.1",
-    "esbuild": "^0.28.1"
+    "uuid": "^11.1.1"
   },
   "engines": {
     "node": ">=20"
