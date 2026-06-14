@@ -2,8 +2,10 @@ import { describe, expect } from 'vitest';
 import { childElements } from '../primitives/dom-helpers.js';
 import { parseXml } from '../primitives/xml.js';
 import { readZipText } from '../primitives/zip.js';
-import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
+import { itAllure, testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { generateDocx } from './compile.js';
+import { THEME_SLOT_TO_CLR_SCHEME } from './emit/theme-part.js';
+import { CANONICAL_THEME_COLORS } from './theme-colors.js';
 import type { DocumentSpec, ThemeColorSlot } from './types.js';
 
 const TEST_FEATURE = 'add-custom-theme';
@@ -185,4 +187,25 @@ describe('Traceability: custom theme generation', () => {
       });
     },
   );
+
+  // Regression guard: CANONICAL_THEME_COLORS (used to derive the w:color/@w:val
+  // fallback for theme-relative authoring) and the clrScheme baked into the
+  // emitted default theme1.xml are two declarations of the same palette. If they
+  // drift, a themed run's fallback hex would disagree with the theme it points at.
+  // Lock them to the actually-emitted default theme.
+  itAllure('canonical theme color fallbacks match the emitted default theme1.xml', async () => {
+    const theme = await readPartDom(
+      await generateDocx({ sections: [{ blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'plain' }] }] }] }),
+      'word/theme/theme1.xml',
+    );
+    for (const [slot, elementName] of Object.entries(THEME_SLOT_TO_CLR_SCHEME) as Array<[ThemeColorSlot, string]>) {
+      const schemeEl = theme.getElementsByTagName(`a:${elementName}`).item(0);
+      expect(schemeEl, `theme1.xml clrScheme missing a:${elementName}`).toBeTruthy();
+      const colorEl = firstChildElement(schemeEl!);
+      // Canonical dk1/lt1 use sysClr (val=windowText/window, lastClr=hex); other
+      // slots use srgbClr (val=hex). Read whichever carries the resolved hex.
+      const emittedHex = colorEl.tagName === 'a:sysClr' ? colorEl.getAttribute('lastClr') : colorEl.getAttribute('val');
+      expect(emittedHex, `mismatch for slot ${slot} (a:${elementName})`).toBe(CANONICAL_THEME_COLORS[slot]);
+    }
+  });
 });

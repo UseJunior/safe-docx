@@ -24,7 +24,8 @@ const THEME_REL_TYPE =
 
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 
-const THEME_SLOT_TO_CLR_SCHEME: Record<ThemeColorSlot, string> = {
+/** Maps each authoring slot to its `clrScheme` child element name in theme1.xml. */
+export const THEME_SLOT_TO_CLR_SCHEME: Record<ThemeColorSlot, string> = {
   text1: 'dk1',
   background1: 'lt1',
   text2: 'dk2',

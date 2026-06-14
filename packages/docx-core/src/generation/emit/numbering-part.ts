@@ -21,7 +21,7 @@ import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
-import type { DocumentSpec, NumberingSpec } from '../types.js';
+import type { DocumentSpec, NumberingSpec, ThemeColorSlot } from '../types.js';
 import { resolveThemeColorValues } from '../theme-colors.js';
 import type { NumberingIdMap } from './emit-context.js';
 import { buildRunPropsElement } from './properties.js';
@@ -50,9 +50,10 @@ export function emitNumberingPartIfNeeded(spec: DocumentSpec, ctx: CompileContex
   definitions.forEach((definition, index) => {
     ids.set(definition.numId, index + 1);
   });
+  const themeColorValues = resolveThemeColorValues(spec.theme);
   // CT_Numbering sequence: every abstractNum precedes every num.
   definitions.forEach((definition, index) => {
-    root.appendChild(buildAbstractNum(doc, definition, index, spec));
+    root.appendChild(buildAbstractNum(doc, definition, index, themeColorValues));
   });
   definitions.forEach((_definition, index) => {
     const num = createWmlElement(doc, W.num, { 'w:numId': String(index + 1) });
@@ -68,7 +69,12 @@ export function emitNumberingPartIfNeeded(spec: DocumentSpec, ctx: CompileContex
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.12
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.6
  */
-function buildAbstractNum(doc: Document, definition: NumberingSpec, abstractId: number, spec: DocumentSpec): Element {
+function buildAbstractNum(
+  doc: Document,
+  definition: NumberingSpec,
+  abstractId: number,
+  themeColorValues: ReadonlyMap<ThemeColorSlot, string>,
+): Element {
   const abstractNum = createWmlElement(doc, W.abstractNum, { 'w:abstractNumId': String(abstractId) });
   abstractNum.appendChild(
     createWmlElement(doc, W.multiLevelType, {
@@ -76,7 +82,7 @@ function buildAbstractNum(doc: Document, definition: NumberingSpec, abstractId: 
     }),
   );
   for (const level of definition.levels) {
-    abstractNum.appendChild(buildLevel(doc, level, spec));
+    abstractNum.appendChild(buildLevel(doc, level, themeColorValues));
   }
   return abstractNum;
 }
@@ -88,7 +94,11 @@ function buildAbstractNum(doc: Document, definition: NumberingSpec, abstractId: 
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.11
  * @conformance ECMA-376 edition 5, Part 1 § 17.9.7
  */
-function buildLevel(doc: Document, level: NumberingSpec['levels'][number], spec: DocumentSpec): Element {
+function buildLevel(
+  doc: Document,
+  level: NumberingSpec['levels'][number],
+  themeColorValues: ReadonlyMap<ThemeColorSlot, string>,
+): Element {
   const lvl = createWmlElement(doc, W.lvl, { 'w:ilvl': String(level.ilvl) });
   lvl.appendChild(createWmlElement(doc, W.start, { 'w:val': String(level.start ?? 1) }));
   lvl.appendChild(createWmlElement(doc, W.numFmt, { 'w:val': level.numFmt }));
@@ -106,7 +116,7 @@ function buildLevel(doc: Document, level: NumberingSpec['levels'][number], spec:
     lvl.appendChild(pPr);
   }
   if (level.runProps !== undefined) {
-    const rPr = buildRunPropsElement(doc, level.runProps, { themeColorValues: resolveThemeColorValues(spec.theme) });
+    const rPr = buildRunPropsElement(doc, level.runProps, { themeColorValues });
     if (rPr) lvl.appendChild(rPr);
   }
   return lvl;
