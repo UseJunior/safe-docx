@@ -13,7 +13,8 @@ import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { OOXML, W } from '../../primitives/namespaces.js';
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
-import type { DocumentSpec, StyleSpec } from '../types.js';
+import type { DocumentSpec, StyleSpec, ThemeColorSlot } from '../types.js';
+import { resolveThemeColorValues } from '../theme-colors.js';
 import { buildParagraphPropsElement, buildRunPropsElement, styleParagraphProps } from './properties.js';
 
 export const STYLES_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml';
@@ -31,10 +32,11 @@ export function emitStylesPart(spec: DocumentSpec, ctx: CompileContext): void {
   const doc = parseXml(STYLES_SKELETON);
   const root = doc.documentElement!;
 
+  const themeColorValues = resolveThemeColorValues(spec.theme);
   root.appendChild(buildDocDefaults(doc));
   root.appendChild(buildNormalStyle(doc));
   for (const style of spec.styles ?? []) {
-    root.appendChild(buildStyle(doc, style));
+    root.appendChild(buildStyle(doc, style, themeColorValues));
   }
 
   ctx.setFileContent('word/styles.xml', XML_DECL + serializeXml(doc));
@@ -70,7 +72,11 @@ function buildNormalStyle(doc: Document): Element {
 }
 
 /** @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17 */
-function buildStyle(doc: Document, spec: StyleSpec): Element {
+function buildStyle(
+  doc: Document,
+  spec: StyleSpec,
+  themeColorValues: ReadonlyMap<ThemeColorSlot, string>,
+): Element {
   const style = createWmlElement(doc, W.style, { 'w:type': spec.type, 'w:styleId': spec.styleId });
   style.appendChild(createWmlElement(doc, W.name, { 'w:val': spec.name }));
   if (spec.basedOn !== undefined) {
@@ -87,7 +93,7 @@ function buildStyle(doc: Document, spec: StyleSpec): Element {
     if (pPr) style.appendChild(pPr);
   }
   if (spec.run) {
-    const rPr = buildRunPropsElement(doc, spec.run);
+    const rPr = buildRunPropsElement(doc, spec.run, { themeColorValues });
     if (rPr) style.appendChild(rPr);
   }
   return style;

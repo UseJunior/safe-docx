@@ -7,7 +7,7 @@
  * cannot carry notes, e.g. headers/footers, and when notes are disabled).
  */
 
-import type { DraftingNoteSpec } from '../types.js';
+import type { DraftingNoteSpec, ThemeColorSlot } from '../types.js';
 
 /** Spec-level numbering handle → numeric w:numId value. */
 export type NumberingIdMap = ReadonlyMap<string, number>;
@@ -28,4 +28,6 @@ export type BlockEmitContext = {
   numberingIds?: NumberingIdMap;
   /** Present only where drafting notes may anchor (body story, notes enabled). */
   notes?: DraftingNoteCollector;
+  /** Merged canonical/custom theme colors used as reader fallback values. */
+  themeColorValues?: ReadonlyMap<ThemeColorSlot, string>;
 };

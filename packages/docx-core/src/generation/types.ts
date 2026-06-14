@@ -15,6 +15,8 @@
 
 export type DocumentSpec = {
   meta?: DocumentMetaSpec;
+  /** Optional partial override for the emitted package theme. */
+  theme?: DocumentThemeSpec;
   /** Emitted to word/styles.xml. Document defaults + Normal are always emitted. */
   styles?: StyleSpec[];
   /** Emitted to word/numbering.xml when non-empty. */
@@ -32,6 +34,30 @@ export type DocumentMetaSpec = {
   author?: string;
   /** ISO-8601 timestamp used for docProps dates. Generation never reads the clock. */
   createdIso?: string;
+};
+
+export const THEME_COLOR_SLOTS = [
+  'text1',
+  'background1',
+  'text2',
+  'background2',
+  'accent1',
+  'accent2',
+  'accent3',
+  'accent4',
+  'accent5',
+  'accent6',
+  'hyperlink',
+  'followedHyperlink',
+] as const;
+
+export type ThemeColorSlot = (typeof THEME_COLOR_SLOTS)[number];
+
+export type DocumentThemeSpec = {
+  /** Partial slot overrides; values are six-digit hex without '#'. */
+  colors?: Partial<Record<ThemeColorSlot, string>>;
+  /** Optional major (headings) and minor (body) latin typefaces. */
+  fonts?: { major?: string; minor?: string };
 };
 
 export type SectionSpec = {
@@ -140,6 +166,12 @@ export type RunProps = {
   underline?: 'single' | 'double' | 'none';
   /** Six-digit hex without '#', e.g. 'FF0000'. */
   colorHex?: string;
+  /** Theme color slot emitted as w:color/@w:themeColor. */
+  themeColor?: ThemeColorSlot;
+  /** Two-digit hex tint emitted as w:color/@w:themeTint. */
+  themeTint?: string;
+  /** Two-digit hex shade emitted as w:color/@w:themeShade. */
+  themeShade?: string;
   /** Fixed text highlight color; arbitrary run fill belongs to run shading. */
   highlight?: HighlightColor;
   /** Applied to ascii + hAnsi + cs so all script ranges agree. */
@@ -205,6 +237,9 @@ export type TableCellSpec = {
   vMerge?: 'restart' | 'continue';
   borders?: TableBorders;
   shadingHex?: string;
+  themeFill?: ThemeColorSlot;
+  themeFillTint?: string;
+  themeFillShade?: string;
   vAlign?: 'top' | 'center' | 'bottom';
   marginsTwips?: { top?: number; right?: number; bottom?: number; left?: number };
   blocks: BlockSpec[];
