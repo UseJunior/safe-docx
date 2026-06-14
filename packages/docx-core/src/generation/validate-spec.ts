@@ -37,8 +37,10 @@ import type {
   TableBorders,
   TableSpec,
 } from './types.js';
+import { HIGHLIGHT_COLORS } from './types.js';
 
 const COLOR_HEX_RE = /^[0-9A-Fa-f]{6}$/;
+const HIGHLIGHT_COLOR_SET: ReadonlySet<string> = new Set(HIGHLIGHT_COLORS);
 
 function unsupported(path: string, feature: string): never {
   throw new GenerationSpecError(
@@ -378,5 +380,12 @@ function validateRunProps(props: RunProps, path: string): void {
   }
   if (props.sizePt !== undefined && (!(props.sizePt > 0) || !Number.isFinite(props.sizePt))) {
     throw new GenerationSpecError('invalid_value', `${path}/sizePt`, 'sizePt must be a positive finite number');
+  }
+  if (props.highlight !== undefined && !HIGHLIGHT_COLOR_SET.has(props.highlight)) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      `${path}/highlight`,
+      `highlight must be one of the fixed CT_HighlightColor values, got '${props.highlight}'`,
+    );
   }
 }
