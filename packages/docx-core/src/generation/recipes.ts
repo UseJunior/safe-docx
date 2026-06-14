@@ -12,22 +12,45 @@
 import type { BlockSpec, BorderSpec, ParagraphSpec, TableSpec } from './types.js';
 
 const SINGLE: BorderSpec = { style: 'single' };
+const NONE: BorderSpec = { style: 'none' };
+const DEFAULT_SUBROW_COLOR_HEX = '595959';
+const DEFAULT_SUBROW_LABEL_INDENT_TWIPS = 240;
+
+export type CoverTermRow = { label: string; value: string };
+export type CoverTermGroupRow = { group: string };
+export type CoverTermSubrow = { label: string; value: string; subrow: true };
+export type CoverTermEntry = CoverTermRow | CoverTermGroupRow | CoverTermSubrow;
 
 export type CoverTermsOptions = {
-  /** Label/value pairs, rendered one row each in declaration order. */
-  terms: Array<{ label: string; value: string }>;
+  /** Plain rows, group headers, and subrows rendered in declaration order. */
+  terms: CoverTermEntry[];
   /** Two-column widths in twips; defaults to a 2880/6480 split of a 6.5" body. */
   columnWidthsTwips?: [number, number];
   /** Heading text for a shaded full-width header row; omitted when absent. */
   title?: string;
+  /** Table border style; defaults to the historical full grid. */
+  borderMode?: 'grid' | 'horizontal-rules';
+  /** Optional minimum row height applied to term/group/sub rows, not the title row. */
+  rowHeightTwips?: number;
+  /** Optional uniform cell padding applied to every cover-terms cell. */
+  cellPaddingTwips?: number;
+  /** Text color for subrow labels and values; defaults to mid-gray. */
+  subrowColorHex?: string;
+  /** Additional left padding on subrow label cells; defaults to 240 twips. */
+  subrowLabelIndentTwips?: number;
 };
 
 /**
  * A fixed-layout two-column label/value table for cover-terms blocks
- * (scenario SDX-GEN-070).
+ * (scenario SDX-GEN-070), with optional house-style grouped/sub rows.
  */
 export function coverTermsTable(options: CoverTermsOptions): TableSpec {
   const [labelWidth, valueWidth] = options.columnWidthsTwips ?? [2880, 6480];
+  const borders =
+    options.borderMode === 'horizontal-rules'
+      ? { top: SINGLE, bottom: SINGLE, left: NONE, right: NONE, insideH: SINGLE, insideV: NONE }
+      : { top: SINGLE, bottom: SINGLE, left: SINGLE, right: SINGLE, insideH: SINGLE, insideV: SINGLE };
+  const rowRhythm = rowRhythmProps(options);
   const rows: TableSpec['rows'] = [];
   if (options.title !== undefined) {
     rows.push({
@@ -37,16 +60,51 @@ export function coverTermsTable(options: CoverTermsOptions): TableSpec {
           gridSpan: 2,
           shadingHex: 'D9D9D9',
           vAlign: 'center',
+          ...cellPaddingProps(options),
           blocks: [paragraph(options.title, { bold: true, alignment: 'center' })],
         },
       ],
     });
   }
   for (const term of options.terms) {
+    if ('group' in term) {
+      rows.push({
+        ...rowRhythm,
+        cells: [
+          {
+            gridSpan: 2,
+            vAlign: 'center',
+            ...cellPaddingProps(options),
+            blocks: [paragraph(term.group, { bold: true })],
+          },
+        ],
+      });
+      continue;
+    }
+
+    const subrow = 'subrow' in term && term.subrow === true;
     rows.push({
+      ...rowRhythm,
       cells: [
-        { blocks: [paragraph(term.label, { bold: true })] },
-        { blocks: [paragraph(term.value)] },
+        {
+          ...cellPaddingProps(options, subrow ? { left: options.subrowLabelIndentTwips ?? DEFAULT_SUBROW_LABEL_INDENT_TWIPS } : undefined),
+          blocks: [
+            paragraph(term.label, {
+              bold: !subrow,
+              italic: subrow,
+              colorHex: subrow ? (options.subrowColorHex ?? DEFAULT_SUBROW_COLOR_HEX) : undefined,
+            }),
+          ],
+        },
+        {
+          ...cellPaddingProps(options),
+          blocks: [
+            paragraph(term.value, {
+              italic: subrow,
+              colorHex: subrow ? (options.subrowColorHex ?? DEFAULT_SUBROW_COLOR_HEX) : undefined,
+            }),
+          ],
+        },
       ],
     });
   }
@@ -54,7 +112,7 @@ export function coverTermsTable(options: CoverTermsOptions): TableSpec {
     kind: 'table',
     layout: 'fixed',
     columnWidthsTwips: [labelWidth, valueWidth],
-    borders: { top: SINGLE, bottom: SINGLE, left: SINGLE, right: SINGLE, insideH: SINGLE, insideV: SINGLE },
+    borders,
     rows,
   };
 }
@@ -104,11 +162,37 @@ export function signatureBlock(options: SignatureBlockOptions): BlockSpec[] {
 
 function paragraph(
   text: string,
-  opts?: { bold?: boolean; alignment?: ParagraphSpec['alignment'] },
+  opts?: { bold?: boolean; italic?: boolean; colorHex?: string; alignment?: ParagraphSpec['alignment'] },
 ): ParagraphSpec {
   return {
     kind: 'paragraph',
     ...(opts?.alignment !== undefined ? { alignment: opts.alignment } : {}),
-    runs: [{ kind: 'text', text, ...(opts?.bold ? { bold: true } : {}) }],
+    runs: [
+      {
+        kind: 'text',
+        text,
+        ...(opts?.bold ? { bold: true } : {}),
+        ...(opts?.italic ? { italic: true } : {}),
+        ...(opts?.colorHex !== undefined ? { colorHex: opts.colorHex } : {}),
+      },
+    ],
+  };
+}
+
+function rowRhythmProps(options: CoverTermsOptions): Pick<TableSpec['rows'][number], 'heightTwips' | 'heightRule'> {
+  return options.rowHeightTwips === undefined ? {} : { heightTwips: options.rowHeightTwips, heightRule: 'atLeast' };
+}
+
+function cellPaddingProps(
+  options: CoverTermsOptions,
+  overrides?: NonNullable<TableSpec['rows'][number]['cells'][number]['marginsTwips']>,
+): Pick<TableSpec['rows'][number]['cells'][number], 'marginsTwips'> {
+  if (options.cellPaddingTwips === undefined && overrides === undefined) return {};
+  const uniform = options.cellPaddingTwips;
+  return {
+    marginsTwips: {
+      ...(uniform === undefined ? {} : { top: uniform, right: uniform, bottom: uniform, left: uniform }),
+      ...overrides,
+    },
   };
 }
