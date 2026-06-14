@@ -105,24 +105,33 @@ export type ParagraphSpec = {
 
 export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec;
 
-export type HighlightColor =
-  | 'yellow'
-  | 'green'
-  | 'cyan'
-  | 'magenta'
-  | 'blue'
-  | 'red'
-  | 'darkBlue'
-  | 'darkCyan'
-  | 'darkGreen'
-  | 'darkMagenta'
-  | 'darkRed'
-  | 'darkYellow'
-  | 'darkGray'
-  | 'lightGray'
-  | 'black'
-  | 'white'
-  | 'none';
+/**
+ * The fixed set of text-highlight values (CT_HighlightColor). Single source of
+ * truth: the {@link HighlightColor} union is derived from this array, and
+ * validation reuses it as a runtime whitelist so JSON/JS callers cannot author
+ * an out-of-enum `w:highlight`.
+ */
+export const HIGHLIGHT_COLORS = [
+  'yellow',
+  'green',
+  'cyan',
+  'magenta',
+  'blue',
+  'red',
+  'darkBlue',
+  'darkCyan',
+  'darkGreen',
+  'darkMagenta',
+  'darkRed',
+  'darkYellow',
+  'darkGray',
+  'lightGray',
+  'black',
+  'white',
+  'none',
+] as const;
+
+export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
 
 /** Run-level formatting shared by text runs, fields, and style definitions. */
 export type RunProps = {

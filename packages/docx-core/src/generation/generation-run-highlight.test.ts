@@ -7,7 +7,7 @@ import { parseXml } from '../primitives/xml.js';
 import { readZipText } from '../primitives/zip.js';
 import { generateDocx } from './compile.js';
 import { checkGeneratedPackage } from './structural-checks.js';
-import type { DocumentSpec } from './types.js';
+import type { DocumentSpec, HighlightColor } from './types.js';
 
 const TEST_FEATURE = 'add-run-highlight';
 const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
@@ -96,6 +96,23 @@ describe('Traceability: run highlight generation', () => {
         const saved = await loaded.toBuffer();
         const { dom: savedDoc } = await loadDocumentXml(saved.buffer);
         expect(highlightValues(savedDoc)).toEqual(['yellow', 'none']);
+      });
+
+      await then('an out-of-enum highlight value is rejected before emission', async () => {
+        const invalidSpec: DocumentSpec = {
+          sections: [
+            {
+              blocks: [
+                {
+                  kind: 'paragraph',
+                  // Simulate a JSON/JS caller bypassing the closed union at runtime.
+                  runs: [{ kind: 'text', text: 'x', highlight: 'notAHighlight' as HighlightColor }],
+                },
+              ],
+            },
+          ],
+        };
+        await expect(generateDocx(invalidSpec)).rejects.toThrow(/highlight must be one of/);
       });
     },
   );
