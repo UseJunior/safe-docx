@@ -13,9 +13,9 @@ export default [
     ],
   },
   {
-    label: 'Planning & Batch',
-    description: 'Stage multi-step edit plans and apply them atomically.',
-    tools: ['init_plan', 'merge_plans', 'apply_plan'],
+    label: 'Batch Editing',
+    description: 'Validate, conflict-check, and apply multiple edits in one call.',
+    tools: ['batch_edit'],
   },
   {
     label: 'Text Editing',
