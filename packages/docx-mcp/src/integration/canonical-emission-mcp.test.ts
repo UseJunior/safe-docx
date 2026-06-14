@@ -7,7 +7,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { openSession, assertSuccess, registerCleanup } from '../testing/session-test-utils.js';
 import { replaceText } from '../tools/replace_text.js';
 import { insertParagraph } from '../tools/insert_paragraph.js';
-import { applyPlan } from '../tools/apply_plan.js';
+import { batchEdit } from '../tools/batch_edit.js';
 import { clearFormatting } from '../tools/clear_formatting.js';
 import { formatLayout } from '../tools/format_layout.js';
 import { addComment } from '../tools/add_comment.js';
@@ -166,7 +166,7 @@ describe('Tool integration through SessionManager: canonical revision emission',
     });
   });
 
-  test('apply_plan saves SafeDocX-authored tracked output for delegated edits', async ({
+  test('batch_edit saves SafeDocX-authored tracked output for delegated edits', async ({
     given,
     when,
     then,
@@ -178,8 +178,8 @@ describe('Tool integration through SessionManager: canonical revision emission',
       opened = await openSession(['Hello world'], { mgr: createManager() });
     });
 
-    await when('apply_plan runs replace_text and insert_paragraph steps', async () => {
-      const applied = await applyPlan(opened.mgr, {
+    await when('batch_edit runs replace_text and insert_paragraph steps', async () => {
+      const applied = await batchEdit(opened.mgr, {
         file_path: opened.inputPath,
         steps: [
           {
@@ -200,7 +200,7 @@ describe('Tool integration through SessionManager: canonical revision emission',
           },
         ],
       });
-      assertSuccess(applied, 'apply_plan');
+      assertSuccess(applied, 'batch_edit');
 
       const parts = await saveAndReadParts(
         opened.mgr,

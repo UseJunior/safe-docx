@@ -80,11 +80,6 @@ describe('parseToolFlags', () => {
       expect(args.file_path).toBe('/explicit.docx');
     });
 
-    test('does not consume positional as file_path for tools without that param', () => {
-      expect(() => parseToolFlags(['extra-arg'], 'merge_plans')).toThrow(
-        'Unexpected positional argument',
-      );
-    });
   });
 
   describe('short alias resolution', () => {

@@ -7,11 +7,9 @@ import { SessionManager, type GDocsSession, type OdfSession } from './session/ma
 import { SAFE_DOCX_MCP_TOOLS } from './tool_catalog.js';
 import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
-import { initPlan } from './tools/init_plan.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
-import { mergePlans } from './tools/merge_plans.js';
-import { applyPlan } from './tools/apply_plan.js';
+import { batchEdit } from './tools/batch_edit.js';
 import { save } from './tools/save.js';
 import { exportDocument } from './tools/export.js';
 import { convertToOdt } from './tools/convert_to_odt.js';
@@ -161,12 +159,8 @@ export async function dispatchToolCall(
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'grep');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'grep');
       return await grep(sessions, args as Parameters<typeof grep>[1]);
-    case 'init_plan':
-      return await initPlan(sessions, args as Parameters<typeof initPlan>[1]);
-    case 'merge_plans':
-      return await mergePlans(args as Parameters<typeof mergePlans>[0]);
-    case 'apply_plan':
-      return await applyPlan(sessions, args as Parameters<typeof applyPlan>[1]);
+    case 'batch_edit':
+      return await batchEdit(sessions, args as Parameters<typeof batchEdit>[1]);
     case 'replace_text':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'replace_text');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'replace_text');

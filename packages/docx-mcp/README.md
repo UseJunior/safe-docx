@@ -44,7 +44,7 @@ Add to your MCP client:
 
 - Read/Search: `read_file`, `grep`, `has_tracked_changes`, `get_session_status`
 - Edit/Layout: `replace_text`, `insert_paragraph`, `format_layout`, `accept_changes`
-- Planning/Batch: `init_plan`, `merge_plans`, `apply_plan`
+- Batch: `batch_edit`
 - Compare/Revision: `compare_documents`, `extract_revisions`, `save`
 - Comments/Footnotes: `add_comment`, `get_comments`, `delete_comment`, `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote`
 - Session/Safety: `clear_session`, path-policy + archive guardrails
@@ -200,7 +200,7 @@ For citation systems that want a portable hash whose canonicalization is documen
 
 The fingerprint is computed as `"sha256:nfkc:" + sha256( stripCfInvisibles(NFKC(visibleText)).replace(/\s+/g, " ").trim() )`, truncated to 32 hex chars. Case is preserved; curly quotes and dashes are NOT folded to ASCII. Cf-category invisibles (soft hyphen, ZWJ/ZWNJ, LRM/RLM, bidi controls, variation selectors, BOM) are stripped so byte-level round-trip noise does not change the hash. The flag has no effect on `format: "toon"` or `format: "simple"`, and is silently ignored for Google Docs sessions.
 
-`content_fingerprint` is a content hash, not a paragraph key. Paragraphs with identical normalized visible text produce identical fingerprints by design; use `_bk_*` IDs whenever you need per-paragraph identity. Edit tools (`replace_text`, `insert_paragraph`, `apply_plan`, etc.) accept ONLY `_bk_*` IDs as anchors — `content_fingerprint` is never an edit anchor. The `sha256:nfkc:` prefix is intentional version reservation; future algorithm bumps will emit a different prefix (e.g. `sha256:nfkc-strip:`), so consumers should store and compare the full prefixed string.
+`content_fingerprint` is a content hash, not a paragraph key. Paragraphs with identical normalized visible text produce identical fingerprints by design; use `_bk_*` IDs whenever you need per-paragraph identity. Edit tools (`replace_text`, `insert_paragraph`, `batch_edit`, etc.) accept ONLY `_bk_*` IDs as anchors — `content_fingerprint` is never an edit anchor. The `sha256:nfkc:` prefix is intentional version reservation; future algorithm bumps will emit a different prefix (e.g. `sha256:nfkc-strip:`), so consumers should store and compare the full prefixed string.
 
 ## Reliability and Evidence
 

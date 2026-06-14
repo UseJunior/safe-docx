@@ -310,8 +310,8 @@ describe('AI revision validation guard', () => {
     expect(introduced).toHaveLength(2);
   });
 
-  test('apply_plan plan-level preflight rejects invalid markup despite skipped per-step preflights', async () => {
-    const { applyPlan } = await import('./apply_plan.js');
+  test('batch_edit plan-level preflight rejects invalid markup despite skipped per-step preflights', async () => {
+    const { batchEdit } = await import('./batch_edit.js');
     const opened = await openSession([], {
       mgr: manager(),
       xml: documentXml(
@@ -320,7 +320,7 @@ describe('AI revision validation guard', () => {
       ),
     });
 
-    const result = await applyPlan(opened.mgr, {
+    const result = await batchEdit(opened.mgr, {
       file_path: opened.filePath,
       steps: [{
         step_id: 's1',

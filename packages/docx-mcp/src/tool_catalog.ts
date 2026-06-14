@@ -27,8 +27,6 @@ const GOOGLE_DOC_ID_FIELD = {
   ),
 };
 
-const PLAN_OBJECT_SCHEMA = z.object({}).catchall(z.unknown());
-
 export const SAFE_DOCX_TOOL_CATALOG = [
   {
     name: 'read_file',
@@ -87,29 +85,9 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
-    name: 'init_plan',
-    description: 'Initialize revision-bound context metadata for coordinated multi-agent planning.',
-    input: z.object({
-      ...FILE_FIELD,
-      plan_name: z.string().optional(),
-      orchestrator_id: z.string().optional(),
-    }),
-    annotations: { readOnlyHint: true, destructiveHint: false },
-  },
-  {
-    name: 'merge_plans',
-    description: 'Deterministically merge multiple sub-agent plans and detect hard conflicts before apply.',
-    input: z.object({
-      plans: z.array(PLAN_OBJECT_SCHEMA),
-      fail_on_conflict: z.boolean().optional(),
-      require_shared_base_revision: z.boolean().optional(),
-    }),
-    annotations: { readOnlyHint: true, destructiveHint: false },
-  },
-  {
-    name: 'apply_plan',
+    name: 'batch_edit',
     description:
-      'Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.',
+      'Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Accepts inline steps or a plan_file_path JSON array.',
     input: z.object({
       ...FILE_FIELD,
       steps: z
