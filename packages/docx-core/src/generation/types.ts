@@ -105,6 +105,25 @@ export type ParagraphSpec = {
 
 export type InlineSpec = RunSpec | FieldSpec | TabSpec | BreakSpec;
 
+export type HighlightColor =
+  | 'yellow'
+  | 'green'
+  | 'cyan'
+  | 'magenta'
+  | 'blue'
+  | 'red'
+  | 'darkBlue'
+  | 'darkCyan'
+  | 'darkGreen'
+  | 'darkMagenta'
+  | 'darkRed'
+  | 'darkYellow'
+  | 'darkGray'
+  | 'lightGray'
+  | 'black'
+  | 'white'
+  | 'none';
+
 /** Run-level formatting shared by text runs, fields, and style definitions. */
 export type RunProps = {
   bold?: boolean;
@@ -112,6 +131,8 @@ export type RunProps = {
   underline?: 'single' | 'double' | 'none';
   /** Six-digit hex without '#', e.g. 'FF0000'. */
   colorHex?: string;
+  /** Fixed text highlight color; arbitrary run fill belongs to run shading. */
+  highlight?: HighlightColor;
   /** Applied to ascii + hAnsi + cs so all script ranges agree. */
   font?: string;
   sizePt?: number;

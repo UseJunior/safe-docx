@@ -65,6 +65,9 @@ export function buildRunPropsElement(doc: Document, props: RunProps): Element | 
     children.set(W.sz, createWmlElement(doc, W.sz, { 'w:val': halfPoints }));
     children.set(W.szCs, createWmlElement(doc, W.szCs, { 'w:val': halfPoints }));
   }
+  if (props.highlight !== undefined) {
+    children.set(W.highlight, createWmlElement(doc, W.highlight, { 'w:val': props.highlight }));
+  }
   if (props.underline !== undefined) {
     children.set(W.u, createWmlElement(doc, W.u, { 'w:val': props.underline }));
   }
