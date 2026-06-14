@@ -94,7 +94,6 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 - `get_session_status.ts` — session metadata and open-document state only.
 - `grep.ts` — read/search tool with no mutation behavior.
 - `has_tracked_changes.ts` — tracked-change presence detector over existing OOXML.
-- `batch_edit.ts` — Table A
 - `open_document.ts` — session/bootstrap entrypoint that opens a document and reports available tools.
 - `pagination.ts` — token-budget estimation and pagination math only.
 - `path_policy.ts` — filesystem policy enforcement only.
