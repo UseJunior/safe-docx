@@ -448,6 +448,9 @@ function parseArgs() {
 
 function mdEscapeTableCell(value) {
   return String(value)
+    // Escape backslashes first so a literal "\" in the value cannot combine
+    // with the pipe-escape below to form an unintended "\|" sequence.
+    .replace(/\\/g, '\\\\')
     .replace(/\|/g, '\\|')
     .replace(/\r?\n/g, ' ')
     .trim();

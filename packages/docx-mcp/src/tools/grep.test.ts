@@ -48,6 +48,41 @@ describe(FEATURE, () => {
     });
   });
 
+  test('returns PATTERN_LIMIT_EXCEEDED when too many patterns are supplied', async ({ given, when, then }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let result: Awaited<ReturnType<typeof grep>>;
+
+    await given('a session with a simple document open', async () => {
+      opened = await openSession(['Hello world']);
+    });
+
+    await when('grep is called with 65 patterns (one over the 64 cap)', async () => {
+      const patterns = Array.from({ length: 65 }, (_, i) => `p${i}`);
+      result = await grep(opened.mgr, { file_path: opened.inputPath, patterns });
+    });
+
+    await then('the result fails with PATTERN_LIMIT_EXCEEDED before compiling the regex', () => {
+      assertFailure(result, 'PATTERN_LIMIT_EXCEEDED');
+    });
+  });
+
+  test('returns PATTERN_LIMIT_EXCEEDED when the combined pattern length is too large', async ({ given, when, then }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let result: Awaited<ReturnType<typeof grep>>;
+
+    await given('a session with a simple document open', async () => {
+      opened = await openSession(['Hello world']);
+    });
+
+    await when('grep is called with a single pattern exceeding the 2000-char combined cap', async () => {
+      result = await grep(opened.mgr, { file_path: opened.inputPath, patterns: ['a'.repeat(2001)] });
+    });
+
+    await then('the result fails with PATTERN_LIMIT_EXCEEDED', () => {
+      assertFailure(result, 'PATTERN_LIMIT_EXCEEDED');
+    });
+  });
+
   test('accepts singular "pattern" string as alias', async ({ given, when, then }: AllureBddContext) => {
     let opened: Awaited<ReturnType<typeof openSession>>;
     let result: Awaited<ReturnType<typeof grep>>;

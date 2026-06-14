@@ -982,9 +982,20 @@ describe('Paragraph-mark revisions merge into the following paragraph (#431)', (
   // Count <w:p> opens, matching self-closing empties (<w:p/>) too; never matches <w:pPr>/<w:pPrChange>.
   const countParagraphs = (xml: string): number => (xml.match(/<w:p(?:\s|\/|>)/g) ?? []).length;
 
+  const stripTags = (s: string): string => {
+    // Loop until stable so nested/adjacent angle brackets cannot leave a
+    // freshly-formed "<...>" behind after a single replace pass.
+    let out = s;
+    let prev: string;
+    do {
+      prev = out;
+      out = out.replace(/<[^>]+>/g, '');
+    } while (out !== prev);
+    return out;
+  };
   const extractText = (xml: string): string =>
     (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) ?? [])
-      .map((t) => t.replace(/<[^>]+>/g, ''))
+      .map((t) => stripTags(t))
       .join('');
 
   const acceptBoth = (inner: string): { ast: string; primitive: string } => {
