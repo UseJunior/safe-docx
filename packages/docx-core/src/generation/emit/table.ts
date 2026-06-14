@@ -141,8 +141,17 @@ function buildCell(doc: Document, table: TableSpec, cell: TableCellSpec, gridOff
   if (cell.borders) {
     props.set(W.tcBorders, buildBordersElement(doc, W.tcBorders, cell.borders));
   }
-  if (cell.shadingHex !== undefined) {
-    props.set(W.shd, createWmlElement(doc, W.shd, { 'w:val': 'clear', 'w:color': 'auto', 'w:fill': cell.shadingHex }));
+  if (cell.shadingHex !== undefined || cell.themeFill !== undefined) {
+    const attrs: Record<string, string> = { 'w:val': 'clear', 'w:color': 'auto' };
+    if (cell.shadingHex !== undefined) attrs['w:fill'] = cell.shadingHex;
+    if (cell.themeFill !== undefined) {
+      attrs['w:themeFill'] = cell.themeFill;
+      const fallback = ctx?.themeColorValues?.get(cell.themeFill);
+      if (fallback !== undefined && attrs['w:fill'] === undefined) attrs['w:fill'] = fallback;
+    }
+    if (cell.themeFillTint !== undefined) attrs['w:themeFillTint'] = cell.themeFillTint;
+    if (cell.themeFillShade !== undefined) attrs['w:themeFillShade'] = cell.themeFillShade;
+    props.set(W.shd, createWmlElement(doc, W.shd, attrs));
   }
   if (cell.marginsTwips) {
     props.set(W.tcMar, buildCellMargins(doc, cell.marginsTwips));

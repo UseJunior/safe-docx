@@ -27,6 +27,7 @@ import { emitSettingsPartIfNeeded } from './emit/settings-part.js';
 import { emitStylesPart } from './emit/styles-part.js';
 import { emitThemePart } from './emit/theme-part.js';
 import { emitWebSettingsPart } from './emit/web-settings-part.js';
+import { resolveThemeColorValues } from './theme-colors.js';
 import type { DocumentSpec } from './types.js';
 import { validateSpec } from './validate-spec.js';
 
@@ -44,10 +45,11 @@ export async function generateDocx(spec: DocumentSpec, opts?: GenerateDocxOption
 
   const notesEnabled = opts?.includeDraftingNotes ?? spec.options?.includeDraftingNotes ?? true;
   const ctx = new CompileContext();
+  const themeColorValues = resolveThemeColorValues(spec.theme);
   const numberingIds = emitNumberingPartIfNeeded(spec, ctx);
-  const headerFooterRefs = emitHeaderFooterParts(spec, ctx, { numberingIds });
+  const headerFooterRefs = emitHeaderFooterParts(spec, ctx, { numberingIds, themeColorValues });
   const notes = notesEnabled ? new DraftingNoteCollector() : undefined;
-  const documentPartXml = emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes });
+  const documentPartXml = emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes, themeColorValues });
   maybeCaptureEmittedDocumentXml(documentPartXml);
   ctx.setFileContent('word/document.xml', documentPartXml);
   if (notes) emitCommentsPartsIfNeeded(spec, ctx, notes);
@@ -56,7 +58,7 @@ export async function generateDocx(spec: DocumentSpec, opts?: GenerateDocxOption
   // Standard ancillary parts every Word-authored package carries (issue #482):
   // theme → fontTable → webSettings, ordered for stable rId allocation. Package
   // plumbing must stay last — it assembles [Content_Types].xml from the registry.
-  emitThemePart(ctx);
+  emitThemePart(ctx, spec.theme);
   emitFontTablePart(spec, ctx);
   emitWebSettingsPart(ctx);
   emitPackageParts(spec, ctx);

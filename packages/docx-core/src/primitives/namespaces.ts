@@ -118,6 +118,7 @@ export const W = {
   ftr: 'ftr',
   settings: 'settings',
   evenAndOddHeaders: 'evenAndOddHeaders',
+  clrSchemeMapping: 'clrSchemeMapping',
 
   // Styles part + paragraph/run formatting (generation emitters)
   docDefaults: 'docDefaults',

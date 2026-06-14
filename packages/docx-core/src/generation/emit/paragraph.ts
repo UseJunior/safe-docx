@@ -54,7 +54,7 @@ export function buildParagraph(doc: Document, paragraph: ParagraphSpec, ctx?: Bl
     p.appendChild(createWmlElement(doc, W.commentRangeStart, { 'w:id': String(noteId) }));
   }
   for (const inline of paragraph.runs) {
-    for (const run of buildInlineRuns(doc, inline)) {
+    for (const run of buildInlineRuns(doc, inline, ctx)) {
       p.appendChild(run);
     }
   }

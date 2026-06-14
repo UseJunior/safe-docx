@@ -10,18 +10,34 @@
  * determinism holds.
  *
  * The root is the DrawingML `a:theme` element carrying themeElements
- * (clrScheme + fontScheme + fmtScheme) — package plumbing, like package-parts.ts,
- * rather than a WordprocessingML content emitter.
+ * (clrScheme + fontScheme + fmtScheme). Optional generation theme input applies
+ * partial color/font overrides to that canonical template before serialization.
  */
 
 import { parseXml, serializeXml, XML_DECL } from '../../primitives/xml.js';
 import type { CompileContext } from '../context.js';
+import type { DocumentThemeSpec, ThemeColorSlot } from '../types.js';
 
 const THEME_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.theme+xml';
 const THEME_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme';
 
 const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+
+const THEME_SLOT_TO_CLR_SCHEME: Record<ThemeColorSlot, string> = {
+  text1: 'dk1',
+  background1: 'lt1',
+  text2: 'dk2',
+  background2: 'lt2',
+  accent1: 'accent1',
+  accent2: 'accent2',
+  accent3: 'accent3',
+  accent4: 'accent4',
+  accent5: 'accent5',
+  accent6: 'accent6',
+  hyperlink: 'hlink',
+  followedHyperlink: 'folHlink',
+};
 
 /** The canonical Office default theme (clrScheme + fontScheme + full fmtScheme). */
 const THEME1_XML =
@@ -101,9 +117,44 @@ const THEME1_XML =
   '<a:extraClrSchemeLst/>' +
   '</a:theme>';
 
-export function emitThemePart(ctx: CompileContext): void {
+export function emitThemePart(ctx: CompileContext, theme?: DocumentThemeSpec): void {
   ctx.registerPart('word/theme/theme1.xml', THEME_CONTENT_TYPE, THEME_REL_TYPE);
   // Parse + reserialize: normalizes output and fails loudly if the static body is
-  // ever edited into malformed XML.
-  ctx.setFileContent('word/theme/theme1.xml', XML_DECL + serializeXml(parseXml(THEME1_XML)));
+  // ever edited into malformed XML. Theme overrides mutate that parsed template
+  // so callers get the complete Office fmtScheme with only requested changes.
+  const doc = parseXml(THEME1_XML);
+  applyThemeOverrides(doc, theme);
+  ctx.setFileContent('word/theme/theme1.xml', XML_DECL + serializeXml(doc));
+}
+
+function applyThemeOverrides(doc: Document, theme?: DocumentThemeSpec): void {
+  if (!theme) return;
+
+  for (const [slot, hex] of Object.entries(theme.colors ?? {}) as Array<[ThemeColorSlot, string]>) {
+    replaceSchemeColor(doc, slot, hex);
+  }
+  if (theme.fonts?.major !== undefined) {
+    setLatinTypeface(doc, 'a:majorFont', theme.fonts.major);
+  }
+  if (theme.fonts?.minor !== undefined) {
+    setLatinTypeface(doc, 'a:minorFont', theme.fonts.minor);
+  }
+}
+
+function replaceSchemeColor(doc: Document, slot: ThemeColorSlot, hex: string): void {
+  const elementName = THEME_SLOT_TO_CLR_SCHEME[slot];
+  const schemeEl = doc.getElementsByTagName(`a:${elementName}`).item(0);
+  if (!schemeEl) throw new Error(`theme clrScheme is missing a:${elementName}`);
+
+  while (schemeEl.firstChild) schemeEl.removeChild(schemeEl.firstChild);
+  const srgb = doc.createElementNS(A_NS, 'a:srgbClr');
+  srgb.setAttribute('val', hex);
+  schemeEl.appendChild(srgb);
+}
+
+function setLatinTypeface(doc: Document, fontElementName: 'a:majorFont' | 'a:minorFont', typeface: string): void {
+  const fontEl = doc.getElementsByTagName(fontElementName).item(0);
+  const latin = fontEl?.getElementsByTagName('a:latin').item(0);
+  if (!latin) throw new Error(`theme fontScheme is missing ${fontElementName}/a:latin`);
+  latin.setAttribute('typeface', typeface);
 }
