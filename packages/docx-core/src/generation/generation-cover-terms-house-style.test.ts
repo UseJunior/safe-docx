@@ -84,7 +84,10 @@ describe('Traceability: cover-terms house style', () => {
         expect(table.rows[1]!.heightRule).toBe('atLeast');
         expect(table.rows[1]!.cells[0]!.gridSpan).toBe(2);
         expect(table.rows[1]!.cells[0]!.shadingHex).toBeUndefined();
-        expect(table.rows[3]!.cells[0]!.marginsTwips?.left).toBe(360);
+        // Subrow label indent is additive over the uniform cell padding: 120 + 360 = 480.
+        expect(table.rows[3]!.cells[0]!.marginsTwips?.left).toBe(480);
+        // The subrow value cell keeps the plain uniform padding (only the label is indented).
+        expect(table.rows[3]!.cells[1]!.marginsTwips?.left).toBe(120);
         spec = specWithCoverTable();
       });
 
@@ -122,7 +125,7 @@ describe('Traceability: cover-terms house style', () => {
         const subrowCells = getDirectChildrenByName(rows[3]!, 'tc');
         const labelPr = firstDirectChild(subrowCells[0]!, 'tcPr');
         const labelMargins = firstDirectChild(labelPr, 'tcMar');
-        expect(firstDirectChild(labelMargins, 'left').getAttribute('w:w')).toBe('360');
+        expect(firstDirectChild(labelMargins, 'left').getAttribute('w:w')).toBe('480');
         for (const cell of subrowCells) {
           const rPr = firstRunProps(cell);
           expect(rPr.getElementsByTagName('w:i')).toHaveLength(1);

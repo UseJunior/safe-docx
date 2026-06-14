@@ -36,7 +36,10 @@ export type CoverTermsOptions = {
   cellPaddingTwips?: number;
   /** Text color for subrow labels and values; defaults to mid-gray. */
   subrowColorHex?: string;
-  /** Additional left padding on subrow label cells; defaults to 240 twips. */
+  /**
+   * Extra left indent on subrow label cells, added on top of `cellPaddingTwips`
+   * (so the label sits further right than a normal row). Defaults to 240 twips.
+   */
   subrowLabelIndentTwips?: number;
 };
 
@@ -87,7 +90,12 @@ export function coverTermsTable(options: CoverTermsOptions): TableSpec {
       ...rowRhythm,
       cells: [
         {
-          ...cellPaddingProps(options, subrow ? { left: options.subrowLabelIndentTwips ?? DEFAULT_SUBROW_LABEL_INDENT_TWIPS } : undefined),
+          ...cellPaddingProps(
+            options,
+            subrow
+              ? { left: (options.cellPaddingTwips ?? 0) + (options.subrowLabelIndentTwips ?? DEFAULT_SUBROW_LABEL_INDENT_TWIPS) }
+              : undefined,
+          ),
           blocks: [
             paragraph(term.label, {
               bold: !subrow,
