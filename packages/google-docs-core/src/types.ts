@@ -93,8 +93,8 @@ export const PROVIDER_CAPABILITIES: Record<DocumentProvider, Set<string>> = {
     'read_file', 'replace_text', 'insert_paragraph', 'grep', 'save',
     'format_layout', 'compare_documents', 'add_comment', 'get_comments',
     'delete_comment', 'accept_changes', 'has_tracked_changes',
-    'get_file_status', 'close_file', 'init_plan', 'merge_plans',
-    'apply_plan', 'get_footnotes', 'add_footnote', 'update_footnote',
+    'get_file_status', 'close_file', 'batch_edit',
+    'get_footnotes', 'add_footnote', 'update_footnote',
     'delete_footnote', 'clear_formatting', 'extract_revisions',
   ]),
   gdocs: new Set([

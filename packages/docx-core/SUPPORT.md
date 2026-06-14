@@ -23,7 +23,7 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | `footnotes.ts` — `deleteFootnote` | `packages/docx-core/src/primitives/footnotes.ts` | `w:del` | Deleting a note removes both the body reference and the note text. **Verified by [120.8] (#143) regression test.** |
 | `replace_text` | `packages/docx-mcp/src/tools/replace_text.ts` | `w:ins`, `w:del`, `w:rPrChange` | MCP wrapper over `text.ts`; the supported contract is native tracked insertion/deletion plus any explicit inline formatting deltas. **Verified by [120.8] (#143) regression test.** |
 | `insert_paragraph` | `packages/docx-mcp/src/tools/insert_paragraph.ts` | `w:ins`, `w:pPrChange`, `w:rPrChange` | Paragraph insertion is body-content creation. Paragraph/run formatting inherited from `style_source_id` stays inside the revisionable surface. **Verified by [120.8] (#143) regression test.** |
-| `apply_plan` | `packages/docx-mcp/src/tools/apply_plan.ts` | `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange` | Plan execution is only an orchestrator, but every applied step delegates to revisionable body-edit primitives. **Verified by [120.8] (#143) regression test.** |
+| `batch_edit` | `packages/docx-mcp/src/tools/batch_edit.ts` | `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange` | Batch execution is only an orchestrator, but every applied step delegates to revisionable body-edit primitives. **Verified by [120.8] (#143) regression test.** |
 | `clear_formatting` | `packages/docx-mcp/src/tools/clear_formatting.ts` | `w:rPrChange` | Run-property clearing is a run formatting revision, not a package mutation. **Verified by [120.8] (#143) regression test.** |
 | `format_layout` | `packages/docx-mcp/src/tools/format_layout.ts` | `w:pPrChange`, `w:trPrChange`, `w:tcPrChange` | Deterministic OOXML geometry edits belong under native property-change revisions. **Verified by [120.8] (#143) regression test.** |
 | `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | `w:ins` (root-comment mode only) | Root-comment mode wraps only the body-story `w:commentReference` run in `w:ins`; range markers and root-comment text in `comments.xml` are not revision-wrapped. **Reply-mode** dispatches through `comments.ts` `addCommentReply` which is Table B (side-part metadata only; no body revision marker). Missing comment infrastructure is also a Table B companion. **Verified by [120.8] (#143) regression test.** |
@@ -94,8 +94,6 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 - `get_session_status.ts` — session metadata and open-document state only.
 - `grep.ts` — read/search tool with no mutation behavior.
 - `has_tracked_changes.ts` — tracked-change presence detector over existing OOXML.
-- `init_plan.ts` — plan-session metadata initializer only.
-- `merge_plans.ts` — read/merge validator for plan JSON, not a document mutator by itself.
 - `open_document.ts` — session/bootstrap entrypoint that opens a document and reports available tools.
 - `pagination.ts` — token-budget estimation and pagination math only.
 - `path_policy.ts` — filesystem policy enforcement only.
@@ -163,7 +161,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `accept_changes.ts` — Internal / non-contract utilities
 - `add_comment.ts` — Table A and Table B
 - `add_footnote.ts` — Table A and Table B
-- `apply_plan.ts` — Table A
+- `batch_edit.ts` — Table A
 - `clear_formatting.ts` — Table A
 - `close_file.ts` — Internal / non-contract utilities
 - `compare_documents.ts` — Table A
@@ -179,9 +177,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `get_session_status.ts` — Internal / non-contract utilities
 - `grep.ts` — Internal / non-contract utilities
 - `has_tracked_changes.ts` — Internal / non-contract utilities
-- `init_plan.ts` — Internal / non-contract utilities
 - `insert_paragraph.ts` — Table A
-- `merge_plans.ts` — Internal / non-contract utilities
 - `open_document.ts` — Internal / non-contract utilities
 - `pagination.ts` — Internal / non-contract utilities
 - `path_policy.ts` — Internal / non-contract utilities

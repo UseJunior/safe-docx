@@ -170,7 +170,7 @@ export async function replaceText(
     font_name?: string;
     color?: string;
     /**
-     * Internal (not exposed in the MCP tool schema): set by apply_plan, which
+     * Internal (not exposed in the MCP tool schema): set by batch_edit, which
      * preflights the whole step sequence once instead of per step.
      */
     skip_ai_revision_preflight?: boolean;

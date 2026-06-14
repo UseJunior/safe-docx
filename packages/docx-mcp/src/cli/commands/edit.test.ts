@@ -86,7 +86,7 @@ describe('parseEditArgs', () => {
 });
 
 describe('runEditCommand E2E', () => {
-  test('builds steps from flags and applies edits via apply_plan', async ({ when, then }: AllureBddContext) => {
+  test('builds steps from flags and applies edits via batch_edit', async ({ when, then }: AllureBddContext) => {
     const { firstParaId, inputPath } = await openSession(['Hello world']);
 
     const output: string[] = [];

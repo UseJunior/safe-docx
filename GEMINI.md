@@ -15,11 +15,9 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 - **get_session_status** — Get session metadata including edit count and normalization stats.
 - **has_tracked_changes** — Check whether the document contains tracked-change markers (insertions, deletions, moves, property changes). Read-only.
 
-### Planning and Batch Operations
+### Batch Editing
 
-- **init_plan** — Initialize revision-bound context metadata for coordinated multi-agent planning.
-- **merge_plans** — Merge multiple sub-agent plans and detect hard conflicts before apply.
-- **apply_plan** — Validate and apply a batch of edit steps (replace_text, insert_paragraph) in one call. All-or-nothing.
+- **batch_edit** — Validate and apply multiple edit steps (replace_text, insert_paragraph) in one call. Validates all steps and rejects conflicts (duplicate ids, overlapping replace ranges, insert-slot collisions) before applying anything; an execution-time failure stops at the first failing step and reports which steps completed. Accepts inline `steps` or a `plan_file_path`.
 
 ### Editing
 
@@ -60,11 +58,10 @@ SafeDocX runs **locally only** — no data leaves the machine. All document read
 3. Call `replace_text` with `target_paragraph_id`, `old_string`, `new_string`, and `instruction`.
 4. Call `save` with `save_to_local_path` to save (defaults to both clean + tracked outputs).
 
-### Batch Edits (Multi-Agent)
+### Batch Edits
 
-1. Call `init_plan` with `file_path` to get a revision-bound planning context.
-2. Build edit steps as JSON (each with `step_id`, `operation`, and operation-specific fields).
-3. Call `apply_plan` with `steps` to validate and apply all edits atomically.
+1. Build edit steps as JSON (each with `step_id`, `operation`, and operation-specific fields).
+2. Call `batch_edit` with `steps` (or `plan_file_path`) to validate, conflict-check, and apply them in one call.
 
 ### Compare Two Documents
 

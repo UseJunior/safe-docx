@@ -47,35 +47,9 @@ Search paragraphs with regex. Use file_path for session-based search, file_paths
 | `search_xml` | `boolean` | no | When true, search raw XML (word/document.xml) instead of paragraph text. |
 | `include_context` | `boolean` | no | When false, skip document view context (list labels, headers) for faster results. Default: true. |
 
-## `init_plan`
+## `batch_edit`
 
-Initialize revision-bound context metadata for coordinated multi-agent planning.
-
-- readOnly: `true`
-- destructive: `false`
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
-| `plan_name` | `string` | no |  |
-| `orchestrator_id` | `string` | no |  |
-
-## `merge_plans`
-
-Deterministically merge multiple sub-agent plans and detect hard conflicts before apply.
-
-- readOnly: `true`
-- destructive: `false`
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `plans` | `array<object>` | yes |  |
-| `fail_on_conflict` | `boolean` | no |  |
-| `require_shared_base_revision` | `boolean` | no |  |
-
-## `apply_plan`
-
-Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.
+Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Accepts inline steps or a plan_file_path JSON array.
 
 - readOnly: `false`
 - destructive: `true`
