@@ -36,6 +36,13 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
+          # Do NOT persist the default GITHUB_TOKEN credential. actions/checkout
+          # otherwise writes an http.extraheader Authorization for
+          # github-actions[bot], which OVERRIDES the URL-embedded app token on the
+          # tag push below — so the push authenticates as github-actions[bot]
+          # (which cannot push tags) and fails with "denied to github-actions[bot]".
+          # With this off, the explicit x-access-token URL in the push step wins.
+          persist-credentials: false
 
       - name: Detect a merged version bump without a tag
         id: detect
