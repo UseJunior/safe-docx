@@ -119,6 +119,8 @@ export type ParagraphSpec = {
   list?: { numId: string; ilvl: number };
   pageBreakBefore?: boolean;
   keepNext?: boolean;
+  /** Keep every line of this paragraph on one page (w:keepLines). */
+  keepLines?: boolean;
   tabs?: Array<{
     posTwips: number;
     align: 'left' | 'center' | 'right';
