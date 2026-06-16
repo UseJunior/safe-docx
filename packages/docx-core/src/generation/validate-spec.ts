@@ -37,11 +37,12 @@ import type {
   TableBorders,
   TableSpec,
 } from './types.js';
-import { HIGHLIGHT_COLORS, THEME_COLOR_SLOTS } from './types.js';
+import { HIGHLIGHT_COLORS, NUMBERING_LEVEL_JUSTIFICATIONS, THEME_COLOR_SLOTS } from './types.js';
 
 const COLOR_HEX_RE = /^[0-9A-Fa-f]{6}$/;
 const TWO_HEX_RE = /^[0-9A-Fa-f]{2}$/;
 const HIGHLIGHT_COLOR_SET: ReadonlySet<string> = new Set(HIGHLIGHT_COLORS);
+const LVL_JC_SET: ReadonlySet<string> = new Set(NUMBERING_LEVEL_JUSTIFICATIONS);
 const THEME_COLOR_SLOT_SET: ReadonlySet<string> = new Set(THEME_COLOR_SLOTS);
 
 function unsupported(path: string, feature: string): never {
@@ -108,6 +109,13 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
       }
       if (level.start !== undefined && (!Number.isInteger(level.start) || level.start < 0)) {
         throw new GenerationSpecError('invalid_value', `${levelPath}/start`, 'Level start must be a non-negative integer');
+      }
+      if (level.lvlJc !== undefined && !LVL_JC_SET.has(level.lvlJc)) {
+        throw new GenerationSpecError(
+          'invalid_value',
+          `${levelPath}/lvlJc`,
+          `lvlJc must be one of ${NUMBERING_LEVEL_JUSTIFICATIONS.join(', ')}, got '${level.lvlJc}'`,
+        );
       }
       if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
     });

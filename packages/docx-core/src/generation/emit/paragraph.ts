@@ -2,7 +2,7 @@
  * Paragraph emitter.
  *
  * Shipped: paragraphs with style references and direct formatting
- * (alignment, spacing, indentation, tabs, keepNext, pageBreakBefore), all
+ * (alignment, spacing, indentation, tabs, keepNext, keepLines, pageBreakBefore), all
  * routed through the shared pPr builder and PPR_ORDER. The section-break
  * injection hook (a pPr-only sectPr) arrives with the multi-section phase.
  */

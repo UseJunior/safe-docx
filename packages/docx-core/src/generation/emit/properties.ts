@@ -13,7 +13,7 @@ import type { ParagraphSpec, RunProps, StyleSpec, ThemeColorSlot } from '../type
 /** Paragraph-formatting subset shared by ParagraphSpec and StyleSpec.paragraph. */
 export type ParagraphProps = Pick<
   ParagraphSpec,
-  'alignment' | 'spacing' | 'indent' | 'tabs' | 'pageBreakBefore' | 'keepNext'
+  'alignment' | 'spacing' | 'indent' | 'tabs' | 'pageBreakBefore' | 'keepNext' | 'keepLines'
 > & { styleId?: string };
 
 const ALIGNMENT_TO_JC: Record<NonNullable<ParagraphProps['alignment']>, string> = {
@@ -111,6 +111,9 @@ export function buildParagraphPropsElement(
   }
   if (props.keepNext) {
     children.set(W.keepNext, createWmlElement(doc, W.keepNext));
+  }
+  if (props.keepLines) {
+    children.set(W.keepLines, createWmlElement(doc, W.keepLines));
   }
   if (props.pageBreakBefore) {
     children.set(W.pageBreakBefore, createWmlElement(doc, W.pageBreakBefore));

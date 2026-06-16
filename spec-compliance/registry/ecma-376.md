@@ -930,8 +930,10 @@ schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc
 verifiedBy:
 ```
 
-Level justification is always emitted (`left`) for determinism — omission
-leaves the alignment to reader defaults.
+Level justification is authorable per level via `NumberingSpec` (`left`,
+`center`, or `right`, the transitional ST_Jc subset) and is always emitted
+deterministically, defaulting to `left` when omitted. `right` aligns labels of
+differing widths on their right edge — the standard legal-outline convention.
 
 ## [ECMA-PART1-17-3-1-19] w:numPr paragraph numbering reference
 

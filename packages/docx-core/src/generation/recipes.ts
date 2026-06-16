@@ -135,16 +135,38 @@ export type SignatureBlockOptions = {
     /** Label for the date row; defaults to 'Date:'. */
     dateLabel?: string;
   }>;
-  /** Signature-line column width in twips; defaults to 4320 (3"). */
+  /** Signature-line column width in twips; defaults to 4320 (3"). Single-column only. */
   lineWidthTwips?: number;
+
+  // ---- two-column mode (all optional; ignored unless layout === 'two-column') ----
+  /** Layout selector. Defaults to 'single-column' (the historical behavior). */
+  layout?: 'single-column' | 'two-column';
+  /** Total grid width in twips, split across the two signer columns. Defaults to 9360 (6.5" body). */
+  totalWidthTwips?: number;
+  /** Center gutter column width between the two signer cells. Defaults to 360 (0.25"). */
+  gutterTwips?: number;
+  /** Color for the muted party header and field captions. Defaults to '595959'. */
+  headerColorHex?: string;
+  /** Captions for the four ruled lines. Defaults to ['Signature', 'Print Name', 'Title', 'Date']. */
+  ruledLineLabels?: [string, string, string, string];
 };
 
 /**
- * Signature blocks rendered as borderless single-column tables whose first
- * content cell carries only a bottom border — the signature line — followed
- * by name, title, and date rows (scenario SDX-GEN-071). No VML, no images.
+ * Signature blocks rendered as borderless tables whose content cells carry
+ * only bottom borders — the signature lines. No VML, no images.
+ *
+ * Default `layout: 'single-column'` keeps the historical stacked block: one
+ * table per party, a bottom-bordered line then name/title/date rows
+ * (scenario SDX-GEN-071). With `layout: 'two-column'` the parties render as a
+ * paired signing grid — two signers per row, each a centered uppercase muted
+ * header over ruled Signature / Print Name / Title / Date lines (Print Name and
+ * Title pre-filled from the party data), with an empty padding cell when the
+ * signer count is odd (scenario SDX-GEN-109).
  */
 export function signatureBlock(options: SignatureBlockOptions): BlockSpec[] {
+  if ((options.layout ?? 'single-column') === 'two-column') {
+    return [twoColumnSignatureGrid(options)];
+  }
   const width = options.lineWidthTwips ?? 4320;
   const blocks: BlockSpec[] = [];
   options.parties.forEach((party, index) => {
@@ -170,7 +192,7 @@ export function signatureBlock(options: SignatureBlockOptions): BlockSpec[] {
 
 function paragraph(
   text: string,
-  opts?: { bold?: boolean; italic?: boolean; colorHex?: string; alignment?: ParagraphSpec['alignment'] },
+  opts?: { bold?: boolean; italic?: boolean; caps?: boolean; colorHex?: string; alignment?: ParagraphSpec['alignment'] },
 ): ParagraphSpec {
   return {
     kind: 'paragraph',
@@ -181,10 +203,92 @@ function paragraph(
         text,
         ...(opts?.bold ? { bold: true } : {}),
         ...(opts?.italic ? { italic: true } : {}),
+        ...(opts?.caps ? { caps: true } : {}),
         ...(opts?.colorHex !== undefined ? { colorHex: opts.colorHex } : {}),
       },
     ],
   };
+}
+
+/**
+ * Two-column signing grid: parties chunked into pairs across a 3-column table
+ * `[signer, gutter, signer]`, with an empty padding cell for an odd final
+ * signer. Each signer cell stacks a centered uppercase muted header over a
+ * nested one-column table of four ruled fields (Signature / Print Name / Title
+ * / Date), reusing the bottom-bordered-cell rule from the single-column path.
+ */
+function twoColumnSignatureGrid(options: SignatureBlockOptions): TableSpec {
+  const total = options.totalWidthTwips ?? 9360;
+  const gutter = options.gutterTwips ?? 360;
+  const signer = Math.max(1, Math.floor((total - gutter) / 2));
+  const mutedColor = options.headerColorHex ?? DEFAULT_SUBROW_COLOR_HEX;
+  const labels = options.ruledLineLabels ?? ['Signature', 'Print Name', 'Title', 'Date'];
+
+  const gutterCell: TableSpec['rows'][number]['cells'][number] = {
+    borders: { top: NONE, bottom: NONE, left: NONE, right: NONE },
+    blocks: [paragraph('')],
+  };
+  const paddingCell: TableSpec['rows'][number]['cells'][number] = {
+    borders: { top: NONE, bottom: NONE, left: NONE, right: NONE },
+    blocks: [paragraph('')],
+  };
+
+  const rows: TableSpec['rows'] = [];
+  for (let i = 0; i < options.parties.length; i += 2) {
+    const left = options.parties[i];
+    if (left === undefined) continue;
+    const right = options.parties[i + 1];
+    rows.push({
+      cells: [
+        signerCell(left, labels, mutedColor),
+        gutterCell,
+        right === undefined ? paddingCell : signerCell(right, labels, mutedColor),
+      ],
+    });
+  }
+
+  return {
+    kind: 'table',
+    layout: 'fixed',
+    columnWidthsTwips: [signer, gutter, signer],
+    borders: { top: NONE, bottom: NONE, left: NONE, right: NONE, insideH: NONE, insideV: NONE },
+    rows,
+  };
+}
+
+function signerCell(
+  party: SignatureBlockOptions['parties'][number],
+  labels: [string, string, string, string],
+  mutedColor: string,
+): TableSpec['rows'][number]['cells'][number] {
+  // Pre-fill Print Name / Title from the party data; Signature / Date stay blank.
+  const fields: Array<[value: string, caption: string]> = [
+    ['', labels[0]],
+    [party.name, labels[1]],
+    [party.title ?? '', labels[2]],
+    ['', party.dateLabel ?? labels[3]],
+  ];
+  return {
+    vAlign: 'top',
+    blocks: [
+      paragraph(party.party, { alignment: 'center', caps: true, colorHex: mutedColor }),
+      {
+        kind: 'table',
+        layout: 'fixed',
+        columnWidthsTwips: [4320],
+        borders: { top: NONE, bottom: NONE, left: NONE, right: NONE, insideH: NONE, insideV: NONE },
+        rows: fields.flatMap(([value, caption]) => ruledFieldRows(value, caption, mutedColor)),
+      },
+    ],
+  };
+}
+
+/** A ruled field = the bottom-bordered value line, then its muted caption beneath. */
+function ruledFieldRows(value: string, caption: string, mutedColor: string): TableSpec['rows'] {
+  return [
+    { cells: [{ borders: { bottom: SINGLE }, blocks: [paragraph(value)] }] },
+    { cells: [{ blocks: [paragraph(caption, { colorHex: mutedColor })] }] },
+  ];
 }
 
 function rowRhythmProps(options: CoverTermsOptions): Pick<TableSpec['rows'][number], 'heightTwips' | 'heightRule'> {

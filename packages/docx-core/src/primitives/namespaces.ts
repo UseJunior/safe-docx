@@ -131,6 +131,7 @@ export const W = {
   caps: 'caps',
   smallCaps: 'smallCaps',
   keepNext: 'keepNext',
+  keepLines: 'keepLines',
   pageBreakBefore: 'pageBreakBefore',
   tabs: 'tabs',
 

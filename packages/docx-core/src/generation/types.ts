@@ -119,6 +119,8 @@ export type ParagraphSpec = {
   list?: { numId: string; ilvl: number };
   pageBreakBefore?: boolean;
   keepNext?: boolean;
+  /** Keep every line of this paragraph on one page (w:keepLines). */
+  keepLines?: boolean;
   tabs?: Array<{
     posTwips: number;
     align: 'left' | 'center' | 'right';
@@ -255,6 +257,18 @@ export type StyleSpec = {
   run?: RunProps;
 };
 
+/**
+ * The level-justification values we author for `w:lvlJc` — the transitional
+ * ST_Jc subset (`left`/`center`/`right`) the numbering generator emits, not the
+ * full CT_Jc value space. Single source of truth: the
+ * {@link NumberingLevelJustification} union is derived from this array, and
+ * validation reuses it as a runtime whitelist so JSON/JS callers cannot author
+ * an out-of-enum `w:lvlJc`.
+ */
+export const NUMBERING_LEVEL_JUSTIFICATIONS = ['left', 'center', 'right'] as const;
+
+export type NumberingLevelJustification = (typeof NUMBERING_LEVEL_JUSTIFICATIONS)[number];
+
 export type NumberingSpec = {
   /** Spec-level handle; the compiler assigns numeric w:numId / abstractNumId. */
   numId: string;
@@ -265,6 +279,11 @@ export type NumberingSpec = {
     /** Level text pattern, e.g. '%1.' or '%1.%2' or a bullet glyph. */
     lvlText: string;
     suff?: 'tab' | 'space' | 'nothing';
+    /**
+     * Level number justification against the text indent (`w:lvlJc`); defaults
+     * to `left`. `right` aligns labels of differing widths on their right edge.
+     */
+    lvlJc?: NumberingLevelJustification;
     indentTwips?: { left?: number; hanging?: number };
     runProps?: RunProps;
   }>;

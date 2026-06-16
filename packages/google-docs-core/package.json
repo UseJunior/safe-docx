@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/google-docs-core",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "description": "Google Docs core library: read, write, and anchor management via Google Docs API",
   "type": "module",
   "main": "dist/index.js",
