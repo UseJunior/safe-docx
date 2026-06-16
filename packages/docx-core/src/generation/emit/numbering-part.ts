@@ -106,7 +106,7 @@ function buildLevel(
     lvl.appendChild(createWmlElement(doc, W.suff, { 'w:val': level.suff }));
   }
   lvl.appendChild(createWmlElement(doc, W.lvlText, { 'w:val': level.lvlText }));
-  lvl.appendChild(createWmlElement(doc, W.lvlJc, { 'w:val': 'left' }));
+  lvl.appendChild(createWmlElement(doc, W.lvlJc, { 'w:val': level.lvlJc ?? 'left' }));
   if (level.indentTwips !== undefined) {
     const pPr = createWmlElement(doc, W.pPr);
     const attrs: Record<string, string> = {};
