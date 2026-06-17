@@ -32,6 +32,8 @@ export * from './formatting_tags.js';
 export * from './prevent_double_elevation.js';
 export * from './tables.js';
 export * from './content_fingerprint.js';
+export * from './locator.js';
+export { buildTableMetaMap, deriveTableContext, type TableMeta } from './table_context.js';
 export {
   getParagraphBookmarkId,
   findParagraphByBookmarkId,

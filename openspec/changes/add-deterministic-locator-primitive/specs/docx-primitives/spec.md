@@ -42,7 +42,7 @@ A `section` scope step SHALL narrow resolution to a contiguous region of the vie
 - **AND** the resolver SHALL NOT silently choose the first heading
 
 ### Requirement: Locator Step Kinds
-The resolver SHALL support four deterministic step kinds. `section` SHALL match a heading by `headingText`/`headingRegex`/`headingStyleId` and SHALL be valid ONLY as a `scope` step — it SHALL NOT be used as a `primary` or assertion, because it denotes a region, not a span. `regex` SHALL match against node `clean_text` and report 0, 1, or many matches; a pattern that yields a zero-length match SHALL be treated as invalid and make the locator `unresolved` (no heuristic advance). `contextual` SHALL require a `contextPattern` to precede the `targetPattern` within a node, optionally gated by `rowLabelPattern` over `table_context.col_header`; its `targetPattern` SHALL likewise be non-zero-length. `fingerprint` SHALL select a whole node whose content fingerprint — computed from the node's raw visible text (`node.text`) via `computeContentFingerprint`, consistent with that function's existing definition — equals the given `sha256:nfkc:` value; it is a node-level anchor and SHALL NOT denote a sub-span.
+The resolver SHALL support four deterministic step kinds. `section` SHALL match a heading by `headingText`/`headingRegex`/`headingStyleId` and SHALL be valid ONLY as a `scope` step — it SHALL NOT be used as a `primary` or assertion, because it denotes a region, not a span. `regex` SHALL match against node `clean_text` and report 0, 1, or many matches; a pattern that yields a zero-length match SHALL be treated as invalid and make the locator `unresolved` (no heuristic advance). `contextual` SHALL require a `contextPattern` to precede the `targetPattern` within a node, optionally gated by `rowLabelPattern` over `table_context.col_header`; its `targetPattern` SHALL likewise be non-zero-length. `fingerprint` SHALL select a whole node whose content fingerprint — computed from the node's raw visible text (`node.raw_text`, falling back to `node.text` when absent) via `computeContentFingerprint`, consistent with that function's existing definition — equals the given `sha256:nfkc:` value; it is a node-level anchor and SHALL NOT denote a sub-span.
 
 #### Scenario: section is scope-only
 - **GIVEN** a locator whose `primary` (or an assertion) is a `section` step
@@ -62,7 +62,7 @@ The resolver SHALL support four deterministic step kinds. `section` SHALL match 
 - **THEN** the span matching the target after the context SHALL be returned
 
 #### Scenario: fingerprint selects a whole node
-- **GIVEN** a `fingerprint` primary whose value equals one node's `computeContentFingerprint(node.text)` (raw visible text)
+- **GIVEN** a `fingerprint` primary whose value equals one node's `computeContentFingerprint(node.raw_text)` (raw visible text)
 - **WHEN** `resolveLocator` is called
 - **THEN** the match SHALL span that whole node
 - **AND** no sub-span offset narrowing SHALL be applied
