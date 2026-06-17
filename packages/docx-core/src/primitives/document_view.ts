@@ -1,6 +1,8 @@
 import { OOXML, W } from './namespaces.js';
 import { getAttributeSafe, getFirstChild } from './xml-helpers.js';
 import { getParagraphText, getParagraphRuns } from './text.js';
+import { getParagraphBookmarkId } from './bookmarks.js';
+import { buildTableMetaMap, deriveTableContext } from './table_context.js';
 import { extractListLabel, stripListLabel, LabelType } from './list_labels.js';
 import { parseNumberingXml, type NumberingCounters, computeListLabelForParagraph } from './numbering.js';
 import { parseStylesXml, type StylesModel, extractParagraphFormatting, extractEffectiveRunFormatting, type RunFormatting } from './styles.js';
@@ -81,35 +83,66 @@ function emitHighlightTagsFromParagraph(p: Element): string {
   return out.join('');
 }
 
+/**
+ * Collect the bookmarked paragraphs of a document, each with its derived table
+ * context, in document order. This is the shared paragraph-collection core used
+ * by BOTH `DocxDocument.buildDocumentView()` and the free `buildDocumentView()`
+ * so the two produce identical node sets.
+ *
+ * Only paragraphs carrying a `_bk_*` bookmark id are included (the document view
+ * addresses nodes by that id). This function does NOT insert bookmarks — a
+ * consumer operating on un-bookmarked source DOCX MUST call
+ * `DocxDocument.insertParagraphBookmarks()` first, or the result is empty.
+ */
+export function collectViewParagraphs(
+  documentXml: Document,
+): Array<{ id: string; p: Element; tableContext?: ReturnType<typeof deriveTableContext> }> {
+  const body = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0);
+  if (!body) return [];
+  const tableMetaMap = buildTableMetaMap(body as Element);
+
+  return Array.from(body.getElementsByTagNameNS(OOXML.W_NS, W.p))
+    .map((p) => {
+      const id = getParagraphBookmarkId(p);
+      if (!id) return null;
+      const tableContext = deriveTableContext(p, tableMetaMap);
+      return tableContext ? { id, p, tableContext } : { id, p };
+    })
+    .filter((x): x is { id: string; p: Element; tableContext?: TableContext } => x !== null);
+}
+
+/**
+ * Free function form of the document-view builder. Delegates to the same shared
+ * core (`collectViewParagraphs` + `buildNodesForDocumentView`) as
+ * `DocxDocument.buildDocumentView()`, so it returns populated nodes — one per
+ * bookmarked paragraph — rather than the empty stub it used to be.
+ *
+ * Like the method, it includes only paragraphs carrying a `_bk_*` bookmark id
+ * and does NOT insert bookmarks itself.
+ */
 export function buildDocumentView(params: {
   documentXml: Document;
   stylesXml: Document | null;
   numberingXml: Document | null;
-  opts?: BuildDocumentViewOptions;
+  footnotesXml?: Document | null;
+  relsMap?: RelsMap;
+  opts?: BuildDocumentViewOptions & { show_formatting?: boolean; formatting_mode?: FormattingMode };
 }): { nodes: DocumentViewNode[]; styles: DocumentStyles } {
-  const { documentXml, stylesXml, numberingXml, opts } = params;
-  const includeSemantic = opts?.include_semantic_tags ?? true;
-  void includeSemantic;
+  const { documentXml, stylesXml, numberingXml, footnotesXml, relsMap, opts } = params;
 
-  const stylesModel = parseStylesXml(stylesXml);
-  void stylesModel;
-  const numberingModel = parseNumberingXml(numberingXml);
-  void numberingModel;
-  const counters: NumberingCounters = new Map();
-  void counters;
+  const paragraphs = collectViewParagraphs(documentXml);
 
-  const body = getFirstChild(documentXml, OOXML.W_NS, W.body);
-  if (!body) return { nodes: [], styles: { styles: new Map(), fingerprint_to_style: new Map() } };
-
-  const paragraphs = Array.from(body.getElementsByTagNameNS(OOXML.W_NS, W.p));
-  const nodes: DocumentViewNode[] = [];
-
-  for (const p of paragraphs) {
-    const prev = p.previousSibling;
-    void prev;
-  }
-
-  return { nodes, styles: { styles: new Map(), fingerprint_to_style: new Map() } };
+  return buildNodesForDocumentView({
+    paragraphs,
+    stylesXml,
+    numberingXml,
+    include_semantic_tags: opts?.include_semantic_tags ?? true,
+    show_formatting: opts?.show_formatting ?? false,
+    formatting_mode: opts?.formatting_mode ?? 'compact',
+    relsMap,
+    documentXml,
+    footnotesXml: footnotesXml ?? null,
+  });
 }
 
 // ── Helpers for building AnnotatedRun arrays ─────────────────────────
@@ -468,8 +501,13 @@ export function buildNodesForDocumentView(params: {
     const paraPPr = getFirstChild(p, OOXML.W_NS, W.pPr);
     const paraFmt = extractParagraphFormatting(paraPPr ?? null, stylesModel);
 
+    // Raw visible text (field codes stripped, but NOT CR/LF-stripped or trimmed).
+    // This is the coordinate system `replaceParagraphTextRange`/`replaceTextAtRange`
+    // operate in; it is carried on the node so the clean_text → raw offset map can
+    // be rebuilt deterministically. @see buildCleanToRawOffsetMap
+    const rawText = getParagraphText(p);
     // Visible clean text (field codes stripped).
-    const fullText = getParagraphText(p).replace(/\r/g, '').replace(/\n/g, '').trim();
+    const fullText = rawText.replace(/\r/g, '').replace(/\n/g, '').trim();
     // Computed once per paragraph: gates the empty-paragraph skip below, drives
     // the [^N] marker injection, and is exposed as node.footnote_refs.
     const fnMarkers = getFootnoteMarkersForParagraph(p, footnoteDisplayMap);
@@ -720,6 +758,7 @@ export function buildNodesForDocumentView(params: {
       text: tagged, // filled after header stripping at render time
 
       clean_text: cleanTextNoLabel,
+      raw_text: rawText,
       tagged_text: tagged,
       visible_offset_correction: visibleOffsetCorrection > 0 ? visibleOffsetCorrection : undefined,
       list_metadata: {
@@ -758,4 +797,94 @@ export function buildNodesForDocumentView(params: {
   }
 
   return { nodes, styles };
+}
+
+// ── clean_text → raw offset map (the #1 offset hazard, centralized) ──
+//
+// Selector patterns are authored against the stable, normalized `clean_text`,
+// but mutation (`replaceParagraphTextRange` / `DocxDocument.replaceTextAtRange`)
+// operates on RAW offsets — `getParagraphText(p)` coordinates. `clean_text` is
+// derived from `raw_text` by removing CR/LF, trimming leading/trailing
+// whitespace, and (for manually-labelled list paragraphs) stripping the label
+// prefix. Each removed character shifts every following offset, so a scalar
+// correction (`visible_offset_correction`) is insufficient when CR/LF appear in
+// the interior. This builds a per-character map so a matched clean-text span can
+// be translated to exact raw offsets.
+//
+// `clean_text` does NOT collapse internal whitespace (that lives only in
+// `computeContentFingerprint`), so the map deliberately does not handle that.
+
+/**
+ * Build a `clean_text → raw_text` offset map for a node. The returned array has
+ * length `clean_text.length + 1`: index `o` (a clean-text offset, `0..length`)
+ * holds the corresponding raw-text offset. A clean span `[cs, ce)` therefore
+ * maps to the raw span `[map[cs], map[ce])`, ready for `replaceTextAtRange`.
+ *
+ * When `node.raw_text` is absent (legacy hand-built fixtures), the map is the
+ * identity — callers operating on real builder output always have `raw_text`.
+ */
+export function buildCleanToRawOffsetMap(node: Pick<DocumentViewNode, 'clean_text' | 'raw_text'>): number[] {
+  const clean = node.clean_text;
+  const raw = node.raw_text;
+
+  // Identity fallback when raw text is unavailable.
+  if (raw === undefined) {
+    const map = new Array<number>(clean.length + 1);
+    for (let i = 0; i <= clean.length; i++) map[i] = i;
+    return map;
+  }
+
+  // Phase A: drop CR/LF, recording the raw index of every surviving character.
+  const survivingRawIdx: number[] = [];
+  let stripped = '';
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i]!;
+    if (c === '\r' || c === '\n') continue;
+    stripped += c;
+    survivingRawIdx.push(i);
+  }
+
+  // Phase B: trim leading/trailing whitespace (String.prototype.trim semantics,
+  // matching the `.trim()` in the clean_text derivation).
+  const leadingTrim = stripped.length - stripped.replace(/^\s+/, '').length;
+  const trimmed = stripped.trim();
+  const fullRawIdx = survivingRawIdx.slice(leadingTrim, leadingTrim + trimmed.length);
+
+  // Phase C: manual-list-label prefix. `clean_text` is a front-stripped suffix
+  // of the trimmed full text, so locate where it begins.
+  let prefixLen = 0;
+  if (clean.length <= trimmed.length && trimmed.endsWith(clean)) {
+    prefixLen = trimmed.length - clean.length;
+  } else {
+    const idx = trimmed.indexOf(clean);
+    prefixLen = idx >= 0 ? idx : 0;
+  }
+  const cleanRawIdx = fullRawIdx.slice(prefixLen, prefixLen + clean.length);
+
+  const map = new Array<number>(clean.length + 1);
+  for (let o = 0; o < clean.length; o++) {
+    map[o] = cleanRawIdx[o] ?? o;
+  }
+  // End offset (one past the last clean char).
+  if (clean.length === 0) {
+    map[0] = fullRawIdx[0] ?? survivingRawIdx[0] ?? 0;
+  } else {
+    const lastRaw = cleanRawIdx[clean.length - 1];
+    map[clean.length] = (lastRaw ?? clean.length - 1) + 1;
+  }
+  return map;
+}
+
+/**
+ * Translate a single `clean_text` offset to its `raw_text` offset for a node.
+ * Convenience wrapper over {@link buildCleanToRawOffsetMap}; for translating
+ * many offsets on one node, build the map once and index it directly.
+ */
+export function cleanToRawOffset(
+  node: Pick<DocumentViewNode, 'clean_text' | 'raw_text'>,
+  cleanOffset: number,
+): number {
+  const map = buildCleanToRawOffsetMap(node);
+  const clamped = Math.max(0, Math.min(cleanOffset, map.length - 1));
+  return map[clamped]!;
 }
