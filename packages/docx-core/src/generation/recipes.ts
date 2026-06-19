@@ -284,11 +284,24 @@ function oaStackedRuledSignatures(options: SignatureBlockOptions): BlockSpec[] {
   const muted = options.headerColorHex ?? DEFAULT_SUBROW_COLOR_HEX;
   const font = options.fontFamily;
   const fields = options.fields ?? ['signature', 'printName', 'title', 'date'];
-  const captions: Record<NonNullable<SignatureBlockOptions['fields']>[number], string> = {
-    signature: 'Signature',
-    printName: 'Print Name',
-    title: 'Title',
-    date: 'Date',
+  // Caption overrides honor the same `ruledLineLabels` tuple as the two-column
+  // path ([Signature, Print Name, Title, Date]); the Date caption additionally
+  // honors a per-party `dateLabel`, matching single-column / two-column behavior.
+  const labels = options.ruledLineLabels ?? ['Signature', 'Print Name', 'Title', 'Date'];
+  const captionFor = (
+    field: NonNullable<SignatureBlockOptions['fields']>[number],
+    party: SignatureBlockOptions['parties'][number],
+  ): string => {
+    switch (field) {
+      case 'signature':
+        return labels[0];
+      case 'printName':
+        return labels[1];
+      case 'title':
+        return labels[2];
+      case 'date':
+        return party.dateLabel ?? labels[3];
+    }
   };
   const fillHighlight = options.fillableHighlight ?? DEFAULT_FILLABLE_HIGHLIGHT;
   const noBorders = { top: NONE, bottom: NONE, left: NONE, right: NONE, insideH: NONE, insideV: NONE };
@@ -306,7 +319,7 @@ function oaStackedRuledSignatures(options: SignatureBlockOptions): BlockSpec[] {
           {
             vAlign: 'bottom' as const,
             borders: noBorders,
-            blocks: [paragraph(captions[field], { bold: true, font })],
+            blocks: [paragraph(captionFor(field, party), { bold: true, font })],
           },
           {
             vAlign: 'bottom' as const,

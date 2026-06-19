@@ -97,6 +97,26 @@ describe('Traceability: signature block oa-stacked-ruled layout', () => {
         expect(rPr.getElementsByTagName('w:b').length).toBeGreaterThan(0);
       });
 
+      await then('custom ruledLineLabels and per-party dateLabel override the captions', async () => {
+        const xml = await generatedDocumentXml({
+          sections: [
+            {
+              blocks: signatureBlock({
+                layout: 'oa-stacked-ruled',
+                ruledLineLabels: ['Sign', 'Name', 'Role', 'Dated'],
+                parties: [{ party: 'Acme', name: 'Jane Doe', title: 'CEO', dateLabel: 'Executed on' }],
+              }),
+            },
+          ],
+        });
+        const labelDom = parseXml(xml);
+        const table = labelDom.getElementsByTagName('w:tbl').item(0)!;
+        const labelCells = getDirectChildrenByName(table, 'tr').map(
+          (tr) => getDirectChildrenByName(tr, 'tc')[0]!.getElementsByTagName('w:t').item(0)?.textContent,
+        );
+        expect(labelCells).toEqual(['Sign', 'Name', 'Role', 'Executed on']); // dateLabel wins over labels[3]
+      });
+
       await then('single-column and two-column layouts remain unchanged', async () => {
         const single = signatureBlock({ parties: [{ party: 'Acme', name: 'Jane Doe', title: 'CEO' }] });
         // single-column: a bold party paragraph + one single-column table.
