@@ -1,6 +1,6 @@
 {
   "name": "safe-docx",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "AI-powered DOCX and ODT editing with tracked changes, redlining, and formatting preservation",
   "contextFileName": "GEMINI.md",
   "entrypoint": "GEMINI.md",
