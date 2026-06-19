@@ -9,16 +9,22 @@
  * VML shapes: Pages and Google Docs mangle VML, borders survive everywhere.
  */
 
-import type { BlockSpec, BorderSpec, ParagraphSpec, TableSpec } from './types.js';
+import type { BlockSpec, BorderSpec, HighlightColor, ParagraphSpec, TableSpec } from './types.js';
 
 const SINGLE: BorderSpec = { style: 'single' };
 const NONE: BorderSpec = { style: 'none' };
 const DEFAULT_SUBROW_COLOR_HEX = '595959';
 const DEFAULT_SUBROW_LABEL_INDENT_TWIPS = 240;
+const DEFAULT_FILLABLE_HIGHLIGHT: HighlightColor = 'yellow';
 
-export type CoverTermRow = { label: string; value: string };
+type CellMargins = NonNullable<TableSpec['rows'][number]['cells'][number]['marginsTwips']>;
+
+/** A value cell that can be flagged as an unfilled fillable placeholder. */
+type FillableValue = { fillable?: boolean };
+
+export type CoverTermRow = { label: string; value: string } & FillableValue;
 export type CoverTermGroupRow = { group: string };
-export type CoverTermSubrow = { label: string; value: string; subrow: true };
+export type CoverTermSubrow = { label: string; value: string; subrow: true } & FillableValue;
 export type CoverTermEntry = CoverTermRow | CoverTermGroupRow | CoverTermSubrow;
 
 export type CoverTermsOptions = {
@@ -34,8 +40,26 @@ export type CoverTermsOptions = {
   rowHeightTwips?: number;
   /** Optional uniform cell padding applied to every cover-terms cell. */
   cellPaddingTwips?: number;
+  /**
+   * Optional non-uniform cell margins. When set it supersedes `cellPaddingTwips`
+   * for every cover-terms cell (the subrow label indent is still added on top of
+   * the resulting `left`).
+   */
+  cellMarginsTwips?: { top?: number; right?: number; bottom?: number; left?: number };
+  /** Body font applied to every label/value/group run; default inherits Normal. */
+  fontFamily?: string;
+  /** Point size for plain-row and group runs; default inherits Normal. */
+  sizePt?: number;
+  /** Point size for subrow runs; defaults to `sizePt`. */
+  subrowSizePt?: number;
+  /** Text color for plain-row labels/values (six-hex, no '#'); default unset. */
+  textColorHex?: string;
+  /** Text color for group-row labels; defaults to `textColorHex`. */
+  groupColorHex?: string;
   /** Text color for subrow labels and values; defaults to mid-gray. */
   subrowColorHex?: string;
+  /** Highlight applied to a value flagged `fillable`; defaults to `yellow`. */
+  fillableHighlight?: HighlightColor;
   /**
    * Extra left indent on subrow label cells, added on top of `cellPaddingTwips`
    * (so the label sits further right than a normal row). Defaults to 240 twips.
@@ -45,7 +69,8 @@ export type CoverTermsOptions = {
 
 /**
  * A fixed-layout two-column label/value table for cover-terms blocks
- * (scenario SDX-GEN-070), with optional house-style grouped/sub rows.
+ * (scenario SDX-GEN-070), with optional house-style grouped/sub rows
+ * (SDX-GEN-106) and run styling + fillable placeholders (SDX-GEN-110).
  */
 export function coverTermsTable(options: CoverTermsOptions): TableSpec {
   const [labelWidth, valueWidth] = options.columnWidthsTwips ?? [2880, 6480];
@@ -54,6 +79,11 @@ export function coverTermsTable(options: CoverTermsOptions): TableSpec {
       ? { top: SINGLE, bottom: SINGLE, left: NONE, right: NONE, insideH: SINGLE, insideV: NONE }
       : { top: SINGLE, bottom: SINGLE, left: SINGLE, right: SINGLE, insideH: SINGLE, insideV: SINGLE };
   const rowRhythm = rowRhythmProps(options);
+  const font = options.fontFamily;
+  const plainSize = options.sizePt;
+  const subSize = options.subrowSizePt ?? options.sizePt;
+  const fillHighlight = options.fillableHighlight ?? DEFAULT_FILLABLE_HIGHLIGHT;
+
   const rows: TableSpec['rows'] = [];
   if (options.title !== undefined) {
     rows.push({
@@ -63,8 +93,8 @@ export function coverTermsTable(options: CoverTermsOptions): TableSpec {
           gridSpan: 2,
           shadingHex: 'D9D9D9',
           vAlign: 'center',
-          ...cellPaddingProps(options),
-          blocks: [paragraph(options.title, { bold: true, alignment: 'center' })],
+          ...cellMarginProps(options),
+          blocks: [paragraph(options.title, { bold: true, alignment: 'center', font, sizePt: plainSize })],
         },
       ],
     });
@@ -77,8 +107,15 @@ export function coverTermsTable(options: CoverTermsOptions): TableSpec {
           {
             gridSpan: 2,
             vAlign: 'center',
-            ...cellPaddingProps(options),
-            blocks: [paragraph(term.group, { bold: true })],
+            ...cellMarginProps(options),
+            blocks: [
+              paragraph(term.group, {
+                bold: true,
+                font,
+                sizePt: plainSize,
+                colorHex: options.groupColorHex ?? options.textColorHex,
+              }),
+            ],
           },
         ],
       });
@@ -86,30 +123,27 @@ export function coverTermsTable(options: CoverTermsOptions): TableSpec {
     }
 
     const subrow = 'subrow' in term && term.subrow === true;
+    const size = subrow ? subSize : plainSize;
+    const labelColor = subrow ? (options.subrowColorHex ?? DEFAULT_SUBROW_COLOR_HEX) : options.textColorHex;
+    const valueColor = subrow ? (options.subrowColorHex ?? DEFAULT_SUBROW_COLOR_HEX) : options.textColorHex;
+    const subrowIndent = (uniformLeft(options)) + (options.subrowLabelIndentTwips ?? DEFAULT_SUBROW_LABEL_INDENT_TWIPS);
+
     rows.push({
       ...rowRhythm,
       cells: [
         {
-          ...cellPaddingProps(
-            options,
-            subrow
-              ? { left: (options.cellPaddingTwips ?? 0) + (options.subrowLabelIndentTwips ?? DEFAULT_SUBROW_LABEL_INDENT_TWIPS) }
-              : undefined,
-          ),
-          blocks: [
-            paragraph(term.label, {
-              bold: !subrow,
-              italic: subrow,
-              colorHex: subrow ? (options.subrowColorHex ?? DEFAULT_SUBROW_COLOR_HEX) : undefined,
-            }),
-          ],
+          ...cellMarginProps(options, subrow ? { left: subrowIndent } : undefined),
+          blocks: [paragraph(term.label, { bold: !subrow, italic: subrow, colorHex: labelColor, font, sizePt: size })],
         },
         {
-          ...cellPaddingProps(options),
+          ...cellMarginProps(options),
           blocks: [
             paragraph(term.value, {
               italic: subrow,
-              colorHex: subrow ? (options.subrowColorHex ?? DEFAULT_SUBROW_COLOR_HEX) : undefined,
+              colorHex: valueColor,
+              font,
+              sizePt: size,
+              ...(term.fillable ? { bold: true, highlight: fillHighlight } : {}),
             }),
           ],
         },
@@ -138,9 +172,9 @@ export type SignatureBlockOptions = {
   /** Signature-line column width in twips; defaults to 4320 (3"). Single-column only. */
   lineWidthTwips?: number;
 
-  // ---- two-column mode (all optional; ignored unless layout === 'two-column') ----
+  // ---- two-column / oa-stacked-ruled mode (ignored unless that layout is set) ----
   /** Layout selector. Defaults to 'single-column' (the historical behavior). */
-  layout?: 'single-column' | 'two-column';
+  layout?: 'single-column' | 'two-column' | 'oa-stacked-ruled';
   /** Total grid width in twips, split across the two signer columns. Defaults to 9360 (6.5" body). */
   totalWidthTwips?: number;
   /** Center gutter column width between the two signer cells. Defaults to 360 (0.25"). */
@@ -149,24 +183,38 @@ export type SignatureBlockOptions = {
   headerColorHex?: string;
   /** Captions for the four ruled lines. Defaults to ['Signature', 'Print Name', 'Title', 'Date']. */
   ruledLineLabels?: [string, string, string, string];
+
+  // ---- oa-stacked-ruled mode only ----
+  /** Width of the left label column in twips. Defaults to 1800 (1.25"). */
+  labelColumnTwips?: number;
+  /** Minimum signing-row height in twips (room to sign). Defaults to 620. */
+  ruledRowHeightTwips?: number;
+  /** Which fields render, in order. Defaults to all four. */
+  fields?: Array<'signature' | 'printName' | 'title' | 'date'>;
+  /** Body font for the OA signature header + labels + values. */
+  fontFamily?: string;
+  /** Mark pre-filled values (printName/title) as fillable -> highlight + bold. */
+  fillable?: boolean;
+  /** Highlight for fillable values; defaults to `yellow`. */
+  fillableHighlight?: HighlightColor;
 };
 
 /**
  * Signature blocks rendered as borderless tables whose content cells carry
  * only bottom borders — the signature lines. No VML, no images.
  *
- * Default `layout: 'single-column'` keeps the historical stacked block: one
- * table per party, a bottom-bordered line then name/title/date rows
- * (scenario SDX-GEN-071). With `layout: 'two-column'` the parties render as a
- * paired signing grid — two signers per row, each a centered uppercase muted
- * header over ruled Signature / Print Name / Title / Date lines (Print Name and
- * Title pre-filled from the party data), with an empty padding cell when the
- * signer count is odd (scenario SDX-GEN-109).
+ * - `single-column` (default): the historical stacked block — one table per
+ *   party, a bottom-bordered line then name/title/date rows (SDX-GEN-071).
+ * - `two-column`: a paired signing grid, two signers per row, each a centered
+ *   muted header over ruled Signature/Print Name/Title/Date lines with captions
+ *   beneath (SDX-GEN-109).
+ * - `oa-stacked-ruled`: per party, a centered muted-caps header over a
+ *   label-column / ruled-line table with tall signing rows (SDX-GEN-111).
  */
 export function signatureBlock(options: SignatureBlockOptions): BlockSpec[] {
-  if ((options.layout ?? 'single-column') === 'two-column') {
-    return [twoColumnSignatureGrid(options)];
-  }
+  const layout = options.layout ?? 'single-column';
+  if (layout === 'two-column') return [twoColumnSignatureGrid(options)];
+  if (layout === 'oa-stacked-ruled') return oaStackedRuledSignatures(options);
   const width = options.lineWidthTwips ?? 4320;
   const blocks: BlockSpec[] = [];
   options.parties.forEach((party, index) => {
@@ -192,7 +240,16 @@ export function signatureBlock(options: SignatureBlockOptions): BlockSpec[] {
 
 function paragraph(
   text: string,
-  opts?: { bold?: boolean; italic?: boolean; caps?: boolean; colorHex?: string; alignment?: ParagraphSpec['alignment'] },
+  opts?: {
+    bold?: boolean;
+    italic?: boolean;
+    caps?: boolean;
+    colorHex?: string;
+    alignment?: ParagraphSpec['alignment'];
+    font?: string;
+    sizePt?: number;
+    highlight?: HighlightColor;
+  },
 ): ParagraphSpec {
   return {
     kind: 'paragraph',
@@ -205,9 +262,87 @@ function paragraph(
         ...(opts?.italic ? { italic: true } : {}),
         ...(opts?.caps ? { caps: true } : {}),
         ...(opts?.colorHex !== undefined ? { colorHex: opts.colorHex } : {}),
+        ...(opts?.font !== undefined ? { font: opts.font } : {}),
+        ...(opts?.sizePt !== undefined ? { sizePt: opts.sizePt } : {}),
+        ...(opts?.highlight !== undefined ? { highlight: opts.highlight } : {}),
       },
     ],
   };
+}
+
+/**
+ * OA stacked-ruled signatures: per party a centered uppercase muted header over
+ * a borderless `[label | ruled line]` two-column table with tall signing rows.
+ * Print Name / Title are pre-filled from the party data and optionally rendered
+ * as fillable (highlight + bold) placeholders.
+ */
+function oaStackedRuledSignatures(options: SignatureBlockOptions): BlockSpec[] {
+  const total = options.totalWidthTwips ?? 9360;
+  const labelWidth = options.labelColumnTwips ?? 1800;
+  const lineWidth = Math.max(1, total - labelWidth);
+  const rowHeight = options.ruledRowHeightTwips ?? 620;
+  const muted = options.headerColorHex ?? DEFAULT_SUBROW_COLOR_HEX;
+  const font = options.fontFamily;
+  const fields = options.fields ?? ['signature', 'printName', 'title', 'date'];
+  // Caption overrides honor the same `ruledLineLabels` tuple as the two-column
+  // path ([Signature, Print Name, Title, Date]); the Date caption additionally
+  // honors a per-party `dateLabel`, matching single-column / two-column behavior.
+  const labels = options.ruledLineLabels ?? ['Signature', 'Print Name', 'Title', 'Date'];
+  const captionFor = (
+    field: NonNullable<SignatureBlockOptions['fields']>[number],
+    party: SignatureBlockOptions['parties'][number],
+  ): string => {
+    switch (field) {
+      case 'signature':
+        return labels[0];
+      case 'printName':
+        return labels[1];
+      case 'title':
+        return labels[2];
+      case 'date':
+        return party.dateLabel ?? labels[3];
+    }
+  };
+  const fillHighlight = options.fillableHighlight ?? DEFAULT_FILLABLE_HIGHLIGHT;
+  const noBorders = { top: NONE, bottom: NONE, left: NONE, right: NONE, insideH: NONE, insideV: NONE };
+
+  const blocks: BlockSpec[] = [];
+  for (const party of options.parties) {
+    blocks.push(paragraph(party.party, { alignment: 'center', caps: true, colorHex: muted, font }));
+    const rows: TableSpec['rows'] = fields.map((field) => {
+      const value = field === 'printName' ? party.name : field === 'title' ? (party.title ?? '') : '';
+      const fillableValue = options.fillable === true && value !== '';
+      return {
+        heightTwips: rowHeight,
+        heightRule: 'atLeast' as const,
+        cells: [
+          {
+            vAlign: 'bottom' as const,
+            borders: noBorders,
+            blocks: [paragraph(captionFor(field, party), { bold: true, font })],
+          },
+          {
+            vAlign: 'bottom' as const,
+            borders: { bottom: SINGLE },
+            blocks: [
+              paragraph(value, {
+                font,
+                ...(fillableValue ? { bold: true, highlight: fillHighlight } : {}),
+              }),
+            ],
+          },
+        ],
+      };
+    });
+    blocks.push({
+      kind: 'table',
+      layout: 'fixed',
+      columnWidthsTwips: [labelWidth, lineWidth],
+      borders: noBorders,
+      rows,
+    });
+  }
+  return blocks;
 }
 
 /**
@@ -295,16 +430,26 @@ function rowRhythmProps(options: CoverTermsOptions): Pick<TableSpec['rows'][numb
   return options.rowHeightTwips === undefined ? {} : { heightTwips: options.rowHeightTwips, heightRule: 'atLeast' };
 }
 
-function cellPaddingProps(
+/** The effective uniform left margin (non-uniform margins win over uniform padding). */
+function uniformLeft(options: CoverTermsOptions): number {
+  if (options.cellMarginsTwips !== undefined) return options.cellMarginsTwips.left ?? 0;
+  return options.cellPaddingTwips ?? 0;
+}
+
+function cellMarginProps(
   options: CoverTermsOptions,
-  overrides?: NonNullable<TableSpec['rows'][number]['cells'][number]['marginsTwips']>,
+  overrides?: Partial<CellMargins>,
 ): Pick<TableSpec['rows'][number]['cells'][number], 'marginsTwips'> {
-  if (options.cellPaddingTwips === undefined && overrides === undefined) return {};
-  const uniform = options.cellPaddingTwips;
-  return {
-    marginsTwips: {
-      ...(uniform === undefined ? {} : { top: uniform, right: uniform, bottom: uniform, left: uniform }),
-      ...overrides,
-    },
-  };
+  const base: CellMargins | undefined = options.cellMarginsTwips
+    ? { ...options.cellMarginsTwips }
+    : options.cellPaddingTwips !== undefined
+      ? {
+          top: options.cellPaddingTwips,
+          right: options.cellPaddingTwips,
+          bottom: options.cellPaddingTwips,
+          left: options.cellPaddingTwips,
+        }
+      : undefined;
+  if (base === undefined && overrides === undefined) return {};
+  return { marginsTwips: { ...(base ?? {}), ...(overrides ?? {}) } };
 }
