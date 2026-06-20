@@ -9,7 +9,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
-| Accept-side round-trip lemma is closed | missing | n/a | No scenario mapping found in current tests |
+| Accept-side round-trip lemma is closed | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | Atom from deleted revision | covered | `src/openspec.traceability.test.ts` |  |
 | Atom from inserted revision | covered | `src/openspec.traceability.test.ts` |  |
 | Atom marked as format-changed | covered | `src/openspec.traceability.test.ts` |  |
@@ -20,7 +20,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Bold added | covered | `src/openspec.traceability.test.ts` |  |
 | Bold added markup | covered | `src/openspec.traceability.test.ts` |  |
 | Bold removed markup | covered | `src/openspec.traceability.test.ts` |  |
-| Bridge case provides a falsifiability layer for the new axiom | missing | n/a | No scenario mapping found in current tests |
+| Bridge case provides a falsifiability layer for the new axiom | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | Bridge file self-description stays accurate | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | Building footnote mapping | covered | `src/openspec.traceability.test.ts` |  |
 | Continuation pattern inherits formatting | covered | `src/openspec.traceability.test.ts` |  |
@@ -34,7 +34,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Element with text content | covered | `src/openspec.traceability.test.ts` |  |
 | Empty properties equal | covered | `src/openspec.traceability.test.ts` |  |
 | Fallback is falsification and coverage is floored, not silently filtered | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Field-bearing arbitrary drives INV-FIELD-001 across operations | missing | n/a | No scenario mapping found in current tests |
+| Field-bearing arbitrary drives INV-FIELD-001 across operations | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | Field-bearing arbitrary drives INV-RT-001 round-trip | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | First footnote displays as 1 | covered | `src/openspec.traceability.test.ts` |  |
 | Format change markup structure | covered | `src/openspec.traceability.test.ts` |  |
@@ -55,14 +55,14 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Orphan list item renders with parent format | covered | `src/openspec.traceability.test.ts` |  |
 | Part from main document | covered | `src/openspec.traceability.test.ts` |  |
 | Partial overlap | covered | `src/openspec.traceability.test.ts` |  |
-| Per-operation assertion strength matches the post-#217 engine | missing | n/a | No scenario mapping found in current tests |
+| Per-operation assertion strength matches the post-#217 engine | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | Proper nested list renders hierarchically | covered | `src/openspec.traceability.test.ts` |  |
 | Range IDs properly paired | covered | `src/openspec.traceability.test.ts` |  |
-| Rebuild fallback only after all inplace passes fail | missing | n/a | No scenario mapping found in current tests |
-| Reject-side round-trip lemma is closed | missing | n/a | No scenario mapping found in current tests |
+| Rebuild fallback only after all inplace passes fail | covered | `src/integration/field-cross-story-pipeline.test.ts` |  |
+| Reject-side round-trip lemma is closed | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | Remove existing revision tracking | covered | `src/openspec.traceability.test.ts` |  |
 | Reserved footnote IDs excluded from numbering | covered | `src/openspec.traceability.test.ts` |  |
-| Residual obligations and the normalizeText modeling gap are documented | missing | n/a | No scenario mapping found in current tests |
+| Residual obligations and the normalizeText modeling gap are documented | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 | Run with properties | covered | `src/openspec.traceability.test.ts` |  |
 | Run without properties | covered | `src/openspec.traceability.test.ts` |  |
 | Same properties different order | covered | `src/openspec.traceability.test.ts` |  |
@@ -74,16 +74,17 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Status for moved destination content | covered | `src/openspec.traceability.test.ts` |  |
 | Status for moved source content | covered | `src/openspec.traceability.test.ts` |  |
 | Status for unmatched atoms | covered | `src/openspec.traceability.test.ts` |  |
-| Table-heavy run-fragmented templates preserve tracked table structure | missing | n/a | No scenario mapping found in current tests |
+| Table-heavy run-fragmented templates preserve tracked table structure | covered | `src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
 | Text becomes bold | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Unknown property name | covered | `src/openspec.traceability.test.ts` |  |
-| `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas | missing | n/a | No scenario mapping found in current tests |
+| `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas | covered | `src/integration/lean-spec-bridge.test.ts` |  |
 
 ## Cross-Implementation Conformance
 
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
 | Checkout ahead of the pin | covered | `src/integration/cross-implementation-suite.test.ts` |  |
+| Protocol version mismatch exits with code 3 | covered | `src/integration/cross-implementation-suite.test.ts` |  |
 | Suite checkout absent | covered | `src/integration/cross-implementation-suite.test.ts` |  |
 | Suite checkout present and safe-docx agrees | covered | `src/integration/cross-implementation-suite.test.ts` |  |
 | Unknown operation declined honestly | covered | `src/integration/cross-implementation-suite.test.ts` |  |

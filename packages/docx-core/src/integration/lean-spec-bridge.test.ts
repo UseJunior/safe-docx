@@ -1636,9 +1636,7 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
   );
 
   test
-    .openspec(
-      '[LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations',
-    )
+    .openspec('[LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations')
     .openspec('[LEAN-FBA-02] Per-operation assertion strength matches the post-#217 engine')
     .openspec('[LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered')
     .openspec('[LEAN-FBA-05] Bridge file self-description stays accurate')(
@@ -1701,6 +1699,10 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
   );
 
   test
+    .openspec('[LEAN-RT-01] Accept-side round-trip lemma is closed')
+    .openspec('[LEAN-RT-02] Reject-side round-trip lemma is closed')
+    .openspec('[LEAN-RT-03] `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas')
+    .openspec('[LEAN-RT-04] Residual obligations and the normalizeText modeling gap are documented')
     .openspec('[LEAN-FBA-03] Field-bearing arbitrary drives INV-RT-001 round-trip')
     .openspec('[LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered')(
     'INV-RT-001: paired round-trip text equality on field-bearing inplace comparison output',
@@ -1907,7 +1909,7 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
-  test(
+  test.openspec('[LEAN-RT-05] Bridge case provides a falsifiability layer for the new axiom')(
     'INV-RT-001: field-bearing inplace comparison output round-trips on accept/reject (axiom falsifiability layer)',
     async ({ given, when, then }: AllureBddContext) => {
       // Falsifiability layer for the residual axiom
@@ -2035,4 +2037,3 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 });
-
