@@ -20,7 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, it, expect } from 'vitest';
-import { resolveSoffice, runLibreOfficeOracle, type OracleJob } from '@usejunior/docx-core';
+import { probeSofficeUsable, resolveSoffice, runLibreOfficeOracle, type OracleJob } from '@usejunior/docx-core';
 
 import { compareOdf } from './index.js';
 import { OdfArchive } from '../shared/odf/OdfArchive.js';
@@ -85,6 +85,10 @@ describe('LibreOffice accept/reject round-trip of the paragraph-granularity redl
       const soffice = resolveSoffice();
       if (!soffice) {
         console.warn('[issue #367] soffice not found — skipping LibreOffice round-trip (set ODF_SOFFICE_BIN to enable).');
+        return;
+      }
+      if (!(await probeSofficeUsable(soffice))) {
+        console.warn('[issue #367] soffice present but unusable (aborts on launch) — skipping LibreOffice round-trip.');
         return;
       }
 

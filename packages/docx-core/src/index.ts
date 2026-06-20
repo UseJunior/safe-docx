@@ -119,8 +119,9 @@ export type {
 } from './primitives/track-changes-emitter.js';
 
 // Re-export the LibreOffice accept/reject oracle (gated reference voter; callers skip when
-// `resolveSoffice()` is null). odf-core's round-trip tests drive it with `.odt` jobs.
-export { resolveSoffice, runLibreOfficeOracle, type OracleJob } from './integration/libreoffice-oracle.js';
+// `resolveSoffice()` is null or `probeSofficeUsable()` is false — the binary can exist yet
+// abort on launch under a restricted shell). odf-core's round-trip tests drive it with `.odt` jobs.
+export { resolveSoffice, probeSofficeUsable, runLibreOfficeOracle, type OracleJob } from './integration/libreoffice-oracle.js';
 
 // Synthetic-DOCX fixture builders re-exported for downstream packages' test suites
 // (odf-core's DOCX→ODT conversion tests build their inputs with these). They live under
