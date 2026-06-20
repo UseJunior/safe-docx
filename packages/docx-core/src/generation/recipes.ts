@@ -65,6 +65,10 @@ export type CoverTermsOptions = {
    * (so the label sits further right than a normal row). Defaults to 240 twips.
    */
   subrowLabelIndentTwips?: number;
+  /** Color (six-hex, no '#') for the table's single-style borders. Default 'auto'. */
+  ruleColorHex?: string;
+  /** Weight in eighths of a point for the single-style borders. Default 4 (0.5pt). */
+  ruleSizeEighthPt?: number;
 };
 
 /**
@@ -74,10 +78,17 @@ export type CoverTermsOptions = {
  */
 export function coverTermsTable(options: CoverTermsOptions): TableSpec {
   const [labelWidth, valueWidth] = options.columnWidthsTwips ?? [2880, 6480];
+  // The single-style borders honor an optional house-style color/weight; omitting
+  // both yields the bare `{ style: 'single' }` (w:sz="4" w:color="auto") as before.
+  const rule: BorderSpec = {
+    style: 'single',
+    ...(options.ruleSizeEighthPt !== undefined ? { sizeEighthPt: options.ruleSizeEighthPt } : {}),
+    ...(options.ruleColorHex !== undefined ? { colorHex: options.ruleColorHex } : {}),
+  };
   const borders =
     options.borderMode === 'horizontal-rules'
-      ? { top: SINGLE, bottom: SINGLE, left: NONE, right: NONE, insideH: SINGLE, insideV: NONE }
-      : { top: SINGLE, bottom: SINGLE, left: SINGLE, right: SINGLE, insideH: SINGLE, insideV: SINGLE };
+      ? { top: rule, bottom: rule, left: NONE, right: NONE, insideH: rule, insideV: NONE }
+      : { top: rule, bottom: rule, left: rule, right: rule, insideH: rule, insideV: rule };
   const rowRhythm = rowRhythmProps(options);
   const font = options.fontFamily;
   const plainSize = options.sizePt;
@@ -168,6 +179,10 @@ export type SignatureBlockOptions = {
     title?: string;
     /** Label for the date row; defaults to 'Date:'. */
     dateLabel?: string;
+    /** Override block `fillable` for this party's Print Name (oa-stacked-ruled). Default: `fillable`. */
+    nameFillable?: boolean;
+    /** Override block `fillable` for this party's Title (oa-stacked-ruled). Default: `fillable`. */
+    titleFillable?: boolean;
   }>;
   /** Signature-line column width in twips; defaults to 4320 (3"). Single-column only. */
   lineWidthTwips?: number;
@@ -197,6 +212,14 @@ export type SignatureBlockOptions = {
   fillable?: boolean;
   /** Highlight for fillable values; defaults to `yellow`. */
   fillableHighlight?: HighlightColor;
+  /** Bold the centered party header (oa-stacked-ruled). Default false. */
+  headerBold?: boolean;
+  /** Party-header point size (oa-stacked-ruled). Default: inherit Normal. */
+  headerSizePt?: number;
+  /** Color (six-hex) for the ruled signing line (oa-stacked-ruled). Default 'auto'. */
+  lineColorHex?: string;
+  /** Ruled signing-line weight in eighths of a point (oa-stacked-ruled). Default 4. */
+  lineSizeEighthPt?: number;
 };
 
 /**
@@ -305,13 +328,38 @@ function oaStackedRuledSignatures(options: SignatureBlockOptions): BlockSpec[] {
   };
   const fillHighlight = options.fillableHighlight ?? DEFAULT_FILLABLE_HIGHLIGHT;
   const noBorders = { top: NONE, bottom: NONE, left: NONE, right: NONE, insideH: NONE, insideV: NONE };
+  // The ruled signing line honors an optional house-style color/weight; omitting
+  // both yields the bare `{ style: 'single' }` bottom border as before.
+  const lineBorder: BorderSpec = {
+    style: 'single',
+    ...(options.lineSizeEighthPt !== undefined ? { sizeEighthPt: options.lineSizeEighthPt } : {}),
+    ...(options.lineColorHex !== undefined ? { colorHex: options.lineColorHex } : {}),
+  };
 
   const blocks: BlockSpec[] = [];
   for (const party of options.parties) {
-    blocks.push(paragraph(party.party, { alignment: 'center', caps: true, colorHex: muted, font }));
+    blocks.push(
+      paragraph(party.party, {
+        alignment: 'center',
+        caps: true,
+        colorHex: muted,
+        font,
+        ...(options.headerBold ? { bold: true } : {}),
+        ...(options.headerSizePt !== undefined ? { sizePt: options.headerSizePt } : {}),
+      }),
+    );
     const rows: TableSpec['rows'] = fields.map((field) => {
       const value = field === 'printName' ? party.name : field === 'title' ? (party.title ?? '') : '';
-      const fillableValue = options.fillable === true && value !== '';
+      // Print Name / Title resolve their fillable flag per party, falling back to
+      // the block-level `fillable`; Signature / Date are never fillable. This lets
+      // a filled assignment stay un-highlighted while an unfilled placeholder is.
+      const fieldFillable =
+        field === 'printName'
+          ? (party.nameFillable ?? options.fillable)
+          : field === 'title'
+            ? (party.titleFillable ?? options.fillable)
+            : false;
+      const fillableValue = fieldFillable === true && value !== '';
       return {
         heightTwips: rowHeight,
         heightRule: 'atLeast' as const,
@@ -323,7 +371,7 @@ function oaStackedRuledSignatures(options: SignatureBlockOptions): BlockSpec[] {
           },
           {
             vAlign: 'bottom' as const,
-            borders: { bottom: SINGLE },
+            borders: { bottom: lineBorder },
             blocks: [
               paragraph(value, {
                 font,
