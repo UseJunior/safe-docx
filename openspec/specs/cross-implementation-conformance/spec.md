@@ -8,6 +8,11 @@ Wire safe-docx into the neutral, wpt-style cross-implementation conformance suit
 
 docx-core SHALL ship a `safe-docx-conformance-adapter` executable implementing the docx-platform-tests adapter protocol v1: it MUST read an operation descriptor (`--operation operation.json`) and an input package (`--input input.docx`), apply the operation with existing docx-core primitives, and write the mutated package (`--output output.docx`), exiting 0. For an operation it does not implement, it MUST exit with code 2 and print a one-line reason — never fabricate output. Protocol-version mismatches MUST exit with code 3.
 
+#### Scenario: [XIMPL-06] Protocol version mismatch exits with code 3
+
+- **WHEN** the adapter receives an operation descriptor whose `protocolVersion` is not supported
+- **THEN** it exits with code 3, prints a one-line reason to stdout, and writes no output package
+
 #### Scenario: [XIMPL-04] acceptAllTrackedChanges round-trip through the adapter
 
 - **WHEN** the adapter is invoked with protocol v1, an `acceptAllTrackedChanges` operation descriptor, and an input .docx whose body contains `w:ins`-wrapped runs
@@ -40,4 +45,3 @@ The self-check SHALL record the docx-platform-tests revision it was validated ag
 
 - **WHEN** the self-check runs against a suite checkout whose HEAD SHA differs from the pinned SHA
 - **THEN** the test logs a warning naming the pinned and actual SHAs and still executes the scenarios
-
