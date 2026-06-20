@@ -1635,6 +1635,11 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-FBA-01/02/04/05 are four facets of one field-bearing
+  // property run — the shared arbitrary, the per-operation assertion strength, the
+  // floored (not filtered) coverage, and the bridge-file self-description are all
+  // observed from this single live-engine property and cannot be split without
+  // re-running the same property against the same generated pairs.
   test
     .openspec('[LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations')
     .openspec('[LEAN-FBA-02] Per-operation assertion strength matches the post-#217 engine')
@@ -1698,6 +1703,14 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-RT-01..04 are the round-trip lemma cluster (accept-side
+  // and reject-side lemmas, the `inv_rt_001` proof that composes them, and the
+  // documented residual obligations); this is the one TS-side bridge test that
+  // exercises accept/reject round-trip equality on the live engine, so the cluster
+  // discharges here together, alongside the field-bearing arbitrary (FBA-03) and its
+  // floored coverage (FBA-04). The single-fixture [LEAN-RT-05] falsifiability case is
+  // deliberately NOT here — it lives on its own fixture test (see below) because it
+  // requires a single deterministic case, not this 100-run property (cf. #513).
   test
     .openspec('[LEAN-RT-01] Accept-side round-trip lemma is closed')
     .openspec('[LEAN-RT-02] Reject-side round-trip lemma is closed')
@@ -1756,6 +1769,11 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-FRAG-01..04 are four facets of one fragmented-field
+  // property run — the shared arbitrary that drives both residual axioms, the
+  // fallback-is-legitimate (mode-independent) outcome, the floored mode/operation
+  // coverage, and the bridge-file self-description — all observed from this single
+  // property and inseparable without re-running it.
   test
     .openspec('[LEAN-FRAG-01] Fragmented-field arbitrary drives both residual axioms across operations')
     .openspec('[LEAN-FRAG-02] Inplace fallback is a legitimate, mode-independent outcome, not falsification')
