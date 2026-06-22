@@ -1,9 +1,10 @@
+> Note: the two-column signature tasks were dropped — that recipe was removed in
+> `remove-agreement-domain-recipes`. Only the keep-lines work remains.
+
 ## 1. Spec
 
-- [x] 1.1 Add the `Two-column signature block layout` requirement with scenario
-      `SDX-GEN-109` and the `Paragraph keep-lines pagination` requirement with
-      scenario `SDX-GEN-108` to the `docx-generation` delta (one `## ADDED
-      Requirements` section, two `### Requirement:` blocks).
+- [x] 1.1 Add the `Paragraph keep-lines pagination` requirement with scenario
+      `SDX-GEN-108` to the `docx-generation` delta.
 
 ## 2. Paragraph keep-lines
 
@@ -13,31 +14,15 @@
       after `w:keepNext` in `buildParagraphPropsElement` (ordered by
       `PPR_ORDER`).
 
-## 3. Two-column signature recipe
+## 3. Tests
 
-- [x] 3.1 Add optional `layout`, `totalWidthTwips`, `gutterTwips`,
-      `headerColorHex`, and `ruledLineLabels` controls to `signatureBlock`.
-- [x] 3.2 Build the two-column path as a 3-column grid of signer cells (centered
-      uppercase muted header + nested ruled-field table, Print Name/Title
-      pre-filled) with a padding cell for odd counts, composing only the
-      existing table/paragraph/run grammar, without changing the single-column
-      default.
+- [x] 3.1 Add `generation-keep-lines.test.ts` with
+      `TEST_FEATURE = 'add-signature-and-keeplines'` and `.openspec` scenario
+      `[SDX-GEN-108]`.
+- [x] 3.2 Assert keepLines emission order, absence when unset, and style-level
+      emission.
 
-## 4. Tests
+## 4. Verify
 
-- [x] 4.1 Add `generation-keep-lines.test.ts` and
-      `generation-two-column-signature.test.ts`, both with
-      `TEST_FEATURE = 'add-signature-and-keeplines'` and `.openspec` scenarios
-      `[SDX-GEN-108]` / `[SDX-GEN-109]`.
-- [x] 4.2 Assert keepLines emission order, absence when unset, and style-level
-      emission; assert the two-column grid columns, caps/muted header,
-      pre-filled Print Name/Title with blank ruled Signature/Date, odd-count
-      padding cell, no VML, structural validity, and single-column default
-      compatibility.
-
-## 5. Verify
-
-- [ ] 5.1 Focused package build/test, spec coverage, conformance-citation check,
-      workspace lint, conformance-doc, and strict OpenSpec validation pass.
-- [ ] 5.2 Real-DOCX visual confirm in Word for Mac (keep-lines block near a page
-      break + odd-count two-column signature open without a repair dialog).
+- [ ] 4.1 Focused package build/test, spec coverage, workspace lint, and strict
+      OpenSpec validation pass.

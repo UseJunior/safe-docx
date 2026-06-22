@@ -238,7 +238,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 
 ## From-Scratch Generation
 
-`@usejunior/docx-core` also generates new `.docx` files from a declarative, JSON-serializable `DocumentSpec` — sections with headers/footers and PAGE/NUMPAGES fields, named styles, tables, multi-level numbering, plus legal-document recipes (`coverTermsTable`, `signatureBlock`) and a separable drafting-note layer compiled to OOXML comments. Generation is deterministic (identical specs produce byte-identical packages) and held to the same ECMA-376 conformance discipline as the editing path:
+`@usejunior/docx-core` also generates new `.docx` files from a declarative, JSON-serializable `DocumentSpec` — sections with headers/footers and PAGE/NUMPAGES fields, named styles, tables, multi-level numbering, plus a separable drafting-note layer compiled to OOXML comments. Generation is deterministic (identical specs produce byte-identical packages) and held to the same ECMA-376 conformance discipline as the editing path:
 
 ```ts
 import { generateDocx } from '@usejunior/docx-core';
@@ -309,7 +309,7 @@ No. Supported runtime usage is JavaScript/TypeScript with `jszip` + `@xmldom/xml
 
 ### Can this generate contracts from scratch?
 
-Yes. `@usejunior/docx-core` ships `generateDocx(spec)` — a declarative DocumentSpec compiler covering sections, headers/footers, fields, styles, tables, multi-level numbering, legal recipes (cover-terms tables, signature blocks), and a separable drafting-note layer. Brownfield editing of existing documents remains the primary focus; generation shares its conformance and validation machinery.
+Yes. `@usejunior/docx-core` ships `generateDocx(spec)` — a declarative DocumentSpec compiler covering sections, headers/footers, fields, styles, tables, multi-level numbering, and a separable drafting-note layer. Brownfield editing of existing documents remains the primary focus; generation shares its conformance and validation machinery.
 
 ### What document types has this been tested on in-repo fixtures?
 

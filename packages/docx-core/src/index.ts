@@ -145,10 +145,6 @@ export {
   checkGeneratedPackage,
   type StructuralCheckResult,
   type StructuralIssue,
-  coverTermsTable,
-  signatureBlock,
-  type CoverTermsOptions,
-  type SignatureBlockOptions,
 } from './generation/index.js';
 export type {
   BlockSpec,

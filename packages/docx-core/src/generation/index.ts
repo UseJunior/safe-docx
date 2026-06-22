@@ -9,7 +9,6 @@
 export { generateDocx, type GenerateDocxOptions } from './compile.js';
 export { GenerationSpecError, GenerationInternalError, type GenerationSpecErrorCode } from './errors.js';
 export { checkGeneratedPackage, type StructuralCheckResult, type StructuralIssue } from './structural-checks.js';
-export { coverTermsTable, signatureBlock, type CoverTermsOptions, type SignatureBlockOptions } from './recipes.js';
 export type {
   BlockSpec,
   BorderSpec,

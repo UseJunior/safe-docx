@@ -17,9 +17,8 @@ import { parseXml } from '../primitives/xml.js';
 import { compareDocuments } from '../index.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { generateDocx } from './compile.js';
-import { coverTermsTable, signatureBlock } from './recipes.js';
 import { checkGeneratedPackage } from './structural-checks.js';
-import type { DocumentSpec } from './types.js';
+import type { BorderSpec, DocumentSpec } from './types.js';
 
 const TEST_FEATURE = 'add-generation-ancillary-parts';
 const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
@@ -32,7 +31,7 @@ const ANCILLARY_CONTENT_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml',
 ];
 
-/** A spec exercising fonts on a style and a run, plus recipe blocks, to drive font enumeration. */
+/** A spec exercising fonts on a style and a run, plus a table and paragraphs, to drive font enumeration. */
 function richSpec(): DocumentSpec {
   return {
     meta: { title: 'Ancillary', author: 'safe-docx', createdIso: '2026-01-01T00:00:00Z' },
@@ -43,8 +42,23 @@ function richSpec(): DocumentSpec {
       {
         blocks: [
           { kind: 'paragraph', styleId: 'Body', runs: [{ kind: 'text', text: 'Hello ' }, { kind: 'text', text: 'world', font: 'Georgia' }] },
-          coverTermsTable({ terms: [{ label: 'Term', value: 'Value' }] }),
-          ...signatureBlock({ parties: [{ party: 'Acme Inc.', name: 'Jane Roe', title: 'Buyer' }] }),
+          {
+            kind: 'table',
+            layout: 'fixed',
+            columnWidthsTwips: [3600, 6000],
+            borders: { bottom: { style: 'single' } as BorderSpec },
+            rows: [
+              {
+                cells: [
+                  { blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Term' }] }] },
+                  { blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Value' }] }] },
+                ],
+              },
+            ],
+          },
+          { kind: 'paragraph', runs: [{ kind: 'text', text: 'Acme Inc.', bold: true }] },
+          { kind: 'paragraph', runs: [{ kind: 'text', text: 'Name: Jane Roe' }] },
+          { kind: 'paragraph', runs: [{ kind: 'text', text: 'Title: Buyer' }] },
         ],
       },
     ],

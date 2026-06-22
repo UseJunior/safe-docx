@@ -195,23 +195,6 @@ computation.
 - **WHEN** the document is generated
 - **THEN** each level SHALL carry the declared `w:numFmt` and level text
 
-### Requirement: Legal-document recipes
-
-The library SHALL provide pure recipe functions producing spec nodes for tabular
-cover-terms blocks and signature blocks, built entirely from the paragraph/table grammar so
-their output is inlineable into any `DocumentSpec`.
-
-#### Scenario: [SDX-GEN-070] a cover-terms recipe produces a label/value table
-- **GIVEN** a list of term labels and values
-- **WHEN** `coverTermsTable` builds a spec node and the document is generated
-- **THEN** the output SHALL contain a fixed-layout two-column table pairing each label with its value
-
-#### Scenario: [SDX-GEN-071] a signature-block recipe renders signature lines
-- **GIVEN** party names with titles and date labels
-- **WHEN** `signatureBlock` builds spec nodes and the document is generated
-- **THEN** each party SHALL receive a signature line rendered as a bottom-bordered cell followed by name, title, and date rows
-- **AND** the output SHALL contain no VML or picture markup
-
 ### Requirement: Separable drafting-note layer
 
 Drafting notes SHALL be emitted as OOXML comments anchored beside content, such that the

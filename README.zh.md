@@ -213,7 +213,7 @@ claude mcp add safe-docx -- npx -y @usejunior/safe-docx
 
 ## 从零开始生成
 
-`@usejunior/docx-core` 也可以从声明式、JSON 可序列化的 `DocumentSpec` 生成新的 `.docx` 文件：带页眉/页脚和 PAGE/NUMPAGES 字段的节、命名样式、表格、多级编号、法律文档配方（`coverTermsTable`、`signatureBlock`），以及可分离的起草说明层（编译为 OOXML 批注）。生成是确定性的（相同 spec 产生字节相同的包），并遵循与编辑路径相同的 ECMA-376 合规纪律：
+`@usejunior/docx-core` 也可以从声明式、JSON 可序列化的 `DocumentSpec` 生成新的 `.docx` 文件：带页眉/页脚和 PAGE/NUMPAGES 字段的节、命名样式、表格、多级编号，以及可分离的起草说明层（编译为 OOXML 批注）。生成是确定性的（相同 spec 产生字节相同的包），并遵循与编辑路径相同的 ECMA-376 合规纪律：
 
 ```ts
 import { generateDocx } from '@usejunior/docx-core';
@@ -277,7 +277,7 @@ const buffer = await generateDocx({
 
 ### 能从零开始生成合同吗？
 
-可以。`@usejunior/docx-core` 提供 `generateDocx(spec)`：一个声明式 DocumentSpec 编译器，覆盖节、页眉/页脚、字段、样式、表格、多级编号、法律配方（封面条款表、签名块）以及可分离的起草说明层。对现有文档的棕地编辑仍是主要关注点；生成能力共享同一套合规和验证机制。
+可以。`@usejunior/docx-core` 提供 `generateDocx(spec)`：一个声明式 DocumentSpec 编译器，覆盖节、页眉/页脚、字段、样式、表格、多级编号以及可分离的起草说明层。对现有文档的棕地编辑仍是主要关注点；生成能力共享同一套合规和验证机制。
 
 ### 本仓库测试文件中测试了哪些文档类型？
 

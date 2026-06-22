@@ -21,6 +21,33 @@ npm run check:spec-coverage
 - `packages/safe-docx-mcpb`: private MCP bundle wrapper.
 - `openspec/`: specs and change deltas.
 
+## Library scope & domain boundaries
+
+safe-docx is a **general OOXML library**. Its public vocabulary should be
+Microsoft Word's / OOXML's vocabulary — table, row, cell, border, run,
+paragraph, numbering, section — **plus a small, explicit allowlist of LLM
+affordances**: features that are not in Word but exist because LLMs are the
+primary consumers of this library (for example, an outline / table-of-contents
+view sized for a model's context window). Such affordances are welcome when they
+are driven by the constraints of LLM consumers, not by any one downstream
+product.
+
+It must **not** contain names or concepts specific to a single downstream
+consumer's domain. Concretely, nothing in `packages/*/src/**` should be named
+after or shaped around a particular document library — no `signature`, `party`,
+`signatory`, `coverTerms`, agreement field names, or similar. A signature block,
+for instance, is just a `w:tbl`: build it from `TableSpec` / `BorderSpec` /
+`RunProps` in the **consumer**, where the agreement-specific iteration belongs.
+The general grammar already expresses per-cell borders (color/weight), run
+highlight, bold/size, and row height — adding a domain-named recipe earns nothing
+and couples the library to one product.
+
+If you are tempted to add something domain-specific "for convenience," put it in
+the consumer instead. If it is a genuinely general primitive or an LLM
+affordance, name it for what it does in OOXML/LLM terms, not for the product that
+prompted it. (History: `coverTermsTable` / `signatureBlock` were removed in
+`remove-agreement-domain-recipes` for exactly this reason.)
+
 ## Branch Naming
 
 Create a branch for every change — never commit directly to `main`.

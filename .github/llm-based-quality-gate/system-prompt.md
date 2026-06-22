@@ -47,6 +47,7 @@ A small set of `npm run` scripts is also allowlisted (`npm run lint`, `npm run c
   - `packages/safe-docx`, `packages/safe-docx-mcpb` — top-level CLI and MCP bundle packaging
   - `packages/google-docs-core` — Google Docs export/import layer
   - `packages/allure-test-factory`, `packages/test-narrative` — test scaffolding
+- **Library scope** (general OOXML only): the public surface should be Word/OOXML vocabulary (table, row, cell, border, run, …) plus a small allowlist of LLM affordances (e.g. an outline/TOC view for a context window). It must not carry names/concepts specific to one downstream product (agreements: `signature`, `party`, `signatory`, `coverTerms`, agreement field names). Domain composition belongs in the consumer. See CONTRIBUTING "Library scope & domain boundaries".
 - **OOXML invariants** that recur:
   - `w:ins`/`w:del` pairing; tracked-changes revision IDs are package-wide and seed from all revision-bearing side parts
   - `w:fldChar` must live sibling-level, never inside `w:del`; deleted instruction text uses `w:delInstrText`

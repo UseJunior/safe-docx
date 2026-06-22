@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/odf-core",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "OpenDocument Format (.odt) core library: archive packaging, document view, surgical text replacement, and tracked-changes comparison",
   "type": "module",
   "main": "dist/index.js",
@@ -14,7 +14,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@usejunior/docx-core": "^0.14.0",
+    "@usejunior/docx-core": "^0.15.0",
     "@xmldom/xmldom": "^0.9.10",
     "jszip": "^3.10.1"
   },
