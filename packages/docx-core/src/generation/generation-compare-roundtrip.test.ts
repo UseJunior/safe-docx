@@ -18,7 +18,6 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { generateDocx } from './compile.js';
-import { coverTermsTable, signatureBlock } from './recipes.js';
 import { compareDocuments } from '../index.js';
 import type { CompareResult, ReconstructionMode } from '../compare-types.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
@@ -28,7 +27,47 @@ import {
   extractTextWithParagraphs,
   compareTexts,
 } from '../baselines/atomizer/trackChangesAcceptorAst.js';
-import type { BlockSpec, DocumentSpec, HeaderFooterSpec } from './types.js';
+import type { BlockSpec, BorderSpec, DocumentSpec, HeaderFooterSpec, TableSpec } from './types.js';
+
+/** Plain two-column label/value table (no agreement-domain recipe). */
+function labelValueTable(rows: Array<{ label: string; value: string }>): TableSpec {
+  const rule: BorderSpec = { style: 'single' };
+  const none: BorderSpec = { style: 'none' };
+  return {
+    kind: 'table',
+    layout: 'fixed',
+    columnWidthsTwips: [3600, 6000],
+    borders: { top: rule, bottom: rule, insideH: rule, left: none, right: none, insideV: none },
+    rows: rows.map((r) => ({
+      cells: [
+        { blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: r.label }] }] },
+        { blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: r.value }] }] },
+      ],
+    })),
+  };
+}
+
+/** Plain signature lines: a party header paragraph plus a bottom-bordered signing-line cell
+ *  and name/title/date rows — table-and-border richness without any signature recipe. */
+function signatureLines(parties: Array<{ party: string; name: string; title: string; dateLabel?: string }>): BlockSpec[] {
+  const line: BorderSpec = { style: 'single' };
+  const blocks: BlockSpec[] = [];
+  for (const p of parties) {
+    blocks.push({ kind: 'paragraph', runs: [{ kind: 'text', text: p.party, bold: true }] });
+    blocks.push({
+      kind: 'table',
+      layout: 'fixed',
+      columnWidthsTwips: [5760],
+      rows: [
+        { cells: [{ borders: { bottom: line }, blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: '' }] }] }] },
+      ],
+    });
+    blocks.push({ kind: 'paragraph', runs: [{ kind: 'text', text: `Name: ${p.name}` }] });
+    blocks.push({ kind: 'paragraph', runs: [{ kind: 'text', text: `Title: ${p.title}` }] });
+    blocks.push({ kind: 'paragraph', runs: [{ kind: 'text', text: p.dateLabel ?? 'Date:' }] });
+  }
+  return blocks;
+}
 
 const TEST_FEATURE = 'add-generation-compare-roundtrip';
 const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
@@ -97,14 +136,11 @@ function pageXofYFooter(): HeaderFooterSpec {
  */
 function fieldsAndTablesSpec(effectiveDate: string): DocumentSpec {
   const blocks: BlockSpec[] = [
-    coverTermsTable({
-      title: 'Cover Terms',
-      terms: [
-        { label: 'Disclosing Party', value: 'Acme Manufacturing, Inc.' },
-        { label: 'Receiving Party', value: 'Northeast Logistics LLC' },
-        { label: 'Effective Date', value: effectiveDate },
-      ],
-    }),
+    labelValueTable([
+      { label: 'Disclosing Party', value: 'Acme Manufacturing, Inc.' },
+      { label: 'Receiving Party', value: 'Northeast Logistics LLC' },
+      { label: 'Effective Date', value: effectiveDate },
+    ]),
     {
       kind: 'paragraph',
       runs: [
@@ -115,12 +151,10 @@ function fieldsAndTablesSpec(effectiveDate: string): DocumentSpec {
       ],
     },
     { kind: 'paragraph', runs: [{ kind: 'text', text: 'IN WITNESS WHEREOF, the parties execute this Agreement.' }] },
-    ...signatureBlock({
-      parties: [
-        { party: 'Acme Manufacturing, Inc.', name: 'Jane Doe', title: 'CEO' },
-        { party: 'Northeast Logistics LLC', name: 'John Smith', title: 'Managing Member', dateLabel: 'Dated:' },
-      ],
-    }),
+    ...signatureLines([
+      { party: 'Acme Manufacturing, Inc.', name: 'Jane Doe', title: 'CEO' },
+      { party: 'Northeast Logistics LLC', name: 'John Smith', title: 'Managing Member', dateLabel: 'Dated:' },
+    ]),
   ];
   return {
     meta: { title: 'Round-trip fields+tables', author: 'safe-docx tests', createdIso: '2026-06-13T00:00:00Z' },

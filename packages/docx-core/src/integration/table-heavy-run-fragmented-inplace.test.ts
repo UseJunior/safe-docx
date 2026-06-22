@@ -1,13 +1,35 @@
 import { describe, expect } from 'vitest';
 import { compareDocuments } from '../index.js';
 import { generateDocx } from '../generation/compile.js';
-import { coverTermsTable } from '../generation/recipes.js';
-import type { DocumentSpec } from '../generation/types.js';
+import type { BorderSpec, DocumentSpec, TableRowSpec, TableSpec } from '../generation/types.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
 const TEST_FEATURE = 'Inplace Reconstruction Cross-Run Recovery';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
+
+/** A plain horizontal-rules label/value table — enough run-bearing table cells to exercise
+ *  cross-run fragmentation recovery, with no dependency on any agreement-domain recipe. */
+function labelValueTable(rows: Array<{ group: string } | { label: string; value: string }>): TableSpec {
+  const rule: BorderSpec = { style: 'single' };
+  const none: BorderSpec = { style: 'none' };
+  return {
+    kind: 'table',
+    layout: 'fixed',
+    columnWidthsTwips: [3600, 6000],
+    borders: { top: rule, bottom: rule, insideH: rule, left: none, right: none, insideV: none },
+    rows: rows.map((r): TableRowSpec =>
+      'group' in r
+        ? { cells: [{ gridSpan: 2, blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: r.group, bold: true }] }] }] }
+        : {
+            cells: [
+              { blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: r.label }] }] },
+              { blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: r.value }] }] },
+            ],
+          },
+    ),
+  };
+}
 
 function tableHeavyTemplate(governingLaw: string): DocumentSpec {
   return {
@@ -15,24 +37,20 @@ function tableHeavyTemplate(governingLaw: string): DocumentSpec {
     sections: [
       {
         blocks: [
-          coverTermsTable({
-            title: 'OpenAgreements Cover Terms',
-            borderMode: 'horizontal-rules',
-            terms: [
-              { group: 'Parties' },
-              { label: 'Disclosing Party', value: 'Acme Holdings, Inc.' },
-              { label: 'Receiving Party', value: 'Northeast Logistics LLC' },
-              { label: 'Affiliate', value: 'Acme Services Group' },
-              { group: 'Commercial Terms' },
-              { label: 'Effective Date', value: 'June 20, 2026' },
-              { label: 'Term', value: 'Three years' },
-              { label: 'Notice Period', value: 'Thirty days' },
-              { group: 'Legal Terms' },
-              { label: 'Governing Law', value: governingLaw },
-              { label: 'Venue', value: 'State and federal courts' },
-              { label: 'Confidential Materials', value: 'Technical, financial, and customer information' },
-            ],
-          }),
+          labelValueTable([
+            { group: 'Parties' },
+            { label: 'Disclosing Party', value: 'Acme Holdings, Inc.' },
+            { label: 'Receiving Party', value: 'Northeast Logistics LLC' },
+            { label: 'Affiliate', value: 'Acme Services Group' },
+            { group: 'Commercial Terms' },
+            { label: 'Effective Date', value: 'June 20, 2026' },
+            { label: 'Term', value: 'Three years' },
+            { label: 'Notice Period', value: 'Thirty days' },
+            { group: 'Legal Terms' },
+            { label: 'Governing Law', value: governingLaw },
+            { label: 'Venue', value: 'State and federal courts' },
+            { label: 'Confidential Materials', value: 'Technical, financial, and customer information' },
+          ]),
           {
             kind: 'paragraph',
             runs: [{ kind: 'text', text: 'Only the governing-law value changes between revisions.' }],

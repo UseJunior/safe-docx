@@ -36,7 +36,7 @@ observation of the new package shape.
 | `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
 | `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
 | `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase5-numbering-recipes.docx` (three-level legal numbering, cover-terms recipe table, signature blocks) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase5-numbering.docx` (three-level legal numbering through the document façade) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
 | `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
 
 ## Per-reader notes

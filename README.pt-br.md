@@ -215,7 +215,7 @@ Adicione a `~/Library/Application Support/Claude/claude_desktop_config.json` (ma
 
 ## Geração do zero
 
-`@usejunior/docx-core` também gera novos arquivos `.docx` a partir de uma `DocumentSpec` declarativa e serializável como JSON: seções com cabeçalhos/rodapés e campos PAGE/NUMPAGES, estilos nomeados, tabelas, numeração multinível, receitas de documentos jurídicos (`coverTermsTable`, `signatureBlock`) e uma camada separável de notas de minuta compilada para comentários OOXML. A geração é determinística (specs idênticas produzem pacotes byte-idênticos) e segue a mesma disciplina de conformidade ECMA-376 do caminho de edição:
+`@usejunior/docx-core` também gera novos arquivos `.docx` a partir de uma `DocumentSpec` declarativa e serializável como JSON: seções com cabeçalhos/rodapés e campos PAGE/NUMPAGES, estilos nomeados, tabelas, numeração multinível e uma camada separável de notas de minuta compilada para comentários OOXML. A geração é determinística (specs idênticas produzem pacotes byte-idênticos) e segue a mesma disciplina de conformidade ECMA-376 do caminho de edição:
 
 ```ts
 import { generateDocx } from '@usejunior/docx-core';
@@ -279,7 +279,7 @@ Não. O uso suportado em tempo de execução é JavaScript/TypeScript com `jszip
 
 ### Pode gerar contratos do zero?
 
-Sim. `@usejunior/docx-core` inclui `generateDocx(spec)`: um compilador declarativo de DocumentSpec que cobre seções, cabeçalhos/rodapés, campos, estilos, tabelas, numeração multinível, receitas jurídicas (tabelas de termos de capa, blocos de assinatura) e uma camada separável de notas de minuta. A edição brownfield de documentos existentes continua sendo o foco principal; a geração compartilha a infraestrutura de conformidade e validação.
+Sim. `@usejunior/docx-core` inclui `generateDocx(spec)`: um compilador declarativo de DocumentSpec que cobre seções, cabeçalhos/rodapés, campos, estilos, tabelas, numeração multinível e uma camada separável de notas de minuta. A edição brownfield de documentos existentes continua sendo o foco principal; a geração compartilha a infraestrutura de conformidade e validação.
 
 ### Quais tipos de documentos foram testados nos fixtures do repositório?
 

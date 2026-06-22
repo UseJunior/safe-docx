@@ -80,6 +80,7 @@ The core product goal is local-first legal-document editing with deterministic b
 - Guard against hostile/corrupt archives (entry count, size, compression-ratio limits).
 - Keep strict-mode operations transactional: validation failures must not partially mutate sessions.
 - Maintain OpenSpec scenario coverage alignment; spec drift should fail validation checks.
+- Stay general: implement Microsoft Word / OOXML functionality plus an explicit allowlist of LLM affordances (e.g. an outline/TOC view for a model's context window), but never names or concepts specific to one downstream product (no `signature`/`party`/`coverTerms`/agreement field names). Domain composition lives in the consumer. See CONTRIBUTING "Library scope & domain boundaries".
 
 ## Gotchas (Learned the Hard Way)
 
