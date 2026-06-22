@@ -11,8 +11,8 @@
 - [ ] 2.2 SDX-GEN-100: self-compare of an authored doc reports zero changes.
 - [ ] 2.3 SDX-GEN-101: a known single-paragraph replacement produces exactly that redline.
 - [ ] 2.4 SDX-GEN-102: accept-all == revised, reject-all == original (rebuild + inplace).
-- [ ] 2.5 SDX-GEN-103: a fields + tables spec (Page X of Y footer, coverTermsTable,
-      signatureBlock) survives the compare round-trip.
+- [ ] 2.5 SDX-GEN-103: a fields + tables spec (Page X of Y footer, a label/value
+      table, and signature-line rows) survives the compare round-trip.
 - [ ] 2.6 SDX-GEN-104: negative control — a malformed authored field trips the
       `fieldStructure` guard.
 

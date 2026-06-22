@@ -31,7 +31,7 @@ const ANCILLARY_CONTENT_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml',
 ];
 
-/** A spec exercising fonts on a style and a run, plus recipe blocks, to drive font enumeration. */
+/** A spec exercising fonts on a style and a run, plus a table and paragraphs, to drive font enumeration. */
 function richSpec(): DocumentSpec {
   return {
     meta: { title: 'Ancillary', author: 'safe-docx', createdIso: '2026-01-01T00:00:00Z' },

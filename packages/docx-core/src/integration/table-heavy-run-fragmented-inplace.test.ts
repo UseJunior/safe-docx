@@ -89,7 +89,7 @@ describe('Inplace reconstruction on table-heavy run-fragmented templates', () =>
       let result!: Awaited<ReturnType<typeof compareDocuments>>;
 
       await given(
-        'a table-heavy cover-terms template whose revised table values are split across different run boundaries',
+        'a table-heavy label/value template whose revised table values are split across different run boundaries',
         async () => {
           original = await generateDocx(tableHeavyTemplate('Delaware'));
           revised = await fragmentRevisedTableRuns(await generateDocx(tableHeavyTemplate('New York')));
