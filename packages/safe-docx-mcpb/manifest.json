@@ -29,6 +29,10 @@
       "description": "Search for text patterns in the document."
     },
     {
+      "name": "get_document_outline",
+      "description": "Get a compact structural map of the document's headings with stable paragraph IDs."
+    },
+    {
       "name": "batch_edit",
       "description": "Validate, conflict-check, and apply multiple edit steps in one call."
     },

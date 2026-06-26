@@ -66,6 +66,23 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
+    name: 'get_document_outline',
+    description:
+      'Get a compact structural map of a document\'s headings (DOCX only). Returns one entry per heading paragraph with its text, outline level, source, and stable `_bk_*` paragraph_id — so an agent can read the cheap outline first, then scope a targeted read_file/replace_text to the right section instead of scanning the whole body. Style-based (Word HeadingN) headings only by default; set include_heuristic_headings=true to also include heuristic titles/run-in headers. Read-only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      format: z
+        .enum(['json', 'markdown'])
+        .optional()
+        .describe("Output format: 'json' (default, structured outline array) or 'markdown' (indented ATX outline under `content`)."),
+      include_heuristic_headings: z
+        .boolean()
+        .optional()
+        .describe('When true, also include heuristically-detected headings (manual title / run-in / centered-caps) alongside Word HeadingN styles. Default: false (style-based only).'),
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
     name: 'grep',
     description: 'Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs. ODT supported via file_path (single-file) only.',
     input: z.object({

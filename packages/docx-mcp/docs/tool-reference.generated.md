@@ -25,6 +25,19 @@ Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k 
 | `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs and ODT. |
 | `include_footnotes` | `boolean` | no | When true and format="json", attach a `footnotes` array ({id, display_number, text}) to each paragraph node for the footnotes anchored to it. Windowed to the returned slice (a paginated walk returns each footnote exactly once) and counted toward the read token budget. Footnotes with an empty body or no anchored paragraph are excluded — use get_footnotes for the authoritative full enumeration. No effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false. |
 
+## `get_document_outline`
+
+Get a compact structural map of a document's headings (DOCX only). Returns one entry per heading paragraph with its text, outline level, source, and stable `_bk_*` paragraph_id — so an agent can read the cheap outline first, then scope a targeted read_file/replace_text to the right section instead of scanning the whole body. Style-based (Word HeadingN) headings only by default; set include_heuristic_headings=true to also include heuristic titles/run-in headers. Read-only.
+
+- readOnly: `true`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `format` | `enum("json", "markdown")` | no | Output format: 'json' (default, structured outline array) or 'markdown' (indented ATX outline under `content`). |
+| `include_heuristic_headings` | `boolean` | no | When true, also include heuristically-detected headings (manual title / run-in / centered-caps) alongside Word HeadingN styles. Default: false (style-based only). |
+
 ## `grep`
 
 Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs. ODT supported via file_path (single-file) only.
