@@ -25,32 +25,53 @@ Artifacts land under `packages/docx-core/src/testing/outputs/`.
 
 ## Matrix
 
+Emitter revision `#482` adds the standard ancillary parts
+(`theme/theme1.xml`, `fontTable.xml`, `webSettings.xml`) to every artifact, so the
+manual Word for Mac / Pages / Google Docs cells are reset to `—` pending a fresh
+observation of the new package shape.
+
 | Artifact | Emitter revision | Word for Mac | Pages | Google Docs import | LibreOffice |
 |---|---|---|---|---|---|
-| `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | PR 1 | — | — | — | clean (identity + PDF probes, 2026-06-11) |
-| `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | PR 2 | — | — | — | clean (identity + PDF probes, 2026-06-11) |
-| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | PR 3 | — | — | — | clean (identity + PDF probes, 2026-06-11) |
-| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | PR 4 | — | — | — | clean (identity + PDF probes, 2026-06-11) |
-| `generation-phase5-numbering-recipes.docx` (three-level legal numbering, cover-terms recipe table, signature blocks) | PR 5 | — | — | — | clean (identity + PDF probes, 2026-06-11) |
-| `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | PR 6 | — | — | — | clean (identity + PDF probes, 2026-06-11) |
+| `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase5-numbering.docx` (three-level legal numbering through the document façade) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
 
 ## Per-reader notes
 
 ### Word for Mac
-_(none yet)_
+- #482 (2026-06-13, Microsoft Word for Mac 16.x): all six artifact classes open
+  **clean — no repair/recovery dialog**. Verified two ways: (1) programmatically,
+  by opening each `generation-phase*.docx` via `open -a "Microsoft Word"` and
+  asserting via System Events that the document registers (`count documents` = 1)
+  with zero alert sheets / `AXDialog` windows on the Word process; (2) visually,
+  via full-screen `screencapture` of each — plain text, the bordered/shaded table,
+  three-level numbering, the signature blocks, and the two anchored comments all
+  render as specified. This settles the "if Word repairs" hypothesis: with the
+  ancillary parts present, Word for Mac does not repair.
+- Follow-up (not a #482 defect): Word opens the documents in **Compatibility
+  Mode** because generation does not emit a `w:compat` →
+  `compatibilityMode=15` `compatSetting` in `word/settings.xml`. Emitting that
+  (always, in a baseline settings part) would clear the legacy-format banner.
+  Tracked separately from the theme/fontTable/webSettings work here.
 
 ### Pages
-_(none yet)_
+_(none yet — needs a manual open of the #482 artifacts)_
 
 ### Google Docs import
-_(none yet)_
+_(none yet — needs a manual import of the #482 artifacts)_
 
 ### LibreOffice
 - PR 1: identity load→save and PDF conversion exercised automatically by
   `generation-package-structure.test.ts` when a local `soffice` binary exists.
 - PR 7 (2026-06-11, LibreOffice headless on macOS): all six artifact classes
   pass the identity probe (load → re-save as .docx → reload via DocxDocument
-  with paragraph content intact) and convert to non-empty PDFs. No dialogs, no
-  content loss observed. Word for Mac, Pages, and Google Docs cells remain
-  open for manual observation — they cannot be automated honestly from this
-  environment.
+  with paragraph content intact) and convert to non-empty PDFs.
+- #482 (2026-06-13, LibreOffice headless on macOS): re-run after adding the
+  ancillary parts — `generation-package-structure.test.ts` identity and PDF
+  probes pass against the new package shape (no dialogs, no content loss). Note:
+  headless `soffice` is occasionally flaky (an `Abort trap: 6` was observed in a
+  parallel run); the probe skips/fails-soft when the binary is unusable, and CI
+  has no `soffice`, so this remains a local-only signal.

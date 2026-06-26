@@ -1,5 +1,10 @@
 import fs from 'node:fs/promises';
-import { findUniqueSubstringMatch, type RevisionContext } from '@usejunior/docx-core';
+import {
+  DocxDocument,
+  findUniqueSubstringMatch,
+  replaceParagraphTextRange,
+  type RevisionContext,
+} from '@usejunior/docx-core';
 import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorMessage } from '../error_utils.js';
 import { err, ok, type ToolResponse } from './types.js';
@@ -7,10 +12,7 @@ import { enforceReadPathPolicy } from './path_policy.js';
 import { replaceText, stripSearchTags } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { resolveSessionForTool } from './session_resolution.js';
-
-// ---------------------------------------------------------------------------
-// Known fields per operation — only these are extracted during normalization.
-// ---------------------------------------------------------------------------
+import { preflightAiRevisionMutation } from './ai_revision_guard.js';
 
 const REPLACE_TEXT_FIELDS = new Set([
   'target_paragraph_id',
@@ -30,17 +32,15 @@ const INSERT_PARAGRAPH_FIELDS = new Set([
 
 const SUPPORTED_OPERATIONS = new Set(['replace_text', 'insert_paragraph']);
 const LEGACY_ALIASES = new Set(['smart_edit', 'smart_insert']);
+const MAX_PLAN_FILE_BYTES = 1 * 1024 * 1024;
 
-const MAX_PLAN_FILE_BYTES = 1 * 1024 * 1024; // 1 MB
-
-// ---------------------------------------------------------------------------
-// Step normalization types
-// ---------------------------------------------------------------------------
+type NormalizedOperation = 'replace_text' | 'insert_paragraph';
 
 type NormalizedStep = {
   step_id: string;
-  operation: 'replace_text' | 'insert_paragraph';
+  operation: NormalizedOperation;
   fields: Record<string, unknown>;
+  resolved_range?: { start: number; end: number };
 };
 
 type StepValidation = {
@@ -51,9 +51,33 @@ type StepValidation = {
   warnings: string[];
 };
 
-// ---------------------------------------------------------------------------
-// Normalization: accept both raw and merge_plans-envelope formats
-// ---------------------------------------------------------------------------
+type StepRef = {
+  plan_id: string;
+  plan_index: number;
+  step_index: number;
+  step_id: string;
+};
+
+type Conflict = {
+  code: string;
+  severity: 'hard';
+  message: string;
+  paragraph_id?: string;
+  step_refs: StepRef[];
+  details?: Record<string, unknown>;
+};
+
+type ConflictStep = {
+  step_id: string;
+  operation: NormalizedOperation;
+  source_plan_id: string;
+  source_plan_index: number;
+  source_step_index: number;
+  target_paragraph_id?: string;
+  positional_anchor_node_id?: string;
+  position?: 'BEFORE' | 'AFTER';
+  range?: { start: number; end: number };
+};
 
 function normalizeSteps(rawSteps: unknown[]): { steps: NormalizedStep[]; errors: string[] } {
   const steps: NormalizedStep[] = [];
@@ -67,24 +91,11 @@ function normalizeSteps(rawSteps: unknown[]): { steps: NormalizedStep[]; errors:
     }
 
     const rawObj = raw as Record<string, unknown>;
-
-    // Reject __proto__ pollution
     if (Object.prototype.hasOwnProperty.call(rawObj, '__proto__')) {
       errors.push(`Step ${i}: __proto__ key is not allowed.`);
       continue;
     }
 
-    // Detect envelope format (merge_plans output has `arguments` sub-object)
-    const hasEnvelope = typeof rawObj.arguments === 'object' && rawObj.arguments !== null && !Array.isArray(rawObj.arguments);
-    const argsSource = hasEnvelope ? rawObj.arguments as Record<string, unknown> : rawObj;
-
-    // Reject __proto__ in arguments envelope too
-    if (hasEnvelope && Object.prototype.hasOwnProperty.call(argsSource, '__proto__')) {
-      errors.push(`Step ${i}: __proto__ key is not allowed in arguments.`);
-      continue;
-    }
-
-    // Extract operation — could be top-level or in arguments
     const operationRaw = String(rawObj.operation ?? rawObj.op ?? '').trim().toLowerCase();
     if (!operationRaw) {
       errors.push(`Step ${i}: missing operation field.`);
@@ -97,26 +108,21 @@ function normalizeSteps(rawSteps: unknown[]): { steps: NormalizedStep[]; errors:
     }
 
     if (!SUPPORTED_OPERATIONS.has(operationRaw)) {
-      errors.push(`Step ${i}: unsupported operation '${operationRaw}'.`);
+      errors.push(`Step ${i}: unsupported operation '${operationRaw}'. Use 'replace_text' or 'insert_paragraph'.`);
       continue;
     }
 
-    const operation = operationRaw as 'replace_text' | 'insert_paragraph';
-
-    // Extract step_id
+    const operation = operationRaw as NormalizedOperation;
     const stepId = typeof rawObj.step_id === 'string' ? rawObj.step_id.trim() : '';
     if (!stepId) {
       errors.push(`Step ${i}: missing or empty step_id.`);
       continue;
     }
 
-    // Extract only known fields into a fresh object (prevents __proto__ pollution)
     const knownFields = operation === 'replace_text' ? REPLACE_TEXT_FIELDS : INSERT_PARAGRAPH_FIELDS;
     const fields: Record<string, unknown> = {};
     for (const key of knownFields) {
-      if (key in argsSource) {
-        fields[key] = argsSource[key];
-      }
+      if (key in rawObj) fields[key] = rawObj[key];
     }
 
     steps.push({ step_id: stepId, operation, fields });
@@ -124,10 +130,6 @@ function normalizeSteps(rawSteps: unknown[]): { steps: NormalizedStep[]; errors:
 
   return { steps, errors };
 }
-
-// ---------------------------------------------------------------------------
-// Validation phase: check ALL steps before applying
-// ---------------------------------------------------------------------------
 
 function validateSteps(
   steps: NormalizedStep[],
@@ -154,8 +156,6 @@ function validateSteps(
         if (text === null) {
           validation.errors.push(`target_paragraph_id '${targetId}' not found in document.`);
         } else {
-          // Check old_string exists and matches in the paragraph.
-          // Apply the same tag-stripping that replaceText does before matching.
           const oldStr = step.fields.old_string;
           if (typeof oldStr !== 'string') {
             validation.errors.push('Missing old_string.');
@@ -172,36 +172,27 @@ function validateSteps(
                 `old_string matched ${matchResult.matchCount} times in paragraph '${targetId}' `
                 + `(${matchResult.mode} matching). Must be unique.`,
               );
+            } else {
+              step.resolved_range = { start: matchResult.start, end: matchResult.end };
             }
           }
         }
       }
 
-      if (typeof step.fields.new_string !== 'string') {
-        validation.errors.push('Missing new_string.');
-      }
-      if (typeof step.fields.instruction !== 'string') {
-        validation.errors.push('Missing instruction.');
-      }
-    } else if (step.operation === 'insert_paragraph') {
+      if (typeof step.fields.new_string !== 'string') validation.errors.push('Missing new_string.');
+      if (typeof step.fields.instruction !== 'string') validation.errors.push('Missing instruction.');
+    } else {
       const anchorId = step.fields.positional_anchor_node_id;
       if (typeof anchorId !== 'string' || !anchorId.trim()) {
         validation.errors.push('Missing positional_anchor_node_id.');
       } else {
         const text = doc.getParagraphTextById(anchorId);
-        if (text === null) {
-          validation.errors.push(`positional_anchor_node_id '${anchorId}' not found in document.`);
-        }
+        if (text === null) validation.errors.push(`positional_anchor_node_id '${anchorId}' not found in document.`);
       }
 
-      if (typeof step.fields.new_string !== 'string') {
-        validation.errors.push('Missing new_string.');
-      }
-      if (typeof step.fields.instruction !== 'string') {
-        validation.errors.push('Missing instruction.');
-      }
+      if (typeof step.fields.new_string !== 'string') validation.errors.push('Missing new_string.');
+      if (typeof step.fields.instruction !== 'string') validation.errors.push('Missing instruction.');
 
-      // Validate style_source_id — warning only, not error
       const styleSourceId = step.fields.style_source_id;
       if (typeof styleSourceId === 'string' && styleSourceId.trim()) {
         const text = doc.getParagraphTextById(styleSourceId);
@@ -223,19 +214,13 @@ function validateSteps(
   return results;
 }
 
-// ---------------------------------------------------------------------------
-// Load steps from file path
-// ---------------------------------------------------------------------------
-
 async function loadStepsFromFile(filePath: string): Promise<{ steps: unknown[]; error?: undefined } | { steps?: undefined; error: ToolResponse }> {
   if (!filePath.endsWith('.json')) {
     return { error: err('INVALID_PLAN_FILE', `plan_file_path must have a .json extension: ${filePath}`) };
   }
 
   const pathCheck = await enforceReadPathPolicy(filePath);
-  if (!pathCheck.ok) {
-    return { error: pathCheck.response };
-  }
+  if (!pathCheck.ok) return { error: pathCheck.response };
 
   let stat: { size: number };
   try {
@@ -269,9 +254,137 @@ async function loadStepsFromFile(filePath: string): Promise<{ steps: unknown[]; 
   return { steps: parsed };
 }
 
-// ---------------------------------------------------------------------------
-// Apply phase: execute steps sequentially, stop on first error
-// ---------------------------------------------------------------------------
+function stepRef(step: ConflictStep): StepRef {
+  return {
+    plan_id: step.source_plan_id,
+    plan_index: step.source_plan_index,
+    step_index: step.source_step_index,
+    step_id: step.step_id,
+  };
+}
+
+function detectDuplicateStepIdConflicts(steps: ConflictStep[]): Conflict[] {
+  const byStepId = new Map<string, ConflictStep[]>();
+  for (const step of steps) {
+    const arr = byStepId.get(step.step_id) ?? [];
+    arr.push(step);
+    byStepId.set(step.step_id, arr);
+  }
+
+  const conflicts: Conflict[] = [];
+  for (const [stepId, dupeSteps] of byStepId.entries()) {
+    if (dupeSteps.length < 2) continue;
+    conflicts.push({
+      code: 'DUPLICATE_STEP_ID',
+      severity: 'hard',
+      message: `Duplicate step_id '${stepId}' detected in batch_edit steps.`,
+      step_refs: dupeSteps.map((s) => stepRef(s)),
+      details: { duplicate_step_id: stepId },
+    });
+  }
+  return conflicts;
+}
+
+function rangesOverlap(a: { start: number; end: number }, b: { start: number; end: number }): boolean {
+  return a.start < b.end && b.start < a.end;
+}
+
+function detectReplaceConflicts(steps: ConflictStep[]): Conflict[] {
+  const replaceSteps = steps.filter((s) => s.operation === 'replace_text' && !!s.target_paragraph_id);
+  const byParagraph = new Map<string, ConflictStep[]>();
+  for (const step of replaceSteps) {
+    const paragraphId = step.target_paragraph_id!;
+    const arr = byParagraph.get(paragraphId) ?? [];
+    arr.push(step);
+    byParagraph.set(paragraphId, arr);
+  }
+
+  const conflicts: Conflict[] = [];
+  for (const [paragraphId, paragraphSteps] of byParagraph.entries()) {
+    if (paragraphSteps.length < 2) continue;
+
+    for (let i = 0; i < paragraphSteps.length; i += 1) {
+      for (let j = i + 1; j < paragraphSteps.length; j += 1) {
+        const a = paragraphSteps[i]!;
+        const b = paragraphSteps[j]!;
+        if (!a.range || !b.range) continue;
+        if (!rangesOverlap(a.range, b.range)) continue;
+
+        conflicts.push({
+          code: 'OVERLAPPING_REPLACE_RANGE',
+          severity: 'hard',
+          message: `replace_text spans overlap in paragraph '${paragraphId}'.`,
+          paragraph_id: paragraphId,
+          step_refs: [stepRef(a), stepRef(b)],
+          details: {
+            first_range: a.range,
+            second_range: b.range,
+          },
+        });
+      }
+    }
+  }
+
+  return conflicts;
+}
+
+function detectInsertSlotCollisions(steps: ConflictStep[]): Conflict[] {
+  const insertSteps = steps.filter(
+    (s) => s.operation === 'insert_paragraph' && !!s.positional_anchor_node_id && !!s.position,
+  );
+  const bySlot = new Map<string, ConflictStep[]>();
+  for (const step of insertSteps) {
+    const slotKey = `${step.positional_anchor_node_id}::${step.position}`;
+    const arr = bySlot.get(slotKey) ?? [];
+    arr.push(step);
+    bySlot.set(slotKey, arr);
+  }
+
+  const conflicts: Conflict[] = [];
+  for (const [slotKey, slotSteps] of bySlot.entries()) {
+    if (slotSteps.length < 2) continue;
+    const anchorId = slotSteps[0]!.positional_anchor_node_id!;
+    const position = slotSteps[0]!.position!;
+    conflicts.push({
+      code: 'INSERT_SLOT_COLLISION',
+      severity: 'hard',
+      message: `Multiple insert_paragraph steps target the same slot '${slotKey}'.`,
+      paragraph_id: anchorId,
+      step_refs: slotSteps.map((s) => stepRef(s)),
+      details: {
+        anchor_paragraph_id: anchorId,
+        position,
+      },
+    });
+  }
+  return conflicts;
+}
+
+function buildConflictView(steps: NormalizedStep[]): ConflictStep[] {
+  return steps.map((step, index) => {
+    if (step.operation === 'replace_text') {
+      return {
+        step_id: step.step_id,
+        operation: step.operation,
+        source_plan_id: 'batch',
+        source_plan_index: 0,
+        source_step_index: index,
+        target_paragraph_id: step.fields.target_paragraph_id as string | undefined,
+        range: step.resolved_range,
+      };
+    }
+
+    return {
+      step_id: step.step_id,
+      operation: step.operation,
+      source_plan_id: 'batch',
+      source_plan_index: 0,
+      source_step_index: index,
+      positional_anchor_node_id: step.fields.positional_anchor_node_id as string | undefined,
+      position: (step.fields.position as 'BEFORE' | 'AFTER' | undefined) ?? 'AFTER',
+    };
+  });
+}
 
 async function executeSteps(
   manager: SessionManager,
@@ -300,6 +413,7 @@ async function executeSteps(
         new_string: step.fields.new_string as string,
         instruction: step.fields.instruction as string,
         normalize_first: step.fields.normalize_first as boolean | undefined,
+        skip_ai_revision_preflight: true,
       }, ctx);
     } else {
       result = await insertParagraph(manager, {
@@ -309,6 +423,7 @@ async function executeSteps(
         instruction: step.fields.instruction as string,
         position: step.fields.position as string | undefined,
         style_source_id: step.fields.style_source_id as string | undefined,
+        skip_ai_revision_preflight: true,
       }, ctx);
     }
 
@@ -330,11 +445,45 @@ async function executeSteps(
   return { completed_step_ids: completedStepIds, step_results: stepResults };
 }
 
-// ---------------------------------------------------------------------------
-// Main tool entry point
-// ---------------------------------------------------------------------------
+function invalidateDocumentCaches(doc: unknown): void {
+  const mutableDoc = doc as { dirty?: boolean; documentViewCache?: unknown };
+  mutableDoc.dirty = true;
+  mutableDoc.documentViewCache = null;
+}
 
-export async function applyPlan(
+function executeStepOnDoc(doc: DocxDocument, step: NormalizedStep, ctx?: RevisionContext): void {
+  if (step.operation === 'replace_text') {
+    const targetParagraphId = step.fields.target_paragraph_id as string;
+    const oldString = stripSearchTags(step.fields.old_string as string);
+    const newString = step.fields.new_string as string;
+    if (step.fields.normalize_first) doc.mergeRunsOnly();
+    const pEl = doc.getParagraphElementById(targetParagraphId);
+    if (!pEl) throw new Error(`Paragraph ID ${targetParagraphId} not found in document`);
+    const text = doc.getParagraphTextById(targetParagraphId) ?? '';
+    const match = findUniqueSubstringMatch(text, oldString);
+    if (match.status !== 'unique') throw new Error(`replace_text preview failed for paragraph ${targetParagraphId}`);
+    if (ctx) {
+      replaceParagraphTextRange(pEl, match.start, match.end, newString, ctx);
+      invalidateDocumentCaches(doc);
+    } else {
+      doc.replaceText({ targetParagraphId, findText: match.matchedText, replaceText: newString });
+    }
+    return;
+  }
+
+  doc.insertParagraph({
+    positionalAnchorNodeId: step.fields.positional_anchor_node_id as string,
+    relativePosition: (step.fields.position as 'BEFORE' | 'AFTER' | undefined) ?? 'AFTER',
+    newText: step.fields.new_string as string,
+    styleSourceId: step.fields.style_source_id as string | undefined,
+  }, ctx);
+}
+
+function executeStepsOnDoc(doc: DocxDocument, steps: NormalizedStep[], ctx?: RevisionContext): void {
+  for (const step of steps) executeStepOnDoc(doc, step, ctx);
+}
+
+export async function batchEdit(
   manager: SessionManager,
   params: {
     file_path?: string;
@@ -343,32 +492,25 @@ export async function applyPlan(
   },
 ): Promise<ToolResponse> {
   try {
-    // Validate mutual exclusivity of steps and plan_file_path
-    if (params.steps && params.plan_file_path) {
-      return err(
-        'INVALID_PARAMS',
-        'Cannot provide both steps and plan_file_path. Use one or the other.',
-      );
+    if (params.steps !== undefined && params.plan_file_path) {
+      return err('INVALID_PARAMS', 'Cannot provide both steps and plan_file_path. Use one or the other.');
     }
 
-    if (!params.steps && !params.plan_file_path) {
-      return err(
-        'INVALID_PARAMS',
-        'Must provide either steps (JSON array) or plan_file_path.',
-      );
+    if (params.steps === undefined && !params.plan_file_path) {
+      return err('INVALID_PARAMS', 'Must provide either steps (JSON array) or plan_file_path.');
     }
 
-    // Load steps
     let rawSteps: unknown[];
     if (params.plan_file_path) {
       const loaded = await loadStepsFromFile(params.plan_file_path);
       if (loaded.error) return loaded.error;
       rawSteps = loaded.steps;
+    } else if (Array.isArray(params.steps)) {
+      rawSteps = params.steps;
     } else {
-      rawSteps = params.steps!;
+      return err('INVALID_PARAMS', 'steps must be a JSON array.');
     }
 
-    // Normalize steps
     const { steps, errors: normErrors } = normalizeSteps(rawSteps);
     if (normErrors.length > 0) {
       return err(
@@ -377,25 +519,20 @@ export async function applyPlan(
       );
     }
 
-    if (steps.length === 0) {
-      return err('EMPTY_PLAN', 'Plan contains no valid steps.');
-    }
+    if (steps.length === 0) return err('EMPTY_BATCH', 'Batch contains no valid steps.');
 
-    // Resolve session
-    const resolved = await resolveSessionForTool(manager, params, { toolName: 'apply_plan' });
+    const resolved = await resolveSessionForTool(manager, params, { toolName: 'batch_edit' });
     if (!resolved.ok) return resolved.response;
     const { session } = resolved;
 
-    // Validation phase — check ALL steps before applying
     const validations = validateSteps(steps, session.doc);
     const overallValid = validations.every((v) => v.valid);
-
     if (!overallValid) {
       return {
         success: false,
         error: {
           code: 'VALIDATION_FAILED',
-          message: `Plan validation failed: ${validations.filter((v) => !v.valid).length} of ${steps.length} step(s) have errors.`,
+          message: `Batch validation failed: ${validations.filter((v) => !v.valid).length} of ${steps.length} step(s) have errors.`,
           hint: 'Fix the reported errors and resubmit.',
         },
         overall_valid: false,
@@ -403,19 +540,42 @@ export async function applyPlan(
       };
     }
 
-    // Collect warnings
     const allWarnings = validations.flatMap((v) => v.warnings.map((w) => ({ step_id: v.step_id, warning: w })));
+    const conflictSteps = buildConflictView(steps);
+    const conflicts = [
+      ...detectDuplicateStepIdConflicts(conflictSteps),
+      ...detectReplaceConflicts(conflictSteps),
+      ...detectInsertSlotCollisions(conflictSteps),
+    ];
+    if (conflicts.length > 0) {
+      return {
+        success: false,
+        error: {
+          code: 'BATCH_CONFLICT',
+          message: `Detected ${conflicts.length} hard conflict(s) in batch_edit steps.`,
+          hint: 'Resolve reported conflicts and resubmit the batch.',
+        },
+        has_conflicts: true,
+        conflict_count: conflicts.length,
+        conflicts,
+      };
+    }
 
-    // Apply phase — execute steps sequentially
     const ctx = await getRevisionContextForSession(session);
-    const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
+    const revisionPreflight = await preflightAiRevisionMutation(
+      session,
+      ctx,
+      (previewDoc, previewCtx) => executeStepsOnDoc(previewDoc, steps, previewCtx),
+    );
+    if (revisionPreflight) return revisionPreflight;
 
+    const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
     if (result.failed_step_id !== undefined) {
       return {
         success: false,
         error: {
-          code: 'APPLY_PARTIAL_FAILURE',
-          message: `Plan execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}).`,
+          code: 'BATCH_PARTIAL_FAILURE',
+          message: `Batch execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}).`,
           hint: 'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
         },
         file_path: manager.normalizePath(session.originalPath),
@@ -438,6 +598,6 @@ export async function applyPlan(
       ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
     });
   } catch (e: unknown) {
-    return err('APPLY_PLAN_ERROR', `Failed to apply plan: ${errorMessage(e)}`);
+    return err('BATCH_EDIT_ERROR', `Failed to apply batch edit: ${errorMessage(e)}`);
   }
 }

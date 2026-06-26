@@ -133,7 +133,11 @@ describe('save', () => {
       `<w:p w14:paraId="11111111"><w:r><w:t>Alpha target text</w:t></w:r></w:p>` +
       `<w:p w14:paraId="22222222" w:rsidR="00AA00AA">` +
       `<w:r w:rsidR="00AA00AA"><w:t>Untouched</w:t></w:r>` +
-      `<w:hyperlink r:id="rIdHyperlink"><w:r><w:t>link</w:t></w:r></w:hyperlink>` +
+      `<w:hyperlink r:id="rIdHyperlink">` +
+      `<w:r w:rsidR="00AA0001"><w:t>commonpaper.com/standards/mutual-</w:t></w:r>` +
+      `<w:r w:rsidR="00AA0002"><w:t>nda</w:t></w:r>` +
+      `<w:r w:rsidR="00AA0003"><w:t>/1.0</w:t></w:r>` +
+      `</w:hyperlink>` +
       `<w:proofErr w:type="spellStart"/>` +
       `<w:r w:rsidR="00BB00BB"><w:t xml:space="preserve"> paragraph</w:t></w:r>` +
       `<w:proofErr w:type="spellEnd"/>` +

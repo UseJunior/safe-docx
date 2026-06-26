@@ -2,7 +2,7 @@
  * Paragraph emitter.
  *
  * Shipped: paragraphs with style references and direct formatting
- * (alignment, spacing, indentation, tabs, keepNext, pageBreakBefore), all
+ * (alignment, spacing, indentation, tabs, keepNext, keepLines, pageBreakBefore), all
  * routed through the shared pPr builder and PPR_ORDER. The section-break
  * injection hook (a pPr-only sectPr) arrives with the multi-section phase.
  */
@@ -54,7 +54,7 @@ export function buildParagraph(doc: Document, paragraph: ParagraphSpec, ctx?: Bl
     p.appendChild(createWmlElement(doc, W.commentRangeStart, { 'w:id': String(noteId) }));
   }
   for (const inline of paragraph.runs) {
-    for (const run of buildInlineRuns(doc, inline)) {
+    for (const run of buildInlineRuns(doc, inline, ctx)) {
       p.appendChild(run);
     }
   }

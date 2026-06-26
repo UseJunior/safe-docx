@@ -196,7 +196,7 @@ How they're derived:
 
 Inserting a paragraph does not renumber unrelated paragraphs. Duplicate paragraphs remain uniquely addressable via deterministic salt resolution.
 
-Edit tools (`replace_text`, `insert_paragraph`, `apply_plan`, etc.) accept ONLY `_bk_*` IDs as anchors.
+Edit tools (`replace_text`, `insert_paragraph`, `batch_edit`, etc.) accept ONLY `_bk_*` IDs as anchors.
 
 ### Optional content_fingerprint for citation systems
 
@@ -271,13 +271,13 @@ Precedence is fixed: exact Word built-in heading styles win over every heuristic
 
 Google Docs is intentionally asymmetric: the `packages/google-docs-core` path emits `heading` only for built-in heading styles that normalize to `Heading1`…`Heading6`. The heuristic detectors do not run on the Google Docs renderer, so sources like `title_caps_centered` and `run_in_header` are Word-only today.
 
-## Batch Edits with apply_plan
+## Batch Edits with batch_edit
 
-For 3+ edits on one document, prefer `apply_plan` over sequential `replace_text` calls. It validates all steps before applying any, so you get all-or-nothing transactional semantics.
+For 3+ edits on one document, prefer `batch_edit` over sequential `replace_text` calls. It validates every step and pre-flights conflicts (duplicate step ids, overlapping replace ranges in one paragraph, insert-slot collisions) before applying anything — a validation or conflict failure applies nothing. Execution then runs the steps in order; if a step fails mid-batch it stops there and returns `completed_step_ids` + `failed_step_id` (already-applied steps remain — reapply to the original DOCX if you need a clean slate).
 
 ```
 1. read_file / grep  → gather paragraph IDs and text
-2. apply_plan(file_path, steps=[
+2. batch_edit(file_path, steps=[
      { step_id: "1", operation: "replace_text", target_paragraph_id, old_string, new_string, instruction },
      { step_id: "2", operation: "insert_paragraph", positional_anchor_node_id, new_string, instruction },
      ...

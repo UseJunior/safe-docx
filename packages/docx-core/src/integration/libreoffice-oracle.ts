@@ -79,6 +79,54 @@ export function resolveSoffice(): string | null {
   return candidates.find((c) => existsSync(c)) ?? null;
 }
 
+const probeResults = new Map<string, Promise<boolean>>();
+
+/**
+ * Preflight launchability probe. `resolveSoffice()` proves the binary EXISTS, not that it can
+ * launch: under a restricted shell (observed: macOS Seatbelt, e.g. `codex exec --sandbox
+ * workspace-write`) soffice dies with SIGABRT ("Abort trap: 6") during init, so a
+ * present-but-unusable binary would FAIL the gated oracle tests instead of skipping them.
+ * Callers check this after `resolveSoffice()` and skip-with-a-warning when it returns false;
+ * the real oracle calls stay outside any try/catch so genuine regressions still fail loudly.
+ *
+ * The probe is the same throwaway headless `--convert-to txt` the oracle uses to initialize its
+ * profile — the cheapest operation known to discriminate "can launch" from "aborts on init".
+ * Memoized per binary path so a multi-test file pays for one launch.
+ */
+export function probeSofficeUsable(soffice: string): Promise<boolean> {
+  let result = probeResults.get(soffice);
+  if (!result) {
+    result = (async () => {
+      const work = mkdtempSync(path.join(os.tmpdir(), 'lo-probe-'));
+      try {
+        const inPath = path.join(work, 'probe-input.txt');
+        const outDir = path.join(work, 'out');
+        writeFileSync(inPath, 'probe');
+        await runSoffice(
+          soffice,
+          [
+            '--headless',
+            '--norestore',
+            '--nologo',
+            `-env:UserInstallation=${pathToFileURL(path.join(work, 'profile')).href}`,
+            '--convert-to',
+            'txt',
+            '--outdir',
+            outDir,
+            inPath,
+          ],
+          30_000,
+        );
+        return existsSync(path.join(outDir, 'probe-input.txt'));
+      } finally {
+        rmSync(work, { recursive: true, force: true });
+      }
+    })();
+    probeResults.set(soffice, result);
+  }
+  return result;
+}
+
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>

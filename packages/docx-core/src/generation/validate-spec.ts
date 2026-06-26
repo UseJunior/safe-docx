@@ -37,8 +37,13 @@ import type {
   TableBorders,
   TableSpec,
 } from './types.js';
+import { HIGHLIGHT_COLORS, NUMBERING_LEVEL_JUSTIFICATIONS, THEME_COLOR_SLOTS } from './types.js';
 
 const COLOR_HEX_RE = /^[0-9A-Fa-f]{6}$/;
+const TWO_HEX_RE = /^[0-9A-Fa-f]{2}$/;
+const HIGHLIGHT_COLOR_SET: ReadonlySet<string> = new Set(HIGHLIGHT_COLORS);
+const LVL_JC_SET: ReadonlySet<string> = new Set(NUMBERING_LEVEL_JUSTIFICATIONS);
+const THEME_COLOR_SLOT_SET: ReadonlySet<string> = new Set(THEME_COLOR_SLOTS);
 
 function unsupported(path: string, feature: string): never {
   throw new GenerationSpecError(
@@ -54,12 +59,25 @@ export function validateSpec(spec: DocumentSpec): void {
     throw new GenerationSpecError('empty_sections', '/sections', 'DocumentSpec.sections must contain at least one section');
   }
 
+  validateTheme(spec);
   const declaredStyleIds = validateStyles(spec.styles ?? []);
   const numbering = validateNumbering(spec.numbering ?? []);
 
   spec.sections.forEach((section, sectionIndex) => {
     validateSection(section, `/sections/${sectionIndex}`, declaredStyleIds, numbering);
   });
+}
+
+function validateTheme(spec: DocumentSpec): void {
+  if (!spec.theme?.colors) return;
+  for (const [slot, hex] of Object.entries(spec.theme.colors)) {
+    if (!THEME_COLOR_SLOT_SET.has(slot)) {
+      throw new GenerationSpecError('invalid_value', `/theme/colors/${slot}`, `theme color slot must be one of the supported theme slots, got '${slot}'`);
+    }
+    if (typeof hex !== 'string' || !COLOR_HEX_RE.test(hex)) {
+      throw new GenerationSpecError('invalid_value', `/theme/colors/${slot}`, `theme color value must be six hex digits without '#', got '${hex}'`);
+    }
+  }
 }
 
 /** Returns numId handle → set of declared levels, for list-reference checks. */
@@ -91,6 +109,13 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
       }
       if (level.start !== undefined && (!Number.isInteger(level.start) || level.start < 0)) {
         throw new GenerationSpecError('invalid_value', `${levelPath}/start`, 'Level start must be a non-negative integer');
+      }
+      if (level.lvlJc !== undefined && !LVL_JC_SET.has(level.lvlJc)) {
+        throw new GenerationSpecError(
+          'invalid_value',
+          `${levelPath}/lvlJc`,
+          `lvlJc must be one of ${NUMBERING_LEVEL_JUSTIFICATIONS.join(', ')}, got '${level.lvlJc}'`,
+        );
       }
       if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
     });
@@ -249,6 +274,17 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
       if (cell.shadingHex !== undefined && !COLOR_HEX_RE.test(cell.shadingHex)) {
         throw new GenerationSpecError('invalid_value', `${cellPath}/shadingHex`, `shadingHex must be six hex digits without '#', got '${cell.shadingHex}'`);
       }
+      if (cell.themeFill !== undefined) {
+        validateThemeColorSlot(cell.themeFill, `${cellPath}/themeFill`, 'themeFill');
+      }
+      if (cell.shadingHex !== undefined && cell.themeFill !== undefined) {
+        throw new GenerationSpecError('invalid_value', `${cellPath}/themeFill`, 'themeFill cannot be set when shadingHex is also set');
+      }
+      validateOptionalTwoHex(cell.themeFillTint, `${cellPath}/themeFillTint`, 'themeFillTint');
+      validateOptionalTwoHex(cell.themeFillShade, `${cellPath}/themeFillShade`, 'themeFillShade');
+      if ((cell.themeFillTint !== undefined || cell.themeFillShade !== undefined) && cell.themeFill === undefined) {
+        throw new GenerationSpecError('invalid_value', `${cellPath}/themeFill`, 'themeFill is required when themeFillTint or themeFillShade is set');
+      }
       if (cell.marginsTwips) {
         for (const [key, value] of Object.entries(cell.marginsTwips)) {
           if (value !== undefined && (typeof value !== 'number' || value < 0 || !Number.isFinite(value))) {
@@ -376,7 +412,37 @@ function validateRunProps(props: RunProps, path: string): void {
   if (props.colorHex !== undefined && !COLOR_HEX_RE.test(props.colorHex)) {
     throw new GenerationSpecError('invalid_value', `${path}/colorHex`, `colorHex must be six hex digits without '#', got '${props.colorHex}'`);
   }
+  if (props.themeColor !== undefined) {
+    validateThemeColorSlot(props.themeColor, `${path}/themeColor`, 'themeColor');
+  }
+  if (props.colorHex !== undefined && props.themeColor !== undefined) {
+    throw new GenerationSpecError('invalid_value', `${path}/themeColor`, 'themeColor cannot be set when colorHex is also set');
+  }
+  validateOptionalTwoHex(props.themeTint, `${path}/themeTint`, 'themeTint');
+  validateOptionalTwoHex(props.themeShade, `${path}/themeShade`, 'themeShade');
+  if ((props.themeTint !== undefined || props.themeShade !== undefined) && props.themeColor === undefined) {
+    throw new GenerationSpecError('invalid_value', `${path}/themeColor`, 'themeColor is required when themeTint or themeShade is set');
+  }
   if (props.sizePt !== undefined && (!(props.sizePt > 0) || !Number.isFinite(props.sizePt))) {
     throw new GenerationSpecError('invalid_value', `${path}/sizePt`, 'sizePt must be a positive finite number');
+  }
+  if (props.highlight !== undefined && !HIGHLIGHT_COLOR_SET.has(props.highlight)) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      `${path}/highlight`,
+      `highlight must be one of the fixed CT_HighlightColor values, got '${props.highlight}'`,
+    );
+  }
+}
+
+function validateThemeColorSlot(value: string, path: string, fieldName: string): void {
+  if (!THEME_COLOR_SLOT_SET.has(value)) {
+    throw new GenerationSpecError('invalid_value', path, `${fieldName} must be one of the supported theme slots, got '${value}'`);
+  }
+}
+
+function validateOptionalTwoHex(value: string | undefined, path: string, fieldName: string): void {
+  if (value !== undefined && !TWO_HEX_RE.test(value)) {
+    throw new GenerationSpecError('invalid_value', path, `${fieldName} must be two hex digits without '#', got '${value}'`);
   }
 }

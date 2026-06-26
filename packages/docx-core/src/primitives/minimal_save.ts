@@ -137,6 +137,134 @@ function sameQualifiedName(a: Element, b: Element): boolean {
   return a.namespaceURI === b.namespaceURI && a.localName === b.localName;
 }
 
+function isWElement(node: Node, localName: string): node is Element {
+  return (
+    node.nodeType === 1 &&
+    (node as Element).namespaceURI === OOXML.W_NS &&
+    (node as Element).localName === localName
+  );
+}
+
+function directChildElement(el: Element, localName: string): Element | null {
+  let child = el.firstChild;
+  while (child) {
+    if (isWElement(child, localName)) return child;
+    child = child.nextSibling;
+  }
+  return null;
+}
+
+function clonedRunFormattingKey(run: Element): string {
+  const rPr = directChildElement(run, W.rPr);
+  return rPr ? serializer.serializeToString(rPr) : '';
+}
+
+function clonedRunContentChildren(run: Element): Node[] {
+  const out: Node[] = [];
+  let child = run.firstChild;
+  while (child) {
+    const next = child.nextSibling;
+    if (!isWElement(child, W.rPr)) out.push(child);
+    child = next;
+  }
+  return out;
+}
+
+function runHasOnlyTextContent(run: Element): boolean {
+  return clonedRunContentChildren(run).every((child) => {
+    if (child.nodeType === 3) return !(child.textContent ?? '').trim();
+    return isWElement(child, W.t);
+  });
+}
+
+function consolidateAdjacentTextChildren(run: Element): void {
+  let child = run.firstChild;
+  while (child) {
+    if (!isWElement(child, W.t)) {
+      child = child.nextSibling;
+      continue;
+    }
+
+    const first = child;
+    let next: Node | null = first.nextSibling;
+    while (next) {
+      if (next.nodeType === 3 && !(next.textContent ?? '').trim()) {
+        const whitespace = next;
+        next = whitespace.nextSibling;
+        whitespace.parentNode?.removeChild(whitespace);
+        continue;
+      }
+      if (!isWElement(next, W.t)) break;
+
+      const following = next.nextSibling;
+      first.textContent = (first.textContent ?? '') + (next.textContent ?? '');
+      next.parentNode?.removeChild(next);
+      next = following;
+    }
+
+    const text = first.textContent ?? '';
+    if (text.startsWith(' ') || text.endsWith(' ')) {
+      first.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
+    } else {
+      first.removeAttributeNS('http://www.w3.org/XML/1998/namespace', 'space');
+    }
+    child = first.nextSibling;
+  }
+}
+
+function mergeAdjacentRunsForKey(container: Element): void {
+  let child = container.firstChild;
+  let currentRun: Element | null = null;
+
+  while (child) {
+    const next = child.nextSibling;
+    if (!isWElement(child, W.r)) {
+      currentRun = null;
+      child = next;
+      continue;
+    }
+
+    if (
+      currentRun &&
+      runHasOnlyTextContent(currentRun) &&
+      runHasOnlyTextContent(child) &&
+      clonedRunFormattingKey(currentRun) === clonedRunFormattingKey(child)
+    ) {
+      for (const node of clonedRunContentChildren(child)) {
+        currentRun.appendChild(node);
+      }
+      consolidateAdjacentTextChildren(currentRun);
+      child.parentNode?.removeChild(child);
+    } else {
+      currentRun = child;
+      consolidateAdjacentTextChildren(currentRun);
+    }
+    child = next;
+  }
+}
+
+function canonicalizeHyperlinkRunsForKey(root: Element): void {
+  const hyperlinks = Array.from(root.getElementsByTagNameNS(OOXML.W_NS, W.hyperlink));
+  if (root.namespaceURI === OOXML.W_NS && root.localName === W.hyperlink) {
+    hyperlinks.unshift(root);
+  }
+  for (const hyperlink of hyperlinks) {
+    mergeAdjacentRunsForKey(hyperlink);
+  }
+}
+
+/**
+ * The atomizer can reconstruct untouched hyperlink text as one run with
+ * multiple `w:t` children, while open-time `mergeRuns` leaves the original
+ * as adjacent runs inside `w:hyperlink`. Canonicalize that comparison-only
+ * shape so restore can still import the pristine original block.
+ */
+function restoreKey(el: Element): string {
+  const clone = el.cloneNode(true) as Element;
+  canonicalizeHyperlinkRunsForKey(clone);
+  return serializer.serializeToString(clone);
+}
+
 /**
  * Reconcile the element children of one container: LCS-matched (untouched)
  * children of `cur` are replaced with the corresponding pristine `orig`
@@ -160,8 +288,8 @@ function reconcileChildren(
   if (origChildren.length !== normChildren.length) return 0;
   if (origChildren.length === 0 || curChildren.length === 0) return 0;
 
-  const normKeys = normChildren.map((el) => serializer.serializeToString(el));
-  const curKeys = curChildren.map((el) => serializer.serializeToString(el));
+  const normKeys = normChildren.map(restoreKey);
+  const curKeys = curChildren.map(restoreKey);
   const pairs = lcsPairs(normKeys, curKeys);
 
   let restored = 0;

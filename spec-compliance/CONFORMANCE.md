@@ -76,6 +76,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-4-4` | w:commentRangeStart comment anchor opening | 5 | 1 | 17.13.4.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart` | — |
 | `ECMA-PART1-17-13-4-3` | w:commentRangeEnd comment anchor closing | 5 | 1 | 17.13.4.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd` | — |
 | `ECMA-PART1-17-13-4-5` | w:commentReference comment reference mark | 5 | 1 | 17.13.4.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference` | — |
+| `ECMA-PART1-17-13-5-15` | Deleted paragraph mark (w:del under w:pPr/w:rPr) | 5 | 1 | 17.13.5.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | — |
+| `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | — |
 
 ### ECMA-PART4-17-16-5 — w:delInstrText and w:fldChar placement in tracked deletions
 
@@ -767,8 +769,10 @@ advertise unused depth.
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc`
 
-Level justification is always emitted (`left`) for determinism — omission
-leaves the alignment to reader defaults.
+Level justification is authorable per level via `NumberingSpec` (`left`,
+`center`, or `right`, the transitional ST_Jc subset) and is always emitted
+deterministically, defaulting to `left` when omitted. `right` aligns labels of
+differing widths on their right edge — the standard legal-outline convention.
 
 ### ECMA-PART1-17-3-1-19 — w:numPr paragraph numbering reference
 
@@ -838,6 +842,38 @@ reference run, so the anchored extent is exactly the paragraph content.
 The trailing reference run carries `w:commentReference` with the same id
 as its range anchors; the existing deleteComment editing path removes the
 trio cleanly, which the strip scenario verifies on generated output.
+
+### ECMA-PART1-17-13-5-15 — Deleted paragraph mark (w:del under w:pPr/w:rPr)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.15
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del`
+
+ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked
+deletion of the *paragraph mark* (the glyph ending the paragraph), not of the
+paragraph's contents. Accepting the revision removes the paragraph break, so
+the paragraph's remaining content merges into the following paragraph; the
+contents themselves are deleted only where they carry their own run-level
+`w:del` wrappers. safe-docx's accept paths implement this merge in
+`packages/docx-core/src/primitives/accept_changes.ts` and
+`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+
+### ECMA-PART1-17-13-5-20 — Inserted paragraph mark (w:ins under w:pPr/w:rPr)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.20
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins`
+
+ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked
+insertion of the *paragraph mark*, not of the paragraph's contents. Rejecting
+the revision removes the inserted paragraph break, so the paragraph's
+surviving content merges into the following paragraph; the contents disappear
+only where they carry their own run-level `w:ins` wrappers. safe-docx's reject
+paths implement this merge in
+`packages/docx-core/src/primitives/reject_changes.ts` and
+`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
 ## Non-Goals
 

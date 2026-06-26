@@ -14,6 +14,7 @@ import { createWmlElement, createWmlTextElement } from '../../primitives/dom-hel
 import { W } from '../../primitives/namespaces.js';
 import { GenerationInternalError } from '../errors.js';
 import type { FieldSpec, InlineSpec, RunProps } from '../types.js';
+import type { BlockEmitContext } from './emit-context.js';
 import { buildRunPropsElement } from './properties.js';
 
 /** Instruction text per field, with the canonical surrounding spaces. */
@@ -22,9 +23,9 @@ const FIELD_INSTRUCTION_TEXT: Record<FieldSpec['field'], string> = {
   NUMPAGES: ' NUMPAGES ',
 };
 
-function makeRun(doc: Document, props: RunProps, ...children: Element[]): Element {
+function makeRun(doc: Document, props: RunProps, ctx: BlockEmitContext | undefined, ...children: Element[]): Element {
   const run = createWmlElement(doc, W.r);
-  const rPr = buildRunPropsElement(doc, props);
+  const rPr = buildRunPropsElement(doc, props, { themeColorValues: ctx?.themeColorValues });
   if (rPr) run.appendChild(rPr);
   for (const child of children) run.appendChild(child);
   return run;
@@ -36,37 +37,37 @@ function makeRun(doc: Document, props: RunProps, ...children: Element[]): Elemen
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  */
-function buildFieldRuns(doc: Document, field: FieldSpec): Element[] {
+function buildFieldRuns(doc: Document, field: FieldSpec, ctx?: BlockEmitContext): Element[] {
   const instr = createWmlElement(doc, W.instrText);
   instr.setAttribute('xml:space', 'preserve');
   instr.appendChild(doc.createTextNode(FIELD_INSTRUCTION_TEXT[field.field]));
 
   return [
-    makeRun(doc, field, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'begin' })),
-    makeRun(doc, field, instr),
-    makeRun(doc, field, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'separate' })),
-    makeRun(doc, field, createWmlTextElement(doc, field.cachedResult)),
-    makeRun(doc, field, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'end' })),
+    makeRun(doc, field, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'begin' })),
+    makeRun(doc, field, ctx, instr),
+    makeRun(doc, field, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'separate' })),
+    makeRun(doc, field, ctx, createWmlTextElement(doc, field.cachedResult)),
+    makeRun(doc, field, ctx, createWmlElement(doc, W.fldChar, { 'w:fldCharType': 'end' })),
   ];
 }
 
 /** Build the w:r element(s) for one inline spec node. */
-export function buildInlineRuns(doc: Document, inline: InlineSpec): Element[] {
+export function buildInlineRuns(doc: Document, inline: InlineSpec, ctx?: BlockEmitContext): Element[] {
   switch (inline.kind) {
     case 'text': {
       const run = createWmlElement(doc, W.r);
-      const rPr = buildRunPropsElement(doc, inline);
+      const rPr = buildRunPropsElement(doc, inline, { themeColorValues: ctx?.themeColorValues });
       if (rPr) run.appendChild(rPr);
       run.appendChild(createWmlTextElement(doc, inline.text));
       return [run];
     }
     case 'field':
-      return buildFieldRuns(doc, inline);
+      return buildFieldRuns(doc, inline, ctx);
     case 'tab':
-      return [makeRun(doc, {}, createWmlElement(doc, W.tab))];
+      return [makeRun(doc, {}, ctx, createWmlElement(doc, W.tab))];
     case 'break': {
       const attrs = inline.breakType === 'page' ? { 'w:type': 'page' } : undefined;
-      return [makeRun(doc, {}, createWmlElement(doc, W.br, attrs))];
+      return [makeRun(doc, {}, ctx, createWmlElement(doc, W.br, attrs))];
     }
     default:
       throw new GenerationInternalError(

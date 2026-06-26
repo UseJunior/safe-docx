@@ -17,7 +17,8 @@
  * SHAs named) but still runs.
  *
  * The protocol-behavior tests (unsupported operation → exit 2, protocol
- * mismatch → exit 3) need no suite checkout and always run.
+ * mismatch → exit 3) and the suite-gating tests (skip-on-absent resolution,
+ * pin-mismatch warning) need no suite checkout and always run.
  */
 
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
@@ -42,7 +43,26 @@ const TSX_BIN = join(PROJECT_ROOT, 'node_modules/.bin/tsx');
 const PIN_FILE = join(INTEGRATION_DIR, 'docx-platform-tests.pin.json');
 
 const SUITE_DIR = process.env.DOCX_PLATFORM_TESTS_DIR ?? '';
-const RUNNER_TSX = SUITE_DIR ? join(SUITE_DIR, 'runner/node_modules/.bin/tsx') : '';
+
+interface SuiteAvailability {
+  available: boolean;
+  runnerTsx: string;
+  skipWarning: string | null;
+}
+
+function resolveSuiteAvailability(suiteDir: string): SuiteAvailability {
+  const runnerTsx = suiteDir ? join(suiteDir, 'runner/node_modules/.bin/tsx') : '';
+  const available = suiteDir !== '' && existsSync(suiteDir) && existsSync(runnerTsx);
+  return {
+    available,
+    runnerTsx,
+    skipWarning: available
+      ? null
+      : '[cross-implementation-suite] SKIP: set DOCX_PLATFORM_TESTS_DIR to a ' +
+        'docx-platform-tests checkout with runner dependencies installed ' +
+        '(git clone open-agreements/docx-platform-tests && cd runner && npm ci).',
+  };
+}
 
 interface SuiteResults {
   results: Array<{
@@ -58,33 +78,31 @@ interface SuiteResults {
   }>;
 }
 
-const suiteAvailable =
-  SUITE_DIR !== '' && existsSync(SUITE_DIR) && existsSync(RUNNER_TSX);
-if (!suiteAvailable) {
-  console.warn(
-    '[cross-implementation-suite] SKIP: set DOCX_PLATFORM_TESTS_DIR to a ' +
-      'docx-platform-tests checkout with runner dependencies installed ' +
-      '(git clone open-agreements/docx-platform-tests && cd runner && npm ci).',
-  );
+const { available: suiteAvailable, runnerTsx: RUNNER_TSX, skipWarning } =
+  resolveSuiteAvailability(SUITE_DIR);
+if (skipWarning) {
+  console.warn(skipWarning);
 }
 const describeMaybe = suiteAvailable ? describe : describe.skip;
+
+function pinMismatchWarning(pinnedCommitSha: string, actualSha: string): string | null {
+  if (actualSha === pinnedCommitSha) return null;
+  return `[cross-implementation-suite] suite checkout is at ${actualSha}, pinned ${pinnedCommitSha}; running anyway`;
+}
 
 function warnOnPinMismatch(): void {
   const pin = JSON.parse(readFileSync(PIN_FILE, 'utf8')) as { pinnedCommitSha: string };
   const head = spawnSync('git', ['-C', SUITE_DIR, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
   const actualSha = head.status === 0 ? head.stdout.trim() : 'unknown';
-  if (actualSha !== pin.pinnedCommitSha) {
-    console.warn(
-      `[cross-implementation-suite] suite checkout is at ${actualSha}, pinned ${pin.pinnedCommitSha}; running anyway`,
-    );
+  const warning = pinMismatchWarning(pin.pinnedCommitSha, actualSha);
+  if (warning) {
+    console.warn(warning);
   }
 }
 
 describeMaybe('Cross-implementation conformance suite self-check', () => {
   test
     .openspec('[XIMPL-01] Suite checkout present and safe-docx agrees')
-    .openspec('[XIMPL-02] Suite checkout absent skips with a logged warning')
-    .openspec('[XIMPL-03] Checkout ahead of the pin warns and still runs')
     .openspec('[XIMPL-04] acceptAllTrackedChanges round-trip through the adapter')(
     'safe-docx adapter passes every docx-platform-tests scenario',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
@@ -144,8 +162,63 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
   );
 });
 
+describe('Suite gating behavior', () => {
+  test.openspec('[XIMPL-02] Suite checkout absent')(
+    'an unset or missing DOCX_PLATFORM_TESTS_DIR resolves to skip with a logged warning',
+    async ({ given, when, then }: AllureBddContext) => {
+      let removedCheckout = '';
+      let unsetResolution: SuiteAvailability;
+      let missingResolution: SuiteAvailability;
+
+      await given('a deleted directory that is guaranteed not to exist', async () => {
+        removedCheckout = mkdtempSync(join(tmpdir(), 'ximpl-absent-'));
+        rmSync(removedCheckout, { recursive: true, force: true });
+        expect(existsSync(removedCheckout)).toBe(false);
+      });
+
+      await when('availability is resolved for an unset and for a missing checkout', async () => {
+        unsetResolution = resolveSuiteAvailability('');
+        missingResolution = resolveSuiteAvailability(removedCheckout);
+      });
+
+      await then('both resolve unavailable with a warning naming the env variable', async () => {
+        for (const resolution of [unsetResolution!, missingResolution!]) {
+          expect(resolution.available).toBe(false);
+          expect(resolution.skipWarning).toContain('SKIP');
+          expect(resolution.skipWarning).toContain('DOCX_PLATFORM_TESTS_DIR');
+        }
+      });
+    },
+  );
+
+  test.openspec('[XIMPL-03] Checkout ahead of the pin')(
+    'a checkout SHA differing from the pin warns naming both SHAs and does not abort',
+    async ({ given, when, then }: AllureBddContext) => {
+      let pinnedSha = '';
+      let warning: string | null = null;
+
+      await given('the committed pin file', async () => {
+        pinnedSha = (JSON.parse(readFileSync(PIN_FILE, 'utf8')) as { pinnedCommitSha: string })
+          .pinnedCommitSha;
+        expect(pinnedSha).toMatch(/^[0-9a-f]{40}$/);
+      });
+
+      await when('the pin check sees a checkout at a different SHA', async () => {
+        warning = pinMismatchWarning(pinnedSha, 'f'.repeat(40));
+      });
+
+      await then('it returns a warning naming both SHAs and stays silent on a match', async () => {
+        expect(warning).toContain(pinnedSha);
+        expect(warning).toContain('f'.repeat(40));
+        expect(warning).toContain('running anyway');
+        expect(pinMismatchWarning(pinnedSha, pinnedSha)).toBeNull();
+      });
+    },
+  );
+});
+
 describe('Conformance adapter protocol behavior', () => {
-  test.openspec('[XIMPL-05] Unknown operation declined honestly with exit code 2')(
+  test.openspec('[XIMPL-05] Unknown operation declined honestly')(
     'unknown operations exit 2 with a one-line reason and no output',
     async ({ given, when, then }: AllureBddContext) => {
       const workDir = mkdtempSync(join(tmpdir(), 'ximpl-proto-'));

@@ -9,6 +9,10 @@
 [![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
 <!-- SYNC:badges END -->
 
+<!-- SYNC:issue-quick-links BEGIN -->
+[Report Bug](https://github.com/usejunior/safe-docx/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/usejunior/safe-docx/issues/new?template=feature_request.yml)
+<!-- SYNC:issue-quick-links END -->
+
 <!-- SYNC:lang-nav BEGIN -->
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
 <!-- SYNC:lang-nav END -->
@@ -212,7 +216,7 @@ Füge zu `~/Library/Application Support/Claude/claude_desktop_config.json` (macO
 
 ## Erstellung von Grund auf
 
-`@usejunior/docx-core` erzeugt auch neue `.docx`-Dateien aus einer deklarativen, JSON-serialisierbaren `DocumentSpec`: Abschnitte mit Kopf-/Fußzeilen und PAGE-/NUMPAGES-Feldern, benannte Stile, Tabellen, mehrstufige Nummerierung, juristische Dokumentrezepte (`coverTermsTable`, `signatureBlock`) und eine trennbare Entwurfsnotiz-Ebene, die zu OOXML-Kommentaren kompiliert wird. Die Erzeugung ist deterministisch (identische Specs erzeugen byte-identische Pakete) und unterliegt derselben ECMA-376-Konformitätsdisziplin wie der Bearbeitungspfad:
+`@usejunior/docx-core` erzeugt auch neue `.docx`-Dateien aus einer deklarativen, JSON-serialisierbaren `DocumentSpec`: Abschnitte mit Kopf-/Fußzeilen und PAGE-/NUMPAGES-Feldern, benannte Stile, Tabellen, mehrstufige Nummerierung und eine trennbare Entwurfsnotiz-Ebene, die zu OOXML-Kommentaren kompiliert wird. Die Erzeugung ist deterministisch (identische Specs erzeugen byte-identische Pakete) und unterliegt derselben ECMA-376-Konformitätsdisziplin wie der Bearbeitungspfad:
 
 ```ts
 import { generateDocx } from '@usejunior/docx-core';
@@ -276,7 +280,7 @@ Nein. Die unterstützte Laufzeitnutzung ist JavaScript/TypeScript mit `jszip` + 
 
 ### Kann man damit Verträge von Grund auf erstellen?
 
-Ja. `@usejunior/docx-core` liefert `generateDocx(spec)` — einen deklarativen DocumentSpec-Compiler für Abschnitte, Kopf-/Fußzeilen, Felder, Stile, Tabellen, mehrstufige Nummerierung, juristische Rezepte (Cover-Terms-Tabellen, Signaturblöcke) und eine trennbare Entwurfsnotiz-Ebene. Brownfield-Bearbeitung bestehender Dokumente bleibt der Hauptfokus; die Erzeugung nutzt dieselbe Konformitäts- und Validierungsinfrastruktur.
+Ja. `@usejunior/docx-core` liefert `generateDocx(spec)` — einen deklarativen DocumentSpec-Compiler für Abschnitte, Kopf-/Fußzeilen, Felder, Stile, Tabellen, mehrstufige Nummerierung und eine trennbare Entwurfsnotiz-Ebene. Brownfield-Bearbeitung bestehender Dokumente bleibt der Hauptfokus; die Erzeugung nutzt dieselbe Konformitäts- und Validierungsinfrastruktur.
 
 ### Welche Dokumenttypen wurden in den Repository-Fixtures getestet?
 

@@ -7,9 +7,10 @@
  * fixed epoch (document-facing dates come from spec.meta.createdIso).
  *
  * Ordering: header/footer parts are allocated first so their relationship
- * ids exist when the document part binds section references; the package
- * plumbing runs last because [Content_Types].xml is assembled from the part
- * registry.
+ * ids exist when the document part binds section references; the standard
+ * ancillary parts (theme, fontTable, webSettings) register before the package
+ * plumbing, which runs last because [Content_Types].xml is assembled from the
+ * part registry.
  */
 
 import { createZipBuffer } from '../primitives/zip.js';
@@ -18,11 +19,15 @@ import { CompileContext } from './context.js';
 import { emitCommentsPartsIfNeeded } from './emit/comments-part.js';
 import { DraftingNoteCollector } from './emit/emit-context.js';
 import { emitDocumentPart } from './emit/document-part.js';
+import { emitFontTablePart } from './emit/font-table-part.js';
 import { emitHeaderFooterParts } from './emit/header-footer-part.js';
 import { emitNumberingPartIfNeeded } from './emit/numbering-part.js';
 import { emitPackageParts } from './emit/package-parts.js';
 import { emitSettingsPartIfNeeded } from './emit/settings-part.js';
 import { emitStylesPart } from './emit/styles-part.js';
+import { emitThemePart } from './emit/theme-part.js';
+import { emitWebSettingsPart } from './emit/web-settings-part.js';
+import { resolveThemeColorValues } from './theme-colors.js';
 import type { DocumentSpec } from './types.js';
 import { validateSpec } from './validate-spec.js';
 
@@ -40,15 +45,22 @@ export async function generateDocx(spec: DocumentSpec, opts?: GenerateDocxOption
 
   const notesEnabled = opts?.includeDraftingNotes ?? spec.options?.includeDraftingNotes ?? true;
   const ctx = new CompileContext();
+  const themeColorValues = resolveThemeColorValues(spec.theme);
   const numberingIds = emitNumberingPartIfNeeded(spec, ctx);
-  const headerFooterRefs = emitHeaderFooterParts(spec, ctx, { numberingIds });
+  const headerFooterRefs = emitHeaderFooterParts(spec, ctx, { numberingIds, themeColorValues });
   const notes = notesEnabled ? new DraftingNoteCollector() : undefined;
-  const documentPartXml = emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes });
+  const documentPartXml = emitDocumentPart(spec, headerFooterRefs, { numberingIds, notes, themeColorValues });
   maybeCaptureEmittedDocumentXml(documentPartXml);
   ctx.setFileContent('word/document.xml', documentPartXml);
   if (notes) emitCommentsPartsIfNeeded(spec, ctx, notes);
   emitStylesPart(spec, ctx);
   emitSettingsPartIfNeeded(spec, ctx);
+  // Standard ancillary parts every Word-authored package carries (issue #482):
+  // theme → fontTable → webSettings, ordered for stable rId allocation. Package
+  // plumbing must stay last — it assembles [Content_Types].xml from the registry.
+  emitThemePart(ctx, spec.theme);
+  emitFontTablePart(spec, ctx);
+  emitWebSettingsPart(ctx);
   emitPackageParts(spec, ctx);
 
   return createZipBuffer(ctx.toFileRecord(), { fileDate: ZIP_EPOCH });

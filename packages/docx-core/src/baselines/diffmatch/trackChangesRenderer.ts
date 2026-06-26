@@ -27,7 +27,7 @@ export function allocateRevisionId(): number {
  * Format a date for OOXML (ISO 8601 format).
  */
 export function formatOoxmlDate(date: Date): string {
-  return date.toISOString().replace('Z', 'Z');
+  return date.toISOString();
 }
 
 /**

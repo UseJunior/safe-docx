@@ -2,6 +2,13 @@ import { SessionManager, getRevisionContextForSession } from '../session/manager
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
+import { DocxDocument, type RevisionContext } from '@usejunior/docx-core';
+import { preflightAiRevisionMutation } from './ai_revision_guard.js';
+
+const FOOTNOTE_TOUCHED_CONTEXT = {
+  relationshipParts: ['word/_rels/document.xml.rels'],
+  sideParts: ['word/footnotes.xml'],
+};
 
 export async function addFootnote(
   manager: SessionManager,
@@ -25,17 +32,28 @@ export async function addFootnote(
   }
 
   const pid = params.target_paragraph_id;
+  const text = params.text;
   const pEl = session.doc.getParagraphElementById(pid);
   if (!pEl) {
     return err('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`, 'Use grep or read_file to find valid paragraph IDs.');
   }
 
   try {
-    const result = await session.doc.addFootnote({
+    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) => doc.addFootnote({
       paragraphId: pid,
       afterText: params.after_text,
-      text: params.text,
-    }, ctx);
+      text,
+    }, activeCtx);
+
+    const revisionPreflight = await preflightAiRevisionMutation(
+      session,
+      ctx,
+      async (doc, activeCtx) => { await mutate(doc, activeCtx); },
+      FOOTNOTE_TOUCHED_CONTEXT,
+    );
+    if (revisionPreflight) return revisionPreflight;
+
+    const result = await mutate(session.doc, ctx);
 
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({

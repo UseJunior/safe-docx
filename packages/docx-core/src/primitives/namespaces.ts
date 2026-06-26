@@ -100,6 +100,7 @@ export const W = {
   bottom: 'bottom',
   left: 'left',
   right: 'right',
+  end: 'end',
   val: 'val',
   hRule: 'hRule',
   w: 'w',
@@ -117,6 +118,7 @@ export const W = {
   ftr: 'ftr',
   settings: 'settings',
   evenAndOddHeaders: 'evenAndOddHeaders',
+  clrSchemeMapping: 'clrSchemeMapping',
 
   // Styles part + paragraph/run formatting (generation emitters)
   docDefaults: 'docDefaults',
@@ -129,6 +131,7 @@ export const W = {
   caps: 'caps',
   smallCaps: 'smallCaps',
   keepNext: 'keepNext',
+  keepLines: 'keepLines',
   pageBreakBefore: 'pageBreakBefore',
   tabs: 'tabs',
 
@@ -170,4 +173,10 @@ export const W = {
   // Revision wrappers
   del: 'del',
   moveFrom: 'moveFrom',
+
+  // Font table (word/fontTable.xml)
+  font: 'font',
+  charset: 'charset',
+  family: 'family',
+  pitch: 'pitch',
 } as const;

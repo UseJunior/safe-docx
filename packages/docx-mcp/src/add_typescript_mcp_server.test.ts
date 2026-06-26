@@ -66,8 +66,7 @@ describe('TypeScript MCP server behavior', () => {
     const expectedToolNames = [
       'read_file',
       'grep',
-      'init_plan',
-      'merge_plans',
+      'batch_edit',
       'replace_text',
       'insert_paragraph',
       'format_layout',
@@ -89,7 +88,7 @@ describe('TypeScript MCP server behavior', () => {
   });
 
   humanReadableTest.openspec('Read-only tools annotated correctly')('Scenario: Read-only tools annotated correctly', async () => {
-    const readOnlyTools = new Set(['read_file', 'grep', 'init_plan', 'merge_plans', 'has_tracked_changes', 'get_file_status']);
+    const readOnlyTools = new Set(['read_file', 'grep', 'has_tracked_changes', 'get_file_status']);
     for (const tool of MCP_TOOLS) {
       if (!readOnlyTools.has(tool.name)) continue;
       expect(tool.annotations.readOnlyHint).toBe(true);
@@ -98,7 +97,7 @@ describe('TypeScript MCP server behavior', () => {
   });
 
   humanReadableTest.openspec('Destructive tools annotated correctly')('Scenario: Destructive tools annotated correctly', async () => {
-    const destructiveTools = new Set(['replace_text', 'insert_paragraph', 'format_layout', 'save']);
+    const destructiveTools = new Set(['batch_edit', 'replace_text', 'insert_paragraph', 'format_layout', 'save']);
     for (const tool of MCP_TOOLS) {
       if (!destructiveTools.has(tool.name)) continue;
       expect(tool.annotations.readOnlyHint).toBe(false);

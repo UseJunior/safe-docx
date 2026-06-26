@@ -148,7 +148,7 @@ export function createProgram(overrides: Partial<CliHandlers> = {}): CliProgram 
         return;
       }
 
-      // Edit command — batched apply_plan wrapper
+      // Edit command — batched batch_edit wrapper
       if (command === 'edit') {
         const editArgs = parseEditArgs(rest);
         await runEditCommand(editArgs, { write: handlers.write, writeError: handlers.writeError });

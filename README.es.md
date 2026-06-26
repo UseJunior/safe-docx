@@ -9,6 +9,10 @@
 [![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
 <!-- SYNC:badges END -->
 
+<!-- SYNC:issue-quick-links BEGIN -->
+[Report Bug](https://github.com/usejunior/safe-docx/issues/new?template=bug_report.yml) · [Request Feature](https://github.com/usejunior/safe-docx/issues/new?template=feature_request.yml)
+<!-- SYNC:issue-quick-links END -->
+
 <!-- SYNC:lang-nav BEGIN -->
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
 <!-- SYNC:lang-nav END -->
@@ -211,7 +215,7 @@ Añade a `~/Library/Application Support/Claude/claude_desktop_config.json` (macO
 
 ## Generación desde cero
 
-`@usejunior/docx-core` también genera nuevos archivos `.docx` desde una `DocumentSpec` declarativa y serializable como JSON: secciones con encabezados/pies de página y campos PAGE/NUMPAGES, estilos con nombre, tablas, numeración multinivel, recetas para documentos legales (`coverTermsTable`, `signatureBlock`) y una capa separable de notas de redacción compilada como comentarios OOXML. La generación es determinista (especificaciones idénticas producen paquetes byte-idénticos) y sigue la misma disciplina de conformidad ECMA-376 que la ruta de edición:
+`@usejunior/docx-core` también genera nuevos archivos `.docx` desde una `DocumentSpec` declarativa y serializable como JSON: secciones con encabezados/pies de página y campos PAGE/NUMPAGES, estilos con nombre, tablas, numeración multinivel y una capa separable de notas de redacción compilada como comentarios OOXML. La generación es determinista (especificaciones idénticas producen paquetes byte-idénticos) y sigue la misma disciplina de conformidad ECMA-376 que la ruta de edición:
 
 ```ts
 import { generateDocx } from '@usejunior/docx-core';
@@ -275,7 +279,7 @@ No. El uso soportado en tiempo de ejecución es JavaScript/TypeScript con `jszip
 
 ### ¿Puede generar contratos desde cero?
 
-Sí. `@usejunior/docx-core` incluye `generateDocx(spec)`: un compilador declarativo de DocumentSpec que cubre secciones, encabezados/pies de página, campos, estilos, tablas, numeración multinivel, recetas legales (tablas de términos de portada, bloques de firma) y una capa separable de notas de redacción. La edición brownfield de documentos existentes sigue siendo el enfoque principal; la generación comparte la maquinaria de conformidad y validación.
+Sí. `@usejunior/docx-core` incluye `generateDocx(spec)`: un compilador declarativo de DocumentSpec que cubre secciones, encabezados/pies de página, campos, estilos, tablas, numeración multinivel y una capa separable de notas de redacción. La edición brownfield de documentos existentes sigue siendo el enfoque principal; la generación comparte la maquinaria de conformidad y validación.
 
 ### ¿Qué tipos de documentos se han probado en los fixtures del repositorio?
 

@@ -1,8 +1,1 @@
-[
-  {
-    "id": "synthetic-table-missing-tblgrid",
-    "issue": "#453",
-    "match": "}tr': This element is not expected.",
-    "reason": "synthetic table fixtures omit the required w:tblGrid, and the engine faithfully preserves the gap into emitted output"
-  }
-]
+[]

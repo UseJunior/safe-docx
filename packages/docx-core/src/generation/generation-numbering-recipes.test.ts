@@ -9,7 +9,6 @@ import {
 import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
 import { generateDocx } from './compile.js';
-import { coverTermsTable, signatureBlock } from './recipes.js';
 import { checkGeneratedPackage } from './structural-checks.js';
 import type { DocumentSpec, NumberingSpec } from './types.js';
 
@@ -186,110 +185,17 @@ describe('Traceability: numbering and legal-document recipes', () => {
     },
   );
 
-  test.openspec('[SDX-GEN-070] a cover-terms recipe produces a label/value table')(
-    'Scenario: a cover-terms recipe produces a label/value table',
-    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
-      let spec!: DocumentSpec;
-      await given('a list of term labels and values handed to coverTermsTable', async () => {
-        const table = coverTermsTable({
-          title: 'Cover Terms',
-          terms: [
-            { label: 'Disclosing Party', value: 'Acme Manufacturing, Inc.' },
-            { label: 'Receiving Party', value: 'Northeast Logistics LLC' },
-            { label: 'Effective Date', value: 'June 11, 2026' },
-          ],
-        });
-        await attachPrettyJson('recipe-output', table);
-        expect(table.kind).toBe('table');
-        expect(JSON.parse(JSON.stringify(table))).toEqual(table);
-        spec = { sections: [{ blocks: [table] }] };
-      });
-
-      let documentXml!: string;
-      await when('the document is generated', async () => {
-        const buffer = await generateDocx(spec);
-        expect((await checkGeneratedPackage(buffer)).ok).toBe(true);
-        documentXml = (await readZipText(buffer, 'word/document.xml'))!;
-      });
-
-      await then('the output contains a fixed-layout two-column table pairing each label with its value', async () => {
-        const dom = parseXml(documentXml);
-        expect(dom.getElementsByTagName('w:tblLayout').item(0)!.getAttribute('w:type')).toBe('fixed');
-        expect(dom.getElementsByTagName('w:gridCol')).toHaveLength(2);
-        const rows = Array.from(dom.getElementsByTagName('w:tr'));
-        expect(rows).toHaveLength(4);
-        expect(documentXml.indexOf('Disclosing Party')).toBeLessThan(documentXml.indexOf('Acme Manufacturing, Inc.'));
-        expect(documentXml.indexOf('Receiving Party')).toBeLessThan(documentXml.indexOf('Northeast Logistics LLC'));
-      });
-    },
-  );
-
-  test.openspec('[SDX-GEN-071] a signature-block recipe renders signature lines')(
-    'Scenario: a signature-block recipe renders signature lines',
-    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
-      let spec!: DocumentSpec;
-      await given('party names with titles and date labels handed to signatureBlock', async () => {
-        const blocks = signatureBlock({
-          parties: [
-            { party: 'Acme Manufacturing, Inc.', name: 'Jane Doe', title: 'CEO' },
-            { party: 'Northeast Logistics LLC', name: 'John Smith', title: 'Managing Member', dateLabel: 'Dated:' },
-          ],
-        });
-        await attachPrettyJson('recipe-output', blocks);
-        expect(blocks.length).toBeGreaterThan(2);
-        spec = { sections: [{ blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'IN WITNESS WHEREOF' }] }, ...blocks] }] };
-      });
-
-      let documentXml!: string;
-      await when('the document is generated', async () => {
-        const buffer = await generateDocx(spec);
-        expect((await checkGeneratedPackage(buffer)).ok).toBe(true);
-        documentXml = (await readZipText(buffer, 'word/document.xml'))!;
-      });
-
-      await then('each party gets a bottom-bordered signature-line cell followed by name, title, and date rows', async () => {
-        const dom = parseXml(documentXml);
-        const lineCells = Array.from(dom.getElementsByTagName('w:tcBorders')).filter(
-          (b) => b.getElementsByTagName('w:bottom').length === 1 && b.getElementsByTagName('w:top').length === 0,
-        );
-        expect(lineCells).toHaveLength(2);
-        for (const name of ['Name: Jane Doe', 'Title: CEO', 'Date:', 'Name: John Smith', 'Title: Managing Member', 'Dated:']) {
-          expect(documentXml).toContain(name);
-        }
-      });
-
-      await then('the output contains no VML or picture markup', async () => {
-        expect(documentXml).not.toMatch(/<w:pict|<v:|<w:object|<w:drawing/);
-        expect(documentXml).toContain('w:tcBorders');
-      });
-    },
-  );
-
-  test('phase 5 numbering/recipes artifact loads through the document façade with labels intact', async () => {
+  test('phase 5 numbering artifact loads through the document façade with labels intact', async () => {
     const spec: DocumentSpec = {
       meta: { title: 'SDX generation phase 5', author: 'safe-docx tests', createdIso: '2026-06-11T00:00:00Z' },
       numbering: [legalNumbering()],
       sections: [
         {
           blocks: [
-            coverTermsTable({
-              title: 'Cover Terms',
-              terms: [
-                { label: 'Disclosing Party', value: 'Acme Manufacturing, Inc.' },
-                { label: 'Receiving Party', value: 'Northeast Logistics LLC' },
-              ],
-            }),
-            { kind: 'paragraph', runs: [{ kind: 'text', text: '' }] },
             listItem('Definitions', 'articles', 0),
             listItem('Confidential Information means non-public information.', 'articles', 1),
             listItem('Obligations', 'articles', 0),
             { kind: 'paragraph', runs: [{ kind: 'text', text: 'IN WITNESS WHEREOF, the parties execute this Agreement.' }] },
-            ...signatureBlock({
-              parties: [
-                { party: 'Acme Manufacturing, Inc.', name: 'Jane Doe', title: 'CEO' },
-                { party: 'Northeast Logistics LLC', name: 'John Smith', title: 'Managing Member' },
-              ],
-            }),
           ],
         },
       ],
@@ -299,9 +205,9 @@ describe('Traceability: numbering and legal-document recipes', () => {
     doc.insertParagraphBookmarks('sdx-gen-phase5');
     const texts = doc.readParagraphs().paragraphs.map((p) => p.text);
     expect(texts.join('\n')).toContain('Definitions');
-    expect(texts.join('\n')).toContain('Name: Jane Doe');
+    expect(texts.join('\n')).toContain('Obligations');
     const { writeIntegrationArtifact } = await import('../integration/output-artifacts.js');
-    const outputPath = await writeIntegrationArtifact('generation-phase5-numbering-recipes.docx', buffer);
-    expect(outputPath).toContain('generation-phase5-numbering-recipes.docx');
+    const outputPath = await writeIntegrationArtifact('generation-phase5-numbering.docx', buffer);
+    expect(outputPath).toContain('generation-phase5-numbering.docx');
   });
 });

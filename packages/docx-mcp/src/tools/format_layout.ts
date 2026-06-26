@@ -2,6 +2,7 @@ import { SessionManager, getRevisionContextForSession } from '../session/manager
 import { errorCode, errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
+import { preflightAiRevisionMutation } from './ai_revision_guard.js';
 import type {
   ParagraphSpacingMutation,
   SpacingLineRule,
@@ -354,6 +355,24 @@ export async function formatLayout(
 
     const paragraphCountBefore = session.doc.getParagraphs().length;
     const warnings: string[] = [];
+
+    const revisionPreflight = await preflightAiRevisionMutation(
+      session,
+      ctx,
+      (previewDoc, previewCtx) => {
+        const previewParagraphCountBefore = previewDoc.getParagraphs().length;
+        if (paragraphSpacing) previewDoc.setParagraphSpacing(paragraphSpacing, previewCtx);
+        if (rowHeight) previewDoc.setTableRowHeight(rowHeight, previewCtx);
+        if (cellPadding) previewDoc.setTableCellPadding(cellPadding, previewCtx);
+        const previewParagraphCountAfter = previewDoc.getParagraphs().length;
+        if (previewParagraphCountAfter !== previewParagraphCountBefore) {
+          throw new Error(
+            `Layout formatting changed paragraph count (${previewParagraphCountBefore} -> ${previewParagraphCountAfter}).`,
+          );
+        }
+      },
+    );
+    if (revisionPreflight) return revisionPreflight;
 
     const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
     const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight, ctx) : null;

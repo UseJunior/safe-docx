@@ -264,6 +264,11 @@ if (!exeExists) {
 const describeMaybe = exeExists ? describe : describe.skip;
 
 describeMaybe('Lean Differential Harness - LCS extensional equivalence', () => {
+  // coverage-rationale: LEAN-DIFF-01/02/03/05 are all observed from one invocation of
+  // the compiled Lean differential harness — extensional match against the TS LCS, the
+  // exhaustive zero-divergence sweep, the clean skip without the Lean toolchain, and the
+  // DP-vs-recursive agreement are facets of the same sweep and cannot be separated
+  // without rebuilding and rerunning the Lean executable per scenario.
   test
     .openspec('[LEAN-DIFF-01] Compiled Lean LCS matches the TS LCS on generated atom-array pairs')
     .openspec('[LEAN-DIFF-02] Exhaustive sweep reproduces the documented zero-divergence result')

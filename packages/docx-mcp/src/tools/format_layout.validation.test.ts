@@ -50,6 +50,8 @@ describe('format_layout validation + strictness', () => {
         `<w:body>` +
         `<w:p><w:r><w:t>Only paragraph</w:t></w:r></w:p>` +
         `<w:tbl>` +
+        `<w:tblPr/>` +
+        `<w:tblGrid><w:gridCol/></w:tblGrid>` +
         `<w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc></w:tr>` +
         `</w:tbl>` +
         `</w:body>` +
@@ -109,6 +111,8 @@ describe('format_layout validation + strictness', () => {
         `<w:body>` +
         `<w:p><w:r><w:t>P</w:t></w:r></w:p>` +
         `<w:tbl>` +
+        `<w:tblPr/>` +
+        `<w:tblGrid><w:gridCol/></w:tblGrid>` +
         `<w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc></w:tr>` +
         `</w:tbl>` +
         `</w:body>` +

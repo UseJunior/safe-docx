@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "safe-docx",
   "display_name": "Safe Docx",
-  "version": "0.11.0",
+  "version": "0.15.0",
   "description": "AI-native Word (.docx) and OpenDocument (.odt) editing with stable paragraph anchors and deterministic document operations.",
   "long_description": "Safe Docx lets Claude work directly with .docx files on your local filesystem. It provides stable paragraph IDs (_bk_*) for precise editing while preserving formatting and structure.\n\nCore capabilities include reading/searching content, formatting-preserving edits and inserts, deterministic layout controls, tracked-changes output, comments, footnote tools, document comparison, and revision extraction.",
   "author": {
@@ -29,16 +29,8 @@
       "description": "Search for text patterns in the document."
     },
     {
-      "name": "init_plan",
-      "description": "Initialize revision-bound metadata for coordinated planning."
-    },
-    {
-      "name": "merge_plans",
-      "description": "Merge multiple sub-agent plans and detect conflicts."
-    },
-    {
-      "name": "apply_plan",
-      "description": "Validate and apply a batch of edit steps in one transaction."
+      "name": "batch_edit",
+      "description": "Validate, conflict-check, and apply multiple edit steps in one call."
     },
     {
       "name": "replace_text",

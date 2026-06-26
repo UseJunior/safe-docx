@@ -13,27 +13,23 @@ This matrix maps OpenSpec `#### Scenario:` entries to Allure story mappings extr
 | accepted document opens cleanly in Microsoft Word | covered | `src/tools/add_accept_tracked_changes.test.ts` |  |
 | original document is not mutated | covered | `src/tools/add_accept_tracked_changes.test.ts` |  |
 
+## Change: `add-ai-revision-validator`
+
+| Scenario | Status | Allure Test Files | Notes |
+|---|---|---|---|
+| failed validation leaves session unchanged | covered | `src/tools/ai_revision_validation.test.ts` |  |
+| foreign revision anomalies do not block AI writes | covered | `src/tools/ai_revision_validation.test.ts` |  |
+| invalid AI revision mutation is rejected | covered | `src/tools/ai_revision_validation.test.ts` |  |
+| save fails on invalid AI revisions | covered | `src/tools/ai_revision_validation.test.ts` |  |
+| save reports foreign revision warnings | covered | `src/tools/ai_revision_validation.test.ts` |  |
+
 ## Change: `add-apply-plan-and-style-source`
 
 | Scenario | Status | Allure Test Files | Notes |
 |---|---|---|---|
-| __proto__ in step fields is rejected | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| canonical names are advertised | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| error when both steps and plan_file_path supplied | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| legacy aliases are rejected inside apply_plan steps | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| legacy aliases are rejected inside plan operations | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| legacy aliases are unavailable | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| legacy aliases rejected during validation | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| partial apply failure stops on first error | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| plan steps loaded from file path | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| step normalization accepts merged format | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| step normalization accepts raw format | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
 | style_source_id clones formatting from specified paragraph | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
 | style_source_id falls back to anchor with warning | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
 | style_source_id omitted uses anchor formatting (backward compatible) | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| successful apply executes all steps | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| unsupported operation is rejected during validation | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
-| validation failure returns all errors without applying | covered | `src/tools/add_apply_plan_and_style_source.test.ts` |  |
 
 ## Change: `add-attach-pretty-json-helper`
 
@@ -156,21 +152,6 @@ This matrix maps OpenSpec `#### Scenario:` entries to Allure story mappings extr
 | overwrite of an existing output file is blocked by default | covered | `src/tools/export.test.ts` |  |
 | unknown export format is rejected | covered | `src/tools/export.test.ts` |  |
 
-## Change: `add-multi-agent-plan-merge-phase-1`
-
-| Scenario | Status | Allure Test Files | Notes |
-|---|---|---|---|
-| init_plan returns revision-bound context | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| init_plan uses file-first session resolution | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| merge_plans can return diagnostics without hard failure | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| merge_plans fails by default when conflicts exist | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| merge_plans reports base-revision conflict | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| merge_plans reports duplicate step IDs | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| merge_plans reports insert-slot collision | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| merge_plans reports overlapping replace ranges | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| merge_plans reports unknown-range conflict for same paragraph | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-| merge_plans returns merged artifact when no conflicts | covered | `src/tools/add_multi_agent_plan_merge_phase_1.test.ts` |  |
-
 ## Change: `add-multi-platform-mcp-discovery`
 
 | Scenario | Status | Allure Test Files | Notes |
@@ -237,6 +218,19 @@ This matrix maps OpenSpec `#### Scenario:` entries to Allure story mappings extr
 |---|---|---|---|
 | Two-file `.odt` compare reports inline granularity and meaningful modifications | covered | `src/tools/odf/odf_compare_inline.test.ts` |  |
 | Whole-paragraph-only diffs still report zero modifications | covered | `src/tools/odf/odf_compare_inline.test.ts` |  |
+
+## Change: `add-read-file-inline-footnotes`
+
+| Scenario | Status | Allure Test Files | Notes |
+|---|---|---|---|
+| a paginated json walk returns each inline footnote exactly once | covered | `src/tools/add_read_file_inline_footnotes.test.ts` |  |
+| footnote markers stay single-rendered when bodies are inlined | covered | `src/tools/add_read_file_inline_footnotes.test.ts` |  |
+| include_footnotes attaches anchored footnote bodies to json paragraph nodes | covered | `src/tools/add_read_file_inline_footnotes.test.ts` |  |
+| include_footnotes defaults off and existing json output is unchanged | covered | `src/tools/add_read_file_inline_footnotes.test.ts` |  |
+| include_footnotes has no effect on toon and simple output | covered | `src/tools/add_read_file_inline_footnotes.test.ts` |  |
+| inline footnote payload counts toward the read token budget | covered | `src/tools/add_read_file_inline_footnotes.test.ts` |  |
+| scaffolding and orphaned footnotes are excluded from inline output | covered | `src/tools/add_read_file_inline_footnotes.test.ts` |  |
+| the NVCA fixture round-trips all anchored footnotes inline | covered | `src/tools/add_read_file_inline_footnotes.test.ts` |  |
 
 ## Change: `add-run-level-formatting-visibility`
 
@@ -368,6 +362,23 @@ This matrix maps OpenSpec `#### Scenario:` entries to Allure story mappings extr
 | multi-paragraph range comment exposes start and end paragraph ids | covered | `src/tools/get_comments_range_metadata.test.ts` |  |
 | single-paragraph range comment exposes range metadata | covered | `src/tools/get_comments_range_metadata.test.ts` |  |
 | threaded replies pass range metadata through | covered | `src/tools/get_comments_range_metadata.test.ts` |  |
+
+## Change: `replace-plan-tools-with-batch-edit`
+
+| Scenario | Status | Allure Test Files | Notes |
+|---|---|---|---|
+| batch_edit applies all valid steps in order | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit conflict pre-flight rejects duplicate step ids | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit conflict pre-flight rejects insert-slot collision | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit conflict pre-flight rejects overlapping replace ranges | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit execution failure stops at first failing step | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit preserves run formatting on replace | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit reads steps from plan_file_path json array | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit rejects both steps and plan_file_path together | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit rejects unsupported operations and legacy aliases | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| batch_edit validation failure applies zero steps | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| canonical names are advertised | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
+| legacy aliases are unavailable | covered | `src/replace_plan_tools_with_batch_edit.test.ts` |  |
 
 ## Change: `update-safe-docx-save-defaults-and-stable-node-ids`
 

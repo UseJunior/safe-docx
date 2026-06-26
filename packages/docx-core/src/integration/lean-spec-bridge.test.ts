@@ -361,15 +361,22 @@ const trackedFootnoteAnchorScenarioArb: fc.Arbitrary<FootnoteAnchorScenario> = p
 //     — the engine flattens the original's inline insertion provenance
 //     unconditionally, so reject(combined) keeps text reject(original) drops
 //     for EVERY revised counterpart (probed: matched, deleted, identical,
-//     unrelated). Paragraph-insert originals are INCLUDED: paragraph-MARK
-//     provenance threads correctly (stacked PPR-DEL(Comparison) +
-//     PPR-INS(input-author) marks compose under mark-based accept/reject).
+//     unrelated). Paragraph-insert ORIGINALS are excluded for the same
+//     flattening: when the comparison deletes the pre-tracked inserted
+//     paragraph, its content is emitted as bare w:del (the original-author
+//     w:ins wrapper is lost), so reject(combined) restores text that
+//     reject(original) discards. The paragraph MARKS themselves thread
+//     correctly (stacked PPR-DEL(Comparison) + PPR-INS(input-author)), and
+//     while paragraph-mark resolution dropped the whole paragraph the content
+//     flattening was unobservable — the #431 merge rule (a mark revision
+//     resolves by merging, never by discarding content) made it visible, so
+//     the exclusion now covers both pre-tracked-insertion shapes. Pinned in
+//     the characterization test below.
 //   - Issue #359: pairs whose pre-tracked-insertion text collides with the
 //     other side's plain text are excluded via `hasInsProvenanceCollision` on
 //     the pair arbitrary below.
 const trackedOriginalScenarioArb: fc.Arbitrary<TrackedScenario> = fc.oneof(
   trackedDeletionScenarioArb,
-  trackedParagraphInsertScenarioArb,
   trackedParagraphPropertyScenarioArb,
   trackedCommentAnchorScenarioArb,
   trackedFootnoteAnchorScenarioArb,
@@ -1504,6 +1511,11 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
           expectedRejectOriginal: '!\n!\nI',
         },
         {
+          // Before #431 the combined output rejected to 'Alpha text.' (the
+          // PPR-INS mark dropped the whole flattened paragraph, a law
+          // violation). The mark-merge rule keeps the flattened content, which
+          // here happens to match reject(original) — the law holds for this
+          // colliding shape even though the provenance is still lost (#359).
           name: '#359 paragraph-insert revised colliding with a plain original paragraph',
           build: async () => ({
             original: await buildSyntheticDocx({ paragraphs: ['Alpha text.', 'Added para.'] }),
@@ -1517,7 +1529,7 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
               })
             ).document,
           }),
-          expectedRejectCombined: 'Alpha text.',
+          expectedRejectCombined: 'Alpha text.\nAdded para.',
           expectedRejectOriginal: 'Alpha text.\nAdded para.',
         },
         {
@@ -1533,6 +1545,31 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
               })
             ).document,
             revised: await buildSyntheticDocx({ paragraphs: ['Alpha text.', 'Added para.'] }),
+          }),
+          expectedRejectCombined: 'Alpha text.\nAdded para.',
+          expectedRejectOriginal: 'Alpha text.',
+        },
+        {
+          // The non-colliding mirror: the comparison deletes the pre-tracked
+          // inserted paragraph and emits its content as bare w:del(Comparison)
+          // under correctly stacked PPR-DEL(Comparison) + PPR-INS(original)
+          // marks — the original-author content w:ins wrapper is lost (#358
+          // class). While paragraph-mark resolution DROPPED the marked
+          // paragraph this was unobservable; the #431 mark-merge rule restores
+          // the flattened content on reject, so reject(combined) keeps text
+          // reject(original) discards and the engine permanently falls back.
+          name: '#358 paragraph-insert original deleted by the comparison (made observable by the #431 mark-merge rule)',
+          build: async () => ({
+            original: (
+              await materializeTrackedScenario({
+                family: 'paragraph-insert',
+                paragraphs: ['Alpha text.'],
+                anchorIndex: 0,
+                relativePosition: 'AFTER',
+                newParagraphText: 'Added para.',
+              })
+            ).document,
+            revised: await buildSyntheticDocx({ paragraphs: ['Alpha text.'] }),
           }),
           expectedRejectCombined: 'Alpha text.\nAdded para.',
           expectedRejectOriginal: 'Alpha text.',
@@ -1598,10 +1635,13 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-FBA-01/02/04/05 are four facets of one field-bearing
+  // property run — the shared arbitrary, the per-operation assertion strength, the
+  // floored (not filtered) coverage, and the bridge-file self-description are all
+  // observed from this single live-engine property and cannot be split without
+  // re-running the same property against the same generated pairs.
   test
-    .openspec(
-      '[LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations',
-    )
+    .openspec('[LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations')
     .openspec('[LEAN-FBA-02] Per-operation assertion strength matches the post-#217 engine')
     .openspec('[LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered')
     .openspec('[LEAN-FBA-05] Bridge file self-description stays accurate')(
@@ -1663,7 +1703,19 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-RT-01..04 are the round-trip lemma cluster (accept-side
+  // and reject-side lemmas, the `inv_rt_001` proof that composes them, and the
+  // documented residual obligations); this is the one TS-side bridge test that
+  // exercises accept/reject round-trip equality on the live engine, so the cluster
+  // discharges here together, alongside the field-bearing arbitrary (FBA-03) and its
+  // floored coverage (FBA-04). The single-fixture [LEAN-RT-05] falsifiability case is
+  // deliberately NOT here — it lives on its own fixture test (see below) because it
+  // requires a single deterministic case, not this 100-run property (cf. #513).
   test
+    .openspec('[LEAN-RT-01] Accept-side round-trip lemma is closed')
+    .openspec('[LEAN-RT-02] Reject-side round-trip lemma is closed')
+    .openspec('[LEAN-RT-03] `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas')
+    .openspec('[LEAN-RT-04] Residual obligations and the normalizeText modeling gap are documented')
     .openspec('[LEAN-FBA-03] Field-bearing arbitrary drives INV-RT-001 round-trip')
     .openspec('[LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered')(
     'INV-RT-001: paired round-trip text equality on field-bearing inplace comparison output',
@@ -1717,6 +1769,11 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-FRAG-01..04 are four facets of one fragmented-field
+  // property run — the shared arbitrary that drives both residual axioms, the
+  // fallback-is-legitimate (mode-independent) outcome, the floored mode/operation
+  // coverage, and the bridge-file self-description — all observed from this single
+  // property and inseparable without re-running it.
   test
     .openspec('[LEAN-FRAG-01] Fragmented-field arbitrary drives both residual axioms across operations')
     .openspec('[LEAN-FRAG-02] Inplace fallback is a legitimate, mode-independent outcome, not falsification')
@@ -1870,7 +1927,7 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
-  test(
+  test.openspec('[LEAN-RT-05] Bridge case provides a falsifiability layer for the new axiom')(
     'INV-RT-001: field-bearing inplace comparison output round-trips on accept/reject (axiom falsifiability layer)',
     async ({ given, when, then }: AllureBddContext) => {
       // Falsifiability layer for the residual axiom
@@ -1998,4 +2055,3 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 });
-

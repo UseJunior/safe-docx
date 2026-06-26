@@ -92,6 +92,19 @@ function ensureChild(parent: Element, localName: string): Element {
   return created;
 }
 
+/**
+ * Keep per-cell margins in the CT_TcMar child sequence required by the schema.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.68
+ */
+function reorderCellMarginEdges(tcMar: Element): void {
+  const orderedNames = [W.top, W.start, W.left, W.bottom, W.end, W.right];
+  const ordered = orderedNames.flatMap((name) => getDirectChildrenByName(tcMar, name));
+  for (const child of ordered) {
+    tcMar.appendChild(child);
+  }
+}
+
 function setWAttr(el: Element, localName: string, value: string): void {
   el.setAttributeNS(OOXML.W_NS, `w:${localName}`, value);
 }
@@ -274,6 +287,7 @@ export function setTableCellPadding(
           setWAttr(right, W.w, String(mutation.rightDxa));
           setWAttr(right, W.type, 'dxa');
         }
+        reorderCellMarginEdges(tcMar);
         if (ctx) {
           // CT_TcPr permits at most one <w:tcPrChange> child.
           for (const stale of getDirectChildrenByName(tcPr, 'tcPrChange')) {

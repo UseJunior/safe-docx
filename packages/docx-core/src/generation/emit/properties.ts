@@ -8,12 +8,12 @@
 import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { W } from '../../primitives/namespaces.js';
 import { appendInOrder, PPR_ORDER, RPR_ORDER } from '../ordering.js';
-import type { ParagraphSpec, RunProps, StyleSpec } from '../types.js';
+import type { ParagraphSpec, RunProps, StyleSpec, ThemeColorSlot } from '../types.js';
 
 /** Paragraph-formatting subset shared by ParagraphSpec and StyleSpec.paragraph. */
 export type ParagraphProps = Pick<
   ParagraphSpec,
-  'alignment' | 'spacing' | 'indent' | 'tabs' | 'pageBreakBefore' | 'keepNext'
+  'alignment' | 'spacing' | 'indent' | 'tabs' | 'pageBreakBefore' | 'keepNext' | 'keepLines'
 > & { styleId?: string };
 
 const ALIGNMENT_TO_JC: Record<NonNullable<ParagraphProps['alignment']>, string> = {
@@ -33,7 +33,11 @@ const ALIGNMENT_TO_JC: Record<NonNullable<ParagraphProps['alignment']>, string> 
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
  */
-export function buildRunPropsElement(doc: Document, props: RunProps): Element | null {
+export function buildRunPropsElement(
+  doc: Document,
+  props: RunProps,
+  opts?: { themeColorValues?: ReadonlyMap<ThemeColorSlot, string> },
+): Element | null {
   const children = new Map<string, Element | Element[]>();
 
   if (props.font !== undefined) {
@@ -57,13 +61,25 @@ export function buildRunPropsElement(doc: Document, props: RunProps): Element | 
   if (props.smallCaps !== undefined) {
     children.set(W.smallCaps, createWmlElement(doc, W.smallCaps, props.smallCaps ? undefined : { 'w:val': '0' }));
   }
-  if (props.colorHex !== undefined) {
-    children.set(W.color, createWmlElement(doc, W.color, { 'w:val': props.colorHex }));
+  if (props.colorHex !== undefined || props.themeColor !== undefined) {
+    const attrs: Record<string, string> = {};
+    if (props.colorHex !== undefined) attrs['w:val'] = props.colorHex;
+    if (props.themeColor !== undefined) {
+      attrs['w:themeColor'] = props.themeColor;
+      const fallback = opts?.themeColorValues?.get(props.themeColor);
+      if (fallback !== undefined && attrs['w:val'] === undefined) attrs['w:val'] = fallback;
+    }
+    if (props.themeTint !== undefined) attrs['w:themeTint'] = props.themeTint;
+    if (props.themeShade !== undefined) attrs['w:themeShade'] = props.themeShade;
+    children.set(W.color, createWmlElement(doc, W.color, attrs));
   }
   if (props.sizePt !== undefined) {
     const halfPoints = String(Math.round(props.sizePt * 2));
     children.set(W.sz, createWmlElement(doc, W.sz, { 'w:val': halfPoints }));
     children.set(W.szCs, createWmlElement(doc, W.szCs, { 'w:val': halfPoints }));
+  }
+  if (props.highlight !== undefined) {
+    children.set(W.highlight, createWmlElement(doc, W.highlight, { 'w:val': props.highlight }));
   }
   if (props.underline !== undefined) {
     children.set(W.u, createWmlElement(doc, W.u, { 'w:val': props.underline }));
@@ -95,6 +111,9 @@ export function buildParagraphPropsElement(
   }
   if (props.keepNext) {
     children.set(W.keepNext, createWmlElement(doc, W.keepNext));
+  }
+  if (props.keepLines) {
+    children.set(W.keepLines, createWmlElement(doc, W.keepLines));
   }
   if (props.pageBreakBefore) {
     children.set(W.pageBreakBefore, createWmlElement(doc, W.pageBreakBefore));

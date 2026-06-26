@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/safe-docx-site",
-  "version": "0.11.0",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "description": "Safe DOCX marketing and trust site (Eleventy)",
@@ -10,6 +10,6 @@
   },
   "devDependencies": {
     "@11ty/eleventy": "^3.1.2",
-    "markdown-it": "^14.1.1"
+    "markdown-it": "^14.2.0"
   }
 }

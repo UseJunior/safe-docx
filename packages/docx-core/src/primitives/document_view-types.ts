@@ -117,6 +117,19 @@ export type DocumentViewNode = {
 
   // Metadata for JSON mode / parity tooling.
   clean_text: string;
+  /**
+   * Raw visible paragraph text (field codes stripped) BEFORE CR/LF removal,
+   * trimming, and manual-list-label stripping — i.e. exactly `getParagraphText(p)`.
+   * This is the coordinate system that `replaceParagraphTextRange` /
+   * `DocxDocument.replaceTextAtRange` operate in. Selector patterns are authored
+   * against `clean_text`; {@link buildCleanToRawOffsetMap} uses `raw_text` +
+   * `clean_text` to translate a matched clean-text span back to raw offsets so
+   * mutation lands on the right characters.
+   *
+   * Optional only so legacy test fixtures that hand-build nodes stay valid; the
+   * real builder (`buildNodesForDocumentView`) always populates it.
+   */
+  raw_text?: string;
   tagged_text: string;
   list_metadata: ListMetadata;
   style_fingerprint: FormattingFingerprint;

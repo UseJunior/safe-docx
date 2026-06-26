@@ -188,12 +188,60 @@ describe('minimal re-serialization on save (issue #408)', () => {
     });
   });
 
+  test('an untouched hyperlink paragraph restores when tracked output groups link text into one run', async ({ given, when, then }: AllureBddContext) => {
+    const originalXmlText =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="${OOXML.W_NS}" xmlns:r="${OOXML.R_NS}"><w:body>` +
+      `<w:p w14:paraId="56317D3A" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w:rsidR="00AA00AA">` +
+      `<w:proofErr w:type="spellStart"/>` +
+      `<w:r w:rsidR="00AA00AA"><w:t>Untouched</w:t></w:r>` +
+      `<w:hyperlink r:id="rIdHyperlink">` +
+      `<w:r w:rsidR="00AA0001"><w:t>commonpaper.com/standards/mutual-</w:t></w:r>` +
+      `<w:r w:rsidR="00AA0002"><w:t>nda</w:t></w:r>` +
+      `<w:r w:rsidR="00AA0003"><w:t>/1.0</w:t></w:r>` +
+      `</w:hyperlink>` +
+      `<w:r w:rsidR="00BB00BB"><w:t xml:space="preserve"> paragraph</w:t></w:r>` +
+      `<w:proofErr w:type="spellEnd"/>` +
+      `</w:p>` +
+      `</w:body></w:document>`;
+    let currentDoc: Document;
+    let restored = 0;
+
+    await given('a tracked-save paragraph reconstructed with one hyperlink run and multiple text nodes', () => {
+      currentDoc = parseXml(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+          `<w:document xmlns:w="${OOXML.W_NS}" xmlns:r="${OOXML.R_NS}"><w:body>` +
+          `<w:p w14:paraId="56317D3A" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" w:rsidR="00AA00AA">` +
+          `<w:r><w:t>Untouched</w:t></w:r>` +
+          `<w:hyperlink r:id="rIdHyperlink">` +
+          `<w:r><w:t>commonpaper.com/standards/mutual-</w:t><w:t>nda</w:t><w:t>/1.0</w:t></w:r>` +
+          `</w:hyperlink>` +
+          `<w:r><w:t xml:space="preserve"> paragraph</w:t></w:r>` +
+          `</w:p>` +
+          `</w:body></w:document>`,
+      );
+    });
+
+    await when('untouched blocks are restored', () => {
+      restored = restoreUntouchedBlocks(currentDoc, originalXmlText);
+    });
+
+    await then('the original hyperlink paragraph is restored with proofing markers and run boundaries', () => {
+      const [original] = bodyBlocks(originalXmlText);
+      const [current] = bodyBlocks(serializer.serializeToString(currentDoc as never));
+      expect(restored).toBe(1);
+      expect(current).toBe(original);
+      expect(current).toContain('<w:proofErr w:type="spellStart"/>');
+      expect(current).toContain('<w:r w:rsidR="00AA0002"><w:t>nda</w:t></w:r>');
+    });
+  });
+
   test('an untouched table restores while a modified table keeps its edit', async ({ given, when, then }: AllureBddContext) => {
     const CELL_P =
       `<w:p><w:proofErr w:type="spellStart"/><w:r w:rsidR="00CC0001"><w:t>cell</w:t></w:r>` +
       `<w:proofErr w:type="spellEnd"/><w:r w:rsidR="00CC0002"><w:t xml:space="preserve"> text</w:t></w:r></w:p>`;
     const TBL = (cellP: string) =>
-      `<w:tbl><w:tr><w:tc>${cellP}</w:tc></w:tr></w:tbl>`;
+      `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc>${cellP}</w:tc></w:tr></w:tbl>`;
     let untouched: { originalXml: string; savedXml: string };
     let modified: { originalXml: string; savedXml: string };
 
@@ -240,10 +288,10 @@ describe('minimal re-serialization on save (issue #408)', () => {
     // proofErr/rsid-bearing paragraph in the table must keep its original
     // XML — issue #408's repro document is almost entirely tables.
     const cellP = (id: string, marker: string) =>
-      `<w:p w14:paraId="${id}"><w:proofErr w:type="spellStart"/><w:r w:rsidR="00${marker}01"><w:t>${marker}</w:t></w:r>` +
-      `<w:proofErr w:type="spellEnd"/><w:r w:rsidR="00${marker}02"><w:t xml:space="preserve"> tail</w:t></w:r></w:p>`;
+      `<w:p w14:paraId="${id}"><w:proofErr w:type="spellStart"/><w:r w:rsidR="0000${marker}01"><w:t>${marker}</w:t></w:r>` +
+      `<w:proofErr w:type="spellEnd"/><w:r w:rsidR="0000${marker}02"><w:t xml:space="preserve"> tail</w:t></w:r></w:p>`;
     const tableBody =
-      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>` +
+      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid>` +
       `<w:tr><w:tc>${cellP('00000A01', 'AA')}${cellP('00000A02', 'AB')}</w:tc><w:tc>${cellP('00000B01', 'BA')}</w:tc></w:tr>` +
       `<w:tr><w:tc>${cellP('00000C01', 'CA')}</w:tc><w:tc>${cellP('00000D01', 'DA')}</w:tc></w:tr>` +
       `</w:tbl>`;

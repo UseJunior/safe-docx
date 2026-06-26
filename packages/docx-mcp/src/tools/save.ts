@@ -5,6 +5,7 @@ import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import {
   DocxZip,
+  TRACKED_CHANGE_ELEMENT_NAME_SET,
   compareDocuments,
   parseXml,
   restoreUntouchedBlocks,
@@ -13,6 +14,7 @@ import {
   type CompareResult,
 } from '@usejunior/docx-core';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
+import { getAiRevisionBaseline, splitIntroducedDiagnostics } from './ai_revision_guard.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
 import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
@@ -20,7 +22,6 @@ type SaveFormat = 'clean' | 'tracked' | 'both';
 type SaveRevisionSummary = { count: number; author: string; ids?: number[] };
 
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-const REVISION_ELEMENT_NAMES = new Set(['ins', 'del', 'pPrChange', 'rPrChange', 'trPrChange', 'tcPrChange']);
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
@@ -83,7 +84,7 @@ async function collectAiRevisionSummary(
 
     const doc = parseXml(xml);
     for (const node of Array.from(doc.getElementsByTagName('*'))) {
-      if (node.namespaceURI !== WORDPROCESSING_ML_NS || !REVISION_ELEMENT_NAMES.has(node.localName)) {
+      if (node.namespaceURI !== WORDPROCESSING_ML_NS || !TRACKED_CHANGE_ELEMENT_NAME_SET.has(node.localName)) {
         continue;
       }
       if (getWordAttr(node, 'author') !== author) continue;
@@ -239,6 +240,42 @@ export async function save(
 
     // Run implicit validation before producing save artifacts.
     const validation = session.doc.validate();
+    let aiRevisionValidation = session.aiAuthor
+      ? await session.doc.validateAiRevisions(session.aiAuthor)
+      : undefined;
+    if (aiRevisionValidation && aiRevisionValidation.errors.length > 0) {
+      // AI-attributed errors always fail the save. Unattributable errors
+      // (field structure, package invariants — no w:author) fail only when
+      // they were not already present in the originally-loaded file; the
+      // session's AI edits did not introduce those.
+      const attributed = aiRevisionValidation.errors.filter((e) => e.author === session.aiAuthor);
+      const unattributed = aiRevisionValidation.errors.filter((e) => e.author !== session.aiAuthor);
+      let introduced = unattributed;
+      let demoted: typeof unattributed = [];
+      if (unattributed.length > 0) {
+        const baseline = await getAiRevisionBaseline(session);
+        ({ introduced, demoted } = splitIntroducedDiagnostics(unattributed, baseline));
+      }
+      const failing = [...attributed, ...introduced];
+      aiRevisionValidation = {
+        valid: failing.length === 0,
+        errors: failing,
+        warnings: [...aiRevisionValidation.warnings, ...demoted],
+      };
+      if (failing.length > 0) {
+        return {
+          ...err(
+            'INVALID_AI_REVISIONS',
+            'Session contains invalid AI-authored tracked-change markup.',
+            'Repair the AI-authored revisions before saving a redline artifact.',
+          ),
+          diagnostics: {
+            errors: failing,
+            warnings: aiRevisionValidation.warnings,
+          },
+        };
+      }
+    }
 
     if (cached) {
       revisedBuffer = cached.revisedBuffer;
@@ -411,8 +448,13 @@ export async function save(
       cache_hit: cacheHit,
       format_source: formatSource,
       parameter_warning: parameterWarning,
-      validation: validation.warnings.length > 0
-        ? { warnings: validation.warnings.map(w => ({ code: w.code, message: w.message })) }
+      validation: validation.warnings.length > 0 || (aiRevisionValidation?.warnings.length ?? 0) > 0
+        ? {
+            warnings: [
+              ...validation.warnings.map(w => ({ code: w.code, message: w.message })),
+              ...(aiRevisionValidation?.warnings ?? []),
+            ],
+          }
         : { valid: true },
       message:
         (trackedReconstructionMode === 'rebuild' ? 'WARNING: Tracked output used REBUILD mode which may alter table structure and fonts. Verify tables in Word. ' : '') +

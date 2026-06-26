@@ -12,6 +12,7 @@ import { parseDocumentXml } from './xmlToWmlElement.js';
 import {
   findAllByTagName,
   acceptChanges as acceptChangesPrimitive,
+  rejectChanges as rejectChangesPrimitive,
   parseXml,
   serializeXml,
 } from '../../primitives/index.js';
@@ -856,14 +857,16 @@ describe('trackChangesAcceptorAst', () => {
   });
 });
 
-// ── G5 regression: Accept-All paragraph removal is purely mark-based (both accept paths) ──
+// ── G5 regression: Accept-All paragraph-mark handling is purely mark-based (both accept paths) ──
 //
 // Closes G5 — the accept-side mirror of #337's reject fix. Both accept entry points — the
 // baseline-atomizer `acceptAllChanges` (string→string) and the primitive `acceptChanges`
-// (Document, mutated in place) — must drop a paragraph IFF its paragraph MARK is PPR-DEL
+// (Document, mutated in place) — must resolve a paragraph IFF its paragraph MARK is PPR-DEL
 // (<w:pPr><w:rPr><w:del/></w:rPr>), never via a content-based heuristic. A run-level deletion
 // (or moveFrom) under an UNTRACKED mark means text removed from a pre-existing paragraph, which
-// Word/LibreOffice keep (empty) on accept. The two paths must agree on every case.
+// Word/LibreOffice keep (empty) on accept. Resolving a PPR-DEL mark merges the paragraph into
+// the following one (#431) — only the break is deleted, not the contents. The two paths must
+// agree on every case.
 describe('Accept-All paragraph removal is mark-based (G5, both accept paths agree)', () => {
   const wrapBody = (inner: string): string =>
     `<?xml version="1.0"?>` +
@@ -883,19 +886,24 @@ describe('Accept-All paragraph removal is mark-based (G5, both accept paths agre
     return { ast, primitive: serializeXml(doc) };
   };
 
-  test('PPR-DEL-marked paragraph: both paths DROP it', async ({ when, then }: AllureBddContext) => {
+  test('PPR-DEL-marked paragraph: both paths MERGE it into the following paragraph', async ({ when, then }: AllureBddContext) => {
+    // The PPR-DEL mark deletes only the paragraph BREAK (ECMA-376 § 17.13.5.15); the
+    // paragraph's untracked content is NOT deleted and must survive the merge (#431).
     let out: { ast: string; primitive: string };
-    await when('both accept paths run on a PPR-DEL-marked paragraph + a plain paragraph', () => {
+    await when('both accept paths run on a PPR-DEL-marked paragraph with untracked content + a plain paragraph', () => {
       out = acceptBoth(
-        `<w:p><w:pPr><w:rPr><w:del w:id="1" w:author="T"/></w:rPr></w:pPr><w:r><w:t>gone</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:rPr><w:del w:id="1" w:author="T"/></w:rPr></w:pPr><w:r><w:t>merged</w:t></w:r></w:p>` +
           KEEP_PARA,
       );
     });
-    await then('only the survivor paragraph remains, on both paths', () => {
+    await then('one paragraph remains holding the merged content before the survivor text, on both paths', () => {
       expect(countParagraphs(out.ast)).toBe(1);
       expect(countParagraphs(out.primitive)).toBe(1);
-      expect(out.ast).not.toContain('gone');
-      expect(out.primitive).not.toContain('gone');
+      for (const xml of [out.ast, out.primitive]) {
+        expect(xml).toContain('merged');
+        expect(xml).toContain('keep');
+        expect(xml.indexOf('merged')).toBeLessThan(xml.indexOf('keep'));
+      }
     });
   });
 
@@ -943,6 +951,378 @@ describe('Accept-All paragraph removal is mark-based (G5, both accept paths agre
       expect(countParagraphs(out.primitive)).toBe(1);
       expect(out.ast).toContain('survives');
       expect(out.primitive).toContain('survives');
+    });
+  });
+});
+
+// ── #431: a paragraph-mark revision merges the paragraph into the following one ──
+//
+// ECMA-376 Part 1 § 17.13.5.15 (del / Deleted Paragraph) and § 17.13.5.20 (ins /
+// Inserted Paragraph) make the paragraph MARK the revision target; the paragraph's
+// contents are not implicitly part of the revision. Accepting a deleted mark (or
+// rejecting an inserted one) therefore removes only the paragraph BREAK: the
+// paragraph's surviving content merges into the following paragraph, which keeps
+// its own w:pPr (formatting follows the surviving mark). Both engine paths — the
+// baseline-atomizer string functions and the in-place primitives — must agree.
+describe('Paragraph-mark revisions merge into the following paragraph (#431)', () => {
+  const acceptTest = testAllure
+    .epic('Document Comparison')
+    .withLabels({ feature: 'Track Changes Acceptor' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' });
+  const rejectTest = testAllure
+    .epic('Document Comparison')
+    .withLabels({ feature: 'Track Changes Acceptor' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.20' });
+
+  const wrapBody = (inner: string): string =>
+    `<?xml version="1.0"?>` +
+    `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+    `<w:body>${inner}</w:body></w:document>`;
+
+  // Count <w:p> opens, matching self-closing empties (<w:p/>) too; never matches <w:pPr>/<w:pPrChange>.
+  const countParagraphs = (xml: string): number => (xml.match(/<w:p(?:\s|\/|>)/g) ?? []).length;
+
+  const stripTags = (s: string): string => {
+    // Loop until stable so nested/adjacent angle brackets cannot leave a
+    // freshly-formed "<...>" behind after a single replace pass.
+    let out = s;
+    let prev: string;
+    do {
+      prev = out;
+      out = out.replace(/<[^>]+>/g, '');
+    } while (out !== prev);
+    return out;
+  };
+  const extractText = (xml: string): string =>
+    (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) ?? [])
+      .map((t) => stripTags(t))
+      .join('');
+
+  const acceptBoth = (inner: string): { ast: string; primitive: string } => {
+    const ast = acceptAllChanges(wrapBody(inner));
+    const doc = parseXml(wrapBody(inner));
+    acceptChangesPrimitive(doc);
+    return { ast, primitive: serializeXml(doc) };
+  };
+
+  const rejectBoth = (inner: string): { ast: string; primitive: string } => {
+    const ast = rejectAllChanges(wrapBody(inner));
+    const doc = parseXml(wrapBody(inner));
+    rejectChangesPrimitive(doc);
+    return { ast, primitive: serializeXml(doc) };
+  };
+
+  const DEL_MARK = `<w:del w:id="1" w:author="T" w:date="2024-01-01T00:00:00Z"/>`;
+  const INS_MARK = `<w:ins w:id="1" w:author="T" w:date="2024-01-01T00:00:00Z"/>`;
+
+  acceptTest('accepting a deleted paragraph mark merges the preceding content into the next paragraph', async ({ when, then }: AllureBddContext) => {
+    // The docx-platform-tests acceptDeletedParagraphMarkMergesParagraphs scenario.
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a mark-deleted paragraph "First half " followed by "second half"', () => {
+      out = acceptBoth(
+        `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr><w:r><w:t xml:space="preserve">First half </w:t></w:r></w:p>` +
+          `<w:p><w:r><w:t>second half</w:t></w:r></w:p>`,
+      );
+    });
+    await then('one paragraph remains reading "First half second half", on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('First half second half');
+      }
+    });
+  });
+
+  rejectTest('rejecting an inserted paragraph mark merges the preceding content into the next paragraph', async ({ when, then }: AllureBddContext) => {
+    // The docx-platform-tests rejectInsertedParagraphMarkMergesParagraphs scenario.
+    let out: { ast: string; primitive: string };
+    await when('reject runs on a mark-inserted paragraph "First half " followed by "second half"', () => {
+      out = rejectBoth(
+        `<w:p><w:pPr><w:rPr>${INS_MARK}</w:rPr></w:pPr><w:r><w:t xml:space="preserve">First half </w:t></w:r></w:p>` +
+          `<w:p><w:r><w:t>second half</w:t></w:r></w:p>`,
+      );
+    });
+    await then('one paragraph remains reading "First half second half", on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('First half second half');
+      }
+    });
+  });
+
+  acceptTest('the merged paragraph keeps the FOLLOWING paragraph\'s w:pPr (formatting follows the surviving mark)', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a centered mark-deleted paragraph followed by a styled paragraph', () => {
+      out = acceptBoth(
+        `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr><w:jc w:val="center"/></w:pPr><w:r><w:t>head</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:t>tail</w:t></w:r></w:p>`,
+      );
+    });
+    await then('the survivor keeps its pStyle and the merged-away paragraph\'s jc is gone, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('headtail');
+        expect(xml).toContain('Quote');
+        expect(xml).not.toContain('center');
+      }
+    });
+  });
+
+  acceptTest('consecutive mark-deleted paragraphs cascade into the first surviving paragraph', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('accept runs on two consecutive mark-deleted paragraphs followed by a plain one', () => {
+      out = acceptBoth(
+        `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr><w:r><w:t>one </w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:rPr><w:del w:id="2" w:author="T" w:date="2024-01-01T00:00:00Z"/></w:rPr></w:pPr><w:r><w:t>two </w:t></w:r></w:p>` +
+          `<w:p><w:r><w:t>three</w:t></w:r></w:p>`,
+      );
+    });
+    await then('one paragraph remains with all three contents in order, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('one two three');
+      }
+    });
+  });
+
+  acceptTest('a trailing mark-deleted paragraph with surviving content is KEPT (no break to remove, no data loss)', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a plain paragraph followed by a trailing mark-deleted paragraph with untracked content', () => {
+      out = acceptBoth(
+        `<w:p><w:r><w:t>lead</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr><w:r><w:t>tail</w:t></w:r></w:p>`,
+      );
+    });
+    await then('both paragraphs survive with their content, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(2);
+        expect(extractText(xml)).toBe('leadtail');
+      }
+    });
+  });
+
+  acceptTest('a trailing mark-deleted paragraph emptied by its own w:del content is removed (comparison round-trip shape)', async ({ when, then }: AllureBddContext) => {
+    // wrapParagraphAsDeleted emits all runs inside w:del + the PPR-DEL mark; once the
+    // run-level deletions are accepted nothing remains to merge or keep.
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a plain paragraph followed by a trailing fully-deleted paragraph', () => {
+      out = acceptBoth(
+        `<w:p><w:r><w:t>lead</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr>` +
+          `<w:del w:id="2" w:author="T" w:date="2024-01-01T00:00:00Z"><w:r><w:delText>gone</w:delText></w:r></w:del></w:p>`,
+      );
+    });
+    await then('only the lead paragraph remains, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('lead');
+      }
+    });
+  });
+
+  acceptTest('a mark-deleted paragraph directly before a table is KEPT (no paragraph to merge into)', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a mark-deleted paragraph with content followed by a table', () => {
+      out = acceptBoth(
+        `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr><w:r><w:t>before table</w:t></w:r></w:p>` +
+          `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+          `<w:p><w:r><w:t>after</w:t></w:r></w:p>`,
+      );
+    });
+    await then('the paragraph content is not merged into the table and not lost, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(extractText(xml)).toBe('before tablecellafter');
+        // The content stays in its own paragraph before the table.
+        expect(xml.indexOf('before table')).toBeLessThan(xml.indexOf('<w:tbl'));
+      }
+    });
+  });
+
+  rejectTest('consecutive mark-inserted paragraphs cascade into the first surviving paragraph on reject', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('reject runs on two consecutive mark-inserted paragraphs followed by a plain one', () => {
+      out = rejectBoth(
+        `<w:p><w:pPr><w:rPr>${INS_MARK}</w:rPr></w:pPr><w:r><w:t>one </w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:rPr><w:ins w:id="2" w:author="T" w:date="2024-01-01T00:00:00Z"/></w:rPr></w:pPr><w:r><w:t>two </w:t></w:r></w:p>` +
+          `<w:p><w:r><w:t>three</w:t></w:r></w:p>`,
+      );
+    });
+    await then('one paragraph remains with all three contents in order, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('one two three');
+      }
+    });
+  });
+
+  rejectTest('on reject the merged paragraph keeps the FOLLOWING paragraph\'s w:pPr', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('reject runs on a centered mark-inserted paragraph followed by a styled paragraph', () => {
+      out = rejectBoth(
+        `<w:p><w:pPr><w:rPr>${INS_MARK}</w:rPr><w:jc w:val="center"/></w:pPr><w:r><w:t>head</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:t>tail</w:t></w:r></w:p>`,
+      );
+    });
+    await then('the survivor keeps its pStyle and the merged-away paragraph\'s jc is gone, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('headtail');
+        expect(xml).toContain('Quote');
+        expect(xml).not.toContain('center');
+      }
+    });
+  });
+
+  rejectTest('a trailing mark-inserted paragraph with surviving content is KEPT on reject', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('reject runs on a plain paragraph followed by a trailing mark-inserted paragraph with untracked content', () => {
+      out = rejectBoth(
+        `<w:p><w:r><w:t>lead</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:rPr>${INS_MARK}</w:rPr></w:pPr><w:r><w:t>tail</w:t></w:r></w:p>`,
+      );
+    });
+    await then('both paragraphs survive with their content, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(2);
+        expect(extractText(xml)).toBe('leadtail');
+      }
+    });
+  });
+
+  rejectTest('a trailing mark-inserted paragraph emptied by its own w:ins content is removed on reject', async ({ when, then }: AllureBddContext) => {
+    // wrapParagraphAsInserted emits all runs inside w:ins + the PPR-INS mark; once the
+    // run-level insertions are rejected nothing remains to merge or keep.
+    let out: { ast: string; primitive: string };
+    await when('reject runs on a plain paragraph followed by a trailing fully-inserted paragraph', () => {
+      out = rejectBoth(
+        `<w:p><w:r><w:t>lead</w:t></w:r></w:p>` +
+          `<w:p><w:pPr><w:rPr>${INS_MARK}</w:rPr></w:pPr>` +
+          `<w:ins w:id="2" w:author="T" w:date="2024-01-01T00:00:00Z"><w:r><w:t>gone</w:t></w:r></w:ins></w:p>`,
+      );
+    });
+    await then('only the lead paragraph remains, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('lead');
+      }
+    });
+  });
+
+  rejectTest('a mark-inserted paragraph directly before a table is KEPT on reject', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('reject runs on a mark-inserted paragraph with untracked content followed by a table', () => {
+      out = rejectBoth(
+        `<w:p><w:pPr><w:rPr>${INS_MARK}</w:rPr></w:pPr><w:r><w:t>before table</w:t></w:r></w:p>` +
+          `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+          `<w:p><w:r><w:t>after</w:t></w:r></w:p>`,
+      );
+    });
+    await then('the paragraph content is not merged into the table and not lost, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(extractText(xml)).toBe('before tablecellafter');
+        expect(xml.indexOf('before table')).toBeLessThan(xml.indexOf('<w:tbl'));
+      }
+    });
+  });
+
+  acceptTest('block-level customXml range markup between the paragraphs does not block the merge', async ({ when, then }: AllureBddContext) => {
+    // EG_RangeMarkupElements members are valid block-level siblings (wml.xsd);
+    // the merge-target scan must skip them, not bail out.
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a mark-deleted paragraph separated from the next by a customXmlInsRangeEnd marker', () => {
+      out = acceptBoth(
+        `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr><w:r><w:t xml:space="preserve">First half </w:t></w:r></w:p>` +
+          `<w:customXmlInsRangeEnd w:id="9"/>` +
+          `<w:p><w:r><w:t>second half</w:t></w:r></w:p>`,
+      );
+    });
+    await then('one paragraph remains reading "First half second half", on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('First half second half');
+      }
+    });
+  });
+
+  rejectTest('a direct-child bookmark boundary keeps its position relative to merged content on reject', async ({ when, then }: AllureBddContext) => {
+    // Regression: bookmark preservation must not pre-relocate direct-child
+    // bookmarks of a merging paragraph — the merge carries them in document
+    // order, and an early move would put the start BEFORE the surviving
+    // untracked content it follows.
+    let out: { ast: string; primitive: string };
+    await when('reject runs on a mark-inserted paragraph with untracked content then a bookmarkStart, whose end is in the next paragraph', () => {
+      out = rejectBoth(
+        `<w:p><w:pPr><w:rPr>${INS_MARK}</w:rPr></w:pPr><w:r><w:t xml:space="preserve">head </w:t></w:r><w:bookmarkStart w:id="7" w:name="bm"/></w:p>` +
+          `<w:p><w:bookmarkEnd w:id="7"/><w:r><w:t>tail</w:t></w:r></w:p>`,
+      );
+    });
+    await then('the merged paragraph reads head-bookmarkStart-bookmarkEnd-tail in that order, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(countParagraphs(xml)).toBe(1);
+        expect(extractText(xml)).toBe('head tail');
+        expect(xml.indexOf('head')).toBeLessThan(xml.indexOf('bookmarkStart'));
+        expect(xml.indexOf('bookmarkStart')).toBeLessThan(xml.indexOf('bookmarkEnd'));
+        expect(xml.indexOf('bookmarkEnd')).toBeLessThan(xml.indexOf('tail'));
+      }
+    });
+  });
+
+  acceptTest('an emptied mark-deleted paragraph after a trailing table is KEPT (a table must not become the last block)', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a fully-deleted paragraph that trails a table at the end of the body', () => {
+      out = acceptBoth(
+        `<w:p><w:r><w:t>lead</w:t></w:r></w:p>` +
+          `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+          `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr>` +
+          `<w:del w:id="2" w:author="T" w:date="2024-01-01T00:00:00Z"><w:r><w:delText>gone</w:delText></w:r></w:del></w:p>`,
+      );
+    });
+    await then('the emptied paragraph survives so the table is not the last block, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(extractText(xml)).toBe('leadcell');
+        // lead + cell paragraph + kept empty trailing paragraph
+        expect(countParagraphs(xml)).toBe(3);
+        expect(xml.indexOf('</w:tbl>')).toBeLessThan(xml.lastIndexOf('<w:p'));
+      }
+    });
+  });
+
+  acceptTest('an emptied mark-deleted paragraph between two tables is KEPT (adjacent tables would merge)', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a fully-deleted paragraph sitting between two tables', () => {
+      out = acceptBoth(
+        `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>alpha</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+          `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr>` +
+          `<w:del w:id="2" w:author="T" w:date="2024-01-01T00:00:00Z"><w:r><w:delText>gone</w:delText></w:r></w:del></w:p>` +
+          `<w:tbl><w:tr><w:tc><w:p><w:r><w:t>beta</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+          `<w:p><w:r><w:t>after</w:t></w:r></w:p>`,
+      );
+    });
+    await then('the separator paragraph survives between the tables, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(extractText(xml)).toBe('alphabetaafter');
+        // alpha cell + separator + beta cell + after
+        expect(countParagraphs(xml)).toBe(4);
+      }
+    });
+  });
+
+  acceptTest('a lone emptied mark-deleted paragraph in a table cell is KEPT (a cell needs a block element)', async ({ when, then }: AllureBddContext) => {
+    let out: { ast: string; primitive: string };
+    await when('accept runs on a table cell whose only paragraph is fully deleted', () => {
+      out = acceptBoth(
+        `<w:tbl><w:tr><w:tc>` +
+          `<w:p><w:pPr><w:rPr>${DEL_MARK}</w:rPr></w:pPr>` +
+          `<w:del w:id="2" w:author="T" w:date="2024-01-01T00:00:00Z"><w:r><w:delText>gone</w:delText></w:r></w:del></w:p>` +
+          `</w:tc></w:tr></w:tbl>` +
+          `<w:p><w:r><w:t>after</w:t></w:r></w:p>`,
+      );
+    });
+    await then('the cell keeps an empty paragraph, on both paths', () => {
+      for (const xml of [out.ast, out.primitive]) {
+        expect(extractText(xml)).toBe('after');
+        // the kept empty cell paragraph + the body paragraph
+        expect(countParagraphs(xml)).toBe(2);
+      }
     });
   });
 });
