@@ -219,6 +219,21 @@ This matrix maps OpenSpec `#### Scenario:` entries to Allure story mappings extr
 | Two-file `.odt` compare reports inline granularity and meaningful modifications | covered | `src/tools/odf/odf_compare_inline.test.ts` |  |
 | Whole-paragraph-only diffs still report zero modifications | covered | `src/tools/odf/odf_compare_inline.test.ts` |  |
 
+## Change: `add-read-file-fingerprint-ordinal`
+
+| Scenario | Status | Allure Test Files | Notes |
+|---|---|---|---|
+| Google Docs ignores include_fingerprint_ordinal | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| TOON format ignores include_fingerprint_ordinal | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| counts are document-wide across paginated windows | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| default JSON output omits ordinal fields | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| duplicate normalized text receives deterministic document-order ordinals | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| opt-in ordinal adds disambiguation fields on JSON output | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| ordinal fields require include_fingerprint | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| portable_paragraph_ref composes fingerprint and ordinal | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| unique paragraph fingerprint reports ordinal 1 and count 1 | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+| whitespace-only variants share fingerprint and get distinct ordinals | covered | `src/tools/read_file_fingerprint_ordinal.test.ts` |  |
+
 ## Change: `add-read-file-inline-footnotes`
 
 | Scenario | Status | Allure Test Files | Notes |

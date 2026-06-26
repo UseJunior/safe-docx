@@ -296,6 +296,7 @@ export async function readFile(
     show_formatting?: boolean;
     comment_rendering?: string;
     include_fingerprint?: boolean;
+    include_fingerprint_ordinal?: boolean;
     include_footnotes?: boolean;
   },
 ): Promise<ToolResponse> {
@@ -408,11 +409,48 @@ export async function readFile(
     // which has list labels stripped and footnote markers appended above.
     let jsonNodes: readonly Record<string, unknown>[] = enriched;
     if (params.include_fingerprint && format === 'json') {
+      // Opt-in duplicate-disambiguation metadata (#205). When
+      // include_fingerprint_ordinal is also set, compute document-order ordinals
+      // and counts per fingerprint over the FULL document (not the returned
+      // slice) so a paginated / node_ids-filtered read still reports stable,
+      // document-wide ordinals and counts. The ordinal is a read-only
+      // disambiguator, never an edit anchor.
+      const ordinalByNodeId = new Map<string, { ordinal: number; count: number }>();
+      if (params.include_fingerprint_ordinal) {
+        const fingerprintByNodeId = new Map<string, string>();
+        const groupCounts = new Map<string, number>();
+        for (const node of nodes) {
+          const paragraphEl = paragraphElementsById.get(node.id);
+          if (!paragraphEl) continue;
+          const fp = computeContentFingerprint(getParagraphText(paragraphEl));
+          fingerprintByNodeId.set(node.id, fp);
+          groupCounts.set(fp, (groupCounts.get(fp) ?? 0) + 1);
+        }
+        const runningOrdinal = new Map<string, number>();
+        for (const node of nodes) {
+          const fp = fingerprintByNodeId.get(node.id);
+          if (fp == null) continue;
+          const ordinal = (runningOrdinal.get(fp) ?? 0) + 1;
+          runningOrdinal.set(fp, ordinal);
+          ordinalByNodeId.set(node.id, { ordinal, count: groupCounts.get(fp)! });
+        }
+      }
+
       jsonNodes = enriched.map((node) => {
         const paragraphEl = paragraphElementsById.get(node.id);
         if (!paragraphEl) return node;
         const fingerprint = computeContentFingerprint(getParagraphText(paragraphEl));
-        return { ...node, content_fingerprint: fingerprint };
+        const withFingerprint: Record<string, unknown> = {
+          ...node,
+          content_fingerprint: fingerprint,
+        };
+        const ordinalInfo = ordinalByNodeId.get(node.id);
+        if (ordinalInfo) {
+          withFingerprint.content_fingerprint_ordinal = ordinalInfo.ordinal;
+          withFingerprint.content_fingerprint_count_in_document = ordinalInfo.count;
+          withFingerprint.portable_paragraph_ref = `${fingerprint}#${ordinalInfo.ordinal}`;
+        }
+        return withFingerprint;
       });
     }
 
