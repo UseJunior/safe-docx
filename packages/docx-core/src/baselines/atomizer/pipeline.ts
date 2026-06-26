@@ -1235,8 +1235,9 @@ async function mergeCommentAncillaryParts(
   // (and any roots not yet present in the result, defensively).
   await mergeMissingCommentDefinitions(resultArchive, commentById, includedCommentIds);
 
-  // Merge commentsExtended and people for the expanded set.
+  // Merge commentsExtended, commentsIds, and people for the expanded set.
   await mergeCommentsExtended(sourceArchive, resultArchive, includedParaIds);
+  await mergeCommentsIds(sourceArchive, resultArchive, includedParaIds);
   await mergePeople(sourceArchive, resultArchive, includedAuthors);
 }
 
@@ -1357,6 +1358,91 @@ const COMMENTS_EXTENDED_DESCRIPTOR: AuxiliaryPartDescriptor = {
   relationshipType: 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended',
   idBearingTags: [], // keyed by w15:paraId, not w:id
 };
+
+const COMMENTS_IDS_DESCRIPTOR: AuxiliaryPartDescriptor = {
+  label: 'commentsIds',
+  partPath: 'word/commentsIds.xml',
+  referenceTag: '',
+  entryTag: 'w16cid:commentId',
+  rootTag: 'w16cid:commentsIds',
+  contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml',
+  relationshipType: 'http://schemas.microsoft.com/office/2016/09/relationships/commentsIds',
+  idBearingTags: [], // keyed by w16cid:paraId, not w:id
+};
+
+/**
+ * Merge the merge-source side's commentsIds.xml durable-ID rows for the
+ * expanded comment set. commentsIds.xml ([MS-DOCX]) keys each
+ * <w16cid:commentId> by the comment paragraph's w16cid:paraId — the same
+ * paraIds threaded through commentsExtended.xml — so merged-in comments retain
+ * their Word durable IDs instead of forcing Word to regenerate them (issue
+ * #471). Mirrors mergeCommentsExtended's append/bootstrap shape.
+ */
+async function mergeCommentsIds(
+  sourceArchive: DocxArchive,
+  resultArchive: DocxArchive,
+  mergedParaIds: Set<string>,
+): Promise<void> {
+  if (mergedParaIds.size === 0) return;
+
+  const sourceXml = await sourceArchive.getFile('word/commentsIds.xml');
+  if (!sourceXml) return;
+
+  const sourceDoc = parseXml(sourceXml);
+  const sourceEntries = sourceDoc.getElementsByTagName('w16cid:commentId');
+
+  // Collect rows whose paraId matches a merged comment's paragraph.
+  const entriesToMerge: Element[] = [];
+  for (let i = 0; i < sourceEntries.length; i++) {
+    const el = sourceEntries[i] as Element;
+    const paraId = el.getAttribute('w16cid:paraId');
+    if (paraId && mergedParaIds.has(paraId)) {
+      entriesToMerge.push(el);
+    }
+  }
+
+  if (entriesToMerge.length === 0) return;
+
+  const resultXml = await resultArchive.getFile('word/commentsIds.xml');
+
+  if (resultXml) {
+    const resultDoc = parseXml(resultXml);
+    const rootEl = resultDoc.documentElement;
+
+    const existingParaIds = new Set<string>();
+    const existing = rootEl.getElementsByTagName('w16cid:commentId');
+    for (let i = 0; i < existing.length; i++) {
+      const pid = (existing[i] as Element).getAttribute('w16cid:paraId');
+      if (pid) existingParaIds.add(pid);
+    }
+
+    for (const el of entriesToMerge) {
+      const pid = el.getAttribute('w16cid:paraId');
+      if (pid && !existingParaIds.has(pid)) {
+        rootEl.appendChild(resultDoc.importNode(el, true));
+      }
+    }
+
+    resultArchive.setFile('word/commentsIds.xml', serializer.serializeToString(resultDoc));
+    return;
+  }
+
+  // Bootstrap: result lacks commentsIds.xml but the merged comments carry
+  // durable IDs. Clone the source's root (preserves namespaces), drop
+  // non-matching rows, then add OPC metadata.
+  const newDoc = parseXml(sourceXml);
+  const newRoot = newDoc.documentElement;
+  const allEntries = newRoot.getElementsByTagName('w16cid:commentId');
+  const toRemove: Element[] = [];
+  for (let i = 0; i < allEntries.length; i++) {
+    const el = allEntries[i] as Element;
+    const paraId = el.getAttribute('w16cid:paraId');
+    if (!paraId || !mergedParaIds.has(paraId)) toRemove.push(el);
+  }
+  for (const el of toRemove) newRoot.removeChild(el);
+  resultArchive.setFile('word/commentsIds.xml', serializer.serializeToString(newDoc));
+  await ensureOpcMetadata(resultArchive, COMMENTS_IDS_DESCRIPTOR);
+}
 
 const PEOPLE_DESCRIPTOR: AuxiliaryPartDescriptor = {
   label: 'people',
