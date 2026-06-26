@@ -3,7 +3,13 @@ import fs from "node:fs";
 import { parse } from "@typescript-eslint/parser";
 import type { TSESTree } from "@typescript-eslint/types";
 
-import { rejectedAliases, tagDefinitions, type NarrativeVisibility, type TagName } from "./tagSchema.js";
+import {
+  rejectedAliases,
+  SUITE_SCENARIO_IDS_TAG,
+  tagDefinitions,
+  type NarrativeVisibility,
+  type TagName
+} from "./tagSchema.js";
 
 const KNOWN_NARRATIVE_KEYS = new Set<string>([
   ...Object.keys(tagDefinitions),
@@ -51,6 +57,7 @@ export type ScenarioEvidence = {
   sourceRef: SourceRef;
   visibility?: NarrativeVisibility;
   narrative: Partial<Record<TagName, string>>;
+  suiteScenarioIds?: string[];
   bddSteps: BddStepEvidence[];
   fixtures: FixtureEvidence[];
   expectArgs: ExpectArgEvidence[];
@@ -236,6 +243,35 @@ function extractNarrative(commentValue: string | undefined): Partial<Record<TagN
   flush();
 
   return narrative;
+}
+
+function extractSuiteScenarioIds(commentValue: string | undefined): string[] | undefined {
+  if (!commentValue) return undefined;
+
+  let seen = false;
+  let collecting = false;
+  const parts: string[] = [];
+  for (const rawLine of commentValue.split("\n")) {
+    const line = rawLine.replace(/^\s*\* ?/, "").trimEnd();
+    const tagMatch = line.match(/^@([A-Za-z][\w-]*)\s*(.*)$/);
+    if (tagMatch) {
+      collecting = tagMatch[1] === SUITE_SCENARIO_IDS_TAG;
+      if (collecting) {
+        seen = true;
+        parts.push(tagMatch[2] ?? "");
+      }
+      continue;
+    }
+    if (collecting) parts.push(line.trim());
+  }
+  if (!seen) return undefined;
+
+  const ids = parts
+    .join(" ")
+    .split(/[\s,]+/)
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return ids.length > 0 ? ids : undefined;
 }
 
 function findLeadingJsDoc(
@@ -426,11 +462,13 @@ export function extractScenarios(filePath: string): ScenarioEvidence[] {
     const comment = findLeadingJsDoc(ast, source, node);
     const body = collectScenarioBody(node);
     const evidence = extractBodyEvidence(body, filePath, source);
+    const suiteScenarioIds = extractSuiteScenarioIds(comment?.value);
     scenarios.push({
       scenarioName: extractScenarioName(node, source),
       sourceRef: sourceRefFor(filePath, node),
       visibility: visibilityForScenarioCall(node, openspecCall, fileBindings),
       narrative: extractNarrative(comment?.value),
+      ...(suiteScenarioIds ? { suiteScenarioIds } : {}),
       ...evidence
     });
   });
