@@ -376,6 +376,14 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
         expect(parts.commentsIdsXml!).toContain('w16cid:durableId="11111111"');
         expect(parts.commentsIdsXml!).toContain('w16cid:paraId="00000002"');
         expect(parts.commentsIdsXml!).toContain('w16cid:durableId="22222222"');
+
+        // Count-guard: appending the reply durable-ID row must not duplicate
+        // the pre-existing root row. Each paraId keys EXACTLY ONE
+        // <w16cid:commentId> durable-ID row.
+        const idRowsForPara = (paraId: string) =>
+          (parts.commentsIdsXml!.match(new RegExp(`w16cid:paraId="${paraId}"`, 'g')) ?? []).length;
+        expect(idRowsForPara('00000001')).toBe(1);
+        expect(idRowsForPara('00000002')).toBe(1);
       });
     });
   });
