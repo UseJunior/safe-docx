@@ -416,8 +416,13 @@ export async function readFile(
       // document-wide ordinals and counts. The ordinal is a read-only
       // disambiguator, never an edit anchor.
       const ordinalByNodeId = new Map<string, { ordinal: number; count: number }>();
+      // Cache fingerprints computed during the ordinal pass so the per-node
+      // enrichment below reuses them instead of recomputing the same
+      // computeContentFingerprint(getParagraphText(...)) for every windowed
+      // node. Both sites key off the same paragraph element, so the value is
+      // identical — this only avoids the double compute (#205).
+      const fingerprintByNodeId = new Map<string, string>();
       if (params.include_fingerprint_ordinal) {
-        const fingerprintByNodeId = new Map<string, string>();
         const groupCounts = new Map<string, number>();
         for (const node of nodes) {
           const paragraphEl = paragraphElementsById.get(node.id);
@@ -439,7 +444,9 @@ export async function readFile(
       jsonNodes = enriched.map((node) => {
         const paragraphEl = paragraphElementsById.get(node.id);
         if (!paragraphEl) return node;
-        const fingerprint = computeContentFingerprint(getParagraphText(paragraphEl));
+        const fingerprint =
+          fingerprintByNodeId.get(node.id) ??
+          computeContentFingerprint(getParagraphText(paragraphEl));
         const withFingerprint: Record<string, unknown> = {
           ...node,
           content_fingerprint: fingerprint,
