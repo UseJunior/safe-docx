@@ -20,6 +20,12 @@ const FILE_FIELD_OPTIONAL = {
   file_path: z.string().optional().describe('Path to the DOCX or ODT file.'),
 };
 
+// DOCX-only tools reject `.odt` paths with UNSUPPORTED_FOR_ODF, so their
+// file_path description must not advertise ODT support.
+const FILE_FIELD_OPTIONAL_DOCX_ONLY = {
+  file_path: z.string().optional().describe('Path to the DOCX file.'),
+};
+
 const GOOGLE_DOC_ID_FIELD = {
   google_doc_id: z.string().optional().describe(
     'Google Doc ID or URL (alternative to file_path). ' +
@@ -68,6 +74,23 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .describe(
           'When true and format="json", attach a `footnotes` array ({id, display_number, text}) to each paragraph node for the footnotes anchored to it. Windowed to the returned slice (a paginated walk returns each footnote exactly once) and counted toward the read token budget. Footnotes with an empty body or no anchored paragraph are excluded — use get_footnotes for the authoritative full enumeration. No effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false.',
         ),
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
+    name: 'get_document_outline',
+    description:
+      'Get a compact structural map of a document\'s headings (DOCX only). Returns one entry per heading paragraph with its text, outline level, source, and stable `_bk_*` paragraph_id — so an agent can read the cheap outline first, then scope a targeted read_file/replace_text to the right section instead of scanning the whole body. Style-based (Word HeadingN) headings only by default; set include_heuristic_headings=true to also include heuristic titles/run-in headers. Read-only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
+      format: z
+        .enum(['json', 'markdown'])
+        .optional()
+        .describe("Output format: 'json' (default, structured outline array) or 'markdown' (indented ATX outline under `content`)."),
+      include_heuristic_headings: z
+        .boolean()
+        .optional()
+        .describe('When true, also include heuristically-detected headings (manual title / run-in / centered-caps) alongside Word HeadingN styles. Default: false (style-based only).'),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
