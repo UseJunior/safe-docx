@@ -319,6 +319,41 @@ describe('add-read-file-fingerprint-ordinal — Optional Fingerprint Ordinal Dis
     },
   );
 
+  test.openspec('simple format ignores include_fingerprint_ordinal')(
+    'simple format ignores include_fingerprint_ordinal',
+    async ({ given, when, then }: AllureBddContext) => {
+      const mgr = createTestSessionManager();
+      const { filePath } = await given('a DOCX session', () =>
+        openSession(['Alpha.', 'Alpha.'], { mgr }),
+      );
+
+      const baseline = await when('reading simple with no fingerprint flags', async () => {
+        const result = await readFile(mgr, { file_path: filePath, format: 'simple', limit: 100 });
+        assertSuccess(result, 'read');
+        return String(result.content);
+      });
+
+      const withFlags = await when(
+        'reading simple with include_fingerprint and include_fingerprint_ordinal',
+        async () => {
+          const result = await readFile(mgr, {
+            file_path: filePath,
+            format: 'simple',
+            include_fingerprint: true,
+            include_fingerprint_ordinal: true,
+            limit: 100,
+          });
+          assertSuccess(result, 'read');
+          return String(result.content);
+        },
+      );
+
+      await then('simple output is byte-identical', async () => {
+        expect(withFlags).toBe(baseline);
+      });
+    },
+  );
+
   test.openspec('Google Docs ignores include_fingerprint_ordinal')(
     'Google Docs ignores include_fingerprint_ordinal',
     async ({ given, when, then }: AllureBddContext) => {

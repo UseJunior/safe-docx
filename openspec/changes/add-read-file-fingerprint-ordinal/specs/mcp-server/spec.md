@@ -88,6 +88,11 @@ Google Docs session (`google_doc_id`), the server SHALL silently ignore the flag
 - **WHEN** `read_file` is called with `format="toon"`, `include_fingerprint=true`, and `include_fingerprint_ordinal=true`
 - **THEN** the TOON output SHALL be identical to the output produced without the flags
 
+#### Scenario: simple format ignores include_fingerprint_ordinal
+- **GIVEN** a DOCX session
+- **WHEN** `read_file` is called with `format="simple"`, `include_fingerprint=true`, and `include_fingerprint_ordinal=true`
+- **THEN** the simple output SHALL be identical to the output produced without the flags
+
 #### Scenario: Google Docs ignores include_fingerprint_ordinal
 - **GIVEN** a Google Docs session
 - **WHEN** `read_file` is dispatched with `google_doc_id`, `format="json"`, `include_fingerprint=true`, and `include_fingerprint_ordinal=true`
