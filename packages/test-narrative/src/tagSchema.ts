@@ -62,6 +62,22 @@ export const tagDefinitions = {
 
 export type TagName = keyof typeof tagDefinitions;
 
+// Cross-implementation suite join keys. Authored as a `@suiteScenarioIds`
+// JSDoc tag (comma/whitespace-separated list), these are renderer-facing join
+// keys between a corpus entry and the cross-impl suite repo's results JSON.
+// They are NOT prose, so they live outside `tagDefinitions` (no word counts)
+// and outside the entry `narrative` object.
+export const SUITE_SCENARIO_IDS_TAG = "suiteScenarioIds";
+
+export const suiteScenarioIdsSchema = z
+  .array(z.string().trim().min(1).max(200))
+  .min(1)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "suiteScenarioIds must not contain duplicates"
+  });
+
+export type SuiteScenarioIds = z.infer<typeof suiteScenarioIdsSchema>;
+
 export const rejectedAliases = [
   "limitation",
   "aiContext",
