@@ -142,8 +142,10 @@ describe('Traceability: Document Outline Tool', () => {
 
     await then('the content SHALL render headings as an indented Markdown outline reflecting level', () => {
       const content = (result as { content?: string }).content ?? '';
-      expect(content).toContain('# Introduction');
-      expect(content).toContain('## Scope of Services');
+      const lines = content.split('\n');
+      // Exact lines: Heading1 renders at depth 1, Heading2 at depth 2, and the
+      // body prose paragraph (not a heading) contributes no line.
+      expect(lines).toEqual(['# Introduction', '## Scope of Services']);
     });
   });
 });
