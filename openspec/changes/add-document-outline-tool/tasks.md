@@ -17,7 +17,7 @@
 - [x] 2.1 Add `get_document_outline` to the tool catalog with a read-only annotation and input schema
   - File: `packages/docx-mcp/src/tool_catalog.ts`
 
-- [x] 2.2 Dispatch `get_document_outline` in the server (DOCX direct; ODT via the shared session lane)
+- [x] 2.2 Dispatch `get_document_outline` in the server (DOCX only; `.odt` paths are rejected with `UNSUPPORTED_FOR_ODF`)
   - File: `packages/docx-mcp/src/server.ts`
 
 ## Phase 3: Tests

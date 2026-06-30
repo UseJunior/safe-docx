@@ -20,6 +20,12 @@ const FILE_FIELD_OPTIONAL = {
   file_path: z.string().optional().describe('Path to the DOCX or ODT file.'),
 };
 
+// DOCX-only tools reject `.odt` paths with UNSUPPORTED_FOR_ODF, so their
+// file_path description must not advertise ODT support.
+const FILE_FIELD_OPTIONAL_DOCX_ONLY = {
+  file_path: z.string().optional().describe('Path to the DOCX file.'),
+};
+
 const GOOGLE_DOC_ID_FIELD = {
   google_doc_id: z.string().optional().describe(
     'Google Doc ID or URL (alternative to file_path). ' +
@@ -70,7 +76,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     description:
       'Get a compact structural map of a document\'s headings (DOCX only). Returns one entry per heading paragraph with its text, outline level, source, and stable `_bk_*` paragraph_id — so an agent can read the cheap outline first, then scope a targeted read_file/replace_text to the right section instead of scanning the whole body. Style-based (Word HeadingN) headings only by default; set include_heuristic_headings=true to also include heuristic titles/run-in headers. Read-only.',
     input: z.object({
-      ...FILE_FIELD_OPTIONAL,
+      ...FILE_FIELD_OPTIONAL_DOCX_ONLY,
       format: z
         .enum(['json', 'markdown'])
         .optional()
