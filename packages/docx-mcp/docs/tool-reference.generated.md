@@ -34,7 +34,7 @@ Get a compact structural map of a document's headings (DOCX only). Returns one e
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `file_path` | `string` | no | Path to the DOCX file. |
 | `format` | `enum("json", "markdown")` | no | Output format: 'json' (default, structured outline array) or 'markdown' (indented ATX outline under `content`). |
 | `include_heuristic_headings` | `boolean` | no | When true, also include heuristically-detected headings (manual title / run-in / centered-caps) alongside Word HeadingN styles. Default: false (style-based only). |
 
