@@ -10,6 +10,7 @@ import { CorrelationStatus } from '../../core-types.js';
 import { getDirectContentElements, splitRunAtVisibleOffset, visibleLengthForEl } from '../../primitives/index.js';
 import { warn } from './debug.js';
 import { FIELD_CHAR_TAG_NAMES } from './inPlaceModifier-deletion.js';
+import { getOriginalInsProvenanceKey, getRunInsertionAnchor } from './inPlaceModifier-wrappers.js';
 
 export function atomContentVisibleLength(el: Element): number {
   const tag = el.tagName;
@@ -146,6 +147,154 @@ export function preSplitMixedStatusRuns(mergedAtoms: ComparisonUnitAtom[]): void
       // DOM operation failed — skip this run. The existing fallback-to-rebuild
       // architecture will handle it if the overall safety check fails.
       warn('preSplitMixedStatusRuns', `Skipping run split due to error: ${_err}`);
+    }
+  }
+}
+
+/**
+ * Pre-split revised-tree runs whose atoms carry different ORIGINAL-side inline
+ * `<w:ins>` provenance (issue #358).
+ *
+ * When the original input pre-tracked part of a paragraph as an insertion and
+ * the revised text matches it, the matched (Equal) atoms land in one revised
+ * run together with plain-lineage atoms — e.g. revised run "Alpha beta" where
+ * only " beta" descends from the original's `<w:ins>`. `handleEqual` wraps at
+ * run granularity, so the run must first be split at provenance boundaries;
+ * afterwards each fragment is uniformly plain or uniformly provenance-bearing
+ * and the per-status handlers wrap the right fragment only.
+ *
+ * Mirrors the span/split machinery of {@link preSplitMixedStatusRuns}; runs
+ * after it (and after {@link preSplitInterleavedWordRuns}), so it operates on
+ * the already status-homogeneous fragments those passes produced.
+ *
+ * Safety: wrapped in try/catch per run group. If any DOM operation fails, the
+ * run is skipped and the existing fallback-to-rebuild architecture handles it.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/358
+ */
+export function preSplitInsProvenanceRuns(mergedAtoms: ComparisonUnitAtom[]): void {
+  // Group atoms by their sourceRunElement (revised-tree runs only).
+  const runGroups = new Map<Element, ComparisonUnitAtom[]>();
+
+  for (const atom of mergedAtoms) {
+    if (!atom.sourceRunElement) continue;
+
+    // Skip original-tree atoms — Deleted/MovedSource runs are cloned, not wrapped.
+    if (
+      atom.correlationStatus === CorrelationStatus.Deleted ||
+      atom.correlationStatus === CorrelationStatus.MovedSource
+    ) continue;
+
+    // Skip collapsed field atoms (multi-run field sequences).
+    if (atom.collapsedFieldAtoms && atom.collapsedFieldAtoms.length > 0) continue;
+
+    // Skip field character elements — semantically fragile.
+    if (FIELD_CHAR_TAG_NAMES.has(atom.contentElement.tagName)) continue;
+
+    const group = runGroups.get(atom.sourceRunElement);
+    if (group) {
+      group.push(atom);
+    } else {
+      runGroups.set(atom.sourceRunElement, [atom]);
+    }
+  }
+
+  for (const [run, atoms] of runGroups) {
+    // Early check: skip runs whose atoms all share one provenance key.
+    const keys = new Set(atoms.map((a) => getOriginalInsProvenanceKey(a)));
+    if (keys.size <= 1) continue;
+
+    // Guard: skip runs already detached from the tree.
+    if (!run.parentNode) continue;
+
+    // Skip runs already inside a physical track-change wrapper: the revised
+    // document's own pre-tracked wrapper governs the whole run, and wrapping
+    // fragments of it again would nest revision markup incorrectly.
+    if (getRunInsertionAnchor(run) !== run) continue;
+
+    try {
+      // Compute the run's actual visible length via DOM traversal.
+      const contentEls = getDirectContentElements(run);
+      let runVisibleLength = 0;
+      for (const cel of contentEls) {
+        runVisibleLength += visibleLengthForEl(cel);
+      }
+
+      // Cross-run safety: if sum of atom lengths exceeds run visible length,
+      // this group contains a cross-run merged atom (passes 3/4). Skip it.
+      let sumAtomLengths = 0;
+      for (const atom of atoms) {
+        sumAtomLengths += atomContentVisibleLength(atom.contentElement);
+      }
+      if (sumAtomLengths > runVisibleLength) continue;
+
+      // Compute contiguous provenance spans with character offsets.
+      interface ProvenanceSpan {
+        key: string | null;
+        startOffset: number;
+        length: number;
+        atoms: ComparisonUnitAtom[];
+      }
+
+      const spans: ProvenanceSpan[] = [];
+      let offset = 0;
+      for (const atom of atoms) {
+        const len = atomContentVisibleLength(atom.contentElement);
+        const key = getOriginalInsProvenanceKey(atom);
+        const lastSpan = spans[spans.length - 1];
+        if (lastSpan && lastSpan.key === key) {
+          lastSpan.length += len;
+          lastSpan.atoms.push(atom);
+        } else {
+          spans.push({
+            key,
+            startOffset: offset,
+            length: len,
+            atoms: [atom],
+          });
+        }
+        offset += len;
+      }
+
+      // If only one span after grouping, no split needed.
+      if (spans.length <= 1) continue;
+
+      // Collect split points: startOffset of each span after the first.
+      const splitPoints: number[] = [];
+      for (let i = 1; i < spans.length; i++) {
+        const pt = spans[i]!.startOffset;
+        // Filter out degenerate split points at boundaries.
+        if (pt > 0 && pt < runVisibleLength) {
+          splitPoints.push(pt);
+        }
+      }
+
+      if (splitPoints.length === 0) continue;
+
+      // Split DOM run right-to-left to keep earlier offsets valid.
+      const rightFragments: Element[] = [];
+      for (let i = splitPoints.length - 1; i >= 0; i--) {
+        const { right } = splitRunAtVisibleOffset(run, splitPoints[i]!);
+        rightFragments.push(right);
+      }
+
+      // Map fragments: [originalRun (leftmost), ...reverse(rightFragments)]
+      // After R-to-L splits, rightFragments are in reverse document order.
+      const fragments = [run, ...rightFragments.reverse()];
+
+      // Update atom sourceRunElement pointers to the correct fragment.
+      // Each span maps to one fragment in order.
+      for (let i = 0; i < spans.length; i++) {
+        const fragment = fragments[i];
+        if (!fragment) continue;
+        for (const atom of spans[i]!.atoms) {
+          atom.sourceRunElement = fragment;
+        }
+      }
+    } catch (_err) {
+      // DOM operation failed — skip this run. The existing fallback-to-rebuild
+      // architecture will handle it if the overall safety check fails.
+      warn('preSplitInsProvenanceRuns', `Skipping run split due to error: ${_err}`);
     }
   }
 }
