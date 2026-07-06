@@ -1,9 +1,16 @@
 /**
  * word/settings.xml emitter.
  *
- * Only emitted when the document actually needs a setting: `w:evenAndOddHeaders`
- * for any section declaring an even-page header or footer, or
+ * Emitted on every package. The part always carries a `w:compat` block with a
+ * `compatibilityMode=15` compatSetting (Word 2013+ / mode 15) so Microsoft Word
+ * opens generated documents in the current format rather than the legacy
+ * "Compatibility Mode" (which shows a banner in the title bar). Conditional
+ * settings are folded in when the document needs them: `w:evenAndOddHeaders`
+ * for any section declaring an even-page header or footer, and
  * `w:clrSchemeMapping` when theme-relative authoring or a custom theme is used.
+ *
+ * The `w:compat` block is static (no clock/random), preserving the compiler's
+ * byte-for-byte determinism guarantee.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
  */
@@ -17,13 +24,17 @@ import type { BlockSpec, DocumentSpec, InlineSpec, TableCellSpec } from '../type
 const SETTINGS_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml';
 const SETTINGS_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings';
 
-export function emitSettingsPartIfNeeded(spec: DocumentSpec, ctx: CompileContext): void {
+/** Word 2013+ compatibility mode; clears Word's legacy "Compatibility Mode" banner. */
+const COMPATIBILITY_MODE_15 = '15';
+const COMPAT_SETTING_URI = 'http://schemas.microsoft.com/office/word';
+
+export function emitSettingsPart(spec: DocumentSpec, ctx: CompileContext): void {
   const needsEvenOdd = spec.sections.some((s) => s.headers?.even || s.footers?.even);
   const needsColorSchemeMapping = spec.theme !== undefined || usesThemeRelativeAuthoring(spec);
-  if (!needsEvenOdd && !needsColorSchemeMapping) return;
 
   ctx.registerPart('word/settings.xml', SETTINGS_CONTENT_TYPE, SETTINGS_REL_TYPE);
   const doc = parseXml(`<w:settings xmlns:w="${OOXML.W_NS}"/>`);
+  // CT_Settings sequence: evenAndOddHeaders and clrSchemeMapping precede compat.
   if (needsEvenOdd) {
     doc.documentElement!.appendChild(createWmlElement(doc, W.evenAndOddHeaders));
   }
@@ -45,6 +56,15 @@ export function emitSettingsPartIfNeeded(spec: DocumentSpec, ctx: CompileContext
       }),
     );
   }
+  const compat = createWmlElement(doc, W.compat);
+  compat.appendChild(
+    createWmlElement(doc, W.compatSetting, {
+      'w:name': 'compatibilityMode',
+      'w:uri': COMPAT_SETTING_URI,
+      'w:val': COMPATIBILITY_MODE_15,
+    }),
+  );
+  doc.documentElement!.appendChild(compat);
   ctx.setFileContent('word/settings.xml', XML_DECL + serializeXml(doc));
 }
 

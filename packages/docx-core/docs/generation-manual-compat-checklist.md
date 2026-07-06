@@ -25,19 +25,20 @@ Artifacts land under `packages/docx-core/src/testing/outputs/`.
 
 ## Matrix
 
-Emitter revision `#482` adds the standard ancillary parts
-(`theme/theme1.xml`, `fontTable.xml`, `webSettings.xml`) to every artifact, so the
-manual Word for Mac / Pages / Google Docs cells are reset to `—` pending a fresh
-observation of the new package shape.
+Emitter revision `#487` emits a baseline `word/settings.xml` on every artifact,
+always carrying a `w:compat` → `compatibilityMode=15` compatSetting to clear
+Word's legacy "Compatibility Mode" banner (building on the `#482` ancillary
+parts). The manual Word for Mac cells are reset to `—` pending a fresh human
+observation that the banner is gone; Pages / Google Docs stay `—` as before.
 
 | Artifact | Emitter revision | Word for Mac | Pages | Google Docs import | LibreOffice |
 |---|---|---|---|---|---|
-| `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase5-numbering.docx` (three-level legal numbering through the document façade) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
-| `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | #482 (+ ancillary parts) | clean (2026-06-13) | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | #487 (+ compat settings) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | #487 (+ compat settings) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | #487 (+ compat settings) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | #487 (+ compat settings) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase5-numbering.docx` (three-level legal numbering through the document façade) | #487 (+ compat settings) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
+| `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | #487 (+ compat settings) | — | — | — | clean (identity + PDF probes, 2026-06-13) |
 
 ## Per-reader notes
 
@@ -56,6 +57,12 @@ observation of the new package shape.
   `compatibilityMode=15` `compatSetting` in `word/settings.xml`. Emitting that
   (always, in a baseline settings part) would clear the legacy-format banner.
   Tracked separately from the theme/fontTable/webSettings work here.
+- #487 (implementation): `generateDocx` now emits a baseline `word/settings.xml`
+  on every package with a `w:compat` → `compatibilityMode=15` compatSetting.
+  Word-for-Mac cells above are reset to `—` pending the manual re-check that the
+  Compatibility-Mode banner is gone AND no repair dialog appears — re-run
+  `~/.claude/skills/word-fidelity-check/probe.sh --screenshots
+  packages/docx-core/src/testing/outputs/generation-phase*.docx`.
 
 ### Pages
 _(none yet — needs a manual open of the #482 artifacts)_
