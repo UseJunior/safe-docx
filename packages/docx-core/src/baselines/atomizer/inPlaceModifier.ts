@@ -42,14 +42,22 @@ import {
   addFormatChange,
   getAtomRunAtBoundary,
   getAtomRuns,
+  getOriginalInsProvenance,
   getRunInsertionAnchor,
+  isCollapsedFieldAtom,
   wrapAsInserted,
   wrapAsMoveTo,
   wrapParagraphAsDeleted,
   wrapParagraphAsInserted,
+  wrapRunWithTrackChange,
+  wrapWithOriginalInsProvenance,
 } from './inPlaceModifier-wrappers.js';
 import { insertDeletedParagraph, insertDeletedRun, insertMoveFromRun } from './inPlaceModifier-deletion.js';
-import { preSplitInterleavedWordRuns, preSplitMixedStatusRuns } from './inPlaceModifier-presplit.js';
+import {
+  preSplitInsProvenanceRuns,
+  preSplitInterleavedWordRuns,
+  preSplitMixedStatusRuns,
+} from './inPlaceModifier-presplit.js';
 import {
   coalesceDelInsPairChains,
   groupDeletionsBeforeInsertions,
@@ -82,6 +90,7 @@ export function modifyRevisedDocument(
   attachSourceElementPointers(revisedAtoms);
   preSplitMixedStatusRuns(mergedAtoms);
   preSplitInterleavedWordRuns(mergedAtoms);
+  preSplitInsProvenanceRuns(mergedAtoms);
 
   // Process atoms and apply track changes to the revised tree
   // Group atoms by paragraph for efficient processing
@@ -233,6 +242,35 @@ interface HandlerResult {
  * Handler function type for processing atoms by status.
  */
 type AtomHandler = (atom: ComparisonUnitAtom, ctx: ProcessingContext) => HandlerResult;
+
+/**
+ * Restore the ORIGINAL input's inline `<w:ins>` provenance on a matched
+ * revised run (issue #358).
+ *
+ * Content whose original lineage was pre-tracked as an insertion must stay
+ * inside a `w:ins` in the combined output, otherwise reject-all keeps text
+ * that reject(original) drops (INV-RT-001 violation). preSplitInsProvenanceRuns
+ * has already isolated the provenance-bearing fragment, so wrapping the whole
+ * run is exact. Runs already sitting inside a physical track-change wrapper
+ * (the revised document's own pre-tracked markup) are left alone — re-wrapping
+ * them would nest revision markup incorrectly.
+ */
+function restoreOriginalInsProvenanceOnRun(
+  atom: ComparisonUnitAtom,
+  run: Element,
+  ctx: ProcessingContext
+): void {
+  const prov = getOriginalInsProvenance(atom);
+  if (!prov) return;
+  if (getRunInsertionAnchor(run) !== run) return;
+  wrapRunWithTrackChange({
+    run,
+    tagName: 'w:ins',
+    author: prov.author,
+    dateStr: prov.date || ctx.dateStr,
+    state: ctx.state,
+  });
+}
 
 function isParagraphRemovedOnRejectInContext(paragraph: Element, ctx: ProcessingContext): boolean {
   if (paragraphHasParaInsMarker(paragraph)) {
@@ -435,12 +473,20 @@ function handleDeleted(atom: ComparisonUnitAtom, ctx: ProcessingContext): Handle
     );
 
     if (del) {
+      // Deleted content whose original lineage was inside a pre-tracked w:ins
+      // nests as <w:ins original-author><w:del Comparison>…</w:del></w:ins>,
+      // so reject-all drops it (with the w:ins) and accept-all resolves the
+      // deletion — both matching the input projections (issue #358).
+      // Collapsed-field atoms emit multiple siblings (some outside <w:del>)
+      // and are left unnested; a pre-tracked inserted field is out of scope.
+      const prov = !isCollapsedFieldAtom(atom) ? getOriginalInsProvenance(atom) : null;
+      const anchor = prov ? wrapWithOriginalInsProvenance(del, prov, ctx.state) : del;
       // Track last run in created paragraphs
       if (unifiedPara !== undefined && ctx.createdParagraphs.has(unifiedPara)) {
-        ctx.createdParagraphLastRun.set(unifiedPara, del);
+        ctx.createdParagraphLastRun.set(unifiedPara, anchor);
       }
       return {
-        newLastRun: del,
+        newLastRun: anchor,
         newLastParagraph: targetParagraph,
         newLastParagraphIndex: atom.paragraphIndex,
       };
@@ -630,6 +676,9 @@ function handleFormatChanged(atom: ComparisonUnitAtom, ctx: ProcessingContext): 
   const run = getAtomRunAtBoundary(atom, 'start');
   if (run && atom.formatChange?.oldRunProperties) {
     addFormatChange(run, atom.formatChange.oldRunProperties, ctx.author, ctx.dateStr, ctx.state);
+    // Equal-text/changed-format content keeps its original-side w:ins lineage
+    // too (issue #358); the w:rPrChange then lives inside the wrapper.
+    restoreOriginalInsProvenanceOnRun(atom, run, ctx);
     const endRun = getAtomRunAtBoundary(atom, 'end') ?? run;
     const insertionPoint = getRunInsertionAnchor(endRun);
 
@@ -668,6 +717,9 @@ function handleEqual(atom: ComparisonUnitAtom, ctx: ProcessingContext): HandlerR
   // For non-empty atoms, sourceRunElement points to revised tree - safe to use directly
   const run = getAtomRunAtBoundary(atom, 'end');
   if (run) {
+    // Matched content whose original lineage was inside a pre-tracked w:ins
+    // must keep that wrapper in the combined output (issue #358).
+    restoreOriginalInsProvenanceOnRun(atom, run, ctx);
     const insertionPoint = getRunInsertionAnchor(run);
 
     // BUG FIX: Don't move the insertion point backwards if we are still in the same run.
@@ -923,6 +975,8 @@ export {
 export {
   addFormatChange,
   addParagraphPropertyChange,
+  getOriginalInsProvenance,
+  getOriginalInsProvenanceKey,
   runHasVisibleContent,
   wrapAsDeleted,
   wrapAsInserted,
@@ -930,6 +984,8 @@ export {
   wrapAsMoveTo,
   wrapParagraphAsDeleted,
   wrapParagraphAsInserted,
+  wrapWithOriginalInsProvenance,
+  type InsProvenance,
 } from './inPlaceModifier-wrappers.js';
 export {
   insertDeletedParagraph,
@@ -937,6 +993,7 @@ export {
   insertMoveFromRun,
 } from './inPlaceModifier-deletion.js';
 export {
+  preSplitInsProvenanceRuns,
   preSplitInterleavedWordRuns,
   preSplitMixedStatusRuns,
 } from './inPlaceModifier-presplit.js';

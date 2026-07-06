@@ -88,6 +88,92 @@ export function isCollapsedFieldAtom(atom: ComparisonUnitAtom): boolean {
 }
 
 /**
+ * Author/date identity of a pre-tracked `<w:ins>` wrapper carried by the
+ * ORIGINAL input document.
+ */
+export interface InsProvenance {
+  author: string;
+  date: string;
+}
+
+/**
+ * Resolve the ORIGINAL document's inline `<w:ins>` provenance for a merged
+ * atom, or null when the original lineage was not inside a pre-tracked
+ * insertion.
+ *
+ * Merged atoms come from two trees: Deleted/MovedSource atoms (and
+ * original-sourced empty-paragraph atoms) ARE original-tree atoms and carry
+ * the input wrapper on `revTrackElement` directly. Equal/FormatChanged/
+ * Inserted atoms — plus the whitespace duplicates reorderChangeBlocks
+ * synthesizes from them — are revised-tree atoms, where `revTrackElement`
+ * describes the REVISED document's own wrapper; the original lineage is only
+ * reachable through the LCS match link (`comparisonUnitAtomBefore`).
+ * `sourceDocument` (assigned in createMergedAtomList) is the discriminator.
+ *
+ * Threading this provenance into reconstruction is what keeps the INV-RT-001
+ * reject projection lawful: content the original tracked as inserted must
+ * stay droppable by reject-all in the combined output.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/358
+ */
+export function getOriginalInsProvenance(atom: ComparisonUnitAtom): InsProvenance | null {
+  const revTrack =
+    atom.sourceDocument === 'original'
+      ? atom.revTrackElement
+      : atom.comparisonUnitAtomBefore?.revTrackElement;
+  if (!revTrack || revTrack.tagName !== 'w:ins') {
+    return null;
+  }
+  const author = revTrack.getAttribute('w:author');
+  if (!author) {
+    return null;
+  }
+  return { author, date: revTrack.getAttribute('w:date') ?? '' };
+}
+
+/**
+ * Grouping key for {@link getOriginalInsProvenance} — atoms whose original
+ * lineage sits in the same-authored `<w:ins>` share a key; plain atoms map to
+ * null. Used to split runs/groups at provenance boundaries.
+ */
+export function getOriginalInsProvenanceKey(atom: ComparisonUnitAtom): string | null {
+  const prov = getOriginalInsProvenance(atom);
+  return prov ? `${prov.author}\u0000${prov.date}` : null;
+}
+
+/**
+ * Nest an already-placed element (typically a freshly emitted `<w:del>`)
+ * inside a `<w:ins>` that restores the original input's insertion provenance:
+ * `<w:ins original-author><w:del Comparison>…</w:del></w:ins>`.
+ *
+ * Projection law: reject-all removes the outer w:ins with its whole subtree
+ * (matching reject(original), which drops the pre-tracked insertion), while
+ * accept-all removes the inner w:del and unwraps the then-empty w:ins
+ * (matching accept(revised), which never had the text).
+ *
+ * The ins-outside/del-inside order mirrors the paragraph-mark analogue
+ * ({@link placeParagraphMarkRevisionMarker} stacks w:ins before w:del).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/358
+ */
+export function wrapWithOriginalInsProvenance(
+  element: Element,
+  prov: InsProvenance,
+  state: RevisionIdState
+): Element {
+  const attrs: Record<string, string> = {
+    'w:id': String(allocateRevisionId(state)),
+    'w:author': prov.author,
+  };
+  if (prov.date) {
+    attrs['w:date'] = prov.date;
+  }
+  const ins = createEl('w:ins', attrs);
+  wrapElement(element, ins);
+  return ins;
+}
+
+/**
  * Convert a run node to the correct insertion anchor.
  *
  * If the run is wrapped in a track-change container, the insertion anchor

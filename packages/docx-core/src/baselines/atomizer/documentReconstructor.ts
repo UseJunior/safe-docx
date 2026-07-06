@@ -27,7 +27,10 @@ import { EMPTY_PARAGRAPH_TAG, isParagraphLevelLeaf, nearestHyperlinkAncestor } f
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import {
   findParagraphMarkRevisionMarker,
+  getOriginalInsProvenance,
+  getOriginalInsProvenanceKey,
   placeParagraphMarkRevisionMarker,
+  type InsProvenance,
 } from './inPlaceModifier-wrappers.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
@@ -660,18 +663,56 @@ function buildParagraphXml(
     const paraId = allocateRevisionId(revState);
     const parts: string[] = [];
     parts.push('<w:p>');
+    // A pre-tracked inserted paragraph keeps its PPR-INS mark from the cloned
+    // source pPr; the comparison's w:del marker stacks after it (issue #452).
     parts.push(serializePPrWithParaRevisionMarker(
       group.pPr, 'w:del', paraId, author, dateStr
     ));
-    parts.push(
-      paragraphHasHyperlinkAtoms(group)
-        ? buildWholeParagraphRevisionContent(group, (runs) =>
-            wrapSerializedContentWithDel(runs, revisionCtx))
-        : wrapSerializedContentWithDel(
-            group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
-            revisionCtx,
-          )
+    const hasInsProvenance = group.runGroups.some((runGroup) =>
+      runGroup.atoms.some((atom) => getOriginalInsProvenanceKey(atom) !== null)
     );
+    if (paragraphHasHyperlinkAtoms(group)) {
+      parts.push(
+        buildWholeParagraphRevisionContent(
+          group,
+          (runs) => wrapSerializedContentWithDel(runs, revisionCtx),
+          hasInsProvenance
+            ? (wrapped, prov) => wrapWithIns(wrapped, prov.author, prov.date || dateStr, revState)
+            : undefined,
+        )
+      );
+    } else if (hasInsProvenance) {
+      // Issue #358: content whose original lineage was inside an inline
+      // pre-tracked w:ins nests as <w:ins original-author><w:del>…</w:del></w:ins>
+      // so reject-all drops it together with the PPR-INS paragraph mark,
+      // matching reject(original). Provenance-free content keeps a plain w:del.
+      for (const runGroup of group.runGroups) {
+        if (groupHasParagraphLevelAtoms(runGroup)) {
+          const markerContent = buildRunContentAsPlainRun(runGroup);
+          if (markerContent) {
+            parts.push(wrapSerializedContentWithDel(markerContent, revisionCtx));
+          }
+          continue;
+        }
+        for (const span of partitionAtomsByInsProvenance(runGroup.atoms)) {
+          const content = buildRunContentAsPlainRun({ ...runGroup, atoms: span.atoms });
+          if (!content) continue;
+          const del = wrapSerializedContentWithDel(content, revisionCtx);
+          parts.push(
+            span.prov
+              ? wrapWithIns(del, span.prov.author, span.prov.date || dateStr, revState)
+              : del
+          );
+        }
+      }
+    } else {
+      parts.push(
+        wrapSerializedContentWithDel(
+          group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
+          revisionCtx,
+        )
+      );
+    }
     parts.push('</w:p>');
     return parts.join('');
   }
@@ -858,6 +899,101 @@ function buildRunContentAsPlainRun(group: RunGroup): string {
 }
 
 /**
+ * Contiguous slice of a RunGroup's atoms sharing one original-side inline
+ * `<w:ins>` provenance (null = plain lineage). See issue #358.
+ */
+interface InsProvenanceSpan {
+  prov: InsProvenance | null;
+  atoms: ComparisonUnitAtom[];
+}
+
+/**
+ * Partition a RunGroup's atoms into contiguous spans by original-ins
+ * provenance key. Atom order is preserved, so document order is unchanged.
+ */
+function partitionAtomsByInsProvenance(atoms: ComparisonUnitAtom[]): InsProvenanceSpan[] {
+  const spans: InsProvenanceSpan[] = [];
+  let lastKey: string | null | undefined;
+  for (const atom of atoms) {
+    const key = getOriginalInsProvenanceKey(atom);
+    const lastSpan = spans[spans.length - 1];
+    if (lastSpan && key === lastKey) {
+      lastSpan.atoms.push(atom);
+    } else {
+      spans.push({ prov: getOriginalInsProvenance(atom), atoms: [atom] });
+    }
+    lastKey = key;
+  }
+  return spans;
+}
+
+/**
+ * Statuses whose emission must preserve the ORIGINAL input's inline `w:ins`
+ * provenance (issue #358): matched content keeps its original wrapper, and
+ * comparison deletions of pre-tracked-inserted content nest the `w:del`
+ * inside the restored `w:ins`. Moved content is out of scope (see #358).
+ */
+const INS_PROVENANCE_STATUSES: ReadonlySet<CorrelationStatus> = new Set([
+  CorrelationStatus.Equal,
+  CorrelationStatus.Unknown,
+  CorrelationStatus.Deleted,
+  CorrelationStatus.FormatChanged,
+]);
+
+function groupHasInsProvenance(group: RunGroup): boolean {
+  return (
+    INS_PROVENANCE_STATUSES.has(group.status) &&
+    group.atoms.some((atom) => getOriginalInsProvenanceKey(atom) !== null)
+  );
+}
+
+/**
+ * Provenance-aware emission for a run group carrying original-ins lineage
+ * (issue #358). Each contiguous provenance span is emitted separately:
+ *
+ * - Equal/Unknown span with provenance → `<w:ins original-author>run</w:ins>`
+ * - Deleted span with provenance →
+ *   `<w:ins original-author><w:del Comparison>run</w:del></w:ins>`
+ * - FormatChanged span with provenance → the rPrChange run inside `w:ins`
+ * - spans without provenance → the legacy per-status emission
+ *
+ * Reject-all then removes the restored `w:ins` subtrees (matching
+ * reject(original), which drops pre-tracked insertions) while accept-all
+ * resolves the inner deletion and unwraps the `w:ins` (matching
+ * accept(revised)).
+ *
+ * Only called when the group actually carries provenance, so paragraphs
+ * without pre-tracked-insertion lineage keep byte-identical output.
+ */
+function buildRunGroupXmlWithInsProvenance(
+  group: RunGroup,
+  author: string,
+  dateStr: string,
+  revState: RevisionIdState
+): string {
+  const parts: string[] = [];
+  for (const span of partitionAtomsByInsProvenance(group.atoms)) {
+    const spanGroup: RunGroup = { ...group, atoms: span.atoms };
+    const content =
+      group.status === CorrelationStatus.FormatChanged
+        ? buildFormatChangeRun(spanGroup, author, dateStr, revState)
+        : buildRunContent(spanGroup);
+    if (!content) continue;
+
+    const inner =
+      group.status === CorrelationStatus.Deleted
+        ? wrapWithDel(content, author, dateStr, revState)
+        : content;
+    parts.push(
+      span.prov
+        ? wrapWithIns(inner, span.prov.author, span.prov.date || dateStr, revState)
+        : inner
+    );
+  }
+  return parts.join('');
+}
+
+/**
  * Build XML for a run group with appropriate track changes wrapper.
  *
  * `explicitMoveMarkers` reports whether the surrounding paragraph's atom
@@ -871,6 +1007,13 @@ function buildRunGroupXml(
   revState: RevisionIdState,
   explicitMoveMarkers: ExplicitMoveMarkers = NO_EXPLICIT_MOVE_MARKERS
 ): string {
+  // Original-ins provenance threading (issue #358). Paragraph-level marker
+  // atoms keep the legacy marker-aware route — their emission interleaves
+  // bare markers with runs and is not span-partitionable.
+  if (groupHasInsProvenance(group) && !groupHasParagraphLevelAtoms(group)) {
+    return buildRunGroupXmlWithInsProvenance(group, author, dateStr, revState);
+  }
+
   const runContent = buildRunContent(group);
 
   // If run content is empty (e.g., only empty paragraph atoms), return empty string
@@ -1195,10 +1338,18 @@ function buildRunGroupsWithHyperlinks(
  * Whole-paragraph insert/delete emission with hyperlink wrappers restored.
  * Each bucket gets its own revision wrapper so the hyperlink can stay
  * OUTSIDE the w:ins / w:del (see buildRunGroupsWithHyperlinks).
+ *
+ * When `provWrap` is provided (whole-paragraph DELETED emission, issue #358),
+ * buckets whose atoms carry original-ins provenance are emitted per
+ * provenance span, with each wrapped chunk further nested via `provWrap`
+ * (`<w:ins original-author><w:del>…</w:del></w:ins>`); the nesting sits
+ * INSIDE the hyperlink wrapper, mirroring the plain `w:del` placement.
+ * Provenance-free buckets keep the legacy single-wrapper emission.
  */
 function buildWholeParagraphRevisionContent(
   group: ParagraphGroup,
-  wrap: (content: string) => string
+  wrap: (content: string) => string,
+  provWrap?: (wrappedContent: string, prov: InsProvenance) => string
 ): string {
   const buckets = mergeAdjacentHyperlinkSegments(
     group.runGroups.flatMap(splitRunGroupByHyperlink)
@@ -1206,9 +1357,36 @@ function buildWholeParagraphRevisionContent(
 
   const parts: string[] = [];
   for (const bucket of buckets) {
-    const runs = bucket.groups.map((g) => buildRunContentAsPlainRun(g)).join('');
-    if (!runs) continue;
-    const wrapped = wrap(runs);
+    const bucketHasProvenance =
+      provWrap !== undefined &&
+      bucket.groups.some((g) =>
+        g.atoms.some((atom) => getOriginalInsProvenanceKey(atom) !== null)
+      );
+
+    let wrapped: string;
+    if (bucketHasProvenance) {
+      const chunks: string[] = [];
+      for (const g of bucket.groups) {
+        if (groupHasParagraphLevelAtoms(g)) {
+          const markerContent = buildRunContentAsPlainRun(g);
+          if (markerContent) chunks.push(wrap(markerContent));
+          continue;
+        }
+        for (const span of partitionAtomsByInsProvenance(g.atoms)) {
+          const content = buildRunContentAsPlainRun({ ...g, atoms: span.atoms });
+          if (!content) continue;
+          const chunk = wrap(content);
+          chunks.push(span.prov ? provWrap!(chunk, span.prov) : chunk);
+        }
+      }
+      wrapped = chunks.join('');
+      if (!wrapped) continue;
+    } else {
+      const runs = bucket.groups.map((g) => buildRunContentAsPlainRun(g)).join('');
+      if (!runs) continue;
+      wrapped = wrap(runs);
+    }
+
     parts.push(
       bucket.hyperlink && isEmittableHyperlink(bucket.hyperlink)
         ? `${serializeHyperlinkOpenTag(bucket.hyperlink.element)}${wrapped}</w:hyperlink>`
