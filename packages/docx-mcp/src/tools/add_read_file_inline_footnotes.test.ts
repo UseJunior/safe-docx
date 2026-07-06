@@ -277,6 +277,9 @@ describe('OpenSpec traceability: add-read-file-inline-footnotes (read_file tool)
     },
   );
 
+  // Scenario name kept verbatim to the archived add-read-file-inline-footnotes
+  // spec (coverage maps by name). The behavior it now asserts is refined by
+  // #207: simple stays unchanged; toon gains a trailing #FOOTNOTES sidecar.
   test.openspec('include_footnotes has no effect on toon and simple output')(
     'include_footnotes has no effect on toon and simple output',
     async ({ given, when, then }: AllureBddContext) => {
@@ -299,9 +302,19 @@ describe('OpenSpec traceability: add-read-file-inline-footnotes (read_file tool)
         return out;
       });
 
-      await then('the rendered content is byte-identical with and without the flag', async () => {
-        expect(rendered['toon:true']).toBe(rendered['toon:false']);
+      await then('simple is byte-identical; toon gains only a trailing #FOOTNOTES sidecar (#207)', async () => {
+        // simple output is unaffected by include_footnotes.
         expect(rendered['simple:true']).toBe(rendered['simple:false']);
+        expect(rendered['simple:true']).not.toContain('#FOOTNOTES');
+        // toon gains a trailing #FOOTNOTES block, appended after the body — the
+        // body lines above it stay byte-identical to the no-flag read.
+        expect(rendered['toon:true']).not.toBe(rendered['toon:false']);
+        expect(rendered['toon:true'].startsWith(rendered['toon:false'])).toBe(true);
+        const suffix = rendered['toon:true'].slice(rendered['toon:false'].length);
+        expect(suffix.startsWith('\n#FOOTNOTES')).toBe(true);
+        expect(suffix).toContain('[^1]');
+        expect(suffix).toContain('[^2]');
+        // The top-level JSON `footnotes` field never leaks into toon text.
         expect(rendered['toon:true']).not.toContain('"footnotes"');
       });
     },
