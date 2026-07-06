@@ -60,6 +60,7 @@ import {
 } from './inPlaceModifier-presplit.js';
 import {
   coalesceDelInsPairChains,
+  coalesceMoveRangeMarkers,
   groupDeletionsBeforeInsertions,
   mergeAdjacentTrackChangeSiblings,
   mergeWhitespaceBridgedTrackChanges,
@@ -124,6 +125,11 @@ export function modifyRevisedDocument(
   // Merge whitespace-bridged track change siblings (issue #42, Bug 2).
   // Runs AFTER coalesce — handles ins+ws+ins and moveTo+ws+moveTo bridging.
   mergeWhitespaceBridgedTrackChanges(ctx.body);
+
+  // Coalesce duplicate move-range markers to one Start/End pair per move group
+  // per paragraph (issue #446). The moveFrom clone path emits a range pair per
+  // fragmented source atom; Word (and the rebuild path) emit exactly one.
+  coalesceMoveRangeMarkers(ctx.body);
 
   // Apply strict post-render consumer compatibility pass
   enforceConsumerCompatibility(revisedRoot, () => allocateRevisionId(state));
@@ -999,6 +1005,7 @@ export {
 } from './inPlaceModifier-presplit.js';
 export {
   coalesceDelInsPairChains,
+  coalesceMoveRangeMarkers,
   groupDeletionsBeforeInsertions,
   isNoOpPair,
   mergeWhitespaceBridgedTrackChanges,

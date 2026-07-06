@@ -292,6 +292,82 @@ export function mergeWhitespaceBridgedTrackChanges(root: Element): void {
 }
 
 // =============================================================================
+// Bug: Coalesce duplicate move-range markers to one pair per move group (issue #446)
+// =============================================================================
+
+/**
+ * The paired range-marker tags for each move direction. A move side is
+ * bracketed by a single Start...End pair sharing the same `w:name` and `w:id`.
+ */
+const MOVE_RANGE_MARKER_TAGS = [
+  { start: 'w:moveFromRangeStart', end: 'w:moveFromRangeEnd' },
+  { start: 'w:moveToRangeStart', end: 'w:moveToRangeEnd' },
+] as const;
+
+/**
+ * Collapse duplicate move-range markers so each move group is bracketed by
+ * exactly ONE range Start and ONE range End per parent element.
+ *
+ * The in-place moveFrom path clones one `<w:moveFrom>` wrapper per source atom
+ * (word-level atomization fragments a moved paragraph into many atoms), and
+ * each clone re-emits its own `<w:moveFromRangeStart>`/`<w:moveFromRangeEnd>`
+ * reusing the cached range id. A moved paragraph that fragments into N runs
+ * therefore emits N identical-id range pairs, where Word (and the rebuild
+ * reconstructor, which coalesces moved run-groups via shouldStartNewRunGroup)
+ * emits exactly one: a single Start before the first wrapper and a single End
+ * after the last, with per-run `<w:moveFrom>` wrappers in between.
+ *
+ * For each parent element and each move `w:name`, this keeps the FIRST range
+ * Start and the LAST range End (in document order) and removes every
+ * intermediate duplicate. Coalescing is scoped per-parent so a move spanning
+ * multiple paragraphs keeps one bracketing pair per paragraph, matching how the
+ * rebuild path brackets multi-paragraph moves.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/446
+ */
+export function coalesceMoveRangeMarkers(root: Element): void {
+  function coalesceInParent(parent: Element): void {
+    for (const { start: startTag, end: endTag } of MOVE_RANGE_MARKER_TAGS) {
+      // Group markers by move name (w:name lives on the Start; the paired End
+      // reuses the Start's w:id, so match ends back to a name via that id).
+      const startsByName = new Map<string, Element[]>();
+      const idToName = new Map<string, string>();
+      const endsByName = new Map<string, Element[]>();
+
+      for (const child of childElements(parent)) {
+        if (child.tagName === startTag) {
+          const name = child.getAttribute('w:name');
+          if (!name) continue;
+          (startsByName.get(name) ?? startsByName.set(name, []).get(name)!).push(child);
+          const id = child.getAttribute('w:id');
+          if (id) idToName.set(id, name);
+        } else if (child.tagName === endTag) {
+          const id = child.getAttribute('w:id');
+          const name = id ? idToName.get(id) : undefined;
+          if (!name) continue;
+          (endsByName.get(name) ?? endsByName.set(name, []).get(name)!).push(child);
+        }
+      }
+
+      // Keep only the first Start and the last End for each move name.
+      for (const [, starts] of startsByName) {
+        for (let i = 1; i < starts.length; i++) parent.removeChild(starts[i]!);
+      }
+      for (const [, ends] of endsByName) {
+        for (let i = 0; i < ends.length - 1; i++) parent.removeChild(ends[i]!);
+      }
+    }
+  }
+
+  function traverse(node: Element): void {
+    coalesceInParent(node);
+    for (const child of childElements(node)) traverse(child);
+  }
+
+  traverse(root);
+}
+
+// =============================================================================
 // Bug 2b: Coalesce del/ins pair chains across whitespace (issue #42)
 // =============================================================================
 
