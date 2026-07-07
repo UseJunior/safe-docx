@@ -171,8 +171,9 @@ describe('mixed-author preservation corpus (#125)', () => {
   it('accept AI in a table leaves foreign row/cell property changes byte-identical', async () => {
     const bodyInner =
       `<w:tbl>` +
+      `<w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid>` +
       `<w:tr><w:trPr><w:trPrChange w:id="102" w:author="${HUMAN}" ${DT}><w:trPr/></w:trPrChange></w:trPr>` +
-      `<w:tc><w:tcPr><w:tcPrChange w:id="103" w:author="${THIRD}" ${DT}><w:tcPr/></w:tcPrChange></w:tcPr>` +
+      `<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/><w:tcPrChange w:id="103" w:author="${THIRD}" ${DT}><w:tcPr/></w:tcPrChange></w:tcPr>` +
       `<w:p><w:r><w:t>cell </w:t></w:r>${ins(101, AI, 'ai')}</w:p></w:tc></w:tr></w:tbl>${SECT}`;
     const doc = await DocxDocument.load(await buildDocx(bodyInner));
     const before = parseXml(await readPart(doc, 'word/document.xml'));
