@@ -1,5 +1,5 @@
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { generateDocx } from '../generation/compile.js';
 import type { BorderSpec, DocumentSpec, TableRowSpec, TableSpec } from '../generation/types.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';

@@ -30,13 +30,13 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments, type ReconstructionMode } from '../index.js';
+import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
 import {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
   normalizeText,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { DocxDocument } from '../primitives/document.js';
 import { getParagraphBookmarkId } from '../primitives/bookmarks.js';

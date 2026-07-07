@@ -1,4 +1,4 @@
-import type { CompareOptions } from '@usejunior/docx-core';
+import type { CompareOptions } from '@usejunior/docx-compare';
 
 /**
  * Default comparison reconstruction mode for tracked output.

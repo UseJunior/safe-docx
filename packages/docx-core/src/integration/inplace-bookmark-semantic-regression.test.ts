@@ -2,15 +2,15 @@ import { beforeAll, describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   compareTexts,
   extractTextWithParagraphs,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
-import { parseDocumentXml } from '../baselines/atomizer/xmlToWmlElement.js';
+} from '@usejunior/docx-compare';
+import { parseDocumentXml } from '@usejunior/docx-compare';
 import { findAllByTagName } from '../primitives/index.js';
 
 interface BookmarkSemanticDiagnostics {

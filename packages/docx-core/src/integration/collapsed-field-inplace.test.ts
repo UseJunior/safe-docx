@@ -15,13 +15,13 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   extractTextWithParagraphs,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 
 // =============================================================================
 // Fixture: Dedicated-run PAGEREF field (field chars in separate runs)

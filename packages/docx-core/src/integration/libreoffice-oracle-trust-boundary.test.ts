@@ -24,7 +24,7 @@
  * @see https://github.com/UseJunior/safe-docx/issues/346 (upstream LibreOffice bug filing)
  */
 import { beforeAll, describe, expect } from 'vitest';
-import { acceptAllChanges, rejectAllChanges } from '../baselines/atomizer/trackChangesAcceptorAst.js';
+import { acceptAllChanges, rejectAllChanges } from '@usejunior/docx-compare';
 import { parseXml } from '../primitives/xml.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {

@@ -9,84 +9,84 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
-| Accept-side round-trip lemma is closed | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Atom from deleted revision | covered | `src/openspec.traceability.test.ts` |  |
-| Atom from inserted revision | covered | `src/openspec.traceability.test.ts` |  |
-| Atom marked as format-changed | covered | `src/openspec.traceability.test.ts` |  |
-| Atom marked as moved destination | covered | `src/openspec.traceability.test.ts` |  |
-| Atom marked as moved source | covered | `src/openspec.traceability.test.ts` |  |
-| Atom with ancestor tracking | covered | `src/openspec.traceability.test.ts` |  |
-| Below threshold treated as separate changes | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
-| Bold added | covered | `src/openspec.traceability.test.ts` |  |
-| Bold added markup | covered | `src/openspec.traceability.test.ts` |  |
-| Bold removed markup | covered | `src/openspec.traceability.test.ts` |  |
-| Bridge case provides a falsifiability layer for the new axiom | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Bridge file self-description stays accurate | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Building footnote mapping | covered | `src/openspec.traceability.test.ts` |  |
-| Continuation pattern inherits formatting | covered | `src/openspec.traceability.test.ts` |  |
-| Creating atom with revision detection | covered | `src/openspec.traceability.test.ts` |  |
-| Creating atom without revision context | covered | `src/openspec.traceability.test.ts` |  |
-| Custom footnote marks respected | covered | `src/openspec.traceability.test.ts` |  |
-| Custom threshold applied | covered | `src/openspec.traceability.test.ts` |  |
-| Different properties | covered | `src/openspec.traceability.test.ts` |  |
-| Element with attributes | covered | `src/openspec.traceability.test.ts` |  |
-| Element with text content | covered | `src/openspec.traceability.test.ts` |  |
-| Empty properties equal | covered | `src/openspec.traceability.test.ts` |  |
-| Fallback is falsification and coverage is floored, not silently filtered | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Field-bearing arbitrary drives INV-FIELD-001 across operations | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Field-bearing arbitrary drives INV-RT-001 round-trip | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| First footnote displays as 1 | covered | `src/openspec.traceability.test.ts` |  |
-| Format change markup structure | covered | `src/openspec.traceability.test.ts` |  |
-| Format detection disabled | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
-| Format detection enabled by default | covered | `src/openspec.traceability.test.ts` |  |
-| Format detection with text change | covered | `src/openspec.traceability.test.ts` |  |
-| Get format change revisions | covered | `src/openspec.traceability.test.ts` |  |
-| Hash calculation for content identity | covered | `src/openspec.traceability.test.ts` |  |
-| Identical text returns 1.0 | covered | `src/openspec.traceability.test.ts` |  |
-| Inplace reconstruction reports the pass that produced the output | covered | `src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
-| Move destination markup structure | covered | `src/openspec.traceability.test.ts` |  |
-| Move detected between similar blocks | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
-| Move detection disabled | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
-| Move source markup structure | covered | `src/openspec.traceability.test.ts` |  |
-| Multiple properties changed | covered | `src/openspec.traceability.test.ts` |  |
-| No common words returns 0.0 | covered | `src/openspec.traceability.test.ts` |  |
-| No format change | covered | `src/openspec.traceability.test.ts` |  |
-| Normalize null properties | covered | `src/openspec.traceability.test.ts` |  |
-| Orphan list item renders with parent format | covered | `src/openspec.traceability.test.ts` |  |
-| Part from main document | covered | `src/openspec.traceability.test.ts` |  |
-| Partial overlap | covered | `src/openspec.traceability.test.ts` |  |
-| Per-operation assertion strength matches the post-#217 engine | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Proper nested list renders hierarchically | covered | `src/openspec.traceability.test.ts` |  |
-| Range IDs properly paired | covered | `src/openspec.traceability.test.ts` |  |
-| Rebuild fallback only after all inplace passes fail | covered | `src/integration/field-cross-story-pipeline.test.ts` |  |
-| Reject-side round-trip lemma is closed | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Remove existing revision tracking | covered | `src/openspec.traceability.test.ts` |  |
-| Reserved footnote IDs excluded from numbering | covered | `src/openspec.traceability.test.ts` |  |
-| Residual obligations and the normalizeText modeling gap are documented | covered | `src/integration/lean-spec-bridge.test.ts` |  |
-| Run with properties | covered | `src/openspec.traceability.test.ts` |  |
-| Run without properties | covered | `src/openspec.traceability.test.ts` |  |
-| Same properties different order | covered | `src/openspec.traceability.test.ts` |  |
-| Sequential numbering ignores XML IDs | covered | `src/openspec.traceability.test.ts` |  |
-| Short blocks ignored | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
-| Status assigned during comparison | covered | `src/openspec.traceability.test.ts` |  |
-| Status for deleted content | covered | `src/openspec.traceability.test.ts` |  |
-| Status for format-changed content | covered | `src/openspec.traceability.test.ts` |  |
-| Status for moved destination content | covered | `src/openspec.traceability.test.ts` |  |
-| Status for moved source content | covered | `src/openspec.traceability.test.ts` |  |
-| Status for unmatched atoms | covered | `src/openspec.traceability.test.ts` |  |
-| Table-heavy run-fragmented templates preserve tracked table structure | covered | `src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
-| Text becomes bold | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
-| Unknown property name | covered | `src/openspec.traceability.test.ts` |  |
-| `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas | covered | `src/integration/lean-spec-bridge.test.ts` |  |
+| Accept-side round-trip lemma is closed | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Atom from deleted revision | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Atom from inserted revision | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Atom marked as format-changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Atom marked as moved destination | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Atom marked as moved source | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Atom with ancestor tracking | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Below threshold treated as separate changes | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Bold added | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Bold added markup | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Bold removed markup | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Bridge case provides a falsifiability layer for the new axiom | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Bridge file self-description stays accurate | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Building footnote mapping | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Continuation pattern inherits formatting | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Creating atom with revision detection | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Creating atom without revision context | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Custom footnote marks respected | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Custom threshold applied | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Different properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Element with attributes | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Element with text content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Empty properties equal | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Fallback is falsification and coverage is floored, not silently filtered | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Field-bearing arbitrary drives INV-FIELD-001 across operations | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Field-bearing arbitrary drives INV-RT-001 round-trip | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| First footnote displays as 1 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Format change markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Format detection disabled | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Format detection enabled by default | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Format detection with text change | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Get format change revisions | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Hash calculation for content identity | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Identical text returns 1.0 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Inplace reconstruction reports the pass that produced the output | covered | `packages/docx-core/src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
+| Move destination markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Move detected between similar blocks | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Move detection disabled | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Move source markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Multiple properties changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| No common words returns 0.0 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| No format change | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Normalize null properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Orphan list item renders with parent format | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Part from main document | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Partial overlap | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Per-operation assertion strength matches the post-#217 engine | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Proper nested list renders hierarchically | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Range IDs properly paired | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Rebuild fallback only after all inplace passes fail | covered | `packages/docx-core/src/integration/field-cross-story-pipeline.test.ts` |  |
+| Reject-side round-trip lemma is closed | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Remove existing revision tracking | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Reserved footnote IDs excluded from numbering | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Residual obligations and the normalizeText modeling gap are documented | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Run with properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Run without properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Same properties different order | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Sequential numbering ignores XML IDs | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Short blocks ignored | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Status assigned during comparison | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Status for deleted content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Status for format-changed content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Status for moved destination content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Status for moved source content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Status for unmatched atoms | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Table-heavy run-fragmented templates preserve tracked table structure | covered | `packages/docx-core/src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
+| Text becomes bold | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Unknown property name | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 
 ## Cross-Implementation Conformance
 
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
-| Checkout ahead of the pin | covered | `src/integration/cross-implementation-suite.test.ts` |  |
-| Protocol version mismatch exits with code 3 | covered | `src/integration/cross-implementation-suite.test.ts` |  |
-| Suite checkout absent | covered | `src/integration/cross-implementation-suite.test.ts` |  |
-| Suite checkout present and safe-docx agrees | covered | `src/integration/cross-implementation-suite.test.ts` |  |
-| Unknown operation declined honestly | covered | `src/integration/cross-implementation-suite.test.ts` |  |
-| acceptAllTrackedChanges round-trip through the adapter | covered | `src/integration/cross-implementation-suite.test.ts` |  |
+| Checkout ahead of the pin | covered | `packages/docx-core/src/integration/cross-implementation-suite.test.ts` |  |
+| Protocol version mismatch exits with code 3 | covered | `packages/docx-core/src/integration/cross-implementation-suite.test.ts` |  |
+| Suite checkout absent | covered | `packages/docx-core/src/integration/cross-implementation-suite.test.ts` |  |
+| Suite checkout present and safe-docx agrees | covered | `packages/docx-core/src/integration/cross-implementation-suite.test.ts` |  |
+| Unknown operation declined honestly | covered | `packages/docx-core/src/integration/cross-implementation-suite.test.ts` |  |
+| acceptAllTrackedChanges round-trip through the adapter | covered | `packages/docx-core/src/integration/cross-implementation-suite.test.ts` |  |
 

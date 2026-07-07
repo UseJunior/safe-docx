@@ -1,0 +1,70 @@
+{
+  "name": "@usejunior/docx-compare",
+  "version": "0.15.0",
+  "description": "DOCX comparison and redline generation for Safe DOCX.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run build -w @usejunior/docx-core && npm run clean:dist && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "node ../../node_modules/vitest/vitest.mjs",
+    "test:run": "node ../../node_modules/vitest/vitest.mjs run",
+    "test:baseline": "node ../../node_modules/vitest/vitest.mjs run -c vitest.baseline.config.ts",
+    "test:coverage": "node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
+    "lint": "tsc --noEmit",
+    "benchmark": "tsx src/benchmark/runner.ts",
+    "cli": "node dist/cli/index.js"
+  },
+  "dependencies": {
+    "@usejunior/docx-core": "^0.15.0",
+    "@xmldom/xmldom": "^0.9.10",
+    "diff-match-patch": "^1.0.5",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/diff-match-patch": "^1.0.36",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/runner": "^4.1.8",
+    "allure-vitest": "^3.9.0",
+    "fast-check": "^3.23.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/UseJunior/safe-docx"
+  },
+  "homepage": "https://github.com/UseJunior/safe-docx/tree/main/packages/docx-compare",
+  "bugs": {
+    "url": "https://github.com/UseJunior/safe-docx/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "keywords": [
+    "docx",
+    "ooxml",
+    "word",
+    "comparison",
+    "track-changes",
+    "redline",
+    "redlining",
+    "document-comparison"
+  ],
+  "license": "Apache-2.0",
+  "bin": {
+    "docx-comparison": "dist/cli/index.js",
+    "safe-docx-compare": "dist/cli/index.js"
+  }
+}

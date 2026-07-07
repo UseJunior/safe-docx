@@ -89,8 +89,8 @@
 import fc from 'fast-check';
 import { DOMParser } from '@xmldom/xmldom';
 import { describe } from 'vitest';
-import { compareDocuments, type ReconstructionMode } from '../index.js';
-import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
+import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { validateFieldStructure } from '@usejunior/docx-compare';
 import {
   COMPLETE_PAGE_FIELD,
   COMPLETE_PAGEREF_FIELD,
@@ -108,7 +108,7 @@ import {
   rejectAllChanges,
   extractTextWithParagraphs,
   normalizeText,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { DocxDocument } from '../primitives/document.js';
 import { getParagraphBookmarkId } from '../primitives/bookmarks.js';

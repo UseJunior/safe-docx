@@ -36,7 +36,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect } from 'vitest';
-import { computeAtomLcs } from '../baselines/atomizer/atomLcs.js';
+import { computeAtomLcs } from '@usejunior/docx-compare';
 import { CorrelationStatus, type ComparisonUnitAtom, type OpcPart } from '../core-types.js';
 import { el } from '../testing/dom-test-helpers.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';

@@ -25,13 +25,13 @@
 
 import { describe, expect } from 'vitest';
 import { DOMParser } from '@xmldom/xmldom';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
-import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
+import { validateFieldStructure } from '@usejunior/docx-compare';
 import {
   acceptAllChanges,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   buildDocxFromBodyXml,

@@ -12,7 +12,7 @@
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 
 const TEST_FEATURE = 'Cross-story Field Closure (#212)';
 const test = testAllure
