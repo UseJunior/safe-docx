@@ -24,6 +24,7 @@ export * from './revision-vocabulary.js';
 export * from './revision-parts.js';
 export * from './accept_changes.js';
 export * from './reject_changes.js';
+export * from './accept_ai_edits.js';
 export * from './extract_revisions.js';
 export * from './comments.js';
 export * from './footnotes.js';

@@ -15,8 +15,27 @@
  */
 
 import { OOXML } from './namespaces.js';
+import type { RevisionFilter } from './accept_changes.js';
 
 const W_NS = OOXML.W_NS;
+
+const ACCEPT_ALL: RevisionFilter = () => true;
+
+/** True iff `el` has an ancestor element with the given WordprocessingML local name. */
+function hasWAncestor(el: Node, localName: string): boolean {
+  let cur: Node | null = el.parentNode;
+  while (cur) {
+    if (
+      cur.nodeType === 1 &&
+      (cur as Element).namespaceURI === W_NS &&
+      (cur as Element).localName === localName
+    ) {
+      return true;
+    }
+    cur = cur.parentNode;
+  }
+  return false;
+}
 
 export type RejectChangesResult = {
   insertionsRemoved: number;
@@ -49,8 +68,12 @@ function collectByLocalName(container: Document | Element, localName: string): E
   return Array.from(container.getElementsByTagNameNS(W_NS, localName));
 }
 
-function removeAllByLocalName(container: Document | Element, localName: string): number {
-  const elements = collectByLocalName(container, localName);
+function removeAllByLocalName(
+  container: Document | Element,
+  localName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): number {
+  const elements = collectByLocalName(container, localName).filter(filter);
   let count = 0;
   for (const el of elements) {
     if (el.parentNode) {
@@ -61,8 +84,12 @@ function removeAllByLocalName(container: Document | Element, localName: string):
   return count;
 }
 
-function unwrapAllByLocalName(container: Document | Element, localName: string): number {
-  const elements = collectByLocalName(container, localName);
+function unwrapAllByLocalName(
+  container: Document | Element,
+  localName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): number {
+  const elements = collectByLocalName(container, localName).filter(filter);
   // Sort deepest-first to handle nested wrappers correctly
   elements.sort((a, b) => getDepth(b) - getDepth(a));
   let count = 0;
@@ -79,10 +106,14 @@ function unwrapAllByLocalName(container: Document | Element, localName: string):
 }
 
 /**
- * Check if a paragraph has a paragraph-level revision marker.
+ * Check if a paragraph has a paragraph-level revision marker the filter selects.
  * Pattern: w:p > w:pPr > w:rPr > w:ins (or w:del)
  */
-function paragraphHasParaMarker(p: Element, markerLocalName: string): boolean {
+function paragraphHasParaMarker(
+  p: Element,
+  markerLocalName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): boolean {
   for (let i = 0; i < p.childNodes.length; i++) {
     const child = p.childNodes[i]!;
     if (!isW(child, 'pPr')) continue;
@@ -91,7 +122,7 @@ function paragraphHasParaMarker(p: Element, markerLocalName: string): boolean {
       if (!isW(pPrChild, 'rPr')) continue;
       for (let k = 0; k < pPrChild.childNodes.length; k++) {
         const rPrChild = pPrChild.childNodes[k]!;
-        if (isW(rPrChild, markerLocalName)) return true;
+        if (isW(rPrChild, markerLocalName) && filter(rPrChild)) return true;
       }
     }
   }
@@ -337,7 +368,12 @@ function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
  *
  * Mutates the Document in place (same convention as acceptChanges).
  */
-export function rejectChanges(doc: Document): RejectChangesResult {
+export function rejectChanges(
+  doc: Document,
+  opts?: { filter?: RevisionFilter },
+): RejectChangesResult {
+  const filter = opts?.filter ?? ACCEPT_ALL;
+  const selective = filter !== ACCEPT_ALL;
   const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
   if (!root) {
     return { insertionsRemoved: 0, deletionsRestored: 0, movesReverted: 0, propertyChangesReverted: 0 };
@@ -357,7 +393,7 @@ export function rejectChanges(doc: Document): RejectChangesResult {
     // inserted into a pre-existing paragraph, which Word/LibreOffice keep (empty) on
     // reject. safe-docx's inserted paragraphs always carry the mark now, so the
     // mark-based rule suffices and is Word-faithful. (Mirrors rejectAllChanges.)
-    if (paragraphHasParaMarker(p, 'ins')) {
+    if (paragraphHasParaMarker(p, 'ins', filter)) {
       markInsertedParagraphs.add(p);
     }
   }
@@ -372,18 +408,25 @@ export function rejectChanges(doc: Document): RejectChangesResult {
   }
 
   // Phase C — Remove insertions and move destinations
-  const insertionsRemoved = removeAllByLocalName(root, 'ins');
-  const moveToRemoved = removeAllByLocalName(root, 'moveTo');
-  removeAllByLocalName(root, 'moveToRangeStart');
-  removeAllByLocalName(root, 'moveToRangeEnd');
-  removeAllByLocalName(root, 'moveFromRangeStart');
-  removeAllByLocalName(root, 'moveFromRangeEnd');
+  const insertionsRemoved = removeAllByLocalName(root, 'ins', filter);
+  const moveToRemoved = removeAllByLocalName(root, 'moveTo', filter);
+  removeAllByLocalName(root, 'moveToRangeStart', filter);
+  removeAllByLocalName(root, 'moveToRangeEnd', filter);
+  removeAllByLocalName(root, 'moveFromRangeStart', filter);
+  removeAllByLocalName(root, 'moveFromRangeEnd', filter);
 
   // Phase D — Unwrap deletions and convert w:delText → w:t
-  const deletionsRestored = unwrapAllByLocalName(root, 'del');
+  const deletionsRestored = unwrapAllByLocalName(root, 'del', filter);
 
-  // Rename all w:delText elements to w:t so getParagraphText() sees them
-  const delTexts = collectByLocalName(root, 'delText');
+  // Rename w:delText → w:t so getParagraphText() sees the restored text — but
+  // only for delTexts whose w:del wrapper was just unwrapped (no surviving w:del
+  // ancestor). In selective mode a foreign (non-target) revision is left intact,
+  // so we additionally exclude delText inside a surviving w:moveFrom (a foreign
+  // move source also carries w:delText that must not be touched); a targeted del
+  // is never nested in a foreign move (that case hard-errors as ambiguous).
+  const delTexts = collectByLocalName(root, 'delText').filter(
+    (dt) => !hasWAncestor(dt, 'del') && (!selective || !hasWAncestor(dt, 'moveFrom')),
+  );
   for (const dt of delTexts) {
     const parent = dt.parentNode;
     if (!parent) continue;
@@ -402,12 +445,12 @@ export function rejectChanges(doc: Document): RejectChangesResult {
   }
 
   // Phase E — Unwrap move sources (keep content at original position)
-  const moveFromUnwrapped = unwrapAllByLocalName(root, 'moveFrom');
+  const moveFromUnwrapped = unwrapAllByLocalName(root, 'moveFrom', filter);
 
   // Phase F — Restore original properties from *PrChange records
   let propertyChangesReverted = 0;
   for (const localName of PR_CHANGE_LOCALS) {
-    const changes = collectByLocalName(root, localName);
+    const changes = collectByLocalName(root, localName).filter(filter);
     // Sort deepest-first
     changes.sort((a, b) => getDepth(b) - getDepth(a));
     for (const change of changes) {
@@ -456,7 +499,7 @@ export function rejectChanges(doc: Document): RejectChangesResult {
         const toRemove: Element[] = [];
         for (let k = 0; k < pPrChild.childNodes.length; k++) {
           const rPrChild = pPrChild.childNodes[k]!;
-          if (isW(rPrChild, 'ins') || isW(rPrChild, 'del')) {
+          if ((isW(rPrChild, 'ins') || isW(rPrChild, 'del')) && filter(rPrChild)) {
             toRemove.push(rPrChild as Element);
           }
         }
@@ -474,15 +517,18 @@ export function rejectChanges(doc: Document): RejectChangesResult {
     resolveParagraphMarkRevision(p);
   }
 
-  // Strip w:rsidDel attributes on remaining elements
-  const allElements = root.getElementsByTagNameNS(W_NS, '*');
-  for (let i = 0; i < allElements.length; i++) {
-    const el = allElements[i]!;
-    if (el.hasAttributeNS(W_NS, 'rsidDel')) {
-      el.removeAttributeNS(W_NS, 'rsidDel');
-    }
-    if (el.hasAttribute('w:rsidDel')) {
-      el.removeAttribute('w:rsidDel');
+  // Strip w:rsidDel attributes on remaining elements. Skipped in selective mode
+  // so a targeted reject leaves foreign elements byte-untouched (#125).
+  if (!selective) {
+    const allElements = root.getElementsByTagNameNS(W_NS, '*');
+    for (let i = 0; i < allElements.length; i++) {
+      const el = allElements[i]!;
+      if (el.hasAttributeNS(W_NS, 'rsidDel')) {
+        el.removeAttributeNS(W_NS, 'rsidDel');
+      }
+      if (el.hasAttribute('w:rsidDel')) {
+        el.removeAttribute('w:rsidDel');
+      }
     }
   }
 

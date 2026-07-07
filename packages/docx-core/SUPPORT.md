@@ -71,6 +71,7 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 ### `docx-core` primitive files
 
 - `accept_changes.ts` — tracked-change consumer that accepts existing `w:ins` / `w:del` / property-change markup in `document.xml` and supported side-story parts (`footnotes.xml`, `endnotes.xml`, `comments.xml`) instead of creating new AI-authored revisions.
+- `accept_ai_edits.ts` — tracked-change consumer that selectively accepts/rejects existing revisions by id or author ([#123](https://github.com/UseJunior/safe-docx/issues/123)) and detects ambiguous overlaps; it resolves existing markup rather than originating AI-authored revisions, so it is not a write-time emission surface.
 - `bookmarks.ts` — internal paragraph-bookmark scaffolding for stable selectors and anchor lookup, not user-visible AI content authorship.
 - `document.ts` — `DocxDocument` facade that routes to lower-level primitives; the contract is defined at the delegated primitive level, not this wrapper.
 - `document_view.ts` — read-only projection layer for toon/json/simple views, style discovery, and footnote marker display.
@@ -98,6 +99,8 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 ### `docx-mcp` read-only, orchestration, and session files
 
 - `accept_changes.ts` — MCP wrapper that consumes existing tracked changes by accepting them.
+- `accept_ai_edits.ts` — MCP wrapper that selectively accepts existing tracked changes by revision id or author ([#123](https://github.com/UseJunior/safe-docx/issues/123)); a consumer, not a write-time revision emitter.
+- `reject_ai_edits.ts` — MCP wrapper that selectively rejects existing tracked changes by revision id or author; symmetric consumer to `accept_ai_edits.ts`.
 - `close_file.ts` — session lifecycle control only.
 - `comparison_defaults.ts` — comparison configuration constant, not an MCP mutation surface by itself.
 - `docx_archive_guard.ts` — archive safety validator that checks zip bomb and entry-size limits before load.
@@ -142,6 +145,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 ### `packages/docx-core/src/primitives`
 
 - `accept_changes.ts` — Internal / non-contract utilities
+- `accept_ai_edits.ts` — Internal / non-contract utilities
 - `bookmarks.ts` — Internal / non-contract utilities
 - `comments.ts` — Table A and Table B
 - `document.ts` — Internal / non-contract utilities
@@ -173,6 +177,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 ### `packages/docx-mcp/src/tools`
 
 - `accept_changes.ts` — Internal / non-contract utilities
+- `accept_ai_edits.ts` — Internal / non-contract utilities
 - `add_comment.ts` — Table A and Table B
 - `add_footnote.ts` — Table A and Table B
 - `batch_edit.ts` — Table A
@@ -198,6 +203,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `preview.ts` — Internal / non-contract utilities
 - `provider_guard.ts` — Internal / non-contract utilities
 - `read_file.ts` — Internal / non-contract utilities
+- `reject_ai_edits.ts` — Internal / non-contract utilities
 - `replace_text.ts` — Table A
 - `save.ts` — Table A
 - `session_resolution.ts` — Internal / non-contract utilities

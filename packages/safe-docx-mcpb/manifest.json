@@ -65,6 +65,14 @@
       "description": "Accept tracked changes in the document body."
     },
     {
+      "name": "accept_ai_edits",
+      "description": "Selectively accept tracked changes by revision id or author, preserving other reviewers' revisions."
+    },
+    {
+      "name": "reject_ai_edits",
+      "description": "Selectively reject tracked changes by revision id or author, preserving other reviewers' revisions."
+    },
+    {
       "name": "has_tracked_changes",
       "description": "Check whether the current document body contains tracked-change markers."
     },
