@@ -64,6 +64,33 @@ classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
 (`surface`: `revisionable` | `package-mutation` | `internal`, plus
 `emitsNonRevisionChanges`).
 
+### Accept/reject invariant coverage (implemented in [#124](https://github.com/UseJunior/safe-docx/issues/124))
+
+Selective accept/reject ([#123](https://github.com/UseJunior/safe-docx/issues/123)) is exercised by a
+mixed-author invariant corpus at
+`packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts`. Each fixture
+carries an AI-authored revision, a foreign (reviewer) revision, and one document feature; after
+`acceptAIEdits` / `rejectAIEdits` targeting the AI author the corpus asserts the AI revision was
+resolved, the foreign revision is byte-identical, the feature is preserved, field structure stays
+balanced, and the document remains structurally valid.
+
+| Feature / revision type | Accept | Reject | Round-trip evidence |
+| --- | --- | --- | --- |
+| `w:ins` / `w:del` (body) | ✅ | ✅ | validateDocument (CI); LibreOffice 25.8 headless (local, no recovery) |
+| `w:rPrChange` (foreign property change) | ✅ | ✅ | validateDocument (CI) |
+| Comment range markers (`w:commentRangeStart`/`End`) | ✅ | ✅ | validateDocument (CI) |
+| Bookmarks (`_bk_*` internal + user) | ✅ | ✅ | validateDocument (CI); LibreOffice 25.8 headless (local, no recovery) |
+| Content controls (`w:sdt`) | ✅ | ✅ | validateDocument (CI) |
+| Field codes (`w:fldChar` / `w:instrText`) | ✅ | ✅ | validateDocument (CI); LibreOffice 25.8 headless (local, no recovery) |
+| Numbering (`w:numPr`) | ✅ | ✅ | validateDocument (CI) |
+| Paragraph style (`w:pStyle`) | ✅ | ✅ | validateDocument (CI) |
+| Footnotes + reviewer revision in a note (side part) | ✅ | — | validateDocument (CI) |
+
+`validateDocument` (structural integrity + tracked-change/field balance) is the CI-runnable proxy for
+"opens without recovery"; Word runners are unavailable, so Word round-trip is manual/pending.
+LibreOffice headless round-trip was performed locally on representative accepted fixtures (`soffice
+--convert-to pdf` produced valid output with no recovery prompt).
+
 ## Internal / non-contract utilities
 
 These files are intentionally outside the revisionable-surface contract. Some perform XML mutations (e.g., bookmark scaffolding, run normalization, style elevation) but those mutations are internal/non-AI-attributable rather than user-directed edits. Others consume or normalize existing tracked changes instead of creating them. Either way, none are part of the promised AI-authored revision contract.
