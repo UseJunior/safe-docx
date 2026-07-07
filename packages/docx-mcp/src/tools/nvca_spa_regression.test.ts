@@ -13,7 +13,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getParagraphRuns } from '@usejunior/docx-core';
+import { getParagraphRuns, parseXml } from '@usejunior/docx-core';
 
 import { SessionManager } from '../session/manager.js';
 import { openDocument } from './open_document.js';
@@ -34,6 +34,12 @@ const SOURCE = path.resolve(__dirname, '../../../../tests/test_documents/nvca-re
 const BONTERMS_NDA_SOURCE = path.resolve(__dirname, '../../../../tests/test_documents/open-agreements/bonterms-mutual-nda.docx');
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function concatWordText(documentXml: string): string {
+  const dom = parseXml(documentXml);
+  const runs = Array.from(dom.getElementsByTagNameNS(W_NS, 't')) as Element[];
+  return runs.map((run) => run.textContent ?? '').join('');
+}
 
 function createMgr(defaultAiAuthor: string | null = null): SessionManager {
   return new SessionManager({ ttlMs: 60 * 60 * 1000, defaultAiAuthor });
@@ -460,8 +466,7 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
       // Deletion markup is covered by the replace-with-different-text cases in
       // the parity and open-agreements E2E suites.
       expect(trackedXml).toContain('w:ins');
-      const insertedRuns = trackedXml.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g) ?? [];
-      const insertedText = insertedRuns.map((run) => run.replace(/<[^>]+>/g, '')).join('');
+      const insertedText = concatWordText(trackedXml);
       expect(insertedText).toContain('Treasury regulations promulgated thereunder');
     });
   });

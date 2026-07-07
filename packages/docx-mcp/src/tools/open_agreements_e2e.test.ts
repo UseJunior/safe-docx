@@ -12,7 +12,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DocxZip } from '@usejunior/docx-core';
+import { DocxZip, parseXml } from '@usejunior/docx-core';
 
 import { SessionManager } from '../session/manager.js';
 import { openDocument } from './open_document.js';
@@ -38,6 +38,7 @@ function fixtureDocx(name: string): string {
 // author matches `tracked_changes_author` below so the save report's stats
 // count these revisions.
 const E2E_AUTHOR = 'E2E Test';
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 function createMgr(): SessionManager {
   return new SessionManager({ ttlMs: 60 * 60 * 1000, defaultAiAuthor: E2E_AUTHOR });
@@ -69,8 +70,9 @@ function countTables(xml: string): number {
 // unreliable; the concatenated run text is the reading a user actually sees
 // (kept + inserted text; deleted <w:delText> is excluded).
 function concatRunText(documentXml: string): string {
-  const runs = documentXml.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g) ?? [];
-  return runs.map((run) => run.replace(/<[^>]+>/g, '')).join('');
+  const dom = parseXml(documentXml);
+  const runs = Array.from(dom.getElementsByTagNameNS(W_NS, 't')) as Element[];
+  return runs.map((run) => run.textContent ?? '').join('');
 }
 
 function hasXmlDeclaration(xml: string): boolean {
