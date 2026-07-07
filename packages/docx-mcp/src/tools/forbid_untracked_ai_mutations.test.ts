@@ -9,6 +9,7 @@ import { SessionManager, type DocxSession } from '../session/manager.js';
 import { TOOL_SURFACE_INDEX, SAFE_DOCX_MCP_TOOLS } from '../tool_catalog.js';
 import { addComment } from './add_comment.js';
 import { addFootnote } from './add_footnote.js';
+import { deleteComment } from './delete_comment.js';
 import { batchEdit } from './batch_edit.js';
 import { clearFormatting } from './clear_formatting.js';
 import { formatLayout } from './format_layout.js';
@@ -159,6 +160,44 @@ const REVISIONABLE_EDITORS: Array<{
   },
 ];
 
+// Revisionable + destructive tools NOT in REVISIONABLE_EDITORS, with the reason
+// each is exempt from the fresh-emission property. Together with the editor set
+// this must exhaust the revisionable-destructive surface, so a future tool
+// cannot silently escape the forbid-untracked guarantee.
+const EXEMPT_REVISIONABLE_DESTRUCTIVE: Record<string, string> = {
+  save: 'finalizer, not an editor — emits no new revisions of its own',
+  delete_comment: 'operates on an existing comment; covered by dedicated root/reply manifest scenarios',
+  update_footnote: 'edits existing note text; emission covered by the #120/#121 emitter tests',
+  delete_footnote: 'removes an existing footnote; emission covered by the #120/#121 emitter tests',
+};
+
+/**
+ * Assert that every occurrence of `insertedText` in the body appears only inside
+ * a `w:ins` tracked-change wrapper — i.e. the AI edit introduced no untracked
+ * body text. Returns the number of matched text nodes (must be > 0).
+ */
+async function assertInsertedTextIsTracked(doc: DocxDocument, insertedText: string): Promise<number> {
+  const { buffer } = await doc.toBuffer({ cleanBookmarks: false });
+  const zip = await DocxZip.load(buffer);
+  const documentXmlText = await zip.readText('word/document.xml');
+  const parsed = parseXml(documentXmlText);
+  let matched = 0;
+  for (const t of Array.from(parsed.getElementsByTagName('*'))) {
+    if (t.namespaceURI !== W_NS || t.localName !== 't') continue;
+    if ((t.textContent ?? '') !== insertedText) continue;
+    matched += 1;
+    let el: Node | null = t.parentNode;
+    let insAncestor = false;
+    while (el) {
+      const asEl = el as Element;
+      if (asEl.namespaceURI === W_NS && asEl.localName === 'ins') insAncestor = true;
+      el = el.parentNode;
+    }
+    expect(insAncestor, `inserted text "${insertedText}" was not wrapped in w:ins`).toBe(true);
+  }
+  return matched;
+}
+
 describe('Forbid untracked AI mutations (#122)', () => {
   registerCleanup();
 
@@ -179,6 +218,19 @@ describe('Forbid untracked AI mutations (#122)', () => {
         for (const name of dual) {
           expect(TOOL_SURFACE_INDEX[name]!.surface).toBe('revisionable');
         }
+        // Coverage guard (derived from the catalog, not hand-maintained): every
+        // revisionable + destructive tool must be either exercised by the
+        // fresh-emission property or explicitly exempted with a reason, so a new
+        // tool cannot silently escape the forbid-untracked guarantee.
+        const revisionableDestructive = SAFE_DOCX_MCP_TOOLS
+          .filter((t) => t.surface === 'revisionable' && !t.annotations.readOnlyHint)
+          .map((t) => t.name)
+          .sort();
+        const accountedFor = [
+          ...REVISIONABLE_EDITORS.map((e) => e.name),
+          ...Object.keys(EXEMPT_REVISIONABLE_DESTRUCTIVE),
+        ].sort();
+        expect(accountedFor).toEqual(revisionableDestructive);
       });
     },
   );
@@ -213,48 +265,160 @@ describe('Forbid untracked AI mutations (#122)', () => {
   test.openspec('revisionable edits produce no untracked AI body content')(
     'Scenario: revisionable edits produce no untracked AI body content',
     async ({ given, when, then }: AllureBddContext) => {
-      const opened = await given('an AI session with a single paragraph', () =>
-        openSession([], {
+      // Each text-inserting editor introduces a unique sentinel token; the
+      // token must appear only inside a w:ins wrapper afterwards.
+      const cases: Array<{ name: string; token: string; run: (o: Awaited<ReturnType<typeof openSession>>) => Promise<unknown> }> = [
+        {
+          name: 'replace_text',
+          token: 'ZULU',
+          run: (o) =>
+            replaceText(o.mgr, {
+              file_path: o.filePath,
+              target_paragraph_id: o.firstParaId,
+              old_string: 'bravo',
+              new_string: 'ZULU',
+              instruction: 'replace bravo',
+            }),
+        },
+        {
+          name: 'insert_paragraph',
+          token: 'YANKEE',
+          run: (o) =>
+            insertParagraph(o.mgr, {
+              file_path: o.filePath,
+              positional_anchor_node_id: o.firstParaId,
+              new_string: 'YANKEE',
+              instruction: 'insert paragraph',
+              position: 'AFTER',
+            }),
+        },
+        {
+          name: 'batch_edit',
+          token: 'XRAY',
+          run: (o) =>
+            batchEdit(o.mgr, {
+              file_path: o.filePath,
+              steps: [
+                {
+                  step_id: 's1',
+                  operation: 'replace_text',
+                  target_paragraph_id: o.firstParaId,
+                  old_string: 'charlie',
+                  new_string: 'XRAY',
+                  instruction: 'replace charlie',
+                },
+              ],
+            }),
+        },
+      ];
+
+      for (const c of cases) {
+        const opened = await given(`an AI session for ${c.name}`, () =>
+          openSession([], {
+            mgr: aiManager(),
+            xml: documentXml(`<w:p><w:r><w:t>Alpha bravo charlie</w:t></w:r></w:p>`),
+          }),
+        );
+
+        const result = await when(`${c.name} introduces text under the AI actor`, () => c.run(opened));
+
+        await then(`${c.name}'s inserted text lands only inside w:ins`, async () => {
+          assertSuccess(result as { success: boolean }, c.name);
+          const session = await docxSession(opened.mgr, opened.filePath);
+          const matched = await assertInsertedTextIsTracked(session.doc, c.token);
+          expect(matched, `expected ${c.name} to insert "${c.token}"`).toBeGreaterThan(0);
+          const validation = await session.doc.validateAiRevisions(AI);
+          expect(validation.errors).toEqual([]);
+        });
+      }
+    },
+  );
+
+  test.openspec('comment reply mode is package-only with no tracked element')(
+    'Scenario: comment reply mode is package-only with no tracked element',
+    async ({ given, when, then }: AllureBddContext) => {
+      const opened = await given('an AI session with a root comment', async () => {
+        const o = await openSession([], {
           mgr: aiManager(),
           xml: documentXml(`<w:p><w:r><w:t>Alpha bravo charlie</w:t></w:r></w:p>`),
-        }),
-      );
+        });
+        const root = await addComment(o.mgr, {
+          file_path: o.filePath,
+          target_paragraph_id: o.firstParaId,
+          anchor_text: 'bravo',
+          author: 'Reviewer',
+          text: 'root note',
+        });
+        assertSuccess(root, 'root comment');
+        return { ...o, rootCommentId: root.comment_id as number };
+      });
 
-      await when('replace_text rewrites text under the AI actor', () =>
-        replaceText(opened.mgr, {
+      const before = await docxSession(opened.mgr, opened.filePath);
+      const revisionsBeforeReply = await countAiRevisions(before.doc, AI);
+
+      const reply = await when('a threaded reply is added', () =>
+        addComment(opened.mgr, {
           file_path: opened.filePath,
-          target_paragraph_id: opened.firstParaId,
-          old_string: 'bravo',
-          new_string: 'BRAVO',
-          instruction: 'uppercase bravo',
+          parent_comment_id: opened.rootCommentId,
+          author: 'Reviewer',
+          text: 'a reply',
         }),
       );
 
-      await then('the replaced text lands only inside tracked-change wrappers', async () => {
+      await then('the reply adds no tracked change and records a package-only manifest entry', async () => {
+        assertSuccess(reply, 'reply');
         const session = await docxSession(opened.mgr, opened.filePath);
-        const { buffer } = await session.doc.toBuffer({ cleanBookmarks: false });
-        const zip = await DocxZip.load(buffer);
-        const documentXmlText = await zip.readText('word/document.xml');
-        const doc = parseXml(documentXmlText);
-        // The inserted run carrying "BRAVO" must have a w:ins ancestor; no
-        // AI-introduced text may sit as a bare run in the body.
-        let sawInsertedText = false;
-        for (const t of Array.from(doc.getElementsByTagName('*'))) {
-          if (t.namespaceURI !== W_NS || t.localName !== 't') continue;
-          if ((t.textContent ?? '') !== 'BRAVO') continue;
-          sawInsertedText = true;
-          let el: Node | null = t.parentNode;
-          let insAncestor = false;
-          while (el) {
-            const asEl = el as Element;
-            if (asEl.namespaceURI === W_NS && asEl.localName === 'ins') insAncestor = true;
-            el = el.parentNode;
-          }
-          expect(insAncestor, 'AI-inserted text was not wrapped in w:ins').toBe(true);
-        }
-        expect(sawInsertedText, 'expected the inserted text to be present').toBe(true);
-        const validation = await session.doc.validateAiRevisions(AI);
-        expect(validation.errors).toEqual([]);
+        const revisionsAfterReply = await countAiRevisions(session.doc, AI);
+        expect(revisionsAfterReply, 'reply must not emit a new tracked-change element').toBe(revisionsBeforeReply);
+        // The reply's manifest entry names side parts only — never document.xml.
+        const replyEntry = session.nonRevisionManifest.find(
+          (e) => e.tool === 'add_comment' && !e.parts.includes('word/document.xml'),
+        );
+        expect(replyEntry, 'expected a package-only reply manifest entry').toBeDefined();
+        expect(replyEntry!.parts).toContain('word/commentsExtended.xml');
+      });
+    },
+  );
+
+  test.openspec('comment reply deletion is package-only')(
+    'Scenario: comment reply deletion is package-only',
+    async ({ given, when, then }: AllureBddContext) => {
+      const opened = await given('an AI session with a root comment and a reply', async () => {
+        const o = await openSession([], {
+          mgr: aiManager(),
+          xml: documentXml(`<w:p><w:r><w:t>Alpha bravo charlie</w:t></w:r></w:p>`),
+        });
+        const root = await addComment(o.mgr, {
+          file_path: o.filePath,
+          target_paragraph_id: o.firstParaId,
+          anchor_text: 'bravo',
+          author: 'Reviewer',
+          text: 'root note',
+        });
+        assertSuccess(root, 'root comment');
+        const reply = await addComment(o.mgr, {
+          file_path: o.filePath,
+          parent_comment_id: root.comment_id as number,
+          author: 'Reviewer',
+          text: 'a reply',
+        });
+        assertSuccess(reply, 'reply');
+        return { ...o, replyId: reply.comment_id as number };
+      });
+
+      const result = await when('the reply is deleted', () =>
+        deleteComment(opened.mgr, { file_path: opened.filePath, comment_id: opened.replyId }),
+      );
+
+      await then('the deletion records a package-only manifest entry without document.xml', async () => {
+        assertSuccess(result, 'delete reply');
+        const session = await docxSession(opened.mgr, opened.filePath);
+        const entry = session.nonRevisionManifest.find(
+          (e) => e.tool === 'delete_comment' && e.editRevision === session.editRevision,
+        );
+        expect(entry, 'expected a delete_comment manifest entry').toBeDefined();
+        expect(entry!.parts).not.toContain('word/document.xml');
+        expect(entry!.parts).toContain('word/comments.xml');
       });
     },
   );

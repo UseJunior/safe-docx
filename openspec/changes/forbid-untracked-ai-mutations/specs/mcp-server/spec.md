@@ -57,3 +57,14 @@ silently.
 - **GIVEN** an AI-authored session in which only a body text edit was performed
 - **WHEN** the document is saved
 - **THEN** the save report SHALL NOT include a non-revision change manifest
+
+#### Scenario: comment reply mode is package-only with no tracked element
+- **GIVEN** an AI-authored session containing a root comment
+- **WHEN** a threaded reply is added
+- **THEN** the reply SHALL NOT emit any new tracked-change element
+- **AND** the reply SHALL record a non-revision change entry naming comment side parts only, never `word/document.xml`
+
+#### Scenario: comment reply deletion is package-only
+- **GIVEN** an AI-authored session containing a root comment and a threaded reply
+- **WHEN** the reply is deleted
+- **THEN** the deletion SHALL record a non-revision change entry naming comment side parts only, never `word/document.xml`
