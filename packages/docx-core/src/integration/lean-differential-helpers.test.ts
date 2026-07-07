@@ -61,9 +61,9 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import fc from 'fast-check';
 import { beforeAll, describe, expect } from 'vitest';
-import { acceptAllChanges, rejectAllChanges } from '../baselines/atomizer/trackChangesAcceptorAst.js';
-import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
-import { parseDocumentXml } from '../baselines/atomizer/xmlToWmlElement.js';
+import { acceptAllChanges, rejectAllChanges } from '@usejunior/docx-compare';
+import { validateFieldStructure } from '@usejunior/docx-compare';
+import { parseDocumentXml } from '@usejunior/docx-compare';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   resolveSoffice,

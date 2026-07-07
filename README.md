@@ -279,7 +279,8 @@ ODF changes are tracked inline at run level: edits within a paragraph appear as 
 
 ## Packages
 
-- `@usejunior/docx-core`: primitives + comparison engine for existing `.docx` documents
+- `@usejunior/docx-core`: OOXML primitives, document generation, and track-changes helpers for `.docx` documents
+- `@usejunior/docx-compare`: DOCX comparison and redline generation; import `compareDocuments` from here
 - `@usejunior/odf-core`: OpenDocument (`.odt`) primitives + tracked-changes comparison engine
 - `@usejunior/docx-mcp`: MCP server implementation and tool surface
 - `@usejunior/safe-docx`: canonical end-user install name (`npx -y @usejunior/safe-docx`)

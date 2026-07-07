@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { parseXml } from '../primitives/xml.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 

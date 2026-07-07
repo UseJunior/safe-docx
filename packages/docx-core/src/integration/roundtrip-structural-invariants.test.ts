@@ -15,15 +15,15 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Struc
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { createHash } from 'crypto';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive, DOCX_PATHS } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   extractTextWithParagraphs,
   compareTexts,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
-import { parseDocumentXml } from '../baselines/atomizer/xmlToWmlElement.js';
+} from '@usejunior/docx-compare';
+import { parseDocumentXml } from '@usejunior/docx-compare';
 import {
   validateNumberingIntegrity,
   validateNoteIntegrity,

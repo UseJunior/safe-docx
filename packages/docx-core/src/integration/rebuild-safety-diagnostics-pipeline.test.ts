@@ -24,7 +24,7 @@ import {
   FIELD_INSTRUCTIONS,
   resultText,
 } from '../testing/ooxml-fixtures.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 
 const test = testAllure
   .epic('Document Comparison')

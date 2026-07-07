@@ -11,14 +11,14 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import JSZip from 'jszip';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
   compareTexts,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Inplace Round-Trip' });
 

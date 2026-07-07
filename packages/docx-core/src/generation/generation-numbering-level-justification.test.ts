@@ -46,8 +46,10 @@ describe('Traceability: numbering level justification', () => {
     'Scenario: level justification is authorable',
     async ({ given, when, then, and, attachPrettyXml }: AllureBddContext) => {
       let buffer!: Buffer;
+      let generatedBytes!: Buffer;
       await given('a numbering definition with right/center levels and one default level', async () => {
         buffer = await generateDocx(justificationSpec());
+        generatedBytes = Buffer.from(buffer);
         expect((await checkGeneratedPackage(buffer)).ok).toBe(true);
       });
 
@@ -76,7 +78,7 @@ describe('Traceability: numbering level justification', () => {
 
       await and('a re-render of the same spec is byte-identical', async () => {
         const second = await generateDocx(justificationSpec());
-        expect(second.equals(buffer)).toBe(true);
+        expect(second.equals(generatedBytes)).toBe(true);
       });
 
       let rejection!: unknown;

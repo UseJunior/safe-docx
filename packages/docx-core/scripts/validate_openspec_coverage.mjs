@@ -11,6 +11,10 @@ const __dirname = path.dirname(__filename);
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const TEST_ROOT = path.join(PACKAGE_ROOT, 'src');
+const TEST_ROOTS = [
+  TEST_ROOT,
+  path.join(REPO_ROOT, 'packages', 'docx-compare', 'src'),
+];
 const DEFAULT_MATRIX_PATH = path.join(TEST_ROOT, 'testing', 'DOCX_COMPARISON_OPENSPEC_TRACEABILITY.md');
 const SPEC_CONFIGS = [
   {
@@ -498,7 +502,9 @@ async function main() {
     });
   }
 
-  const testFiles = await listFilesRecursively(TEST_ROOT, (f) => f.endsWith('.test.ts'));
+  const testFiles = (
+    await Promise.all(TEST_ROOTS.map((root) => listFilesRecursively(root, (f) => f.endsWith('.test.ts'))))
+  ).flat().sort();
 
   const storyToFiles = new Map();
   const storySet = new Set();
@@ -517,7 +523,7 @@ async function main() {
 
   for (const tf of testFiles) {
     const content = await fs.readFile(tf, 'utf-8');
-    const rel = path.relative(PACKAGE_ROOT, tf).split(path.sep).join('/');
+    const rel = path.relative(REPO_ROOT, tf).split(path.sep).join('/');
 
     for (const { rawStory, slice } of parseTaggedTestSlices(content)) {
       const resolved = resolveStoryName(rawStory);
