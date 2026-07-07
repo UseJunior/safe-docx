@@ -26,7 +26,6 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Continuation pattern inherits formatting | covered | `src/openspec.traceability.test.ts` |  |
 | Creating atom with revision detection | covered | `src/openspec.traceability.test.ts` |  |
 | Creating atom without revision context | covered | `src/openspec.traceability.test.ts` |  |
-| Cross-run pass rescues inplace output | missing | n/a | No scenario mapping found in current tests |
 | Custom footnote marks respected | covered | `src/openspec.traceability.test.ts` |  |
 | Custom threshold applied | covered | `src/openspec.traceability.test.ts` |  |
 | Different properties | covered | `src/openspec.traceability.test.ts` |  |
@@ -44,6 +43,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Get format change revisions | covered | `src/openspec.traceability.test.ts` |  |
 | Hash calculation for content identity | covered | `src/openspec.traceability.test.ts` |  |
 | Identical text returns 1.0 | covered | `src/openspec.traceability.test.ts` |  |
+| Inplace reconstruction reports the pass that produced the output | covered | `src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
 | Move destination markup structure | covered | `src/openspec.traceability.test.ts` |  |
 | Move detected between similar blocks | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
 | Move detection disabled | covered | `src/openspec.priority-scenarios.test.ts`, `src/openspec.traceability.test.ts` |  |
