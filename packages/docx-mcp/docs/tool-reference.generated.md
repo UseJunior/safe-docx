@@ -125,8 +125,8 @@ Save document. For DOCX: saves clean and/or tracked changes output. For ODT: sav
 | `allow_overwrite` | `boolean` | no |  |
 | `tracked_save_to_local_path` | `string` | no |  |
 | `tracked_changes_author` | `string` | no |  |
-| `tracked_changes_engine` | `enum("auto", "atomizer")` | no |  |
-| `fail_on_rebuild_fallback` | `boolean` | no | When true, return an error instead of a destructive output if the comparison engine falls back to rebuild mode (which destroys table structure). Default: false. |
+| `tracked_changes_engine` | `enum("auto", "atomizer")` | no | Deprecated and ignored (#126). The redline is now the session's write-time tracked markup, serialized directly — there is no comparison engine to select. Use the compare_documents tool for comparison-based redlines. |
+| `fail_on_rebuild_fallback` | `boolean` | no | Deprecated and ignored (#126). The default save no longer runs the comparison reconstruction engine, so there is no rebuild fallback to guard against; accepted for backward compatibility only. |
 
 ## `export`
 

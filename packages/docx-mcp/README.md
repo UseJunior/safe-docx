@@ -252,7 +252,7 @@ Yes. Use `get_footnotes`, `add_footnote`, `update_footnote`, and `delete_footnot
 
 ### Can it produce tracked changes for review?
 
-Yes. Use `save` with tracked variants or `compare_documents` for standalone original/revised comparisons.
+Yes. `save`'s redline is the session's own write-time tracked markup, serialized directly as authored — the edits your tools made are recorded as `w:ins`/`w:del` with a stable author and revision ids, and any pre-existing third-party revisions are preserved. The clean variant is that same document with the AI author's edits accepted; paragraphs the AI never touched stay byte-identical to the source. For a standalone redline between two arbitrary documents (or a session against its original), use `compare_documents` — comparison is opt-in there, not a step baked into every save.
 
 ### Is processing local-only?
 

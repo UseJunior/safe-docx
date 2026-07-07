@@ -1205,4 +1205,32 @@ export class DocxDocument {
     const buffer = await this.zip.toBuffer();
     return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
   }
+
+  /**
+   * Produce the CLEAN artifact for a write-time editing session (#126): accept
+   * the AI actor's tracked edits on an *isolated copy* of this document — this
+   * instance is left unmutated, so a paired tracked artifact can still be
+   * serialized from it — then serialize with minimal reserialization against
+   * THIS document's original on-disk document.xml.
+   *
+   * The isolation matters for the #408 guarantee. Loading the isolated copy
+   * from a re-serialized buffer would reset its minimal-reserialization
+   * baseline to the already-normalized text, so body blocks the AI never
+   * touched would come back merely semantically equal (proofErr stripped, runs
+   * merged) rather than byte-identical to the source. Carrying THIS document's
+   * true baseline forward keeps untouched blocks pristine while accepted blocks
+   * emit as their final text.
+   *
+   * @see https://github.com/UseJunior/safe-docx/issues/408
+   */
+  async toAcceptedBuffer(
+    selector: AiEditSelector,
+    opts?: { cleanBookmarks?: boolean },
+  ): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
+    const cleanBookmarks = opts?.cleanBookmarks ?? true;
+    const isolated = await DocxDocument.load((await this.toBuffer({ cleanBookmarks: false })).buffer);
+    isolated.originalDocumentXmlText = this.originalDocumentXmlText;
+    await isolated.acceptAIEdits(selector);
+    return isolated.toBuffer({ cleanBookmarks, minimalReserialization: cleanBookmarks });
+  }
 }

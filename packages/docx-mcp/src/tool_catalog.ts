@@ -212,12 +212,17 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       allow_overwrite: z.boolean().optional(),
       tracked_save_to_local_path: z.string().optional(),
       tracked_changes_author: z.string().optional(),
-      tracked_changes_engine: z.enum(['auto', 'atomizer']).optional(),
+      tracked_changes_engine: z
+        .enum(['auto', 'atomizer'])
+        .optional()
+        .describe(
+          'Deprecated and ignored (#126). The redline is now the session\'s write-time tracked markup, serialized directly — there is no comparison engine to select. Use the compare_documents tool for comparison-based redlines.',
+        ),
       fail_on_rebuild_fallback: z
         .boolean()
         .optional()
         .describe(
-          'When true, return an error instead of a destructive output if the comparison engine falls back to rebuild mode (which destroys table structure). Default: false.',
+          'Deprecated and ignored (#126). The default save no longer runs the comparison reconstruction engine, so there is no rebuild fallback to guard against; accepted for backward compatibility only.',
         ),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
