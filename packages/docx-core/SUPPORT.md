@@ -32,7 +32,7 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | `update_footnote` | `packages/docx-mcp/src/tools/update_footnote.ts` | `w:ins`, `w:del` | Note text replacement belongs inside the revisionable surface. **Verified by [120.8] (#143) regression test.** |
 | `delete_footnote` | `packages/docx-mcp/src/tools/delete_footnote.ts` | `w:del` | Footnote deletion removes both reference and note text. **Verified by [120.8] (#143) regression test.** |
 | `compare_documents` | `packages/docx-mcp/src/tools/compare_documents.ts` | `w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, `w:moveFromRangeStart`/`End`, `w:moveToRangeStart`/`End`, `w:pPrChange`, `w:rPrChange` | Opt-in whole-document redlining tool. The atomizer engine runs move detection and format detection, so the actual emission set is broader than `w:ins`/`w:del`. Comparison-time emission, not write-time. `#118` removes it from the default finalization path for supported AI edits but leaves it available as a legacy redlining tier. |
-| `save` (tracked branch) | `packages/docx-mcp/src/tools/save.ts` | `w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, `w:moveFromRangeStart`/`End`, `w:moveToRangeStart`/`End`, `w:pPrChange`, `w:rPrChange` | Only the tracked-output branch belongs here, because it delegates to `compareDocuments(...)`. Comparison-time emission, not write-time. Clean-only save is just serialization. |
+| `save` (tracked branch) | `packages/docx-mcp/src/tools/save.ts` | Existing session-authored `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange`, and other write-time revision markup emitted by revisionable edit primitives | Only the tracked-output branch belongs here. It serializes the session's write-time revision markup directly and reports `tracked_changes_source: "write-time"`; it no longer derives default tracked output by delegating to `compareDocuments(...)`. Clean-only save serializes the accepted document state. |
 
 ## Table B: Package-level (non-revisionable) mutations
 
@@ -261,4 +261,4 @@ These ECMA-376 elements stay in the canonical vocabulary even though the current
 - `w:cellIns`, `w:cellDel`, and `w:cellMerge` — no dedicated cell-topology mutation file is surfaced today.
 - `w:numberingChange` — no dedicated numbering mutation file is surfaced today.
 - `w:rPrChange` and `w:pPrChange` already apply to accept/reject flow as well as live AI formatting/property edits.
-- `compare_documents.ts` and `save.ts` still rely on comparison-time reconstruction today, which is why `#120` remains the next required implementation step.
+- `compare_documents.ts` remains the opt-in comparison-time reconstruction surface. The default `save` tracked-output path serializes write-time revision markup directly, so supported AI edits no longer rely on comparison-time reconstruction during finalization.
