@@ -47,11 +47,43 @@ function createEl(tag: string, attrs?: Record<string, string>): Element {
 /**
  * Options for document reconstruction.
  */
+/**
+ * Resolves an inserted/retargeted link's revised-side r:id to one that will
+ * actually resolve in the rebuild output package (which is cloned from the
+ * ORIGINAL archive, so revised-only r:ids dangle without help).
+ *
+ * Returns the id to emit — either an existing original id that already points
+ * at the same destination, or a freshly-allocated, collision-free id whose
+ * relationship the pipeline ships into document.xml.rels — or null when the
+ * destination can't be shipped (no revised relationship for that r:id), in
+ * which case the caller emits the content unwrapped (pre-#376 behavior).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/376
+ */
+export interface HyperlinkRelResolver {
+  /**
+   * A stable key for a hyperlink's *resolved destination* (r:id resolved to its
+   * target URL via the correct side's rels, folded with any w:anchor), used to
+   * group atoms into wrappers. Two links with the same destination share a
+   * wrapper even if their raw r:id differs; a retarget that reuses the same
+   * r:id for a new target gets two wrappers, so inserted text never inherits
+   * the stale target. `fromOriginal` selects which side's rels resolves r:id.
+   */
+  destinationKey(element: Element, fromOriginal: boolean): string;
+  resolveRevisedOnlyRid(revisedRid: string): string | null;
+}
+
 export interface ReconstructorOptions {
   /** Author name for track changes */
   author: string;
   /** Timestamp for track changes */
   date: Date;
+  /**
+   * Rebuild-only: makes revised-only hyperlink r:ids shippable (issue #376).
+   * Absent in inplace mode, where the revised archive is the base and its
+   * r:ids already resolve.
+   */
+  hyperlinkRelResolver?: HyperlinkRelResolver;
 }
 
 /**
@@ -105,7 +137,9 @@ export function reconstructDocument(
   const paragraphXmls: string[] = [];
 
   for (const group of paragraphGroups) {
-    const paragraphXml = buildParagraphXml(group, author, dateStr, revState);
+    const paragraphXml = buildParagraphXml(
+      group, author, dateStr, revState, options.hyperlinkRelResolver
+    );
     paragraphXmls.push(paragraphXml);
   }
 
@@ -601,7 +635,8 @@ function buildParagraphXml(
   group: ParagraphGroup,
   author: string,
   dateStr: string,
-  revState: RevisionIdState
+  revState: RevisionIdState,
+  hyperlinkRelResolver?: HyperlinkRelResolver
 ): string {
   const revisionCtx = createRevisionContext({ author, date: dateStr, idState: revState });
 
@@ -643,7 +678,7 @@ function buildParagraphXml(
     const paraId = allocateRevisionId(revState);
     const insertedRunXml = paragraphHasHyperlinkAtoms(group)
       ? buildWholeParagraphRevisionContent(group, (runs) =>
-          wrapSerializedContentWithIns(runs, revisionCtx))
+          wrapSerializedContentWithIns(runs, revisionCtx), undefined, hyperlinkRelResolver)
       : wrapSerializedContentWithIns(
           group.runGroups.map((runGroup) => buildRunContentAsPlainRun(runGroup)).join(''),
           revisionCtx,
@@ -679,6 +714,7 @@ function buildParagraphXml(
           hasInsProvenance
             ? (wrapped, prov) => wrapWithIns(wrapped, prov.author, prov.date || dateStr, revState)
             : undefined,
+          hyperlinkRelResolver,
         )
       );
     } else if (hasInsProvenance) {
@@ -752,7 +788,9 @@ function buildParagraphXml(
   // paragraphs keep the legacy per-group emission byte-identical.
   const explicitMoveMarkers = collectExplicitMoveMarkers(group);
   if (paragraphHasHyperlinkAtoms(group)) {
-    parts.push(buildRunGroupsWithHyperlinks(group.runGroups, author, dateStr, revState, explicitMoveMarkers));
+    parts.push(buildRunGroupsWithHyperlinks(
+      group.runGroups, author, dateStr, revState, explicitMoveMarkers, hyperlinkRelResolver
+    ));
   } else {
     for (const runGroup of group.runGroups) {
       const runXml = buildRunGroupXml(runGroup, author, dateStr, revState, explicitMoveMarkers);
@@ -1160,43 +1198,66 @@ function hyperlinkKey(el: Element): string {
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
  * @see https://github.com/UseJunior/safe-docx/issues/368
  */
-function resolveHyperlinkForAtom(atom: ComparisonUnitAtom): ResolvedHyperlink | null {
+function resolveHyperlinkForAtom(
+  atom: ComparisonUnitAtom,
+  resolver: HyperlinkRelResolver | undefined
+): ResolvedHyperlink | null {
   const own = nearestHyperlinkAncestor(atom);
   if (!own) return null;
+  // The grouping key is the resolved destination when a resolver is available
+  // (rebuild), falling back to the raw attribute fingerprint otherwise. Keying
+  // by destination is what keeps a same-r:id retarget in two wrappers while a
+  // bare id reshuffle (same URL) still collapses to one.
+  const keyFor = (el: Element, fromOriginal: boolean): string =>
+    resolver ? resolver.destinationKey(el, fromOriginal) : hyperlinkKey(el);
+
   if (atom.sourceDocument === 'original') {
-    return { element: own, key: hyperlinkKey(own), fromOriginal: true };
+    return { element: own, key: keyFor(own, true), fromOriginal: true };
   }
   const before = atom.comparisonUnitAtomBefore;
   const beforeHyperlink = before ? nearestHyperlinkAncestor(before) : null;
-  // Attribute to the original wrapper only when both trees agree on the
-  // hyperlink's attributes. When they differ (e.g. the revision retargeted
-  // the link to a new r:id), emitting the original wrapper would pin the
-  // still-equal link text to the STALE target in the accepted document —
-  // worse than dropping the wrapper. Such atoms fall through to the
-  // revised-only policy below instead.
-  // TODO(#376): the faithful tracked representation of a retargeted link
-  // is delete-old-link + insert-new-link (what Word emits), which needs the
-  // hyperlink fingerprint in atom identity so the LCS stops matching text
-  // across different link targets.
-  if (beforeHyperlink && hyperlinkKey(beforeHyperlink) === hyperlinkKey(own)) {
-    return { element: beforeHyperlink, key: hyperlinkKey(beforeHyperlink), fromOriginal: true };
+  // An equal revised atom attributes to the original wrapper when both sides
+  // resolve to the same destination — then the original wrapper's r:id is
+  // guaranteed to resolve in the original-based package. A bare r:id reshuffle
+  // (same URL, new id) still matches here; a retarget does not.
+  if (
+    beforeHyperlink &&
+    keyFor(beforeHyperlink, true) === keyFor(own, false)
+  ) {
+    return { element: beforeHyperlink, key: keyFor(beforeHyperlink, true), fromOriginal: true };
   }
-  // Revised-only attribution (purely inserted hyperlink). Emitting its r:id
-  // would dangle against the original-based package, so the caller only
-  // wraps when the hyperlink carries no relationship reference (anchor-only).
-  return { element: own, key: hyperlinkKey(own), fromOriginal: false };
+  // Revised-only attribution: a purely inserted hyperlink, or the insert half
+  // of a retarget (delete-old-link + insert-new-link). Its revised r:id would
+  // dangle against the original-based package, so the caller re-maps it through
+  // the HyperlinkRelResolver (shipping a merged relationship) and drops the
+  // wrapper only when the destination can't be shipped (issue #376).
+  return { element: own, key: keyFor(own, false), fromOriginal: false };
 }
 
 /**
- * Whether a resolved hyperlink is safe to re-emit. Original-attributed
- * wrappers always are; revised-only wrappers are safe only without an r:id
- * (internal anchor links), because the rebuild package ships the ORIGINAL
- * document.xml.rels and a revised-only r:id would be a dangling reference
- * (Word treats those as a corrupt package). Revised-only r:id hyperlinks
- * keep today's behavior — content emitted unwrapped.
+ * Compute the opening `<w:hyperlink …>` tag to emit for a resolved wrapper, or
+ * null when the wrapper must be dropped and its content emitted unwrapped.
+ *
+ * Original-attributed wrappers and anchor-only revised wrappers emit verbatim.
+ * A revised-only r:id wrapper is emitted only when `resolver` maps its r:id to
+ * one that resolves in the rebuild package (the mapped id replaces r:id in the
+ * tag); without a resolver or a shippable target the wrapper is dropped,
+ * preserving the pre-#376 behavior (rebuild ships the ORIGINAL
+ * document.xml.rels, so an un-merged revised-only r:id would dangle and Word
+ * treats that as a corrupt package).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/376
  */
-function isEmittableHyperlink(resolved: ResolvedHyperlink): boolean {
-  return resolved.fromOriginal || resolved.element.getAttribute('r:id') === null;
+function emitHyperlinkOpenTag(
+  resolved: ResolvedHyperlink,
+  resolver: HyperlinkRelResolver | undefined
+): string | null {
+  if (resolved.fromOriginal) return serializeHyperlinkOpenTag(resolved.element);
+  const rid = resolved.element.getAttribute('r:id');
+  if (rid === null) return serializeHyperlinkOpenTag(resolved.element);
+  const mappedRid = resolver?.resolveRevisedOnlyRid(rid) ?? null;
+  if (mappedRid === null) return null;
+  return serializeHyperlinkOpenTag(resolved.element, mappedRid);
 }
 
 /**
@@ -1226,7 +1287,10 @@ interface HyperlinkSegment {
  * moveFromRangeStart/End once per slice, corrupting the move ranges. A move
  * spanning a hyperlink keeps today's unwrapped emission.
  */
-function splitRunGroupByHyperlink(group: RunGroup): HyperlinkSegment[] {
+function splitRunGroupByHyperlink(
+  group: RunGroup,
+  resolver: HyperlinkRelResolver | undefined
+): HyperlinkSegment[] {
   if (
     group.status === CorrelationStatus.MovedSource ||
     group.status === CorrelationStatus.MovedDestination
@@ -1241,7 +1305,7 @@ function splitRunGroupByHyperlink(group: RunGroup): HyperlinkSegment[] {
     // Emit-ability is decided per merged bucket, not per atom: an inserted
     // atom inside an otherwise-original hyperlink folds into the adjacent
     // original-attributed bucket via the shared key.
-    const resolved = resolveHyperlinkForAtom(atom);
+    const resolved = resolveHyperlinkForAtom(atom, resolver);
     const key = resolved?.key ?? null;
 
     if (current && (current.hyperlink?.key ?? null) === key) {
@@ -1264,14 +1328,19 @@ function splitRunGroupByHyperlink(group: RunGroup): HyperlinkSegment[] {
 
 /**
  * Serialize the opening tag of a re-emitted w:hyperlink wrapper, copying the
- * source element's attributes verbatim (r:id, w:anchor, w:history, ...).
+ * source element's attributes verbatim (r:id, w:anchor, w:history, ...). When
+ * `ridOverride` is given, the r:id value is replaced in place (position
+ * preserved) so a retargeted/inserted link can point at a merged-in
+ * relationship id (issue #376).
  */
-function serializeHyperlinkOpenTag(el: Element): string {
+function serializeHyperlinkOpenTag(el: Element, ridOverride?: string): string {
   const attrs: string[] = [];
   for (let i = 0; i < el.attributes.length; i++) {
     const attr = el.attributes.item(i)!;
     if (attr.name.startsWith('xmlns')) continue;
-    attrs.push(` ${attr.name}="${escapeXmlAttr(attr.value)}"`);
+    const value =
+      attr.name === 'r:id' && ridOverride !== undefined ? ridOverride : attr.value;
+    attrs.push(` ${attr.name}="${escapeXmlAttr(value)}"`);
   }
   return `<w:hyperlink${attrs.join('')}>`;
 }
@@ -1313,10 +1382,11 @@ function buildRunGroupsWithHyperlinks(
   author: string,
   dateStr: string,
   revState: RevisionIdState,
-  explicitMoveMarkers: ExplicitMoveMarkers = NO_EXPLICIT_MOVE_MARKERS
+  explicitMoveMarkers: ExplicitMoveMarkers = NO_EXPLICIT_MOVE_MARKERS,
+  hyperlinkRelResolver?: HyperlinkRelResolver
 ): string {
   const buckets = mergeAdjacentHyperlinkSegments(
-    runGroups.flatMap(splitRunGroupByHyperlink)
+    runGroups.flatMap((g) => splitRunGroupByHyperlink(g, hyperlinkRelResolver))
   );
 
   const parts: string[] = [];
@@ -1325,11 +1395,10 @@ function buildRunGroupsWithHyperlinks(
       .map((g) => buildRunGroupXml(g, author, dateStr, revState, explicitMoveMarkers))
       .join('');
     if (!content) continue;
-    parts.push(
-      bucket.hyperlink && isEmittableHyperlink(bucket.hyperlink)
-        ? `${serializeHyperlinkOpenTag(bucket.hyperlink.element)}${content}</w:hyperlink>`
-        : content
-    );
+    const openTag = bucket.hyperlink
+      ? emitHyperlinkOpenTag(bucket.hyperlink, hyperlinkRelResolver)
+      : null;
+    parts.push(openTag ? `${openTag}${content}</w:hyperlink>` : content);
   }
   return parts.join('');
 }
@@ -1349,10 +1418,11 @@ function buildRunGroupsWithHyperlinks(
 function buildWholeParagraphRevisionContent(
   group: ParagraphGroup,
   wrap: (content: string) => string,
-  provWrap?: (wrappedContent: string, prov: InsProvenance) => string
+  provWrap?: (wrappedContent: string, prov: InsProvenance) => string,
+  hyperlinkRelResolver?: HyperlinkRelResolver
 ): string {
   const buckets = mergeAdjacentHyperlinkSegments(
-    group.runGroups.flatMap(splitRunGroupByHyperlink)
+    group.runGroups.flatMap((g) => splitRunGroupByHyperlink(g, hyperlinkRelResolver))
   );
 
   const parts: string[] = [];
@@ -1387,11 +1457,10 @@ function buildWholeParagraphRevisionContent(
       wrapped = wrap(runs);
     }
 
-    parts.push(
-      bucket.hyperlink && isEmittableHyperlink(bucket.hyperlink)
-        ? `${serializeHyperlinkOpenTag(bucket.hyperlink.element)}${wrapped}</w:hyperlink>`
-        : wrapped
-    );
+    const openTag = bucket.hyperlink
+      ? emitHyperlinkOpenTag(bucket.hyperlink, hyperlinkRelResolver)
+      : null;
+    parts.push(openTag ? `${openTag}${wrapped}</w:hyperlink>` : wrapped);
   }
   return parts.join('');
 }
