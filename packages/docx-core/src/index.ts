@@ -21,6 +21,7 @@ export type {
   ReconstructionFallbackReason,
   ReconstructionIdDelta,
   ReconstructionIdDeltaSummary,
+  ReconstructionInplaceSuccessDiagnostics,
   ReconstructionMode,
   ReconstructionSafetyCheckName,
   ReconstructionSafetyChecks,
