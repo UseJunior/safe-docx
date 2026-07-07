@@ -39,18 +39,12 @@ export type SaveCacheEntry = {
   revision: number;
   format: SaveFormat;
   cleanBookmarks: boolean;
-  trackedEngine: 'auto' | 'atomizer';
   trackedAuthor: string;
   revisedBuffer: Buffer;
   trackedBuffer: Buffer | null;
   trackedStats: TrackedChangesStats | null;
-  trackedReconstructionMode?: ReconstructionMode;
-  trackedFallbackReason?: ReconstructionFallbackReason;
-  trackedFallbackDiagnostics?: ReconstructionFallbackDiagnostics;
   bookmarksRemoved: number;
   blocksRestored: number;
-  trackedBlocksRestored: number;
-  trackedRestoreError?: string;
   exportedAtUtc: string;
   cachedAtIso: string;
 };

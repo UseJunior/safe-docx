@@ -43,10 +43,13 @@ async function saveAndReadParts(
   outputPath: string,
   partPaths: string[],
 ): Promise<Record<string, string>> {
+  // #126: write-time tracked markup lands in the tracked (redline) artifact; the
+  // clean artifact now accepts the AI's edits. Verify the emitted wrappers via the
+  // tracked output.
   const saved = await save(mgr, {
     file_path: inputPath,
     save_to_local_path: outputPath,
-    save_format: 'clean',
+    save_format: 'tracked',
     clean_bookmarks: true,
   });
   assertSuccess(saved, 'save');

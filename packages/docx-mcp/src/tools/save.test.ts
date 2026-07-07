@@ -1,7 +1,8 @@
 import { describe, expect } from 'vitest';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { restoreTrackedUntouchedBlocks, save } from './save.js';
+import { save } from './save.js';
+import { SessionManager } from '../session/manager.js';
 import { openDocument } from './open_document.js';
 import { grep } from './grep.js';
 import { replaceText } from './replace_text.js';
@@ -100,7 +101,6 @@ describe('save', () => {
 
     const fileSize = (await fs.stat(outPath)).size;
     expect(fileSize).toBeGreaterThan(0);
-    expect((result as Record<string, unknown>).tracked_blocks_restored).toBe(0);
   });
 
   test('tracked save includes comparison with baseline', async () => {
@@ -121,8 +121,8 @@ describe('save', () => {
     assertSuccess(result, 'tracked save');
   });
 
-  test('tracked save restores untouched body blocks without stripping new revisions', async () => {
-    const mgr = createTestSessionManager();
+  test('tracked save emits write-time markup and preserves untouched blocks + rels (#126)', async () => {
+    const mgr = new SessionManager({ defaultAiAuthor: 'Test Author' });
     const tmpDir = await createTrackedTempDir('save-tracked-minimal-');
     const originalDocumentXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
@@ -186,31 +186,21 @@ describe('save', () => {
 
     const trackedXml = await documentXmlFromDocx(trackedPath);
     const trackedRels = await zipText(trackedPath, 'word/_rels/document.xml.rels');
-    expect((result as Record<string, unknown>).tracked_blocks_restored).toBeGreaterThan(0);
-    expect(paragraphXml(trackedXml, 1)).toBe(paragraphXml(originalDocumentXml, 1));
+    // The tracked artifact is the session's write-time markup (#126). The
+    // untouched paragraph keeps its content and the hyperlink relationship survives.
+    expect(paragraphXml(trackedXml, 1)).toContain('Untouched');
     expect(trackedRels).toContain('Id="rIdHyperlink"');
     expect(trackedRels).toContain('https://example.com/original');
 
     const editedParagraph = paragraphXml(trackedXml, 0);
     expect(editedParagraph).toContain('<w:ins');
     expect(editedParagraph).toContain('<w:del');
+    // Author is the write-time actor (the session AI author), not a comparison param.
     expect(editedParagraph).toContain('w:author="Test Author"');
-    expect(editedParagraph).toContain('replacement');
-    expect((result as Record<string, unknown>).tracked_restore_error).toBeUndefined();
-  });
-
-  test('tracked restore post-pass surfaces failure instead of swallowing it', async () => {
-    // Not a zip at all — DocxZip.load must throw, exercising the catch path.
-    const garbage = Buffer.from('not a zip archive');
-    const restored = await restoreTrackedUntouchedBlocks(garbage, garbage);
-
-    // Degrades to the unrestored artifact: the input buffer passes through
-    // untouched, but the failure is reported rather than reading as the
-    // benign "nothing to restore".
-    expect(restored.buffer).toBe(garbage);
-    expect(restored.blocksRestored).toBe(0);
-    expect(typeof restored.restoreError).toBe('string');
-    expect(restored.restoreError!.length).toBeGreaterThan(0);
+    // Write-time minimal-diff markup: the deletion covers the removed text and the
+    // insertion carries the new text (a shared suffix may fall outside the wrappers).
+    expect(editedParagraph).toContain('<w:delText>targe');
+    expect(editedParagraph).toContain('replacemen');
   });
 
   test('both-mode generates two files', async () => {
@@ -228,7 +218,6 @@ describe('save', () => {
     const exists = await fs.stat(outPath).then(() => true).catch(() => false);
     expect(exists).toBe(true);
     expect((result as Record<string, unknown>).blocks_restored).toBeGreaterThan(0);
-    expect((result as Record<string, unknown>).tracked_blocks_restored).toBeGreaterThan(0);
   });
 
   test('reports stats (insertions/deletions/modifications)', async () => {
