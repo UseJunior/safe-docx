@@ -50,6 +50,20 @@ Use the alternate contract below whenever a primitive/tool mutates relationships
 
 No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement, header/footer part creation, image-part insertion, or `core.xml` / `app.xml` metadata editing. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation.
 
+### Non-revision change manifest (implemented in [#122](https://github.com/UseJunior/safe-docx/issues/122))
+
+Table B mutations are recorded in a per-session **non-revision change manifest**
+(`DocxSession.nonRevisionManifest`, populated via `SessionManager.recordNonRevisionChange`).
+Each entry is `{ tool, editRevision, parts, description }`, where `parts` names the
+package parts mutated without a tracked-change wrapper. The `save` report surfaces
+the manifest as `non_revision_changes` (omitted when empty), so package-level
+mutations are accounted for alongside the tracked revisions list rather than
+landing silently. The dual-surface tools that record entries are `add_comment`,
+`delete_comment`, and `add_footnote`; the write surface of every tool is
+classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
+(`surface`: `revisionable` | `package-mutation` | `internal`, plus
+`emitsNonRevisionChanges`).
+
 ## Internal / non-contract utilities
 
 These files are intentionally outside the revisionable-surface contract. Some perform XML mutations (e.g., bookmark scaffolding, run normalization, style elevation) but those mutations are internal/non-AI-attributable rather than user-directed edits. Others consume or normalize existing tracked changes instead of creating them. Either way, none are part of the promised AI-authored revision contract.

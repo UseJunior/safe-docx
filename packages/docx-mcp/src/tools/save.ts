@@ -438,6 +438,13 @@ export async function save(
         ? 'Rebuild mode was used which may alter document structure (tables, fonts, etc.)'
         : undefined,
       revisions,
+      // #122: package-level mutations with no native OOXML revision wrapper
+      // (comment/footnote side parts, relationships, content types) are not
+      // tracked changes, so surface them explicitly alongside the revisions
+      // list rather than letting them land silently.
+      non_revision_changes: session.nonRevisionManifest.length > 0
+        ? session.nonRevisionManifest
+        : undefined,
       exported_at_utc: exportTimestamp,
       bookmarks_removed: clean ? bookmarksRemoved : 0,
       blocks_restored: blocksRestored,
