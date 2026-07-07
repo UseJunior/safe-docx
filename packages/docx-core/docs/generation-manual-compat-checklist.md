@@ -106,7 +106,14 @@ are observed directly; Google Docs is imported via Drive conversion.
   with paragraph content intact) and convert to non-empty PDFs.
 - #482 (2026-07-06, LibreOffice headless on macOS): re-run after regenerating the
   ancillary-parts package shape — `generation-package-structure.test.ts` identity
-  and PDF probes pass against the new bytes (no dialogs, no content loss). Note:
-  headless `soffice` is occasionally flaky (an `Abort trap: 6` was observed in a
-  parallel run); the probe skips/fails-soft when the binary is unusable, and CI
-  has no `soffice`, so this remains a local-only signal.
+  and PDF probes passed against the new bytes (no dialogs, no content loss).
+  Gating caveat: those probes are gated **only** on `resolveSoffice()`
+  (`const describeProbes = soffice ? describe : describe.skip`), so they run
+  whenever a `soffice` binary is present. Headless `soffice` on macOS is
+  intermittently unusable (an `Abort trap: 6` crash was observed in a parallel
+  run); when the binary is present but crashes, these two probes **fail rather
+  than skip** — so a red identity/PDF result there is the known `soffice` flake,
+  not a generation regression (re-run to confirm). CI installs no `soffice`, so
+  `resolveSoffice()` is null and the probes skip; this remains a local-only
+  signal. (A future hardening could gate on `probeSofficeUsable()` too, so an
+  installed-but-crashing binary skips instead of failing.)
