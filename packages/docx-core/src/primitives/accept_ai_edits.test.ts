@@ -1,6 +1,9 @@
 import { describe, expect } from 'vitest';
 import { itAllure as it } from '../testing/allure-test.js';
 import { parseXml, serializeXml } from './xml.js';
+import { DocxDocument } from './document.js';
+import { DocxZip } from './zip.js';
+import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import {
   acceptAIEdits,
   rejectAIEdits,
@@ -181,6 +184,74 @@ describe('selective accept/reject by revision id/author (#123)', () => {
       );
       const overlaps = detectAmbiguousOverlaps(doc, new Set(['1', '2']));
       expect(overlaps).toHaveLength(0);
+    });
+  });
+
+  // Regression cases for the foreign-revision byte-identical invariant surfaced
+  // by the #123 codex peer review.
+  describe('foreign-revision preservation (byte-identical invariant)', () => {
+    it('does not rename delText inside a foreign w:moveFrom on selective reject', () => {
+      const foreign = `<w:moveFrom w:id="2" w:author="${HUMAN}"><w:r><w:delText xml:space="preserve">moved</w:delText></w:r></w:moveFrom>`;
+      const doc = body(`<w:p>${aiDel(1, 'gone')}${foreign}</w:p>`);
+      rejectAIEdits(doc, { author: AI });
+      const out = xml(doc);
+      // Rejecting the AI deletion restores its text as a normal run…
+      expect(out).toContain('<w:t xml:space="preserve">gone</w:t>');
+      expect(out).not.toContain('<w:delText xml:space="preserve">gone');
+      // …while the foreign move source stays byte-identical (its delText NOT renamed).
+      expect(out).toContain(foreign);
+    });
+
+    it('hard-errors when a selected property change shares its container with a foreign revision', () => {
+      // pPr holds a foreign paragraph-mark insertion (reviewer) and a selected AI pPrChange.
+      const doc = body(
+        `<w:p><w:pPr><w:rPr><w:ins w:id="2" w:author="${HUMAN}"/></w:rPr>` +
+          `<w:pPrChange w:id="1" w:author="${AI}"><w:pPr/></w:pPrChange></w:pPr>` +
+          `<w:r><w:t>x</w:t></w:r></w:p>`,
+      );
+      expect(() => rejectAIEdits(doc, { author: AI })).toThrow(AmbiguousRevisionOverlapError);
+    });
+
+    it('hard-errors on a paragraph-mark merge whose pPr holds a foreign mark revision', () => {
+      // AI deleted the paragraph mark; a reviewer inserted the same mark — merging
+      // the paragraph would drop the reviewer revision, so it is ambiguous.
+      const doc = body(
+        `<w:p><w:pPr><w:rPr>` +
+          `<w:del w:id="1" w:author="${AI}"/><w:ins w:id="2" w:author="${HUMAN}"/>` +
+          `</w:rPr></w:pPr><w:r><w:t>first</w:t></w:r></w:p>` +
+          `<w:p><w:r><w:t>second</w:t></w:r></w:p>`,
+      );
+      expect(() => acceptAIEdits(doc, { author: AI })).toThrow(AmbiguousRevisionOverlapError);
+    });
+
+    it('does not prune an orphaned footnote that still carries a foreign revision', async () => {
+      // The body footnoteReference (id=9) lives inside a selected AI deletion, so
+      // accepting it orphans footnote id=9 — which contains a reviewer insertion.
+      const bodyXml =
+        `<w:p><w:r><w:t>text</w:t></w:r>` +
+        `<w:del w:id="5" w:author="${AI}"><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>` +
+        `<w:footnoteReference w:id="9"/></w:r></w:del></w:p>`;
+      const footnotesXml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:footnotes xmlns:w="${W}">` +
+        `<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>` +
+        `<w:footnote w:id="9"><w:p><w:r><w:t>note </w:t></w:r>` +
+        `<w:ins w:id="20" w:author="${HUMAN}"><w:r><w:t>reviewer text</w:t></w:r></w:ins></w:p></w:footnote>` +
+        `</w:footnotes>`;
+
+      const base = await buildDocxFromBodyXml(bodyXml);
+      const zip = await DocxZip.load(base);
+      zip.writeText('word/footnotes.xml', footnotesXml);
+      const doc = await DocxDocument.load(await zip.toBuffer());
+
+      await doc.acceptAIEdits({ author: AI });
+
+      const outZip = await DocxZip.load((await doc.toBuffer({ cleanBookmarks: false })).buffer);
+      const outFootnotes = await outZip.readText('word/footnotes.xml');
+      // The note is now unreferenced, but it must not be deleted because it still
+      // carries the reviewer's revision.
+      expect(outFootnotes).toContain('w:id="20"');
+      expect(outFootnotes).toContain('reviewer text');
     });
   });
 });

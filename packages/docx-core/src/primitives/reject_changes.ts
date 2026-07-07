@@ -420,9 +420,13 @@ export function rejectChanges(
 
   // Rename w:delText → w:t so getParagraphText() sees the restored text — but
   // only for delTexts whose w:del wrapper was just unwrapped (no surviving w:del
-  // ancestor). In selective mode a foreign (non-target) w:del is left intact, so
-  // its w:delText must stay w:delText and must not be touched.
-  const delTexts = collectByLocalName(root, 'delText').filter((dt) => !hasWAncestor(dt, 'del'));
+  // ancestor). In selective mode a foreign (non-target) revision is left intact,
+  // so we additionally exclude delText inside a surviving w:moveFrom (a foreign
+  // move source also carries w:delText that must not be touched); a targeted del
+  // is never nested in a foreign move (that case hard-errors as ambiguous).
+  const delTexts = collectByLocalName(root, 'delText').filter(
+    (dt) => !hasWAncestor(dt, 'del') && (!selective || !hasWAncestor(dt, 'moveFrom')),
+  );
   for (const dt of delTexts) {
     const parent = dt.parentNode;
     if (!parent) continue;

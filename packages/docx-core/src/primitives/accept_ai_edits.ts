@@ -38,6 +38,45 @@ const W_NS = OOXML.W_NS;
  */
 const OVERLAP_CONTAINER_LOCALS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
 
+/**
+ * Property-change revision records. Accepting removes the record; rejecting
+ * rewrites the enclosing property element — so a selected one that shares its
+ * property container with a foreign revision is ambiguous.
+ */
+const PROPERTY_CHANGE_LOCALS = new Set([
+  'rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange',
+  'tblPrExChange', 'trPrChange', 'tcPrChange', 'tblGridChange', 'numberingChange',
+]);
+
+/** A `w:ins`/`w:del` that is a paragraph-mark marker (child of `w:pPr > w:rPr`). */
+function isParagraphMarkMarker(el: Element): boolean {
+  if (el.localName !== 'ins' && el.localName !== 'del') return false;
+  const parent = el.parentNode as Element | null;
+  const grand = parent?.parentNode as Element | null;
+  return (
+    !!parent && parent.namespaceURI === W_NS && parent.localName === 'rPr' &&
+    !!grand && grand.namespaceURI === W_NS && grand.localName === 'pPr'
+  );
+}
+
+/**
+ * The property element whose contents accept/reject would rewrite or drop when
+ * resolving `el`: the nearest enclosing `w:pPr` (so a paragraph-mark or pPrChange
+ * collision is seen across the whole paragraph properties), else `el`'s direct
+ * parent property element (a run's `w:rPr` for a run-level rPrChange).
+ */
+function enclosingPropertyContainer(el: Element): Element | null {
+  let cur: Node | null = el.parentNode;
+  while (cur) {
+    if (cur.nodeType === 1 && (cur as Element).namespaceURI === W_NS && (cur as Element).localName === 'pPr') {
+      return cur as Element;
+    }
+    cur = cur.parentNode;
+  }
+  const parent = el.parentNode;
+  return parent && parent.nodeType === 1 ? (parent as Element) : null;
+}
+
 /** Selector for a selective accept/reject operation. */
 export interface AiEditSelector {
   /** Explicit `w:id` values to target (strings or numbers). Primary signature. */
@@ -186,6 +225,30 @@ export function detectAmbiguousOverlaps(root: Element | Document, selectedIds: S
         }
       }
       anc = anc.parentNode;
+    }
+  }
+
+  // Property-container collision: a selected property-change or paragraph-mark
+  // revision that shares its property container (w:pPr or a run's w:rPr) with a
+  // foreign revision. Accepting a paragraph-mark merge drops the source w:pPr,
+  // and rejecting a property change rewrites the container — either would alter
+  // the foreign revision, so it is ambiguous.
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i]!;
+    const isProperty = PROPERTY_CHANGE_LOCALS.has(el.localName) || isParagraphMarkMarker(el);
+    if (!isProperty) continue;
+    const id = revisionElementId(el);
+    if (id == null || !selectedIds.has(id)) continue;
+
+    const container = enclosingPropertyContainer(el);
+    if (!container) continue;
+    const siblings = container.getElementsByTagNameNS(W_NS, '*');
+    for (let j = 0; j < siblings.length; j++) {
+      const s = siblings[j]!;
+      if (s === el) continue;
+      if (!TRACKED_CHANGE_ELEMENT_NAME_SET.has(s.localName)) continue;
+      const sid = revisionElementId(s);
+      if (sid == null || !selectedIds.has(sid)) record(el, s);
     }
   }
   return overlaps;

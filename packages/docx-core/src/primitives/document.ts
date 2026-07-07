@@ -66,6 +66,8 @@ import {
   type AiEditSelector,
   type AiRevisionOverlap,
 } from './accept_ai_edits.js';
+import { revisionElementId } from './accept_changes.js';
+import { TRACKED_CHANGE_ELEMENT_NAME_SET } from './revision-vocabulary.js';
 import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
@@ -157,7 +159,26 @@ function collectLiveFootnoteRefIds(doc: Document): Set<number> {
 // The corresponding <w:footnote w:id=N> in footnotes.xml is then unreachable —
 // remove it so the side part matches the post-sweep body. Reserved separator /
 // continuationSeparator entries are preserved unconditionally.
-function pruneOrphanedFootnotes(footnotesDoc: Document, liveRefIds: Set<number>): number {
+/**
+ * True iff a footnote entry contains a tracked-change element whose id is not in
+ * `selectedIds` — a foreign revision that a selective sweep must not delete.
+ */
+function footnoteHasForeignRevision(fn: Element, selectedIds: Set<string>): boolean {
+  const els = fn.getElementsByTagNameNS(OOXML.W_NS, '*');
+  for (let i = 0; i < els.length; i++) {
+    const el = els.item(i) as Element;
+    if (!TRACKED_CHANGE_ELEMENT_NAME_SET.has(el.localName)) continue;
+    const id = revisionElementId(el);
+    if (id == null || !selectedIds.has(id)) return true;
+  }
+  return false;
+}
+
+function pruneOrphanedFootnotes(
+  footnotesDoc: Document,
+  liveRefIds: Set<number>,
+  protectForeign?: Set<string>,
+): number {
   const entries = Array.from(footnotesDoc.getElementsByTagNameNS(OOXML.W_NS, W.footnote));
   let pruned = 0;
   for (const fn of entries) {
@@ -166,6 +187,10 @@ function pruneOrphanedFootnotes(footnotesDoc: Document, liveRefIds: Set<number>)
     const id = parseWId(fn);
     if (id === null) continue;
     if (liveRefIds.has(id)) continue;
+    // Selective mode: never delete a note that still carries a foreign revision
+    // (the mixed-author byte-identical invariant, #123/#125). Leaving an
+    // unreferenced note is package hygiene at worst, not data loss.
+    if (protectForeign && footnoteHasForeignRevision(fn, protectForeign)) continue;
     fn.parentNode?.removeChild(fn);
     pruned++;
   }
@@ -465,7 +490,7 @@ export class DocxDocument {
 
       let footnotesPruned = 0;
       if (story.path === 'word/footnotes.xml' && liveFootnoteRefIds) {
-        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds);
+        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds, selectedIds);
       }
       if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(story.path, serializeXml(story.doc));
@@ -503,7 +528,7 @@ export class DocxDocument {
 
       let footnotesPruned = 0;
       if (story.path === 'word/footnotes.xml' && liveFootnoteRefIds) {
-        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds);
+        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds, selectedIds);
       }
       if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
         this.zip.writeText(story.path, serializeXml(story.doc));
