@@ -36,6 +36,15 @@ export async function deleteComment(
     await mutate(session.doc, ctx);
 
     manager.markEdited(session);
+    // The removed body-story w:commentReference run is wrapped in w:del (Table
+    // A), but removing the comment/reply body text from comments.xml and the
+    // reply graph from commentsExtended.xml is package-mutation side-part
+    // cleanup with no revision wrapper (#122): record it.
+    manager.recordNonRevisionChange(session, {
+      tool: 'delete_comment',
+      parts: [...COMMENT_TOUCHED_CONTEXT.sideParts, ...COMMENT_TOUCHED_CONTEXT.relationshipParts],
+      description: `Comment ${params.comment_id} and its threaded replies removed from comment side-story parts (comments.xml, commentsExtended.xml). The body-story comment reference removal is tracked separately as a w:del revision.`,
+    });
     return ok(mergeSessionResolutionMetadata({
       comment_id: params.comment_id,
       file_path: manager.normalizePath(session.originalPath),

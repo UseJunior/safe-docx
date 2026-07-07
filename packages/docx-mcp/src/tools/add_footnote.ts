@@ -56,6 +56,15 @@ export async function addFootnote(
     const result = await mutate(session.doc, ctx);
 
     manager.markEdited(session);
+    // The body-story w:footnoteReference and note text are tracked as w:ins
+    // (Table A), but creating word/footnotes.xml and registering the part in
+    // relationships/content-types is a package mutation with no revision
+    // wrapper (#122): record it in the non-revision manifest.
+    manager.recordNonRevisionChange(session, {
+      tool: 'add_footnote',
+      parts: [...FOOTNOTE_TOUCHED_CONTEXT.sideParts, ...FOOTNOTE_TOUCHED_CONTEXT.relationshipParts],
+      description: `Footnote ${result.noteId} note body written to word/footnotes.xml. When the document lacked footnote infrastructure, the part, its relationship, and content-type registration were bootstrapped. The body-story footnote reference is tracked separately as a w:ins revision.`,
+    });
     return ok(mergeSessionResolutionMetadata({
       note_id: result.noteId,
       target_paragraph_id: pid,

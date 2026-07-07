@@ -48,6 +48,13 @@ export async function addComment(
 
       const result = await mutate(session.doc, ctx);
       manager.markEdited(session);
+      // Replies have no body anchor, so the whole write is package-mutation
+      // side-part metadata (#122): record it in the non-revision manifest.
+      manager.recordNonRevisionChange(session, {
+        tool: 'add_comment',
+        parts: [...COMMENT_TOUCHED_CONTEXT.sideParts, ...COMMENT_TOUCHED_CONTEXT.relationshipParts],
+        description: `Threaded reply to comment ${parentCommentId} written to comment side-story parts (comments.xml, commentsExtended.xml, people.xml). Replies have no body anchor, so no tracked-change marker is emitted.`,
+      });
       return ok(mergeSessionResolutionMetadata({
         comment_id: result.commentId,
         parent_comment_id: result.parentCommentId,
@@ -126,6 +133,15 @@ export async function addComment(
     const result = await mutate(session.doc, ctx);
 
     manager.markEdited(session);
+    // The body-story w:commentReference run is wrapped in w:ins (Table A), but
+    // the comment body text, author metadata, and any comment-infrastructure
+    // bootstrap are package-mutation side-part writes with no revision wrapper
+    // (#122): record them in the non-revision manifest.
+    manager.recordNonRevisionChange(session, {
+      tool: 'add_comment',
+      parts: [...COMMENT_TOUCHED_CONTEXT.sideParts, ...COMMENT_TOUCHED_CONTEXT.relationshipParts],
+      description: `Comment ${result.commentId} body text and author metadata written to comment side-story parts (comments.xml, people.xml). The body-story comment reference is tracked separately as a w:ins revision.`,
+    });
     return ok(mergeSessionResolutionMetadata({
       comment_id: result.commentId,
       anchor_paragraph_id: pid,
