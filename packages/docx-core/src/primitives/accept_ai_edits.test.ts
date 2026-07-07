@@ -224,6 +224,23 @@ describe('selective accept/reject by revision id/author (#123)', () => {
       expect(() => acceptAIEdits(doc, { author: AI })).toThrow(AmbiguousRevisionOverlapError);
     });
 
+    it('merges a foreign body revision forward (byte-identical) on a selected paragraph-mark accept', () => {
+      // AI deleted the paragraph mark (para merges into the next). The source
+      // paragraph BODY carries a reviewer insertion — the merge must relocate it
+      // into the following paragraph byte-identically, never drop it. (Only a
+      // foreign revision in the source pPr is ambiguous; body content rides along.)
+      const foreignIns = `<w:ins w:id="2" w:author="${HUMAN}"><w:r><w:t xml:space="preserve">reviewer</w:t></w:r></w:ins>`;
+      const doc = body(
+        `<w:p><w:pPr><w:rPr><w:del w:id="1" w:author="${AI}"/></w:rPr></w:pPr>` +
+          `<w:r><w:t>a</w:t></w:r>${foreignIns}</w:p>` +
+          `<w:p><w:r><w:t>b</w:t></w:r></w:p>`,
+      );
+      acceptAIEdits(doc, { author: AI });
+      const out = xml(doc);
+      expect(out).toContain(foreignIns); // reviewer insertion preserved after the merge
+      expect(out).not.toContain('w:id="1"'); // AI paragraph-mark deletion accepted
+    });
+
     it('does not prune an orphaned footnote that still carries a foreign revision', async () => {
       // The body footnoteReference (id=9) lives inside a selected AI deletion, so
       // accepting it orphans footnote id=9 — which contains a reviewer insertion.
