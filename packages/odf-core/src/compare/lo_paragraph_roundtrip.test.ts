@@ -20,11 +20,18 @@
  *    so reject-all left a stray trailing empty paragraph; the emitter now keeps the bracket
  *    within the inserted run and stores the paired deletion without a merge artifact)
  *
- * NOT covered: compositions whose accept- or reject-target document ENDS with a table (pure
- * insertion after a trailing table, pure deletion of everything after a table). LibreOffice
- * appends a trailing empty paragraph to such documents on any load/save — observed even on
- * accept-all with no rejection involved — so an exact-text round-trip is unrepresentable there
- * regardless of the emitted markup.
+ * Also pinned here, G-case style (KNOWN ENGINE BUG, issue #540): a pure end-of-document deletion
+ * whose backward anchor is a table-cell paragraph. Its reject target (table + trailing
+ * paragraph) IS representable, but the point marker sits at the end of the CELL paragraph, so
+ * LibreOffice restores the deleted body paragraph inside the cell. The composition's
+ * `expectedAccept`/`expectedReject`/`assertRejectXml` pin today's wrong output so any drift —
+ * regression or accidental fix — surfaces.
+ *
+ * Separately: any document that ENDS with a table gains a trailing empty paragraph on a
+ * LibreOffice load/save (observed even on accept-all with no rejection involved), so
+ * exact-text round-trip is unrepresentable for accept/reject targets of that shape regardless
+ * of the emitted markup; the pinned expectations fold that normalization in. Pure insertion
+ * after a trailing table (reject target ends with the table) stays uncovered for that reason.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -89,6 +96,11 @@ type Composition = {
   /** Raw block XML overrides; when absent, blocks are plain `Standard` paragraphs of the texts. */
   originalXml?: string[];
   revisedXml?: string[];
+  /** Characterization overrides for pinned known-wrong outputs; default to `revised`/`original`. */
+  expectedAccept?: string[];
+  expectedReject?: string[];
+  /** Extra structural pin on the reject-all content.xml (texts alone can hide placement bugs). */
+  assertRejectXml?: (content: string) => void;
 };
 
 const COMPOSITIONS: Composition[] = [
@@ -139,6 +151,29 @@ const COMPOSITIONS: Composition[] = [
       standardParagraph('Executed and delivered by the parties.'),
     ],
   },
+  {
+    // KNOWN ENGINE BUG (issue #540), pinned: the deletion's backward anchor is the table-cell
+    // paragraph, so reject-all restores the deleted body paragraph INSIDE the cell (and the
+    // accept target ends with the table, so LibreOffice's load/save normalization appends a
+    // trailing empty paragraph). Update these pins when the anchoring is fixed.
+    name: 'KNOWN BUG (issue #540): pure end-of-document deletion after a table restores inside the cell',
+    original: ['Intro paragraph.', 'Signature cell.', 'Drop this trailing paragraph.'],
+    revised: ['Intro paragraph.', 'Signature cell.'],
+    originalXml: [
+      standardParagraph('Intro paragraph.'),
+      SIGNATURE_TABLE,
+      standardParagraph('Drop this trailing paragraph.'),
+    ],
+    revisedXml: [standardParagraph('Intro paragraph.'), SIGNATURE_TABLE],
+    expectedAccept: ['Intro paragraph.', 'Signature cell.', ''],
+    expectedReject: ['Intro paragraph.', 'Signature cell.', 'Drop this trailing paragraph.', ''],
+    assertRejectXml: (content) => {
+      // The restored paragraph sits inside the table cell — the issue #540 signature.
+      expect(content).toMatch(
+        /<table:table-cell[^>]*>(?:(?!<\/table:table-cell>)[\s\S])*Drop this trailing paragraph\./,
+      );
+    },
+  },
 ];
 
 describe('LibreOffice accept/reject round-trip of the paragraph-granularity redline', () => {
@@ -169,8 +204,9 @@ describe('LibreOffice accept/reject round-trip of the paragraph-granularity redl
       const results = await runLibreOfficeOracle(jobs, soffice);
       for (let i = 0; i < COMPOSITIONS.length; i++) {
         const c = COMPOSITIONS[i]!;
-        expect(paragraphTexts(results[2 * i]!), `${c.name}: accept-all`).toEqual(c.revised);
-        expect(paragraphTexts(results[2 * i + 1]!), `${c.name}: reject-all`).toEqual(c.original);
+        expect(paragraphTexts(results[2 * i]!), `${c.name}: accept-all`).toEqual(c.expectedAccept ?? c.revised);
+        expect(paragraphTexts(results[2 * i + 1]!), `${c.name}: reject-all`).toEqual(c.expectedReject ?? c.original);
+        c.assertRejectXml?.(results[2 * i + 1]!);
       }
     },
     240_000,
