@@ -68,28 +68,41 @@ classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
 
 Selective accept/reject ([#123](https://github.com/UseJunior/safe-docx/issues/123)) is exercised by a
 mixed-author invariant corpus at
-`packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts`. Each fixture
-carries an AI-authored revision, a foreign (reviewer) revision, and one document feature; after
-`acceptAIEdits` / `rejectAIEdits` targeting the AI author the corpus asserts the AI revision was
-resolved, the foreign revision is byte-identical, the feature is preserved, field structure stays
-balanced, and the document remains structurally valid.
+`packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts`. Each fixture carries an
+AI-authored revision, a foreign (reviewer) revision, and one document feature; after `acceptAIEdits`
+/ `rejectAIEdits` targeting the AI author the corpus asserts, per fixture, that **every** AI revision
+was resolved (0 remain), that the foreign revisions are **byte-identical** — their serialized
+subtrees, by author, are exactly equal (same set and count) before and after — that the feature is
+preserved, that field structure stays balanced, and that the body passes structural lint.
 
-| Feature / revision type | Accept | Reject | Round-trip evidence |
-| --- | --- | --- | --- |
-| `w:ins` / `w:del` (body) | ✅ | ✅ | validateDocument (CI); LibreOffice 25.8 headless (local, no recovery) |
-| `w:rPrChange` (foreign property change) | ✅ | ✅ | validateDocument (CI) |
-| Comment range markers (`w:commentRangeStart`/`End`) | ✅ | ✅ | validateDocument (CI) |
-| Bookmarks (`_bk_*` internal + user) | ✅ | ✅ | validateDocument (CI); LibreOffice 25.8 headless (local, no recovery) |
-| Content controls (`w:sdt`) | ✅ | ✅ | validateDocument (CI) |
-| Field codes (`w:fldChar` / `w:instrText`) | ✅ | ✅ | validateDocument (CI); LibreOffice 25.8 headless (local, no recovery) |
-| Numbering (`w:numPr`) | ✅ | ✅ | validateDocument (CI) |
-| Paragraph style (`w:pStyle`) | ✅ | ✅ | validateDocument (CI) |
-| Footnotes + reviewer revision in a note (side part) | ✅ | — | validateDocument (CI) |
+| Feature / revision preserved | Accept | Reject |
+| --- | --- | --- |
+| `w:ins` / `w:del` (body) | ✅ | ✅ |
+| `w:rPrChange` (foreign property change) | ✅ | ✅ |
+| `w:sectPrChange` (foreign section-properties change) | ✅ | ✅ |
+| `w:tcPrChange` (foreign table-cell-properties change) | ✅ | ✅ |
+| Comment range markers (`w:commentRangeStart`/`End`) | ✅ | ✅ |
+| Bookmarks (`_bk_*` internal + user) | ✅ | ✅ |
+| Content controls (`w:sdt`) | ✅ | ✅ |
+| Field codes (`w:fldChar` / `w:instrText`) | ✅ | ✅ |
+| Numbering reference (`w:numPr`) | ✅ | ✅ |
+| Paragraph / table styles (`w:pStyle`, table structure) | ✅ | ✅ |
+| Footnotes — reviewer revision inside a note (side part) | ✅ | ✅ |
+| Endnotes — reviewer revision inside a note (side part) | ✅ | ✅ |
 
-`validateDocument` (structural integrity + tracked-change/field balance) is the CI-runnable proxy for
-"opens without recovery"; Word runners are unavailable, so Word round-trip is manual/pending.
-LibreOffice headless round-trip was performed locally on representative accepted fixtures (`soffice
---convert-to pdf` produced valid output with no recovery prompt).
+`validateDocument` is **body-level structural lint** (bookmark pairing, tracked-change wrapper
+attributes, `w:fldChar` begin/end balance) — it is the CI assertion that the sweep did not corrupt the
+body, **not** a guarantee that Word/LibreOffice will open the file without recovery. Representative
+accepted fixtures (bookmarks, field codes) were additionally opened in **LibreOffice 25.8 headless**
+locally (`soffice --convert-to pdf`, no recovery prompt); Word round-trip is manual/pending.
+
+**Scope.** accept/reject resolves `w:ins`, `w:del`, `w:moveFrom`/`w:moveTo`, and the property changes
+`w:rPrChange`/`w:pPrChange`/`w:sectPrChange`/`w:tblPrChange`/`w:trPrChange`/`w:tcPrChange`. Cell-topology
+and grid/numbering revisions (`w:cellIns`/`w:cellDel`/`w:cellMerge`/`w:tblGridChange`/`w:numberingChange`)
+are **not** resolved by the engine and are not emitted by any current primitive (Appendix B), so they
+are deferred. Parts the sweep never reads — `styles.xml`, `numbering.xml`, headers/footers,
+relationships, content types — are preserved by construction; the corpus targets the swept stories
+(`document.xml` + `footnotes`/`endnotes`/`comments`) where preservation is non-trivial.
 
 ## Internal / non-contract utilities
 
