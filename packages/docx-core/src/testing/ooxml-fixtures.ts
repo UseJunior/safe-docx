@@ -155,8 +155,22 @@ export function WHOLE_FIELD_IN_DEL(
  * Use `buildSyntheticDocx` (in `../integration/synthetic-docx-fixture.ts`)
  * instead when you need paragraph-array input with optional
  * footnote/comment/bookmark scaffolding.
+ *
+ * Pass `hyperlinkRels` to populate `word/_rels/document.xml.rels` with hyperlink
+ * relationships so `r:id` references in the body actually resolve (needed to
+ * exercise link retargeting / relationship merging — issue #376).
  */
-export async function buildDocxFromBodyXml(bodyXml: string): Promise<Buffer> {
+export interface HyperlinkRelFixture {
+  id: string;
+  target: string;
+  /** Defaults to true (external URL); pass false for an internal target. */
+  external?: boolean;
+}
+
+export async function buildDocxFromBodyXml(
+  bodyXml: string,
+  hyperlinkRels: HyperlinkRelFixture[] = [],
+): Promise<Buffer> {
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
@@ -179,9 +193,28 @@ export async function buildDocxFromBodyXml(bodyXml: string): Promise<Buffer> {
     `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
     `</Relationships>`;
 
+  const escapeAttr = (value: string): string =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  const hyperlinkRelsXml = hyperlinkRels
+    .map((rel) => {
+      const external = rel.external ?? true;
+      const mode = external ? ` TargetMode="External"` : '';
+      return (
+        `<Relationship Id="${escapeAttr(rel.id)}"` +
+        ` Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"` +
+        ` Target="${escapeAttr(rel.target)}"${mode}/>`
+      );
+    })
+    .join('');
+
   const docRelsXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    `${hyperlinkRelsXml}` +
     `</Relationships>`;
 
   const zip = new JSZip();

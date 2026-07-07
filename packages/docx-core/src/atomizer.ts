@@ -1034,6 +1034,58 @@ export function nearestHyperlinkAncestor(atom: ComparisonUnitAtom): WmlElement |
 }
 
 /**
+ * The logical destination of a w:hyperlink, used to salt atom identity.
+ *
+ * Prefers the *resolved* target over the raw r:id: an external r:id resolves
+ * through `relsMap` to its URL, an internal link salts on its w:anchor, and an
+ * unresolvable r:id falls back to the raw id so at least attribute-level
+ * discrimination survives. Same destination on both sides yields the same salt
+ * (still Equal); a changed destination yields different salts, which is what
+ * turns a retarget into delete-old-link + insert-new-link.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/376
+ */
+function hyperlinkDestinationSalt(
+  link: WmlElement,
+  relsMap: ReadonlyMap<string, string>
+): string | null {
+  const rid = link.getAttribute('r:id');
+  const anchor = link.getAttribute('w:anchor');
+  const parts: string[] = [];
+  if (rid) parts.push(`rel=${relsMap.get(rid) ?? `unresolved:${rid}`}`);
+  if (anchor) parts.push(`anchor=${anchor}`);
+  return parts.length > 0 ? parts.join('|') : null;
+}
+
+/**
+ * Fold each atom's nearest-hyperlink destination into its identity hash so the
+ * LCS stops matching equal text that sits under different link targets. Applied
+ * as a post-atomization pass (after run/word merging and numbering salting, all
+ * of which leave each atom with a single well-defined ancestry) so it need not
+ * be duplicated at every hash-recompute site.
+ *
+ * Atoms outside any hyperlink, and hyperlinks with neither r:id nor anchor, are
+ * left untouched — their hashes stay byte-identical to the pre-#376 output.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see https://github.com/UseJunior/safe-docx/issues/376
+ */
+export function applyHyperlinkDestinationSalt(
+  atoms: ComparisonUnitAtom[],
+  relsMap: ReadonlyMap<string, string>
+): void {
+  for (const atom of atoms) {
+    const link = nearestHyperlinkAncestor(atom);
+    if (!link) continue;
+    const salt = hyperlinkDestinationSalt(link, relsMap);
+    if (salt !== null) {
+      atom.sha1Hash = `${atom.sha1Hash}:hlink:${salt}`;
+    }
+  }
+}
+
+/**
  * Check if two atoms can be merged into one.
  *
  * Atoms can be merged if they:

@@ -39,7 +39,14 @@ import {
   DEFAULT_FORMAT_DETECTION_SETTINGS,
   CorrelationStatus,
 } from '../../core-types.js';
-import { atomizeTree, assignParagraphIndices } from '../../atomizer.js';
+import { atomizeTree, assignParagraphIndices, applyHyperlinkDestinationSalt } from '../../atomizer.js';
+import {
+  parseHyperlinkRelTargets,
+  parseHyperlinkRelEntries,
+  listRelationshipIds,
+  type HyperlinkRelEntry,
+} from '../../primitives/relationships.js';
+import { OOXML } from '../../primitives/namespaces.js';
 import { detectMovesInAtomList } from '../../move-detection.js';
 import { detectFormatChangesInAtomList } from '../../format-detection.js';
 import {
@@ -58,6 +65,7 @@ import {
 } from './hierarchicalLcs.js';
 import {
   reconstructDocument,
+  type HyperlinkRelResolver,
   computeReconstructionStats,
 } from './documentReconstructor.js';
 import { modifyRevisedDocument, ContainerResolutionError } from './inPlaceModifier.js';
@@ -610,6 +618,19 @@ export async function compareDocumentsAtomizer(
   const originalNumberingXml = await originalArchive.getNumberingXml() ?? undefined;
   const revisedNumberingXml = await revisedArchive.getNumberingXml() ?? undefined;
 
+  // Extract hyperlink relationship tables from BOTH archives (issue #376).
+  // The salt uses these to hash a link's resolved destination (so retargeting
+  // becomes delete-old-link + insert-new-link); step 12 uses them to ship a
+  // resolvable relationship for any inserted/retargeted link in rebuild output.
+  const [originalRelsRaw, revisedRelsRaw] = await Promise.all([
+    originalArchive.getFile('word/_rels/document.xml.rels'),
+    revisedArchive.getFile('word/_rels/document.xml.rels'),
+  ]);
+  const originalRelsDoc = originalRelsRaw ? parseXml(originalRelsRaw) : null;
+  const revisedRelsDoc = revisedRelsRaw ? parseXml(revisedRelsRaw) : null;
+  const originalHyperlinkTargets = parseHyperlinkRelTargets(originalRelsDoc);
+  const revisedHyperlinkTargets = parseHyperlinkRelTargets(revisedRelsDoc);
+
   // Extract footnote/endnote sidecars from BOTH archives for per-story
   // field-closure validation (issue #212). Step 12 picks the base archive by
   // reconstruction mode (inplace = revised, rebuild = original) and merges
@@ -659,6 +680,7 @@ export async function compareDocumentsAtomizer(
     mergedAtoms: ComparisonUnitAtom[];
     newDocumentXml: string;
     outputMode: ReconstructionMode;
+    hyperlinkRelationships: NewHyperlinkRel[];
   } => {
     // Parse fresh trees for each pass because inplace reconstruction mutates revised AST.
     const originalTree = parseDocumentXml(originalXml);
@@ -690,6 +712,12 @@ export async function compareDocumentsAtomizer(
       virtualizeNumberingLabels(revisedAtoms, revisedNumberingXml, numberingSettings);
     }
 
+    // Step 5b: Salt atom identity with each side's resolved hyperlink target so
+    // the LCS represents a retargeted link as delete-old-link + insert-new-link
+    // instead of matching its text across different destinations (issue #376).
+    applyHyperlinkDestinationSalt(originalAtoms, originalHyperlinkTargets);
+    applyHyperlinkDestinationSalt(revisedAtoms, revisedHyperlinkTargets);
+
     // Step 6: Run hierarchical LCS (paragraph-level first, then atom-level within)
     const lcsResult = hierarchicalCompare(originalAtoms, revisedAtoms);
 
@@ -719,6 +747,7 @@ export async function compareDocumentsAtomizer(
 
     // Step 11: Reconstruct document with track changes
     let newDocumentXml: string;
+    let hyperlinkRelationships: NewHyperlinkRel[] = [];
     if (outputMode === 'inplace') {
       // In-place mode: modify the revised AST directly, producing revised-based output.
       newDocumentXml = modifyRevisedDocument(
@@ -730,10 +759,18 @@ export async function compareDocumentsAtomizer(
       );
     } else {
       // Rebuild mode: reconstruct from atoms using original as the structural base.
-      newDocumentXml = reconstructDocument(mergedAtoms, originalXml, { author, date });
+      // Ship a resolvable relationship for any inserted/retargeted link whose
+      // r:id lives only in the revised package (issue #376).
+      const { resolver, newRelationships } = createRebuildHyperlinkRelResolver(
+        originalRelsDoc, revisedRelsDoc
+      );
+      newDocumentXml = reconstructDocument(mergedAtoms, originalXml, {
+        author, date, hyperlinkRelResolver: resolver,
+      });
+      hyperlinkRelationships = newRelationships;
     }
 
-    return { mergedAtoms, newDocumentXml, outputMode };
+    return { mergedAtoms, newDocumentXml, outputMode, hyperlinkRelationships };
   };
 
   const evaluateRoundTripSafety = (candidateXml: string) =>
@@ -750,6 +787,7 @@ export async function compareDocumentsAtomizer(
     mergedAtoms: ComparisonUnitAtom[];
     newDocumentXml: string;
     outputMode: ReconstructionMode;
+    hyperlinkRelationships: NewHyperlinkRel[];
   };
   let fallbackReason: ReconstructionFallbackReason | undefined;
   let fallbackDiagnostics: ReconstructionFallbackDiagnostics | undefined;
@@ -887,6 +925,10 @@ export async function compareDocumentsAtomizer(
   const resultArchive = await baseArchive.clone();
   maybeCaptureEmittedDocumentXml(newDocumentXml);
   resultArchive.setDocumentXml(newDocumentXml);
+
+  // Step 12a: Ship relationships for inserted/retargeted hyperlinks whose r:id
+  // the rebuild reconstructor re-mapped into the original-based package (#376).
+  await appendHyperlinkRelationships(resultArchive, comparisonResult.hyperlinkRelationships);
 
   // Step 12b: Merge auxiliary part definitions (footnotes, endnotes, comments).
   // Reconstruction may insert content (deleted in inplace, added in rebuild)
@@ -1135,6 +1177,140 @@ async function ensureOpcMetadata(
       archive.setFile(relsPath, serializer.serializeToString(relsDoc));
     }
   }
+}
+
+// =============================================================================
+// Hyperlink Relationship Merging (issue #376)
+//
+// Rebuild output is cloned from the ORIGINAL archive, so a hyperlink inserted
+// or retargeted by the revision references an r:id that resolves only in the
+// REVISED package. These helpers ship the revised destination into the output's
+// document.xml.rels — reusing an original relationship that already points at
+// the same target, or allocating a fresh collision-free id — mirroring the
+// copy-if-missing convention used for auxiliary parts (issue #94).
+// =============================================================================
+
+/** A hyperlink relationship to append to the rebuild output's rels part. */
+interface NewHyperlinkRel {
+  id: string;
+  target: string;
+  external: boolean;
+}
+
+/** Destination identity that folds in the target mode (external vs internal). */
+function hyperlinkDestKey(entry: HyperlinkRelEntry): string {
+  return `${entry.external ? 'ext' : 'int'}:${entry.target}`;
+}
+
+/** Highest numeric `rIdN` among a set of relationship ids (0 when none). */
+function maxNumericRelId(ids: Set<string>): number {
+  let max = 0;
+  for (const id of ids) {
+    const m = /^rId(\d+)$/.exec(id);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return max;
+}
+
+/**
+ * Build the HyperlinkRelResolver for rebuild output. `resolveRevisedOnlyRid`
+ * maps a revised-only hyperlink r:id to one that resolves in the output
+ * package, recording any freshly-allocated relationship in `newRelationships`
+ * for the pipeline to append. Returns null when the revised side has no
+ * shippable relationship for that r:id (the wrapper is then dropped).
+ */
+function createRebuildHyperlinkRelResolver(
+  originalRelsDoc: Document | null,
+  revisedRelsDoc: Document | null,
+): { resolver: HyperlinkRelResolver; newRelationships: NewHyperlinkRel[] } {
+  const originalEntries = parseHyperlinkRelEntries(originalRelsDoc);
+  const revisedEntries = parseHyperlinkRelEntries(revisedRelsDoc);
+  const existingIds = listRelationshipIds(originalRelsDoc);
+
+  const originalIdByDest = new Map<string, string>();
+  for (const [id, entry] of originalEntries) {
+    if (!originalIdByDest.has(hyperlinkDestKey(entry))) {
+      originalIdByDest.set(hyperlinkDestKey(entry), id);
+    }
+  }
+
+  const newRelationships: NewHyperlinkRel[] = [];
+  const allocatedIdByDest = new Map<string, string>();
+  const resultByRid = new Map<string, string | null>();
+  let maxId = maxNumericRelId(existingIds);
+
+  const resolver: HyperlinkRelResolver = {
+    destinationKey(element, fromOriginal): string {
+      const rid = element.getAttribute('r:id');
+      const anchor = element.getAttribute('w:anchor');
+      const parts: string[] = [];
+      if (rid) {
+        const entry = (fromOriginal ? originalEntries : revisedEntries).get(rid);
+        parts.push(`rel=${entry ? hyperlinkDestKey(entry) : `unresolved:${rid}`}`);
+      }
+      if (anchor) parts.push(`anchor=${anchor}`);
+      // Attribute-less wrapper: fall back to identity so distinct empty
+      // wrappers never accidentally merge.
+      return parts.length > 0 ? parts.join('|') : `wrapper:${fromOriginal ? 'o' : 'r'}`;
+    },
+    resolveRevisedOnlyRid(revisedRid: string): string | null {
+      const cached = resultByRid.get(revisedRid);
+      if (cached !== undefined) return cached;
+
+      const entry = revisedEntries.get(revisedRid);
+      let result: string | null;
+      if (!entry) {
+        result = null;
+      } else {
+        const key = hyperlinkDestKey(entry);
+        const reused = originalIdByDest.get(key) ?? allocatedIdByDest.get(key);
+        if (reused) {
+          result = reused;
+        } else {
+          let id: string;
+          do {
+            id = `rId${++maxId}`;
+          } while (existingIds.has(id));
+          allocatedIdByDest.set(key, id);
+          newRelationships.push({ id, target: entry.target, external: entry.external });
+          result = id;
+        }
+      }
+      resultByRid.set(revisedRid, result);
+      return result;
+    },
+  };
+
+  return { resolver, newRelationships };
+}
+
+/**
+ * Append merged-in hyperlink relationships to the result package's
+ * document.xml.rels. No-op when there are none.
+ */
+async function appendHyperlinkRelationships(
+  archive: DocxArchive,
+  relationships: NewHyperlinkRel[],
+): Promise<void> {
+  if (relationships.length === 0) return;
+  const relsPath = 'word/_rels/document.xml.rels';
+  const relsXml = await archive.getFile(relsPath);
+  const relsDoc = relsXml
+    ? parseXml(relsXml)
+    : parseXml(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Relationships xmlns="${REL_NS}"></Relationships>`,
+      );
+  const relsEl = relsDoc.documentElement;
+  for (const rel of relationships) {
+    const el = relsDoc.createElementNS(REL_NS, 'Relationship');
+    el.setAttribute('Id', rel.id);
+    el.setAttribute('Type', OOXML.HYPERLINK_REL_TYPE);
+    el.setAttribute('Target', rel.target);
+    if (rel.external) el.setAttribute('TargetMode', 'External');
+    relsEl.appendChild(el);
+  }
+  archive.setFile(relsPath, serializer.serializeToString(relsDoc));
 }
 
 // =============================================================================
