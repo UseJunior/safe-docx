@@ -20,12 +20,11 @@
  *    so reject-all left a stray trailing empty paragraph; the emitter now keeps the bracket
  *    within the inserted run and stores the paired deletion without a merge artifact)
  *
- * Also pinned here, G-case style (KNOWN ENGINE BUG, issue #540): a pure end-of-document deletion
- * whose backward anchor is a table-cell paragraph. Its reject target (table + trailing
- * paragraph) IS representable, but the point marker sits at the end of the CELL paragraph, so
- * LibreOffice restores the deleted body paragraph inside the cell. The composition's
- * `expectedAccept`/`expectedReject`/`assertRejectXml` pin today's wrong output so any drift —
- * regression or accidental fix — surfaces.
+ *  - pure end-of-document deletion whose backward anchor is a table-cell paragraph (issue #540 —
+ *    anchoring the point marker at the end of the CELL paragraph made LibreOffice restore the
+ *    deleted body paragraph INSIDE the cell on reject-all; the emitter now synthesizes a residual
+ *    empty body paragraph after the table to host the marker, so reject-all restores the deleted
+ *    paragraph after the table and `assertRejectXml` guards that it is NOT inside the cell)
  *
  * Separately: any document that ENDS with a table gains a trailing empty paragraph on a
  * LibreOffice load/save (observed even on accept-all with no rejection involved), so
@@ -152,11 +151,13 @@ const COMPOSITIONS: Composition[] = [
     ],
   },
   {
-    // KNOWN ENGINE BUG (issue #540), pinned: the deletion's backward anchor is the table-cell
-    // paragraph, so reject-all restores the deleted body paragraph INSIDE the cell (and the
-    // accept target ends with the table, so LibreOffice's load/save normalization appends a
-    // trailing empty paragraph). Update these pins when the anchoring is fixed.
-    name: 'KNOWN BUG (issue #540): pure end-of-document deletion after a table restores inside the cell',
+    // issue #540 (fixed): a PURE end-of-document deletion whose backward anchor is the table-cell
+    // paragraph. Anchoring the marker in the cell made reject-all restore the deleted body
+    // paragraph INSIDE the cell; the emitter now hosts the marker in a synthesized residual empty
+    // body paragraph after the table, so reject-all restores the original AFTER the table.
+    // Accept-all leaves that residual empty paragraph (the document then ends with an empty body
+    // paragraph — same visible text LibreOffice's end-with-a-table normalization would produce).
+    name: 'issue #540 (fixed): pure end-of-document deletion after a table restores after the cell',
     original: ['Intro paragraph.', 'Signature cell.', 'Drop this trailing paragraph.'],
     revised: ['Intro paragraph.', 'Signature cell.'],
     originalXml: [
@@ -166,12 +167,39 @@ const COMPOSITIONS: Composition[] = [
     ],
     revisedXml: [standardParagraph('Intro paragraph.'), SIGNATURE_TABLE],
     expectedAccept: ['Intro paragraph.', 'Signature cell.', ''],
-    expectedReject: ['Intro paragraph.', 'Signature cell.', 'Drop this trailing paragraph.', ''],
+    // reject-all reproduces the original exactly (no stray trailing empty paragraph): default.
     assertRejectXml: (content) => {
-      // The restored paragraph sits inside the table cell — the issue #540 signature.
-      expect(content).toMatch(
+      // The restored paragraph is a body paragraph AFTER the table, NOT inside the cell.
+      expect(content).not.toMatch(
         /<table:table-cell[^>]*>(?:(?!<\/table:table-cell>)[\s\S])*Drop this trailing paragraph\./,
       );
+      expect(content).toMatch(/<\/table:table>[\s\S]*Drop this trailing paragraph\./);
+    },
+  },
+  {
+    // issue #540, coalesced N>1: two trailing paragraphs deleted after the table. The single
+    // synthesized residual empty body paragraph is the only merge slot, yet reject-all must restore
+    // BOTH paragraphs after the table in order — the no-artifact storage supplies the one missing
+    // break between them (same accounting as the issue #380 coalesced insertion-start case). Proves
+    // the residual-body representation is faithful for N > 1, not just the single-paragraph shape.
+    name: 'issue #540 (fixed): coalesced multi-paragraph end-of-document deletion after a table',
+    original: ['Intro paragraph.', 'Signature cell.', 'First trailing.', 'Second trailing.'],
+    revised: ['Intro paragraph.', 'Signature cell.'],
+    originalXml: [
+      standardParagraph('Intro paragraph.'),
+      SIGNATURE_TABLE,
+      standardParagraph('First trailing.'),
+      standardParagraph('Second trailing.'),
+    ],
+    revisedXml: [standardParagraph('Intro paragraph.'), SIGNATURE_TABLE],
+    expectedAccept: ['Intro paragraph.', 'Signature cell.', ''],
+    // reject-all reproduces the original exactly (both trailing paragraphs, in order): default.
+    assertRejectXml: (content) => {
+      // Neither restored paragraph sits inside the cell; both are body paragraphs after the table.
+      expect(content).not.toMatch(
+        /<table:table-cell[^>]*>(?:(?!<\/table:table-cell>)[\s\S])*(First|Second) trailing\./,
+      );
+      expect(content).toMatch(/<\/table:table>[\s\S]*First trailing\.[\s\S]*Second trailing\./);
     },
   },
 ];

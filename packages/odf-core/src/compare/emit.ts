@@ -29,7 +29,12 @@
  *    co-located `text:change-start`, hence still outside the insertion span — and its region
  *    stores NO merge-artifact paragraph: rejecting the content-only insertion leaves one
  *    residual empty paragraph behind, and that residual paragraph is the merge slot the
- *    artifact normally provides (issue #380). Consecutive deletions coalesce into ONE region with
+ *    artifact normally provides (issue #380). A PURE end-of-document deletion (no paired
+ *    insertion) whose backward anchor is a table-cell paragraph likewise cannot anchor in the
+ *    cell — LibreOffice would restore the deleted paragraph INSIDE the cell (issue #540); instead
+ *    a fresh empty body `text:p` is appended after the table to host the marker and serve as the
+ *    (no-artifact) merge slot, so rejecting restores the paragraph after the table. Consecutive
+ *    deletions coalesce into ONE region with
  *    all deleted paragraphs plus one empty merge-artifact paragraph (artifact last for forward,
  *    first for backward). `text:change` is inline and is never a direct block child of
  *    `office:text`.
@@ -233,10 +238,11 @@ export function emitTrackedChanges(params: EmitParams): EmitResult {
       build: () => {
         const mode = deletionAnchorMode(dr, insertRuns, revisedBlocks, m);
         const deletedPs = dr.originalIndices.map((i) => revisedDoc.importNode(originalBlocks[i]!, true) as Element);
-        // 'insertion-start' stores no merge artifact: the residual empty paragraph left by
-        // rejecting the co-located content-only insertion is the merge slot (issue #380).
+        // 'insertion-start' and 'residual-body' store no merge artifact: the residual empty
+        // body paragraph — left by rejecting a co-located content-only insertion (issue #380)
+        // or synthesized after the trailing table (issue #540) — IS the merge slot.
         const stored =
-          mode === 'insertion-start'
+          mode === 'insertion-start' || mode === 'residual-body'
             ? deletedPs
             : mode === 'forward'
               ? [...deletedPs, makeEmptyParagraph(revisedDoc, originalBlocks[dr.originalIndices[0]!]!)]
@@ -271,8 +277,17 @@ export function emitTrackedChanges(params: EmitParams): EmitResult {
   // --- Place whole-paragraph deletion point markers.
   for (const run of deleteRuns) {
     const marker = makeMarker(revisedDoc, 'change', run.id);
-    if (deletionAnchorMode(run, insertRuns, revisedBlocks, m) === 'backward') {
+    const mode = deletionAnchorMode(run, insertRuns, revisedBlocks, m);
+    if (mode === 'backward') {
       appendOutsideInsertionStart(revisedBlocks[Math.min(run.revisedCursor, m) - 1]!, marker);
+    } else if (mode === 'residual-body') {
+      // Pure end-of-document deletion after a trailing table (issue #540): synthesize an empty
+      // body paragraph after the table to host the marker, so Reject All restores the deleted
+      // paragraph AFTER the table rather than inside the cell. The paragraph inherits the deleted
+      // block's style and is the region's merge slot.
+      const residual = makeEmptyParagraph(revisedDoc, originalBlocks[run.originalIndices[0]!]!);
+      prepend(residual, marker);
+      officeText.appendChild(residual);
     } else {
       // 'forward' and 'insertion-start' both prepend at the cursor block. For 'insertion-start'
       // the co-located insertion's `change-start` was prepended first (insertion markers are
@@ -358,8 +373,17 @@ function placeModifyMarkers(doc: Document, block: Element, placements: MarkerPla
  *    table-cell paragraph: there the insertion bracket stays within the inserted run (see
  *    `placeInsertionMarkers`), so the paragraph start is outside the insertion span, and the
  *    deletion's region stores no merge-artifact paragraph (issue #380).
+ *  - `residual-body`: a fresh empty body `text:p` appended after the trailing table hosts the
+ *    marker at its start. Chosen instead of `backward` for a PURE end-of-document deletion (no
+ *    paired insertion) whose backward anchor would be a table-cell paragraph: anchoring in the
+ *    cell makes LibreOffice Reject All restore the deleted body paragraph INSIDE the cell
+ *    (issue #540). LibreOffice cannot delete a document's final paragraph mark nor merge a body
+ *    paragraph into a table cell, so the faithful shape keeps a residual empty body paragraph
+ *    after the table — the merge slot — and the deletion's region stores no merge-artifact
+ *    paragraph (mirrors the `insertion-start` residual, whose slot is left by rejecting a
+ *    content-only insertion). Reject re-inserts the stored paragraphs there, after the table.
  */
-type DeletionAnchorMode = 'forward' | 'backward' | 'insertion-start';
+type DeletionAnchorMode = 'forward' | 'backward' | 'insertion-start' | 'residual-body';
 
 function deletionAnchorMode(
   run: DeleteRun,
@@ -367,7 +391,7 @@ function deletionAnchorMode(
   revisedBlocks: Element[],
   m: number,
 ): DeletionAnchorMode {
-  if (run.revisedCursor >= m) return 'backward';
+  if (run.revisedCursor >= m) return isInsideTableCell(revisedBlocks[m - 1]!) ? 'residual-body' : 'backward';
   if (run.revisedCursor === 0) return 'forward';
   if (!insertRuns.some((ins) => ins.a === run.revisedCursor && ins.b === m - 1)) return 'forward';
   return isInsideTableCell(revisedBlocks[run.revisedCursor - 1]!) ? 'insertion-start' : 'backward';
