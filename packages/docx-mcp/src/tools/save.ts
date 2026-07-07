@@ -4,7 +4,6 @@ import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
 import {
-  DocxDocument,
   DocxZip,
   TRACKED_CHANGE_ELEMENT_NAME_SET,
   parseXml,
@@ -257,9 +256,14 @@ export async function save(
       // author there is no write-time AI markup, so the document serializes as-is
       // with a minimal, blast-radius-matching diff.
       if (session.aiAuthor) {
-        const cleanDoc = await DocxDocument.load((await session.doc.toBuffer({ cleanBookmarks: false })).buffer);
-        await cleanDoc.acceptAIEdits({ author: session.aiAuthor, normalizeFirst: true });
-        const cleaned = await cleanDoc.toBuffer({ cleanBookmarks: clean });
+        // Accept the AI actor's write-time edits on an isolated copy so the
+        // session (and its tracked artifact) keep the markup, while untouched
+        // body blocks stay byte-identical to the source via minimal
+        // reserialization against the true original document.xml (#408).
+        const cleaned = await session.doc.toAcceptedBuffer(
+          { author: session.aiAuthor, normalizeFirst: true },
+          { cleanBookmarks: clean },
+        );
         revisedBuffer = cleaned.buffer;
         bookmarksRemoved = cleaned.bookmarksRemoved;
         blocksRestored = cleaned.blocksRestored;

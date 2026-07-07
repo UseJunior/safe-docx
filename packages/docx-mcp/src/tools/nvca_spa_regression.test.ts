@@ -35,8 +35,8 @@ const BONTERMS_NDA_SOURCE = path.resolve(__dirname, '../../../../tests/test_docu
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-function createMgr(): SessionManager {
-  return new SessionManager({ ttlMs: 60 * 60 * 1000 });
+function createMgr(defaultAiAuthor: string | null = null): SessionManager {
+  return new SessionManager({ ttlMs: 60 * 60 * 1000, defaultAiAuthor });
 }
 
 const tempDirs: string[] = [];
@@ -53,16 +53,21 @@ async function makeTempDir(prefix = 'nvca-spa-'): Promise<string> {
   return dir;
 }
 
-async function openFixture(source: string): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
-  const mgr = createMgr();
+async function openFixture(
+  source: string,
+  defaultAiAuthor: string | null = null,
+): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
+  const mgr = createMgr(defaultAiAuthor);
   const openRes = await openDocument(mgr, { file_path: source });
   expect(openRes.success).toBe(true);
   const filePath = (openRes.file_path as string) ?? source;
   return { mgr, sid: filePath, filePath };
 }
 
-async function openSPA(): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
-  return openFixture(SOURCE);
+async function openSPA(
+  defaultAiAuthor: string | null = null,
+): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
+  return openFixture(SOURCE, defaultAiAuthor);
 }
 
 function assertSuccess(result: { success: boolean }, label: string): void {
@@ -420,7 +425,9 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
     let saveRes: Awaited<ReturnType<typeof save>>;
 
     await given('the NVCA SPA source document is open and the Code definition has been expanded', async () => {
-      ({ mgr, sid, filePath } = await openSPA());
+      // A tracked session emits write-time redline markup on edit (#126); the
+      // author matches tracked_changes_author below.
+      ({ mgr, sid, filePath } = await openSPA('NVCA Test'));
       const tmpDir = await makeTempDir();
       const result = await replaceText(mgr, {
         file_path: filePath,
@@ -445,12 +452,17 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
     await then('the save succeeds', () => {
       assertSuccess(saveRes, 'save tracked');
     });
-    await and('the tracked file contains w:ins and w:del revision markup with the inserted text', async () => {
+    await and('the tracked file contains w:ins revision markup with the inserted clause', async () => {
       const { readDocumentXmlFromPath } = await import('../testing/docx_test_utils.js');
       const trackedXml = await readDocumentXmlFromPath(trackedPath);
+      // The Code definition was expanded by inserting a clause before the final
+      // period, so the write-time redline is a pure insertion (no deletion).
+      // Deletion markup is covered by the replace-with-different-text cases in
+      // the parity and open-agreements E2E suites.
       expect(trackedXml).toContain('w:ins');
-      expect(trackedXml).toContain('w:del');
-      expect(trackedXml).toContain('Treasury');
+      const insertedRuns = trackedXml.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g) ?? [];
+      const insertedText = insertedRuns.map((run) => run.replace(/<[^>]+>/g, '')).join('');
+      expect(insertedText).toContain('Treasury regulations promulgated thereunder');
     });
   });
 });
