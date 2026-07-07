@@ -64,6 +64,46 @@ classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
 (`surface`: `revisionable` | `package-mutation` | `internal`, plus
 `emitsNonRevisionChanges`).
 
+### Accept/reject invariant coverage (implemented in [#124](https://github.com/UseJunior/safe-docx/issues/124))
+
+Selective accept/reject ([#123](https://github.com/UseJunior/safe-docx/issues/123)) is exercised by a
+mixed-author invariant corpus at
+`packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts`. Each fixture carries an
+AI-authored revision, a foreign (reviewer) revision, and one document feature; after `acceptAIEdits`
+/ `rejectAIEdits` targeting the AI author the corpus asserts, per fixture, that **every** AI revision
+was resolved (0 remain), that the foreign revisions are **byte-identical** — their serialized
+subtrees, by author, are exactly equal (same set and count) before and after — that the feature is
+preserved, that field structure stays balanced, and that the body passes structural lint.
+
+| Feature / revision preserved | Accept | Reject |
+| --- | --- | --- |
+| `w:ins` / `w:del` (body) | ✅ | ✅ |
+| `w:rPrChange` (foreign property change) | ✅ | ✅ |
+| `w:sectPrChange` (foreign section-properties change) | ✅ | ✅ |
+| `w:tcPrChange` (foreign table-cell-properties change) | ✅ | ✅ |
+| Comment range markers (`w:commentRangeStart`/`End`) | ✅ | ✅ |
+| Bookmarks (`_bk_*` internal + user) | ✅ | ✅ |
+| Content controls (`w:sdt`) | ✅ | ✅ |
+| Field codes (`w:fldChar` / `w:instrText`) | ✅ | ✅ |
+| Numbering reference (`w:numPr`) | ✅ | ✅ |
+| Paragraph / table styles (`w:pStyle`, table structure) | ✅ | ✅ |
+| Footnotes — reviewer revision inside a note (side part) | ✅ | ✅ |
+| Endnotes — reviewer revision inside a note (side part) | ✅ | ✅ |
+
+`validateDocument` is **body-level structural lint** (bookmark pairing, tracked-change wrapper
+attributes, `w:fldChar` begin/end balance) — it is the CI assertion that the sweep did not corrupt the
+body, **not** a guarantee that Word/LibreOffice will open the file without recovery. Representative
+accepted fixtures (bookmarks, field codes) were additionally opened in **LibreOffice 25.8 headless**
+locally (`soffice --convert-to pdf`, no recovery prompt); Word round-trip is manual/pending.
+
+**Scope.** accept/reject resolves `w:ins`, `w:del`, `w:moveFrom`/`w:moveTo`, and the property changes
+`w:rPrChange`/`w:pPrChange`/`w:sectPrChange`/`w:tblPrChange`/`w:trPrChange`/`w:tcPrChange`. Cell-topology
+and grid/numbering revisions (`w:cellIns`/`w:cellDel`/`w:cellMerge`/`w:tblGridChange`/`w:numberingChange`)
+are **not** resolved by the engine and are not emitted by any current primitive (Appendix B), so they
+are deferred. Parts the sweep never reads — `styles.xml`, `numbering.xml`, headers/footers,
+relationships, content types — are preserved by construction; the corpus targets the swept stories
+(`document.xml` + `footnotes`/`endnotes`/`comments`) where preservation is non-trivial.
+
 ## Internal / non-contract utilities
 
 These files are intentionally outside the revisionable-surface contract. Some perform XML mutations (e.g., bookmark scaffolding, run normalization, style elevation) but those mutations are internal/non-AI-attributable rather than user-directed edits. Others consume or normalize existing tracked changes instead of creating them. Either way, none are part of the promised AI-authored revision contract.
