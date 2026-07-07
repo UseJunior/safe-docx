@@ -176,6 +176,32 @@ const COMPOSITIONS: Composition[] = [
       expect(content).toMatch(/<\/table:table>[\s\S]*Drop this trailing paragraph\./);
     },
   },
+  {
+    // issue #540, coalesced N>1: two trailing paragraphs deleted after the table. The single
+    // synthesized residual empty body paragraph is the only merge slot, yet reject-all must restore
+    // BOTH paragraphs after the table in order — the no-artifact storage supplies the one missing
+    // break between them (same accounting as the issue #380 coalesced insertion-start case). Proves
+    // the residual-body representation is faithful for N > 1, not just the single-paragraph shape.
+    name: 'issue #540 (fixed): coalesced multi-paragraph end-of-document deletion after a table',
+    original: ['Intro paragraph.', 'Signature cell.', 'First trailing.', 'Second trailing.'],
+    revised: ['Intro paragraph.', 'Signature cell.'],
+    originalXml: [
+      standardParagraph('Intro paragraph.'),
+      SIGNATURE_TABLE,
+      standardParagraph('First trailing.'),
+      standardParagraph('Second trailing.'),
+    ],
+    revisedXml: [standardParagraph('Intro paragraph.'), SIGNATURE_TABLE],
+    expectedAccept: ['Intro paragraph.', 'Signature cell.', ''],
+    // reject-all reproduces the original exactly (both trailing paragraphs, in order): default.
+    assertRejectXml: (content) => {
+      // Neither restored paragraph sits inside the cell; both are body paragraphs after the table.
+      expect(content).not.toMatch(
+        /<table:table-cell[^>]*>(?:(?!<\/table:table-cell>)[\s\S])*(First|Second) trailing\./,
+      );
+      expect(content).toMatch(/<\/table:table>[\s\S]*First trailing\.[\s\S]*Second trailing\./);
+    },
+  },
 ];
 
 describe('LibreOffice accept/reject round-trip of the paragraph-granularity redline', () => {
