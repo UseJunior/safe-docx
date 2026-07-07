@@ -19,6 +19,7 @@ import type {
   ReconstructionFallbackReason,
   ReconstructionIdDelta,
   ReconstructionIdDeltaSummary,
+  ReconstructionInplaceSuccessDiagnostics,
   ReconstructionRebuildSafetyDiagnostics,
   ReconstructionSafetyFailureSummary,
   ReconstructionSafetyFailureDetails,
@@ -791,6 +792,7 @@ export async function compareDocumentsAtomizer(
   };
   let fallbackReason: ReconstructionFallbackReason | undefined;
   let fallbackDiagnostics: ReconstructionFallbackDiagnostics | undefined;
+  let inplaceSuccessDiagnostics: ReconstructionInplaceSuccessDiagnostics | undefined;
   if (reconstructionMode === 'inplace') {
     // Adaptive strategy:
     // 1) Try no-cross-run passes first (higher run anchoring fidelity).
@@ -840,6 +842,7 @@ export async function compareDocumentsAtomizer(
 
     const failedAttempts: ReconstructionAttemptDiagnostics[] = [];
     let selected: typeof comparisonResult | undefined;
+    let selectedPass: ReconstructionAttemptDiagnostics['pass'] | undefined;
     for (const { pass, atomizeOptions } of inplacePasses) {
       let candidate: typeof comparisonResult;
       try {
@@ -862,6 +865,7 @@ export async function compareDocumentsAtomizer(
 
       if (safety.safe) {
         selected = candidate;
+        selectedPass = pass;
         break;
       }
 
@@ -876,6 +880,13 @@ export async function compareDocumentsAtomizer(
 
     if (selected) {
       comparisonResult = selected;
+      // selectedPass is always set when `selected` is (assigned together at the
+      // break). Surface which pass won and which it superseded so callers can
+      // distinguish a cross-run rescue from a first-pass success.
+      inplaceSuccessDiagnostics = {
+        passUsed: selectedPass!,
+        precedingFailedAttempts: failedAttempts,
+      };
     } else {
       comparisonResult = runComparisonPass(
         { atomizeParagraphLevelMarkers: true },
@@ -963,6 +974,7 @@ export async function compareDocumentsAtomizer(
     fallbackReason,
     fallbackDiagnostics,
     rebuildSafetyDiagnostics,
+    inplaceSuccessDiagnostics,
   };
 }
 

@@ -174,6 +174,28 @@ export interface ReconstructionFallbackDiagnostics {
 }
 
 /**
+ * Diagnostics for a *successful* inplace reconstruction: which pass produced the
+ * accepted output, and the passes that were tried and rejected before it. The
+ * fallback diagnostics above only surface when every inplace pass fails and the
+ * pipeline reroutes to rebuild; this surfaces the same per-pass detail on the
+ * success path, so a caller can tell which pass produced the output — e.g. a
+ * later pass rescuing what an earlier pass could not reconstruct safely —
+ * without inferring it from the absence of a fallback. Present only for atomizer
+ * inplace output (`reconstructionModeUsed === 'inplace'`).
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/469
+ */
+export interface ReconstructionInplaceSuccessDiagnostics {
+  /** The inplace pass whose output passed all round-trip safety checks. */
+  passUsed: ReconstructionAttemptDiagnostics['pass'];
+  /**
+   * Passes tried and rejected (in evaluation order) before `passUsed`
+   * succeeded. Empty when the first pass already satisfied every safety check.
+   */
+  precedingFailedAttempts: ReconstructionAttemptDiagnostics[];
+}
+
+/**
  * Round-trip safety evaluation of rebuild output. Rebuild is the terminal
  * reconstruction strategy — there is no further fallback — so a failed check
  * cannot reroute the pipeline. The document is returned anyway and the
@@ -219,4 +241,9 @@ export interface CompareResult {
    * Present only when at least one check failed.
    */
   rebuildSafetyDiagnostics?: ReconstructionRebuildSafetyDiagnostics;
+  /**
+   * Which inplace pass produced the output and which passes it superseded.
+   * Present only when atomizer produced inplace output.
+   */
+  inplaceSuccessDiagnostics?: ReconstructionInplaceSuccessDiagnostics;
 }
