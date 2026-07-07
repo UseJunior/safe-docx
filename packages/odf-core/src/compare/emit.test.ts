@@ -19,6 +19,23 @@ function contentXml(paras: string[]): string {
 </office:document-content>`;
 }
 
+/**
+ * Content.xml whose body is an intro paragraph, a one-cell table, then `trailingParas` — the
+ * issue #380 shape (a signature table followed by the document's last paragraph(s)).
+ */
+function contentXmlWithTable(trailingParas: string[]): string {
+  const tail = trailingParas.map((t) => `<text:p>${t}</text:p>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:xml="http://www.w3.org/XML/1998/namespace">
+  <office:body><office:text><text:p>Intro</text:p><table:table><table:table-row><table:table-cell><text:p>Cell</text:p></table:table-cell></table:table-row></table:table>${tail}</office:text></office:body>
+</office:document-content>`;
+}
+
 function officeText(xml: string): Element {
   const doc = parseXml(xml);
   return doc.getElementsByTagNameNS(ODF_NS.OFFICE, 'text').item(0) as Element;
@@ -189,6 +206,57 @@ describe('compareOdf — ODF tracked-changes emission', () => {
     // The kept cell paragraph "Cell2" carries the inline deletion marker at its start.
     expect(out).toMatch(/<table:table-cell><text:p><text:change [^>]*\/>Cell2<\/text:p>/);
     expect(OdfDocument.fromContentXml(out).getParagraphs().map((p) => p.text)).toEqual(['Cell2']);
+  });
+
+  it('replaced LAST paragraph after a table: bracket stays inside the inserted run, deletion stores no artifact (issue #380)', () => {
+    // The backward anchor would be a table-cell paragraph. A change-start there spans from the
+    // cell into the body — a paragraph-break merge LibreOffice cannot perform across the table
+    // boundary, so reject-all stranded an empty trailing paragraph.
+    const { contentXml: out, stats } = compareOdf(
+      contentXmlWithTable(['Old closing words.']),
+      contentXmlWithTable(['Fresh unrelated sentence.']),
+    );
+    expect(stats).toEqual({ insertions: 1, deletions: 1, modifications: 0 });
+    const ot = officeText(out);
+    const regions = trackedRegions(ot);
+    expect(regions).toHaveLength(2);
+    const delRegion = regions.find((r) => childByName(r, ODF_NS.TEXT, 'deletion'))!;
+    // No merge-artifact paragraph: the residual empty paragraph left by rejecting the
+    // content-only insertion bracket is the merge slot the artifact normally provides.
+    expect(deletionStored(delRegion)).toEqual(['Old closing words.']);
+    // The table-cell paragraph carries no markers.
+    expect(out).toContain('<table:table-cell><text:p>Cell</text:p></table:table-cell>');
+    // Replacement paragraph: deletion point first (outside the span), then the bracket.
+    const ps = bodyParagraphs(ot);
+    const lastP = ps[ps.length - 1]!;
+    expect(
+      elementChildren(lastP)
+        .slice(0, 2)
+        .map((e) => e.localName),
+    ).toEqual(['change', 'change-start']);
+    expect(lastElLocal(lastP)).toBe('change-end');
+  });
+
+  it('coalesced multi-paragraph replacement after a table also stores no artifact (issue #380)', () => {
+    const out = compareOdf(
+      contentXmlWithTable(['Old clause one entirely.', 'Old clause two entirely.']),
+      contentXmlWithTable(['Fresh unrelated sentence.']),
+    ).contentXml;
+    const regions = trackedRegions(officeText(out));
+    const delRegion = regions.find((r) => childByName(r, ODF_NS.TEXT, 'deletion'))!;
+    // Both deleted paragraphs, no artifact: rejecting the insertion leaves ONE residual empty
+    // paragraph, and re-inserting two stored paragraphs contributes the one missing break.
+    expect(deletionStored(delRegion)).toEqual(['Old clause one entirely.', 'Old clause two entirely.']);
+  });
+
+  it('end-of-document insertion after a trailing table brackets only the inserted run (issue #380)', () => {
+    const out = compareOdf(contentXmlWithTable([]), contentXmlWithTable(['Appended after the table.'])).contentXml;
+    const ot = officeText(out);
+    const ps = bodyParagraphs(ot);
+    const lastP = ps[ps.length - 1]!;
+    expect(firstElLocal(lastP)).toBe('change-start');
+    expect(lastElLocal(lastP)).toBe('change-end');
+    expect(out).toContain('<table:table-cell><text:p>Cell</text:p></table:table-cell>');
   });
 
   it('fails closed when every paragraph is deleted (no anchor)', () => {
