@@ -26,6 +26,22 @@ export type AcceptChangesResult = {
   propertyChangesResolved: number;
 };
 
+/**
+ * Predicate selecting which revision elements a sweep processes. The default
+ * ({@link ACCEPT_ALL}) processes every revision — the original whole-document
+ * behavior. `acceptAIEdits`/`rejectAIEdits` (#123) pass a predicate that matches
+ * only the targeted revision ids so foreign (non-target) revisions are left
+ * byte-untouched.
+ */
+export type RevisionFilter = (el: Element) => boolean;
+
+const ACCEPT_ALL: RevisionFilter = () => true;
+
+/** The package-wide revision id (`w:id`) of a revision element, if any. */
+export function revisionElementId(el: Element): string | null {
+  return el.getAttributeNS(W_NS, 'id') ?? el.getAttribute('w:id');
+}
+
 // ── DOM helpers (internal) ──────────────────────────────────────────
 
 function isW(node: Node, localName: string): node is Element {
@@ -50,8 +66,12 @@ function collectByLocalName(container: Document | Element, localName: string): E
   return Array.from(container.getElementsByTagNameNS(W_NS, localName));
 }
 
-function removeAllByLocalName(container: Document | Element, localName: string): number {
-  const elements = collectByLocalName(container, localName);
+function removeAllByLocalName(
+  container: Document | Element,
+  localName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): number {
+  const elements = collectByLocalName(container, localName).filter(filter);
   let count = 0;
   for (const el of elements) {
     if (el.parentNode) {
@@ -62,8 +82,12 @@ function removeAllByLocalName(container: Document | Element, localName: string):
   return count;
 }
 
-function unwrapAllByLocalName(container: Document | Element, localName: string): number {
-  const elements = collectByLocalName(container, localName);
+function unwrapAllByLocalName(
+  container: Document | Element,
+  localName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): number {
+  const elements = collectByLocalName(container, localName).filter(filter);
   // Sort deepest-first to handle nested wrappers correctly
   elements.sort((a, b) => getDepth(b) - getDepth(a));
   let count = 0;
@@ -84,7 +108,11 @@ function unwrapAllByLocalName(container: Document | Element, localName: string):
  * Check if a paragraph has a paragraph-level revision marker.
  * Pattern: w:p > w:pPr > w:rPr > w:del (or w:ins)
  */
-function paragraphHasParaMarker(p: Element, markerLocalName: string): boolean {
+function paragraphHasParaMarker(
+  p: Element,
+  markerLocalName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): boolean {
   for (let i = 0; i < p.childNodes.length; i++) {
     const child = p.childNodes[i]!;
     if (!isW(child, 'pPr')) continue;
@@ -93,7 +121,7 @@ function paragraphHasParaMarker(p: Element, markerLocalName: string): boolean {
       if (!isW(pPrChild, 'rPr')) continue;
       for (let k = 0; k < pPrChild.childNodes.length; k++) {
         const rPrChild = pPrChild.childNodes[k]!;
-        if (isW(rPrChild, markerLocalName)) return true;
+        if (isW(rPrChild, markerLocalName) && filter(rPrChild)) return true;
       }
     }
   }
@@ -254,7 +282,12 @@ function resolveParagraphMarkRevision(p: Element): void {
  * Mutates the Document in place (same convention as simplifyRedlines
  * and mergeRuns).
  */
-export function acceptChanges(doc: Document): AcceptChangesResult {
+export function acceptChanges(
+  doc: Document,
+  opts?: { filter?: RevisionFilter },
+): AcceptChangesResult {
+  const filter = opts?.filter ?? ACCEPT_ALL;
+  const selective = filter !== ACCEPT_ALL;
   const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
   if (!root) {
     return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
@@ -275,31 +308,33 @@ export function acceptChanges(doc: Document): AcceptChangesResult {
     // accept. safe-docx's deleted paragraphs always carry the mark now, so the
     // mark-based rule suffices and is Word-faithful. (Mirrors acceptAllChanges and the
     // reject-side rule.)
-    if (paragraphHasParaMarker(p, 'del')) {
+    if (paragraphHasParaMarker(p, 'del', filter)) {
       markDeletedParagraphs.push(p);
     }
   }
 
   // Phase B — Remove deletions and move sources
-  const deletionsAccepted = removeAllByLocalName(root, 'del');
-  const moveFromRemoved = removeAllByLocalName(root, 'moveFrom');
-  removeAllByLocalName(root, 'moveFromRangeStart');
-  removeAllByLocalName(root, 'moveFromRangeEnd');
-  removeAllByLocalName(root, 'moveToRangeStart');
-  removeAllByLocalName(root, 'moveToRangeEnd');
+  const deletionsAccepted = removeAllByLocalName(root, 'del', filter);
+  const moveFromRemoved = removeAllByLocalName(root, 'moveFrom', filter);
+  removeAllByLocalName(root, 'moveFromRangeStart', filter);
+  removeAllByLocalName(root, 'moveFromRangeEnd', filter);
+  removeAllByLocalName(root, 'moveToRangeStart', filter);
+  removeAllByLocalName(root, 'moveToRangeEnd', filter);
 
   // Phase C — Unwrap insertions and move destinations (depth-sorted)
-  const insertionsAccepted = unwrapAllByLocalName(root, 'ins');
-  const moveToUnwrapped = unwrapAllByLocalName(root, 'moveTo');
+  const insertionsAccepted = unwrapAllByLocalName(root, 'ins', filter);
+  const moveToUnwrapped = unwrapAllByLocalName(root, 'moveTo', filter);
 
   // Phase D — Remove property change records
   let propertyChangesResolved = 0;
   for (const localName of PR_CHANGE_LOCALS) {
-    propertyChangesResolved += removeAllByLocalName(root, localName);
+    propertyChangesResolved += removeAllByLocalName(root, localName, filter);
   }
 
   // Phase E — Cleanup
-  // Strip paragraph-level revision markers from w:pPr/w:rPr
+  // Strip paragraph-level revision markers from w:pPr/w:rPr (only those the
+  // filter selects, so a selective accept leaves foreign paragraph-mark
+  // revisions byte-untouched).
   for (const p of collectByLocalName(root, 'p')) {
     for (let i = 0; i < p.childNodes.length; i++) {
       const child = p.childNodes[i]!;
@@ -311,7 +346,7 @@ export function acceptChanges(doc: Document): AcceptChangesResult {
         const toRemove: Element[] = [];
         for (let k = 0; k < pPrChild.childNodes.length; k++) {
           const rPrChild = pPrChild.childNodes[k]!;
-          if (isW(rPrChild, 'ins') || isW(rPrChild, 'del')) {
+          if ((isW(rPrChild, 'ins') || isW(rPrChild, 'del')) && filter(rPrChild)) {
             toRemove.push(rPrChild as Element);
           }
         }
@@ -329,16 +364,22 @@ export function acceptChanges(doc: Document): AcceptChangesResult {
     resolveParagraphMarkRevision(p);
   }
 
-  // Strip w:rsidDel attributes on remaining elements
-  const allElements = root.getElementsByTagNameNS(W_NS, '*');
-  for (let i = 0; i < allElements.length; i++) {
-    const el = allElements[i]!;
-    if (el.hasAttributeNS(W_NS, 'rsidDel')) {
-      el.removeAttributeNS(W_NS, 'rsidDel');
-    }
-    // Also check prefixed form
-    if (el.hasAttribute('w:rsidDel')) {
-      el.removeAttribute('w:rsidDel');
+  // Strip w:rsidDel attributes on remaining elements. Skipped in selective
+  // mode: rsidDel is a document-wide save-id, and a selective accept must not
+  // mutate elements outside the targeted revision set (the mixed-author
+  // byte-identical invariant, #125). The accepted revisions are removed/unwrapped
+  // above, taking their own rsidDel with them.
+  if (!selective) {
+    const allElements = root.getElementsByTagNameNS(W_NS, '*');
+    for (let i = 0; i < allElements.length; i++) {
+      const el = allElements[i]!;
+      if (el.hasAttributeNS(W_NS, 'rsidDel')) {
+        el.removeAttributeNS(W_NS, 'rsidDel');
+      }
+      // Also check prefixed form
+      if (el.hasAttribute('w:rsidDel')) {
+        el.removeAttribute('w:rsidDel');
+      }
     }
   }
 

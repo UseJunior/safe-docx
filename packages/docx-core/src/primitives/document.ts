@@ -58,6 +58,15 @@ import {
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
 import {
+  collectRevisionElements,
+  resolveSelectedIds,
+  detectAmbiguousOverlaps,
+  selectedIdFilter,
+  AmbiguousRevisionOverlapError,
+  type AiEditSelector,
+  type AiRevisionOverlap,
+} from './accept_ai_edits.js';
+import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
   addCommentReply as addCommentReplyImpl,
@@ -401,6 +410,112 @@ export class DocxDocument {
       this.documentViewCache = null;
     }
     return total;
+  }
+
+  /**
+   * Read all revisionable stories (document.xml + supported side parts) as parsed
+   * Documents, resolve the selector's target revision-id set across every story
+   * (a revision id is package-wide), and hard-error on any ambiguous overlap
+   * unless the selector opts into `normalizeFirst`.
+   */
+  private async prepareSelectiveStories(
+    selector: AiEditSelector,
+  ): Promise<{ stories: Array<{ path: string | null; doc: Document }>; selectedIds: Set<string> }> {
+    const stories: Array<{ path: string | null; doc: Document }> = [
+      { path: null, doc: this.documentXml },
+    ];
+    for (const partPath of REVISION_STORY_PART_PATHS) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (xml) stories.push({ path: partPath, doc: parseXml(xml) });
+    }
+
+    const allRevisionElements = stories.flatMap((s) => collectRevisionElements(s.doc));
+    const selectedIds = resolveSelectedIds(allRevisionElements, selector);
+
+    if (!selector.normalizeFirst) {
+      const overlaps: AiRevisionOverlap[] = stories.flatMap((s) =>
+        detectAmbiguousOverlaps(s.doc, selectedIds),
+      );
+      if (overlaps.length > 0) throw new AmbiguousRevisionOverlapError(overlaps);
+    }
+    return { stories, selectedIds };
+  }
+
+  /**
+   * Accept only the revisions named by `selector` (by id or author) across
+   * document.xml and supported side-story parts, leaving every other revision
+   * byte-untouched (#123). Hard-errors on an ambiguous overlap unless
+   * `normalizeFirst` is set.
+   */
+  async acceptAIEdits(selector: AiEditSelector): Promise<{ result: AcceptChangesResult; selectedIds: string[] }> {
+    const { stories, selectedIds } = await this.prepareSelectiveStories(selector);
+    const filter = selectedIdFilter(selectedIds);
+    const total = emptyAcceptChangesResult();
+
+    const bodyResult = acceptChangesImpl(this.documentXml, { filter });
+    addAcceptChangesResult(total, bodyResult);
+    const liveFootnoteRefIds = bodyResult.deletionsAccepted > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
+    for (const story of stories) {
+      if (story.path == null) continue; // document.xml already swept above
+      const partResult = acceptChangesImpl(story.doc, { filter });
+      addAcceptChangesResult(total, partResult);
+
+      let footnotesPruned = 0;
+      if (story.path === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds);
+      }
+      if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
+        this.zip.writeText(story.path, serializeXml(story.doc));
+        if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
+      }
+    }
+
+    if (hasAcceptedChanges(total)) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return { result: total, selectedIds: [...selectedIds] };
+  }
+
+  /**
+   * Reject only the revisions named by `selector` across document.xml and
+   * supported side-story parts, leaving every other revision byte-untouched.
+   * Symmetric to {@link DocxDocument.acceptAIEdits}.
+   */
+  async rejectAIEdits(selector: AiEditSelector): Promise<{ result: RejectChangesResult; selectedIds: string[] }> {
+    const { stories, selectedIds } = await this.prepareSelectiveStories(selector);
+    const filter = selectedIdFilter(selectedIds);
+    const total = emptyRejectChangesResult();
+
+    const bodyResult = rejectChangesImpl(this.documentXml, { filter });
+    addRejectChangesResult(total, bodyResult);
+    const liveFootnoteRefIds = bodyResult.insertionsRemoved > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
+    for (const story of stories) {
+      if (story.path == null) continue;
+      const partResult = rejectChangesImpl(story.doc, { filter });
+      addRejectChangesResult(total, partResult);
+
+      let footnotesPruned = 0;
+      if (story.path === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds);
+      }
+      if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
+        this.zip.writeText(story.path, serializeXml(story.doc));
+        if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
+      }
+    }
+
+    if (hasRejectedChanges(total)) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return { result: total, selectedIds: [...selectedIds] };
   }
 
   removeJuniorBookmarks(): number {

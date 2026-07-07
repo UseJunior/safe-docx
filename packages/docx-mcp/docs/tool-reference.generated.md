@@ -183,6 +183,34 @@ Accept all tracked changes in the document body, producing a clean document with
 | --- | --- | --- | --- |
 | `file_path` | `string` | yes | Path to the DOCX or ODT file. |
 
+## `accept_ai_edits`
+
+Selectively accept tracked changes by revision id or author, leaving all other (e.g. third-party reviewer) revisions byte-untouched. Provide revision_ids (array of w:id values) to target specific revisions, or author to accept every revision by one actor. Sweeps document.xml and supported side-story parts (footnotes, endnotes, comments). An ambiguous overlap — a targeted revision structurally containing, or contained by, a non-targeted revision (nested ins/del/move) — hard-errors with code AMBIGUOUS_REVISION_OVERLAP and a structured `overlaps` list unless normalize_first is set (best-effort, no byte-identical promise).
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
+| `revision_ids` | `array<unknown>` | no | w:id values of the revisions to accept. Mutually preferred over author. |
+| `author` | `string` | no | Accept every revision authored by this w:author. Convenience alternative to revision_ids. |
+| `normalize_first` | `boolean` | no | Attempt best-effort resolution on an ambiguous (overlapping) revision graph instead of hard-erroring. No byte-identical guarantee. Default: false. |
+
+## `reject_ai_edits`
+
+Selectively reject tracked changes by revision id or author (restoring their pre-edit state), leaving all other revisions byte-untouched. Symmetric to accept_ai_edits: provide revision_ids or author, sweeps document.xml and supported side-story parts, and hard-errors on an ambiguous overlap (code AMBIGUOUS_REVISION_OVERLAP with a structured `overlaps` list) unless normalize_first is set.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
+| `revision_ids` | `array<unknown>` | no | w:id values of the revisions to reject. Mutually preferred over author. |
+| `author` | `string` | no | Reject every revision authored by this w:author. Convenience alternative to revision_ids. |
+| `normalize_first` | `boolean` | no | Attempt best-effort resolution on an ambiguous (overlapping) revision graph instead of hard-erroring. No byte-identical guarantee. Default: false. |
+
 ## `has_tracked_changes`
 
 Check whether the document body contains tracked-change markers (insertions, deletions, moves, and property-change records). Read-only.
