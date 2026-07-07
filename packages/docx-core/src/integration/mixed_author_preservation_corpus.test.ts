@@ -32,15 +32,31 @@ const DT = 'w:date="2026-01-01T00:00:00Z"';
 const SECT = `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>`;
 const serializer = new XMLSerializer();
 
-/** Serialized subtrees of every tracked-change element authored by `author`, sorted. */
-function revisionSubtreesByAuthor(root: Document | Element, author: string): string[] {
+/** Ancestor local-name path from the story root down to `el`. */
+function ancestorPath(el: Element): string {
+  const names: string[] = [];
+  let cur: Node | null = el;
+  while (cur && cur.nodeType === 1) {
+    names.unshift((cur as Element).localName);
+    cur = cur.parentNode;
+  }
+  return names.join('/');
+}
+
+/**
+ * Context-aware oracle for every tracked-change element authored by `author`:
+ * each entry pairs the element's ancestor path (its structural location) with its
+ * serialized subtree, sorted. Comparing this before/after proves a foreign
+ * revision is neither mutated NOR moved to a different location in the story.
+ */
+function revisionContextsByAuthor(root: Document | Element, author: string): string[] {
   const out: string[] = [];
   const all = root.getElementsByTagNameNS(W, '*');
   for (let i = 0; i < all.length; i++) {
     const el = all[i]!;
     if (!TRACKED_CHANGE_ELEMENT_NAME_SET.has(el.localName)) continue;
     const a = el.getAttributeNS(W, 'author') ?? el.getAttribute('w:author');
-    if (a === author) out.push(serializer.serializeToString(el));
+    if (a === author) out.push(`${ancestorPath(el)}\n${serializer.serializeToString(el)}`);
   }
   return out.sort();
 }
@@ -105,15 +121,15 @@ describe('mixed-author preservation corpus (#125)', () => {
       ins(101, AI, 'ai ') + ins(102, HUMAN, 'human ') + del(103, THIRD, 'third') + `</w:p>${SECT}`;
     const doc = await DocxDocument.load(await buildDocx(bodyInner));
     const before = parseXml(await readPart(doc, 'word/document.xml'));
-    const humanBefore = revisionSubtreesByAuthor(before, HUMAN);
-    const thirdBefore = revisionSubtreesByAuthor(before, THIRD);
+    const humanBefore = revisionContextsByAuthor(before, HUMAN);
+    const thirdBefore = revisionContextsByAuthor(before, THIRD);
 
     await doc.acceptAIEdits({ author: AI });
 
     const after = parseXml(await readPart(doc, 'word/document.xml'));
-    expect(revisionSubtreesByAuthor(after, AI)).toEqual([]); // AI resolved
-    expect(revisionSubtreesByAuthor(after, HUMAN)).toEqual(humanBefore); // byte-identical
-    expect(revisionSubtreesByAuthor(after, THIRD)).toEqual(thirdBefore);
+    expect(revisionContextsByAuthor(after, AI)).toEqual([]); // AI resolved
+    expect(revisionContextsByAuthor(after, HUMAN)).toEqual(humanBefore); // byte-identical
+    expect(revisionContextsByAuthor(after, THIRD)).toEqual(thirdBefore);
   });
 
   it('reject AI in body leaves both human and third-party revisions byte-identical', async () => {
@@ -122,15 +138,15 @@ describe('mixed-author preservation corpus (#125)', () => {
       ins(101, AI, 'ai ') + ins(102, HUMAN, 'human ') + del(103, THIRD, 'third') + `</w:p>${SECT}`;
     const doc = await DocxDocument.load(await buildDocx(bodyInner));
     const before = parseXml(await readPart(doc, 'word/document.xml'));
-    const humanBefore = revisionSubtreesByAuthor(before, HUMAN);
-    const thirdBefore = revisionSubtreesByAuthor(before, THIRD);
+    const humanBefore = revisionContextsByAuthor(before, HUMAN);
+    const thirdBefore = revisionContextsByAuthor(before, THIRD);
 
     await doc.rejectAIEdits({ author: AI });
 
     const after = parseXml(await readPart(doc, 'word/document.xml'));
-    expect(revisionSubtreesByAuthor(after, AI)).toEqual([]);
-    expect(revisionSubtreesByAuthor(after, HUMAN)).toEqual(humanBefore);
-    expect(revisionSubtreesByAuthor(after, THIRD)).toEqual(thirdBefore);
+    expect(revisionContextsByAuthor(after, AI)).toEqual([]);
+    expect(revisionContextsByAuthor(after, HUMAN)).toEqual(humanBefore);
+    expect(revisionContextsByAuthor(after, THIRD)).toEqual(thirdBefore);
   });
 
   it('selecting a non-AI author resolves only that author, leaving AI and third-party intact', async () => {
@@ -139,17 +155,17 @@ describe('mixed-author preservation corpus (#125)', () => {
       ins(101, AI, 'ai ') + ins(102, HUMAN, 'human ') + ins(103, THIRD, 'third') + `</w:p>${SECT}`;
     const doc = await DocxDocument.load(await buildDocx(bodyInner));
     const before = parseXml(await readPart(doc, 'word/document.xml'));
-    const aiBefore = revisionSubtreesByAuthor(before, AI);
-    const thirdBefore = revisionSubtreesByAuthor(before, THIRD);
+    const aiBefore = revisionContextsByAuthor(before, AI);
+    const thirdBefore = revisionContextsByAuthor(before, THIRD);
 
     // Accept the HUMAN reviewer's revisions, not the AI's.
     const { selectedIds } = await doc.acceptAIEdits({ author: HUMAN });
     expect(selectedIds).toEqual(['102']);
 
     const after = parseXml(await readPart(doc, 'word/document.xml'));
-    expect(revisionSubtreesByAuthor(after, HUMAN)).toEqual([]); // human resolved
-    expect(revisionSubtreesByAuthor(after, AI)).toEqual(aiBefore); // AI byte-identical
-    expect(revisionSubtreesByAuthor(after, THIRD)).toEqual(thirdBefore);
+    expect(revisionContextsByAuthor(after, HUMAN)).toEqual([]); // human resolved
+    expect(revisionContextsByAuthor(after, AI)).toEqual(aiBefore); // AI byte-identical
+    expect(revisionContextsByAuthor(after, THIRD)).toEqual(thirdBefore);
   });
 
   it('accept AI in a table leaves foreign row/cell property changes byte-identical', async () => {
@@ -160,26 +176,29 @@ describe('mixed-author preservation corpus (#125)', () => {
       `<w:p><w:r><w:t>cell </w:t></w:r>${ins(101, AI, 'ai')}</w:p></w:tc></w:tr></w:tbl>${SECT}`;
     const doc = await DocxDocument.load(await buildDocx(bodyInner));
     const before = parseXml(await readPart(doc, 'word/document.xml'));
-    const humanBefore = revisionSubtreesByAuthor(before, HUMAN);
-    const thirdBefore = revisionSubtreesByAuthor(before, THIRD);
+    const humanBefore = revisionContextsByAuthor(before, HUMAN);
+    const thirdBefore = revisionContextsByAuthor(before, THIRD);
 
     await doc.acceptAIEdits({ author: AI });
 
     const afterXml = await readPart(doc, 'word/document.xml');
     const after = parseXml(afterXml);
-    expect(revisionSubtreesByAuthor(after, AI)).toEqual([]);
-    expect(revisionSubtreesByAuthor(after, HUMAN)).toEqual(humanBefore);
-    expect(revisionSubtreesByAuthor(after, THIRD)).toEqual(thirdBefore);
+    expect(revisionContextsByAuthor(after, AI)).toEqual([]);
+    expect(revisionContextsByAuthor(after, HUMAN)).toEqual(humanBefore);
+    expect(revisionContextsByAuthor(after, THIRD)).toEqual(thirdBefore);
     expect(afterXml).toContain('<w:tbl>'); // table structure preserved
   });
 
-  it('accept AI in the body does not touch a reviewer revision in a header or footer', async () => {
+  it('leaves headers and footers entirely untouched (unswept-part guard, incl. AI revisions)', async () => {
+    // Headers/footers are NOT in the swept story set, so accept/reject never opens
+    // them. Even an AI-authored revision in a header is left untouched — the corpus
+    // pins that accept/reject never reaches into these parts for any actor.
     const headerXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:hdr xmlns:w="${W}"><w:p><w:r><w:t>H </w:t></w:r>${ins(201, HUMAN, 'hdr-rev')}</w:p></w:hdr>`;
+      `<w:hdr xmlns:w="${W}"><w:p><w:r><w:t>H </w:t></w:r>${ins(201, AI, 'hdr-ai')}${ins(202, HUMAN, 'hdr-rev')}</w:p></w:hdr>`;
     const footerXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-      `<w:ftr xmlns:w="${W}"><w:p><w:r><w:t>F </w:t></w:r>${del(202, THIRD, 'ftr-rev')}</w:p></w:ftr>`;
+      `<w:ftr xmlns:w="${W}"><w:p><w:r><w:t>F </w:t></w:r>${del(203, THIRD, 'ftr-rev')}</w:p></w:ftr>`;
     const parts: Part[] = [
       {
         path: 'word/header1.xml', xml: headerXml, relId: 'rId10',
@@ -199,10 +218,11 @@ describe('mixed-author preservation corpus (#125)', () => {
 
     await doc.acceptAIEdits({ author: AI });
 
-    // Headers/footers are not in the swept story set, so they are byte-identical.
+    // Whole parts byte-identical — including the AI revision in the header.
     expect(await readPart(doc, 'word/header1.xml')).toBe(headerXml);
     expect(await readPart(doc, 'word/footer1.xml')).toBe(footerXml);
-    expect(revisionSubtreesByAuthor(parseXml(await readPart(doc, 'word/document.xml')), AI)).toEqual([]);
+    // The AI revision in the BODY was resolved (only the unswept parts are exempt).
+    expect(revisionContextsByAuthor(parseXml(await readPart(doc, 'word/document.xml')), AI)).toEqual([]);
   });
 
   it('accept AI across footnotes and endnotes preserves human and third-party note revisions', async () => {
@@ -226,16 +246,15 @@ describe('mixed-author preservation corpus (#125)', () => {
       },
     ];
     const doc = await DocxDocument.load(await buildDocx(`<w:p><w:r><w:t>body</w:t></w:r></w:p>${SECT}`, parts));
-    const fnHumanBefore = revisionSubtreesByAuthor(parseXml(notePart('footnote')), HUMAN);
-    const fnThirdBefore = revisionSubtreesByAuthor(parseXml(notePart('footnote')), THIRD);
 
     await doc.acceptAIEdits({ author: AI });
 
-    for (const part of ['word/footnotes.xml', 'word/endnotes.xml']) {
+    for (const [label, part] of [['footnote', 'word/footnotes.xml'], ['endnote', 'word/endnotes.xml']] as const) {
+      const before = parseXml(notePart(label));
       const after = parseXml(await readPart(doc, part));
-      expect(revisionSubtreesByAuthor(after, AI), part).toEqual([]);
-      expect(revisionSubtreesByAuthor(after, HUMAN), part).toEqual(fnHumanBefore);
-      expect(revisionSubtreesByAuthor(after, THIRD), part).toEqual(fnThirdBefore);
+      expect(revisionContextsByAuthor(after, AI), part).toEqual([]); // AI resolved in the note
+      expect(revisionContextsByAuthor(after, HUMAN), part).toEqual(revisionContextsByAuthor(before, HUMAN));
+      expect(revisionContextsByAuthor(after, THIRD), part).toEqual(revisionContextsByAuthor(before, THIRD));
     }
   });
 
@@ -245,6 +264,7 @@ describe('mixed-author preservation corpus (#125)', () => {
       `<w:del w:id="102" w:author="${HUMAN}" ${DT}><w:r><w:delText>x</w:delText></w:r></w:del>` +
       `</w:ins></w:p>${SECT}`;
     const doc = await DocxDocument.load(await buildDocx(bodyInner));
+    const before = await readPart(doc, 'word/document.xml');
 
     let error: unknown;
     try {
@@ -257,9 +277,7 @@ describe('mixed-author preservation corpus (#125)', () => {
     expect(overlaps).toHaveLength(1);
     expect(overlaps[0]).toMatchObject({ outerId: '101', outerAuthor: AI, innerId: '102', innerAuthor: HUMAN });
 
-    // The document must be untouched after a hard error (both revisions intact).
-    const after = await readPart(doc, 'word/document.xml');
-    expect(after).toContain('w:id="101"');
-    expect(after).toContain('w:id="102"');
+    // The document must be byte-identical after a hard error — no partial mutation.
+    expect(await readPart(doc, 'word/document.xml')).toBe(before);
   });
 });
