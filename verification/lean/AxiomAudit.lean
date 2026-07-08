@@ -1,5 +1,6 @@
 import LeanSpike
 import LeanSpike.LcsDP
+import Tier2.XmlTripleChecker
 
 #print axioms LeanSpike.inv_field_001
 #print axioms LeanSpike.inv_rt_001
@@ -10,3 +11,4 @@ import LeanSpike.LcsDP
 #print axioms LeanSpike.lcs_partitions_inputs
 #print axioms LeanSpike.computeAtomLcsDP_eq_computeAtomLcs
 #print axioms LeanSpike.rawMatches_are_longest_relevant
+#print axioms Tier2.XmlTripleChecker.checker_sound
