@@ -12,6 +12,11 @@ export type {
   CompareOptions,
   CompareResult,
   CompareStats,
+  DocumentIntegrityCertificate,
+  DocumentIntegrityCertificateStatus,
+  DocumentIntegrityCheckCertificate,
+  DocumentIntegrityCheckStatus,
+  LeanXmlVerifierOptions,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
@@ -43,7 +48,7 @@ export async function compareDocuments(
   revised: Buffer,
   options: CompareOptions = {},
 ): Promise<CompareResult> {
-  const { engine = 'auto', author, date, reconstructionMode, premergeRuns } = options;
+  const { engine = 'auto', author, date, reconstructionMode, premergeRuns, leanXmlVerifier } = options;
 
   if ((engine as string) === 'diffmatch') {
     throw new Error(
@@ -58,6 +63,7 @@ export async function compareDocuments(
       date,
       reconstructionMode,
       premergeRuns,
+      leanXmlVerifier,
     });
   }
 

@@ -28,3 +28,9 @@ lean_exe leanDifferential where
 @[default_target]
 lean_exe leanHelperDifferential where
   root := `DifferentialHelpers
+
+-- Runtime XML-triple verifier: checks the actual original/revised/combined
+-- `word/document.xml` strings emitted by the TypeScript producer.
+@[default_target]
+lean_exe leanDocxChecker where
+  root := `LeanDocxChecker

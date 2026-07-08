@@ -28,6 +28,7 @@ import type {
   ReconstructionTextMismatchSummary,
   ReconstructionTextMismatchDetails,
   ReconstructionMode,
+  LeanXmlVerifierOptions,
 } from '../../compare-types.js';
 import type {
   ComparisonUnitAtom,
@@ -70,6 +71,7 @@ import {
   computeReconstructionStats,
 } from './documentReconstructor.js';
 import { modifyRevisedDocument, ContainerResolutionError } from './inPlaceModifier.js';
+import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
@@ -132,6 +134,8 @@ export interface AtomizerOptions {
    * Default: 'rebuild'
    */
   reconstructionMode?: ReconstructionMode;
+  /** Optional Lean 4 XML triple verifier for inplace outputs. */
+  leanXmlVerifier?: LeanXmlVerifierOptions;
 }
 
 interface BookmarkDiagnostics {
@@ -580,6 +584,7 @@ export async function compareDocumentsAtomizer(
     numbering = {},
     premergeRuns = true,
     reconstructionMode = 'rebuild',
+    leanXmlVerifier,
   } = options;
 
   // Merge settings with defaults
@@ -964,6 +969,15 @@ export async function compareDocumentsAtomizer(
   // Step 13: Save result and compute stats
   const resultBuffer = await resultArchive.save();
   const stats = computeAtomizerStats(mergedAtoms);
+  const documentIntegrity = leanXmlVerifier?.enabled
+    ? await runLeanXmlTripleVerifier({
+        originalDocumentXml: originalXml,
+        revisedDocumentXml: revisedXml,
+        comparedDocumentXml: newDocumentXml,
+        reconstructionMode: comparisonResult.outputMode,
+        options: leanXmlVerifier,
+      })
+    : undefined;
 
   return {
     document: resultBuffer,
@@ -975,6 +989,7 @@ export async function compareDocumentsAtomizer(
     fallbackDiagnostics,
     rebuildSafetyDiagnostics,
     inplaceSuccessDiagnostics,
+    documentIntegrity,
   };
 }
 

@@ -1,0 +1,65 @@
+{
+  "checker": "safe-docx-lean-xml-triple-checker",
+  "protocolVersion": 1,
+  "scope": {
+    "packagePart": "word/document.xml",
+    "reconstructionModes": {
+      "covered": ["inplace"],
+      "outOfScope": ["rebuild"]
+    },
+    "documentSurfaces": {
+      "covered": ["main document body text and field-marker token stream"],
+      "outOfScope": [
+        "comments.xml",
+        "footnotes.xml",
+        "endnotes.xml",
+        "numbering.xml",
+        "document relationships",
+        "styles.xml",
+        "settings.xml",
+        "headers",
+        "footers"
+      ]
+    }
+  },
+  "parsedWordprocessingML": {
+    "elements": [
+      "w:p",
+      "w:ins",
+      "w:del",
+      "w:moveFrom",
+      "w:moveTo",
+      "w:fldChar",
+      "w:t",
+      "w:delText",
+      "w:instrText",
+      "w:delInstrText"
+    ],
+    "attributes": [
+      "w:fldCharType"
+    ],
+    "attributeValues": {
+      "w:fldCharType": ["begin", "separate", "end"]
+    },
+    "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"]
+  },
+  "checkedProperties": [
+    "Accepting all tracked changes in the compared document yields the same normalized text as the revised document.",
+    "Rejecting all tracked changes in the compared document yields the same normalized text as the original document.",
+    "After accepting all tracked changes, Word field markers remain structurally valid.",
+    "After rejecting all tracked changes, Word field markers remain structurally valid.",
+    "The compared document does not place Word field markers inside deletion markup."
+  ],
+  "knownUncheckedAreas": [
+    "full ECMA-376 schema validation",
+    "rendering equivalence",
+    "formatting fidelity",
+    "bookmark semantic equivalence",
+    "comment anchor and thread integrity",
+    "footnote and endnote definition/reference integrity",
+    "relationship target integrity",
+    "package-level OPC constraints",
+    "OOXML extension and compatibility markup"
+  ],
+  "futureObligationQueue": []
+}
