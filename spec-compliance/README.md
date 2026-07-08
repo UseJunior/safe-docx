@@ -10,6 +10,7 @@ The contents are auditable in-repo:
 | ----------------------------- | ------------------------------------------------------------------ |
 | `CONFORMANCE.md`              | Human-readable summary. **Auto-generated** — do not edit by hand.  |
 | `registry/ecma-376.md`        | Source of truth: targeted sections, Non-Goals, schema bindings.    |
+| `ecma-376/coverage-ledger/`   | Planning ledgers for expanding coverage without overclaiming.      |
 | `ecma-376/schemas/`           | Vendored normative ECMA-376 XSDs (3.3 MB total, in-tree).          |
 | `ecma-376/COPYRIGHT.txt`      | Ecma International copyright notice preserved with the schemas.    |
 | `AGENTS.md`                   | Citation-hygiene rules for AI assistants and contributors.         |
@@ -32,6 +33,9 @@ land as siblings of `registry/ecma-376.md` without restructuring this tree.
 - **Marking a deliberate non-conformance.** Use `@conformance-gap` in place
   of `@conformance`. The coverage report classifies it as an intentional
   divergence, not a missing claim.
+- **Planning the next ECMA tranche.** Use the coverage ledgers under
+  `ecma-376/coverage-ledger/` to group registry work into reviewable issue
+  slices before adding claims.
 
 See [`AGENTS.md`](./AGENTS.md) for the full citation rules and the
 [issue #227 problem statement](https://github.com/UseJunior/safe-docx/issues/227)
