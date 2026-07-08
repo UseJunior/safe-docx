@@ -20,7 +20,7 @@ part: 4
 section: "17.16.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText
-verifiedBy:
+verifiedBy: packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/integration/lean-spec-bridge.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 ```
 
 When the engine emits deletions that cross complex-field boundaries: every
@@ -28,7 +28,7 @@ When the engine emits deletions that cross complex-field boundaries: every
 constraint), and every `w:fldChar` run remains at sibling level — Word
 treats `w:fldChar` inside `<w:del>` as fatal and discards the field state
 machine. The runtime enforcement lives in
-`packages/docx-core/src/baselines/atomizer/pipeline.ts` (the
+`packages/docx-compare/src/baselines/atomizer/pipeline.ts` (the
 `validateFieldStructure` function); the related (and parallel)
 `w:fldChar`-placement check appears at the same site under the same
 section.
@@ -41,7 +41,7 @@ part: 1
 section: "17.13.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange
-verifiedBy:
+verifiedBy: packages/docx-compare/src/atomizer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts
 ```
 
 Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,
@@ -51,7 +51,7 @@ revision markers) are valid as direct children of `<w:p>` (and of revision
 wrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but
 never inside `<w:r>`. safe-docx's rebuild reconstructor emits them as
 siblings of `<w:r>`, not as leaves wrapped in a synthetic run. The
-authoritative list lives in `packages/docx-core/src/atomizer.ts`.
+authoritative list lives in `packages/docx-compare/src/atomizer.ts`.
 
 ## [ECMA-PART1-17-13-8-1] Proofing error anchors
 
@@ -1036,7 +1036,7 @@ part: 1
 section: "17.13.5.15"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del
-verifiedBy:
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked
@@ -1046,7 +1046,7 @@ the paragraph's remaining content merges into the following paragraph; the
 contents themselves are deleted only where they carry their own run-level
 `w:del` wrappers. safe-docx's accept paths implement this merge in
 `packages/docx-core/src/primitives/accept_changes.ts` and
-`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
 ## [ECMA-PART1-17-13-5-20] Inserted paragraph mark (w:ins under w:pPr/w:rPr)
 
@@ -1056,7 +1056,7 @@ part: 1
 section: "17.13.5.20"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
-verifiedBy:
+verifiedBy: packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked
@@ -1066,7 +1066,7 @@ surviving content merges into the following paragraph; the contents disappear
 only where they carry their own run-level `w:ins` wrappers. safe-docx's reject
 paths implement this merge in
 `packages/docx-core/src/primitives/reject_changes.ts` and
-`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
 ## Non-Goals
 

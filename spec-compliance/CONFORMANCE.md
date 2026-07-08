@@ -13,8 +13,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 
 | ID | Title | Edition | Part | Section | Schema reference | Verified by |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ECMA-PART4-17-16-5` | w:delInstrText and w:fldChar placement in tracked deletions | 5 | 4 | 17.16.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText` | — |
-| `ECMA-PART1-17-13-5` | Paragraph-level OOXML markers | 5 | 1 | 17.13.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | — |
+| `ECMA-PART4-17-16-5` | w:delInstrText and w:fldChar placement in tracked deletions | 5 | 4 | 17.16.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText` | packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/integration/lean-spec-bridge.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json |
+| `ECMA-PART1-17-13-5` | Paragraph-level OOXML markers | 5 | 1 | 17.13.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-compare/src/atomizer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts |
 | `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | — |
 | `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | — |
 | `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | — |
@@ -76,8 +76,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-4-4` | w:commentRangeStart comment anchor opening | 5 | 1 | 17.13.4.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart` | — |
 | `ECMA-PART1-17-13-4-3` | w:commentRangeEnd comment anchor closing | 5 | 1 | 17.13.4.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd` | — |
 | `ECMA-PART1-17-13-4-5` | w:commentReference comment reference mark | 5 | 1 | 17.13.4.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference` | — |
-| `ECMA-PART1-17-13-5-15` | Deleted paragraph mark (w:del under w:pPr/w:rPr) | 5 | 1 | 17.13.5.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | — |
-| `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | — |
+| `ECMA-PART1-17-13-5-15` | Deleted paragraph mark (w:del under w:pPr/w:rPr) | 5 | 1 | 17.13.5.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts |
+| `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts |
 
 ### ECMA-PART4-17-16-5 — w:delInstrText and w:fldChar placement in tracked deletions
 
@@ -85,13 +85,14 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 - **Part / Section:** Part 4 § 17.16.5
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/integration/lean-spec-bridge.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 
 When the engine emits deletions that cross complex-field boundaries: every
 `w:delInstrText` run sits inside `<w:del>` (the DeletedFieldCode schema
 constraint), and every `w:fldChar` run remains at sibling level — Word
 treats `w:fldChar` inside `<w:del>` as fatal and discards the field state
 machine. The runtime enforcement lives in
-`packages/docx-core/src/baselines/atomizer/pipeline.ts` (the
+`packages/docx-compare/src/baselines/atomizer/pipeline.ts` (the
 `validateFieldStructure` function); the related (and parallel)
 `w:fldChar`-placement check appears at the same site under the same
 section.
@@ -102,6 +103,7 @@ section.
 - **Part / Section:** Part 1 § 17.13.5
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange`
+- **Verified by:** packages/docx-compare/src/atomizer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts
 
 Specific OOXML elements (notably `w:commentRangeStart`, `w:commentRangeEnd`,
 `w:bookmarkStart`, `w:bookmarkEnd`, `w:permStart`, `w:permEnd`, and the
@@ -110,7 +112,7 @@ revision markers) are valid as direct children of `<w:p>` (and of revision
 wrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but
 never inside `<w:r>`. safe-docx's rebuild reconstructor emits them as
 siblings of `<w:r>`, not as leaves wrapped in a synthetic run. The
-authoritative list lives in `packages/docx-core/src/atomizer.ts`.
+authoritative list lives in `packages/docx-compare/src/atomizer.ts`.
 
 ### ECMA-PART1-17-13-8-1 — Proofing error anchors
 
@@ -849,6 +851,7 @@ trio cleanly, which the strip scenario verifies on generated output.
 - **Part / Section:** Part 1 § 17.13.5.15
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del`
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts
 
 ECMA-376 Part 1 §17.13.5.15 defines `w:del` inside `w:pPr/w:rPr` as a tracked
 deletion of the *paragraph mark* (the glyph ending the paragraph), not of the
@@ -857,7 +860,7 @@ the paragraph's remaining content merges into the following paragraph; the
 contents themselves are deleted only where they carry their own run-level
 `w:del` wrappers. safe-docx's accept paths implement this merge in
 `packages/docx-core/src/primitives/accept_changes.ts` and
-`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
 ### ECMA-PART1-17-13-5-20 — Inserted paragraph mark (w:ins under w:pPr/w:rPr)
 
@@ -865,6 +868,7 @@ contents themselves are deleted only where they carry their own run-level
 - **Part / Section:** Part 1 § 17.13.5.20
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins`
+- **Verified by:** packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts
 
 ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked
 insertion of the *paragraph mark*, not of the paragraph's contents. Rejecting
@@ -873,7 +877,7 @@ surviving content merges into the following paragraph; the contents disappear
 only where they carry their own run-level `w:ins` wrappers. safe-docx's reject
 paths implement this merge in
 `packages/docx-core/src/primitives/reject_changes.ts` and
-`packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+`packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
 ## Non-Goals
 
