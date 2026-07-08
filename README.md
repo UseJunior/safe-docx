@@ -107,6 +107,8 @@ Safe Docx is not intended to replace generation-first `.docx` libraries.
 
 Safe Docx is a deliberately narrow tool, and for plenty of document work it is not the one you want. Below are the alternatives people most often weigh it against — each is a genuinely good fit for cases Safe Docx is not built for. The links go to fuller write-ups.
 
+For a fixture-by-fixture view, see the [live DOCX compatibility matrix](https://usejunior.com/safe-docx/compatibility/?utm_source=github&utm_medium=readme&utm_campaign=safe-docx), which compares Safe Docx with python-docx, LibreOffice, Open XML SDK, docx, SuperDoc, and docx-rs.
+
 ### vs SuperDoc
 
 SuperDoc is a polished, full-featured WYSIWYG editor: a browser-based document engine with real-time multi-user collaboration and a large MCP tool surface. If you want people to *see and edit* a document in the browser, it is the more complete product and the one we would point you to. Safe Docx is headless — no editor, no rendering, no collaboration layer — so it can offer nothing on that front. Reach for Safe Docx only when you specifically want a lightweight, local MCP server for agent-driven edits; reach for SuperDoc when humans need a real editing surface. [Full comparison →](https://usejunior.com/comparisons/safe-docx-vs-superdoc?utm_source=github&utm_medium=readme&utm_campaign=safe-docx)
