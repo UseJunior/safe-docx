@@ -2,7 +2,23 @@
   "checker": "safe-docx-lean-xml-triple-checker",
   "protocolVersion": 1,
   "scope": {
-    "packagePart": "word/document.xml",
+    "inputs": [
+      {
+        "name": "original",
+        "source": "original DOCX package",
+        "packagePart": "word/document.xml"
+      },
+      {
+        "name": "revised",
+        "source": "revised DOCX package",
+        "packagePart": "word/document.xml"
+      },
+      {
+        "name": "compared",
+        "source": "safe-docx comparison output DOCX package",
+        "packagePart": "word/document.xml"
+      }
+    ],
     "reconstructionModes": {
       "covered": ["inplace"],
       "outOfScope": ["rebuild"]
@@ -49,6 +65,18 @@
     "After accepting all tracked changes, Word field markers remain structurally valid.",
     "After rejecting all tracked changes, Word field markers remain structurally valid.",
     "The compared document does not place Word field markers inside deletion markup."
+  ],
+  "ecma376Traceability": [
+    {
+      "registryId": "ECMA-PART1-17-13-5",
+      "section": "Part 1 §17.13.5",
+      "claim": "The parser recognizes the tracked-run wrappers that affect accept/reject text projection in the main document body."
+    },
+    {
+      "registryId": "ECMA-PART4-17-16-5",
+      "section": "Part 4 §17.16.5",
+      "claim": "The checker rejects field markers under deletion markup and requires deleted field-code text to stay under deletion markup."
+    }
   ],
   "knownUncheckedAreas": [
     "full ECMA-376 schema validation",
