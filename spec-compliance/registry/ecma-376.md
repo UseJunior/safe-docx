@@ -80,15 +80,18 @@ verifiedBy: packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnote
 ```
 
 `w:id` on `w:footnoteReference` is a *reference identifier*, not the
-displayed footnote number. Display numbers are derived sequentially by
-document order. The 5th-edition Part 1 examples at §17.11.9 / §17.11.10
-illustrate the special footnote types (separator and continuation
-separator) using `w:id="0"` and `w:id="1"`; safe-docx treats those IDs
-as conventional reserved values via `RESERVED_FOOTNOTE_IDS` in
-`packages/docx-core/src/core-types.ts` and `isReservedId` in
-`packages/docx-core/src/footnotes.ts`. The runtime ordering logic
-(`findReferencesInOrder`, also in `footnotes.ts`) implements the
-reference-vs-display distinction this section establishes.
+displayed footnote number. For the supported Word-conventional package
+surface, display numbers are derived sequentially by document order. The
+runtime ordering logic (`findReferencesInOrder` in
+`packages/docx-core/src/footnotes.ts`) implements that distinction.
+
+The current `isReservedId` helper skips numeric IDs `0` and `1`, following a
+convention seen in Word-produced packages. That is a conformance gap, not a
+rule of §17.11.14: the standard identifies separator and continuation-
+separator notes through note type and does not normatively reserve those
+numeric identifiers. Arbitrary packages that use `0` or `1` for user notes,
+full `w:type` interpretation, and complete `w:customMarkFollows` display-mark
+semantics are outside the present numbering claim.
 
 The compiled Lean checker reads `word/footnotes.xml` and
 `word/endnotes.xml` from the original, revised, and compared packages, but
@@ -1037,7 +1040,7 @@ part: 1
 section: "17.13.4.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference
-verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; packages/docx-core/src/primitives/comments.ts; packages/docx-core/src/primitives/comments.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
 ```
 
 The trailing reference run carries `w:commentReference` with the same id
@@ -1107,8 +1110,10 @@ field-code parsing and evaluation, cached-result correctness, pagination, and
 equivalence to a Word application's field engine are out of scope.
 
 Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
-display numbering plus generated single-paragraph root comments. It does not
-claim complete note-definition/reference integrity, relationship validation,
+display numbering for Word-conventional packages plus generated
+single-paragraph root comments. It does not claim arbitrary numeric note-ID
+assignment, complete `w:type` or `w:customMarkFollows` display semantics,
+complete note-definition/reference integrity, relationship validation,
 arbitrary cross-paragraph comment ranges, threaded-comment semantics,
 resolution-state semantics, or repair of malformed third-party comment parts.
 The compiled Lean checker independently covers fixed-story text projection and

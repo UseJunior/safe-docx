@@ -24,7 +24,7 @@ This initial denominator classifies only seeded references. Unlisted ECMA-376 pr
 | `ooxml.ecma376.5ed.part1.comments.comment` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.2 | `partial` | 1 source / 1 tests |
 | `ooxml.ecma376.5ed.part1.comments.range-start` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.4 | `partial` | 1 source / 1 tests |
 | `ooxml.ecma376.5ed.part1.comments.range-end` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.3 | `partial` | 1 source / 1 tests |
-| `ooxml.ecma376.5ed.part1.comments.reference` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.5 | `partial` | 1 source / 2 tests |
+| `ooxml.ecma376.5ed.part1.comments.reference` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.5 | `partial` | 1 source / 1 tests |
 
 ## Generated vocabulary use
 

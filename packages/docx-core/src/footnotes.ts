@@ -7,7 +7,8 @@
  * number. Display numbers are sequential based on document order.
  *
  * @example
- * Document has 91 footnotes with XML IDs 2-92 (IDs 0, 1 are reserved):
+ * Under safe-docx's current Word-conventional package assumption, a document
+ * has 91 user footnotes with XML IDs 2-92 (IDs 0 and 1 are skipped):
  * - Incorrect: Display as 2, 3, 4, ..., 92
  * - Correct: Display as 1, 2, 3, ..., 91
  *
@@ -57,13 +58,13 @@ export function findReferencesInOrder(
 /**
  * Check if a footnote/endnote ID is reserved.
  *
- * IDs 0 and 1 are treated as reserved, matching the special separator and
- * continuation-separator footnote examples in ECMA-376 5th edition Part 1
- * §17.11.9 / §17.11.10.
+ * IDs 0 and 1 are treated as separator sentinels for compatibility with the
+ * Word-produced packages safe-docx currently targets. ECMA-376 identifies
+ * separator notes by note type; §17.11.14 does not reserve numeric IDs.
  *
  * @param xmlId - The XML ID to check
  * @returns True if this is a reserved ID
- * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.11.14 — numeric IDs 0 and 1 are skipped as Word-conventional separator sentinels even though the section does not reserve those identifiers
  */
 export function isReservedId(xmlId: string): boolean {
   return (
