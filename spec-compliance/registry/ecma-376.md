@@ -76,19 +76,29 @@ part: 1
 section: "17.11.14"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference
-verifiedBy:
+verifiedBy: packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts
 ```
 
 `w:id` on `w:footnoteReference` is a *reference identifier*, not the
-displayed footnote number. Display numbers are derived sequentially by
-document order. The 5th-edition Part 1 examples at §17.11.9 / §17.11.10
-illustrate the special footnote types (separator and continuation
-separator) using `w:id="0"` and `w:id="1"`; safe-docx treats those IDs
-as conventional reserved values via `RESERVED_FOOTNOTE_IDS` in
-`packages/docx-core/src/core-types.ts` and `isReservedId` in
-`packages/docx-core/src/footnotes.ts`. The runtime ordering logic
-(`findReferencesInOrder`, also in `footnotes.ts`) implements the
-reference-vs-display distinction this section establishes.
+displayed footnote number. For the supported Word-conventional package
+surface, display numbers are derived sequentially by document order. The
+runtime ordering logic (`findReferencesInOrder` in
+`packages/docx-core/src/footnotes.ts`) implements that distinction.
+
+The current `isReservedId` helper skips numeric IDs `0` and `1`, following a
+convention seen in Word-produced packages. That is a conformance gap, not a
+rule of §17.11.14: the standard identifies separator and continuation-
+separator notes through note type and does not normatively reserve those
+numeric identifiers. Arbitrary packages that use `0` or `1` for user notes,
+full `w:type` interpretation, and complete `w:customMarkFollows` display-mark
+semantics are outside the present numbering claim.
+
+The compiled Lean checker reads `word/footnotes.xml` and
+`word/endnotes.xml` from the original, revised, and compared packages, but
+only proves normalized text projection and field-marker structure for user
+notes. It does not inspect `w:footnoteReference`/`w:endnoteReference`, match
+reference IDs to definitions, or validate note relationships. Those claims
+remain runtime-and-test-backed only.
 
 ## [ECMA-PART1-17-16-22] w:hyperlink container preservation under tracked changes
 
@@ -958,7 +968,7 @@ part: 1
 section: "17.13.4.6"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
 ```
 
 Drafting notes compile to a word/comments.xml part holding one
@@ -966,6 +976,9 @@ Drafting notes compile to a word/comments.xml part holding one
 people parts (content/relationship types matching what Word itself
 writes, cross-checked against the Open XML SDK part constants). The
 emitter lives in `packages/docx-core/src/generation/emit/comments-part.ts`.
+This claim is limited to generated root-comment collections. Thread replies,
+comment-resolution semantics, and arbitrary third-party comment-part repair
+are not claimed. `comments.xml` is outside the compiled Lean checker scope.
 
 ## [ECMA-PART1-17-13-4-2] w:comment comment content emission
 
@@ -975,7 +988,7 @@ part: 1
 section: "17.13.4.2"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
 ```
 
 Each comment carries deterministic metadata: sequential ids in document
@@ -983,6 +996,8 @@ order, author falling back note.author → meta.author → 'safe-docx' with
 derived initials, dates only from DraftingNoteSpec.dateIso or
 meta.createdIso (never the clock), and a `w14:paraId` derived from the
 comment id so commentsExtended entries pair up by construction.
+This does not claim validation of externally supplied comment IDs, extension
+thread graphs, or comment relationships.
 
 ## [ECMA-PART1-17-13-4-4] w:commentRangeStart comment anchor opening
 
@@ -992,12 +1007,14 @@ part: 1
 section: "17.13.4.4"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
 ```
 
 A noted paragraph opens its comment range before its first run; range
 ids always match an emitted comment, and the disabled-notes compile emits
 no anchors at all, keeping the body byte-identical to a never-noted spec.
+Cross-paragraph ranges and repair of malformed or orphaned anchors are outside
+this generation claim.
 
 ## [ECMA-PART1-17-13-4-3] w:commentRangeEnd comment anchor closing
 
@@ -1007,11 +1024,13 @@ part: 1
 section: "17.13.4.3"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
 ```
 
 The comment range closes after the paragraph's last run, before the
 reference run, so the anchored extent is exactly the paragraph content.
+Cross-paragraph ranges and repair of malformed or orphaned anchors are outside
+this generation claim.
 
 ## [ECMA-PART1-17-13-4-5] w:commentReference comment reference mark
 
@@ -1021,12 +1040,14 @@ part: 1
 section: "17.13.4.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
 ```
 
 The trailing reference run carries `w:commentReference` with the same id
 as its range anchors; the existing deleteComment editing path removes the
 trio cleanly, which the strip scenario verifies on generated output.
+The compiled Lean checker does not read `comments.xml` or prove anchor,
+reference-ID, relationship, or thread integrity.
 
 ## [ECMA-PART1-17-13-5-15] Deleted paragraph mark (w:del under w:pPr/w:rPr)
 
@@ -1087,6 +1108,18 @@ Within Part 1 §17.16, safe-docx targets structural emission of complex fields
 and the PAGE and NUMPAGES instructions listed above. Other field instructions,
 field-code parsing and evaluation, cached-result correctness, pagination, and
 equivalence to a Word application's field engine are out of scope.
+
+Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
+display numbering for Word-conventional packages plus generated
+single-paragraph root comments. It does not claim arbitrary numeric note-ID
+assignment, complete `w:type` or `w:customMarkFollows` display semantics,
+complete note-definition/reference integrity, relationship validation,
+arbitrary cross-paragraph comment ranges, threaded-comment semantics,
+resolution-state semantics, or repair of malformed third-party comment parts.
+The compiled Lean checker independently covers fixed-story text projection and
+field-marker structure in `word/footnotes.xml` and `word/endnotes.xml`; it does
+not cover any of those excluded reference, relationship, anchor, or thread
+semantics and does not read `word/comments.xml`.
 
 A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
 the citation lint. For a deliberate divergence *inside a targeted section*, use
