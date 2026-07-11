@@ -56,6 +56,40 @@ async function verifyArtifacts(manifest) {
   }
 }
 
+async function verifyDerivedSchemas(manifest) {
+  const schemaSets = [
+    { part: 1, nestedArchive: 'OfficeOpenXML-XMLSchema-Strict.zip', derivedDirectory: 'strict' },
+    { part: 2, nestedArchive: 'OpenPackagingConventions-XMLSchema.zip', derivedDirectory: 'opc' },
+    { part: 4, nestedArchive: 'OfficeOpenXML-XMLSchema-Transitional.zip', derivedDirectory: 'transitional' },
+  ];
+
+  for (const schemaSet of schemaSets) {
+    const artifact = manifest.artifacts.find((candidate) => candidate.part === schemaSet.part);
+    if (!artifact) throw new Error(`No artifact manifest entry for Part ${schemaSet.part}`);
+    const outer = await JSZip.loadAsync(await readFile(path.join(root, artifact.path)));
+    const nestedEntry = outer.file(schemaSet.nestedArchive);
+    if (!nestedEntry) throw new Error(`${artifact.path} does not contain ${schemaSet.nestedArchive}`);
+    const nested = await JSZip.loadAsync(await nestedEntry.async('nodebuffer'));
+    const sourceNames = Object.values(nested.files)
+      .filter((entry) => !entry.dir && entry.name.endsWith('.xsd'))
+      .map((entry) => path.basename(entry.name))
+      .sort();
+    const derivedPath = path.join(root, 'spec-compliance/ecma-376/schemas', schemaSet.derivedDirectory);
+    const derivedNames = (await readdir(derivedPath)).filter((name) => name.endsWith('.xsd')).sort();
+    if (JSON.stringify(sourceNames) !== JSON.stringify(derivedNames)) {
+      throw new Error(`${schemaSet.derivedDirectory}: extracted XSD file set differs from ${schemaSet.nestedArchive}`);
+    }
+    for (const name of sourceNames) {
+      const sourceEntry = nested.file(name) ?? nested.file(Object.keys(nested.files).find((entryName) => path.basename(entryName) === name));
+      const sourceBytes = await sourceEntry.async('nodebuffer');
+      const derivedBytes = await readFile(path.join(derivedPath, name));
+      if (!sourceBytes.equals(derivedBytes)) {
+        throw new Error(`${schemaSet.derivedDirectory}/${name}: bytes differ from ${schemaSet.nestedArchive}`);
+      }
+    }
+  }
+}
+
 function collectDeclarations(node, declarationKind, found = new Set()) {
   if (Array.isArray(node)) {
     for (const child of node) collectDeclarations(child, declarationKind, found);
@@ -261,6 +295,7 @@ const artifacts = await readJson(artifactManifestPath);
 const references = await readJson(referenceManifestPath);
 const seed = await readJson(vocabularySeedPath);
 await verifyArtifacts(artifacts);
+await verifyDerivedSchemas(artifacts);
 const vocabulary = await generateVocabulary(artifacts, seed);
 await emit(vocabularyOutputPath, stableJson(vocabulary));
 await emit(typescriptOutputPath, generateTypescript(vocabulary));

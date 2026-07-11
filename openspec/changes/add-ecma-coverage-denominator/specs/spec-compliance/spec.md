@@ -12,6 +12,8 @@ publication date, path, checksum, source URL, and copyright status.
 - **WHEN** `npm run check:ecma-376-coverage` runs
 - **THEN** every vendored ZIP SHALL match its manifest SHA-256
 - **AND** `SHA256SUMS` SHALL contain exactly the same artifact set
+- **AND** the existing Strict, Transitional, and OPC schema trees SHALL match
+  the corresponding nested official XSD archives byte for byte
 
 ### Requirement: Generated ECMA-376 vocabulary
 

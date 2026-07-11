@@ -49,7 +49,9 @@ Nothing under `schemas/` is modified to make validation work.
 The official ZIPs are recorded in
 `../manifests/ecma-376-artifacts.json` with SHA-256 identities. Generated
 vocabulary is read directly from the nested XSD archive in the Part 4 ZIP and
-records that input checksum. The extracted XSDs encode the **machine-readable** structural rules of ECMA-376 —
+records that input checksum. The coverage check also verifies that every
+extracted Strict, Transitional, and OPC XSD matches its nested official source
+byte for byte. The extracted XSDs encode the **machine-readable** structural rules of ECMA-376 —
 element names, attribute types, restrictions, enumerations, and value
 patterns. A `@conformance` claim that names `wml.xsd#element:delInstrText`
 resolves without leaving the repo. The PDFs remain inside the unchanged ZIPs;
