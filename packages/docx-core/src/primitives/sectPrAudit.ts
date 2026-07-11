@@ -9,7 +9,10 @@ export type SectPrIssueType =
   | 'sectpr_invalid_parent'
   | 'sectpr_in_ppr_without_paragraph_parent'
   | 'sectpr_reference_missing_rid'
-  | 'sectpr_reference_dangling_rid';
+  | 'sectpr_reference_dangling_rid'
+  | 'sectpr_reference_wrong_relationship_type'
+  | 'sectpr_reference_missing_target_part'
+  | 'sectpr_reference_wrong_target_root';
 
 export interface SectPrAuditIssue {
   type: SectPrIssueType;
@@ -58,26 +61,46 @@ function nodePath(node: Element): string {
   return parts.reverse().join('/');
 }
 
-function collectRelationshipIds(documentRelsXml: string | null | undefined): Set<string> {
+interface DocumentRelationship {
+  type: string;
+  target: string;
+  external: boolean;
+}
+
+function collectRelationships(documentRelsXml: string | null | undefined): Map<string, DocumentRelationship> {
   if (!documentRelsXml) {
-    return new Set<string>();
+    return new Map();
   }
 
   try {
     const relDoc = parseXml(documentRelsXml);
-    const ids = new Set<string>();
+    const relationshipsById = new Map<string, DocumentRelationship>();
     const relationships = relDoc.getElementsByTagName('Relationship');
     for (let i = 0; i < relationships.length; i++) {
       const rel = relationships.item(i);
       const id = rel?.getAttribute('Id');
       if (id) {
-        ids.add(id);
+        relationshipsById.set(id, {
+          type: rel?.getAttribute('Type') ?? '',
+          target: rel?.getAttribute('Target') ?? '',
+          external: rel?.getAttribute('TargetMode') === 'External',
+        });
       }
     }
-    return ids;
+    return relationshipsById;
   } catch {
-    return new Set<string>();
+    return new Map();
   }
+}
+
+function resolveDocumentTarget(target: string): string {
+  const parts = ['word'];
+  for (const segment of target.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') parts.pop();
+    else parts.push(segment);
+  }
+  return parts.join('/');
 }
 
 function getRid(ref: Element): string | undefined {
@@ -89,9 +112,22 @@ function getRid(ref: Element): string | undefined {
   );
 }
 
-export function auditSectPr(documentXml: string, documentRelsXml?: string | null): SectPrAuditSummary {
+/**
+ * Audit section placement and header/footer bindings. When package parts are
+ * supplied, every typed reference is followed through document.xml.rels to a
+ * target part whose root must match the reference kind.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @see https://github.com/UseJunior/safe-docx/issues/560
+ */
+export function auditSectPr(
+  documentXml: string,
+  documentRelsXml?: string | null,
+  packageParts?: ReadonlyMap<string, string>,
+): SectPrAuditSummary {
   const issues: SectPrAuditIssue[] = [];
-  const relIds = collectRelationshipIds(documentRelsXml);
+  const relationships = collectRelationships(documentRelsXml);
 
   const doc = parseXml(documentXml);
   const body = doc.getElementsByTagName('w:body').item(0) as Element | null;
@@ -184,13 +220,60 @@ export function auditSectPr(documentXml: string, documentRelsXml?: string | null
         continue;
       }
 
-      if (relIds.size > 0 && !relIds.has(rid)) {
+      const relationship = relationships.get(rid);
+      if (!relationship) {
         issues.push({
           type: 'sectpr_reference_dangling_rid',
           path: nodePath(child),
           message: `${child.tagName} references missing relationship id '${rid}'`,
           rid,
         });
+        continue;
+      }
+
+      const kind = child.tagName === 'w:headerReference' ? 'header' : 'footer';
+      const expectedType = `http://schemas.openxmlformats.org/officeDocument/2006/relationships/${kind}`;
+      if (relationship.type !== expectedType || relationship.external) {
+        issues.push({
+          type: 'sectpr_reference_wrong_relationship_type',
+          path: nodePath(child),
+          message: `${child.tagName} relationship '${rid}' has type '${relationship.type || '(missing)'}'`,
+          rid,
+        });
+        continue;
+      }
+
+      if (packageParts) {
+        const targetName = resolveDocumentTarget(relationship.target);
+        const targetXml = packageParts.get(targetName);
+        if (!targetXml) {
+          issues.push({
+            type: 'sectpr_reference_missing_target_part',
+            path: nodePath(child),
+            message: `${child.tagName} relationship '${rid}' resolves to missing part '${targetName}'`,
+            rid,
+          });
+          continue;
+        }
+        try {
+          const expectedRoot = kind === 'header' ? 'w:hdr' : 'w:ftr';
+          const actualRoot = parseXml(targetXml).documentElement?.tagName;
+          if (actualRoot !== expectedRoot) {
+            issues.push({
+              type: 'sectpr_reference_wrong_target_root',
+              path: nodePath(child),
+              message: `${child.tagName} relationship '${rid}' targets <${actualRoot ?? 'nothing'}>, expected <${expectedRoot}>`,
+              rid,
+            });
+          }
+        } catch {
+          issues.push({
+            type: 'sectpr_reference_wrong_target_root',
+            path: nodePath(child),
+            message: `${child.tagName} relationship '${rid}' targets malformed XML`,
+            rid,
+          });
+        }
       }
     }
   }

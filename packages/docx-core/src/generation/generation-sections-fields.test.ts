@@ -72,7 +72,94 @@ async function loadPart(buffer: Buffer, part: string): Promise<Document> {
   return parseXml(xml!);
 }
 
+async function mutatePackage(buffer: Buffer, mutate: (zip: JSZip) => void | Promise<void>): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(buffer);
+  await mutate(zip);
+  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+}
+
 describe('Traceability: multi-section documents, headers/footers, and fields', () => {
+  test
+    .conformance(
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.5' },
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.2' },
+    )(
+    'resolves header and footer roles through document relationships and target parts',
+    async ({ given, when, then }: AllureBddContext) => {
+      let buffer!: Buffer;
+      await given('two sections using all roles, including a relationship reused by both sections', async () => {
+        const repeated = header('Shared default header');
+        buffer = await generateDocx({
+          sections: [
+            {
+              headers: { first: header('First A'), default: repeated, even: header('Even A') },
+              footers: { first: header('First footer A'), default: header('Default footer A'), even: header('Even footer A') },
+              blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Section A' }] }],
+            },
+            {
+              headers: { default: repeated },
+              blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Section B' }] }],
+            },
+          ],
+        });
+        buffer = await mutatePackage(buffer, async (zip) => {
+          const xml = await zip.file('word/document.xml')!.async('text');
+          const defaults = [...xml.matchAll(/<w:headerReference[^>]*w:type="default"[^>]*r:id="([^"]+)"[^>]*\/>/g)];
+          expect(defaults).toHaveLength(2);
+          zip.file('word/document.xml', xml.replace(defaults[1]![0], defaults[1]![0].replace(defaults[1]![1]!, defaults[0]![1]!)));
+        });
+      });
+
+      await when('the intact package is checked', async () => {
+        const result = await checkGeneratedPackage(buffer);
+        expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+      });
+
+      await then('missing optional first/even roles remain valid', async () => {
+        const result = await checkGeneratedPackage(await generateDocx(coverBodySpec()));
+        expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+      });
+
+      await then('a header reference bound to a footer relationship is rejected', async () => {
+        const tampered = await mutatePackage(buffer, async (zip) => {
+          const xml = await zip.file('word/_rels/document.xml.rels')!.async('text');
+          zip.file('word/_rels/document.xml.rels', xml.replace('/relationships/header', '/relationships/footer'));
+        });
+        const result = await checkGeneratedPackage(tampered);
+        expect(result.issues.some((issue) => issue.message.includes('sectpr_reference_wrong_relationship_type'))).toBe(true);
+      });
+
+      await then('a footer reference bound to a header relationship is rejected', async () => {
+        const tampered = await mutatePackage(buffer, async (zip) => {
+          const xml = await zip.file('word/_rels/document.xml.rels')!.async('text');
+          zip.file('word/_rels/document.xml.rels', xml.replace('/relationships/footer', '/relationships/header'));
+        });
+        const result = await checkGeneratedPackage(tampered);
+        expect(result.issues.some((issue) => issue.message.includes('sectpr_reference_wrong_relationship_type'))).toBe(true);
+      });
+
+      await then('a reference whose relationship id is absent is rejected', async () => {
+        const tampered = await mutatePackage(buffer, async (zip) => {
+          const xml = await zip.file('word/document.xml')!.async('text');
+          zip.file('word/document.xml', xml.replace(/r:id="rId\d+"/, 'r:id="rIdMissing"'));
+        });
+        const result = await checkGeneratedPackage(tampered);
+        expect(result.issues.some((issue) => issue.message.includes('sectpr_reference_dangling_rid'))).toBe(true);
+      });
+
+      await then('missing and wrong-root target parts are rejected', async () => {
+        const zip = await JSZip.loadAsync(buffer);
+        const headerXml = await zip.file('word/header1.xml')!.async('text');
+        zip.file('word/header1.xml', headerXml.replace('<w:hdr', '<w:ftr').replace('</w:hdr>', '</w:ftr>'));
+        let result = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
+        expect(result.issues.some((issue) => issue.message.includes('sectpr_reference_wrong_target_root'))).toBe(true);
+
+        zip.remove('word/header1.xml');
+        result = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
+        expect(result.issues.some((issue) => issue.message.includes('sectpr_reference_missing_target_part'))).toBe(true);
+      });
+    },
+  );
   test
     .openspec('[SDX-GEN-021] non-final sections end with a dedicated break paragraph')
     .conformance(

@@ -208,7 +208,7 @@ function checkSectPr(contents: Map<string, string>): StructuralIssue[] {
   if (!documentXml) {
     return [{ check: 'sectpr', part: 'word/document.xml', message: 'Part is missing' }];
   }
-  const audit = auditSectPr(documentXml, contents.get('word/_rels/document.xml.rels') ?? null);
+  const audit = auditSectPr(documentXml, contents.get('word/_rels/document.xml.rels') ?? null, contents);
   for (const issue of audit.issues) {
     issues.push({ check: 'sectpr', part: 'word/document.xml', message: `${issue.type}: ${issue.message}` });
   }
