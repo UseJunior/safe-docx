@@ -16,6 +16,8 @@ export type {
   DocumentIntegrityCertificateStatus,
   DocumentIntegrityCheckCertificate,
   DocumentIntegrityCheckStatus,
+  DocumentIntegrityStoryCertificate,
+  DocumentIntegrityStoryName,
   LeanXmlVerifierOptions,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,

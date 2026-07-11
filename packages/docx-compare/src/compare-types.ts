@@ -26,7 +26,8 @@ export interface CompareOptions {
   /**
    * Optional Lean 4 verifier for atomizer inplace output. When enabled, the
    * atomizer still produces the DOCX, then a separately compiled Lean checker
-   * evaluates the original/revised/result document.xml triple.
+   * extracts and evaluates fixed WordprocessingML stories from the actual
+   * original/revised/result DOCX package triple.
    */
   leanXmlVerifier?: LeanXmlVerifierOptions;
   /**
@@ -77,7 +78,10 @@ export type ReconstructionMode = 'rebuild' | 'inplace';
 export type ReconstructionFallbackReason = 'round_trip_safety_check_failed';
 
 export interface LeanXmlVerifierOptions {
-  /** Run the Lean XML triple verifier. Default: false. */
+  /**
+   * Run the Lean fixed-story verifier. Default: false.
+   * The compiled verifier currently requires `unzip` on PATH to extract DOCX parts.
+   */
   enabled?: boolean;
   /**
    * Path to the compiled `leanDocxChecker` executable. Defaults to
@@ -242,35 +246,47 @@ export interface DocumentIntegrityCheckCertificate {
   claim: string;
 }
 
-export interface DocumentIntegrityCertificate {
-  /** Overall result from the separately compiled Lean verifier. */
-  status: DocumentIntegrityCertificateStatus;
-  /** Human-facing verifier name, intentionally not a Lean theorem identifier. */
-  verifier: 'Lean XML triple checker';
-  /** Version of the JSON protocol used between TypeScript and the Lean exe. */
-  protocolVersion: 1;
-  /** Main-document XML only; ancillary OOXML parts are not covered by this increment. */
-  scope: 'word/document.xml';
-  /** Reconstruction mode of the compared DOCX that was offered to the verifier. */
-  reconstructionMode: ReconstructionMode;
-  /** SHA-256 hashes of the exact XML strings sent to the verifier. */
-  inputSha256: {
-    originalDocumentXml: string;
-    revisedDocumentXml: string;
-    comparedDocumentXml: string;
-  };
+export type DocumentIntegrityStoryName = 'main' | 'footnotes' | 'endnotes';
+
+export interface DocumentIntegrityStoryCertificate {
+  name: DocumentIntegrityStoryName;
+  status: 'passed' | 'failed';
   checks: {
     acceptingAllTrackedChangesMatchesRevisedText: DocumentIntegrityCheckCertificate;
     rejectingAllTrackedChangesMatchesOriginalText: DocumentIntegrityCheckCertificate;
     acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
-    comparedDocumentHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+    comparedStoryHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
   };
-  parsedTokenCounts?: {
-    original: number;
-    revised: number;
-    compared: number;
+  parsedTokenCounts: { original: number; revised: number; compared: number };
+}
+
+export interface DocumentIntegrityCertificate {
+  /** Overall result from the separately compiled Lean verifier. */
+  status: DocumentIntegrityCertificateStatus;
+  /** Human-facing verifier name, intentionally not a Lean theorem identifier. */
+  verifier: 'Lean fixed-story checker';
+  /** Version of the JSON protocol used between TypeScript and the Lean exe. */
+  protocolVersion: 2;
+  /** Fixed story allowlist selected and extracted by the compiled verifier. */
+  scope: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
+  /** Reconstruction mode of the compared DOCX that was offered to the verifier. */
+  reconstructionMode: ReconstructionMode;
+  /** SHA-256 hashes of the exact DOCX package snapshots offered to the verifier. */
+  inputSha256: {
+    originalDocx: string;
+    revisedDocx: string;
+    comparedDocx: string;
   };
+  stories: DocumentIntegrityStoryCertificate[];
+  presenceMismatches?: Array<{
+    name: string;
+    packagePart: string;
+    required: boolean;
+    presence: { original: boolean; revised: boolean; combined: boolean };
+  }>;
+  /** Important surfaces this certificate does not claim to validate. */
+  exclusions: string[];
   reason?: string;
 }
 

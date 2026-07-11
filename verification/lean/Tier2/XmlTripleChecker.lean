@@ -26,6 +26,8 @@ inductive XmlTok
   | instrText (s : String)
   | delInstrText (s : String)
   | fldChar (k : FldCharKind)
+  | enterReservedNote
+  | exitReservedNote
   deriving DecidableEq, Repr, Inhabited
 
 def decodeXmlText (s : String) : String :=
@@ -53,7 +55,10 @@ def tagPayload (segment : String) : String × String :=
   | tag :: rest => (tag, String.intercalate ">" rest)
 
 def tagToken (tag payload : String) : List XmlTok :=
-  if isStartTag tag "w:p" then [.pBreak]
+  if (isStartTag tag "w:footnote" || isStartTag tag "w:endnote") &&
+      (tag.contains "w:id=\"-1\"" || tag.contains "w:id=\"0\"") then [.enterReservedNote]
+  else if isEndTag tag "w:footnote" || isEndTag tag "w:endnote" then [.exitReservedNote]
+  else if isStartTag tag "w:p" then [.pBreak]
   else if isStartTag tag "w:ins" then [.enter .ins]
   else if isEndTag tag "w:ins" then [.exit .ins]
   else if isStartTag tag "w:del" then [.enter .del]
@@ -77,6 +82,29 @@ def parseXmlTokens (xml : String) : List XmlTok :=
   (((xml.splitOn "<").drop 1).map fun segment =>
     let (tag, payload) := tagPayload segment
     tagToken tag payload).flatten
+
+def projectUserNoteTokensAux : Bool → List XmlTok → List XmlTok
+  | _, [] => []
+  | _, .enterReservedNote :: rest => projectUserNoteTokensAux true rest
+  | _, .exitReservedNote :: rest => projectUserNoteTokensAux false rest
+  | true, _ :: rest => projectUserNoteTokensAux true rest
+  | false, tok :: rest => tok :: projectUserNoteTokensAux false rest
+
+def projectUserNoteTokens (toks : List XmlTok) : List XmlTok :=
+  projectUserNoteTokensAux false toks
+
+theorem projectUserNoteTokensAux_no_reserved (inside : Bool) (toks : List XmlTok) :
+    (projectUserNoteTokensAux inside toks).all (fun tok =>
+      tok != .enterReservedNote && tok != .exitReservedNote) = true := by
+  induction toks generalizing inside with
+  | nil => simp [projectUserNoteTokensAux]
+  | cons tok rest ih =>
+    cases inside <;> cases tok <;> simp_all [projectUserNoteTokensAux]
+
+theorem projectUserNoteTokens_no_reserved (toks : List XmlTok) :
+    (projectUserNoteTokens toks).all (fun tok =>
+      tok != .enterReservedNote && tok != .exitReservedNote) = true := by
+  exact projectUserNoteTokensAux_no_reserved false toks
 
 def popWrapper (w : Wrapper) : List Wrapper → List Wrapper
   | [] => []
@@ -228,6 +256,40 @@ def comparisonCheckerB (original revised combined : List XmlTok) : CheckReport :
     combinedHasNoFldCharInsideDel := !hasFldCharInsideDel combined
   }
 
+structure NamedStoryTriple where
+  name : String
+  original : List XmlTok
+  revised : List XmlTok
+  combined : List XmlTok
+  deriving Repr, Inhabited
+
+structure StoryReport where
+  name : String
+  report : CheckReport
+  originalTokenCount : Nat
+  revisedTokenCount : Nat
+  combinedTokenCount : Nat
+  deriving Repr, Inhabited
+
+def checkNamedStory (story : NamedStoryTriple) : StoryReport :=
+  { name := story.name
+    report := comparisonCheckerB story.original story.revised story.combined
+    originalTokenCount := story.original.length
+    revisedTokenCount := story.revised.length
+    combinedTokenCount := story.combined.length }
+
+def checkStoryCollection (stories : List NamedStoryTriple) : List StoryReport :=
+  stories.map checkNamedStory
+
+def storyCollectionPassed (reports : List StoryReport) : Bool :=
+  reports.all (fun report => report.report.passed)
+
+theorem story_collection_sound (stories : List NamedStoryTriple)
+    (h : storyCollectionPassed (checkStoryCollection stories) = true) :
+    ∀ report ∈ checkStoryCollection stories, report.report.passed = true := by
+  intro report hReport
+  simpa [storyCollectionPassed] using List.all_eq_true.mp h report hReport
+
 theorem checker_sound (original revised combined : List XmlTok)
     (h : (comparisonCheckerB original revised combined).passed = true) :
     (comparisonCheckerB original revised combined).acceptPreservesFieldStructure = true ∧
@@ -238,6 +300,21 @@ theorem checker_sound (original revised combined : List XmlTok)
   simp only [CheckReport.passed, Bool.and_eq_true] at h
   rcases h with ⟨⟨⟨⟨hAccept, hReject⟩, hAcceptText⟩, hRejectText⟩, hNoDelField⟩
   exact ⟨hAccept, hReject, hAcceptText, hRejectText, hNoDelField⟩
+
+theorem story_collection_checker_sound (stories : List NamedStoryTriple)
+    (h : storyCollectionPassed (checkStoryCollection stories) = true) :
+    ∀ story ∈ stories,
+      let report := comparisonCheckerB story.original story.revised story.combined
+      report.acceptPreservesFieldStructure = true ∧
+      report.rejectPreservesFieldStructure = true ∧
+      report.acceptTextMatchesRevised = true ∧
+      report.rejectTextMatchesOriginal = true ∧
+      report.combinedHasNoFldCharInsideDel = true := by
+  intro story hStory
+  have hMember : checkNamedStory story ∈ checkStoryCollection stories := by
+    exact List.mem_map.mpr ⟨story, hStory, rfl⟩
+  have hPassed := story_collection_sound stories h (checkNamedStory story) hMember
+  exact checker_sound story.original story.revised story.combined hPassed
 
 def boolJson (b : Bool) : Json := toJson b
 
@@ -251,6 +328,17 @@ def reportToJson (r : CheckReport) : Json :=
         , ("rejectTextMatchesOriginal", boolJson r.rejectTextMatchesOriginal)
         , ("combinedHasNoFldCharInsideDel", boolJson r.combinedHasNoFldCharInsideDel)
         ])
+    ]
+
+def storyReportToJson (r : StoryReport) : Json :=
+  Json.mkObj
+    [ ("name", toJson r.name)
+    , ("parsedTokenCounts", Json.mkObj
+        [ ("original", toJson r.originalTokenCount)
+        , ("revised", toJson r.revisedTokenCount)
+        , ("combined", toJson r.combinedTokenCount)
+        ])
+    , ("report", reportToJson r.report)
     ]
 
 end Tier2.XmlTripleChecker

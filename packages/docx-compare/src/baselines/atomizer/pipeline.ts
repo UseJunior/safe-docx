@@ -972,9 +972,9 @@ export async function compareDocumentsAtomizer(
   const stats = computeAtomizerStats(mergedAtoms);
   const documentIntegrity = leanXmlVerifier?.enabled
     ? await runLeanXmlTripleVerifier({
-        originalDocumentXml: originalXml,
-        revisedDocumentXml: revisedXml,
-        comparedDocumentXml: newDocumentXml,
+        originalDocx: original,
+        revisedDocx: revised,
+        comparedDocx: resultBuffer,
         reconstructionMode: comparisonResult.outputMode,
         options: leanXmlVerifier,
       })

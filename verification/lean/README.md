@@ -171,22 +171,38 @@ It concluded *full atom equality* (`a = b`), which held only because `Atom` expo
 
 **Scope note on optimality (INV-LCS-002) — resolved.** `rawMatches_are_longest` bounds the length of every *structural* common subsequence (`isCommonSubseq s orig rev := s <+ orig ∧ s <+ rev`, i.e. literal sublists of both). It remains true and non-vacuous after broadening, but it is *strictly weaker* than "longest under `atomsEqual`": because `atomsEqual` correlates atoms only up to `Atom.relevant`, an `atomsEqual`-matchable common subsequence need not be a structural sublist of both inputs. This gap is now closed by `rawMatches_are_longest_relevant` (`LeanSpike/LcsDP.lean`), which bounds every common subsequence of the relevant projections (`orig.map Atom.relevant`, `rev.map Atom.relevant`) — i.e. optimality at the `atomsEqual` level. It is provably stronger: e.g. two atoms with equal `Atom.relevant` but differing `correlationStatus` have an `atomsEqual`-matchable common subsequence of length 1 that is *not* a structural sublist of both. The proof reuses the `rawMatches_are_longest` induction skeleton, lifted to projected lists via a type-polymorphic `sublist_drop_heads` and the converse lemma `atomsEqual_of_relevant_eq` (projection equality ⇒ `atomsEqual`).
 
-## Lean XML triple checker
+## Lean fixed-story checker
 
-`Tier2/XmlTripleChecker.lean` defines the first compiled verifier for real
-comparison output. The `leanDocxChecker` executable reads a JSON object
-containing the original, revised, and compared `word/document.xml` strings,
-parses the relevant WordprocessingML token subset in Lean, and checks whether:
+`Tier2/XmlTripleChecker.lean` defines the compiled verifier for real comparison
+output. The `leanDocxChecker` executable receives paths to exact snapshots of
+the original, revised, and compared DOCX packages. The Lean process invokes the
+package extractor and selects these fixed WordprocessingML stories itself:
+
+- required `word/document.xml`;
+- optional `word/footnotes.xml`; and
+- optional `word/endnotes.xml`.
+
+Optional parts must be present in all three packages or absent from all three.
+Each supplied story is parsed and checked independently, so field state cannot
+balance across part boundaries. Reserved note IDs `-1` and `0` are removed by
+the Lean-defined `projectUserNoteTokens` projection before user-note text is
+compared. The projection and collection soundness theorem are included in the
+axiom audit.
+
+For every supplied story, the checker checks whether:
 
 - accepting all tracked changes in the compared XML recovers the revised text;
 - rejecting all tracked changes in the compared XML recovers the original text;
 - the accept and reject projections keep valid Word field structure; and
 - the compared XML does not place field markers inside deletion markup.
 
-The public claim is deliberately per-document: a separately compiled Lean
-program checked this XML triple. It is not a proof of the entire TypeScript
-comparison engine, package-level OPC behavior, rendering fidelity, rebuild mode,
-or ancillary parts. The current parsed and out-of-scope surfaces are tracked in
+The public claim is deliberately per-package-triple: a separately compiled Lean
+program extracted and checked these fixed stories. It is not a proof of the
+entire TypeScript comparison engine, note/reference or relationship integrity,
+package-level OPC behavior, rendering fidelity, rebuild mode, comments,
+headers/footers, or full ECMA-376 conformance. Package extraction currently
+requires `unzip`; absence or extraction failure produces `not_run`. The exact
+parsed and out-of-scope surfaces are tracked in
 `verification/registry/lean-xml-checker-coverage.json` and drift-checked by
 `npm run check:lean-xml-checker-coverage`.
 
