@@ -34,9 +34,9 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-10-4` | w:hdr header part emission | 5 | 1 | 17.10.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hdr` | — |
 | `ECMA-PART1-17-10-3` | w:ftr footer part emission | 5 | 1 | 17.10.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr` | — |
 | `ECMA-PART1-17-10-1` | w:evenAndOddHeaders setting | 5 | 1 | 17.10.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders` | — |
-| `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | — |
-| `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | — |
-| `ECMA-PART1-17-16-5-42` | NUMPAGES field instruction emission | 5 | 1 | 17.16.5.42 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | — |
+| `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json |
+| `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts |
+| `ECMA-PART1-17-16-5-42` | NUMPAGES field instruction emission | 5 | 1 | 17.16.5.42 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts |
 | `ECMA-PART1-17-4-37` | w:tbl table emission | 5 | 1 | 17.4.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tbl` | — |
 | `ECMA-PART1-17-4-59` | w:tblPr table-properties emission | 5 | 1 | 17.4.59 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPr` | — |
 | `ECMA-PART1-17-4-63` | w:tblW preferred-width consistency | 5 | 1 | 17.4.63 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblW` | — |
@@ -381,6 +381,7 @@ document-level switch can never drift apart.
 - **Part / Section:** Part 1 § 17.16.18
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar`
+- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 
 Every generated field is a complete five-run sequence — `fldChar begin`,
 preserved-space `w:instrText`, `fldChar separate`, a cached-result run,
@@ -395,6 +396,7 @@ separate → end state machine over every story part.
 - **Part / Section:** Part 1 § 17.16.5.44
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText`
+- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
 
 The PAGE instruction is emitted with canonical surrounding spaces
 (` PAGE `) inside a preserved-space `w:instrText`, matching the shape of
@@ -406,6 +408,7 @@ the committed field fixtures used by the comparison pipeline.
 - **Part / Section:** Part 1 § 17.16.5.42
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText`
+- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
 
 The NUMPAGES instruction follows the same emission discipline as PAGE
 (` NUMPAGES `, preserved spacing, cached result required), giving
@@ -893,6 +896,11 @@ non-goal, ships in `packages/docx-core/src/generation/` under the
 section; they are described under
 [“What Safe Docx Is Not Optimized For”](/README.md#what-safe-docx-is-not-optimized-for)
 in the root README.
+
+Within Part 1 §17.16, safe-docx targets structural emission of complex fields
+and the PAGE and NUMPAGES instructions listed above. Other field instructions,
+field-code parsing and evaluation, cached-result correctness, pagination, and
+equivalence to a Word application's field engine are out of scope.
 
 A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
 the citation lint. For a deliberate divergence *inside a targeted section*, use

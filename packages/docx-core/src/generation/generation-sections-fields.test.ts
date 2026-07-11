@@ -272,32 +272,34 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
     },
   );
 
-  test.openspec('[SDX-GEN-032] field pairing holds in every story part')(
-    'Scenario: field pairing holds in every story part',
-    async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
-      let buffer!: Buffer;
-      await given('a generated package with fields in its footer story', async () => {
-        buffer = await generateDocx(coverBodySpec());
-      });
+  test
+    .openspec('[SDX-GEN-032] field pairing holds in every story part')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' })(
+      'Scenario: field pairing holds in every story part',
+      async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
+        let buffer!: Buffer;
+        await given('a generated package with fields in its footer story', async () => {
+          buffer = await generateDocx(coverBodySpec());
+        });
 
-      await when('the structural field-pairing check scans every story part', async () => {
-        const result = await checkGeneratedPackage(buffer);
-        expect(result.ok, JSON.stringify(result.issues)).toBe(true);
-      });
+        await when('the structural field-pairing check scans every story part', async () => {
+          const result = await checkGeneratedPackage(buffer);
+          expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+        });
 
-      await then('removing a fldChar end from the footer is detected as an unclosed field', async () => {
-        const zip = await JSZip.loadAsync(buffer);
-        const footer = await zip.file('word/footer1.xml')!.async('text');
-        const tampered = footer.replace(/<w:r><w:fldChar w:fldCharType="end"\/><\/w:r>/, '');
-        expect(tampered).not.toBe(footer);
-        zip.file('word/footer1.xml', tampered);
-        const result = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
-        await attachPrettyJson('tampered-field-result', result);
-        expect(result.ok).toBe(false);
-        expect(result.issues.some((i) => i.check === 'field_pairing' && i.part === 'word/footer1.xml')).toBe(true);
-      });
-    },
-  );
+        await then('removing a fldChar end from the footer is detected as an unclosed field', async () => {
+          const zip = await JSZip.loadAsync(buffer);
+          const footer = await zip.file('word/footer1.xml')!.async('text');
+          const tampered = footer.replace(/<w:r><w:fldChar w:fldCharType="end"\/><\/w:r>/, '');
+          expect(tampered).not.toBe(footer);
+          zip.file('word/footer1.xml', tampered);
+          const result = await checkGeneratedPackage((await zip.generateAsync({ type: 'nodebuffer' })) as Buffer);
+          await attachPrettyJson('tampered-field-result', result);
+          expect(result.ok).toBe(false);
+          expect(result.issues.some((i) => i.check === 'field_pairing' && i.part === 'word/footer1.xml')).toBe(true);
+        });
+      },
+    );
 
   test('cover→body acceptance artifact is written for the manual compatibility matrix', async () => {
     const buffer = await generateDocx(coverBodySpec());

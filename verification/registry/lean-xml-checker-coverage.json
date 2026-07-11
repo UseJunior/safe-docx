@@ -73,6 +73,11 @@
       "claim": "The parser recognizes the tracked-run wrappers that affect accept/reject text projection in the main document body."
     },
     {
+      "registryId": "ECMA-PART1-17-16-18",
+      "section": "Part 1 §17.16.18",
+      "claim": "For original, revised, and compared word/document.xml, the checker recognizes begin, separate, and end markers and requires a valid marker sequence after accepting and rejecting tracked changes."
+    },
+    {
       "registryId": "ECMA-PART4-17-16-5",
       "section": "Part 4 §17.16.5",
       "claim": "The checker rejects field markers under deletion markup and requires deleted field-code text to stay under deletion markup."
@@ -87,6 +92,7 @@
     "footnote and endnote definition/reference integrity",
     "relationship target integrity",
     "package-level OPC constraints",
+    "field instruction parsing, evaluation, and cached-result correctness, including PAGE and NUMPAGES semantics",
     "OOXML extension and compatibility markup"
   ],
   "futureObligationQueue": []
