@@ -1,22 +1,22 @@
 {
-  "checker": "safe-docx-lean-xml-triple-checker",
-  "protocolVersion": 1,
+  "checker": "safe-docx-lean-fixed-story-checker",
+  "protocolVersion": 2,
   "scope": {
     "inputs": [
       {
         "name": "original",
         "source": "original DOCX package",
-        "packagePart": "word/document.xml"
+        "packageParts": ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"]
       },
       {
         "name": "revised",
         "source": "revised DOCX package",
-        "packagePart": "word/document.xml"
+        "packageParts": ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"]
       },
       {
         "name": "compared",
         "source": "safe-docx comparison output DOCX package",
-        "packagePart": "word/document.xml"
+        "packageParts": ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"]
       }
     ],
     "reconstructionModes": {
@@ -24,11 +24,13 @@
       "outOfScope": ["rebuild"]
     },
     "documentSurfaces": {
-      "covered": ["main document body text and field-marker token stream"],
+      "covered": [
+        "word/document.xml text and field-marker token stream (required)",
+        "word/footnotes.xml user-note text and field-marker token stream (optional; absent sides modeled as empty when any side is present)",
+        "word/endnotes.xml user-note text and field-marker token stream (optional; absent sides modeled as empty when any side is present)"
+      ],
       "outOfScope": [
         "comments.xml",
-        "footnotes.xml",
-        "endnotes.xml",
         "numbering.xml",
         "document relationships",
         "styles.xml",
@@ -49,22 +51,29 @@
       "w:t",
       "w:delText",
       "w:instrText",
-      "w:delInstrText"
+      "w:delInstrText",
+      "w:footnote",
+      "w:endnote"
     ],
     "attributes": [
-      "w:fldCharType"
+      "w:fldCharType",
+      "w:type"
     ],
     "attributeValues": {
-      "w:fldCharType": ["begin", "separate", "end"]
+      "w:fldCharType": ["begin", "separate", "end"],
+      "w:type": ["separator", "continuationSeparator"]
     },
     "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"]
   },
   "checkedProperties": [
-    "Accepting all tracked changes in the compared document yields the same normalized text as the revised document.",
-    "Rejecting all tracked changes in the compared document yields the same normalized text as the original document.",
-    "After accepting all tracked changes, Word field markers remain structurally valid.",
-    "After rejecting all tracked changes, Word field markers remain structurally valid.",
-    "The compared document does not place Word field markers inside deletion markup."
+    "For every supplied fixed story, accepting all tracked changes in the compared story yields the same normalized text as the revised story.",
+    "For every supplied fixed story, rejecting all tracked changes in the compared story yields the same normalized text as the original story.",
+    "For every supplied fixed story, accept and reject projections retain structurally valid Word field markers.",
+    "For every supplied fixed story, the compared story has no Word field markers inside deletion markup.",
+    "The main story is required; when any optional note story is present, absent sides are checked as empty stories.",
+    "Reserved note entries are selected by namespace-qualified w:type separator or continuationSeparator, independent of numeric ID, and excluded by an idempotent Lean projection.",
+    "Element and attribute prefixes are resolved to namespace URIs, and each fixed part must have its expected WordprocessingML expanded-name root.",
+    "Package and selected-part extraction is bounded by package size, compressed size, expanded size, compression ratio, diagnostics, and streamed-output limits."
   ],
   "ecma376Traceability": [
     {
@@ -75,7 +84,7 @@
     {
       "registryId": "ECMA-PART1-17-16-18",
       "section": "Part 1 §17.16.18",
-      "claim": "For original, revised, and compared word/document.xml, the checker recognizes begin, separate, and end markers and requires a valid marker sequence after accepting and rejecting tracked changes."
+      "claim": "For every supplied fixed story, the checker recognizes begin, separate, and end markers and requires a valid marker sequence after accepting and rejecting tracked changes."
     },
     {
       "registryId": "ECMA-PART1-17-16-13",
@@ -89,11 +98,12 @@
     "formatting fidelity",
     "bookmark semantic equivalence",
     "comment anchor and thread integrity",
-    "footnote and endnote definition/reference integrity",
+    "footnote and endnote definition/reference integrity, including reference IDs and relationships",
     "relationship target integrity",
     "package-level OPC constraints",
     "field instruction parsing, evaluation, and cached-result correctness, including PAGE and NUMPAGES semantics",
     "OOXML extension and compatibility markup"
+    ,"general-purpose XML canonicalization, DTDs, and CDATA beyond the checked WordprocessingML token surface"
   ],
   "futureObligationQueue": []
 }

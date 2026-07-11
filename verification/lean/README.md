@@ -171,22 +171,54 @@ It concluded *full atom equality* (`a = b`), which held only because `Atom` expo
 
 **Scope note on optimality (INV-LCS-002) — resolved.** `rawMatches_are_longest` bounds the length of every *structural* common subsequence (`isCommonSubseq s orig rev := s <+ orig ∧ s <+ rev`, i.e. literal sublists of both). It remains true and non-vacuous after broadening, but it is *strictly weaker* than "longest under `atomsEqual`": because `atomsEqual` correlates atoms only up to `Atom.relevant`, an `atomsEqual`-matchable common subsequence need not be a structural sublist of both inputs. This gap is now closed by `rawMatches_are_longest_relevant` (`LeanSpike/LcsDP.lean`), which bounds every common subsequence of the relevant projections (`orig.map Atom.relevant`, `rev.map Atom.relevant`) — i.e. optimality at the `atomsEqual` level. It is provably stronger: e.g. two atoms with equal `Atom.relevant` but differing `correlationStatus` have an `atomsEqual`-matchable common subsequence of length 1 that is *not* a structural sublist of both. The proof reuses the `rawMatches_are_longest` induction skeleton, lifted to projected lists via a type-polymorphic `sublist_drop_heads` and the converse lemma `atomsEqual_of_relevant_eq` (projection equality ⇒ `atomsEqual`).
 
-## Lean XML triple checker
+## Lean fixed-story checker
 
-`Tier2/XmlTripleChecker.lean` defines the first compiled verifier for real
-comparison output. The `leanDocxChecker` executable reads a JSON object
-containing the original, revised, and compared `word/document.xml` strings,
-parses the relevant WordprocessingML token subset in Lean, and checks whether:
+`Tier2/XmlTripleChecker.lean` defines the compiled verifier for real comparison
+output. The `leanDocxChecker` executable receives paths to exact snapshots of
+the original, revised, and compared DOCX packages. The Lean process invokes the
+package extractor and selects these fixed WordprocessingML stories itself:
+
+- required `word/document.xml`;
+- optional `word/footnotes.xml`; and
+- optional `word/endnotes.xml`.
+
+If any package supplies an optional part, absent sides are represented by empty
+token stories. This permits checked tracked-part additions and removals while an
+untracked text divergence still fails; all-absent optional parts are omitted.
+Each story is parsed and checked independently, so field state cannot balance
+across part boundaries.
+
+The Lean parser resolves prefixes to namespace URIs, accepts any prefix bound to
+the WordprocessingML namespace, requires the expected expanded-name root, and
+rejects malformed or unbound XML. Reserved note entries are selected by the
+namespace-qualified `w:type` value `separator` or `continuationSeparator`, not
+by ID. Therefore a normal note with ID `0` remains visible, while a typed
+separator with any ID is excluded. `projectUserNoteTokens` is proved
+idempotent, and its typed-reserved projection theorem is included in the axiom
+audit alongside collection soundness.
+
+For every supplied story, the checker checks whether:
 
 - accepting all tracked changes in the compared XML recovers the revised text;
 - rejecting all tracked changes in the compared XML recovers the original text;
 - the accept and reject projections keep valid Word field structure; and
 - the compared XML does not place field markers inside deletion markup.
 
-The public claim is deliberately per-document: a separately compiled Lean
-program checked this XML triple. It is not a proof of the entire TypeScript
-comparison engine, package-level OPC behavior, rendering fidelity, rebuild mode,
-or ancillary parts. The current parsed and out-of-scope surfaces are tracked in
+The public claim is deliberately per-package-triple: a separately compiled Lean
+program extracted and checked these fixed stories. It is not a proof of the
+entire TypeScript comparison engine, note/reference or relationship integrity,
+package-level OPC behavior, rendering fidelity, rebuild mode, comments,
+headers/footers, or full ECMA-376 conformance. Package extraction currently
+requires `unzip`; absence, corrupt archives, metadata errors, oversized
+packages/parts, excessive compression ratios, output-limit violations, or
+extraction failure produce `not_run`. The extractor checks compressed and
+expanded metadata before extraction and streams output under a hard bound.
+
+The executable speaks protocol v2, but the TypeScript certificate retains the
+public v1 discriminator, verifier name, main-document scope, XML hashes, checks,
+and token counts. Fixed-story scope, package hashes, story presence, per-story
+reports, and exclusions are additive fields. The exact
+parsed and out-of-scope surfaces are tracked in
 `verification/registry/lean-xml-checker-coverage.json` and drift-checked by
 `npm run check:lean-xml-checker-coverage`.
 
