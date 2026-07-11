@@ -17,6 +17,67 @@
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
 <!-- SYNC:lang-nav END -->
 
+<!-- SYNC:architecture-diagram BEGIN -->
+```mermaid
+%%{init: {"flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 30, "rankSpacing": 50}, "themeVariables": {"fontSize": "14px"}} }%%
+flowchart LR
+    DocInLeft["<b>Existing .docx</b><br/>on disk"]
+
+    subgraph Server["@usejunior/safe-docx — local MCP server"]
+        direction LR
+
+        subgraph ReadParse["<b>1. Read</b>"]
+            direction TB
+            RPTool["<code>read_file(file_path,<br/>&nbsp;&nbsp;format)</code>"]
+        end
+
+        subgraph Locate["<b>2. Locate</b>"]
+            direction TB
+            LocTool["<code>grep(file_path,<br/>&nbsp;&nbsp;pattern)</code>"]
+        end
+
+        subgraph Edit["<b>3. Edit</b>"]
+            direction TB
+            EditTool["<code>replace_text(<br/>&nbsp;&nbsp;target_paragraph_id,<br/>&nbsp;&nbsp;old_string, new_string,<br/>&nbsp;&nbsp;instruction)</code>"]
+        end
+
+        subgraph Save["<b>4. Save</b>"]
+            direction TB
+            SaveTool["<code>save(save_to_local_path,<br/>&nbsp;&nbsp;save_format)</code>"]
+        end
+
+        ReadParse --> Locate
+        Locate --> Edit
+        Edit --> Save
+    end
+
+    DocInRight["<b>Saved .docx output</b><br/>on disk"]
+
+    subgraph Client [" "]
+        direction TB
+        Prompt["<b>Prompt</b><br/>'Change NDA governing law to Delaware'"]
+        Agent["<b>Coding agent / MCP client</b><br/>Claude Code · Cursor · Gemini CLI"]
+        Prompt --> Agent
+    end
+
+    DocInLeft --> RPTool
+    SaveTool --> DocInRight
+    Agent <-->|tool call / tool result| Server
+
+    classDef io fill:#f5f5f5,stroke:#888,color:#222
+    classDef server fill:#eff6ff,stroke:#3b82f6,color:#1e3a8a
+    classDef stage fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+    classDef tools fill:#ecfdf5,stroke:#10b981,color:#064e3b
+    classDef ext fill:#ddd6fe,stroke:#7c3aed,color:#3b0764
+    classDef hidden fill:none,stroke:none
+    class DocInLeft,DocInRight io
+    class Server server
+    class ReadParse,Locate,Edit,Save stage
+    class RPTool,LocTool,EditTool,SaveTool tools
+    class Prompt,Agent ext
+    class Client hidden
+```
+<!-- SYNC:architecture-diagram END -->
 
 Safe Docx is an open-source TypeScript stack for surgical editing of existing Microsoft Word `.docx` files — and, through the same tool surface, OpenDocument `.odt` files. It is built for workflows where an agent proposes changes and a human still needs reliable, formatting-preserving document edits.
 
@@ -46,7 +107,7 @@ Safe Docx is not intended to replace generation-first `.docx` libraries.
 
 Safe Docx is a deliberately narrow tool, and for plenty of document work it is not the one you want. Below are the alternatives people most often weigh it against — each is a genuinely good fit for cases Safe Docx is not built for. The links go to fuller write-ups.
 
-For a fixture-by-fixture view, see the [live DOCX compatibility matrix](https://open-agreements.github.io/docx-platform-tests/results/utm_source=github&utm_medium=readme&utm_campaign=safe-docx), which compares Safe Docx with python-docx, LibreOffice, Open XML SDK, docx, SuperDoc, and docx-rs.
+For a fixture-by-fixture view, see the [live DOCX compatibility matrix](https://open-agreements.github.io/docx-platform-tests/results/?utm_source=github&utm_medium=readme&utm_campaign=safe-docx), which compares Safe Docx with python-docx, LibreOffice, Open XML SDK, docx, SuperDoc, and docx-rs.
 
 ### vs SuperDoc
 
@@ -69,47 +130,49 @@ safe-docx targets a defined subset of **ECMA-376 5th edition**. The full surface
 
 - **65** sections claimed
 - **5** sections explicitly out-of-scope (Non-Goals)
+- **0** known gaps under `@conformance-gap`
 - Vendored normative schemas: `spec-compliance/ecma-376/schemas/`
 <!-- AUTO-GENERATED:conformance-summary END -->
-
 
 ### Example: Agent Editing a Contract
 
 When you prompt a coding agent (Claude Code, Cursor, Gemini CLI) with Safe Docx installed, the agent makes MCP tool calls like these:
 
+**User prompt**
 
-User: 
 ```text
-      Edit the NDA at ~/docs/NDA.docx — change the governing law
-      from "State of New York" to "State of Delaware" and save both
-      a clean copy and a tracked-changes copy.
+Edit the NDA at ~/docs/NDA.docx — change the governing law
+from "State of New York" to "State of Delaware" and save both
+a clean copy and a tracked-changes copy.
 ```
-Agent calls:
+
+**Agent calls**
+
 ```text
-  1. read_file(file_path="~/docs/NDA.docx", format="toon")
-     → Returns paragraphs with stable IDs:
-       _bk_a3f29c10b8e4, _bk_7d2e8f1a4c5b, ...
-       (12-char hex hashes derived from intrinsic w14:paraId
-        or normalized text — byte-identical across reopens
-        for identical stored DOCX bytes)
+1. read_file(file_path="~/docs/NDA.docx", format="toon")
+   → Returns paragraphs with stable IDs:
+     _bk_a3f29c10b8e4, _bk_7d2e8f1a4c5b, ...
+     (12-char hex hashes derived from intrinsic w14:paraId
+      or normalized text — byte-identical across reopens
+      for identical stored DOCX bytes)
 
-  2. grep(file_path="~/docs/NDA.docx", pattern="State of New York")
-     → Match in paragraph _bk_e4c8a91f2d36
+2. grep(file_path="~/docs/NDA.docx", pattern="State of New York")
+   → Match in paragraph _bk_e4c8a91f2d36
 
-  3. replace_text(
-       file_path="~/docs/NDA.docx",
-       target_paragraph_id="_bk_e4c8a91f2d36",
-       old_string="State of New York",
-       new_string="State of Delaware",
-       instruction="Change governing law to Delaware"
-     )
+3. replace_text(
+     file_path="~/docs/NDA.docx",
+     target_paragraph_id="_bk_e4c8a91f2d36",
+     old_string="State of New York",
+     new_string="State of Delaware",
+     instruction="Change governing law to Delaware"
+   )
 
-  4. save(
-       file_path="~/docs/NDA.docx",
-       save_to_local_path="~/docs/NDA-clean.docx",
-       tracked_save_to_local_path="~/docs/NDA-tracked.docx",
-       save_format="both"
-     )
+4. save(
+     file_path="~/docs/NDA.docx",
+     save_to_local_path="~/docs/NDA-clean.docx",
+     tracked_save_to_local_path="~/docs/NDA-tracked.docx",
+     save_format="both"
+   )
 ```
 
 The agent handles the tool calls automatically. You get a clean file and a tracked-changes file for human review.
@@ -121,7 +184,6 @@ The agent handles the tool calls automatically. You get a clean file and a track
 ```bash
 claude mcp add safe-docx -- npx -y @usejunior/safe-docx
 ```
-
 
 ### Gemini CLI
 
