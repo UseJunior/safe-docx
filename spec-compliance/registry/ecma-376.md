@@ -398,7 +398,7 @@ part: 1
 section: "17.16.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 ```
 
 Every generated field is a complete five-run sequence — `fldChar begin`,
@@ -416,7 +416,7 @@ part: 1
 section: "17.16.5.44"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
 ```
 
 The PAGE instruction is emitted with canonical surrounding spaces
@@ -431,7 +431,7 @@ part: 1
 section: "17.16.5.42"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
 ```
 
 The NUMPAGES instruction follows the same emission discipline as PAGE
@@ -1082,6 +1082,11 @@ non-goal, ships in `packages/docx-core/src/generation/` under the
 section; they are described under
 [“What Safe Docx Is Not Optimized For”](/README.md#what-safe-docx-is-not-optimized-for)
 in the root README.
+
+Within Part 1 §17.16, safe-docx targets structural emission of complex fields
+and the PAGE and NUMPAGES instructions listed above. Other field instructions,
+field-code parsing and evaluation, cached-result correctness, pagination, and
+equivalence to a Word application's field engine are out of scope.
 
 A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
 the citation lint. For a deliberate divergence *inside a targeted section*, use

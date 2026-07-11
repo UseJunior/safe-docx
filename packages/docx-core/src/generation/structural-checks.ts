@@ -233,6 +233,12 @@ function isStoryPart(name: string): boolean {
   );
 }
 
+/**
+ * Validate begin → separate → end field structure independently in each
+ * generated WordprocessingML story part.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
 function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
   const issues: StructuralIssue[] = [];
   for (const [name, text] of contents) {
