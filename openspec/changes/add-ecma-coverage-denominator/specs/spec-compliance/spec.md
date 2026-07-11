@@ -34,6 +34,12 @@ checksum and schema locator.
 - **WHEN** `npm run check:ecma-376-coverage` runs
 - **THEN** the check SHALL fail with a regeneration instruction
 
+#### Scenario: Ambiguous schema declaration name
+
+- **GIVEN** a seeded element or attribute name occurs under multiple owning declarations
+- **WHEN** vocabulary metadata is generated
+- **THEN** every matching owning type or group path SHALL be recorded
+
 ### Requirement: Semantic OOXML references remain explicit
 
 Hand-authored semantic groups SHALL consume generated raw vocabulary constants
@@ -47,6 +53,19 @@ coverage status and related source and tests.
 - **THEN** each initial spec-reference ID SHALL have an `@ooxmlSpec` linkage
 - **AND** the field-fragmentation group SHALL use generated constants for
   `w:fldChar`, `w:instrText`, and `w:delInstrText`
+
+#### Scenario: Reference metadata disagrees with canonical registry
+
+- **GIVEN** a spec-reference record whose edition, part, or section differs
+  from its related canonical registry entry
+- **WHEN** `npm run check:ecma-376-coverage` runs
+- **THEN** the check SHALL fail
+
+#### Scenario: Duplicate manifest identity
+
+- **GIVEN** duplicate spec-reference IDs or vocabulary constants
+- **WHEN** `npm run check:ecma-376-coverage` runs
+- **THEN** the check SHALL fail deterministically
 
 ### Requirement: Honest generated coverage report
 

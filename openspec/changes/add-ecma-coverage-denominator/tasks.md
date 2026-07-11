@@ -14,3 +14,4 @@
 - [x] 3.1 Use generated QNames in the field-fragmentation semantic group.
 - [x] 3.2 Add `@ooxmlSpec` source links and a generated coverage report.
 - [x] 3.3 Add a CI-suitable checksum, locator, usage, and drift check.
+- [x] 3.4 Reconcile manifest references with canonical registry metadata and add deterministic generator tests.

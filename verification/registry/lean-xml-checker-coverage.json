@@ -78,9 +78,9 @@
       "claim": "For original, revised, and compared word/document.xml, the checker recognizes begin, separate, and end markers and requires a valid marker sequence after accepting and rejecting tracked changes."
     },
     {
-      "registryId": "ECMA-PART4-17-16-5",
-      "section": "Part 4 §17.16.5",
-      "claim": "The checker rejects field markers under deletion markup and requires deleted field-code text to stay under deletion markup."
+      "registryId": "ECMA-PART1-17-16-13",
+      "section": "Part 1 §17.16.13",
+      "claim": "The checker requires deleted field-code text to stay under deletion markup. Field-marker sequencing and placement are traced separately to Part 1 §17.16.18."
     }
   ],
   "knownUncheckedAreas": [

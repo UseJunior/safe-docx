@@ -5,6 +5,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
+import { loadRegistry } from './lib/conformance-registry.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const checkOnly = process.argv.includes('--check');
@@ -25,6 +26,34 @@ function sha256(bytes) {
 
 function stableJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+export function assertUniqueValues(records, key, label) {
+  const seen = new Set();
+  for (const record of records) {
+    const value = record[key];
+    if (seen.has(value)) throw new Error(`Duplicate ${label}: ${value}`);
+    seen.add(value);
+  }
+}
+
+export function validateReferenceRegistryConsistency(reference, registryTargets, artifactByPath) {
+  const artifact = artifactByPath.get(reference.sourceArtifact);
+  if (!artifact) throw new Error(`${reference.id}: sourceArtifact is absent from the artifact manifest`);
+  if (artifact.edition !== reference.edition || artifact.part !== reference.part) {
+    throw new Error(`${reference.id}: sourceArtifact edition/part disagrees with the reference`);
+  }
+  if (!Array.isArray(reference.relatedRegistryIds) || reference.relatedRegistryIds.length === 0) {
+    throw new Error(`${reference.id}: relatedRegistryIds must name at least one canonical registry entry`);
+  }
+  for (const registryId of reference.relatedRegistryIds) {
+    const registryEntry = registryTargets.get(registryId);
+    if (!registryEntry) throw new Error(`${reference.id}: unknown canonical registry ID ${registryId}`);
+    const { edition, part, section } = registryEntry.meta;
+    if (Number(edition) !== reference.edition || Number(part) !== reference.part || section !== reference.section) {
+      throw new Error(`${reference.id}: ${registryId} edition/part/section disagrees with the reference`);
+    }
+  }
 }
 
 async function verifyArtifacts(manifest) {
@@ -90,25 +119,63 @@ async function verifyDerivedSchemas(manifest) {
   }
 }
 
-function collectDeclarations(node, declarationKind, found = new Set()) {
+export function collectDeclarationLocators(node, declarationKind, declarationName, owners = [], found = new Set()) {
   if (Array.isArray(node)) {
-    for (const child of node) collectDeclarations(child, declarationKind, found);
+    for (const child of node) collectDeclarationLocators(child, declarationKind, declarationName, owners, found);
     return found;
   }
   if (!node || typeof node !== 'object') return found;
 
   for (const [key, value] of Object.entries(node)) {
-    if (key === `xsd:${declarationKind}` || key === `xs:${declarationKind}`) {
+    const kindMatch = /^(?:xsd|xs):(element|attribute|complexType|simpleType|group|attributeGroup)$/.exec(key);
+    if (kindMatch) {
       const declarations = Array.isArray(value) ? value : [value];
       for (const declaration of declarations) {
-        if (declaration && typeof declaration === 'object' && typeof declaration['@_name'] === 'string') {
-          found.add(declaration['@_name']);
+        if (!declaration || typeof declaration !== 'object') continue;
+        const name = declaration['@_name'];
+        const kind = kindMatch[1];
+        if (kind === declarationKind && name === declarationName) {
+          found.add([...owners, `${kind}:${name}`].join('/'));
         }
+        const nextOwners = typeof name === 'string' && kind !== 'attribute'
+          ? [...owners, `${kind}:${name}`]
+          : owners;
+        collectDeclarationLocators(declaration, declarationKind, declarationName, nextOwners, found);
       }
+      continue;
     }
-    collectDeclarations(value, declarationKind, found);
+    collectDeclarationLocators(value, declarationKind, declarationName, owners, found);
   }
   return found;
+}
+
+async function validateManifests(artifactManifest, references, seed) {
+  assertUniqueValues(artifactManifest.artifacts, 'path', 'artifact path');
+  assertUniqueValues(artifactManifest.artifacts, 'part', 'artifact part');
+  assertUniqueValues(references.references, 'id', 'spec-reference ID');
+  assertUniqueValues(seed.entries, 'constant', 'vocabulary constant');
+  const vocabularyNames = seed.entries.map((entry) => ({ key: `${entry.kind}:${entry.localName}` }));
+  assertUniqueValues(vocabularyNames, 'key', 'vocabulary declaration');
+
+  const registry = loadRegistry();
+  if (registry.errors.length > 0) {
+    throw new Error(`Canonical conformance registry is invalid: ${registry.errors.map((error) => error.message).join('; ')}`);
+  }
+  const artifactByPath = new Map(artifactManifest.artifacts.map((artifact) => [artifact.path, artifact]));
+  const zipByPath = new Map();
+  for (const reference of references.references) {
+    validateReferenceRegistryConsistency(reference, registry.targets, artifactByPath);
+    const locator = /^(.+\.pdf)#(\d+(?:\.\d+)*)$/.exec(reference.locator);
+    if (!locator || locator[2] !== reference.section) {
+      throw new Error(`${reference.id}: locator must name its source PDF and exact section`);
+    }
+    let zip = zipByPath.get(reference.sourceArtifact);
+    if (!zip) {
+      zip = await JSZip.loadAsync(await readFile(path.join(root, reference.sourceArtifact)));
+      zipByPath.set(reference.sourceArtifact, zip);
+    }
+    if (!zip.file(locator[1])) throw new Error(`${reference.id}: locator PDF is absent from sourceArtifact`);
+  }
 }
 
 async function generateVocabulary(artifactManifest, seed) {
@@ -128,11 +195,9 @@ async function generateVocabulary(artifactManifest, seed) {
     throw new Error(`${seed.schemaPath}: expected targetNamespace ${seed.namespaceUri}, got ${targetNamespace}`);
   }
 
-  const elements = collectDeclarations(parsed, 'element');
-  const attributes = collectDeclarations(parsed, 'attribute');
   const entries = seed.entries.map((entry) => {
-    const declarations = entry.kind === 'element' ? elements : attributes;
-    if (!declarations.has(entry.localName)) {
+    const declarationPaths = [...collectDeclarationLocators(parsed, entry.kind, entry.localName)].sort();
+    if (declarationPaths.length === 0) {
       throw new Error(`${seed.schemaPath}: missing ${entry.kind} declaration ${entry.localName}`);
     }
     return {
@@ -145,7 +210,9 @@ async function generateVocabulary(artifactManifest, seed) {
       kind: entry.kind,
       sourceArtifact: artifact.path,
       sourceArtifactSha256: artifact.sha256,
-      sourceLocator: `${seed.nestedSchemaArchive}!/${seed.schemaPath}#${entry.kind}:${entry.localName}`,
+      sourceLocators: declarationPaths.map(
+        (declarationPath) => `${seed.nestedSchemaArchive}!/${seed.schemaPath}#${declarationPath}`
+      ),
     };
   });
 
@@ -174,14 +241,14 @@ function generateTypescript(vocabulary) {
     '  readonly qname: string;',
     '  readonly clarkName: string;',
     "  readonly kind: 'element' | 'attribute';",
-    '  readonly sourceLocator: string;',
+    '  readonly sourceLocators: readonly string[];',
     '}',
     '',
     'export const WML = {',
   ];
   for (const entry of vocabulary.entries) {
     lines.push(`  ${entry.constant}: {`);
-    for (const key of ['namespaceUri', 'preferredPrefix', 'localName', 'qname', 'clarkName', 'kind', 'sourceLocator']) {
+    for (const key of ['namespaceUri', 'preferredPrefix', 'localName', 'qname', 'clarkName', 'kind', 'sourceLocators']) {
       lines.push(`    ${key}: ${JSON.stringify(entry[key])},`);
     }
     lines.push('  },');
@@ -225,7 +292,10 @@ async function generateReport(references, vocabulary) {
       await access(path.join(root, relatedPath));
     }
     statusCounts.set(reference.coverageStatus, (statusCounts.get(reference.coverageStatus) ?? 0) + 1);
-    const linked = source.some((file) => file.text.includes(`@ooxmlSpec ${reference.id}`));
+    const linked = reference.relatedSource.some((relatedPath) => {
+      const file = source.find((candidate) => candidate.path === relatedPath);
+      return file?.text.includes(`@ooxmlSpec ${reference.id}`);
+    });
     if (!linked) throw new Error(`No source @ooxmlSpec linkage for ${reference.id}`);
   }
 
@@ -291,13 +361,20 @@ async function emit(relativePath, content) {
   await writeFile(absolutePath, content);
 }
 
-const artifacts = await readJson(artifactManifestPath);
-const references = await readJson(referenceManifestPath);
-const seed = await readJson(vocabularySeedPath);
-await verifyArtifacts(artifacts);
-await verifyDerivedSchemas(artifacts);
-const vocabulary = await generateVocabulary(artifacts, seed);
-await emit(vocabularyOutputPath, stableJson(vocabulary));
-await emit(typescriptOutputPath, generateTypescript(vocabulary));
-await emit(reportOutputPath, await generateReport(references, vocabulary));
-console.log(`${checkOnly ? 'Verified' : 'Generated'} ECMA-376 artifacts, ${references.references.length} references, and ${vocabulary.entries.length} vocabulary entries.`);
+export async function main() {
+  const artifacts = await readJson(artifactManifestPath);
+  const references = await readJson(referenceManifestPath);
+  const seed = await readJson(vocabularySeedPath);
+  await validateManifests(artifacts, references, seed);
+  await verifyArtifacts(artifacts);
+  await verifyDerivedSchemas(artifacts);
+  const vocabulary = await generateVocabulary(artifacts, seed);
+  await emit(vocabularyOutputPath, stableJson(vocabulary));
+  await emit(typescriptOutputPath, generateTypescript(vocabulary));
+  await emit(reportOutputPath, await generateReport(references, vocabulary));
+  console.log(`${checkOnly ? 'Verified' : 'Generated'} ECMA-376 artifacts, ${references.references.length} references, and ${vocabulary.entries.length} vocabulary entries.`);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}

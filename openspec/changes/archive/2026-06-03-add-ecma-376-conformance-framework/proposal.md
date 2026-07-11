@@ -36,7 +36,7 @@ DOM ecosystem (spec text co-located, tests structurally bound, gaps explicit).
   drift pairs).
 - **NEW: Three seed entries** in the registry, each annotated at one source
   site and exercised by one test:
-  - `[ECMA-PART4-17-16-5]` — `pipeline.ts` field-state-machine constraints.
+  - `[ECMA-PART1-17-16-13]` — deleted field-code containment constraints.
   - `[ECMA-PART1-17-13-5]` — `atomizer.ts` paragraph-level OOXML markers.
   - `[ECMA-PART1-17-11]`   — `footnotes.ts` + `core-types.ts` reserved IDs.
 - **NEW: OpenSpec capability `spec-compliance`** (this change's delta spec)

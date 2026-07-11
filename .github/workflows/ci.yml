@@ -101,6 +101,8 @@ jobs:
           exit 1
       - name: Validate OpenSpec traceability coverage
         run: npm run check:spec-coverage
+      - name: Verify ECMA-376 source artifacts and generated coverage
+        run: npm run check:ecma-376-coverage
 
   site-check:
     runs-on: ubuntu-latest

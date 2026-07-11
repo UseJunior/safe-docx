@@ -15,10 +15,14 @@ without invalidating those existing paths.
 
 - Official ZIPs are authoritative source artifacts; existing `schemas/` files
   remain derived declaration-resolution surfaces for the current registry.
+- The canonical Markdown conformance registry owns edition, part, and section;
+  spec-reference records must resolve to and agree with those facts.
 - The vocabulary seed chooses the initial declarations, while the generator
   verifies each declaration against the XSD nested in the official Part 4 ZIP.
 - Semantic groups remain hand-authored and import generated raw QName entries.
 - Generated outputs record the source artifact SHA-256 and are drift checked.
+- Ambiguous schema names record every owning type/group declaration path rather
+  than presenting a bare name as a unique locator.
 
 ## Risks / Trade-offs
 

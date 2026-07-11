@@ -17,7 +17,9 @@
       "kind": "element",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:fldChar"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunInnerContent/element:fldChar"
+      ]
     },
     {
       "constant": "INSTR_TEXT",
@@ -29,7 +31,9 @@
       "kind": "element",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:instrText"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunInnerContent/element:instrText"
+      ]
     },
     {
       "constant": "DEL_INSTR_TEXT",
@@ -41,7 +45,9 @@
       "kind": "element",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:delInstrText"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunInnerContent/element:delInstrText"
+      ]
     },
     {
       "constant": "INS",
@@ -53,7 +59,13 @@
       "kind": "element",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:ins"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_NumPr/element:ins",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_TrPr/element:ins",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_ParaRPrTrackChanges/element:ins",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RPrMath/element:ins",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunLevelElts/element:ins"
+      ]
     },
     {
       "constant": "DEL",
@@ -65,7 +77,13 @@
       "kind": "element",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:del"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_MathCtrlIns/element:del",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_TrPr/element:del",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_ParaRPrTrackChanges/element:del",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RPrMath/element:del",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunLevelElts/element:del"
+      ]
     },
     {
       "constant": "FLD_CHAR_TYPE",
@@ -77,7 +95,9 @@
       "kind": "attribute",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#attribute:fldCharType"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FldChar/attribute:fldCharType"
+      ]
     },
     {
       "constant": "ID",
@@ -89,7 +109,17 @@
       "kind": "attribute",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#attribute:id"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_Div/attribute:id",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_EastAsianLayout/attribute:id",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FitText/attribute:id",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FtnEdn/attribute:id",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FtnEdnRef/attribute:id",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FtnEdnSepRef/attribute:id",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_Markup/attribute:id",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_Perm/attribute:id",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_Tc/attribute:id"
+      ]
     },
     {
       "constant": "AUTHOR",
@@ -101,7 +131,10 @@
       "kind": "attribute",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#attribute:author"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_MoveBookmark/attribute:author",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_TrackChange/attribute:author"
+      ]
     },
     {
       "constant": "DATE",
@@ -113,7 +146,10 @@
       "kind": "attribute",
       "sourceArtifact": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
       "sourceArtifactSha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
-      "sourceLocator": "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#attribute:date"
+      "sourceLocators": [
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_MoveBookmark/attribute:date",
+        "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_TrackChange/attribute:date"
+      ]
     }
   ]
 }

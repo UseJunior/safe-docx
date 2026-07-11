@@ -47,7 +47,7 @@ const test = testAllure
     story: 'Issue #217 — fragment <w:ins>/<w:del> at field-character boundaries',
     severity: 'critical',
   })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
 
 // =============================================================================
 // Helpers

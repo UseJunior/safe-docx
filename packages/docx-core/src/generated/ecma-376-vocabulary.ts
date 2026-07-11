@@ -9,7 +9,7 @@ export interface OoxmlVocabularyEntry {
   readonly qname: string;
   readonly clarkName: string;
   readonly kind: 'element' | 'attribute';
-  readonly sourceLocator: string;
+  readonly sourceLocators: readonly string[];
 }
 
 export const WML = {
@@ -20,7 +20,7 @@ export const WML = {
     qname: "w:fldChar",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldChar",
     kind: "element",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:fldChar",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunInnerContent/element:fldChar"],
   },
   INSTR_TEXT: {
     namespaceUri: "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -29,7 +29,7 @@ export const WML = {
     qname: "w:instrText",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}instrText",
     kind: "element",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:instrText",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunInnerContent/element:instrText"],
   },
   DEL_INSTR_TEXT: {
     namespaceUri: "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -38,7 +38,7 @@ export const WML = {
     qname: "w:delInstrText",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}delInstrText",
     kind: "element",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:delInstrText",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunInnerContent/element:delInstrText"],
   },
   INS: {
     namespaceUri: "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -47,7 +47,7 @@ export const WML = {
     qname: "w:ins",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}ins",
     kind: "element",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:ins",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_NumPr/element:ins","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_TrPr/element:ins","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_ParaRPrTrackChanges/element:ins","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RPrMath/element:ins","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunLevelElts/element:ins"],
   },
   DEL: {
     namespaceUri: "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -56,7 +56,7 @@ export const WML = {
     qname: "w:del",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}del",
     kind: "element",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#element:del",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_MathCtrlIns/element:del","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_TrPr/element:del","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_ParaRPrTrackChanges/element:del","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RPrMath/element:del","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#group:EG_RunLevelElts/element:del"],
   },
   FLD_CHAR_TYPE: {
     namespaceUri: "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -65,7 +65,7 @@ export const WML = {
     qname: "w:fldCharType",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}fldCharType",
     kind: "attribute",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#attribute:fldCharType",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FldChar/attribute:fldCharType"],
   },
   ID: {
     namespaceUri: "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -74,7 +74,7 @@ export const WML = {
     qname: "w:id",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id",
     kind: "attribute",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#attribute:id",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_Div/attribute:id","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_EastAsianLayout/attribute:id","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FitText/attribute:id","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FtnEdn/attribute:id","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FtnEdnRef/attribute:id","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_FtnEdnSepRef/attribute:id","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_Markup/attribute:id","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_Perm/attribute:id","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_Tc/attribute:id"],
   },
   AUTHOR: {
     namespaceUri: "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -83,7 +83,7 @@ export const WML = {
     qname: "w:author",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}author",
     kind: "attribute",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#attribute:author",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_MoveBookmark/attribute:author","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_TrackChange/attribute:author"],
   },
   DATE: {
     namespaceUri: "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
@@ -92,6 +92,6 @@ export const WML = {
     qname: "w:date",
     clarkName: "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}date",
     kind: "attribute",
-    sourceLocator: "OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#attribute:date",
+    sourceLocators: ["OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_MoveBookmark/attribute:date","OfficeOpenXML-XMLSchema-Transitional.zip!/wml.xsd#complexType:CT_TrackChange/attribute:date"],
   },
 } as const satisfies Record<string, OoxmlVocabularyEntry>;

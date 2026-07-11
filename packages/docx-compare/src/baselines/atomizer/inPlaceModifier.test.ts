@@ -33,7 +33,7 @@ import { assertDefined } from '../../testing/test-utils.js';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: 'Inplace Modifier' })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
 
 /**
  * Create a mock atom for testing.

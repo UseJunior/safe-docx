@@ -398,7 +398,8 @@ const serializer = new XMLSerializer();
  * Header/footer stories are not yet covered — they require relationship
  * walking to enumerate `headerN.xml`/`footerN.xml`.
  *
- * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @see https://github.com/UseJunior/safe-docx/issues/212
  */
 export function splitStories(
@@ -489,9 +490,9 @@ function evaluateSafetyChecks(
     auxiliarySidecars.footnotesXmls,
     auxiliarySidecars.endnotesXmls,
   );
-  // Issue #217 conformance gate on the COMBINED output: w:fldChar MUST NOT
-  // appear inside <w:del>. ECMA-376 Part 4 § 17.16.5 makes this fatal for
-  // Word's field state machine. The full validateFieldStructure check is run
+  // Issue #217 conformance gate on the COMBINED output: keep w:fldChar outside
+  // <w:del>, matching the Part 1 complex-field and deleted-field-code syntax.
+  // The full validateFieldStructure check is run
   // on the accept/reject projections (per-story); on the combined view we
   // only gate the strict no-fldChar-in-del rule because some legacy emit
   // paths (e.g. delInstrText inside <w:moveFrom>) are non-conformant in shape
