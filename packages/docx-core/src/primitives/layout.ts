@@ -92,13 +92,20 @@ function ensureChild(parent: Element, localName: string): Element {
   return created;
 }
 
-/** Insert w:spacing at its CT_PPr sequence position, before w:ind and later properties. */
-function ensureParagraphSpacing(pPr: Element): Element {
-  const existing = getDirectChildrenByName(pPr, W.spacing)[0];
-  if (existing) return existing;
+/** Replace all direct spacing children with one node at its CT_PPr sequence position. */
+function normalizeParagraphSpacing(pPr: Element): Element {
   const doc = pPr.ownerDocument;
   if (!doc) throw new Error('Element pPr has no ownerDocument');
   const created = doc.createElementNS(OOXML.W_NS, `w:${W.spacing}`);
+  const existing = getDirectChildrenByName(pPr, W.spacing);
+  const source = existing[0];
+  if (source) {
+    for (let i = 0; i < source.attributes.length; i++) {
+      const attr = source.attributes.item(i);
+      if (attr) created.setAttributeNS(attr.namespaceURI, attr.name, attr.value);
+    }
+  }
+  for (const stale of existing) pPr.removeChild(stale);
   const successors = new Set([W.ind, 'contextualSpacing', W.jc, 'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', W.rPr, W.sectPr, 'pPrChange']);
   const successor = Array.from(pPr.children).find((child) => isW(child as Element, (child as Element).localName) && successors.has((child as Element).localName));
   if (successor) pPr.insertBefore(created, successor);
@@ -188,7 +195,7 @@ export function setParagraphSpacing(
     const currentPPr = getDirectChildrenByName(paragraph, W.pPr)[0] ?? null;
     const oldPPr = currentPPr ? (currentPPr.cloneNode(true) as Element) : null;
     const pPr = ensureFirstChild(paragraph, W.pPr);
-    const spacing = ensureParagraphSpacing(pPr);
+    const spacing = normalizeParagraphSpacing(pPr);
 
     if (typeof mutation.beforeTwips === 'number') setWAttr(spacing, W.before, String(mutation.beforeTwips));
     if (typeof mutation.afterTwips === 'number') setWAttr(spacing, W.after, String(mutation.afterTwips));

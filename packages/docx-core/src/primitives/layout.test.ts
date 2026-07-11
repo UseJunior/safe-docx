@@ -70,6 +70,23 @@ describe('layout tracked-change emission', () => {
     }
   });
 
+  test('setParagraphSpacing replaces duplicate misplaced spacing while preserving unrelated content', () => {
+    const indexed = createIndexedDocument(
+      '<w:p><w:pPr><w:jc w:val="left"/><w:spacing w:before="60"/><x:custom xmlns:x="urn:custom" keep="yes"/><w:spacing w:after="90"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>',
+    );
+    setParagraphSpacing(indexed.doc, { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 });
+
+    const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+    const pPr = firstDirectChild(paragraph, W.pPr);
+    const spacings = getDirectChildrenByName(pPr, W.spacing);
+    expect(spacings).toHaveLength(1);
+    expect(wordAttr(spacings[0]!, 'before')).toBe('120');
+    expect(wordAttr(spacings[0]!, 'after')).toBeNull();
+    expect(Array.from(pPr.children).map((child) => child.localName)).toEqual(['spacing', 'jc', 'custom']);
+    expect(pPr.getElementsByTagNameNS('urn:custom', 'custom').item(0)?.getAttribute('keep')).toBe('yes');
+    expect(pPr.toString()).toContain('w:spacing w:before="120"');
+  });
+
   test('setParagraphSpacing rejects values outside its OOXML simple types', () => {
     const indexed = createIndexedDocument('<w:p><w:r><w:t>x</w:t></w:r></w:p>');
     const paragraphIds = [indexed.paragraphIds[0]!];

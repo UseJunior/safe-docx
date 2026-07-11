@@ -109,6 +109,26 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
     },
   );
 
+  test('StyleSpec paragraph properties use the same runtime validation as authored paragraphs', async () => {
+    const cases: Array<[string, (paragraph: NonNullable<NonNullable<DocumentSpec['styles']>[number]['paragraph']>) => void]> = [
+      ['alignment', (paragraph) => { paragraph.alignment = 'distributed' as never; }],
+      ['spacing/beforeTwips', (paragraph) => { paragraph.spacing = { beforeTwips: -1 }; }],
+      ['tabs/0/posTwips', (paragraph) => { paragraph.tabs = [{ posTwips: -1, align: 'left' }]; }],
+      ['indent/firstLineTwips', (paragraph) => { paragraph.indent = { firstLineTwips: -1 }; }],
+      ['indent', (paragraph) => { paragraph.indent = { firstLineTwips: 120, hangingTwips: 120 }; }],
+    ];
+
+    for (const [suffix, mutate] of cases) {
+      const spec = styledSpec();
+      const paragraph = spec.styles![0]!.paragraph!;
+      mutate(paragraph);
+      await expect(generateDocx(spec)).rejects.toMatchObject({
+        code: 'invalid_value',
+        path: `/styles/0/paragraph/${suffix}`,
+      });
+    }
+  });
+
   test
     .openspec('[SDX-GEN-040] declared styles are emitted into the style table')
     .conformance(

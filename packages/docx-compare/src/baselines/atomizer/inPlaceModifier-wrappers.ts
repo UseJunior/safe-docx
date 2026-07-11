@@ -15,6 +15,7 @@ import {
   getMoveRangeIds,
   parentElement,
   type RevisionIdState,
+  W_NS,
 } from './inPlaceModifier-shared.js';
 
 export type TrackChangeTag = 'w:ins' | 'w:del' | 'w:moveFrom' | 'w:moveTo';
@@ -559,7 +560,7 @@ export function addFormatChange(
   // format-changed atoms from the same split run, so keep the latest snapshot
   // instead of stacking invalid siblings.
   for (const child of childElements(rPr)) {
-    if (child.tagName === 'w:rPrChange') {
+    if (child.namespaceURI === W_NS && child.localName === 'rPrChange') {
       rPr.removeChild(child);
     }
   }
@@ -577,6 +578,7 @@ export function addFormatChange(
   if (oldRunProperties) {
     const oldRPr = createEl('w:rPr');
     for (const child of childElements(oldRunProperties)) {
+      if (child.namespaceURI === W_NS && child.localName === 'rPrChange') continue;
       const cloned = child.cloneNode(true) as Element;
       oldRPr.appendChild(cloned);
     }
