@@ -975,6 +975,11 @@ export async function compareDocumentsAtomizer(
         originalDocx: original,
         revisedDocx: revised,
         comparedDocx: resultBuffer,
+        legacyDocumentXml: {
+          original: originalXml,
+          revised: revisedXml,
+          compared: newDocumentXml,
+        },
         reconstructionMode: comparisonResult.outputMode,
         options: leanXmlVerifier,
       })

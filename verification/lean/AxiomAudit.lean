@@ -14,3 +14,5 @@ import Tier2.XmlTripleChecker
 #print axioms Tier2.XmlTripleChecker.checker_sound
 #print axioms Tier2.XmlTripleChecker.story_collection_checker_sound
 #print axioms Tier2.XmlTripleChecker.projectUserNoteTokens_no_reserved
+#print axioms Tier2.XmlTripleChecker.projectUserNoteTokens_idempotent
+#print axioms Tier2.XmlTripleChecker.projectUserNoteTokens_typed_reserved

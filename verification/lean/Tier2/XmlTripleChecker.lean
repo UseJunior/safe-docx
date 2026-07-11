@@ -39,8 +39,17 @@ def decodeXmlText (s : String) : String :=
   let s := s.replace "&apos;" apostrophe
   s.replace "&amp;" "&"
 
+def wmlNamespace : String :=
+  "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+def normalizeTagWhitespace (tag : String) : String :=
+  ((tag.replace "\n" " ").replace "\r" " ").replace "\t" " "
+
+def tagWords (tag : String) : List String :=
+  (normalizeTagWhitespace tag).splitOn " " |>.filter (· != "")
+
 def tagName (tag : String) : String :=
-  let first := List.getD (tag.splitOn " ") 0 tag
+  let first := List.getD (tagWords tag) 0 tag
   first.replace "/" ""
 
 def isStartTag (tag name : String) : Bool :=
@@ -54,9 +63,78 @@ def tagPayload (segment : String) : String × String :=
   | [] => ("", "")
   | tag :: rest => (tag, String.intercalate ">" rest)
 
+def splitQName (name : String) : String × String :=
+  match name.splitOn ":" with
+  | [localName] => ("", localName)
+  | [pre, localName] => (pre, localName)
+  | _ => ("", "")
+
+abbrev NamespaceBindings := List (String × String)
+
+def namespaceLookup (bindings : NamespaceBindings) (key : String) : Option String :=
+  match bindings.find? (fun binding => binding.1 == key) with
+  | some binding => some binding.2
+  | none => none
+
+def namespaceLookupD (bindings : NamespaceBindings) (key fallback : String) : String :=
+  (namespaceLookup bindings key).getD fallback
+
+def attrTokenValue (token key : String) : Option String :=
+  let doubleMarker := key ++ "=\""
+  let singleMarker := key ++ "='"
+  if token.startsWith doubleMarker && token.endsWith "\"" then
+    some ((token.drop doubleMarker.length).dropEnd 1).toString
+  else if token.startsWith singleMarker && token.endsWith "'" then
+    some ((token.drop singleMarker.length).dropEnd 1).toString
+  else none
+
+def namespaceDeclarations (tag : String) : List (String × String) :=
+  (tagWords tag).filterMap fun rawToken =>
+    let token := if rawToken.endsWith "/" then (rawToken.dropEnd 1).toString else rawToken
+    if let some value := attrTokenValue token "xmlns" then some ("", value)
+    else if token.startsWith "xmlns:" then
+      let key := List.getD (token.splitOn "=") 0 ""
+      let pre := (List.getD (key.splitOn ":") 1 "")
+      (attrTokenValue token key).map fun value => (pre, value)
+    else none
+
+def extendNamespaces (base : NamespaceBindings) (decls : List (String × String)) : NamespaceBindings :=
+  decls.foldl (fun acc binding => binding :: acc.filter (fun old => old.1 != binding.1)) base
+
+def resolveQName (bindings : NamespaceBindings) (name : String) : Except String (String × String) := do
+  let (pre, localName) := splitQName name
+  if localName.isEmpty then throw s!"invalid qualified name: {name}"
+  if pre.isEmpty then return (namespaceLookupD bindings "" "", localName)
+  match namespaceLookup bindings pre with
+  | some uri => return (uri, localName)
+  | none => throw s!"unbound namespace prefix: {pre}"
+
+def canonicalizeWmlTag (tag localName : String) (bindings : NamespaceBindings) : String :=
+  let attrs := (tagWords tag).drop 1 |>.filter (fun token => !token.startsWith "xmlns")
+  let attrs := attrs.map fun rawToken =>
+    let token := if rawToken.endsWith "/" then (rawToken.dropEnd 1).toString else rawToken
+    let key := List.getD (token.splitOn "=") 0 token
+    let (pre, attrLocal) := splitQName key
+    if !pre.isEmpty && namespaceLookupD bindings pre "" == wmlNamespace then
+      match attrTokenValue token key with
+      | some value => "w:" ++ attrLocal ++ "=\"" ++ value ++ "\""
+      | none => token
+    else token
+  String.intercalate " " (("w:" ++ localName) :: attrs)
+
+def validateAttributeNamespaces (tag : String) (bindings : NamespaceBindings) : Except String Unit := do
+  for rawToken in (tagWords tag).drop 1 do
+    let token := if rawToken.endsWith "/" then (rawToken.dropEnd 1).toString else rawToken
+    let key := List.getD (token.splitOn "=") 0 token
+    if key == "xmlns" || key.startsWith "xmlns:" then continue
+    let (pre, _) := splitQName key
+    if !pre.isEmpty && (namespaceLookup bindings pre).isNone then
+      throw s!"unbound namespace prefix on attribute: {pre}"
+
 def tagToken (tag payload : String) : List XmlTok :=
   if (isStartTag tag "w:footnote" || isStartTag tag "w:endnote") &&
-      (tag.contains "w:id=\"-1\"" || tag.contains "w:id=\"0\"") then [.enterReservedNote]
+      (tag.contains "w:type=\"separator\"" ||
+       tag.contains "w:type=\"continuationSeparator\"") then [.enterReservedNote]
   else if isEndTag tag "w:footnote" || isEndTag tag "w:endnote" then [.exitReservedNote]
   else if isStartTag tag "w:p" then [.pBreak]
   else if isStartTag tag "w:ins" then [.enter .ins]
@@ -78,10 +156,60 @@ def tagToken (tag payload : String) : List XmlTok :=
   else if isStartTag tag "w:delInstrText" then [.delInstrText (decodeXmlText payload)]
   else []
 
-def parseXmlTokens (xml : String) : List XmlTok :=
-  (((xml.splitOn "<").drop 1).map fun segment =>
-    let (tag, payload) := tagPayload segment
-    tagToken tag payload).flatten
+structure OpenElement where
+  uri : String
+  localName : String
+  namespaces : NamespaceBindings
+
+structure XmlParseState where
+  stack : List OpenElement := []
+  tokens : List XmlTok := []
+  rootSeen : Bool := false
+
+def currentNamespaces (state : XmlParseState) : NamespaceBindings :=
+  match state.stack with
+  | top :: _ => top.namespaces
+  | [] => [("xml", "http://www.w3.org/XML/1998/namespace")]
+
+def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : String) :
+    Except String XmlParseState := do
+  let parts := segment.splitOn ">"
+  if parts.length < 2 then throw "malformed XML tag without closing >"
+  let tag := List.getD parts 0 ""
+  let payload := String.intercalate ">" (parts.drop 1)
+  let trimmed := tag.trimAscii.toString
+  if trimmed.isEmpty then throw "empty XML tag"
+  if trimmed.startsWith "?" || trimmed.startsWith "!" then return state
+  if trimmed.startsWith "/" then
+    let rawName := ((List.getD (tagWords trimmed) 0 "").drop 1).toString
+    let some top := state.stack.head? | throw "unexpected closing tag"
+    let (uri, localName) ← resolveQName top.namespaces rawName
+    if uri != top.uri || localName != top.localName then
+      throw s!"mismatched closing tag: {rawName}"
+    let emitted := if uri == wmlNamespace then tagToken ("/w:" ++ localName) payload else []
+    return { state with stack := state.stack.drop 1, tokens := state.tokens ++ emitted }
+  let selfClosing := trimmed.endsWith "/"
+  if state.rootSeen && state.stack.isEmpty then throw "multiple XML root elements"
+  let rawName := List.getD (tagWords trimmed) 0 ""
+  let bindings := extendNamespaces (currentNamespaces state) (namespaceDeclarations trimmed)
+  validateAttributeNamespaces trimmed bindings
+  let (uri, localName) ← resolveQName bindings rawName
+  if !state.rootSeen then
+    if uri != wmlNamespace || localName != expectedRoot then
+      throw s!"unexpected root namespace={uri} local={localName}; expected namespace={wmlNamespace} local={expectedRoot}"
+  let canonical := if uri == wmlNamespace then canonicalizeWmlTag trimmed localName bindings else trimmed
+  let emitted := if uri == wmlNamespace then tagToken canonical payload else []
+  let next := { state with tokens := state.tokens ++ emitted, rootSeen := true }
+  if selfClosing then return next
+  return { next with stack := { uri, localName, namespaces := bindings } :: next.stack }
+
+def parseXmlTokensForRoot (xml expectedRoot : String) : Except String (List XmlTok) := do
+  let segments := (xml.splitOn "<").drop 1
+  if segments.isEmpty then throw "XML has no root element"
+  let final ← segments.foldlM (parseXmlSegment expectedRoot) {}
+  if !final.rootSeen then throw "XML has no root element"
+  if !final.stack.isEmpty then throw "XML has unclosed elements"
+  return final.tokens
 
 def projectUserNoteTokensAux : Bool → List XmlTok → List XmlTok
   | _, [] => []
@@ -105,6 +233,31 @@ theorem projectUserNoteTokens_no_reserved (toks : List XmlTok) :
     (projectUserNoteTokens toks).all (fun tok =>
       tok != .enterReservedNote && tok != .exitReservedNote) = true := by
   exact projectUserNoteTokensAux_no_reserved false toks
+
+theorem projectUserNoteTokensAux_of_no_reserved (inside : Bool) (toks : List XmlTok)
+    (h : toks.all (fun tok => tok != .enterReservedNote && tok != .exitReservedNote) = true) :
+    projectUserNoteTokensAux inside toks = if inside then [] else toks := by
+  induction toks generalizing inside with
+  | nil => simp [projectUserNoteTokensAux]
+  | cons tok rest ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    rcases h with ⟨⟨hEnter, hExit⟩, hRest⟩
+    cases inside <;> cases tok <;> simp_all [projectUserNoteTokensAux]
+
+theorem projectUserNoteTokens_idempotent (toks : List XmlTok) :
+    projectUserNoteTokens (projectUserNoteTokens toks) = projectUserNoteTokens toks := by
+  apply projectUserNoteTokensAux_of_no_reserved false
+  exact projectUserNoteTokens_no_reserved toks
+
+theorem projectUserNoteTokens_typed_reserved (payload : List XmlTok)
+    (h : payload.all (fun tok => tok != .enterReservedNote && tok != .exitReservedNote) = true) :
+    projectUserNoteTokens (.enterReservedNote :: payload ++ [.exitReservedNote]) = [] := by
+  induction payload with
+  | nil => simp [projectUserNoteTokens, projectUserNoteTokensAux]
+  | cons tok rest ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    rcases h with ⟨⟨hEnter, hExit⟩, hRest⟩
+    cases tok <;> simp_all [projectUserNoteTokens, projectUserNoteTokensAux]
 
 def popWrapper (w : Wrapper) : List Wrapper → List Wrapper
   | [] => []
@@ -177,12 +330,12 @@ def stepField (r : WalkResult) : XmlTok → WalkResult
     | .invalid => .invalid
   | .fldChar .separate =>
     match r with
-    | .ok [] => .ok []
-    | .ok (_ :: rest) => .ok (true :: rest)
+    | .ok (false :: rest) => .ok (true :: rest)
+    | .ok _ => .invalid
     | .invalid => .invalid
   | .fldChar .endf =>
     match r with
-    | .ok [] => .ok []
+    | .ok [] => .invalid
     | .ok (_ :: rest) => .ok rest
     | .invalid => .invalid
   | .instrText _ =>
@@ -201,7 +354,7 @@ def isEnd : XmlTok → Bool
   | _ => false
 
 def validateFieldStructureTokens (toks : List XmlTok) : Bool :=
-  toks.countP isBegin == toks.countP isEnd && (toks.foldl stepField (.ok [])).isValid
+  toks.countP isBegin == toks.countP isEnd && toks.foldl stepField (.ok []) == .ok []
 
 def tokenText : XmlTok → List Char
   | .text s => s.toList
@@ -261,6 +414,9 @@ structure NamedStoryTriple where
   original : List XmlTok
   revised : List XmlTok
   combined : List XmlTok
+  originalPresent : Bool := true
+  revisedPresent : Bool := true
+  combinedPresent : Bool := true
   deriving Repr, Inhabited
 
 structure StoryReport where
@@ -269,6 +425,9 @@ structure StoryReport where
   originalTokenCount : Nat
   revisedTokenCount : Nat
   combinedTokenCount : Nat
+  originalPresent : Bool
+  revisedPresent : Bool
+  combinedPresent : Bool
   deriving Repr, Inhabited
 
 def checkNamedStory (story : NamedStoryTriple) : StoryReport :=
@@ -276,7 +435,10 @@ def checkNamedStory (story : NamedStoryTriple) : StoryReport :=
     report := comparisonCheckerB story.original story.revised story.combined
     originalTokenCount := story.original.length
     revisedTokenCount := story.revised.length
-    combinedTokenCount := story.combined.length }
+    combinedTokenCount := story.combined.length
+    originalPresent := story.originalPresent
+    revisedPresent := story.revisedPresent
+    combinedPresent := story.combinedPresent }
 
 def checkStoryCollection (stories : List NamedStoryTriple) : List StoryReport :=
   stories.map checkNamedStory
@@ -333,6 +495,11 @@ def reportToJson (r : CheckReport) : Json :=
 def storyReportToJson (r : StoryReport) : Json :=
   Json.mkObj
     [ ("name", toJson r.name)
+    , ("presence", Json.mkObj
+        [ ("original", toJson r.originalPresent)
+        , ("revised", toJson r.revisedPresent)
+        , ("combined", toJson r.combinedPresent)
+        ])
     , ("parsedTokenCounts", Json.mkObj
         [ ("original", toJson r.originalTokenCount)
         , ("revised", toJson r.revisedTokenCount)

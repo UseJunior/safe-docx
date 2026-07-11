@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
@@ -56,12 +58,17 @@ describeWithLean('Lean XML triple verifier certificate', () => {
       await then('the certificate reports plain document properties and hashes', () => {
         expect(result.reconstructionModeUsed).toBe('inplace');
         expect(result.documentIntegrity?.status).toBe('passed');
-        expect(result.documentIntegrity?.scope).toEqual([
+        expect(result.documentIntegrity?.protocolVersion).toBe(1);
+        expect(result.documentIntegrity?.scope).toBe('word/document.xml');
+        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(2);
+        expect(result.documentIntegrity?.fixedStoryScope).toEqual([
           'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
         ]);
-        expect(result.documentIntegrity?.inputSha256.originalDocx).toMatch(/^[0-9a-f]{64}$/);
+        expect(result.documentIntegrity?.inputSha256.originalDocumentXml).toMatch(/^[0-9a-f]{64}$/);
+        expect(result.documentIntegrity?.inputPackageSha256?.originalDocx).toMatch(/^[0-9a-f]{64}$/);
+        expect(result.documentIntegrity?.stories?.map((story) => story.name)).toEqual(['main']);
         expect(
-          result.documentIntegrity?.stories[0]?.checks.acceptingAllTrackedChangesMatchesRevisedText.claim
+          result.documentIntegrity?.stories?.[0]?.checks.acceptingAllTrackedChangesMatchesRevisedText.claim
         ).toContain('revised story');
         expect(JSON.stringify(result.documentIntegrity)).not.toContain('tier2.checker_sound');
         expect(JSON.stringify(result.documentIntegrity)).not.toContain('INV');
@@ -129,11 +136,16 @@ describe('Lean XML triple verifier scope boundary', () => {
   );
 });
 
-async function replacePart(docx: Buffer, path: string, xml: string | null): Promise<Buffer> {
+async function replacePart(
+  docx: Buffer,
+  path: string,
+  xml: string | null,
+  compression: 'STORE' | 'DEFLATE' = 'STORE'
+): Promise<Buffer> {
   const zip = await JSZip.loadAsync(docx);
   if (xml === null) zip.remove(path);
   else zip.file(path, xml);
-  return zip.generateAsync({ type: 'nodebuffer' });
+  return zip.generateAsync({ type: 'nodebuffer', compression });
 }
 
 async function readPart(docx: Buffer, path: string): Promise<string> {
@@ -142,22 +154,29 @@ async function readPart(docx: Buffer, path: string): Promise<string> {
   return part.async('string');
 }
 
+function withPrefix(xml: string, from: string, to: string): string {
+  return xml
+    .replace(`xmlns:${from}=`, `xmlns:${to}=`)
+    .replaceAll(`${from}:`, `${to}:`);
+}
+
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const footnotes = (userBody: string, separatorBody = '<w:r><w:separator/></w:r>') =>
   `<w:footnotes xmlns:w="${W_NS}">` +
-  `<w:footnote w:id="-1"><w:p>${separatorBody}</w:p></w:footnote>` +
-  `<w:footnote w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>` +
+  `<w:footnote w:type="separator" w:id="-1"><w:p>${separatorBody}</w:p></w:footnote>` +
+  `<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>` +
   `<w:footnote w:id="1"><w:p>${userBody}</w:p></w:footnote></w:footnotes>`;
 const endnotes = (userBody: string) =>
   `<w:endnotes xmlns:w="${W_NS}">` +
-  `<w:endnote w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>` +
-  `<w:endnote w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>` +
+  `<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>` +
+  `<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>` +
   `<w:endnote w:id="1"><w:p>${userBody}</w:p></w:endnote></w:endnotes>`;
 
 describeWithLean('Lean fixed-story package protocol', () => {
   const run = (originalDocx: Buffer, revisedDocx: Buffer, comparedDocx: Buffer) =>
     runLeanXmlTripleVerifier({
       originalDocx, revisedDocx, comparedDocx,
+      legacyDocumentXml: { original: '', revised: '', compared: '' },
       reconstructionMode: 'inplace',
       options: { executablePath: LEAN_EXE },
     });
@@ -170,7 +189,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
       });
       const certificate = await run(docx, docx, docx);
       expect(certificate.status).toBe('passed');
-      expect(certificate.stories.map((story) => story.name)).toEqual(['main', 'footnotes', 'endnotes']);
+      expect(certificate.stories?.map((story) => story.name)).toEqual(['main', 'footnotes', 'endnotes']);
     });
 
   test.openspec('[LEAN-STORY-02] Side-story state is isolated')(
@@ -182,17 +201,61 @@ describeWithLean('Lean fixed-story package protocol', () => {
       const malformed = await replacePart(withFootnote, 'word/endnotes.xml', endnotes('<w:r><w:fldChar w:fldCharType="end"/></w:r>'));
       const certificate = await run(malformed, malformed, malformed);
       expect(certificate.status).toBe('failed');
-      expect(certificate.stories.filter((story) => story.status === 'failed').map((story) => story.name)).toEqual(['footnotes', 'endnotes']);
+      expect(certificate.stories?.filter((story) => story.status === 'failed').map((story) => story.name)).toEqual(['footnotes', 'endnotes']);
     });
 
-  test.openspec('[LEAN-STORY-03] Optional presence mismatch fails')(
-    'fails closed when an optional story is absent from one package', async () => {
+  test.openspec('[LEAN-STORY-03] Optional presence is modeled as an empty story')(
+    'rejects an untracked optional-part addition against an empty original story', async () => {
       const withNote = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
       const withoutNote = await replacePart(withNote, 'word/footnotes.xml', null);
-      const certificate = await run(withNote, withNote, withoutNote);
+      const certificate = await run(withoutNote, withNote, withNote);
       expect(certificate.status).toBe('failed');
-      expect(certificate.presenceMismatches?.[0]?.name).toBe('footnotes');
+      expect(certificate.presenceMismatches).toEqual([]);
+      expect(certificate.stories?.find((story) => story.name === 'footnotes')?.presence).toEqual({
+        original: false, revised: true, compared: true,
+      });
     });
+
+  test('accepts tracked optional-part addition and removal against empty missing stories', async () => {
+    const withNote = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
+    const withoutNote = await replacePart(withNote, 'word/footnotes.xml', null);
+    const added = await replacePart(
+      withNote,
+      'word/footnotes.xml',
+      footnotes('<w:ins><w:r><w:t>Added note</w:t></w:r></w:ins>')
+    );
+    const revisedAdded = await replacePart(
+      withNote,
+      'word/footnotes.xml',
+      footnotes('<w:r><w:t>Added note</w:t></w:r>')
+    );
+    const removed = await replacePart(
+      withNote,
+      'word/footnotes.xml',
+      footnotes('<w:del><w:r><w:delText>Removed note</w:delText></w:r></w:del>')
+    );
+    const originalRemoved = await replacePart(
+      withNote,
+      'word/footnotes.xml',
+      footnotes('<w:r><w:t>Removed note</w:t></w:r>')
+    );
+
+    expect((await run(withoutNote, revisedAdded, added)).status).toBe('passed');
+    expect((await run(originalRemoved, withoutNote, removed)).status).toBe('passed');
+  });
+
+  test('fails closed when the required main story is missing from any package', async () => {
+    const base = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const missingMain = await replacePart(base, 'word/document.xml', null);
+    const certificate = await run(missingMain, base, base);
+    expect(certificate.status).toBe('failed');
+    expect(certificate.presenceMismatches).toEqual([{
+      name: 'main',
+      packagePart: 'word/document.xml',
+      required: true,
+      presence: { original: false, revised: true, combined: true },
+    }]);
+  });
 
   test.openspec('[LEAN-STORY-04] Reserved separator text is excluded')(
     'ignores reserved separator entry text through the Lean projection', async () => {
@@ -202,6 +265,71 @@ describeWithLean('Lean fixed-story package protocol', () => {
       expect((await run(original, revised, revised)).status).toBe('passed');
     });
 
+  test('uses namespace-qualified note type rather than numeric IDs for reserved projection', async () => {
+    const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
+    const typedAnyId = (reserved: string, normalZero: string) =>
+      `<w:footnotes xmlns:w="${W_NS}">` +
+      `<w:footnote w:type="separator" w:id="77"><w:p><w:r><w:t>${reserved}</w:t></w:r></w:p></w:footnote>` +
+      `<w:footnote w:id="0"><w:p><w:r><w:t>${normalZero}</w:t></w:r></w:p></w:footnote>` +
+      `</w:footnotes>`;
+    const original = await replacePart(base, 'word/footnotes.xml', typedAnyId('old reserved', 'visible old'));
+    const revisedReservedOnly = await replacePart(base, 'word/footnotes.xml', typedAnyId('new reserved', 'visible old'));
+    const revisedNormalZero = await replacePart(base, 'word/footnotes.xml', typedAnyId('new reserved', 'visible new'));
+
+    expect((await run(original, revisedReservedOnly, revisedReservedOnly)).status).toBe('passed');
+    expect((await run(original, revisedNormalZero, revisedNormalZero)).status).toBe('failed');
+  });
+
+  test.openspec('[LEAN-STORY-06] Alternate namespace prefixes preserve checks')(
+    'accepts alternate WordprocessingML prefixes and detects divergent text through them', async () => {
+    const base = await buildDocxFromBodyXml(paragraphWithText('Original'));
+    const originalXml = withPrefix(await readPart(base, 'word/document.xml'), 'w', 'wp');
+    const original = await replacePart(base, 'word/document.xml', originalXml);
+    const revisedXml = originalXml.replace('Original', 'Revised');
+    const revised = await replacePart(base, 'word/document.xml', revisedXml);
+    const malformedFieldBase = await buildDocxFromBodyXml(
+      '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r></w:p>'
+    );
+    const malformedField = await replacePart(
+      malformedFieldBase,
+      'word/document.xml',
+      withPrefix(await readPart(malformedFieldBase, 'word/document.xml'), 'w', 'wp')
+    );
+
+    expect((await run(original, original, original)).status).toBe('passed');
+    expect((await run(original, revised, revised)).status).toBe('failed');
+    expect((await run(malformedField, malformedField, malformedField)).status).toBe('failed');
+    });
+
+  test('rejects malformed or unrecognized WordprocessingML roots instead of accepting empty tokens', async () => {
+    const base = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const wrongRoot = await replacePart(
+      base,
+      'word/document.xml',
+      '<x:document xmlns:x="urn:not-wordprocessingml"><x:p><x:t>Body</x:t></x:p></x:document>'
+    );
+    const malformed = await replacePart(base, 'word/document.xml', '<w:document><w:p></w:document>');
+    expect((await run(wrongRoot, wrongRoot, wrongRoot)).status).toBe('not_run');
+    expect((await run(malformed, malformed, malformed)).status).toBe('not_run');
+  });
+
+  test('rejects balanced malformed end-before-begin and repeated-separate fields per story', async () => {
+    const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
+    const endThenBegin =
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>';
+    const repeatedSeparate =
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    const malformedOrder = await replacePart(base, 'word/footnotes.xml', footnotes(endThenBegin));
+    const malformedRepeat = await replacePart(base, 'word/footnotes.xml', footnotes(repeatedSeparate));
+    expect((await run(malformedOrder, malformedOrder, malformedOrder)).status).toBe('failed');
+    expect((await run(malformedRepeat, malformedRepeat, malformedRepeat)).status).toBe('failed');
+  });
+
   test.openspec('[LEAN-STORY-05] Side-story divergence is visible')(
     'reports reject text divergence in a footnote story', async () => {
       const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
@@ -209,7 +337,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
       const revised = await replacePart(base, 'word/footnotes.xml', footnotes('<w:r><w:t>Revised note</w:t></w:r>'));
       const certificate = await run(original, revised, revised);
       expect(certificate.status).toBe('failed');
-      expect(certificate.stories.find((story) => story.name === 'footnotes')?.checks.rejectingAllTrackedChangesMatchesOriginalText.status).toBe('failed');
+      expect(certificate.stories?.find((story) => story.name === 'footnotes')?.checks.rejectingAllTrackedChangesMatchesOriginalText.status).toBe('failed');
     });
 
   test('agrees with the existing TS accept/reject oracle on a tracked footnote protocol case', async () => {
@@ -233,5 +361,196 @@ describeWithLean('Lean fixed-story package protocol', () => {
       normalizeText(extractTextWithParagraphs(rejectAllChanges(originalXml)))
     );
     expect((await run(original, revised, combined)).status).toBe('passed');
+  });
+});
+
+const validProtocolReport = {
+  protocolVersion: 2,
+  checker: 'safe-docx-lean-fixed-story-checker',
+  passed: true,
+  stories: [{
+    name: 'main',
+    presence: { original: true, revised: true, combined: true },
+    parsedTokenCounts: { original: 1, revised: 1, combined: 1 },
+    report: {
+      passed: true,
+      checks: {
+        acceptPreservesFieldStructure: true,
+        rejectPreservesFieldStructure: true,
+        acceptTextMatchesRevised: true,
+        rejectTextMatchesOriginal: true,
+        combinedHasNoFldCharInsideDel: true,
+      },
+    },
+  }],
+  presenceMismatches: [],
+};
+
+async function fakeChecker(output: unknown): Promise<{ dir: string; executable: string }> {
+  const dir = await mkdtemp(join(tmpdir(), 'safe-docx-fake-checker-'));
+  const executable = join(dir, 'checker');
+  await writeFile(
+    executable,
+    `#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '${JSON.stringify(output)}'\n`,
+  );
+  await chmod(executable, 0o700);
+  return { dir, executable };
+}
+
+describe('Lean fixed-story protocol and security hardening', () => {
+  const runWith = (
+    originalDocx: Buffer,
+    revisedDocx: Buffer,
+    comparedDocx: Buffer,
+    executablePath: string,
+    timeoutMs = 10_000,
+  ) => runLeanXmlTripleVerifier({
+    originalDocx,
+    revisedDocx,
+    comparedDocx,
+    legacyDocumentXml: { original: '<w:document/>', revised: '<w:document/>', compared: '<w:document/>' },
+    reconstructionMode: 'inplace',
+    options: { executablePath, timeoutMs },
+  });
+
+  test.openspec('[LEAN-STORY-08] Public certificate remains v1 compatible')(
+    'preserves the public v1 certificate fields while adding package-story evidence', async () => {
+    const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const result = await runWith(docx, docx, docx, LEAN_EXE);
+    const legacyShape: {
+      protocolVersion: 1;
+      verifier: 'Lean XML triple checker';
+      scope: 'word/document.xml';
+    } = result;
+    expect(legacyShape).toMatchObject({
+      protocolVersion: 1,
+      verifier: 'Lean XML triple checker',
+      scope: 'word/document.xml',
+    });
+    expect(result.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
+    expect(result.checkerProtocolVersion).toBe(2);
+    });
+
+  test.openspec('[LEAN-STORY-09] Inconsistent executable protocol is rejected')(
+    'rejects duplicate, negative-count, inconsistent, and extra-field protocol reports', async () => {
+    const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const variants = [
+      { ...validProtocolReport, stories: [...validProtocolReport.stories, validProtocolReport.stories[0]] },
+      { ...validProtocolReport, stories: [{
+        ...validProtocolReport.stories[0],
+        parsedTokenCounts: { original: -1, revised: 1, combined: 1 },
+      }] },
+      { ...validProtocolReport, stories: [{
+        ...validProtocolReport.stories[0],
+        parsedTokenCounts: { original: 1.5, revised: 1, combined: 1 },
+      }] },
+      { ...validProtocolReport, stories: [{
+        ...validProtocolReport.stories[0],
+        name: 'comments',
+      }] },
+      { ...validProtocolReport, stories: [{
+        ...validProtocolReport.stories[0],
+        name: 'footnotes',
+      }] },
+      { ...validProtocolReport, stories: [{
+        ...validProtocolReport.stories[0],
+        report: { ...validProtocolReport.stories[0]!.report, passed: false },
+      }] },
+      { ...validProtocolReport, passed: false },
+      { ...validProtocolReport, unexpected: true },
+      { ...validProtocolReport, passed: false, presenceMismatches: [{
+        name: 'main',
+        packagePart: 'word/document.xml',
+        required: true,
+        presence: { original: false, revised: false, combined: false },
+        unexpected: true,
+      }] },
+    ];
+    for (const variant of variants) {
+      const fake = await fakeChecker(variant);
+      try {
+        expect((await runWith(docx, docx, docx, fake.executable)).status).toBe('not_run');
+      } finally {
+        await rm(fake.dir, { recursive: true, force: true });
+      }
+    }
+    });
+
+  test('snapshots mutable package buffers before hashing, writing, or awaiting', async () => {
+    const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const dir = await mkdtemp(join(tmpdir(), 'safe-docx-snapshot-checker-'));
+    const executable = join(dir, 'checker');
+    await writeFile(executable, `#!/usr/bin/env node
+let raw = '';
+process.stdin.on('data', chunk => raw += chunk);
+process.stdin.on('end', () => setTimeout(() => {
+  const req = JSON.parse(raw);
+  const bytes = require('node:fs').readFileSync(req.originalDocxPath);
+  if (bytes.subarray(0, 2).toString() !== 'PK') process.exit(9);
+  process.stdout.write(${JSON.stringify(JSON.stringify(validProtocolReport))});
+}, 50));
+`);
+    await chmod(executable, 0o700);
+    try {
+      const mutable = Buffer.from(docx);
+      const pending = runWith(mutable, docx, docx, executable);
+      mutable.fill(0);
+      expect((await pending).status).toBe('passed');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('kills verifier process groups when a timeout fires', async () => {
+    const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const dir = await mkdtemp(join(tmpdir(), 'safe-docx-timeout-checker-'));
+    const executable = join(dir, 'checker');
+    const pidPath = join(dir, 'descendant.pid');
+    await writeFile(executable, `#!/bin/sh\nsleep 30 &\necho $! > '${pidPath}'\ncat >/dev/null\nwait\n`);
+    await chmod(executable, 0o700);
+    try {
+      expect((await runWith(docx, docx, docx, executable, 300)).status).toBe('not_run');
+      const pid = Number((await readFile(pidPath, 'utf8')).trim());
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(() => process.kill(pid, 0)).toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describeWithLean('Lean compiled package extraction limits', () => {
+  const run = (docx: Buffer) => runLeanXmlTripleVerifier({
+    originalDocx: docx,
+    revisedDocx: docx,
+    comparedDocx: docx,
+    legacyDocumentXml: { original: '', revised: '', compared: '' },
+    reconstructionMode: 'inplace',
+    options: { executablePath: LEAN_EXE },
+  });
+
+  test.openspec('[LEAN-STORY-07] Unsafe package extraction fails closed')(
+    'reports corrupt archives as not_run rather than missing optional stories', async () => {
+    const result = await run(Buffer.from('not a zip archive'));
+    expect(result.status).toBe('not_run');
+    expect(result.reason).toContain('archive metadata failed');
+    });
+
+  test('rejects oversized expanded story output before buffering it', async () => {
+    const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
+    const huge = footnotes(`<w:r><w:t>${'x'.repeat(16 * 1024 * 1024 + 1)}</w:t></w:r>`);
+    const oversized = await replacePart(base, 'word/footnotes.xml', huge, 'DEFLATE');
+    const result = await run(oversized);
+    expect(result.status).toBe('not_run');
+    expect(result.reason).toContain('expanded size exceeds');
+  });
+
+  test('rejects excessive compression ratios before extraction', async () => {
+    const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
+    const bomb = footnotes(`<w:r><w:t>${'x'.repeat(2 * 1024 * 1024)}</w:t></w:r>`);
+    const compressed = await replacePart(base, 'word/footnotes.xml', bomb, 'DEFLATE');
+    const result = await run(compressed);
+    expect(result.status).toBe('not_run');
+    expect(result.reason).toContain('compression ratio exceeds');
   });
 });

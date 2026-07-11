@@ -70,6 +70,25 @@ if (!lean.includes('projectUserNoteTokens') || !lean.includes('story_collection_
   errors.push('Lean checker must retain the reserved-note projection and collection theorem');
 }
 
+for (const value of ledger.parsedWordprocessingML?.attributeValues?.['w:type'] ?? []) {
+  if (!lean.includes(`w:type=\\"${value}\\"`)) {
+    errors.push(`ledger reserved note type ${value} is not recognized by the Lean checker`);
+  }
+}
+
+for (const required of [
+  'resolveQName',
+  'wmlNamespace',
+  'maxPackageBytes',
+  'maxPartCompressedBytes',
+  'maxPartExpandedBytes',
+  'maxCompressionRatio',
+]) {
+  if (!lean.includes(required) && !executable.includes(required)) {
+    errors.push(`coverage claim requires ${required} in the Lean checker path`);
+  }
+}
+
 if (errors.length > 0) {
   console.error('Lean XML checker coverage ledger drift detected:');
   for (const error of errors) {

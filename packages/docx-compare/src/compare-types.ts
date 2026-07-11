@@ -259,26 +259,41 @@ export interface DocumentIntegrityStoryCertificate {
     comparedStoryHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
   };
   parsedTokenCounts: { original: number; revised: number; compared: number };
+  presence: { original: boolean; revised: boolean; compared: boolean };
 }
 
 export interface DocumentIntegrityCertificate {
   /** Overall result from the separately compiled Lean verifier. */
   status: DocumentIntegrityCertificateStatus;
   /** Human-facing verifier name, intentionally not a Lean theorem identifier. */
-  verifier: 'Lean fixed-story checker';
-  /** Version of the JSON protocol used between TypeScript and the Lean exe. */
-  protocolVersion: 2;
-  /** Fixed story allowlist selected and extracted by the compiled verifier. */
-  scope: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
+  verifier: 'Lean XML triple checker';
+  /** Stable public certificate protocol retained for v1 consumers. */
+  protocolVersion: 1;
+  /** Stable v1 main-document scope. See `fixedStoryScope` for additive coverage. */
+  scope: 'word/document.xml';
   /** Reconstruction mode of the compared DOCX that was offered to the verifier. */
   reconstructionMode: ReconstructionMode;
-  /** SHA-256 hashes of the exact DOCX package snapshots offered to the verifier. */
+  /** Stable v1 hashes of the main-document XML projections. */
   inputSha256: {
-    originalDocx: string;
-    revisedDocx: string;
-    comparedDocx: string;
+    originalDocumentXml: string;
+    revisedDocumentXml: string;
+    comparedDocumentXml: string;
   };
-  stories: DocumentIntegrityStoryCertificate[];
+  /** Stable v1 main-story checks, populated from the compiled checker report. */
+  checks: {
+    acceptingAllTrackedChangesMatchesRevisedText: DocumentIntegrityCheckCertificate;
+    rejectingAllTrackedChangesMatchesOriginalText: DocumentIntegrityCheckCertificate;
+    acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
+    rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
+    comparedDocumentHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+  };
+  /** Stable v1 main-story token counts. */
+  parsedTokenCounts?: { original: number; revised: number; compared: number };
+  /** Internal executable protocol used for package-level verification. */
+  checkerProtocolVersion?: 2;
+  fixedStoryScope?: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
+  inputPackageSha256?: { originalDocx: string; revisedDocx: string; comparedDocx: string };
+  stories?: DocumentIntegrityStoryCertificate[];
   presenceMismatches?: Array<{
     name: string;
     packagePart: string;
@@ -286,7 +301,7 @@ export interface DocumentIntegrityCertificate {
     presence: { original: boolean; revised: boolean; combined: boolean };
   }>;
   /** Important surfaces this certificate does not claim to validate. */
-  exclusions: string[];
+  exclusions?: string[];
   reason?: string;
 }
 

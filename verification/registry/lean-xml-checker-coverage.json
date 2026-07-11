@@ -26,8 +26,8 @@
     "documentSurfaces": {
       "covered": [
         "word/document.xml text and field-marker token stream (required)",
-        "word/footnotes.xml user-note text and field-marker token stream (optional, symmetric presence)",
-        "word/endnotes.xml user-note text and field-marker token stream (optional, symmetric presence)"
+        "word/footnotes.xml user-note text and field-marker token stream (optional; absent sides modeled as empty when any side is present)",
+        "word/endnotes.xml user-note text and field-marker token stream (optional; absent sides modeled as empty when any side is present)"
       ],
       "outOfScope": [
         "comments.xml",
@@ -51,17 +51,17 @@
       "w:t",
       "w:delText",
       "w:instrText",
-      "w:delInstrText"
-      ,"w:footnote"
-      ,"w:endnote"
+      "w:delInstrText",
+      "w:footnote",
+      "w:endnote"
     ],
     "attributes": [
       "w:fldCharType",
-      "w:id"
+      "w:type"
     ],
     "attributeValues": {
       "w:fldCharType": ["begin", "separate", "end"],
-      "w:id": ["-1", "0"]
+      "w:type": ["separator", "continuationSeparator"]
     },
     "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"]
   },
@@ -70,8 +70,10 @@
     "For every supplied fixed story, rejecting all tracked changes in the compared story yields the same normalized text as the original story.",
     "For every supplied fixed story, accept and reject projections retain structurally valid Word field markers.",
     "For every supplied fixed story, the compared story has no Word field markers inside deletion markup.",
-    "The main story is required and optional note-story presence must match across all three packages.",
-    "Reserved separator and continuation-separator note entries are excluded from user-visible note projection in Lean."
+    "The main story is required; when any optional note story is present, absent sides are checked as empty stories.",
+    "Reserved note entries are selected by namespace-qualified w:type separator or continuationSeparator, independent of numeric ID, and excluded by an idempotent Lean projection.",
+    "Element and attribute prefixes are resolved to namespace URIs, and each fixed part must have its expected WordprocessingML expanded-name root.",
+    "Package and selected-part extraction is bounded by package size, compressed size, expanded size, compression ratio, diagnostics, and streamed-output limits."
   ],
   "ecma376Traceability": [
     {
@@ -101,6 +103,7 @@
     "package-level OPC constraints",
     "field instruction parsing, evaluation, and cached-result correctness, including PAGE and NUMPAGES semantics",
     "OOXML extension and compatibility markup"
+    ,"general-purpose XML canonicalization, DTDs, and CDATA beyond the checked WordprocessingML token surface"
   ],
   "futureObligationQueue": []
 }

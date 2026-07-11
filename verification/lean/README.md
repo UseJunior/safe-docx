@@ -182,12 +182,20 @@ package extractor and selects these fixed WordprocessingML stories itself:
 - optional `word/footnotes.xml`; and
 - optional `word/endnotes.xml`.
 
-Optional parts must be present in all three packages or absent from all three.
-Each supplied story is parsed and checked independently, so field state cannot
-balance across part boundaries. Reserved note IDs `-1` and `0` are removed by
-the Lean-defined `projectUserNoteTokens` projection before user-note text is
-compared. The projection and collection soundness theorem are included in the
-axiom audit.
+If any package supplies an optional part, absent sides are represented by empty
+token stories. This permits checked tracked-part additions and removals while an
+untracked text divergence still fails; all-absent optional parts are omitted.
+Each story is parsed and checked independently, so field state cannot balance
+across part boundaries.
+
+The Lean parser resolves prefixes to namespace URIs, accepts any prefix bound to
+the WordprocessingML namespace, requires the expected expanded-name root, and
+rejects malformed or unbound XML. Reserved note entries are selected by the
+namespace-qualified `w:type` value `separator` or `continuationSeparator`, not
+by ID. Therefore a normal note with ID `0` remains visible, while a typed
+separator with any ID is excluded. `projectUserNoteTokens` is proved
+idempotent, and its typed-reserved projection theorem is included in the axiom
+audit alongside collection soundness.
 
 For every supplied story, the checker checks whether:
 
@@ -201,7 +209,15 @@ program extracted and checked these fixed stories. It is not a proof of the
 entire TypeScript comparison engine, note/reference or relationship integrity,
 package-level OPC behavior, rendering fidelity, rebuild mode, comments,
 headers/footers, or full ECMA-376 conformance. Package extraction currently
-requires `unzip`; absence or extraction failure produces `not_run`. The exact
+requires `unzip`; absence, corrupt archives, metadata errors, oversized
+packages/parts, excessive compression ratios, output-limit violations, or
+extraction failure produce `not_run`. The extractor checks compressed and
+expanded metadata before extraction and streams output under a hard bound.
+
+The executable speaks protocol v2, but the TypeScript certificate retains the
+public v1 discriminator, verifier name, main-document scope, XML hashes, checks,
+and token counts. Fixed-story scope, package hashes, story presence, per-story
+reports, and exclusions are additive fields. The exact
 parsed and out-of-scope surfaces are tracked in
 `verification/registry/lean-xml-checker-coverage.json` and drift-checked by
 `npm run check:lean-xml-checker-coverage`.
