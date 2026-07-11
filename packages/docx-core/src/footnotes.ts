@@ -12,6 +12,7 @@
  * - Correct: Display as 1, 2, 3, ..., 91
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.notes.footnote-reference-numbering
  */
 
 import {

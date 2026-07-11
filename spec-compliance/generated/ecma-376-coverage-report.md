@@ -2,7 +2,7 @@
 # ECMA-376 coverage denominator report
 
 Official artifacts verified: **1 referenced / 4 vendored**.
-Initial spec references classified: **2**.
+Initial spec references classified: **8**.
 Generated vocabulary entries: **9**.
 
 This initial denominator classifies only seeded references. Unlisted ECMA-376 prose requirements remain `not-yet-covered`; this report does not claim full standard coverage.
@@ -11,7 +11,7 @@ This initial denominator classifies only seeded references. Unlisted ECMA-376 pr
 
 | Status | References |
 | --- | ---: |
-| `partial` | 2 |
+| `partial` | 8 |
 
 ## Spec references
 
@@ -19,6 +19,12 @@ This initial denominator classifies only seeded references. Unlisted ECMA-376 pr
 | --- | --- | --- | --- |
 | `ooxml.ecma376.5ed.part1.fields.deleted-field-code` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.16.13 | `partial` | 2 source / 2 tests |
 | `ooxml.ecma376.5ed.part1.fields.complex-field-characters` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.16.18 | `partial` | 1 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.notes.footnote-reference-numbering` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.11.14 | `partial` | 1 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.comments.collection` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.6 | `partial` | 1 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.comments.comment` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.2 | `partial` | 1 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.comments.range-start` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.4 | `partial` | 1 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.comments.range-end` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.3 | `partial` | 1 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.comments.reference` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.5 | `partial` | 1 source / 2 tests |
 
 ## Generated vocabulary use
 

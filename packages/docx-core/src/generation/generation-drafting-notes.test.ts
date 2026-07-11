@@ -49,6 +49,7 @@ describe('Traceability: separable drafting-note layer', () => {
     .openspec('[SDX-GEN-080] a drafting note becomes an anchored comment')
     .conformance(
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.6' },
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' },

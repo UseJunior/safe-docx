@@ -30,7 +30,7 @@
         "word/endnotes.xml user-note text and field-marker token stream (optional; absent sides modeled as empty when any side is present)"
       ],
       "outOfScope": [
-        "comments.xml",
+        "word/comments.xml and all comment anchors, reference IDs, relationships, extension parts, and thread semantics",
         "numbering.xml",
         "document relationships",
         "styles.xml",
@@ -97,7 +97,7 @@
     "rendering equivalence",
     "formatting fidelity",
     "bookmark semantic equivalence",
-    "comment anchor and thread integrity",
+    "comments.xml and comment anchor, reference-ID, relationship, extension-part, and thread integrity",
     "footnote and endnote definition/reference integrity, including reference IDs and relationships",
     "relationship target integrity",
     "package-level OPC constraints",
