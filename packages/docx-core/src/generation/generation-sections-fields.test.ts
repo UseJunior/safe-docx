@@ -101,6 +101,25 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
         expect(result.stats.referenceCount).toBe(1);
       });
 
+      await then('prefixed package relationships are matched by namespace URI and local name', () => {
+        const prefixedRelationships = `<pr:Relationships xmlns:pr="${pr}"><pr:Relationship Id="rId1" Type="${r}/header" Target="header1.xml"/></pr:Relationships>`;
+        const result = auditSectPr(documentXml, prefixedRelationships, new Map([
+          ['word/header1.xml', `<wp:hdr xmlns:wp="${w}"/>`],
+        ]));
+        expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+        expect(result.stats.referenceCount).toBe(1);
+      });
+
+      await then('a package Relationship prefix bound to the wrong namespace is ignored', () => {
+        const spoofedRelationships = `<pr:Relationships xmlns:pr="urn:not-package-relationships"><pr:Relationship Id="rId1" Type="${r}/header" Target="header1.xml"/></pr:Relationships>`;
+        const result = auditSectPr(documentXml, spoofedRelationships, new Map([
+          ['word/header1.xml', `<wp:hdr xmlns:wp="${w}"/>`],
+        ]));
+        expect(result.issues).toEqual(
+          expect.arrayContaining([expect.objectContaining({ type: 'sectpr_reference_dangling_rid', rid: 'rId1' })]),
+        );
+      });
+
       await then('a familiar prefix bound to the wrong namespace is rejected', () => {
         const result = auditSectPr(documentXml, relationships, new Map([
           ['word/header1.xml', '<w:hdr xmlns:w="urn:not-wordprocessingml"/>'],
@@ -113,6 +132,31 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
           const invalidDocument = documentXml.replace(' wp:type="default"', typeAttribute);
           const result = auditSectPr(invalidDocument, relationships);
           expect(result.issues.map((issue) => issue.type)).toContain('sectpr_reference_invalid_type');
+        }
+      });
+
+      await then('missing and invalid footer roles are rejected', () => {
+        const footerDocument = documentXml.replace('headerReference', 'footerReference');
+        const footerRelationships = relationships.replace(`${r}/header`, `${r}/footer`).replace('header1.xml', 'footer1.xml');
+        for (const typeAttribute of ['', ' wp:type="odd"']) {
+          const invalidDocument = footerDocument.replace(' wp:type="default"', typeAttribute);
+          const result = auditSectPr(invalidDocument, footerRelationships);
+          expect(result.issues).toEqual(
+            expect.arrayContaining([expect.objectContaining({ type: 'sectpr_reference_invalid_type' })]),
+          );
+        }
+      });
+
+      await then('external header and footer relationship targets are rejected', () => {
+        for (const kind of ['header', 'footer']) {
+          const referenceDocument = documentXml.replace('headerReference', `${kind}Reference`);
+          const externalRelationships = relationships
+            .replace(`${r}/header`, `${r}/${kind}`)
+            .replace('Target="header1.xml"', 'Target="https://example.test/story.xml" TargetMode="External"');
+          const result = auditSectPr(referenceDocument, externalRelationships);
+          expect(result.issues).toEqual(
+            expect.arrayContaining([expect.objectContaining({ type: 'sectpr_reference_wrong_relationship_type', rid: 'rId1' })]),
+          );
         }
       });
 
