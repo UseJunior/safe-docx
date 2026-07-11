@@ -1,31 +1,9 @@
 # @usejunior/docx-core
 
-[![npm version](https://img.shields.io/npm/v/%40usejunior%2Fdocx-core)](https://www.npmjs.com/package/@usejunior/docx-core)
-[![CI](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/UseJunior/safe-docx/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
+OOXML primitives and DOCX generation in TypeScript.
 
-Core Safe Docx library for brownfield editing and comparison of existing `.docx` files.
-
-## What This Package Is
-
-`@usejunior/docx-core` is the production engine behind Safe Docx. It is designed for surgical operations on existing Word documents where formatting fidelity and deterministic behavior matter.
-
-Primary capabilities:
-
-- tracked-change comparison output for review workflows
-- revision extraction and OOXML-safe document primitives
-- formatting-preserving text and paragraph operations
-- comment and footnote primitive support
-
-Default comparison is pure TypeScript atomizer (`engine: "auto"` -> `atomizer`).
-
-## What This Package Is Not
-
-- Not a hosted service
-- Not a document-generation framework for creating new files from scratch
-- Not dependent on .NET for supported runtime APIs
-
-Internal benchmark code exists for maintainer analysis, but benchmarking is not a user-facing feature.
+[![npm](https://img.shields.io/npm/v/%40usejunior%2Fdocx-core)](https://www.npmjs.com/package/@usejunior/docx-core)
+[![Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](../../LICENSE)
 
 ## Install
 
@@ -33,69 +11,33 @@ Internal benchmark code exists for maintainer analysis, but benchmarking is not 
 npm install @usejunior/docx-core
 ```
 
-## Quickstart: Compare Two DOCX Files
+## Example
 
 ```ts
-import { readFile, writeFile } from 'node:fs/promises';
-import { compareDocuments } from '@usejunior/docx-core';
+import { writeFile } from 'node:fs/promises';
+import { generateDocx } from '@usejunior/docx-core';
 
-const original = await readFile('./original.docx');
-const revised = await readFile('./revised.docx');
-
-const result = await compareDocuments(original, revised, {
-  author: 'Comparison',
-  // engine defaults to "auto" (atomizer)
+const document = await generateDocx({
+  sections: [{
+    blocks: [{
+      kind: 'paragraph',
+      runs: [{ kind: 'text', text: 'Hello' }],
+    }],
+  }],
 });
 
-await writeFile('./output.redline.docx', result.document);
-console.log(result.engine, result.stats);
+await writeFile('hello.docx', document);
 ```
 
-## Engine Model
+`DocumentSpec` supports sections, headers and footers, fields, styles, tables, numbering, and comments. The supported runtime uses `jszip` and `@xmldom/xmldom`; it does not require Word, LibreOffice, Python, or .NET.
 
-- `atomizer` (default via `auto`): primary production path
-- `wmlcomparer`: not available through supported programmatic API usage
-
-## Dependency Footprint
-
-Runtime dependencies are intentionally small:
-
-- `@xmldom/xmldom` for XML DOM handling
-- `jszip` for DOCX zip container handling
-
-No native binaries, and no .NET prerequisite for supported runtime API usage.
-
-## Automated Fixture Coverage
-
-In-repo automated fixtures currently include:
-
-- Common Paper style mutual NDA variants
-- Bonterms mutual NDA fixture
-- Letter of Intent fixture
-- ILPA limited partnership agreement redline fixtures
-
-## Designed for Complex DOCX Classes
-
-`@usejunior/docx-core` is designed to support complex legal/business document classes such as:
-
-- NVCA financing forms
-- YC SAFEs
-- Offering memoranda
-- Order forms and services agreements
-- Limited partnership agreements
-
-## From-Scratch Generation
-
-If your primary use case is generating new documents from scratch, use a generation-oriented package such as [`docx`](https://www.npmjs.com/package/docx).
+For two-document comparison, use [`@usejunior/docx-compare`](../docx-compare). For agent-driven editing, use [`@usejunior/safe-docx`](../safe-docx).
 
 ## Development
 
 ```bash
 npm run build -w @usejunior/docx-core
 npm run test:run -w @usejunior/docx-core
-npm run lint -w @usejunior/docx-core
 ```
 
-## License
-
-Apache-2.0
+See the repository [architecture](../../docs/architecture.md), [support contract](SUPPORT.md), and [contribution guide](../../CONTRIBUTING.md).

@@ -146,13 +146,13 @@ grammar, and the lint SHALL reject any annotation pointing at a Non-Goal.
 - **WHEN** source code contains `@conformance ECMA-376 edition 5, Part 1 § 17.99`
 - **THEN** the lint SHALL fail
 
-### Requirement: CONFORMANCE.md and README marker block are generated
+### Requirement: CONFORMANCE.md is generated and README files link to it
 
-The repository SHALL generate `spec-compliance/CONFORMANCE.md` and the
-`<!-- AUTO-GENERATED:conformance-summary -->` marker block in the canonical
-`README.md` from the registry, and the drift check
-`npm run check:conformance-doc` SHALL fail if either output disagrees
-with the committed version.
+The repository SHALL generate `spec-compliance/CONFORMANCE.md` from the
+registry, and the drift check `npm run check:conformance-doc` SHALL fail if
+that output disagrees with the committed version. Canonical and localized
+README files SHALL link to `spec-compliance/CONFORMANCE.md` without
+reproducing generated claim counts.
 
 #### Scenario: hand-editing CONFORMANCE.md fails drift
 
@@ -165,28 +165,22 @@ with the committed version.
 
 - **WHEN** a contributor adds a new section to `registry/ecma-376.md`
   but does not run the generator
-- **THEN** `npm run check:conformance-doc` SHALL fail because the
-  generated `CONFORMANCE.md` and canonical `README.md` marker block are out
-  of date
+- **THEN** `npm run check:conformance-doc` SHALL fail because the generated
+  `CONFORMANCE.md` is out of date
 
-#### Scenario: missing marker block in canonical README fails drift
+#### Scenario: README provides progressive disclosure
 
-- **WHEN** a contributor accidentally removes the
-  `<!-- AUTO-GENERATED:conformance-summary START -->` …
-  `END` markers from `README.md`
-- **THEN** `npm run check:conformance-doc` SHALL fail with a clear
-  "marker block missing" error
+- **WHEN** a reader inspects the canonical or a localized README
+- **THEN** the README SHALL link to `spec-compliance/CONFORMANCE.md`
+- **AND** it SHALL NOT reproduce generated section, Non-Goal, or gap counts
 
-#### Scenario: localized READMEs carry static translated conformance links
+#### Scenario: localized README links are translated
 
 - **GIVEN** localized READMEs such as `README.es.md`, `README.zh.md`,
   `README.pt-br.md`, and `README.de.md`
-- **WHEN** `npm run check:conformance-doc` verifies generated conformance
-  documentation
-- **THEN** the drift gate SHALL NOT verify those localized README files
-- **AND** localized READMEs SHALL carry hand-translated static content that
-  links to `spec-compliance/CONFORMANCE.md` instead of the dynamic
-  `<!-- AUTO-GENERATED:conformance-summary -->` marker block
+- **WHEN** a reader opens a localized README
+- **THEN** it SHALL carry hand-translated static content that links to
+  `spec-compliance/CONFORMANCE.md`
 
 ### Requirement: `testAllure.conformance({…})` helper
 
@@ -222,4 +216,3 @@ as a top-level concern.
 - **GIVEN** the root `package.json` script `preflight:ci`
 - **THEN** the script SHALL invoke both new conformance checks
   alongside existing checks
-

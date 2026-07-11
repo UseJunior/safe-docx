@@ -3,13 +3,8 @@
 //
 // Drift gate for the generated conformance artifacts. Runs
 // `generate_conformance_doc.mjs`, then verifies that the generated outputs
-// match the committed working tree. Fails if either:
-//   - `spec-compliance/CONFORMANCE.md` differs from generator output, or
-//   - the canonical `README.md` AUTO-GENERATED marker block differs from
-//     generator output.
-// Localized READMEs (`README.es.md`, `README.zh.md`, etc.) carry
-// hand-translated static content and are NOT verified by this gate — see
-// `generate_conformance_doc.mjs` for the rationale.
+// match the committed working tree. Fails if
+// `spec-compliance/CONFORMANCE.md` differs from generator output.
 // Mirrors the package-script pattern used by `check:tool-docs` and
 // `check:trust-metrics`.
 
@@ -31,13 +26,7 @@ function run() {
   }
 
   // 2. Diff the working tree against HEAD for the relevant paths. Only the
-  // canonical English README receives the auto-generated marker block;
-  // localized READMEs carry a static hand-translated link that points at
-  // the canonical surface and is not part of the drift contract.
-  const paths = [
-    'spec-compliance/CONFORMANCE.md',
-    'README.md',
-  ];
+  const paths = ['spec-compliance/CONFORMANCE.md'];
   const diff = spawnSync('git', ['diff', '--exit-code', '--', ...paths], {
     cwd: REPO_ROOT,
     stdio: 'inherit',
