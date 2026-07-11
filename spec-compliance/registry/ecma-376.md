@@ -189,7 +189,7 @@ part: 1
 section: "17.3.1.26"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts
 ```
 
 `w:pPr` (CT_PPr) declares its children as an ordered sequence; readers
@@ -209,7 +209,7 @@ part: 1
 section: "17.3.2.28"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts
 ```
 
 `w:rPr` (CT_RPr) likewise declares an ordered property sequence. The
@@ -1146,6 +1146,18 @@ style inheritance, layout, rendering, or assertions about arbitrary consumer
 behavior. Comparison preserves ancillary parts according to its documented
 in-place/rebuild rules; this registry does not claim semantic comparison of
 header or footer content across document versions.
+
+Within Part 1 §17.3, safe-docx targets the direct-formatting properties exposed
+by `ParagraphSpec` and `RunProps`: paragraph style references, keep controls,
+page breaks, tabs, spacing, indentation, alignment, fonts, bold/italic/caps,
+color, size, highlight, and underline. The shared builders emit that bounded
+subset in the relative order declared by the vendored `CT_PPr` and `CT_RPr`
+schemas, and ordinary load/save preserves the authored XML. This does not claim
+support for every §17.3 property, Word rendering or layout, theme/font
+resolution, style inheritance or cascade, computed formatting equivalence, or
+semantic comparison of formatting across document versions. Property revision
+records are limited to the separately enumerated §17.13.5 behavior; wrappers do
+not broaden this §17.3 claim.
 
 A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
 the citation lint. For a deliberate divergence *inside a targeted section*, use

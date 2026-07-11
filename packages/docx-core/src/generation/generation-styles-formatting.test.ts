@@ -9,7 +9,7 @@ import { OOXML } from '../primitives/namespaces.js';
 import { generateDocx } from './compile.js';
 import { GenerationSpecError } from './errors.js';
 import { checkGeneratedPackage } from './structural-checks.js';
-import type { DocumentSpec } from './types.js';
+import type { DocumentSpec, HighlightColor } from './types.js';
 
 const TEST_FEATURE = 'add-docx-generation';
 const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
@@ -170,10 +170,17 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
         expect(rPr).toBeTruthy();
       });
 
-      await then('the rPr children appear in the WML schema sequence', async () => {
+      await then('the rPr children appear in the WML schema sequence with exact authored values', async () => {
         const names = wChildNames(rPr);
         await attachPrettyJson('rpr-child-order', names);
         expect(names).toEqual(['rFonts', 'b', 'bCs', 'i', 'iCs', 'color', 'sz', 'szCs', 'u']);
+        expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:ascii')).toBe('Georgia');
+        expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:hAnsi')).toBe('Georgia');
+        expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:cs')).toBe('Georgia');
+        expect(getDirectChildrenByName(rPr, 'color')[0]!.getAttribute('w:val')).toBe('1F4E79');
+        expect(getDirectChildrenByName(rPr, 'sz')[0]!.getAttribute('w:val')).toBe('24');
+        expect(getDirectChildrenByName(rPr, 'szCs')[0]!.getAttribute('w:val')).toBe('24');
+        expect(getDirectChildrenByName(rPr, 'u')[0]!.getAttribute('w:val')).toBe('single');
       });
 
       await then('the formatting survives a round-trip through the run-formatting reader', async () => {
@@ -192,6 +199,25 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
           colorHex: '1F4E79',
           fontName: 'Georgia',
           fontSizePt: 12,
+        });
+      });
+
+      await then('the direct run properties survive a package load/save round-trip unchanged', async () => {
+        const loaded = await DocxDocument.load(buffer);
+        const saved = await loaded.toBuffer();
+        const savedDocument = await loadPart(saved.buffer, 'word/document.xml');
+        const savedRPr = savedDocument.getElementsByTagNameNS(OOXML.W_NS, 'rPr').item(0)!;
+        expect(wChildNames(savedRPr)).toEqual(wChildNames(rPr));
+        expect(savedRPr.toString()).toBe(rPr.toString());
+      });
+
+      await then('malformed run property values are rejected before XML emission', async () => {
+        const malformed: DocumentSpec = {
+          sections: [{ blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'x', colorHex: '#red', sizePt: 0, highlight: 'glow' as HighlightColor }] }] }],
+        };
+        await expect(generateDocx(malformed)).rejects.toMatchObject({
+          code: 'invalid_value',
+          path: '/sections/0/blocks/0/runs/0/colorHex',
         });
       });
     },
@@ -224,6 +250,34 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
         const tab = pPr.getElementsByTagName('w:tab').item(0)!;
         expect(tab.getAttribute('w:pos')).toBe('4320');
         expect(tab.getAttribute('w:leader')).toBe('dot');
+        const spacing = getDirectChildrenByName(pPr, 'spacing')[0]!;
+        expect(spacing.getAttribute('w:before')).toBe('0');
+        expect(spacing.getAttribute('w:after')).toBe('200');
+        expect(spacing.getAttribute('w:line')).toBe('276');
+        expect(spacing.getAttribute('w:lineRule')).toBe('auto');
+        const ind = getDirectChildrenByName(pPr, 'ind')[0]!;
+        expect(ind.getAttribute('w:left')).toBe('720');
+        expect(ind.getAttribute('w:hanging')).toBe('360');
+      });
+
+      await then('the direct paragraph properties survive a package load/save round-trip unchanged', async () => {
+        const loaded = await DocxDocument.load(buffer);
+        const saved = await loaded.toBuffer();
+        const savedDocument = await loadPart(saved.buffer, 'word/document.xml');
+        const savedParagraph = savedDocument.getElementsByTagNameNS(OOXML.W_NS, 'p').item(1)!;
+        const savedPPr = getDirectChildrenByName(savedParagraph, 'pPr')[0]!;
+        expect(wChildNames(savedPPr)).toEqual(wChildNames(pPr));
+        expect(savedPPr.toString()).toBe(pPr.toString());
+      });
+
+      await then('malformed paragraph property values are rejected before XML emission', async () => {
+        const malformed: DocumentSpec = {
+          sections: [{ blocks: [{ kind: 'paragraph', tabs: [{ posTwips: -1, align: 'left' }], runs: [{ kind: 'text', text: 'x' }] }] }],
+        };
+        await expect(generateDocx(malformed)).rejects.toMatchObject({
+          code: 'invalid_value',
+          path: '/sections/0/blocks/0/tabs/0/posTwips',
+        });
       });
     },
   );
