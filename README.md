@@ -46,7 +46,7 @@ Safe Docx is not intended to replace generation-first `.docx` libraries.
 
 Safe Docx is a deliberately narrow tool, and for plenty of document work it is not the one you want. Below are the alternatives people most often weigh it against — each is a genuinely good fit for cases Safe Docx is not built for. The links go to fuller write-ups.
 
-For a fixture-by-fixture view, see the [live DOCX compatibility matrix](https://usejunior.com/safe-docx/compatibility/?utm_source=github&utm_medium=readme&utm_campaign=safe-docx), which compares Safe Docx with python-docx, LibreOffice, Open XML SDK, docx, SuperDoc, and docx-rs.
+For a fixture-by-fixture view, see the [live DOCX compatibility matrix](https://open-agreements.github.io/docx-platform-tests/results/utm_source=github&utm_medium=readme&utm_campaign=safe-docx), which compares Safe Docx with python-docx, LibreOffice, Open XML SDK, docx, SuperDoc, and docx-rs.
 
 ### vs SuperDoc
 
@@ -69,35 +69,23 @@ safe-docx targets a defined subset of **ECMA-376 5th edition**. The full surface
 
 - **65** sections claimed
 - **5** sections explicitly out-of-scope (Non-Goals)
-- **0** known gaps under `@conformance-gap`
 - Vendored normative schemas: `spec-compliance/ecma-376/schemas/`
 <!-- AUTO-GENERATED:conformance-summary END -->
 
-## Trusted By
-
-- **Am Law top-10 firm** — multistep contract translation pipeline
-- **150-lawyer regional firm** — 22M+ tokens of contract markup processed
-- **Gemini CLI** — compatible Word editing MCP extension
-
-## Start Here
-
-```bash
-npx -y @usejunior/safe-docx
-```
-
-For detailed setup and tool reference, see `packages/docx-mcp/README.md`.
 
 ### Example: Agent Editing a Contract
 
 When you prompt a coding agent (Claude Code, Cursor, Gemini CLI) with Safe Docx installed, the agent makes MCP tool calls like these:
 
+
+User: 
 ```text
-User: Edit the NDA at ~/docs/NDA.docx — change the governing law
+      Edit the NDA at ~/docs/NDA.docx — change the governing law
       from "State of New York" to "State of Delaware" and save both
       a clean copy and a tracked-changes copy.
-
+```
 Agent calls:
-
+```text
   1. read_file(file_path="~/docs/NDA.docx", format="toon")
      → Returns paragraphs with stable IDs:
        _bk_a3f29c10b8e4, _bk_7d2e8f1a4c5b, ...
@@ -134,20 +122,6 @@ The agent handles the tool calls automatically. You get a clean file and a track
 claude mcp add safe-docx -- npx -y @usejunior/safe-docx
 ```
 
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
-```json
-{
-  "mcpServers": {
-    "safe-docx": {
-      "command": "npx",
-      "args": ["-y", "@usejunior/safe-docx"]
-    }
-  }
-}
-```
 
 ### Gemini CLI
 
