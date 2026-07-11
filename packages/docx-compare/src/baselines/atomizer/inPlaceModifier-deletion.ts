@@ -6,7 +6,7 @@
  */
 
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
-import { childElements, findChildByTagName, insertAfterElement } from '@usejunior/docx-core';
+import { childElements, findChildByTagName, insertAfterElement, WML } from '@usejunior/docx-core';
 import {
   allocateRevisionId,
   convertToDelText,
@@ -405,7 +405,15 @@ export function insertDeletedParagraph(
   return clonedParagraph;
 }
 
-// Field-character tag names that should not be split.
+/**
+ * Field-code marker and payload elements that require field-aware splitting.
+ * The semantic subset is maintained here; its raw QNames are schema-generated.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
+ * @ooxmlSpec ooxml.ecma376.5ed.part4.fields.fragmented-track-changes
+ */
 export const FIELD_CHAR_TAG_NAMES: ReadonlySet<string> = new Set([
-  'w:fldChar', 'w:instrText', 'w:delInstrText',
+  WML.FLD_CHAR.qname,
+  WML.INSTR_TEXT.qname,
+  WML.DEL_INSTR_TEXT.qname,
 ]);

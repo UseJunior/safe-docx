@@ -54,6 +54,12 @@ export function hasFldCharInsideDel(documentXml: string): boolean {
   return violation;
 }
 
+/**
+ * Reports structural complex-field violations without evaluating field codes.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.fields.complex-field-characters
+ */
 export function collectFieldStructureIssues(input: string | FieldStory[]): FieldStructureIssue[] {
   if (typeof input === 'string') {
     return collectFieldStructureIssuesForStory(input, 'document');
