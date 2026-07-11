@@ -326,6 +326,16 @@ via `setAttributeNS`) resolves in the document's relationships. References
 lead the `w:sectPr` child sequence; the structural validator rejects
 dangling or missing ids.
 
+The package audit follows each reference through `document.xml.rels`, checks
+the header relationship type, resolves its target part, and requires a
+`w:hdr` root. Duplicate roles within one section, duplicate relationship ids,
+targets that escape the package root, and fragment-bearing targets are
+rejected. Relative and package-absolute targets are normalized before lookup;
+URI-fragment semantics are outside this audit's supported OPC target model.
+Relationship reuse across sections is accepted. Pagination,
+role inheritance when a reference is absent, and reader rendering are not
+evaluated.
+
 ### ECMA-PART1-17-10-2 — w:footerReference binding
 
 - **Edition:** ECMA-376 5
@@ -336,6 +346,10 @@ dangling or missing ids.
 Footer references follow the same typed-binding discipline as header
 references, emitted in a fixed first/default/even order for deterministic
 output.
+
+The package audit applies the corresponding footer relationship and `w:ftr`
+target checks. It verifies explicit bindings only; it does not predict page
+assignment or consumer fallback behavior for omitted roles.
 
 ### ECMA-PART1-17-10-6 — w:titlePg first-page header/footer switch
 
@@ -940,6 +954,16 @@ The compiled Lean checker independently covers fixed-story text projection and
 field-marker structure in `word/footnotes.xml` and `word/endnotes.xml`; it does
 not cover any of those excluded reference, relationship, anchor, or thread
 semantics and does not read `word/comments.xml`.
+
+Within Part 1 §17.6 and §17.10, safe-docx targets generated section-property
+placement, explicit page-setup values, and explicit first/default/even
+header/footer bindings. The package audit resolves those bindings through the
+main-document relationships and checks the target story root. It does not
+implement pagination, section inheritance or omitted-role fallback semantics,
+style inheritance, layout, rendering, or assertions about arbitrary consumer
+behavior. Comparison preserves ancillary parts according to its documented
+in-place/rebuild rules; this registry does not claim semantic comparison of
+header or footer content across document versions.
 
 A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
 the citation lint. For a deliberate divergence *inside a targeted section*, use
