@@ -193,7 +193,8 @@ function isPresenceMismatch(value: unknown): boolean {
     mismatch.required === true &&
     !!presence &&
     hasExactKeys(presence, ['original', 'revised', 'combined']) &&
-    isBooleanRecord(presence, ['original', 'revised', 'combined'])
+    isBooleanRecord(presence, ['original', 'revised', 'combined']) &&
+    !(presence.original && presence.revised && presence.combined)
   );
 }
 
