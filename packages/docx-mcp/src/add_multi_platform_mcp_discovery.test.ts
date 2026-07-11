@@ -62,7 +62,9 @@ describe('Multi-platform MCP discovery docs', () => {
       expect(fs.existsSync(installGuidePath)).toBe(true);
 
       const content = fs.readFileSync(installGuidePath, 'utf-8');
-      expect(content).toContain('npx');
+      expect(content).toContain('docs/installation.md');
+      expect(content).toContain('/absolute/path/to/safe-docx');
+      expect(content).toContain('command -v safe-docx');
       expect(content).toContain('@usejunior/safe-docx');
       expect(content).toContain('Claude Desktop');
       expect(content).toContain('Claude Code');
