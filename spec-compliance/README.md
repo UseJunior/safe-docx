@@ -22,8 +22,8 @@ land as siblings of `registry/ecma-376.md` without restructuring this tree.
 ## Workflow
 
 - **Reading a conformance claim in source.** A JSDoc `@conformance ECMA-376
-  edition 5, Part 4 § 17.16.5` tag points at a registry entry whose
-  `[ECMA-PART4-17-16-5]` ID is stable across reorganizations of either
+  edition 5, Part 1 § 17.16.13` tag points at a registry entry whose
+  `[ECMA-PART1-17-16-13]` ID is stable across reorganizations of either
   ECMA-376 or this codebase.
 - **Adding a new conformance claim.** Add a `## [ECMA-PART<N>-<section>] …`
   entry to `registry/ecma-376.md`, regenerate `CONFORMANCE.md` and the

@@ -40,13 +40,13 @@ resolves to a registry section ID.
 
 #### Scenario: valid tag resolves to a known section
 
-- **GIVEN** a registry entry `[ECMA-PART4-17-16-5]`
-- **WHEN** a JSDoc block contains `@conformance ECMA-376 edition 5, Part 4 § 17.16.5`
+- **GIVEN** a registry entry `[ECMA-PART1-17-16-13]`
+- **WHEN** a JSDoc block contains `@conformance ECMA-376 edition 5, Part 1 § 17.16.13`
 - **THEN** the citation-hygiene lint SHALL accept the tag
 
 #### Scenario: tag value missing an edition fails
 
-- **WHEN** a JSDoc block contains `@conformance ECMA-376 Part 4 § 17.16.5` (no edition)
+- **WHEN** a JSDoc block contains `@conformance ECMA-376 Part 1 § 17.16.13` (no edition)
 - **THEN** the lint SHALL fail with a grammar error
 
 #### Scenario: tag value pointing at an unknown section fails
@@ -56,7 +56,7 @@ resolves to a registry section ID.
 
 #### Scenario: tag value containing an issue reference fails
 
-- **WHEN** a JSDoc block contains `@conformance ECMA-376 edition 5, Part 4 § 17.16.5 (#217)`
+- **WHEN** a JSDoc block contains `@conformance ECMA-376 edition 5, Part 1 § 17.16.13 (#217)`
 - **THEN** the lint SHALL fail; the `#NNN` reference MUST move to a
   `@see` tag or surrounding prose
 
@@ -66,13 +66,13 @@ Source code intentionally diverging from a normative requirement SHALL use a `@c
 
 #### Scenario: gap tag with a reason passes the lint
 
-- **GIVEN** a JSDoc block with `@conformance-gap ECMA-376 edition 5, Part 4 § 17.16.5 — Word ≤ 2010 deviates`
+- **GIVEN** a JSDoc block with `@conformance-gap ECMA-376 edition 5, Part 1 § 17.16.13 — Word ≤ 2010 deviates`
 - **THEN** the lint SHALL accept the tag and the coverage report SHALL
   classify the site as `intentional-gap`
 
 #### Scenario: gap tag without a reason fails
 
-- **WHEN** a JSDoc block contains `@conformance-gap ECMA-376 edition 5, Part 4 § 17.16.5` (no em-dash + reason)
+- **WHEN** a JSDoc block contains `@conformance-gap ECMA-376 edition 5, Part 1 § 17.16.13` (no em-dash + reason)
 - **THEN** the lint SHALL fail
 
 ### Requirement: Scoped citation-hygiene lint
@@ -93,7 +93,7 @@ files, `__tests__/` directories, `docs/`, `verification/`,
 #### Scenario: test description with ECMA-376 mention requires `.conformance()`
 
 - **GIVEN** a test file with `describe('ECMA-376 fragmentation', …)` or
-  `it('emits per ECMA-376 §17.16.5', …)`
+  `it('emits per ECMA-376 §17.16.13', …)`
 - **WHEN** the test does not call `testAllure.conformance({…})`
 - **THEN** the lint SHALL fail
 
@@ -191,10 +191,10 @@ and mirrors the existing `.openspec(…)` hook pattern.
 
 #### Scenario: helper emits structured label
 
-- **GIVEN** a test calling `testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' })`
+- **GIVEN** a test calling `testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' })`
 - **WHEN** the test runs
 - **THEN** the Allure result SHALL include
-  `label('conformance', 'ECMA-376/edition-5/part-4/17.16.5')`
+  `label('conformance', 'ECMA-376/edition-5/part-1/17.16.13')`
 - **AND** the helper SHALL NOT overload the `story` label
 
 ### Requirement: CI gates publish conformance checks explicitly

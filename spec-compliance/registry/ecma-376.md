@@ -12,26 +12,24 @@ outlive a future migration off OpenSpec. Entries are parsed by
 
 ## Targeted sections
 
-## [ECMA-PART4-17-16-5] w:delInstrText and w:fldChar placement in tracked deletions
+## [ECMA-PART1-17-16-13] w:delInstrText containment in tracked deletions
 
 ```yaml
 edition: 5
-part: 4
-section: "17.16.5"
+part: 1
+section: "17.16.13"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText
 verifiedBy: packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/integration/lean-spec-bridge.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 ```
 
-When the engine emits deletions that cross complex-field boundaries: every
-`w:delInstrText` run sits inside `<w:del>` (the DeletedFieldCode schema
-constraint), and every `w:fldChar` run remains at sibling level — Word
-treats `w:fldChar` inside `<w:del>` as fatal and discards the field state
-machine. The runtime enforcement lives in
+Part 1 §17.16.13 requires every `w:delInstrText` run to sit inside `<w:del>`
+and describes it as deleted field code within a complex field. The runtime
+enforcement lives in
 `packages/docx-compare/src/baselines/atomizer/pipeline.ts` (the
-`validateFieldStructure` function); the related (and parallel)
-`w:fldChar`-placement check appears at the same site under the same
-section.
+`validateFieldStructure` function). The related `w:fldChar` placement rule is
+tracked separately under `ECMA-PART1-17-16-18`; Part 4 supplies the
+Transitional XSD declaration but is not the prose authority for this claim.
 
 ## [ECMA-PART1-17-13-5] Paragraph-level OOXML markers
 
@@ -398,7 +396,7 @@ part: 1
 section: "17.16.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 ```
 
 Every generated field is a complete five-run sequence — `fldChar begin`,
@@ -406,7 +404,9 @@ preserved-space `w:instrText`, `fldChar separate`, a cached-result run,
 `fldChar end` — and `w:dirty` is never set. The cached result is a
 required spec property, making the no-recovery-dialog guarantee
 unrepresentable-by-omission; the structural validator runs a begin →
-separate → end state machine over every story part.
+separate → end state machine over every story part. The comparison path keeps
+these field-state markers outside the `w:del` payload wrappers shown by the
+Part 1 complex-field and deleted-field-code syntax.
 
 ## [ECMA-PART1-17-16-5-44] PAGE field instruction emission
 
