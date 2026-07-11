@@ -27,7 +27,7 @@ land as siblings of `registry/ecma-376.md` without restructuring this tree.
   ECMA-376 or this codebase.
 - **Adding a new conformance claim.** Add a `## [ECMA-PART<N>-<section>] …`
   entry to `registry/ecma-376.md`, regenerate `CONFORMANCE.md` and the
-  README marker block via `npm run check:conformance-doc`, then annotate
+  generated conformance report via `npm run check:conformance-doc`, then annotate
   the source/test sites with `@conformance` / `.conformance(…)`. The
   citation-hygiene lint will verify everything resolves.
 - **Marking a deliberate non-conformance.** Use `@conformance-gap` in place
