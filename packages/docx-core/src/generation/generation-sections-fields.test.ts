@@ -4,6 +4,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { childElements } from '../primitives/dom-helpers.js';
 import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
+import { auditSectPr } from '../primitives/sectPrAudit.js';
 import { generateDocx } from './compile.js';
 import { checkGeneratedPackage } from './structural-checks.js';
 import type { DocumentSpec, HeaderFooterSpec } from './types.js';
@@ -79,6 +80,62 @@ async function mutatePackage(buffer: Buffer, mutate: (zip: JSZip) => void | Prom
 }
 
 describe('Traceability: multi-section documents, headers/footers, and fields', () => {
+  test
+    .conformance(
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.5' },
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.2' },
+    )(
+    'validates expanded names, explicit roles, absolute targets, and unique relationship ids',
+    async ({ then }: AllureBddContext) => {
+      const w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+      const r = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+      const pr = 'http://schemas.openxmlformats.org/package/2006/relationships';
+      const documentXml = `<wp:document xmlns:wp="${w}" xmlns:rel="${r}"><wp:body><wp:sectPr><wp:headerReference wp:type="default" rel:id="rId1"/></wp:sectPr></wp:body></wp:document>`;
+      const relationships = `<Relationships xmlns="${pr}"><Relationship Id="rId1" Type="${r}/header" Target="header1.xml"/></Relationships>`;
+
+      await then('valid alternate prefixes are accepted by namespace URI and local name', () => {
+        const result = auditSectPr(documentXml, relationships, new Map([
+          ['word/header1.xml', `<alt:hdr xmlns:alt="${w}"/>`],
+        ]));
+        expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+        expect(result.stats.referenceCount).toBe(1);
+      });
+
+      await then('a familiar prefix bound to the wrong namespace is rejected', () => {
+        const result = auditSectPr(documentXml, relationships, new Map([
+          ['word/header1.xml', '<w:hdr xmlns:w="urn:not-wordprocessingml"/>'],
+        ]));
+        expect(result.issues.map((issue) => issue.type)).toContain('sectpr_reference_wrong_target_root');
+      });
+
+      await then('missing and invalid reference roles are rejected', () => {
+        for (const typeAttribute of ['', ' wp:type="odd"']) {
+          const invalidDocument = documentXml.replace(' wp:type="default"', typeAttribute);
+          const result = auditSectPr(invalidDocument, relationships);
+          expect(result.issues.map((issue) => issue.type)).toContain('sectpr_reference_invalid_type');
+        }
+      });
+
+      await then('a package-absolute relationship target resolves from the package root', () => {
+        const absoluteRelationships = relationships.replace('Target="header1.xml"', 'Target="/word/header1.xml"');
+        const result = auditSectPr(documentXml, absoluteRelationships, new Map([
+          ['word/header1.xml', `<wp:hdr xmlns:wp="${w}"/>`],
+        ]));
+        expect(result.ok, JSON.stringify(result.issues)).toBe(true);
+      });
+
+      await then('duplicate relationship ids are rejected deterministically', () => {
+        const duplicateRelationships = relationships.replace(
+          '</Relationships>',
+          `<Relationship Id="rId1" Type="${r}/footer" Target="footer1.xml"/></Relationships>`,
+        );
+        const result = auditSectPr(documentXml, duplicateRelationships);
+        expect(result.issues.filter((issue) => issue.type === 'sectpr_duplicate_relationship_id')).toEqual([
+          expect.objectContaining({ rid: 'rId1' }),
+        ]);
+      });
+    },
+  );
   test
     .conformance(
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.5' },

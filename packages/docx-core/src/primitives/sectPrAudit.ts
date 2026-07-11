@@ -9,7 +9,9 @@ export type SectPrIssueType =
   | 'sectpr_invalid_parent'
   | 'sectpr_in_ppr_without_paragraph_parent'
   | 'sectpr_reference_missing_rid'
+  | 'sectpr_reference_invalid_type'
   | 'sectpr_reference_dangling_rid'
+  | 'sectpr_duplicate_relationship_id'
   | 'sectpr_reference_wrong_relationship_type'
   | 'sectpr_reference_missing_target_part'
   | 'sectpr_reference_wrong_target_root';
@@ -37,7 +39,7 @@ function elementSiblingIndex(node: Element): number {
   if (!parent) return 1;
   let idx = 0;
   for (const sibling of childElements(parent as Element)) {
-    if (sibling.tagName === node.tagName) {
+    if (sibling.namespaceURI === node.namespaceURI && sibling.localName === node.localName) {
       idx++;
     }
     if (sibling === node) {
@@ -67,19 +69,36 @@ interface DocumentRelationship {
   external: boolean;
 }
 
-function collectRelationships(documentRelsXml: string | null | undefined): Map<string, DocumentRelationship> {
+interface RelationshipCollection {
+  relationships: Map<string, DocumentRelationship>;
+  duplicateIds: string[];
+}
+
+const RELATIONSHIPS_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const REFERENCE_TYPES = new Set(['first', 'default', 'even']);
+
+function isWmlElement(element: Element, localName: string): boolean {
+  return element.namespaceURI === OOXML.W_NS && element.localName === localName;
+}
+
+function collectRelationships(documentRelsXml: string | null | undefined): RelationshipCollection {
   if (!documentRelsXml) {
-    return new Map();
+    return { relationships: new Map(), duplicateIds: [] };
   }
 
   try {
     const relDoc = parseXml(documentRelsXml);
     const relationshipsById = new Map<string, DocumentRelationship>();
-    const relationships = relDoc.getElementsByTagName('Relationship');
+    const duplicateIds = new Set<string>();
+    const relationships = relDoc.getElementsByTagNameNS(RELATIONSHIPS_NS, 'Relationship');
     for (let i = 0; i < relationships.length; i++) {
       const rel = relationships.item(i);
       const id = rel?.getAttribute('Id');
       if (id) {
+        if (relationshipsById.has(id)) {
+          duplicateIds.add(id);
+          continue;
+        }
         relationshipsById.set(id, {
           type: rel?.getAttribute('Type') ?? '',
           target: rel?.getAttribute('Target') ?? '',
@@ -87,14 +106,14 @@ function collectRelationships(documentRelsXml: string | null | undefined): Map<s
         });
       }
     }
-    return relationshipsById;
+    return { relationships: relationshipsById, duplicateIds: [...duplicateIds].sort() };
   } catch {
-    return new Map();
+    return { relationships: new Map(), duplicateIds: [] };
   }
 }
 
 function resolveDocumentTarget(target: string): string {
-  const parts = ['word'];
+  const parts = target.startsWith('/') ? [] : ['word'];
   for (const segment of target.split('/')) {
     if (!segment || segment === '.') continue;
     if (segment === '..') parts.pop();
@@ -104,12 +123,7 @@ function resolveDocumentTarget(target: string): string {
 }
 
 function getRid(ref: Element): string | undefined {
-  return (
-    ref.getAttribute('r:id') ??
-    ref.getAttributeNS(OOXML.R_NS, 'id') ??
-    ref.getAttribute('id') ??
-    undefined
-  );
+  return ref.getAttributeNS(OOXML.R_NS, 'id') || undefined;
 }
 
 /**
@@ -127,10 +141,20 @@ export function auditSectPr(
   packageParts?: ReadonlyMap<string, string>,
 ): SectPrAuditSummary {
   const issues: SectPrAuditIssue[] = [];
-  const relationships = collectRelationships(documentRelsXml);
+  const relationshipCollection = collectRelationships(documentRelsXml);
+  const relationships = relationshipCollection.relationships;
+
+  for (const id of relationshipCollection.duplicateIds) {
+    issues.push({
+      type: 'sectpr_duplicate_relationship_id',
+      path: 'Relationships',
+      message: `document.xml.rels contains duplicate relationship id '${id}'`,
+      rid: id,
+    });
+  }
 
   const doc = parseXml(documentXml);
-  const body = doc.getElementsByTagName('w:body').item(0) as Element | null;
+  const body = doc.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0) as Element | null;
 
   if (!body) {
     return {
@@ -152,7 +176,7 @@ export function auditSectPr(
   }
 
   const bodyChildren = childElements(body);
-  const bodyLevelSectPrNodes = bodyChildren.filter((child) => child.tagName === 'w:sectPr');
+  const bodyLevelSectPrNodes = bodyChildren.filter((child) => isWmlElement(child, 'sectPr'));
 
   if (bodyLevelSectPrNodes.length > 1) {
     for (const sectPr of bodyLevelSectPrNodes) {
@@ -177,7 +201,7 @@ export function auditSectPr(
     }
   }
 
-  const sectPrNodes = Array.from(doc.getElementsByTagName('w:sectPr'));
+  const sectPrNodes = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, 'sectPr'));
   let paragraphLevelSectPrCount = 0;
   let referenceCount = 0;
 
@@ -185,18 +209,17 @@ export function auditSectPr(
     const parent = sectPr.parentNode;
     const parentTag = parent && parent.nodeType === 1 ? (parent as Element).tagName : '';
 
-    if (parentTag === 'w:pPr') {
+    if (parent && parent.nodeType === 1 && isWmlElement(parent as Element, 'pPr')) {
       paragraphLevelSectPrCount++;
       const grand = (parent as Element).parentNode;
-      const grandTag = grand && grand.nodeType === 1 ? (grand as Element).tagName : '';
-      if (grandTag !== 'w:p') {
+      if (!(grand && grand.nodeType === 1 && isWmlElement(grand as Element, 'p'))) {
         issues.push({
           type: 'sectpr_in_ppr_without_paragraph_parent',
           path: nodePath(sectPr),
           message: 'w:sectPr in w:pPr does not have w:p as parent',
         });
       }
-    } else if (parentTag !== 'w:body') {
+    } else if (!(parent && parent.nodeType === 1 && isWmlElement(parent as Element, 'body'))) {
       issues.push({
         type: 'sectpr_invalid_parent',
         path: nodePath(sectPr),
@@ -205,11 +228,21 @@ export function auditSectPr(
     }
 
     for (const child of childElements(sectPr)) {
-      if (child.tagName !== 'w:headerReference' && child.tagName !== 'w:footerReference') {
+      const isHeaderReference = isWmlElement(child, 'headerReference');
+      const isFooterReference = isWmlElement(child, 'footerReference');
+      if (!isHeaderReference && !isFooterReference) {
         continue;
       }
 
       referenceCount++;
+      const referenceType = child.getAttributeNS(OOXML.W_NS, 'type') ?? '';
+      if (!REFERENCE_TYPES.has(referenceType)) {
+        issues.push({
+          type: 'sectpr_reference_invalid_type',
+          path: nodePath(child),
+          message: `${child.tagName} has missing or invalid w:type '${referenceType || '(missing)'}'; expected first, default, or even`,
+        });
+      }
       const rid = getRid(child);
       if (!rid) {
         issues.push({
@@ -231,7 +264,7 @@ export function auditSectPr(
         continue;
       }
 
-      const kind = child.tagName === 'w:headerReference' ? 'header' : 'footer';
+      const kind = isHeaderReference ? 'header' : 'footer';
       const expectedType = `http://schemas.openxmlformats.org/officeDocument/2006/relationships/${kind}`;
       if (relationship.type !== expectedType || relationship.external) {
         issues.push({
@@ -256,13 +289,13 @@ export function auditSectPr(
           continue;
         }
         try {
-          const expectedRoot = kind === 'header' ? 'w:hdr' : 'w:ftr';
-          const actualRoot = parseXml(targetXml).documentElement?.tagName;
-          if (actualRoot !== expectedRoot) {
+          const expectedRoot = kind === 'header' ? 'hdr' : 'ftr';
+          const actualRoot = parseXml(targetXml).documentElement;
+          if (!actualRoot || !isWmlElement(actualRoot, expectedRoot)) {
             issues.push({
               type: 'sectpr_reference_wrong_target_root',
               path: nodePath(child),
-              message: `${child.tagName} relationship '${rid}' targets <${actualRoot ?? 'nothing'}>, expected <${expectedRoot}>`,
+              message: `${child.tagName} relationship '${rid}' targets <${actualRoot?.tagName ?? 'nothing'}>, expected WordprocessingML <${expectedRoot}>`,
               rid,
             });
           }
