@@ -17,67 +17,6 @@
 [English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
 <!-- SYNC:lang-nav END -->
 
-<!-- SYNC:architecture-diagram BEGIN -->
-```mermaid
-%%{init: {"flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 30, "rankSpacing": 50}, "themeVariables": {"fontSize": "14px"}} }%%
-flowchart LR
-    DocInLeft["<b>Existing .docx</b><br/>on disk"]
-
-    subgraph Server["@usejunior/safe-docx — local MCP server"]
-        direction LR
-
-        subgraph ReadParse["<b>1. Read</b>"]
-            direction TB
-            RPTool["<code>read_file(file_path,<br/>&nbsp;&nbsp;format)</code>"]
-        end
-
-        subgraph Locate["<b>2. Locate</b>"]
-            direction TB
-            LocTool["<code>grep(file_path,<br/>&nbsp;&nbsp;pattern)</code>"]
-        end
-
-        subgraph Edit["<b>3. Edit</b>"]
-            direction TB
-            EditTool["<code>replace_text(<br/>&nbsp;&nbsp;target_paragraph_id,<br/>&nbsp;&nbsp;old_string, new_string,<br/>&nbsp;&nbsp;instruction)</code>"]
-        end
-
-        subgraph Save["<b>4. Save</b>"]
-            direction TB
-            SaveTool["<code>save(save_to_local_path,<br/>&nbsp;&nbsp;save_format)</code>"]
-        end
-
-        ReadParse --> Locate
-        Locate --> Edit
-        Edit --> Save
-    end
-
-    DocInRight["<b>Saved .docx output</b><br/>on disk"]
-
-    subgraph Client [" "]
-        direction TB
-        Prompt["<b>Prompt</b><br/>'Change NDA governing law to Delaware'"]
-        Agent["<b>Coding agent / MCP client</b><br/>Claude Code · Cursor · Gemini CLI"]
-        Prompt --> Agent
-    end
-
-    DocInLeft --> RPTool
-    SaveTool --> DocInRight
-    Agent <-->|tool call / tool result| Server
-
-    classDef io fill:#f5f5f5,stroke:#888,color:#222
-    classDef server fill:#eff6ff,stroke:#3b82f6,color:#1e3a8a
-    classDef stage fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
-    classDef tools fill:#ecfdf5,stroke:#10b981,color:#064e3b
-    classDef ext fill:#ddd6fe,stroke:#7c3aed,color:#3b0764
-    classDef hidden fill:none,stroke:none
-    class DocInLeft,DocInRight io
-    class Server server
-    class ReadParse,Locate,Edit,Save stage
-    class RPTool,LocTool,EditTool,SaveTool tools
-    class Prompt,Agent ext
-    class Client hidden
-```
-<!-- SYNC:architecture-diagram END -->
 
 Safe Docx is an open-source TypeScript stack for surgical editing of existing Microsoft Word `.docx` files — and, through the same tool surface, OpenDocument `.odt` files. It is built for workflows where an agent proposes changes and a human still needs reliable, formatting-preserving document edits.
 
