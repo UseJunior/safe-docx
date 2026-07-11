@@ -4,14 +4,14 @@ Safe Docx treats document safety and standards conformance as scoped, inspectabl
 
 ## Trust Model
 
-The default MCP runtime is a local Node.js process:
+The MCP server and CLI run as local Node.js processes:
 
 - document files are read from permitted local paths;
 - mutations are held in a local document session;
 - outputs are written to caller-selected permitted paths;
 - no Safe Docx hosted service receives document content.
 
-Safe Docx does not control the surrounding MCP client or model provider. Text returned by a read tool may be sent to the configured model by that client.
+Safe Docx does not control a surrounding agent, MCP client, or model provider. Text returned by a read operation may be sent to the configured model by that client or agent.
 
 ## Filesystem Policy
 
@@ -44,22 +44,11 @@ OOXML implementation claims use `@conformance ECMA-376 edition 5, Part N § SECT
 
 This is subset conformance, not full Microsoft Word compatibility. Safe Docx does not claim visual equivalence, complete layout behavior, or implementation of every ECMA-376 feature.
 
-## Evidence Layers
-
-| Layer | What it establishes | What it does not establish |
-|---|---|---|
-| Unit and integration tests | Behavior for exercised inputs and fixtures | Correctness for every valid document |
-| ECMA-376 citations | Normative basis for a behavior | That the implementation is bug-free |
-| Vendored schemas | Structural validation against selected normative schemas | Word rendering equivalence |
-| OpenSpec scenarios | Intended repository behavior and acceptance cases | Formal proof of implementation |
-| Differential and oracle tests | Agreement with another implementation on a defined projection | General equivalence outside that projection |
-| Lean artifacts | Properties of modeled definitions and stated assumptions | Proof of the entire TypeScript stack or full OOXML |
-
-The [invariant registry](../verification/INVARIANTS.md) names proof tier, residual axioms, caveats, production surfaces, and falsifiers for verification claims.
-
 ## Optional Document Integrity Check
 
-`compare_documents` accepts `verify_document_integrity=true`. When a compiled Lean checker is available, Safe Docx passes the actual original, revised, and compared `word/document.xml` parts to a separately compiled executable and returns `document_integrity` metadata.
+`compare_documents` accepts `verify_document_integrity=true`. When a compiled Lean checker is available, Safe Docx passes the actual original, revised, and comparison `word/document.xml` parts to a separately compiled executable and returns `document_integrity` metadata.
+
+The checker validates selected invariants of that document triple, including that accepting the comparison recovers the revised text projection and rejecting it recovers the original text projection, within the checker's documented normalization and model boundaries.
 
 If the executable is unavailable, the result is `status: "not_run"`. Absence of the optional checker never becomes a verified claim.
 
@@ -71,7 +60,7 @@ verification/lean/.lake/build/bin/leanDocxChecker
 
 Set `SAFE_DOCX_LEAN_XML_CHECKER` to use another executable. Normal package usage does not require Lean or Lake.
 
-The checker covers a narrow comparison-output contract. It is not a proof of the comparison implementation, the MCP server, or the complete ECMA-376 standard.
+The checker validates the documents presented to it. It is not a proof of the TypeScript source code, visual fidelity, or the complete ECMA-376 standard.
 
 ## Runtime Dependencies
 
@@ -99,5 +88,6 @@ Safe Docx makes document mutations inspectable and repeatable. It does not repla
 | [Conformance workflow](../spec-compliance/README.md) | Registry and generation mechanics |
 | [Invariant registry](../verification/INVARIANTS.md) | Verification claims, caveats, and falsifiers |
 | [Lean verifier](../verification/lean/README.md) | Formal model and remaining specification gaps |
+| [Testing and evidence](testing-and-evidence.md) | Behavioral specifications, automated tests, and verification layers |
 | [Core support contract](../packages/docx-core/SUPPORT.md) | AI-attributable edit behavior |
 | [MCP assumptions](../packages/docx-mcp/assumptions.md) | Runtime and tool assumptions |

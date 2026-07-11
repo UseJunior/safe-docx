@@ -25,11 +25,4 @@ See [installation and verification](../../docs/installation.md) for pinned versi
 
 See the [generated tool reference](docs/tool-reference.generated.md) for the complete schemas.
 
-## Development
-
-```bash
-npm run build -w @usejunior/docx-mcp
-npm run test:run -w @usejunior/docx-mcp
-```
-
-Tool definitions live in `src/tool_catalog.ts`. Read the repository [architecture](../../docs/architecture.md) and [contribution guide](../../CONTRIBUTING.md) before changing the public surface.
+See the [architecture](../../docs/architecture.md), [installation guide](../../docs/installation.md), and [generated tool reference](docs/tool-reference.generated.md).

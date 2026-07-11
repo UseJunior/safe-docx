@@ -33,11 +33,4 @@ await writeFile('hello.docx', document);
 
 For two-document comparison, use [`@usejunior/docx-compare`](../docx-compare). For agent-driven editing, use [`@usejunior/safe-docx`](../safe-docx).
 
-## Development
-
-```bash
-npm run build -w @usejunior/docx-core
-npm run test:run -w @usejunior/docx-core
-```
-
-See the repository [architecture](../../docs/architecture.md), [support contract](SUPPORT.md), and [contribution guide](../../CONTRIBUTING.md).
+See the repository [architecture](../../docs/architecture.md), [support contract](SUPPORT.md), and [package source and examples](https://github.com/UseJunior/safe-docx/tree/main/packages/docx-core).

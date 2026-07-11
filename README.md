@@ -15,7 +15,7 @@ Edit Word and OpenDocument files with coding agents.
 [English](./README.md) · [Español](./README.es.md) · [简体中文](./README.zh.md) · [Português](./README.pt-br.md) · [Deutsch](./README.de.md)
 <!-- SYNC:lang-nav END -->
 
-Safe Docx is a local MCP server for reading, editing, comparing, and saving existing `.docx` and `.odt` files. It preserves document structure and can produce clean or tracked-changes output.
+Safe Docx is a local MCP server and CLI for reading, searching, editing, comparing, converting, and saving document files. It preserves DOCX structure and can produce clean or tracked-changes output.
 
 ## Example
 
@@ -43,11 +43,13 @@ Follow the complete [editing walkthrough](docs/tutorial.md).
 npm install --global @usejunior/safe-docx
 ```
 
-Then configure your MCP client to run `safe-docx`. For Claude Code:
+Then configure your MCP client with the installed executable's absolute path. For Claude Code:
 
 ```bash
-claude mcp add safe-docx -- safe-docx
+claude mcp add safe-docx -- /absolute/path/to/safe-docx
 ```
+
+See [Installation and verification](docs/installation.md) for locating the executable, pinning a version, and configuring clients.
 
 ## Documentation
 
@@ -55,6 +57,7 @@ claude mcp add safe-docx -- safe-docx
 - [Tool reference](packages/docx-mcp/docs/tool-reference.generated.md)
 - [TypeScript library](packages/docx-core/README.md)
 - [Architecture](docs/architecture.md)
+- [Testing and evidence](docs/testing-and-evidence.md)
 - [Trust and conformance](docs/trust-and-conformance.md)
 - [Contributing](CONTRIBUTING.md)
 

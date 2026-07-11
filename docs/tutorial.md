@@ -1,16 +1,14 @@
 # Tutorial
 
-This walkthrough uses Safe Docx to inspect an existing contract, make one targeted edit, and save both a clean document and a tracked-changes document.
+This walkthrough changes one clause in an existing contract and saves both a clean document and a tracked-changes document.
 
 ## What We Are Going To Do
-
-We will change the governing law in `NDA.docx` from New York to Delaware:
 
 ```text
 NDA.docx
     |
     v
-read and locate the clause
+read and find the clause
     |
     v
 replace one exact phrase
@@ -19,62 +17,21 @@ replace one exact phrase
 NDA-clean.docx + NDA-tracked.docx
 ```
 
-The coding agent handles the MCP calls. You describe the result and review the output in your normal document editor.
+The agent handles the tool calls. You describe the result and review the output in your normal document editor.
 
-## Step 1: Check The Requirements
+## Step 1: Install Safe Docx
 
-You need:
+You need Node.js 18 or later and an existing `.docx` file. Follow [Installation](installation.md) to inspect and install the npm package.
 
-- Node.js 18 or later
-- an MCP-compatible coding agent
-- an existing `.docx` or `.odt` file
-
-Supported document operations run locally. Microsoft Word, LibreOffice, Python, and .NET are not required for the default DOCX path.
-
-## Step 2: Install And Connect Safe Docx
-
-Follow [Installation](installation.md) to inspect and install the npm package. Safe Docx then uses standard MCP `stdio` configuration:
-
-| Setting | Value |
-|---|---|
-| Command | `safe-docx` |
-| Arguments | none |
-| Transport | `stdio` |
-
-For Claude Code:
+Safe Docx works through MCP and through direct CLI commands. For Claude Code:
 
 ```bash
-claude mcp add safe-docx -- safe-docx
+claude mcp add safe-docx -- /absolute/path/to/safe-docx
 ```
 
-For clients that use JSON configuration:
+Use `command -v safe-docx` on macOS or Linux, or `where safe-docx` on Windows, to find the installed executable. Desktop applications often do not inherit the same `PATH` as an interactive terminal.
 
-```json
-{
-  "mcpServers": {
-    "safe-docx": {
-      "command": "safe-docx",
-      "args": []
-    }
-  }
-}
-```
-
-Start the client and confirm that the Safe Docx tools are available.
-
-## Step 3: Make A Working Copy
-
-Keep the source document unchanged. For this tutorial, use:
-
-```text
-~/docs/NDA.docx
-```
-
-Safe Docx applies edits in a live document session and writes a new file only when the agent calls `save` or `export`.
-
-## Step 4: Ask For The Edit
-
-Give the agent a specific instruction with input and output paths:
+## Step 2: Ask For The Edit
 
 ```text
 Edit ~/docs/NDA.docx. Change the governing law from "State of New York"
@@ -82,24 +39,39 @@ to "State of Delaware". Save a clean copy to ~/docs/NDA-clean.docx and a
 tracked-changes copy to ~/docs/NDA-tracked.docx. Do not change anything else.
 ```
 
-The important parts are the exact old text, the intended replacement, and distinct output paths.
+The exact old text, intended replacement, and output paths make the request easy to verify.
 
-## Step 5: Inspect The Document
+## Step 3: Read The Document
 
-The agent first calls `read_file` or `grep`:
+The agent can inspect the document with `read_file`:
 
 ```text
 read_file(file_path="~/docs/NDA.docx", format="toon")
+```
+
+| Key | Meaning |
+|---|---|
+| `file_path` | The existing document to read. It also identifies the session used by later calls. |
+| `format` | The response representation. `toon` is compact and preserves paragraph IDs for agent use. |
+
+The result includes paragraph IDs such as `_bk_e4c8a91f2d36`. Those IDs let later operations target one paragraph without rewriting the whole document.
+
+## Step 4: Find The Clause
+
+The agent searches for the existing language:
+
+```text
 grep(file_path="~/docs/NDA.docx", pattern="State of New York")
 ```
 
-Reads return stable paragraph IDs such as `_bk_e4c8a91f2d36`. Edit tools use these IDs as anchors so the agent can target a paragraph without rewriting the whole file.
+| Key | Meaning |
+|---|---|
+| `file_path` | The document to search. An existing session for this path is reused. |
+| `pattern` | A regular expression matched against the document's visible text. |
 
-If the search returns no match or several ambiguous matches, the agent should inspect more context before editing.
+If the search returns no match or several ambiguous matches, the agent should read more context before editing.
 
-## Step 6: Apply The Edit
-
-For a single replacement, the agent calls:
+## Step 5: Apply The Edit
 
 ```text
 replace_text(
@@ -111,13 +83,17 @@ replace_text(
 )
 ```
 
-Safe Docx mutates the document package rather than reconstructing the document from extracted text. Untouched paragraphs remain outside the edit operation.
+| Key | Meaning |
+|---|---|
+| `file_path` | The document session to edit. |
+| `target_paragraph_id` | The paragraph ID returned by `read_file` or `grep`. |
+| `old_string` | The exact text expected in that paragraph. The edit fails if it is absent or ambiguous. |
+| `new_string` | The replacement text. Supported inline formatting tags can also be used here. |
+| `instruction` | A required legacy compatibility field. The current DOCX replacement implementation does not use it to decide or delegate the edit; describe the change briefly until the field is removed or made optional. |
 
-For several related changes, agents can use `batch_edit` to apply an ordered set of mutations.
+The change is applied to the live document session. Untouched paragraphs remain outside the edit operation.
 
-## Step 7: Save Reviewable Outputs
-
-The agent saves clean and tracked variants:
+## Step 6: Save Reviewable Outputs
 
 ```text
 save(
@@ -128,9 +104,16 @@ save(
 )
 ```
 
-The clean file contains the agent's accepted edit. The tracked file records the edit as WordprocessingML insertions and deletions for human review.
+| Key | Meaning |
+|---|---|
+| `file_path` | The edited document session to save. |
+| `save_to_local_path` | Destination for the clean document. |
+| `tracked_save_to_local_path` | Destination for the document containing tracked changes. |
+| `save_format` | `clean`, `tracked`, or `both`. This walkthrough requests both variants. |
 
-## Step 8: Review The Result
+The clean file contains the accepted edit. The tracked file records the insertion and deletion for human review.
+
+## Step 7: Review The Result
 
 Open both files in Word or LibreOffice and verify:
 
@@ -139,25 +122,23 @@ Open both files in Word or LibreOffice and verify:
 3. Surrounding formatting, numbering, headers, and tables remain intact.
 4. No unrelated revisions appear.
 
-Safe Docx preserves document semantics, but it is not a rendering engine. Visual review remains appropriate for material documents.
+Visual review remains appropriate for material documents because Safe Docx is not a rendering engine.
 
-## Step 9: Try The Other Workflows
-
-The same read-locate-mutate-save lifecycle supports:
+## Other Workflows
 
 | Workflow | Primary tools |
 |---|---|
-| Several edits | `batch_edit`, `save` |
-| Paragraph insertion | `insert_paragraph` |
+| Read a document | `read_file` |
+| Search a document | `grep` |
 | Comments | `add_comment`, `get_comments`, `delete_comment` |
 | Footnotes | `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote` |
-| Existing revisions | `has_tracked_changes`, `accept_changes`, `extract_revisions` |
-| Two-file redline | `compare_documents` |
-| ODT conversion | `convert_to_odt` |
-| Structured inspection | `read_file`, `get_document_outline`, `grep` |
+| Compare two documents | `compare_documents` |
+| Inspect or accept revisions | `has_tracked_changes`, `extract_revisions`, `accept_changes` |
+| Insert a paragraph | `insert_paragraph` |
+| Apply several edits together | `batch_edit` |
+| Convert DOCX to ODT | `convert_to_odt` |
+| Convert DOCX to Markdown | `export` with `format="markdown"` |
+| Convert DOCX to HTML | `export` with `format="html"` |
+| Save an editing session | `save` |
 
-Use the [generated tool reference](../packages/docx-mcp/docs/tool-reference.generated.md) for complete arguments and response schemas. Use the [golden prompts](../packages/docx-mcp/docs/golden-prompts.md) for additional agent instructions.
-
-## How The Pieces Fit
-
-The MCP server is one interface over several document engines. The [architecture guide](architecture.md) explains package ownership, session state, document identity, comparison, and output validation. The [trust and conformance guide](trust-and-conformance.md) explains which guarantees are structural, tested, specified, or optional.
+Use the [tool reference](../packages/docx-mcp/docs/tool-reference.generated.md) for complete arguments and response schemas. Use the [golden prompts](../packages/docx-mcp/docs/golden-prompts.md) for more agent instructions.

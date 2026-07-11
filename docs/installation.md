@@ -58,18 +58,24 @@ Check out a release tag or commit before running `npm ci` when reproducibility m
 
 ## Configure An MCP Client
 
-After a global npm install, the server command is:
+After a global npm install, locate the executable:
+
+```bash
+command -v safe-docx
+```
+
+On Windows, use `where safe-docx`. Configure desktop applications with the returned absolute path because they may not inherit the same `PATH` as an interactive terminal:
 
 | Setting | Value |
 |---|---|
-| Command | `safe-docx` |
+| Command | the absolute path returned by `command -v safe-docx` or `where safe-docx` |
 | Arguments | none |
 | Transport | `stdio` |
 
 Claude Code:
 
 ```bash
-claude mcp add safe-docx -- safe-docx
+claude mcp add safe-docx -- /absolute/path/to/safe-docx
 ```
 
 JSON-based clients:
@@ -78,20 +84,14 @@ JSON-based clients:
 {
   "mcpServers": {
     "safe-docx": {
-      "command": "safe-docx",
+      "command": "/absolute/path/to/safe-docx",
       "args": []
     }
   }
 }
 ```
 
-Some desktop applications do not inherit the same `PATH` as an interactive shell. If the client cannot find `safe-docx`, use the absolute path returned by:
-
-```bash
-command -v safe-docx
-```
-
-On Windows, use `where safe-docx`.
+Shell-based agents can usually invoke `safe-docx` directly when the global npm binary directory is already on `PATH`.
 
 ## Update Or Remove
 
