@@ -10,9 +10,11 @@ export type SectPrIssueType =
   | 'sectpr_in_ppr_without_paragraph_parent'
   | 'sectpr_reference_missing_rid'
   | 'sectpr_reference_invalid_type'
+  | 'sectpr_duplicate_reference_type'
   | 'sectpr_reference_dangling_rid'
   | 'sectpr_duplicate_relationship_id'
   | 'sectpr_reference_wrong_relationship_type'
+  | 'sectpr_reference_invalid_target'
   | 'sectpr_reference_missing_target_part'
   | 'sectpr_reference_wrong_target_root';
 
@@ -112,14 +114,19 @@ function collectRelationships(documentRelsXml: string | null | undefined): Relat
   }
 }
 
-function resolveDocumentTarget(target: string): string {
+function resolveDocumentTarget(target: string): string | undefined {
+  // Part-name fragments are outside this audit's explicit OPC target model.
+  if (target.includes('#')) return undefined;
   const parts = target.startsWith('/') ? [] : ['word'];
   for (const segment of target.split('/')) {
     if (!segment || segment === '.') continue;
-    if (segment === '..') parts.pop();
+    if (segment === '..') {
+      if (parts.length === 0) return undefined;
+      parts.pop();
+    }
     else parts.push(segment);
   }
-  return parts.join('/');
+  return parts.length > 0 ? parts.join('/') : undefined;
 }
 
 function getRid(ref: Element): string | undefined {
@@ -206,6 +213,7 @@ export function auditSectPr(
   let referenceCount = 0;
 
   for (const sectPr of sectPrNodes) {
+    const seenReferenceTypes = new Set<string>();
     const parent = sectPr.parentNode;
     const parentTag = parent && parent.nodeType === 1 ? (parent as Element).tagName : '';
 
@@ -242,6 +250,17 @@ export function auditSectPr(
           path: nodePath(child),
           message: `${child.tagName} has missing or invalid w:type '${referenceType || '(missing)'}'; expected first, default, or even`,
         });
+      } else {
+        const referenceKey = `${isHeaderReference ? 'header' : 'footer'}:${referenceType}`;
+        if (seenReferenceTypes.has(referenceKey)) {
+          issues.push({
+            type: 'sectpr_duplicate_reference_type',
+            path: nodePath(child),
+            message: `${child.tagName} duplicates the '${referenceType}' role within this w:sectPr`,
+          });
+        } else {
+          seenReferenceTypes.add(referenceKey);
+        }
       }
       const rid = getRid(child);
       if (!rid) {
@@ -278,6 +297,15 @@ export function auditSectPr(
 
       if (packageParts) {
         const targetName = resolveDocumentTarget(relationship.target);
+        if (!targetName) {
+          issues.push({
+            type: 'sectpr_reference_invalid_target',
+            path: nodePath(child),
+            message: `${child.tagName} relationship '${rid}' has unsupported or malformed target '${relationship.target}'`,
+            rid,
+          });
+          continue;
+        }
         const targetXml = packageParts.get(targetName);
         if (!targetXml) {
           issues.push({

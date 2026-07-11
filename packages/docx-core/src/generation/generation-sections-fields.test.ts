@@ -133,6 +133,51 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
         expect(result.issues.filter((issue) => issue.type === 'sectpr_duplicate_relationship_id')).toEqual([
           expect.objectContaining({ rid: 'rId1' }),
         ]);
+
+        const reversed = duplicateRelationships.replace(
+          /(<Relationship Id="rId1"[^>]+\/>)(<Relationship Id="rId1"[^>]+\/>)/,
+          '$2$1',
+        );
+        expect(auditSectPr(documentXml, reversed).issues.filter(
+          (issue) => issue.type === 'sectpr_duplicate_relationship_id',
+        )).toEqual([expect.objectContaining({ rid: 'rId1' })]);
+      });
+
+      await then('duplicate header and footer roles within one section are rejected', () => {
+        for (const kind of ['header', 'footer']) {
+          const duplicateDocument = documentXml.replace(
+            /<wp:headerReference[^>]+\/>/,
+            `<wp:${kind}Reference wp:type="default" rel:id="rId1"/><wp:${kind}Reference wp:type="default" rel:id="rId1"/>`,
+          );
+          expect(auditSectPr(duplicateDocument, relationships).issues).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ type: 'sectpr_duplicate_reference_type' }),
+            ]),
+          );
+        }
+      });
+
+      await then('relative and package-absolute targets normalize dot segments without escaping the package', () => {
+        const parts = new Map([['word/header1.xml', `<wp:hdr xmlns:wp="${w}"/>`]]);
+        for (const target of ['./headers/../header1.xml', '/word/./headers/../header1.xml']) {
+          const normalizedRelationships = relationships.replace('header1.xml', target);
+          expect(auditSectPr(documentXml, normalizedRelationships, parts).ok).toBe(true);
+        }
+
+        const escapingRelationships = relationships.replace('header1.xml', '/../../header1.xml');
+        expect(auditSectPr(documentXml, escapingRelationships, parts).issues).toEqual(
+          expect.arrayContaining([expect.objectContaining({ type: 'sectpr_reference_invalid_target' })]),
+        );
+      });
+
+      await then('fragment-bearing targets are rejected as outside the supported OPC target model', () => {
+        const fragmentRelationships = relationships.replace('header1.xml', 'header1.xml#section');
+        const result = auditSectPr(documentXml, fragmentRelationships, new Map([
+          ['word/header1.xml', `<wp:hdr xmlns:wp="${w}"/>`],
+        ]));
+        expect(result.issues).toEqual(
+          expect.arrayContaining([expect.objectContaining({ type: 'sectpr_reference_invalid_target' })]),
+        );
       });
     },
   );

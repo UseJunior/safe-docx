@@ -323,7 +323,11 @@ dangling or missing ids.
 
 The package audit follows each reference through `document.xml.rels`, checks
 the header relationship type, resolves its target part, and requires a
-`w:hdr` root. Relationship reuse across sections is accepted. Pagination,
+`w:hdr` root. Duplicate roles within one section, duplicate relationship ids,
+targets that escape the package root, and fragment-bearing targets are
+rejected. Relative and package-absolute targets are normalized before lookup;
+URI-fragment semantics are outside this audit's supported OPC target model.
+Relationship reuse across sections is accepted. Pagination,
 role inheritance when a reference is absent, and reader rendering are not
 evaluated.
 
