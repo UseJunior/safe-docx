@@ -44,6 +44,17 @@ const TWO_HEX_RE = /^[0-9A-Fa-f]{2}$/;
 const HIGHLIGHT_COLOR_SET: ReadonlySet<string> = new Set(HIGHLIGHT_COLORS);
 const LVL_JC_SET: ReadonlySet<string> = new Set(NUMBERING_LEVEL_JUSTIFICATIONS);
 const THEME_COLOR_SLOT_SET: ReadonlySet<string> = new Set(THEME_COLOR_SLOTS);
+const ALIGNMENTS = new Set(['left', 'center', 'right', 'justify']);
+const UNDERLINES = new Set(['single', 'double', 'none']);
+const TAB_ALIGNMENTS = new Set(['left', 'center', 'right']);
+const TAB_LEADERS = new Set(['none', 'dot', 'underscore']);
+const LINE_RULES = new Set(['auto', 'exact', 'atLeast']);
+
+function requireInteger(value: unknown, path: string, description: string, minimum?: number): void {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || (minimum !== undefined && value < minimum)) {
+    throw new GenerationSpecError('invalid_value', path, description);
+  }
+}
 
 function unsupported(path: string, feature: string): never {
   throw new GenerationSpecError(
@@ -371,10 +382,36 @@ function validateParagraph(
   }
   if (paragraph.tabs) {
     paragraph.tabs.forEach((stop, i) => {
-      if (!(stop.posTwips >= 0) || !Number.isFinite(stop.posTwips)) {
-        throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/posTwips`, 'Tab stop position must be a non-negative finite twips value');
-      }
+      requireInteger(stop.posTwips, `${path}/tabs/${i}/posTwips`, 'Tab stop position must be a non-negative safe integer in twips', 0);
+      if (!TAB_ALIGNMENTS.has(stop.align)) throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/align`, `Unsupported tab alignment '${stop.align}'`);
+      if (stop.leader !== undefined && !TAB_LEADERS.has(stop.leader)) throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/leader`, `Unsupported tab leader '${stop.leader}'`);
     });
+  }
+  if (paragraph.alignment !== undefined && !ALIGNMENTS.has(paragraph.alignment)) {
+    throw new GenerationSpecError('invalid_value', `${path}/alignment`, `Unsupported paragraph alignment '${paragraph.alignment}'`);
+  }
+  if (paragraph.spacing) {
+    for (const key of ['beforeTwips', 'afterTwips'] as const) {
+      const value = paragraph.spacing[key];
+      if (value !== undefined) requireInteger(value, `${path}/spacing/${key}`, `${key} must be a non-negative safe integer`, 0);
+    }
+    if (paragraph.spacing.lineTwips !== undefined) requireInteger(paragraph.spacing.lineTwips, `${path}/spacing/lineTwips`, 'lineTwips must be a safe integer');
+    if (paragraph.spacing.lineRule !== undefined && !LINE_RULES.has(paragraph.spacing.lineRule)) {
+      throw new GenerationSpecError('invalid_value', `${path}/spacing/lineRule`, `Unsupported line rule '${paragraph.spacing.lineRule}'`);
+    }
+  }
+  if (paragraph.indent) {
+    for (const key of ['leftTwips', 'rightTwips'] as const) {
+      const value = paragraph.indent[key];
+      if (value !== undefined) requireInteger(value, `${path}/indent/${key}`, `${key} must be a safe integer`);
+    }
+    for (const key of ['firstLineTwips', 'hangingTwips'] as const) {
+      const value = paragraph.indent[key];
+      if (value !== undefined) requireInteger(value, `${path}/indent/${key}`, `${key} must be a non-negative safe integer`, 0);
+    }
+    if (paragraph.indent.firstLineTwips !== undefined && paragraph.indent.hangingTwips !== undefined) {
+      throw new GenerationSpecError('invalid_value', `${path}/indent`, 'firstLineTwips and hangingTwips are mutually exclusive');
+    }
   }
 
   if (!Array.isArray(paragraph.runs)) {
@@ -409,6 +446,9 @@ function validateInline(run: InlineSpec, path: string): void {
 }
 
 function validateRunProps(props: RunProps, path: string): void {
+  if (props.underline !== undefined && !UNDERLINES.has(props.underline)) {
+    throw new GenerationSpecError('invalid_value', `${path}/underline`, `Unsupported underline value '${props.underline}'`);
+  }
   if (props.colorHex !== undefined && !COLOR_HEX_RE.test(props.colorHex)) {
     throw new GenerationSpecError('invalid_value', `${path}/colorHex`, `colorHex must be six hex digits without '#', got '${props.colorHex}'`);
   }

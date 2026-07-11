@@ -52,6 +52,33 @@ function revisionId(element: Element): number {
 }
 
 describe('layout tracked-change emission', () => {
+  test('setParagraphSpacing inserts spacing at the CT_PPr sequence position', () => {
+    for (const suffix of [
+      '<w:ind/><w:jc w:val="left"/>',
+      '<w:jc w:val="left"/>',
+      '<w:rPr/><w:sectPr/>',
+      '<w:pPrChange w:id="1" w:author="a" w:date="2026-01-01T00:00:00Z"><w:pPr/></w:pPrChange>',
+    ]) {
+      const indexed = createIndexedDocument(`<w:p><w:pPr>${suffix}</w:pPr><w:r><w:t>x</w:t></w:r></w:p>`);
+      setParagraphSpacing(indexed.doc, { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 });
+      const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+      const names = Array.from(firstDirectChild(paragraph, W.pPr).children).map((child) => child.localName);
+      expect(names.indexOf(W.spacing)).toBeGreaterThanOrEqual(0);
+      for (const successor of [W.ind, W.jc, W.rPr, W.sectPr, 'pPrChange']) {
+        if (names.includes(successor)) expect(names.indexOf(W.spacing)).toBeLessThan(names.indexOf(successor));
+      }
+    }
+  });
+
+  test('setParagraphSpacing rejects values outside its OOXML simple types', () => {
+    const indexed = createIndexedDocument('<w:p><w:r><w:t>x</w:t></w:r></w:p>');
+    const paragraphIds = [indexed.paragraphIds[0]!];
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, beforeTwips: -1 })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, afterTwips: 1.5 })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, lineTwips: Number.NaN })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, lineRule: 'loose' as never })).toThrow(RangeError);
+  });
+
   test('setParagraphSpacing emits pPrChange with the prior paragraph properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let paragraphId: string;

@@ -92,6 +92,20 @@ function ensureChild(parent: Element, localName: string): Element {
   return created;
 }
 
+/** Insert w:spacing at its CT_PPr sequence position, before w:ind and later properties. */
+function ensureParagraphSpacing(pPr: Element): Element {
+  const existing = getDirectChildrenByName(pPr, W.spacing)[0];
+  if (existing) return existing;
+  const doc = pPr.ownerDocument;
+  if (!doc) throw new Error('Element pPr has no ownerDocument');
+  const created = doc.createElementNS(OOXML.W_NS, `w:${W.spacing}`);
+  const successors = new Set([W.ind, 'contextualSpacing', W.jc, 'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', W.rPr, W.sectPr, 'pPrChange']);
+  const successor = Array.from(pPr.children).find((child) => isW(child as Element, (child as Element).localName) && successors.has((child as Element).localName));
+  if (successor) pPr.insertBefore(created, successor);
+  else pPr.appendChild(created);
+  return created;
+}
+
 /**
  * Keep per-cell margins in the CT_TcMar child sequence required by the schema.
  *
@@ -148,6 +162,18 @@ export function setParagraphSpacing(
   mutation: ParagraphSpacingMutation,
   ctx?: RevisionContext,
 ): ParagraphSpacingMutationResult {
+  for (const key of ['beforeTwips', 'afterTwips'] as const) {
+    const value = mutation[key];
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new RangeError(`${key} must be a non-negative safe integer`);
+    }
+  }
+  if (mutation.lineTwips !== undefined && !Number.isSafeInteger(mutation.lineTwips)) {
+    throw new RangeError('lineTwips must be a safe integer');
+  }
+  if (mutation.lineRule !== undefined && !(['auto', 'exact', 'atLeast'] as const).includes(mutation.lineRule)) {
+    throw new RangeError(`Unsupported lineRule '${mutation.lineRule}'`);
+  }
   const paragraphIds = [...new Set(mutation.paragraphIds)];
   const missingParagraphIds: string[] = [];
   let affectedParagraphs = 0;
@@ -162,7 +188,7 @@ export function setParagraphSpacing(
     const currentPPr = getDirectChildrenByName(paragraph, W.pPr)[0] ?? null;
     const oldPPr = currentPPr ? (currentPPr.cloneNode(true) as Element) : null;
     const pPr = ensureFirstChild(paragraph, W.pPr);
-    const spacing = ensureChild(pPr, W.spacing);
+    const spacing = ensureParagraphSpacing(pPr);
 
     if (typeof mutation.beforeTwips === 'number') setWAttr(spacing, W.before, String(mutation.beforeTwips));
     if (typeof mutation.afterTwips === 'number') setWAttr(spacing, W.after, String(mutation.afterTwips));

@@ -35,7 +35,9 @@ export const PPR_ORDER = [
 ] as const;
 
 /**
- * Child order for w:rPr (CT_RPr / EG_RPrBase). Subset actually emitted.
+ * Deterministic emission order for the supported w:rPr subset. CT_RPr uses a
+ * repeatable choice, so this table is not a schema sequence; conformance
+ * requires each property to occur at most once.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.3.2.28
  */

@@ -7,6 +7,7 @@ import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
 import { OOXML } from '../primitives/namespaces.js';
 import { generateDocx } from './compile.js';
+import { buildRunPropsElement } from './emit/properties.js';
 import { GenerationSpecError } from './errors.js';
 import { checkGeneratedPackage } from './structural-checks.js';
 import type { DocumentSpec, HighlightColor } from './types.js';
@@ -146,9 +147,9 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
   );
 
   test
-    .openspec('[SDX-GEN-041] run properties are emitted in schema order')
+    .openspec('[SDX-GEN-041] run properties are emitted at most once')
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.2.28' })(
-    'Scenario: run properties are emitted in schema order',
+    'Scenario: run properties are emitted at most once',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let buffer!: Buffer;
       await given('a run specifying bold, italic, underline, color, font, and size', async () => {
@@ -170,10 +171,11 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
         expect(rPr).toBeTruthy();
       });
 
-      await then('the rPr children appear in the WML schema sequence with exact authored values', async () => {
+      await then('each direct rPr property occurs at most once with exact authored values', async () => {
         const names = wChildNames(rPr);
         await attachPrettyJson('rpr-child-order', names);
         expect(names).toEqual(['rFonts', 'b', 'bCs', 'i', 'iCs', 'color', 'sz', 'szCs', 'u']);
+        expect(new Set(names).size).toBe(names.length);
         expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:ascii')).toBe('Georgia');
         expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:hAnsi')).toBe('Georgia');
         expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:cs')).toBe('Georgia');
@@ -219,6 +221,20 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
           code: 'invalid_value',
           path: '/sections/0/blocks/0/runs/0/colorHex',
         });
+        const invalidUnderline = styledSpec();
+        (invalidUnderline.sections[0]!.blocks[0] as any).runs = [{ kind: 'text', text: 'x', underline: 'zigzag' }];
+        await expect(generateDocx(invalidUnderline)).rejects.toMatchObject({ code: 'invalid_value', path: '/sections/0/blocks/0/runs/0/underline' });
+      });
+
+      await then('live builder attributes are namespace-correct before and after serialization', async () => {
+        const host = parseXml(`<x:root xmlns:x="urn:test" xmlns:q="${OOXML.W_NS}"/>`);
+        const live = buildRunPropsElement(host, { font: 'Georgia', underline: 'single' })!;
+        const font = getDirectChildrenByName(live, 'rFonts')[0]!;
+        const underline = getDirectChildrenByName(live, 'u')[0]!;
+        expect(font.getAttributeNodeNS(OOXML.W_NS, 'ascii')?.value).toBe('Georgia');
+        expect(underline.getAttributeNodeNS(OOXML.W_NS, 'val')?.value).toBe('single');
+        const reparsed = parseXml(live.toString()).documentElement;
+        expect(getDirectChildrenByName(reparsed, 'u')[0]!.getAttributeNS(OOXML.W_NS, 'val')).toBe('single');
       });
     },
   );
@@ -278,6 +294,19 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
           code: 'invalid_value',
           path: '/sections/0/blocks/0/tabs/0/posTwips',
         });
+        const probes: Array<{ path: string; mutate: (paragraph: any) => void }> = [
+          { path: '/sections/0/blocks/0/alignment', mutate: (p) => { p.alignment = 'diagonal'; } },
+          { path: '/sections/0/blocks/0/spacing/beforeTwips', mutate: (p) => { p.spacing = { beforeTwips: -1 }; } },
+          { path: '/sections/0/blocks/0/tabs/0/posTwips', mutate: (p) => { p.tabs = [{ posTwips: 1.5, align: 'left' }]; } },
+          { path: '/sections/0/blocks/0/indent/firstLineTwips', mutate: (p) => { p.indent = { firstLineTwips: -1 }; } },
+          { path: '/sections/0/blocks/0/indent', mutate: (p) => { p.indent = { firstLineTwips: 120, hangingTwips: 120 }; } },
+        ];
+        for (const probe of probes) {
+          const invalid = styledSpec();
+          invalid.sections[0]!.blocks = [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'x' }] }];
+          probe.mutate(invalid.sections[0]!.blocks[0]);
+          await expect(generateDocx(invalid)).rejects.toMatchObject({ code: 'invalid_value', path: probe.path });
+        }
       });
     },
   );
