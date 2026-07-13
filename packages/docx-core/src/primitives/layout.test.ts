@@ -143,6 +143,40 @@ describe('layout tracked-change emission', () => {
     });
   });
 
+  test('tracked spacing normalizes live and prior snapshots with alternate prefixes', () => {
+    const indexed = createIndexedDocument(
+      '<w:p xmlns:q="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:pPr><w:jc w:val="left"/><q:spacing q:before="60"/><x:custom xmlns:x="urn:custom" keep="yes"/><w:spacing w:after="90"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>',
+    );
+    setParagraphSpacing(
+      indexed.doc,
+      { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 },
+      createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      }),
+    );
+
+    const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+    const pPr = firstDirectChild(paragraph, W.pPr);
+    const pPrChange = firstDirectChild(pPr, 'pPrChange');
+    const previousPPr = firstDirectChild(pPrChange, W.pPr);
+    const liveNames = Array.from(pPr.children).map((child) => child.localName);
+    const priorNames = Array.from(previousPPr.children).map((child) => child.localName);
+
+    expect(getDirectChildrenByName(pPr, W.spacing)).toHaveLength(1);
+    expect(getDirectChildrenByName(previousPPr, W.spacing)).toHaveLength(1);
+    expect(liveNames).toEqual(['spacing', 'jc', 'custom', 'pPrChange']);
+    expect(priorNames).toEqual(['spacing', 'jc', 'custom']);
+    expect(wordAttr(firstDirectChild(pPr, W.spacing), 'before')).toBe('120');
+    expect(wordAttr(firstDirectChild(previousPPr, W.spacing), 'before')).toBe('60');
+    expect(wordAttr(firstDirectChild(previousPPr, W.spacing), 'after')).toBeNull();
+    expect(pPr.getElementsByTagNameNS('urn:custom', 'custom').length).toBe(2);
+    expect(
+      previousPPr.getElementsByTagNameNS('urn:custom', 'custom').item(0)?.getAttribute('keep'),
+    ).toBe('yes');
+  });
+
   test('setTableRowHeight emits trPrChange with the prior row properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let trPr: Element;

@@ -194,6 +194,9 @@ export function setParagraphSpacing(
 
     const currentPPr = getDirectChildrenByName(paragraph, W.pPr)[0] ?? null;
     const oldPPr = currentPPr ? (currentPPr.cloneNode(true) as Element) : null;
+    if (oldPPr && getDirectChildrenByName(oldPPr, W.spacing).length > 0) {
+      normalizeParagraphSpacing(oldPPr);
+    }
     const pPr = ensureFirstChild(paragraph, W.pPr);
     const spacing = normalizeParagraphSpacing(pPr);
 

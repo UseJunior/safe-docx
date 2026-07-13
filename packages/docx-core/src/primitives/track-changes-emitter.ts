@@ -13,7 +13,6 @@ const EXCLUDED_TRPR_CHANGE_CHILDREN = new Set(['w:trPrChange', 'w:ins', 'w:del']
 // change-of-a-change marker w:tcPrChange itself is excluded. See:
 // https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.previoustablecellproperties
 const EXCLUDED_TCPR_CHANGE_CHILDREN = new Set(['w:tcPrChange']);
-const EXCLUDED_RPR_CHANGE_CHILDREN = new Set(['w:rPrChange']);
 
 /**
  * State for allocating monotonically increasing revision IDs.
@@ -248,7 +247,7 @@ export function buildRPrChangeElement(oldRPr: Element | null, ctx: RevisionConte
 
   if (oldRPr) {
     for (const child of childElements(oldRPr)) {
-      if (!EXCLUDED_RPR_CHANGE_CHILDREN.has(child.tagName)) {
+      if (!(child.namespaceURI === OOXML.W_NS && child.localName === 'rPrChange')) {
         previousRPr.appendChild(child.cloneNode(true));
       }
     }
