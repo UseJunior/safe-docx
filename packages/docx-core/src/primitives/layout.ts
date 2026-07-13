@@ -92,6 +92,27 @@ function ensureChild(parent: Element, localName: string): Element {
   return created;
 }
 
+/** Replace all direct spacing children with one node at its CT_PPr sequence position. */
+function normalizeParagraphSpacing(pPr: Element): Element {
+  const doc = pPr.ownerDocument;
+  if (!doc) throw new Error('Element pPr has no ownerDocument');
+  const created = doc.createElementNS(OOXML.W_NS, `w:${W.spacing}`);
+  const existing = getDirectChildrenByName(pPr, W.spacing);
+  const source = existing[0];
+  if (source) {
+    for (let i = 0; i < source.attributes.length; i++) {
+      const attr = source.attributes.item(i);
+      if (attr) created.setAttributeNS(attr.namespaceURI, attr.name, attr.value);
+    }
+  }
+  for (const stale of existing) pPr.removeChild(stale);
+  const successors = new Set([W.ind, 'contextualSpacing', W.jc, 'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', W.rPr, W.sectPr, 'pPrChange']);
+  const successor = Array.from(pPr.children).find((child) => isW(child as Element, (child as Element).localName) && successors.has((child as Element).localName));
+  if (successor) pPr.insertBefore(created, successor);
+  else pPr.appendChild(created);
+  return created;
+}
+
 /**
  * Keep per-cell margins in the CT_TcMar child sequence required by the schema.
  *
@@ -148,6 +169,18 @@ export function setParagraphSpacing(
   mutation: ParagraphSpacingMutation,
   ctx?: RevisionContext,
 ): ParagraphSpacingMutationResult {
+  for (const key of ['beforeTwips', 'afterTwips'] as const) {
+    const value = mutation[key];
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new RangeError(`${key} must be a non-negative safe integer`);
+    }
+  }
+  if (mutation.lineTwips !== undefined && !Number.isSafeInteger(mutation.lineTwips)) {
+    throw new RangeError('lineTwips must be a safe integer');
+  }
+  if (mutation.lineRule !== undefined && !(['auto', 'exact', 'atLeast'] as const).includes(mutation.lineRule)) {
+    throw new RangeError(`Unsupported lineRule '${mutation.lineRule}'`);
+  }
   const paragraphIds = [...new Set(mutation.paragraphIds)];
   const missingParagraphIds: string[] = [];
   let affectedParagraphs = 0;
@@ -161,8 +194,11 @@ export function setParagraphSpacing(
 
     const currentPPr = getDirectChildrenByName(paragraph, W.pPr)[0] ?? null;
     const oldPPr = currentPPr ? (currentPPr.cloneNode(true) as Element) : null;
+    if (oldPPr && getDirectChildrenByName(oldPPr, W.spacing).length > 0) {
+      normalizeParagraphSpacing(oldPPr);
+    }
     const pPr = ensureFirstChild(paragraph, W.pPr);
-    const spacing = ensureChild(pPr, W.spacing);
+    const spacing = normalizeParagraphSpacing(pPr);
 
     if (typeof mutation.beforeTwips === 'number') setWAttr(spacing, W.before, String(mutation.beforeTwips));
     if (typeof mutation.afterTwips === 'number') setWAttr(spacing, W.after, String(mutation.afterTwips));

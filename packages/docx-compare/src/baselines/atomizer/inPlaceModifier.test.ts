@@ -1749,6 +1749,28 @@ describe('inPlaceModifier', () => {
         expect(childElements(innerRPr).map((c) => c.tagName)).toEqual(['w:color']);
       });
     });
+
+    test('excludes alternate-prefix rPrChange records from the prior-properties snapshot', () => {
+      const r = el('w:r', {}, [el('w:rPr'), el('w:t', {}, undefined, 'text')]);
+      const oldRPr = el('w:rPr', {}, [el('w:b')]);
+      const priorChange = oldRPr.ownerDocument.createElementNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+        'q:rPrChange',
+      );
+      priorChange.appendChild(el('w:rPr', {}, [el('w:i')]));
+      oldRPr.appendChild(priorChange);
+
+      addFormatChange(r, oldRPr, author, dateStr, createRevisionIdState());
+
+      const currentRPr = childElements(r).find((child) => child.localName === 'rPr')!;
+      const change = childElements(currentRPr).find((child) => child.localName === 'rPrChange')!;
+      const snapshot = childElements(change).find((child) => child.localName === 'rPr')!;
+      expect(childElements(snapshot).map((child) => child.localName)).toEqual(['b']);
+      expect(snapshot.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+        'rPrChange',
+      )).toHaveLength(0);
+    });
   });
 
   // ── Branch coverage: preSplitMixedStatusRuns ──────────────────────

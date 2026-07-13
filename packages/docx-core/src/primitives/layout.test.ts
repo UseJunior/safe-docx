@@ -52,6 +52,50 @@ function revisionId(element: Element): number {
 }
 
 describe('layout tracked-change emission', () => {
+  test('setParagraphSpacing inserts spacing at the CT_PPr sequence position', () => {
+    for (const suffix of [
+      '<w:ind/><w:jc w:val="left"/>',
+      '<w:jc w:val="left"/>',
+      '<w:rPr/><w:sectPr/>',
+      '<w:pPrChange w:id="1" w:author="a" w:date="2026-01-01T00:00:00Z"><w:pPr/></w:pPrChange>',
+    ]) {
+      const indexed = createIndexedDocument(`<w:p><w:pPr>${suffix}</w:pPr><w:r><w:t>x</w:t></w:r></w:p>`);
+      setParagraphSpacing(indexed.doc, { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 });
+      const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+      const names = Array.from(firstDirectChild(paragraph, W.pPr).children).map((child) => child.localName);
+      expect(names.indexOf(W.spacing)).toBeGreaterThanOrEqual(0);
+      for (const successor of [W.ind, W.jc, W.rPr, W.sectPr, 'pPrChange']) {
+        if (names.includes(successor)) expect(names.indexOf(W.spacing)).toBeLessThan(names.indexOf(successor));
+      }
+    }
+  });
+
+  test('setParagraphSpacing replaces duplicate misplaced spacing while preserving unrelated content', () => {
+    const indexed = createIndexedDocument(
+      '<w:p><w:pPr><w:jc w:val="left"/><w:spacing w:before="60"/><x:custom xmlns:x="urn:custom" keep="yes"/><w:spacing w:after="90"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>',
+    );
+    setParagraphSpacing(indexed.doc, { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 });
+
+    const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+    const pPr = firstDirectChild(paragraph, W.pPr);
+    const spacings = getDirectChildrenByName(pPr, W.spacing);
+    expect(spacings).toHaveLength(1);
+    expect(wordAttr(spacings[0]!, 'before')).toBe('120');
+    expect(wordAttr(spacings[0]!, 'after')).toBeNull();
+    expect(Array.from(pPr.children).map((child) => child.localName)).toEqual(['spacing', 'jc', 'custom']);
+    expect(pPr.getElementsByTagNameNS('urn:custom', 'custom').item(0)?.getAttribute('keep')).toBe('yes');
+    expect(pPr.toString()).toContain('w:spacing w:before="120"');
+  });
+
+  test('setParagraphSpacing rejects values outside its OOXML simple types', () => {
+    const indexed = createIndexedDocument('<w:p><w:r><w:t>x</w:t></w:r></w:p>');
+    const paragraphIds = [indexed.paragraphIds[0]!];
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, beforeTwips: -1 })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, afterTwips: 1.5 })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, lineTwips: Number.NaN })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, lineRule: 'loose' as never })).toThrow(RangeError);
+  });
+
   test('setParagraphSpacing emits pPrChange with the prior paragraph properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let paragraphId: string;
@@ -97,6 +141,40 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousSpacing, 'before')).toBeNull();
       expect(wordAttr(previousSpacing, 'after')).toBe('120');
     });
+  });
+
+  test('tracked spacing normalizes live and prior snapshots with alternate prefixes', () => {
+    const indexed = createIndexedDocument(
+      '<w:p xmlns:q="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:pPr><w:jc w:val="left"/><q:spacing q:before="60"/><x:custom xmlns:x="urn:custom" keep="yes"/><w:spacing w:after="90"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>',
+    );
+    setParagraphSpacing(
+      indexed.doc,
+      { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 },
+      createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      }),
+    );
+
+    const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+    const pPr = firstDirectChild(paragraph, W.pPr);
+    const pPrChange = firstDirectChild(pPr, 'pPrChange');
+    const previousPPr = firstDirectChild(pPrChange, W.pPr);
+    const liveNames = Array.from(pPr.children).map((child) => child.localName);
+    const priorNames = Array.from(previousPPr.children).map((child) => child.localName);
+
+    expect(getDirectChildrenByName(pPr, W.spacing)).toHaveLength(1);
+    expect(getDirectChildrenByName(previousPPr, W.spacing)).toHaveLength(1);
+    expect(liveNames).toEqual(['spacing', 'jc', 'custom', 'pPrChange']);
+    expect(priorNames).toEqual(['spacing', 'jc', 'custom']);
+    expect(wordAttr(firstDirectChild(pPr, W.spacing), 'before')).toBe('120');
+    expect(wordAttr(firstDirectChild(previousPPr, W.spacing), 'before')).toBe('60');
+    expect(wordAttr(firstDirectChild(previousPPr, W.spacing), 'after')).toBeNull();
+    expect(pPr.getElementsByTagNameNS('urn:custom', 'custom').length).toBe(2);
+    expect(
+      previousPPr.getElementsByTagNameNS('urn:custom', 'custom').item(0)?.getAttribute('keep'),
+    ).toBe('yes');
   });
 
   test('setTableRowHeight emits trPrChange with the prior row properties snapshot', async ({ given, when, then }: AllureBddContext) => {
