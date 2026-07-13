@@ -1053,4 +1053,14 @@ safe-docx surfaces no table-wide property or grid mutation today and does not
 author these revision elements, so it makes no conformance claim over this
 section.
 
+Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
+safe-docx validates runtime enum values, duplicate declarations, table-grid
+arithmetic, and style/numbering references before emission, then preserves the
+authored parts through package load/save. These claims do not cover Word's
+table layout algorithm or pagination, numbering rendering or complete
+override/counter behavior, style cascade or latent-style semantics,
+theme/font resolution, rendering, or tracked table-topology and
+property-revision records. Preservation does not imply semantic
+interpretation of unknown third-party markup.
+
 _Sources: `spec-compliance/registry/ecma-376.md`._

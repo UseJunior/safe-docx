@@ -49,6 +49,14 @@ const UNDERLINES = new Set(['single', 'double', 'none']);
 const TAB_ALIGNMENTS = new Set(['left', 'center', 'right']);
 const TAB_LEADERS = new Set(['none', 'dot', 'underscore']);
 const LINE_RULES = new Set(['auto', 'exact', 'atLeast']);
+const TABLE_LAYOUTS = new Set(['fixed', 'autofit']);
+const BORDER_STYLES = new Set(['single', 'double', 'none']);
+const ROW_HEIGHT_RULES = new Set(['atLeast', 'exact']);
+const CELL_VERTICAL_ALIGNMENTS = new Set(['top', 'center', 'bottom']);
+const VERTICAL_MERGES = new Set(['restart', 'continue']);
+const STYLE_TYPES = new Set(['paragraph', 'character']);
+const NUMBER_FORMATS = new Set(['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none']);
+const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
 
 function requireInteger(value: unknown, path: string, description: string, minimum?: number): void {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || (minimum !== undefined && value < minimum)) {
@@ -91,7 +99,12 @@ function validateTheme(spec: DocumentSpec): void {
   }
 }
 
-/** Returns numId handle → set of declared levels, for list-reference checks. */
+/**
+ * Returns numId handle -> set of declared levels, for list-reference checks.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.28
+ */
 function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number>> {
   const declared = new Map<string, Set<number>>();
   definitions.forEach((definition, index) => {
@@ -118,6 +131,12 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
       if (typeof level.lvlText !== 'string' || level.lvlText.length === 0) {
         throw new GenerationSpecError('invalid_value', `${levelPath}/lvlText`, 'Numbering levels require a lvlText pattern');
       }
+      if (!NUMBER_FORMATS.has(level.numFmt)) {
+        throw new GenerationSpecError('invalid_value', `${levelPath}/numFmt`, `Unsupported numbering format '${level.numFmt}'`);
+      }
+      if (level.suff !== undefined && !NUMBER_SUFFIXES.has(level.suff)) {
+        throw new GenerationSpecError('invalid_value', `${levelPath}/suff`, `Unsupported numbering suffix '${level.suff}'`);
+      }
       if (level.start !== undefined && (!Number.isInteger(level.start) || level.start < 0)) {
         throw new GenerationSpecError('invalid_value', `${levelPath}/start`, 'Level start must be a non-negative integer');
       }
@@ -129,19 +148,31 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
         );
       }
       if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
+      if (level.indentTwips) {
+        for (const [key, value] of Object.entries(level.indentTwips)) {
+          requireInteger(value, `${levelPath}/indentTwips/${key}`, 'Numbering indentation must be a non-negative safe integer', 0);
+        }
+      }
     });
     declared.set(definition.numId, levels);
   });
   return declared;
 }
 
-/** Returns the set of resolvable style ids (declared styles + implicit Normal). */
+/**
+ * Returns the set of resolvable style ids (declared styles + implicit Normal).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17
+ */
 function validateStyles(styles: StyleSpec[]): Set<string> {
   const ids = new Set<string>(['Normal']);
   styles.forEach((style, index) => {
     const path = `/styles/${index}`;
     if (!style.styleId || !style.name) {
       throw new GenerationSpecError('invalid_value', path, 'StyleSpec requires styleId and name');
+    }
+    if (!STYLE_TYPES.has(style.type)) {
+      throw new GenerationSpecError('invalid_value', `${path}/type`, `Unsupported style type '${style.type}'`);
     }
     if (ids.has(style.styleId)) {
       throw new GenerationSpecError('invalid_value', `${path}/styleId`, `Duplicate styleId '${style.styleId}'`);
@@ -231,8 +262,14 @@ function validateBlock(
  * vertical-merge continuation must sit at exactly the grid position and
  * span of a merge cell in the previous row — otherwise readers either show
  * a recovery dialog or silently reflow the table.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.37
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.48
  */
 function validateTable(table: TableSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>, story: StoryContext): void {
+  if (table.layout !== undefined && !TABLE_LAYOUTS.has(table.layout)) {
+    throw new GenerationSpecError('invalid_value', `${path}/layout`, `Unsupported table layout '${table.layout}'`);
+  }
   if (!Array.isArray(table.columnWidthsTwips) || table.columnWidthsTwips.length === 0) {
     throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips`, 'Tables require at least one column width');
   }
@@ -257,6 +294,9 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
     if (row.heightTwips !== undefined && (!(row.heightTwips > 0) || !Number.isFinite(row.heightTwips))) {
       throw new GenerationSpecError('invalid_value', `${rowPath}/heightTwips`, 'Row height must be positive finite twips');
     }
+    if (row.heightRule !== undefined && !ROW_HEIGHT_RULES.has(row.heightRule)) {
+      throw new GenerationSpecError('invalid_value', `${rowPath}/heightRule`, `Unsupported row height rule '${row.heightRule}'`);
+    }
 
     const currentMerges = new Map<number, number>();
     let gridOffset = 0;
@@ -278,11 +318,17 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
           );
         }
       }
+      if (cell.vMerge !== undefined && !VERTICAL_MERGES.has(cell.vMerge)) {
+        throw new GenerationSpecError('invalid_value', `${cellPath}/vMerge`, `Unsupported vertical merge value '${cell.vMerge}'`);
+      }
       if (cell.vMerge !== undefined) currentMerges.set(gridOffset, span);
       if (cell.widthTwips !== undefined && (!(cell.widthTwips > 0) || !Number.isFinite(cell.widthTwips))) {
         throw new GenerationSpecError('invalid_value', `${cellPath}/widthTwips`, 'Cell width must be positive finite twips');
       }
       if (cell.borders) validateBorders(cell.borders, `${cellPath}/borders`);
+      if (cell.vAlign !== undefined && !CELL_VERTICAL_ALIGNMENTS.has(cell.vAlign)) {
+        throw new GenerationSpecError('invalid_value', `${cellPath}/vAlign`, `Unsupported cell vertical alignment '${cell.vAlign}'`);
+      }
       if (cell.shadingHex !== undefined && !COLOR_HEX_RE.test(cell.shadingHex)) {
         throw new GenerationSpecError('invalid_value', `${cellPath}/shadingHex`, `shadingHex must be six hex digits without '#', got '${cell.shadingHex}'`);
       }
@@ -327,6 +373,9 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
 function validateBorders(borders: TableBorders, path: string): void {
   for (const [edge, spec] of Object.entries(borders) as Array<[string, BorderSpec | undefined]>) {
     if (!spec) continue;
+    if (!BORDER_STYLES.has(spec.style)) {
+      throw new GenerationSpecError('invalid_value', `${path}/${edge}/style`, `Unsupported border style '${spec.style}'`);
+    }
     if (spec.colorHex !== undefined && !COLOR_HEX_RE.test(spec.colorHex)) {
       throw new GenerationSpecError('invalid_value', `${path}/${edge}/colorHex`, `colorHex must be six hex digits without '#', got '${spec.colorHex}'`);
     }
