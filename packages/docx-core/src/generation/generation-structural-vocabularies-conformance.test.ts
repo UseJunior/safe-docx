@@ -1,4 +1,8 @@
 import { describe, expect } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 import { testAllure } from '../testing/allure-test.js';
 import { DocxDocument } from '../primitives/document.js';
 import { OOXML } from '../primitives/namespaces.js';
@@ -8,7 +12,23 @@ import { generateDocx } from './compile.js';
 import { checkGeneratedPackage } from './structural-checks.js';
 import type { DocumentSpec } from './types.js';
 
-const test = testAllure.epic('Document Generation').withLabels({ feature: 'ecma-376-structural-vocabularies' });
+const test = testAllure.epic('Document Generation').withLabels({ feature: 'ECMA-376 Structural Vocabularies' });
+
+function validateEmittedWml(parts: Record<string, string>): void {
+  const dir = mkdtempSync(resolve(tmpdir(), 'safe-docx-structural-schema-'));
+  try {
+    const schema = resolve(process.cwd(), '../../spec-compliance/ecma-376/validation/wml-document-transitional.xsd');
+    const files = Object.entries(parts).map(([name, xml]) => {
+      const path = resolve(dir, name);
+      writeFileSync(path, xml);
+      return path;
+    });
+    const result = spawnSync('xmllint', ['--noout', '--nonet', '--schema', schema, ...files], { encoding: 'utf8' });
+    expect(result.status, result.stderr).toBe(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 function representativeSpec(): DocumentSpec {
   return {
@@ -35,7 +55,7 @@ function representativeSpec(): DocumentSpec {
           heightTwips: 360,
           heightRule: 'atLeast',
           cells: [
-            { shadingHex: 'D9EAF7', vAlign: 'center', blocks: [{ kind: 'paragraph', styleId: 'TableBody', list: { numId: 'clauses', ilvl: 0 }, runs: [{ kind: 'text', text: 'Term' }] }] },
+            { shadingHex: 'D9EAF7', vAlign: 'center', marginsTwips: { top: 0 }, blocks: [{ kind: 'paragraph', styleId: 'TableBody', list: { numId: 'clauses', ilvl: 0 }, runs: [{ kind: 'text', text: 'Term' }] }] },
             { blocks: [{ kind: 'paragraph', styleId: 'TableBody', runs: [{ kind: 'text', text: 'Meaning' }] }] },
           ],
         }],
@@ -67,6 +87,7 @@ describe('ECMA-376 tables, numbering, and styles evidence', () => {
       expect(await readZipText(saved.buffer, 'word/document.xml')).toBe(documentBefore);
       expect(await readZipText(saved.buffer, 'word/numbering.xml')).toBe(numberingBefore);
       expect(await readZipText(saved.buffer, 'word/styles.xml')).toBe(stylesBefore);
+      validateEmittedWml({ 'document.xml': documentBefore, 'numbering.xml': numberingBefore, 'styles.xml': stylesBefore });
     });
 
   test
@@ -113,5 +134,84 @@ describe('ECMA-376 tables, numbering, and styles evidence', () => {
       const missingLevel = representativeSpec();
       (missingLevel.sections[0]!.blocks[0] as any).rows[0].cells[0].blocks[0].list.ilvl = 8;
       await expect(generateDocx(missingLevel)).rejects.toMatchObject({ code: 'dangling_numbering_reference' });
+
+      const danglingBasedOn = representativeSpec();
+      danglingBasedOn.styles![0]!.basedOn = 'MissingBase';
+      await expect(generateDocx(danglingBasedOn)).rejects.toMatchObject({
+        code: 'dangling_style_reference',
+        path: '/styles/0/basedOn',
+      });
+
+      const danglingNext = representativeSpec();
+      danglingNext.styles![0]!.next = 'MissingNext';
+      await expect(generateDocx(danglingNext)).rejects.toMatchObject({
+        code: 'dangling_style_reference',
+        path: '/styles/0/next',
+      });
+    });
+
+  test
+    .conformance(
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.16' },
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.81' },
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.25' },
+    )('enforces exact integer domains before serializing table and numbering measures', async () => {
+      const fields: Array<[string, (spec: DocumentSpec, value: number) => void, boolean]> = [
+        ['/sections/0/blocks/0/columnWidthsTwips/0', (spec, value) => { (spec.sections[0]!.blocks[0] as any).columnWidthsTwips[0] = value; }, false],
+        ['/sections/0/blocks/0/rows/0/heightTwips', (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].heightTwips = value; }, true],
+        ['/sections/0/blocks/0/rows/0/cells/0/widthTwips', (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].widthTwips = value; }, false],
+        ['/sections/0/blocks/0/rows/0/cells/0/marginsTwips/top', (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].marginsTwips.top = value; }, true],
+        ['/sections/0/blocks/0/borders/top/sizeEighthPt', (spec, value) => { (spec.sections[0]!.blocks[0] as any).borders.top.sizeEighthPt = value; }, true],
+        ['/numbering/0/levels/0/start', (spec, value) => { spec.numbering![0]!.levels[0]!.start = value; }, true],
+      ];
+      for (const [path, mutate, allowsZero] of fields) {
+        for (const value of [0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, 1e100, -1]) {
+          if (value === -1 && path.endsWith('/start')) continue;
+          const spec = representativeSpec();
+          mutate(spec, value);
+          await expect(generateDocx(spec)).rejects.toMatchObject({ code: 'invalid_value', path });
+        }
+        if (!allowsZero) {
+          const spec = representativeSpec();
+          mutate(spec, 0);
+          await expect(generateDocx(spec)).rejects.toMatchObject({ code: 'invalid_value', path });
+        }
+      }
+
+      const negativeStart = representativeSpec();
+      negativeStart.numbering![0]!.levels[0]!.start = -1;
+      await expect(generateDocx(negativeStart)).rejects.toMatchObject({
+        code: 'invalid_value',
+        path: '/numbering/0/levels/0/start',
+      });
+
+      const boundary = representativeSpec();
+      const table = boundary.sections[0]!.blocks[0] as any;
+      table.columnWidthsTwips[0] = Number.MAX_SAFE_INTEGER - table.columnWidthsTwips[1];
+      table.rows[0].heightTwips = 0;
+      table.rows[0].cells[0].widthTwips = Number.MAX_SAFE_INTEGER;
+      table.rows[0].cells[0].marginsTwips.top = 0;
+      table.borders.top.sizeEighthPt = 0;
+      boundary.numbering![0]!.levels[0]!.start = Number.MAX_SAFE_INTEGER;
+      const generated = await generateDocx(boundary);
+      validateEmittedWml({
+        'document.xml': (await readZipText(generated, 'word/document.xml'))!,
+        'numbering.xml': (await readZipText(generated, 'word/numbering.xml'))!,
+        'styles.xml': (await readZipText(generated, 'word/styles.xml'))!,
+      });
+
+      const otherBoundaries = representativeSpec();
+      const otherTable = otherBoundaries.sections[0]!.blocks[0] as any;
+      otherTable.columnWidthsTwips[0] = 1;
+      otherTable.rows[0].heightTwips = Number.MAX_SAFE_INTEGER;
+      otherTable.rows[0].cells[0].widthTwips = 1;
+      otherTable.rows[0].cells[0].marginsTwips.top = Number.MAX_SAFE_INTEGER;
+      otherTable.borders.top.sizeEighthPt = Number.MAX_SAFE_INTEGER;
+      const otherGenerated = await generateDocx(otherBoundaries);
+      validateEmittedWml({
+        'document.xml': (await readZipText(otherGenerated, 'word/document.xml'))!,
+        'numbering.xml': (await readZipText(otherGenerated, 'word/numbering.xml'))!,
+        'styles.xml': (await readZipText(otherGenerated, 'word/styles.xml'))!,
+      });
     });
 });

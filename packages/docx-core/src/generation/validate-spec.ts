@@ -58,8 +58,13 @@ const STYLE_TYPES = new Set(['paragraph', 'character']);
 const NUMBER_FORMATS = new Set(['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none']);
 const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
 
-function requireInteger(value: unknown, path: string, description: string, minimum?: number): void {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || (minimum !== undefined && value < minimum)) {
+function requireInteger(value: unknown, path: string, description: string, minimum?: number, maximum?: number): void {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    (minimum !== undefined && value < minimum) ||
+    (maximum !== undefined && value > maximum)
+  ) {
     throw new GenerationSpecError('invalid_value', path, description);
   }
 }
@@ -137,8 +142,13 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
       if (level.suff !== undefined && !NUMBER_SUFFIXES.has(level.suff)) {
         throw new GenerationSpecError('invalid_value', `${levelPath}/suff`, `Unsupported numbering suffix '${level.suff}'`);
       }
-      if (level.start !== undefined && (!Number.isInteger(level.start) || level.start < 0)) {
-        throw new GenerationSpecError('invalid_value', `${levelPath}/start`, 'Level start must be a non-negative integer');
+      if (level.start !== undefined) {
+        requireInteger(
+          level.start,
+          `${levelPath}/start`,
+          'Level start must be a non-negative safe integer that serializes exactly as ST_DecimalNumber',
+          0,
+        );
       }
       if (level.lvlJc !== undefined && !LVL_JC_SET.has(level.lvlJc)) {
         throw new GenerationSpecError(
@@ -274,10 +284,21 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
     throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips`, 'Tables require at least one column width');
   }
   table.columnWidthsTwips.forEach((width, i) => {
-    if (!(width > 0) || !Number.isFinite(width)) {
-      throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips/${i}`, 'Column widths must be positive finite twips');
-    }
+    requireInteger(
+      width,
+      `${path}/columnWidthsTwips/${i}`,
+      'Column widths must be positive safe integers in the ST_TwipsMeasure domain',
+      1,
+    );
   });
+  const totalWidth = table.columnWidthsTwips.reduce((sum, width) => sum + width, 0);
+  if (!Number.isSafeInteger(totalWidth)) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      `${path}/columnWidthsTwips`,
+      'The table width sum must remain a safe integer so w:tblW serializes exactly',
+    );
+  }
   if (table.borders) validateBorders(table.borders, `${path}/borders`);
   if (!Array.isArray(table.rows) || table.rows.length === 0) {
     throw new GenerationSpecError('invalid_value', `${path}/rows`, 'Tables require at least one row');
@@ -291,8 +312,13 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
     if (!Array.isArray(row.cells) || row.cells.length === 0) {
       throw new GenerationSpecError('invalid_value', `${rowPath}/cells`, 'Rows require at least one cell');
     }
-    if (row.heightTwips !== undefined && (!(row.heightTwips > 0) || !Number.isFinite(row.heightTwips))) {
-      throw new GenerationSpecError('invalid_value', `${rowPath}/heightTwips`, 'Row height must be positive finite twips');
+    if (row.heightTwips !== undefined) {
+      requireInteger(
+        row.heightTwips,
+        `${rowPath}/heightTwips`,
+        'Row height must be a non-negative safe integer in the ST_TwipsMeasure domain',
+        0,
+      );
     }
     if (row.heightRule !== undefined && !ROW_HEIGHT_RULES.has(row.heightRule)) {
       throw new GenerationSpecError('invalid_value', `${rowPath}/heightRule`, `Unsupported row height rule '${row.heightRule}'`);
@@ -322,8 +348,13 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
         throw new GenerationSpecError('invalid_value', `${cellPath}/vMerge`, `Unsupported vertical merge value '${cell.vMerge}'`);
       }
       if (cell.vMerge !== undefined) currentMerges.set(gridOffset, span);
-      if (cell.widthTwips !== undefined && (!(cell.widthTwips > 0) || !Number.isFinite(cell.widthTwips))) {
-        throw new GenerationSpecError('invalid_value', `${cellPath}/widthTwips`, 'Cell width must be positive finite twips');
+      if (cell.widthTwips !== undefined) {
+        requireInteger(
+          cell.widthTwips,
+          `${cellPath}/widthTwips`,
+          'Cell width must be a positive safe integer in the ST_MeasurementOrPercent integer branch',
+          1,
+        );
       }
       if (cell.borders) validateBorders(cell.borders, `${cellPath}/borders`);
       if (cell.vAlign !== undefined && !CELL_VERTICAL_ALIGNMENTS.has(cell.vAlign)) {
@@ -345,8 +376,13 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
       }
       if (cell.marginsTwips) {
         for (const [key, value] of Object.entries(cell.marginsTwips)) {
-          if (value !== undefined && (typeof value !== 'number' || value < 0 || !Number.isFinite(value))) {
-            throw new GenerationSpecError('invalid_value', `${cellPath}/marginsTwips/${key}`, 'Cell margins must be non-negative finite twips');
+          if (value !== undefined) {
+            requireInteger(
+              value,
+              `${cellPath}/marginsTwips/${key}`,
+              'Cell margins must be non-negative safe integers in the ST_MeasurementOrPercent integer branch',
+              0,
+            );
           }
         }
       }
@@ -379,8 +415,13 @@ function validateBorders(borders: TableBorders, path: string): void {
     if (spec.colorHex !== undefined && !COLOR_HEX_RE.test(spec.colorHex)) {
       throw new GenerationSpecError('invalid_value', `${path}/${edge}/colorHex`, `colorHex must be six hex digits without '#', got '${spec.colorHex}'`);
     }
-    if (spec.sizeEighthPt !== undefined && (!(spec.sizeEighthPt > 0) || !Number.isFinite(spec.sizeEighthPt))) {
-      throw new GenerationSpecError('invalid_value', `${path}/${edge}/sizeEighthPt`, 'Border size must be positive finite eighth-points');
+    if (spec.sizeEighthPt !== undefined) {
+      requireInteger(
+        spec.sizeEighthPt,
+        `${path}/${edge}/sizeEighthPt`,
+        'Border size must be a non-negative safe integer in the ST_EighthPointMeasure domain',
+        0,
+      );
     }
   }
 }
