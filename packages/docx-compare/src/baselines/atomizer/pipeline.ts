@@ -41,7 +41,13 @@ import {
   DEFAULT_FORMAT_DETECTION_SETTINGS,
   CorrelationStatus,
 } from '@usejunior/docx-core';
-import { atomizeTree, assignParagraphIndices, applyHyperlinkDestinationSalt } from '../../atomizer.js';
+import {
+  atomizeTree,
+  assignParagraphIndices,
+  applyHyperlinkDestinationSalt,
+  assignIdentityIds,
+  IdentityInterner,
+} from '../../atomizer.js';
 import {
   parseHyperlinkRelTargets,
   parseHyperlinkRelEntries,
@@ -724,6 +730,13 @@ export async function compareDocumentsAtomizer(
     // instead of matching its text across different destinations (issue #376).
     applyHyperlinkDestinationSalt(originalAtoms, originalHyperlinkTargets);
     applyHyperlinkDestinationSalt(revisedAtoms, revisedHyperlinkTargets);
+
+    // Step 5c: Intern each atom's now-finalized identity into a shared integer id.
+    // One interner per comparison pass covers both documents, so equal identities
+    // get equal ids across sides; the LCS then compares ids instead of hash strings.
+    const identityInterner = new IdentityInterner();
+    assignIdentityIds(originalAtoms, identityInterner);
+    assignIdentityIds(revisedAtoms, identityInterner);
 
     // Step 6: Run hierarchical LCS (paragraph-level first, then atom-level within)
     const lcsResult = hierarchicalCompare(originalAtoms, revisedAtoms);
