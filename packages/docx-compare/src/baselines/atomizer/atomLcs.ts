@@ -49,14 +49,18 @@ export function computeAtomLcs(
   const n = original.length;
   const m = revised.length;
 
-  // Select the equality comparator once, not per DP cell. When every atom carries
-  // an interned identity id (the production pipeline path), equality is a single
-  // integer compare — no sha1Hash string compare and no recursive textContent DOM
-  // walk. Otherwise (e.g. duck-typed atoms in direct-call unit tests) fall back to
-  // the legacy hash+text+tag comparison, which the id comparator reproduces exactly.
+  // Select the equality comparator once, not per DP cell. Use the integer-id path
+  // only when EVERY atom on both sides carries an interned id (the production
+  // pipeline path): equality is then a single integer compare — no sha1Hash string
+  // compare and no recursive textContent DOM walk. Checking every atom (not just
+  // the first) is required for soundness — a mixed array where only some atoms are
+  // interned must NOT take the id path, or two un-interned atoms would compare
+  // `undefined === undefined` and match spuriously. The O(n+m) scan is negligible
+  // beside the O(n*m) DP. Duck-typed atoms in direct-call unit tests carry no id
+  // and fall back to the legacy hash+text+tag comparison the id relation reproduces.
   const useIds =
-    (n === 0 || getIdentityId(original[0]!) !== undefined) &&
-    (m === 0 || getIdentityId(revised[0]!) !== undefined);
+    original.every((a) => getIdentityId(a) !== undefined) &&
+    revised.every((a) => getIdentityId(a) !== undefined);
   const eq = useIds
     ? (a: ComparisonUnitAtom, b: ComparisonUnitAtom): boolean => getIdentityId(a) === getIdentityId(b)
     : atomsEqual;

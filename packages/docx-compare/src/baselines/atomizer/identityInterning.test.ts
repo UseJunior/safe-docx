@@ -2,9 +2,12 @@
  * Regression tests for atom identity interning (#585).
  *
  * The interned integer id assigned by `assignIdentityIds` must reproduce the
- * legacy `atomsEqual` relation EXACTLY — equal `sha1Hash`, equal recursive
- * `textContent`, and equal `tagName`. These tests guard the two mistakes the
- * #583/#584 review flagged:
+ * legacy `atomsEqual` relation — equal `sha1Hash`, equal recursive `textContent`,
+ * equal `tagName`. It does so exactly on all realizable inputs; the only divergence
+ * is on a SHA-1 collision with equal text/tag (equal under legacy, unequal under
+ * identity interning), which is a deliberate, practically-unreachable *strengthening*
+ * — interning is strictly more correct there (the point of #585). These tests guard
+ * the two mistakes the #583/#584 review flagged:
  *   1. interning text alone (would merge same-text/different-attribute atoms), and
  *   2. mis-reading AC3 as "same text + different rPr must NOT match" — rPr lives
  *      on the run ancestor, not `contentElement`, so those atoms MUST match and
@@ -113,6 +116,13 @@ describe('atom identity interning', () => {
           atom(el('w:drawing', { 'r:id': 'rId1' })),
           atom(el('w:drawing', { 'r:id': 'rId1' })), // duplicate drawing (collides today — must still match)
           atom(el('w:drawing', { 'r:id': 'rId2' })), // different drawing
+          // Nested drawings: r:embed lives on a descendant (a:blip), not on w:drawing.
+          // hashElement reads only w:drawing's tag/attrs/leaf-text and textContent is
+          // "", so two drawings differing ONLY in a descendant relationship collide
+          // today — the interned id must preserve that exactly (not "fix" it).
+          atom(el('w:drawing', {}, [el('a:blip', { 'r:embed': 'rId1' })])),
+          atom(el('w:drawing', {}, [el('a:blip', { 'r:embed': 'rId9' })])), // different descendant → still collides
+          atom(el('w:drawing', {}, [el('wp:docPr', {}, undefined, 'caption')])), // descendant TEXT → distinct
         ];
         ids = idsOf(atoms);
       });
@@ -130,6 +140,11 @@ describe('atom identity interning', () => {
       await then('the two identical inline drawings share an id (preserving today\'s collision behavior)', () => {
         expect(ids[10]).toBe(ids[11]);
         expect(ids[10]).not.toBe(ids[12]);
+      });
+
+      await then('nested drawings differing only in a descendant relationship still collide; descendant text distinguishes', () => {
+        expect(ids[13]).toBe(ids[14]); // different a:blip r:embed, both textContent "" → collide (as today)
+        expect(ids[13]).not.toBe(ids[15]); // descendant caption text → distinct
       });
     }
   );
