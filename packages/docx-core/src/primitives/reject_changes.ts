@@ -1,7 +1,7 @@
 /**
  * reject_changes — reject all tracked changes in a OOXML document body.
  *
- * Produces the document as it was before tracked changes were made by:
+ * Restores the document for the supported revision subset by:
  * - Removing w:ins elements AND their content (insertions undone)
  * - Unwrapping w:del elements and converting w:delText → w:t (deletions restored)
  * - Unwrapping w:moveFrom (keep at original position), removing w:moveTo and content
@@ -10,6 +10,10 @@
  * - Stripping paragraph-level revision markers, merging a paragraph whose
  *   mark was a tracked insertion into the following paragraph
  * - Stripping rsidDel attributes
+ *
+ * Numbering, table-grid/exception, cell-topology, custom XML, and extension
+ * conflict records are not semantically resolved here; see the advanced
+ * revision classification manifest.
  *
  * Operates on the W3C DOM (`@xmldom/xmldom`).
  */
@@ -367,6 +371,15 @@ function relocateBookmarks(p: Element, paragraphsToRemove: Set<Element>): void {
  * the document to its pre-edit state.
  *
  * Mutates the Document in place (same convention as acceptChanges).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
  */
 export function rejectChanges(
   doc: Document,

@@ -97,12 +97,16 @@ accepted fixtures (bookmarks, field codes) were additionally opened in **LibreOf
 locally (`soffice --convert-to pdf`, no recovery prompt); Word round-trip is manual/pending.
 
 **Scope.** accept/reject resolves `w:ins`, `w:del`, `w:moveFrom`/`w:moveTo`, and the property changes
-`w:rPrChange`/`w:pPrChange`/`w:sectPrChange`/`w:tblPrChange`/`w:trPrChange`/`w:tcPrChange`. Cell-topology
-and grid/numbering revisions (`w:cellIns`/`w:cellDel`/`w:cellMerge`/`w:tblGridChange`/`w:numberingChange`)
-are **not** resolved by the engine and are not emitted by any current primitive (Appendix B), so they
-are deferred. Parts the sweep never reads — `styles.xml`, `numbering.xml`, headers/footers,
-relationships, content types — are preserved by construction; the corpus targets the swept stories
-(`document.xml` + `footnotes`/`endnotes`/`comments`) where preservation is non-trivial.
+`w:rPrChange`/`w:pPrChange`/`w:sectPrChange`/`w:tblPrChange`/`w:trPrChange`/`w:tcPrChange`. Move range
+markers are removed, but wrapper-to-range identity semantics are not proven. Cell-topology,
+table-grid/exception, and numbering revisions (`w:cellIns`/`w:cellDel`/`w:cellMerge`/
+`w:tblGridChange`/`w:tblPrExChange`/`w:numberingChange`) are **not** resolved by the engine; custom XML
+revision ranges are preserved but not interpreted. The package sweep reads `document.xml`,
+`footnotes.xml`, `endnotes.xml`, `comments.xml`, and `glossary/document.xml`. Parts it never sweeps —
+`styles.xml`, `numbering.xml`, headers/footers, relationships, and content types — are preservation-only.
+The machine-readable operation matrix and drift gate live at
+`spec-compliance/manifests/ecma-376-advanced-revisions.json` and
+`npm run check:advanced-revision-classification`.
 
 ## Internal / non-contract utilities
 

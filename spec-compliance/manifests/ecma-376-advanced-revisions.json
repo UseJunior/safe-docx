@@ -1,0 +1,253 @@
+{
+  "schemaVersion": 1,
+  "standard": "ECMA-376",
+  "edition": 5,
+  "part": 1,
+  "scope": "WordprocessingML advanced revision records",
+  "statuses": {
+    "implemented": "safe-docx performs the named semantic operation and executable evidence is listed",
+    "preservation-only": "safe-docx retains or structurally tolerates the markup without claiming its revision semantics",
+    "conformance-gap": "safe-docx recognizes some of the surface but does not implement complete ECMA-376 semantics",
+    "non-goal": "safe-docx intentionally does not implement or interpret this surface"
+  },
+  "storyScope": {
+    "acceptReject": [
+      "word/document.xml",
+      "word/footnotes.xml",
+      "word/endnotes.xml",
+      "word/comments.xml",
+      "word/glossary/document.xml"
+    ],
+    "preservationOnly": [
+      "word/header*.xml",
+      "word/footer*.xml",
+      "word/styles.xml",
+      "word/numbering.xml"
+    ],
+    "leanReads": [
+      "word/document.xml",
+      "word/footnotes.xml",
+      "word/endnotes.xml"
+    ],
+    "leanClaim": "The compiled checker projects text and field markers only. It does not prove advanced revision-record semantics, property snapshots, range pairing, annotations, relationships, styles, numbering, headers, or footers."
+  },
+  "records": [
+    {
+      "id": "advanced-revision.content-insert-delete",
+      "elements": ["ins", "del"],
+      "registryIds": ["ECMA-PART1-17-13-5"],
+      "classification": "implemented",
+      "operations": { "emit": "implemented", "accept": "implemented", "reject": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/track-changes-emitter.ts",
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/src/primitives/track-changes-emitter.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Included as the baseline against which advanced records are classified; Lean verifies only projected text and field-marker outcomes, not wrapper semantics generally."
+    },
+    {
+      "id": "advanced-revision.run-properties",
+      "elements": ["rPrChange"],
+      "registryIds": ["ECMA-PART1-17-13-5-30", "ECMA-PART1-17-13-5-31"],
+      "classification": "implemented",
+      "operations": { "emit": "implemented", "accept": "implemented", "reject": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/track-changes-emitter.ts",
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/src/primitives/text.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Emission is limited to supported run-formatting mutations; this is not a claim over all run-property semantics."
+    },
+    {
+      "id": "advanced-revision.paragraph-properties",
+      "elements": ["pPrChange"],
+      "registryIds": ["ECMA-PART1-17-13-5-29"],
+      "classification": "implemented",
+      "operations": { "emit": "implemented", "accept": "implemented", "reject": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/track-changes-emitter.ts",
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/src/primitives/layout.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Emission is limited to supported paragraph-layout mutations."
+    },
+    {
+      "id": "advanced-revision.table-row-properties",
+      "elements": ["trPrChange"],
+      "registryIds": ["ECMA-PART1-17-13-5-37"],
+      "classification": "implemented",
+      "operations": { "emit": "implemented", "accept": "implemented", "reject": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/track-changes-emitter.ts",
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/src/primitives/layout.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Emission is limited to supported row-height mutations."
+    },
+    {
+      "id": "advanced-revision.table-cell-properties",
+      "elements": ["tcPrChange"],
+      "registryIds": ["ECMA-PART1-17-13-5-36"],
+      "classification": "implemented",
+      "operations": { "emit": "implemented", "accept": "implemented", "reject": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/track-changes-emitter.ts",
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/src/primitives/layout.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Emission is limited to supported cell-padding mutations."
+    },
+    {
+      "id": "advanced-revision.section-properties",
+      "elements": ["sectPrChange"],
+      "registryIds": ["ECMA-PART1-17-13-5-32"],
+      "classification": "implemented",
+      "operations": { "emit": "non-goal", "accept": "implemented", "reject": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/test-primitives/validate_ai_revisions.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Existing records can be consumed; no safe-docx primitive authors section-property revisions."
+    },
+    {
+      "id": "advanced-revision.table-properties",
+      "elements": ["tblPrChange"],
+      "registryIds": ["ECMA-PART1-17-13-5-34"],
+      "classification": "implemented",
+      "operations": { "emit": "non-goal", "accept": "implemented", "reject": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Existing records can be consumed; no safe-docx primitive authors table-wide property revisions."
+    },
+    {
+      "id": "advanced-revision.moves-content",
+      "elements": ["moveFrom", "moveTo"],
+      "registryIds": ["ECMA-PART1-17-13-5-21"],
+      "classification": "implemented",
+      "operations": { "emit": "non-goal", "accept": "implemented", "reject": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Accept keeps moveTo and reject keeps moveFrom. Pair identity and complete range semantics are classified separately."
+    },
+    {
+      "id": "advanced-revision.moves-ranges",
+      "elements": ["moveFromRangeStart", "moveFromRangeEnd", "moveToRangeStart", "moveToRangeEnd"],
+      "registryIds": ["ECMA-PART1-17-13-5-21"],
+      "classification": "conformance-gap",
+      "operations": { "emit": "non-goal", "accept": "conformance-gap", "reject": "conformance-gap", "validate": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/validate_ai_revisions.ts",
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/test-primitives/validate_ai_revisions.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "The validator checks start/end IDs and accept/reject removes markers, but neither resolver proves wrapper-to-range pairing or move identity semantics."
+    },
+    {
+      "id": "advanced-revision.numbering-properties",
+      "elements": ["numberingChange"],
+      "registryIds": ["ECMA-PART1-17-13-5"],
+      "classification": "conformance-gap",
+      "operations": { "emit": "non-goal", "accept": "conformance-gap", "reject": "conformance-gap", "validate": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/validate_ai_revisions.ts",
+        "packages/docx-core/test-primitives/validate_ai_revisions.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Metadata and placement are validated, but accept/reject does not resolve the record and no primitive emits it."
+    },
+    {
+      "id": "advanced-revision.table-grid-and-exceptions",
+      "elements": ["tblPrExChange", "tblGridChange"],
+      "registryIds": ["ECMA-PART1-17-13-5-33", "ECMA-PART1-17-13-5-35"],
+      "classification": "conformance-gap",
+      "operations": { "emit": "non-goal", "accept": "conformance-gap", "reject": "conformance-gap", "validate": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/validate_ai_revisions.ts",
+        "packages/docx-core/test-primitives/validate_ai_revisions.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "The vocabulary is recognized and tblGridChange placement is validated, but semantic resolution is not implemented."
+    },
+    {
+      "id": "advanced-revision.cell-topology",
+      "elements": ["cellIns", "cellDel", "cellMerge"],
+      "registryIds": ["ECMA-PART1-17-13-5-2"],
+      "classification": "preservation-only",
+      "operations": { "emit": "non-goal", "accept": "conformance-gap", "reject": "conformance-gap", "preserve": "implemented", "validate": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/track-changes-emitter.ts",
+        "packages/docx-core/src/primitives/validate_ai_revisions.ts",
+        "packages/docx-core/src/primitives/layout.test.ts",
+        "packages/docx-core/test-primitives/validate_ai_revisions.test.ts"
+      ],
+      "notes": "Existing topology records survive tcPrChange snapshot emission, but are not accepted, rejected, or authored directly."
+    },
+    {
+      "id": "advanced-revision.custom-xml-ranges",
+      "elements": ["customXmlInsRangeStart", "customXmlInsRangeEnd", "customXmlDelRangeStart", "customXmlDelRangeEnd", "customXmlMoveFromRangeStart", "customXmlMoveFromRangeEnd", "customXmlMoveToRangeStart", "customXmlMoveToRangeEnd"],
+      "registryIds": ["ECMA-PART1-17-13-5"],
+      "classification": "preservation-only",
+      "operations": { "emit": "non-goal", "accept": "preservation-only", "reject": "preservation-only", "validate": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/validate_ai_revisions.ts",
+        "packages/docx-core/test-primitives/validate_ai_revisions.test.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Range pairing can be validated and markers survive ordinary accept/reject; custom XML revision semantics are not interpreted."
+    },
+    {
+      "id": "advanced-revision.annotations-and-ranges",
+      "elements": ["bookmarkStart", "bookmarkEnd", "commentRangeStart", "commentRangeEnd", "commentReference", "permStart", "permEnd", "proofErr"],
+      "registryIds": ["ECMA-PART1-17-13-5"],
+      "classification": "preservation-only",
+      "operations": { "emit": "non-goal", "accept": "preservation-only", "reject": "preservation-only", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/accept_changes.ts",
+        "packages/docx-core/src/primitives/reject_changes.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "These are interactions around revision resolution, not advanced revision records themselves. Preservation does not prove anchor, permission, comment, or proofing semantics."
+    },
+    {
+      "id": "advanced-revision.conflicts",
+      "elements": ["w14:conflictIns", "w14:conflictDel"],
+      "registryIds": ["ECMA-PART1-17-13-5"],
+      "classification": "non-goal",
+      "operations": { "emit": "non-goal", "accept": "non-goal", "reject": "non-goal", "lean": "non-goal" },
+      "evidence": [],
+      "notes": "Conflict records are Microsoft extension markup, not ECMA-376 5th-edition WordprocessingML declarations; safe-docx makes no semantic claim for them."
+    },
+    {
+      "id": "advanced-revision.header-footer-stories",
+      "elements": ["header story revisions", "footer story revisions"],
+      "registryIds": ["ECMA-PART1-17-13-5"],
+      "classification": "preservation-only",
+      "operations": { "emit": "non-goal", "accept": "conformance-gap", "reject": "conformance-gap", "preserve": "implemented", "lean": "non-goal" },
+      "evidence": [
+        "packages/docx-core/src/primitives/revision-parts.ts",
+        "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+      ],
+      "notes": "Package load/save preserves header/footer parts and validation enumerates them, but package-wide accept/reject does not sweep them and Lean does not read them."
+    }
+  ]
+}

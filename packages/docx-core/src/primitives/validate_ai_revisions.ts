@@ -79,6 +79,12 @@ const RANGE_PAIRS: Array<{ start: string; end: string }> = [
   { start: 'bookmarkStart', end: 'bookmarkEnd' },
 ];
 
+/**
+ * Placement checks include numberingChange metadata even though semantic
+ * accept/reject remains outside the supported resolver.
+ *
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5 — numberingChange is schema vocabulary without a numbered Part 1 §17.13.5 heading, and safe-docx does not resolve its semantics
+ */
 const TRACKED_CHANGE_PLACEMENTS: Record<string, readonly string[]> = {
   cellIns: ['tcPr'],
   cellDel: ['tcPr'],

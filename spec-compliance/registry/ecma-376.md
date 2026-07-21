@@ -1107,6 +1107,130 @@ paths implement this merge in
 `packages/docx-core/src/primitives/reject_changes.ts` and
 `packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
+## [ECMA-PART1-17-13-5-21] Tracked move revisions (w:moveFrom / w:moveTo)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.21"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx consumes existing `w:moveFrom` and `w:moveTo` wrappers during
+accept/reject: accept removes the source and keeps the unwrapped destination;
+reject keeps the unwrapped source and removes the destination. It does not emit
+first-class moves. Range milestones are removed during resolution and their
+start/end IDs are checked by the AI-revision validator, but wrapper-to-range
+identity and full move-pair semantics remain a conformance gap. The compiled
+Lean checker projects text through move wrappers; it does not prove move-record
+semantics or range pairing.
+
+## [ECMA-PART1-17-13-5-29] Paragraph-property revisions (w:pPrChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.29"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx emits bounded `w:pPrChange` snapshots for supported paragraph-layout
+mutations and consumes existing records through accept/reject. This does not
+claim complete paragraph formatting or computed style semantics.
+
+## [ECMA-PART1-17-13-5-30] Paragraph-mark run-property revisions (w:rPrChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.30"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange
+verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx accepts/rejects `w:rPrChange` records under paragraph-mark run
+properties. Emission is bounded to the supported formatting surfaces; Lean does
+not inspect or prove the prior-property snapshot.
+
+## [ECMA-PART1-17-13-5-31] Run-property revisions (w:rPrChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.31"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange
+verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx emits bounded run-formatting snapshots and consumes existing
+`w:rPrChange` records. It does not claim complete run-property semantics.
+
+## [ECMA-PART1-17-13-5-32] Section-property revisions (w:sectPrChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.32"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx consumes existing `w:sectPrChange` records: accept removes the prior
+snapshot and reject restores it. No current primitive authors these records;
+headers, footers, relationship semantics, pagination, and Lean are outside the
+claim.
+
+## [ECMA-PART1-17-13-5-34] Table-property revisions (w:tblPrChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.34"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange
+verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx accepts/rejects existing `w:tblPrChange` records but does not emit
+them. Table layout/rendering and Lean verification are outside this claim.
+
+## [ECMA-PART1-17-13-5-36] Table-cell-property revisions (w:tcPrChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.36"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange
+verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+The supported cell-padding mutation emits `w:tcPrChange`; accept/reject also
+consume existing records. Cell-topology records inside the snapshot remain
+preservation-only, and Lean does not inspect the snapshot.
+
+## [ECMA-PART1-17-13-5-37] Table-row-property revisions (w:trPrChange)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.37"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange
+verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+The supported row-height mutation emits `w:trPrChange`; accept/reject also
+consume existing records. Complete row-property semantics and Lean verification
+are outside this claim.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the
@@ -1185,73 +1309,33 @@ mutation today — it neither authors these revision elements nor offers an
 accept/reject path dedicated to them — so it makes no conformance claim over
 this section.
 
-## [ECMA-PART1-17-13-5-21] Tracked move revisions (w:moveFrom / w:moveTo)
+## [ECMA-PART1-17-13-5-33] Table-grid revisions (w:tblGridChange)
 
 ```yaml
 edition: 5
 part: 1
-section: "17.13.5.21"
+section: "17.13.5.33"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange
 verifiedBy:
 ```
 
-ECMA-376 Part 1 §17.13.5.21 onward define tracked *moves*: the `w:moveFrom` and
-`w:moveTo` content wrappers plus the paired `w:moveFromRangeStart` /
-`w:moveFromRangeEnd` and `w:moveToRangeStart` / `w:moveToRangeEnd` range markers.
-safe-docx surfaces no move primitive today; relocating content is expressed as a
-deletion plus an insertion, not as a first-class move pair. No conformance claim
-is made over the move-revision section.
+safe-docx recognizes `w:tblGridChange` metadata and placement but does not emit,
+accept, or reject its grid semantics.
 
-## [ECMA-PART1-17-13-5-30] Numbering-property revisions (w:numberingChange)
+## [ECMA-PART1-17-13-5-35] Table-property-exception revisions (w:tblPrExChange)
 
 ```yaml
 edition: 5
 part: 1
-section: "17.13.5.30"
+section: "17.13.5.35"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numberingChange
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange
 verifiedBy:
 ```
 
-ECMA-376 Part 1 §17.13.5.30 defines `w:numberingChange`, the revision record for
-a paragraph's previous numbering properties. safe-docx surfaces no numbering
-mutation today and does not author this revision element, so it makes no
-conformance claim over this section.
-
-## [ECMA-PART1-17-13-5-34] Section-property revisions (w:sectPrChange)
-
-```yaml
-edition: 5
-part: 1
-section: "17.13.5.34"
-url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange
-verifiedBy:
-```
-
-ECMA-376 Part 1 §17.13.5.34 defines `w:sectPrChange`, the revision record for a
-prior set of section properties (page layout, columns, headers/footers binding).
-safe-docx surfaces no section-layout mutation today and does not author this
-revision element, so it makes no conformance claim over this section.
-
-## [ECMA-PART1-17-13-5-36] Table-property and grid revisions (w:tblPrChange / w:tblPrExChange / w:tblGridChange)
-
-```yaml
-edition: 5
-part: 1
-section: "17.13.5.36"
-url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
-schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange
-verifiedBy:
-```
-
-ECMA-376 Part 1 §17.13.5.35–§17.13.5.37 define tracked changes to table-wide
-structure: `w:tblGridChange` (grid-column definitions), `w:tblPrChange`
-(table properties), and `w:tblPrExChange` (table-level property exceptions).
-safe-docx surfaces no table-wide property or grid mutation today and does not
-author these revision elements, so it makes no conformance claim over this
-section.
+safe-docx recognizes `w:tblPrExChange` metadata but does not emit, accept, or
+reject table-level property-exception semantics.
 
 Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
 safe-docx validates its documented API-supported enum and safe-integer subset,

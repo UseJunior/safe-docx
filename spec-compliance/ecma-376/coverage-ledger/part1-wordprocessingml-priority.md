@@ -31,7 +31,7 @@ compares, accepts/rejects revisions, and emits WordprocessingML documents.
 | Numbering | Part 1 §17.9 plus paragraph `w:numPr` | `partial`; generated definitions/references, API-subset value/reference validation, and package preservation are evidenced; XML integers wider than JavaScript safe integers, rendering, complete overrides, and Word counter behavior are not | `ECMA-PART1-17-9-16`, `ECMA-PART1-17-9-1`, `ECMA-PART1-17-9-2`, `ECMA-PART1-17-9-15`, `ECMA-PART1-17-9-18`, `ECMA-PART1-17-9-3`, `ECMA-PART1-17-9-6`, `ECMA-PART1-17-9-17`, `ECMA-PART1-17-9-11`, `ECMA-PART1-17-9-25`, `ECMA-PART1-17-9-28`, `ECMA-PART1-17-9-12`, `ECMA-PART1-17-9-7`, `ECMA-PART1-17-3-1-19`, `ECMA-PART1-17-13-5-30` | Track ECMA-376 §17.9 numbering coverage |
 | Styles and defaults | Part 1 §17.7 | `partial`; generated definitions/defaults/references, API-subset validation, and package preservation are evidenced; schema-valid table/numbering style types, full cascade, latent styles, theme resolution, and rendering are unsupported or non-goals | `ECMA-PART1-17-7-4-18`, `ECMA-PART1-17-7-4-17`, `ECMA-PART1-17-7-5-1` | Track ECMA-376 §17.7 styles coverage |
 | Comments, footnotes, and anchors | Part 1 §17.11 and §17.13.4 | `partial`; comments and footnote-reference semantics are claimed for the supported surface | `ECMA-PART1-17-11-14`, `ECMA-PART1-17-13-4-6`, `ECMA-PART1-17-13-4-2`, `ECMA-PART1-17-13-4-4`, `ECMA-PART1-17-13-4-3`, `ECMA-PART1-17-13-4-5` | Track ECMA-376 §17.11/§17.13.4 note and comment coverage |
-| Moves and property-revision records | Part 1 §17.13.5 move, numbering, section, table-property revision records | `non-goal` today except where expressed as delete plus insert | `ECMA-PART1-17-13-5-21`, `ECMA-PART1-17-13-5-30`, `ECMA-PART1-17-13-5-34`, `ECMA-PART1-17-13-5-36` | Track non-goal status for ECMA-376 advanced revision records |
+| Moves and property-revision records | Part 1 §17.13.5 move and property-revision records | `partial`; existing move wrappers and six property snapshot records have bounded accept/reject support, four property families have bounded emission, while move-range identity, numbering/grid/exception resolution, topology, custom XML, conflicts, header/footer sweeps, and Lean semantics are gaps, preservation-only, or non-goals according to the machine-readable matrix | `ECMA-PART1-17-13-5-21`, `ECMA-PART1-17-13-5-29`, `ECMA-PART1-17-13-5-30`, `ECMA-PART1-17-13-5-31`, `ECMA-PART1-17-13-5-32`, `ECMA-PART1-17-13-5-33`, `ECMA-PART1-17-13-5-34`, `ECMA-PART1-17-13-5-35`, `ECMA-PART1-17-13-5-36`, `ECMA-PART1-17-13-5-37` | Track non-goal status for ECMA-376 advanced revision records |
 
 ## Issue Template
 
@@ -62,3 +62,8 @@ A slice is complete only when:
 - generated `CONFORMANCE.md` and README summary remain up to date; and
 - any Lean-backed claim is tied to the concrete checker input, not to the whole
   TypeScript implementation or to all of ECMA-376.
+
+The operation-specific advanced-revision denominator is
+`spec-compliance/manifests/ecma-376-advanced-revisions.json`. Its checker fails
+when a runtime revision-vocabulary element is not classified, an implemented
+claim lacks evidence, an issue anchor disappears, or Lean scope drifts.

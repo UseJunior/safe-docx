@@ -12,6 +12,7 @@ const checkOnly = process.argv.includes('--check');
 const artifactManifestPath = 'spec-compliance/manifests/ecma-376-artifacts.json';
 const referenceManifestPath = 'spec-compliance/manifests/ecma-376-spec-references.json';
 const vocabularySeedPath = 'spec-compliance/manifests/ecma-376-vocabulary-seed.json';
+const advancedRevisionManifestPath = 'spec-compliance/manifests/ecma-376-advanced-revisions.json';
 const vocabularyOutputPath = 'spec-compliance/generated/ecma-376-vocabulary.json';
 const reportOutputPath = 'spec-compliance/generated/ecma-376-coverage-report.md';
 const typescriptOutputPath = 'packages/docx-core/src/generated/ecma-376-vocabulary.ts';
@@ -162,9 +163,13 @@ async function validateManifests(artifactManifest, references, seed) {
     throw new Error(`Canonical conformance registry is invalid: ${registry.errors.map((error) => error.message).join('; ')}`);
   }
   const artifactByPath = new Map(artifactManifest.artifacts.map((artifact) => [artifact.path, artifact]));
+  const denominatorRegistry = new Map([
+    ...registry.targets,
+    ...registry.nonGoals.map((entry) => [entry.id, entry]),
+  ]);
   const zipByPath = new Map();
   for (const reference of references.references) {
-    validateReferenceRegistryConsistency(reference, registry.targets, artifactByPath);
+    validateReferenceRegistryConsistency(reference, denominatorRegistry, artifactByPath);
     const locator = /^(.+\.pdf)#(\d+(?:\.\d+)*)$/.exec(reference.locator);
     if (!locator || locator[2] !== reference.section) {
       throw new Error(`${reference.id}: locator must name its source PDF and exact section`);
@@ -268,7 +273,7 @@ async function sourceFiles(directory) {
   return files;
 }
 
-async function generateReport(references, vocabulary) {
+async function generateReport(references, vocabulary, advancedRevisions) {
   const scanRoots = ['packages/docx-core/src', 'packages/docx-compare/src'];
   const files = (await Promise.all(scanRoots.map((scanRoot) => sourceFiles(path.join(root, scanRoot))))).flat();
   const source = await Promise.all(files.map(async (file) => ({
@@ -332,6 +337,14 @@ async function generateReport(references, vocabulary) {
     '| --- | --- | --- | --- |',
     ...references.references.map((entry) => `| \`${entry.id}\` | Part ${entry.part}, ${entry.locator} | \`${entry.coverageStatus}\` | ${entry.relatedSource.length} source / ${entry.relatedTests.length} tests |`),
     '',
+    '## Advanced revision records',
+    '',
+    'This operation-specific matrix distinguishes semantic implementation from preservation, known gaps, and non-goals. Lean scope is recorded independently and does not inherit TypeScript claims.',
+    '',
+    '| Record | Classification | Operations |',
+    '| --- | --- | --- |',
+    ...advancedRevisions.records.map((entry) => `| \`${entry.id}\` | \`${entry.classification}\` | ${Object.entries(entry.operations).map(([operation, status]) => `${operation}=\`${status}\``).join('<br>')} |`),
+    '',
     '## Generated vocabulary use',
     '',
     '| Constant | QName | Kind | Source use |',
@@ -365,13 +378,14 @@ export async function main() {
   const artifacts = await readJson(artifactManifestPath);
   const references = await readJson(referenceManifestPath);
   const seed = await readJson(vocabularySeedPath);
+  const advancedRevisions = await readJson(advancedRevisionManifestPath);
   await validateManifests(artifacts, references, seed);
   await verifyArtifacts(artifacts);
   await verifyDerivedSchemas(artifacts);
   const vocabulary = await generateVocabulary(artifacts, seed);
   await emit(vocabularyOutputPath, stableJson(vocabulary));
   await emit(typescriptOutputPath, generateTypescript(vocabulary));
-  await emit(reportOutputPath, await generateReport(references, vocabulary));
+  await emit(reportOutputPath, await generateReport(references, vocabulary, advancedRevisions));
   console.log(`${checkOnly ? 'Verified' : 'Generated'} ECMA-376 artifacts, ${references.references.length} references, and ${vocabulary.entries.length} vocabulary entries.`);
 }
 
