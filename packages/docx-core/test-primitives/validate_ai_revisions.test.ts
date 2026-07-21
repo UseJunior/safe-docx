@@ -11,7 +11,7 @@ import {
 } from '../src/index.js';
 import { buildDocxFromBodyXml } from '../src/testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
-import { revisionEvidence } from '../src/testing/revision-evidence.js';
+import { revisionEvidence, revisionEvidenceCases } from '../src/testing/revision-evidence.js';
 
 const TEST_FEATURE = 'add-ai-revision-validator';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -173,10 +173,14 @@ describe('validateAiRevisions', () => {
         await and('legacy and wrong-namespace lookalike parents are rejected', () => {
           expect(invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toHaveLength(2);
         });
-        revisionEvidence('ADV-NUMBERING-PLACEMENT-01', {
+        const source = doc(`<w:p><w:pPr><w:numPr><w:numberingChange ${metadata}/></w:numPr></w:pPr></w:p>`);
+        revisionEvidence('ADV-NUMBERING-PLACEMENT-01', revisionEvidenceCases({
           elements: ['numberingChange'], operations: ['validate'], story: 'main',
-          passed: () => valid.errors.every((error) => error.code !== 'REVISION_PLACEMENT_INVALID') && invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID').length === 2,
-        });
+          fixture: () => ({ target: source.getElementsByTagNameNS(W_NS, 'numberingChange').item(0) as Element | null, valid, invalid }),
+          targetPresent: (fixture) => fixture.target !== null,
+          observable: (fixture) => fixture.valid.errors.every((error) => error.code !== 'REVISION_PLACEMENT_INVALID') && fixture.invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID').length === 2,
+          removeTarget: (fixture) => ({ ...fixture, target: null }),
+        }));
       },
     );
 

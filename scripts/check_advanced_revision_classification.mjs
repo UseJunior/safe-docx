@@ -9,6 +9,7 @@ const manifestPath = path.join(root, 'spec-compliance/manifests/ecma-376-advance
 const vocabularyPath = path.join(root, 'packages/docx-core/src/primitives/revision-vocabulary.ts');
 const registryPath = path.join(root, 'spec-compliance/registry/ecma-376.md');
 const leanLedgerPath = path.join(root, 'verification/registry/lean-xml-checker-coverage.json');
+const evidenceResultsPath = path.join(root, 'spec-compliance/evidence/ecma-376-advanced-revisions.json');
 
 const ALLOWED_STATUSES = new Set(['implemented', 'preservation-only', 'conformance-gap', 'non-goal']);
 const REQUIRED_MODE_PATHS = ['comparison.inplace', 'comparison.rebuild', 'reconstruction.inplace', 'reconstruction.rebuild'];
@@ -49,6 +50,10 @@ const REQUIRED_ELEMENT_ANCHORS = new Map(Object.entries({
   permEnd: ['ECMA-PART1-17-13-7-1'],
   permStart: ['ECMA-PART1-17-13-7-2'],
   proofErr: ['ECMA-PART1-17-13-8-1'],
+  'w14:conflictIns': [],
+  'w14:conflictDel': [],
+  'header story revisions': [],
+  'footer story revisions': [],
 }));
 const LEAN_PROJECTED_ELEMENTS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
 
@@ -83,35 +88,7 @@ function flattenStatuses(value, prefix = '', out = new Map()) {
   return out;
 }
 
-function literalProperty(object, name, sourceFile) {
-  const property = object.properties.find((candidate) =>
-    ts.isPropertyAssignment(candidate) &&
-    ((ts.isIdentifier(candidate.name) && candidate.name.text === name) ||
-      (ts.isStringLiteral(candidate.name) && candidate.name.text === name)),
-  );
-  if (!property || !ts.isPropertyAssignment(property)) return null;
-  if (!ts.isStringLiteral(property.initializer) && !ts.isNoSubstitutionTemplateLiteral(property.initializer)) {
-    throw new Error(`${sourceFile.fileName}: evidence ${name} must be a string literal`);
-  }
-  return property.initializer.text;
-}
-
-function literalArrayProperty(object, name, sourceFile) {
-  const property = object.properties.find((candidate) =>
-    ts.isPropertyAssignment(candidate) && ts.isIdentifier(candidate.name) && candidate.name.text === name,
-  );
-  if (!property || !ts.isPropertyAssignment(property) || !ts.isArrayLiteralExpression(property.initializer)) {
-    throw new Error(`${sourceFile.fileName}: evidence ${name} must be a literal array`);
-  }
-  return property.initializer.elements.map((item) => {
-    if (!ts.isStringLiteral(item) && !ts.isNoSubstitutionTemplateLiteral(item)) {
-      throw new Error(`${sourceFile.fileName}: evidence ${name} entries must be string literals`);
-    }
-    return item.text;
-  });
-}
-
-export function parseEvidenceTest(source, filename, evidenceId) {
+export function hasExecutableEvidenceTest(source, filename, evidenceId) {
   const sourceFile = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   let callback = null;
   const visit = (node) => {
@@ -127,66 +104,27 @@ export function parseEvidenceTest(source, filename, evidenceId) {
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-  if (!callback) return null;
-  const claims = [];
-  let declarationCount = 0;
-  const collectClaims = (node) => {
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'revisionEvidence') {
-      const [idArg, matrixArg] = node.arguments;
-      if (!idArg || (!ts.isStringLiteral(idArg) && !ts.isNoSubstitutionTemplateLiteral(idArg))) {
-        throw new Error(`${filename}: revisionEvidence id must be a string literal`);
-      }
-      if (idArg.text === evidenceId) {
-        declarationCount += 1;
-        if (!matrixArg || !ts.isObjectLiteralExpression(matrixArg)) {
-          throw new Error(`${evidenceId}: revisionEvidence matrix must be an object literal`);
-        }
-        const elements = literalArrayProperty(matrixArg, 'elements', sourceFile);
-        const operations = literalArrayProperty(matrixArg, 'operations', sourceFile);
-        const defaultStory = literalProperty(matrixArg, 'story', sourceFile);
-        const storiesProperty = matrixArg.properties.find((candidate) =>
-          ts.isPropertyAssignment(candidate) && ts.isIdentifier(candidate.name) && candidate.name.text === 'stories',
-        );
-        const stories = new Map();
-        if (storiesProperty && ts.isPropertyAssignment(storiesProperty)) {
-          if (!ts.isObjectLiteralExpression(storiesProperty.initializer)) throw new Error(`${evidenceId}: stories must be an object literal`);
-          for (const property of storiesProperty.initializer.properties) {
-            if (!ts.isPropertyAssignment(property)) throw new Error(`${evidenceId}: invalid story mapping`);
-            const element = ts.isIdentifier(property.name) || ts.isStringLiteral(property.name) ? property.name.text : null;
-            if (!element || (!ts.isStringLiteral(property.initializer) && !ts.isNoSubstitutionTemplateLiteral(property.initializer))) {
-              throw new Error(`${evidenceId}: story mappings must use string literals`);
-            }
-            stories.set(element, property.initializer.text);
-          }
-        }
-        const passed = matrixArg.properties.find((candidate) =>
-            ts.isPropertyAssignment(candidate) && ts.isIdentifier(candidate.name) && candidate.name.text === 'passed',
-        );
-        if (!passed || !ts.isPropertyAssignment(passed) ||
-            (!ts.isArrowFunction(passed.initializer) && !ts.isFunctionExpression(passed.initializer))) {
-          throw new Error(`${evidenceId}: passed must be an executable callback`);
-        }
-        for (const element of elements) {
-          const story = stories.get(element) ?? defaultStory;
-          if (!story) throw new Error(`${evidenceId}: no story declared for ${element}`);
-          for (const operation of operations) {
-            claims.push({ element, operation, story });
-          }
-        }
-      }
-    }
-    ts.forEachChild(node, collectClaims);
-  };
-  collectClaims(callback);
-  if (declarationCount !== 1) throw new Error(`${evidenceId}: expected one structured revisionEvidence declaration`);
-  return claims;
+  return callback !== null;
 }
 
 function claimKey({ element, operation, story }) {
   return `${element}\u0000${operation}\u0000${story}`;
 }
 
-async function validateEvidence(record, operationStatuses, declaredClaimsByEvidence) {
+function validateEvidenceResult(row) {
+  const expected = {
+    targetPresent: true,
+    observable: true,
+    targetRemovalDetected: true,
+    operationMutationDetected: true,
+    storyMutationDetected: true,
+  };
+  if (JSON.stringify(row.assertions) !== JSON.stringify(expected)) {
+    throw new Error(`${row.id}: incomplete mutation-sensitive result for ${row.element} ${row.operation} ${row.story}`);
+  }
+}
+
+async function validateEvidence(record, operationStatuses, executedClaimsByEvidence) {
   const evidenceIds = new Set();
   const evidenceByOperation = new Map();
   for (const evidence of record.evidence ?? []) {
@@ -195,14 +133,14 @@ async function validateEvidence(record, operationStatuses, declaredClaimsByEvide
     for (const sourcePath of evidence.sources ?? []) await access(path.join(root, sourcePath));
     await access(path.join(root, evidence.test.path));
     const testSource = await readFile(path.join(root, evidence.test.path), 'utf8');
-    const executableClaims = parseEvidenceTest(testSource, evidence.test.path, evidence.id);
-    if (!executableClaims) throw new Error(`${evidence.id}: identifier is not attached to an executable test callback`);
+    if (!hasExecutableEvidenceTest(testSource, evidence.test.path, evidence.id)) {
+      throw new Error(`${evidence.id}: identifier is not attached to an executable test callback`);
+    }
     const expectedClaims = evidence.claims ?? [];
-    const declaredClaims = declaredClaimsByEvidence.get(`${evidence.id}\u0000${evidence.test.path}`) ?? [];
+    const executableClaims = executedClaimsByEvidence.get(evidence.id) ?? [];
     if (expectedClaims.length === 0) throw new Error(`${evidence.id}: structured claims are required`);
     const actualKeys = new Set(executableClaims.map(claimKey));
     const expectedKeys = new Set(expectedClaims.map(claimKey));
-    const declaredKeys = new Set(declaredClaims.map(claimKey));
     if (actualKeys.size !== executableClaims.length) throw new Error(`${evidence.id}: duplicate executable evidence claim`);
     if (expectedKeys.size !== expectedClaims.length) throw new Error(`${evidence.id}: duplicate manifest evidence claim`);
     for (const claim of expectedClaims) {
@@ -216,16 +154,6 @@ async function validateEvidence(record, operationStatuses, declaredClaimsByEvide
       covered.add(claim.element);
       evidenceByOperation.set(claim.operation, covered);
     }
-    for (const claim of executableClaims) {
-      if (!declaredKeys.has(claimKey(claim))) {
-        throw new Error(`${evidence.id}: undeclared executable claim for ${claim.element} ${claim.operation} ${claim.story}`);
-      }
-    }
-    for (const claim of declaredClaims) {
-      if (!actualKeys.has(claimKey(claim))) {
-        throw new Error(`${evidence.id}: missing executable claim for ${claim.element} ${claim.operation} ${claim.story}`);
-      }
-    }
   }
 
   for (const [operation, status] of operationStatuses) {
@@ -237,21 +165,43 @@ async function validateEvidence(record, operationStatuses, declaredClaimsByEvide
   }
 }
 
-export async function validateAdvancedRevisionClassification(manifest, vocabulary, registryText, leanLedger) {
+export async function validateAdvancedRevisionClassification(manifest, vocabulary, registryText, leanLedger, evidenceResults) {
   if (manifest.schemaVersion !== 3) throw new Error('Unsupported advanced-revision manifest schemaVersion');
   if (!Array.isArray(manifest.records) || manifest.records.length === 0) throw new Error('Advanced-revision manifest has no records');
 
   const ids = new Set();
   const classifiedElements = new Set();
   const anchorsByElement = new Map();
-  const declaredClaimsByEvidence = new Map();
+  if (evidenceResults?.schemaVersion !== 1 || !Array.isArray(evidenceResults.cases)) {
+    throw new Error('Unsupported or missing advanced-revision evidence results');
+  }
+  const executedClaimsByEvidence = new Map();
+  for (const row of evidenceResults.cases) {
+    validateEvidenceResult(row);
+    const rows = executedClaimsByEvidence.get(row.id) ?? [];
+    rows.push({ element: row.element, operation: row.operation, story: row.story });
+    executedClaimsByEvidence.set(row.id, rows);
+  }
+  const manifestClaimsByEvidence = new Map();
   for (const record of manifest.records) {
     for (const evidence of record.evidence ?? []) {
-      const key = `${evidence.id}\u0000${evidence.test?.path ?? ''}`;
-      const claims = declaredClaimsByEvidence.get(key) ?? [];
+      const claims = manifestClaimsByEvidence.get(evidence.id) ?? [];
       claims.push(...(evidence.claims ?? []));
-      declaredClaimsByEvidence.set(key, claims);
+      manifestClaimsByEvidence.set(evidence.id, claims);
     }
+  }
+  for (const [evidenceId, claims] of manifestClaimsByEvidence) {
+    const expected = new Set(claims.map(claimKey));
+    const executed = new Set((executedClaimsByEvidence.get(evidenceId) ?? []).map(claimKey));
+    for (const claim of expected) {
+      if (!executed.has(claim)) throw new Error(`${evidenceId}: missing executed mutation-sensitive claim ${claim.replaceAll('\u0000', ' ')}`);
+    }
+    for (const claim of executed) {
+      if (!expected.has(claim)) throw new Error(`${evidenceId}: undeclared executed mutation-sensitive claim ${claim.replaceAll('\u0000', ' ')}`);
+    }
+  }
+  for (const evidenceId of executedClaimsByEvidence.keys()) {
+    if (!manifestClaimsByEvidence.has(evidenceId)) throw new Error(`${evidenceId}: executed evidence is not declared by the manifest`);
   }
   for (const record of manifest.records) {
     if (ids.has(record.id)) throw new Error(`Duplicate advanced-revision record id: ${record.id}`);
@@ -282,7 +232,7 @@ export async function validateAdvancedRevisionClassification(manifest, vocabular
         if (!registryText.includes(`## [${registryId}]`)) throw new Error(`${record.id}: unknown registry id ${registryId}`);
       }
     }
-    await validateEvidence(record, operationStatuses, declaredClaimsByEvidence);
+    await validateEvidence(record, operationStatuses, executedClaimsByEvidence);
   }
 
   const unclassified = vocabulary.filter((element) => !classifiedElements.has(element));
@@ -293,6 +243,14 @@ export async function validateAdvancedRevisionClassification(manifest, vocabular
     if (actual.join('|') !== expected.join('|')) {
       throw new Error(`${element}: normative anchors must be ${expected.join(', ') || '(none)'}; found ${actual.join(', ') || '(none)'}`);
     }
+  }
+  const unexpectedAnchorElements = [...anchorsByElement.keys()].filter((element) => !REQUIRED_ELEMENT_ANCHORS.has(element));
+  if (unexpectedAnchorElements.length > 0) {
+    throw new Error(`Canonical normative-anchor map is missing classified elements: ${unexpectedAnchorElements.join(', ')}`);
+  }
+  const missingClassifiedElements = [...REQUIRED_ELEMENT_ANCHORS.keys()].filter((element) => !anchorsByElement.has(element));
+  if (missingClassifiedElements.length > 0) {
+    throw new Error(`Canonical normative-anchor map contains unclassified elements: ${missingClassifiedElements.join(', ')}`);
   }
 
   if ((manifest.storyScope?.leanReads ?? []).join('|') !== 'word/document.xml|word/footnotes.xml|word/endnotes.xml') {
@@ -306,13 +264,14 @@ export async function validateAdvancedRevisionClassification(manifest, vocabular
 }
 
 export async function main() {
-  const [manifest, vocabularySource, registryText, leanLedger] = await Promise.all([
+  const [manifest, vocabularySource, registryText, leanLedger, evidenceResults] = await Promise.all([
     readFile(manifestPath, 'utf8').then(JSON.parse),
     readFile(vocabularyPath, 'utf8'),
     readFile(registryPath, 'utf8'),
     readFile(leanLedgerPath, 'utf8').then(JSON.parse),
+    readFile(evidenceResultsPath, 'utf8').then(JSON.parse),
   ]);
-  await validateAdvancedRevisionClassification(manifest, parseRevisionVocabulary(vocabularySource), registryText, leanLedger);
+  await validateAdvancedRevisionClassification(manifest, parseRevisionVocabulary(vocabularySource), registryText, leanLedger, evidenceResults);
   console.log(`check_advanced_revision_classification: OK (${manifest.records.length} records)`);
 }
 

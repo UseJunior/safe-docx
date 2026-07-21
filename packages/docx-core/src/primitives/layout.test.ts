@@ -6,7 +6,7 @@ import { setParagraphSpacing, setTableCellPadding, setTableRowHeight } from './l
 import { OOXML, W } from './namespaces.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { parseXml } from './xml.js';
-import { revisionEvidence } from '../testing/revision-evidence.js';
+import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Layout Primitives' });
 
@@ -142,10 +142,13 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousSpacing, 'before')).toBeNull();
       expect(wordAttr(previousSpacing, 'after')).toBe('120');
     });
-    revisionEvidence('ADV-PPR-EMISSION-01', {
+    revisionEvidence('ADV-PPR-EMISSION-01', revisionEvidenceCases({
       elements: ['pPrChange'], operations: ['emit'], story: 'main',
-      passed: () => pPrChange.getElementsByTagNameNS(W_NS, W.pPr).length === 1 && wordAttr(previousSpacing, 'after') === '120',
-    });
+      fixture: () => ({ target: pPrChange as Element | null, previousSpacing }),
+      targetPresent: (fixture) => fixture.target !== null,
+      observable: (fixture) => fixture.target?.getElementsByTagNameNS(W_NS, W.pPr).length === 1 && wordAttr(fixture.previousSpacing, 'after') === '120',
+      removeTarget: (fixture) => ({ ...fixture, target: null }),
+    }));
   });
 
   test('tracked spacing normalizes live and prior snapshots with alternate prefixes', () => {
@@ -224,10 +227,13 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousTrHeight, 'val')).toBe('360');
       expect(wordAttr(previousTrHeight, 'hRule')).toBe('atLeast');
     });
-    revisionEvidence('ADV-TRPR-EMISSION-01', {
+    revisionEvidence('ADV-TRPR-EMISSION-01', revisionEvidenceCases({
       elements: ['trPrChange'], operations: ['emit'], story: 'main',
-      passed: () => trPrChange.getElementsByTagNameNS(W_NS, W.trPr).length === 1 && wordAttr(previousTrHeight, 'val') === '360',
-    });
+      fixture: () => ({ target: trPrChange as Element | null, previousTrHeight }),
+      targetPresent: (fixture) => fixture.target !== null,
+      observable: (fixture) => fixture.target?.getElementsByTagNameNS(W_NS, W.trPr).length === 1 && wordAttr(fixture.previousTrHeight, 'val') === '360',
+      removeTarget: (fixture) => ({ ...fixture, target: null }),
+    }));
   });
 
   test
@@ -283,10 +289,13 @@ describe('layout tracked-change emission', () => {
           expect(getDirectChildrenByName(previousTcMar, W.left)).toHaveLength(0);
           expect(firstDirectChild(previousTcMar, W.top)).toBeDefined();
         });
-        revisionEvidence('ADV-TCPR-EMISSION-01', {
+        revisionEvidence('ADV-TCPR-EMISSION-01', revisionEvidenceCases({
           elements: ['tcPrChange'], operations: ['emit'], story: 'main',
-          passed: () => tcPrChange.getElementsByTagNameNS(W_NS, W.tcPr).length === 1 && getDirectChildrenByName(previousTcMar, W.left).length === 0,
-        });
+          fixture: () => ({ target: tcPrChange as Element | null, previousTcMar }),
+          targetPresent: (fixture) => fixture.target !== null,
+          observable: (fixture) => fixture.target?.getElementsByTagNameNS(W_NS, W.tcPr).length === 1 && getDirectChildrenByName(fixture.previousTcMar, W.left).length === 0,
+          removeTarget: (fixture) => ({ ...fixture, target: null }),
+        }));
       },
     );
 

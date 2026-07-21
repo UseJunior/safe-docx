@@ -1,0 +1,2333 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "npm run generate:advanced-revision-evidence",
+  "cases": [
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "bookmarkEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "bookmarkEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "bookmarkStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "bookmarkStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "commentRangeEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "commentRangeEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "commentRangeStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "commentRangeStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "commentReference",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "commentReference",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlDelRangeEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlDelRangeEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlDelRangeStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlDelRangeStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlInsRangeEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlInsRangeEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlInsRangeStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlInsRangeStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlMoveFromRangeEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlMoveFromRangeEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlMoveFromRangeStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlMoveFromRangeStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlMoveToRangeEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlMoveToRangeEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlMoveToRangeStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "customXmlMoveToRangeStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "del",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "del",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "ins",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "ins",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveFrom",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveFrom",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveFromRangeEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveFromRangeEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveFromRangeStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveFromRangeStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveTo",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveTo",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveToRangeEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveToRangeEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveToRangeStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "moveToRangeStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "permEnd",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "permEnd",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "permStart",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "permStart",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "proofErr",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "proofErr",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "w14:conflictDel",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "w14:conflictDel",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "w14:conflictIns",
+      "operation": "reconstruction.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+      "element": "w14:conflictIns",
+      "operation": "reconstruction.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFrom",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFrom",
+      "operation": "comparison.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFrom",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFromRangeEnd",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFromRangeEnd",
+      "operation": "comparison.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFromRangeEnd",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFromRangeStart",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFromRangeStart",
+      "operation": "comparison.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveFromRangeStart",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveTo",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveTo",
+      "operation": "comparison.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveTo",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveToRangeEnd",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveToRangeEnd",
+      "operation": "comparison.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveToRangeEnd",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveToRangeStart",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveToRangeStart",
+      "operation": "comparison.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-COMPARE-MOVE-EMISSION-01",
+      "element": "moveToRangeStart",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-EMISSION-01",
+      "element": "del",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-EMISSION-01",
+      "element": "del",
+      "operation": "comparison.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-EMISSION-01",
+      "element": "del",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-EMISSION-01",
+      "element": "ins",
+      "operation": "comparison.inplace",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-EMISSION-01",
+      "element": "ins",
+      "operation": "comparison.rebuild",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-EMISSION-01",
+      "element": "ins",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-RESOLUTION-01",
+      "element": "del",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-RESOLUTION-01",
+      "element": "del",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-RESOLUTION-01",
+      "element": "ins",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-CONTENT-RESOLUTION-01",
+      "element": "ins",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveFrom",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveFrom",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveFromRangeEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveFromRangeEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveFromRangeStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveFromRangeStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveTo",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveTo",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveToRangeEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveToRangeEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveToRangeStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-MOVE-RESOLUTION-01",
+      "element": "moveToRangeStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-NUMBERING-PLACEMENT-01",
+      "element": "numberingChange",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PPR-EMISSION-01",
+      "element": "pPrChange",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "pPrChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "pPrChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "rPrChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "rPrChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "sectPrChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "sectPrChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "tblPrChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "tblPrChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "tcPrChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "tcPrChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "trPrChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-PROPERTY-RESOLUTION-01",
+      "element": "trPrChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "bookmarkEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "bookmarkEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "bookmarkStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "bookmarkStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "commentRangeEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "commentRangeEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "commentRangeStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "commentRangeStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "commentReference",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "commentReference",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlDelRangeEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlDelRangeEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlDelRangeStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlDelRangeStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlInsRangeEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlInsRangeEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlInsRangeStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlInsRangeStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlMoveFromRangeEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlMoveFromRangeEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlMoveFromRangeStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlMoveFromRangeStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlMoveToRangeEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlMoveToRangeEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlMoveToRangeStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "customXmlMoveToRangeStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "permEnd",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "permEnd",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "permStart",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "permStart",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "proofErr",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RANGE-PRESERVATION-01",
+      "element": "proofErr",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-RPR-EMISSION-01",
+      "element": "rPrChange",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-STORY-BOUNDARY-01",
+      "element": "footer story revisions",
+      "operation": "accept",
+      "story": "footer",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-STORY-BOUNDARY-01",
+      "element": "footer story revisions",
+      "operation": "preserve",
+      "story": "footer",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-STORY-BOUNDARY-01",
+      "element": "footer story revisions",
+      "operation": "reject",
+      "story": "footer",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-STORY-BOUNDARY-01",
+      "element": "header story revisions",
+      "operation": "accept",
+      "story": "header",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-STORY-BOUNDARY-01",
+      "element": "header story revisions",
+      "operation": "preserve",
+      "story": "header",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-STORY-BOUNDARY-01",
+      "element": "header story revisions",
+      "operation": "reject",
+      "story": "header",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TCPR-EMISSION-01",
+      "element": "tcPrChange",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellDel",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellDel",
+      "operation": "preserve",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellDel",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellIns",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellIns",
+      "operation": "preserve",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellIns",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellMerge",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellMerge",
+      "operation": "preserve",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TOPOLOGY-PRESERVATION-01",
+      "element": "cellMerge",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-TRPR-EMISSION-01",
+      "element": "trPrChange",
+      "operation": "emit",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-UNRESOLVED-RECORDS-01",
+      "element": "numberingChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-UNRESOLVED-RECORDS-01",
+      "element": "numberingChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-UNRESOLVED-RECORDS-01",
+      "element": "tblGridChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-UNRESOLVED-RECORDS-01",
+      "element": "tblGridChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-UNRESOLVED-RECORDS-01",
+      "element": "tblPrExChange",
+      "operation": "accept",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-UNRESOLVED-RECORDS-01",
+      "element": "tblPrExChange",
+      "operation": "reject",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "cellDel",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "cellIns",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "cellMerge",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "customXmlDelRangeEnd",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "customXmlDelRangeStart",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "customXmlInsRangeEnd",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "customXmlInsRangeStart",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "customXmlMoveFromRangeEnd",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "customXmlMoveFromRangeStart",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "customXmlMoveToRangeEnd",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "customXmlMoveToRangeStart",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "moveFromRangeEnd",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "moveFromRangeStart",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "moveToRangeEnd",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "moveToRangeStart",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "tblGridChange",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    },
+    {
+      "id": "ADV-VALIDATOR-COVERAGE-01",
+      "element": "tblPrExChange",
+      "operation": "validate",
+      "story": "main",
+      "assertions": {
+        "targetPresent": true,
+        "observable": true,
+        "targetRemovalDetected": true,
+        "operationMutationDetected": true,
+        "storyMutationDetected": true
+      }
+    }
+  ]
+}
