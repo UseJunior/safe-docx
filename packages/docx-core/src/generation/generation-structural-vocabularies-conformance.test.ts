@@ -95,22 +95,36 @@ describe('ECMA-376 tables, numbering, and styles evidence', () => {
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.52' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.17' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.7.4.17' },
-    )('rejects invalid runtime enum values before emitting schema-invalid XML', async () => {
-      const cases: Array<[string, (spec: DocumentSpec) => void]> = [
-        ['/sections/0/blocks/0/layout', (spec) => { (spec.sections[0]!.blocks[0] as any).layout = 'fluid'; }],
-        ['/sections/0/blocks/0/borders/top/style', (spec) => { (spec.sections[0]!.blocks[0] as any).borders.top.style = 'wave'; }],
-        ['/sections/0/blocks/0/rows/0/heightRule', (spec) => { (spec.sections[0]!.blocks[0] as any).rows[0].heightRule = 'auto'; }],
-        ['/sections/0/blocks/0/rows/0/cells/0/vAlign', (spec) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].vAlign = 'middle'; }],
-        ['/numbering/0/levels/0/numFmt', (spec) => { (spec.numbering![0]!.levels[0] as any).numFmt = 'ordinalish'; }],
-        ['/numbering/0/levels/0/suff', (spec) => { (spec.numbering![0]!.levels[0] as any).suff = 'comma'; }],
-        ['/numbering/0/levels/0/indentTwips/left', (spec) => { spec.numbering![0]!.levels[0]!.indentTwips!.left = -1; }],
-        ['/styles/0/type', (spec) => { (spec.styles![0] as any).type = 'table'; }],
+    )('separates schema-invalid enums from schema-valid values outside the API subset', async () => {
+      const cases: Array<[string, 'invalid_value' | 'unsupported_feature', (spec: DocumentSpec) => void]> = [
+        ['/sections/0/blocks/0/layout', 'invalid_value', (spec) => { (spec.sections[0]!.blocks[0] as any).layout = 'fluid'; }],
+        ['/sections/0/blocks/0/borders/top/style', 'unsupported_feature', (spec) => { (spec.sections[0]!.blocks[0] as any).borders.top.style = 'wave'; }],
+        ['/sections/0/blocks/0/rows/0/heightRule', 'unsupported_feature', (spec) => { (spec.sections[0]!.blocks[0] as any).rows[0].heightRule = 'auto'; }],
+        ['/sections/0/blocks/0/rows/0/cells/0/vAlign', 'invalid_value', (spec) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].vAlign = 'middle'; }],
+        ['/numbering/0/levels/0/numFmt', 'invalid_value', (spec) => { (spec.numbering![0]!.levels[0] as any).numFmt = 'ordinalish'; }],
+        ['/numbering/0/levels/0/suff', 'invalid_value', (spec) => { (spec.numbering![0]!.levels[0] as any).suff = 'comma'; }],
+        ['/styles/0/type', 'unsupported_feature', (spec) => { (spec.styles![0] as any).type = 'table'; }],
+        ['/styles/0/run/underline', 'unsupported_feature', (spec) => { spec.styles![0]!.run = { underline: 'wave' as any }; }],
+        ['/styles/0/run/colorHex', 'unsupported_feature', (spec) => { spec.styles![0]!.run = { colorHex: 'auto' }; }],
       ];
-      for (const [path, mutate] of cases) {
+      for (const [path, code, mutate] of cases) {
         const spec = representativeSpec();
         mutate(spec);
-        await expect(generateDocx(spec)).rejects.toMatchObject({ code: 'invalid_value', path });
+        await expect(generateDocx(spec)).rejects.toMatchObject({ code, path });
       }
+
+      const schemaProbe = representativeSpec();
+      schemaProbe.styles![0]!.run = { underline: 'single', colorHex: '000000' };
+      const generated = await generateDocx(schemaProbe);
+      validateEmittedWml({
+        'document.xml': (await readZipText(generated, 'word/document.xml'))!
+          .replace('w:val="single"', 'w:val="wave"'),
+        'numbering.xml': (await readZipText(generated, 'word/numbering.xml'))!,
+        'styles.xml': (await readZipText(generated, 'word/styles.xml'))!
+          .replace('w:type="paragraph"', 'w:type="table"')
+          .replace('w:val="single"', 'w:val="wave"')
+          .replace('w:val="000000"', 'w:val="auto"'),
+      });
     });
 
   test
@@ -155,59 +169,56 @@ describe('ECMA-376 tables, numbering, and styles evidence', () => {
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.16' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.81' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.25' },
-    )('enforces exact integer domains before serializing table and numbering measures', async () => {
+    )('enforces the API-representable safe-integer subset of vendored XSD numeric domains', async () => {
       const fields: Array<[string, (spec: DocumentSpec, value: number) => void, boolean]> = [
         ['/sections/0/blocks/0/columnWidthsTwips/0', (spec, value) => { (spec.sections[0]!.blocks[0] as any).columnWidthsTwips[0] = value; }, false],
-        ['/sections/0/blocks/0/rows/0/heightTwips', (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].heightTwips = value; }, true],
-        ['/sections/0/blocks/0/rows/0/cells/0/widthTwips', (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].widthTwips = value; }, false],
+        ['/sections/0/blocks/0/rows/0/heightTwips', (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].heightTwips = value; }, false],
+        ['/sections/0/blocks/0/rows/0/cells/0/widthTwips', (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].widthTwips = value; }, true],
         ['/sections/0/blocks/0/rows/0/cells/0/marginsTwips/top', (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].marginsTwips.top = value; }, true],
-        ['/sections/0/blocks/0/borders/top/sizeEighthPt', (spec, value) => { (spec.sections[0]!.blocks[0] as any).borders.top.sizeEighthPt = value; }, true],
+        ['/sections/0/blocks/0/borders/top/sizeEighthPt', (spec, value) => { (spec.sections[0]!.blocks[0] as any).borders.top.sizeEighthPt = value; }, false],
         ['/numbering/0/levels/0/start', (spec, value) => { spec.numbering![0]!.levels[0]!.start = value; }, true],
+        ['/numbering/0/levels/0/indentTwips/left', (spec, value) => { spec.numbering![0]!.levels[0]!.indentTwips!.left = value; }, true],
+        ['/numbering/0/levels/0/indentTwips/hanging', (spec, value) => { spec.numbering![0]!.levels[0]!.indentTwips!.hanging = value; }, false],
       ];
-      for (const [path, mutate, allowsZero] of fields) {
-        for (const value of [0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, 1e100, -1]) {
-          if (value === -1 && path.endsWith('/start')) continue;
+      for (const [path, mutate, signed] of fields) {
+        for (const value of [0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, Number.MIN_SAFE_INTEGER - 1]) {
           const spec = representativeSpec();
           mutate(spec, value);
           await expect(generateDocx(spec)).rejects.toMatchObject({ code: 'invalid_value', path });
         }
-        if (!allowsZero) {
+        if (!signed) {
           const spec = representativeSpec();
-          mutate(spec, 0);
+          mutate(spec, -1);
           await expect(generateDocx(spec)).rejects.toMatchObject({ code: 'invalid_value', path });
         }
       }
 
-      const negativeStart = representativeSpec();
-      negativeStart.numbering![0]!.levels[0]!.start = -1;
-      await expect(generateDocx(negativeStart)).rejects.toMatchObject({
-        code: 'invalid_value',
-        path: '/numbering/0/levels/0/start',
-      });
-
-      const boundary = representativeSpec();
-      const table = boundary.sections[0]!.blocks[0] as any;
-      table.columnWidthsTwips[0] = Number.MAX_SAFE_INTEGER - table.columnWidthsTwips[1];
-      table.rows[0].heightTwips = 0;
-      table.rows[0].cells[0].widthTwips = Number.MAX_SAFE_INTEGER;
-      table.rows[0].cells[0].marginsTwips.top = 0;
-      table.borders.top.sizeEighthPt = 0;
-      boundary.numbering![0]!.levels[0]!.start = Number.MAX_SAFE_INTEGER;
-      const generated = await generateDocx(boundary);
+      const minima = representativeSpec();
+      const minimumTable = minima.sections[0]!.blocks[0] as any;
+      minimumTable.columnWidthsTwips = [0, 0];
+      minimumTable.rows[0].heightTwips = 0;
+      minimumTable.rows[0].cells[0].widthTwips = Number.MIN_SAFE_INTEGER;
+      minimumTable.rows[0].cells[0].marginsTwips.top = Number.MIN_SAFE_INTEGER;
+      minimumTable.borders.top.sizeEighthPt = 0;
+      minima.numbering![0]!.levels[0]!.start = Number.MIN_SAFE_INTEGER;
+      minima.numbering![0]!.levels[0]!.indentTwips = { left: Number.MIN_SAFE_INTEGER, hanging: 0 };
+      const generated = await generateDocx(minima);
       validateEmittedWml({
         'document.xml': (await readZipText(generated, 'word/document.xml'))!,
         'numbering.xml': (await readZipText(generated, 'word/numbering.xml'))!,
         'styles.xml': (await readZipText(generated, 'word/styles.xml'))!,
       });
 
-      const otherBoundaries = representativeSpec();
-      const otherTable = otherBoundaries.sections[0]!.blocks[0] as any;
-      otherTable.columnWidthsTwips[0] = 1;
-      otherTable.rows[0].heightTwips = Number.MAX_SAFE_INTEGER;
-      otherTable.rows[0].cells[0].widthTwips = 1;
-      otherTable.rows[0].cells[0].marginsTwips.top = Number.MAX_SAFE_INTEGER;
-      otherTable.borders.top.sizeEighthPt = Number.MAX_SAFE_INTEGER;
-      const otherGenerated = await generateDocx(otherBoundaries);
+      const maxima = representativeSpec();
+      const maximumTable = maxima.sections[0]!.blocks[0] as any;
+      maximumTable.columnWidthsTwips = [Number.MAX_SAFE_INTEGER, 0];
+      maximumTable.rows[0].heightTwips = Number.MAX_SAFE_INTEGER;
+      maximumTable.rows[0].cells[0].widthTwips = Number.MAX_SAFE_INTEGER;
+      maximumTable.rows[0].cells[0].marginsTwips.top = Number.MAX_SAFE_INTEGER;
+      maximumTable.borders.top.sizeEighthPt = Number.MAX_SAFE_INTEGER;
+      maxima.numbering![0]!.levels[0]!.start = Number.MAX_SAFE_INTEGER;
+      maxima.numbering![0]!.levels[0]!.indentTwips = { left: Number.MAX_SAFE_INTEGER, hanging: Number.MAX_SAFE_INTEGER };
+      const otherGenerated = await generateDocx(maxima);
       validateEmittedWml({
         'document.xml': (await readZipText(otherGenerated, 'word/document.xml'))!,
         'numbering.xml': (await readZipText(otherGenerated, 'word/numbering.xml'))!,

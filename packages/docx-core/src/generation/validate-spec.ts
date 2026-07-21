@@ -46,15 +46,22 @@ const LVL_JC_SET: ReadonlySet<string> = new Set(NUMBERING_LEVEL_JUSTIFICATIONS);
 const THEME_COLOR_SLOT_SET: ReadonlySet<string> = new Set(THEME_COLOR_SLOTS);
 const ALIGNMENTS = new Set(['left', 'center', 'right', 'justify']);
 const UNDERLINES = new Set(['single', 'double', 'none']);
+const SCHEMA_UNDERLINES_OUTSIDE_API = new Set([
+  'words', 'thick', 'dotted', 'dottedHeavy', 'dash', 'dashedHeavy', 'dashLong', 'dashLongHeavy',
+  'dotDash', 'dashDotHeavy', 'dotDotDash', 'dashDotDotHeavy', 'wave', 'wavyHeavy', 'wavyDouble',
+]);
 const TAB_ALIGNMENTS = new Set(['left', 'center', 'right']);
 const TAB_LEADERS = new Set(['none', 'dot', 'underscore']);
 const LINE_RULES = new Set(['auto', 'exact', 'atLeast']);
 const TABLE_LAYOUTS = new Set(['fixed', 'autofit']);
 const BORDER_STYLES = new Set(['single', 'double', 'none']);
+const SCHEMA_BORDER_STYLES_OUTSIDE_API = new Set(['wave']);
 const ROW_HEIGHT_RULES = new Set(['atLeast', 'exact']);
+const SCHEMA_ROW_HEIGHT_RULES = new Set([...ROW_HEIGHT_RULES, 'auto']);
 const CELL_VERTICAL_ALIGNMENTS = new Set(['top', 'center', 'bottom']);
 const VERTICAL_MERGES = new Set(['restart', 'continue']);
 const STYLE_TYPES = new Set(['paragraph', 'character']);
+const SCHEMA_STYLE_TYPES = new Set([...STYLE_TYPES, 'table', 'numbering']);
 const NUMBER_FORMATS = new Set(['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none']);
 const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
 
@@ -75,6 +82,14 @@ function unsupported(path: string, feature: string): never {
     path,
     `Spec feature '${feature}' is declared in the DocumentSpec type surface but its emitter has not shipped yet; ` +
       'it is rejected rather than silently ignored',
+  );
+}
+
+function unsupportedApiValue(path: string, value: unknown, schemaType: string): never {
+  throw new GenerationSpecError(
+    'unsupported_feature',
+    path,
+    `Value '${String(value)}' is valid in ${schemaType} but is outside the DocumentSpec API-supported subset`,
   );
 }
 
@@ -146,8 +161,7 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
         requireInteger(
           level.start,
           `${levelPath}/start`,
-          'Level start must be a non-negative safe integer that serializes exactly as ST_DecimalNumber',
-          0,
+          'Level start must be a signed safe integer in the API-representable subset of ST_DecimalNumber',
         );
       }
       if (level.lvlJc !== undefined && !LVL_JC_SET.has(level.lvlJc)) {
@@ -159,8 +173,20 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
       }
       if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
       if (level.indentTwips) {
-        for (const [key, value] of Object.entries(level.indentTwips)) {
-          requireInteger(value, `${levelPath}/indentTwips/${key}`, 'Numbering indentation must be a non-negative safe integer', 0);
+        if (level.indentTwips.left !== undefined) {
+          requireInteger(
+            level.indentTwips.left,
+            `${levelPath}/indentTwips/left`,
+            'Numbering left indentation must be a signed safe integer in the API-representable subset of ST_SignedTwipsMeasure',
+          );
+        }
+        if (level.indentTwips.hanging !== undefined) {
+          requireInteger(
+            level.indentTwips.hanging,
+            `${levelPath}/indentTwips/hanging`,
+            'Numbering hanging indentation must be a non-negative safe integer in the API-representable subset of ST_TwipsMeasure',
+            0,
+          );
         }
       }
     });
@@ -182,6 +208,7 @@ function validateStyles(styles: StyleSpec[]): Set<string> {
       throw new GenerationSpecError('invalid_value', path, 'StyleSpec requires styleId and name');
     }
     if (!STYLE_TYPES.has(style.type)) {
+      if (SCHEMA_STYLE_TYPES.has(style.type)) unsupportedApiValue(`${path}/type`, style.type, 'ST_StyleType');
       throw new GenerationSpecError('invalid_value', `${path}/type`, `Unsupported style type '${style.type}'`);
     }
     if (ids.has(style.styleId)) {
@@ -287,8 +314,8 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
     requireInteger(
       width,
       `${path}/columnWidthsTwips/${i}`,
-      'Column widths must be positive safe integers in the ST_TwipsMeasure domain',
-      1,
+      'Column widths must be non-negative safe integers in the API-representable integer branch of ST_TwipsMeasure',
+      0,
     );
   });
   const totalWidth = table.columnWidthsTwips.reduce((sum, width) => sum + width, 0);
@@ -321,6 +348,7 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
       );
     }
     if (row.heightRule !== undefined && !ROW_HEIGHT_RULES.has(row.heightRule)) {
+      if (SCHEMA_ROW_HEIGHT_RULES.has(row.heightRule)) unsupportedApiValue(`${rowPath}/heightRule`, row.heightRule, 'ST_HeightRule');
       throw new GenerationSpecError('invalid_value', `${rowPath}/heightRule`, `Unsupported row height rule '${row.heightRule}'`);
     }
 
@@ -352,8 +380,7 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
         requireInteger(
           cell.widthTwips,
           `${cellPath}/widthTwips`,
-          'Cell width must be a positive safe integer in the ST_MeasurementOrPercent integer branch',
-          1,
+          'Cell width must be a signed safe integer in the API-representable integer branch of ST_MeasurementOrPercent',
         );
       }
       if (cell.borders) validateBorders(cell.borders, `${cellPath}/borders`);
@@ -380,8 +407,7 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
             requireInteger(
               value,
               `${cellPath}/marginsTwips/${key}`,
-              'Cell margins must be non-negative safe integers in the ST_MeasurementOrPercent integer branch',
-              0,
+              'Cell margins must be signed safe integers in the API-representable integer branch of ST_MeasurementOrPercent',
             );
           }
         }
@@ -410,6 +436,7 @@ function validateBorders(borders: TableBorders, path: string): void {
   for (const [edge, spec] of Object.entries(borders) as Array<[string, BorderSpec | undefined]>) {
     if (!spec) continue;
     if (!BORDER_STYLES.has(spec.style)) {
+      if (SCHEMA_BORDER_STYLES_OUTSIDE_API.has(spec.style)) unsupportedApiValue(`${path}/${edge}/style`, spec.style, 'ST_Border');
       throw new GenerationSpecError('invalid_value', `${path}/${edge}/style`, `Unsupported border style '${spec.style}'`);
     }
     if (spec.colorHex !== undefined && !COLOR_HEX_RE.test(spec.colorHex)) {
@@ -545,9 +572,13 @@ function validateInline(run: InlineSpec, path: string): void {
 
 function validateRunProps(props: RunProps, path: string): void {
   if (props.underline !== undefined && !UNDERLINES.has(props.underline)) {
+    if (SCHEMA_UNDERLINES_OUTSIDE_API.has(props.underline)) {
+      unsupportedApiValue(`${path}/underline`, props.underline, 'ST_Underline');
+    }
     throw new GenerationSpecError('invalid_value', `${path}/underline`, `Unsupported underline value '${props.underline}'`);
   }
   if (props.colorHex !== undefined && !COLOR_HEX_RE.test(props.colorHex)) {
+    if (props.colorHex === 'auto') unsupportedApiValue(`${path}/colorHex`, props.colorHex, 'ST_HexColor');
     throw new GenerationSpecError('invalid_value', `${path}/colorHex`, `colorHex must be six hex digits without '#', got '${props.colorHex}'`);
   }
   if (props.themeColor !== undefined) {
