@@ -61,6 +61,7 @@ import {
   parseDocumentXml,
   findBody,
   backfillParentReferences,
+  canonicalizeWordprocessingPrefixes,
 } from './xmlToWmlElement.js';
 import { findAllByTagName, getLeafText } from '@usejunior/docx-core';
 import {
@@ -624,8 +625,8 @@ export async function compareDocumentsAtomizer(
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
 
   // Step 2: Extract document.xml
-  const originalXml = await originalArchive.getDocumentXml();
-  const revisedXml = await revisedArchive.getDocumentXml();
+  const originalXml = canonicalizeWordprocessingPrefixes(await originalArchive.getDocumentXml());
+  const revisedXml = canonicalizeWordprocessingPrefixes(await revisedArchive.getDocumentXml());
 
   // Extract numbering.xml if available
   const originalNumberingXml = await originalArchive.getNumberingXml() ?? undefined;

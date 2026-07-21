@@ -2,7 +2,7 @@
 # ECMA-376 coverage denominator report
 
 Official artifacts verified: **1 referenced / 4 vendored**.
-Initial spec references classified: **8**.
+Initial spec references classified: **12**.
 Generated vocabulary entries: **9**.
 
 This initial denominator classifies only seeded references. Unlisted ECMA-376 prose requirements remain `not-yet-covered`; this report does not claim full standard coverage.
@@ -11,7 +11,7 @@ This initial denominator classifies only seeded references. Unlisted ECMA-376 pr
 
 | Status | References |
 | --- | ---: |
-| `partial` | 8 |
+| `partial` | 12 |
 
 ## Spec references
 
@@ -25,6 +25,34 @@ This initial denominator classifies only seeded references. Unlisted ECMA-376 pr
 | `ooxml.ecma376.5ed.part1.comments.range-start` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.4 | `partial` | 1 source / 1 tests |
 | `ooxml.ecma376.5ed.part1.comments.range-end` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.3 | `partial` | 1 source / 1 tests |
 | `ooxml.ecma376.5ed.part1.comments.reference` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.4.5 | `partial` | 1 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.revisions.moves` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.5.21 | `partial` | 2 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.revisions.run-properties-paragraph-mark` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.5.30 | `partial` | 2 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.revisions.section-properties` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.5.32 | `partial` | 2 source / 1 tests |
+| `ooxml.ecma376.5ed.part1.revisions.table-cell-properties` | Part 1, Ecma Office Open XML Part 1 - Fundamentals And Markup Language Reference.pdf#17.13.5.36 | `partial` | 2 source / 1 tests |
+
+## Advanced revision records
+
+This operation-specific matrix distinguishes semantic implementation from preservation, known gaps, and non-goals. Lean scope is recorded independently and does not inherit TypeScript claims.
+
+| Record | Classification | Operations |
+| --- | --- | --- |
+| `advanced-revision.content-insert-delete` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`implemented`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap`<br>lean.textFieldProjection=`implemented`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.run-properties` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.paragraph-mark-run-properties` | `implemented` | emit=`non-goal`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.paragraph-properties` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.table-row-properties` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.table-cell-properties` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.section-properties` | `implemented` | emit=`non-goal`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.table-properties` | `implemented` | emit=`non-goal`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.moves-content` | `implemented` | emit=`implemented`<br>accept=`implemented`<br>reject=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`implemented`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap`<br>lean.textFieldProjection=`implemented`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.moves-ranges` | `conformance-gap` | emit=`implemented`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>validate=`implemented`<br>comparison.inplace=`implemented`<br>comparison.rebuild=`implemented`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`preservation-only`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.numbering-properties` | `conformance-gap` | emit=`non-goal`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.table-grid-and-exceptions` | `conformance-gap` | emit=`non-goal`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.cell-topology` | `preservation-only` | emit=`non-goal`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>preserve=`preservation-only`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.custom-xml-ranges` | `preservation-only` | emit=`non-goal`<br>accept=`preservation-only`<br>reject=`preservation-only`<br>validate=`implemented`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.annotations-and-ranges` | `preservation-only` | emit=`non-goal`<br>accept=`preservation-only`<br>reject=`preservation-only`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.conflicts` | `non-goal` | emit=`non-goal`<br>accept=`non-goal`<br>reject=`non-goal`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`preservation-only`<br>reconstruction.rebuild=`conformance-gap`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
+| `advanced-revision.header-footer-stories` | `preservation-only` | emit=`non-goal`<br>accept=`conformance-gap`<br>reject=`conformance-gap`<br>preserve=`preservation-only`<br>comparison.inplace=`non-goal`<br>comparison.rebuild=`non-goal`<br>reconstruction.inplace=`non-goal`<br>reconstruction.rebuild=`non-goal`<br>lean.textFieldProjection=`non-goal`<br>lean.advancedRecordSemantics=`non-goal` |
 
 ## Generated vocabulary use
 

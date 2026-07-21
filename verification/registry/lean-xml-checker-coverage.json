@@ -102,8 +102,9 @@
     "relationship target integrity",
     "package-level OPC constraints",
     "field instruction parsing, evaluation, and cached-result correctness, including PAGE and NUMPAGES semantics",
-    "OOXML extension and compatibility markup"
-    ,"general-purpose XML canonicalization, DTDs, and CDATA beyond the checked WordprocessingML token surface"
+    "OOXML extension and compatibility markup",
+    "advanced revision-record semantics, including property snapshots, move-range pairing, numbering/table/style revisions, custom XML revisions, conflict records, and annotation interactions",
+    "general-purpose XML canonicalization, DTDs, and CDATA beyond the checked WordprocessingML token surface"
   ],
   "futureObligationQueue": []
 }

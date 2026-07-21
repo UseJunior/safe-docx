@@ -180,6 +180,8 @@ export function buildPPrChangeElement(oldPPr: Element | null, ctx: RevisionConte
  * Build a `<w:trPrChange>` wrapper containing the previous row properties.
  *
  * The nested snapshot excludes children that are not valid in `CT_TrPrBase`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
  */
 export function buildTrPrChangeElement(oldTrPr: Element | null, ctx: RevisionContext): Element {
   const trPrChange = createWmlElement(
@@ -205,6 +207,8 @@ export function buildTrPrChangeElement(oldTrPr: Element | null, ctx: RevisionCon
  * Build a `<w:tcPrChange>` wrapper containing the previous cell properties.
  *
  * The nested snapshot excludes children that are not valid in `CT_TcPrBase`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
  */
 export function buildTcPrChangeElement(oldTcPr: Element | null, ctx: RevisionContext): Element {
   const tcPrChange = createWmlElement(
