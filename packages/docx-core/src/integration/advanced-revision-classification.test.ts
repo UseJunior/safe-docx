@@ -34,6 +34,24 @@ function cloneDocument(doc: Document): Document {
   return parseXml(serializeXml(doc));
 }
 
+function corruptPreservationTarget(doc: Document, element: string): Document {
+  const clone = cloneDocument(doc);
+  const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
+  const local = element.replace('w14:', '');
+  const target = clone.getElementsByTagNameNS(namespace, local).item(0);
+  if (!target) throw new Error(`Missing preservation target ${element}`);
+
+  if (local === 'proofErr') {
+    target.setAttributeNS(W_NS, `${target.prefix ?? 'w'}:type`, 'gramStart');
+    return clone;
+  }
+
+  const currentId = target.getAttributeNS(namespace, 'id');
+  if (currentId === null) throw new Error(`No schema-valid corruption defined for ${element}`);
+  target.setAttributeNS(namespace, `${target.prefix ?? 'w'}:id`, currentId === '999' ? '998' : '999');
+  return clone;
+}
+
 function withoutElement(doc: Document, localName: string): Document {
   const clone = cloneDocument(doc);
   for (const node of Array.from(clone.getElementsByTagNameNS(W_NS, localName))) node.parentNode?.removeChild(node);
@@ -810,6 +828,12 @@ describe('ECMA-376 advanced revision records', () => {
           'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
           'commentReference', 'permStart', 'permEnd', 'proofErr', 'w14:conflictIns', 'w14:conflictDel',
         ];
+        await then('proofing-error corruption uses a schema-valid alternate type without adding an id', () => {
+          const corrupted = corruptPreservationTarget(sourceDocument, 'proofErr');
+          const proofErr = corrupted.getElementsByTagNameNS(W_NS, 'proofErr').item(0)!;
+          expect(proofErr.getAttributeNS(W_NS, 'type')).toBe('gramStart');
+          expect(proofErr.hasAttributeNS(W_NS, 'id')).toBe(false);
+        });
         await revisionEvidence('ADV-COMPARE-MODE-PRESERVATION-01', revisionEvidenceCases({
           elements: preservationElements,
           operations: ['reconstruction.inplace', 'reconstruction.rebuild'],
@@ -847,13 +871,10 @@ describe('ECMA-376 advanced revision records', () => {
             },
             {
               name: 'corrupt-target',
-              apply: (fixture, context) => {
-                const clone = cloneDocument(fixture);
-                const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
-                const target = clone.getElementsByTagNameNS(namespace, element.replace('w14:', '')).item(0);
-                target?.setAttributeNS(namespace, `${target.prefix ?? 'q'}:id`, '999');
-                return { fixture: clone, context };
-              },
+              apply: (fixture, context) => ({
+                fixture: corruptPreservationTarget(fixture, element),
+                context,
+              }),
             },
           ],
         }));
