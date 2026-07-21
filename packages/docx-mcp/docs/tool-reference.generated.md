@@ -85,7 +85,7 @@ Replace text in a paragraph by provider paragraph id, preserving formatting wher
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
-| `target_paragraph_id` | `string` | yes |  |
+| `target_paragraph_id` | `string` | yes | Paragraph anchor. Accepts a safe-docx `_bk_*` id, or any other bookmark name attached to the paragraph (e.g. a host application's own stable paragraph bookmark). Exact name match. |
 | `old_string` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
@@ -102,7 +102,7 @@ Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DO
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
-| `positional_anchor_node_id` | `string` | yes |  |
+| `positional_anchor_node_id` | `string` | yes | Anchor paragraph. Accepts a safe-docx `_bk_*` id, or any other bookmark name attached to the paragraph (e.g. a host application's own stable paragraph bookmark). Exact name match. |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
 | `position` | `enum("BEFORE", "AFTER")` | no |  |

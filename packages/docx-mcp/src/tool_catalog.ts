@@ -167,7 +167,11 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
-      target_paragraph_id: z.string(),
+      target_paragraph_id: z
+        .string()
+        .describe(
+          'Paragraph anchor. Accepts a safe-docx `_bk_*` id, or any other bookmark name attached to the paragraph (e.g. a host application\'s own stable paragraph bookmark). Exact name match.',
+        ),
       old_string: z.string(),
       new_string: z.string(),
       instruction: z.string(),
@@ -185,7 +189,11 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
-      positional_anchor_node_id: z.string(),
+      positional_anchor_node_id: z
+        .string()
+        .describe(
+          'Anchor paragraph. Accepts a safe-docx `_bk_*` id, or any other bookmark name attached to the paragraph (e.g. a host application\'s own stable paragraph bookmark). Exact name match.',
+        ),
       new_string: z.string(),
       instruction: z.string(),
       position: z.enum(['BEFORE', 'AFTER']).optional(),

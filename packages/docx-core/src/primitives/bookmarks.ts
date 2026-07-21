@@ -125,14 +125,23 @@ function isParagraph(el: Element): boolean {
   return el.namespaceURI === OOXML.W_NS && el.localName === W.p;
 }
 
-export function getParagraphBookmarkId(p: Element): string | null {
-  // Supports:
-  // 1) sibling style: <w:bookmarkStart/> <w:p/> <w:bookmarkEnd/>
-  // 2) inside style: <w:p><w:bookmarkStart/> ... </w:p>
+/**
+ * Collect every bookmark name attached to a paragraph, in discovery order.
+ *
+ * Supports both attachment styles:
+ *   1) sibling: `<w:bookmarkStart/> <w:p/> <w:bookmarkEnd/>`
+ *   2) inside:  `<w:p><w:bookmarkStart/> ... </w:p>`
+ *
+ * Paragraphs routinely carry stacked bookmarks — our own `_bk_*`, `edit-*` spans,
+ * Word's own `_Toc*`/`_Ref*`, and names owned by an embedding application (e.g.
+ * a host that stamps its own stable paragraph ids). Returning all of them lets
+ * callers resolve an anchor by any of these names, not just ours.
+ */
+export function getParagraphBookmarkNames(p: Element): string[] {
+  const names: string[] = [];
 
-  // 1) Sibling style lookup.
-  // Handle stacked bookmarks (e.g. _bk_* plus edit-*) around the same paragraph.
-  // We scan backward across adjacent bookmark nodes until we hit another paragraph.
+  // 1) Sibling style. Scan backward across adjacent bookmark nodes until we hit
+  // another paragraph, so stacked bookmarks around one paragraph are all seen.
   const prev = prevElementSibling(p);
   const next = nextElementSibling(p);
   if (prev && next && isBookmarkEnd(next)) {
@@ -141,7 +150,7 @@ export function getParagraphBookmarkId(p: Element): string | null {
       if (isParagraph(cur)) break;
       if (isBookmarkStart(cur)) {
         const name = getAttr(cur, 'name');
-        if (name && name.startsWith('_bk_')) return name;
+        if (name) names.push(name);
       }
       cur = prevElementSibling(cur);
     }
@@ -152,9 +161,23 @@ export function getParagraphBookmarkId(p: Element): string | null {
   for (let i = 0; i < starts.length; i++) {
     const el = starts.item(i);
     const name = el ? getAttr(el, 'name') : null;
-    if (name && name.startsWith('_bk_')) return name;
+    if (name) names.push(name);
   }
 
+  return names;
+}
+
+/**
+ * The paragraph's canonical safe-docx id (`_bk_*`), or null when it has none.
+ *
+ * This intentionally stays `_bk_`-only: it is the id we *report* for a paragraph.
+ * To *resolve* an anchor the caller supplied, use `findParagraphByBookmarkId`,
+ * which accepts any bookmark name on the paragraph.
+ */
+export function getParagraphBookmarkId(p: Element): string | null {
+  for (const name of getParagraphBookmarkNames(p)) {
+    if (name.startsWith('_bk_')) return name;
+  }
   return null;
 }
 
@@ -273,11 +296,21 @@ export function insertSingleParagraphBookmark(doc: Document, p: Element): string
   return name;
 }
 
+/**
+ * Resolve an anchor to its paragraph by ANY bookmark name attached to it.
+ *
+ * Anchors are not limited to safe-docx's own `_bk_*` ids. An embedding
+ * application that already stamps stable per-paragraph bookmarks (and whose
+ * pipeline may not preserve `w14:paraId`) can pass those names directly, instead
+ * of having to reconstruct our content-derived ids — a reconstruction that has to
+ * fall back to matching paragraph text, which is not a sound identity and can
+ * silently target the wrong paragraph. Matching is exact on the bookmark name.
+ */
 export function findParagraphByBookmarkId(doc: Document, bookmarkId: string): Element | null {
   const paragraphs = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.p));
   for (const p of paragraphs) {
     if (!isParagraph(p)) continue;
-    if (getParagraphBookmarkId(p) === bookmarkId) return p;
+    if (getParagraphBookmarkNames(p).includes(bookmarkId)) return p;
   }
   return null;
 }
