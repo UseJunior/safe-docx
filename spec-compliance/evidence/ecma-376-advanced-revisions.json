@@ -9,9 +9,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -21,9 +22,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -33,9 +35,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -45,9 +48,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -57,9 +61,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -69,9 +74,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -81,9 +87,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -93,9 +100,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -105,9 +113,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -117,9 +126,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -129,9 +139,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -141,9 +152,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -153,9 +165,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -165,9 +178,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -177,9 +191,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -189,9 +204,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -201,9 +217,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -213,9 +230,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -225,9 +243,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -237,9 +256,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -249,9 +269,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -261,9 +282,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -273,9 +295,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -285,9 +308,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -297,9 +321,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -309,9 +334,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -321,9 +347,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -333,9 +360,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -345,9 +373,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -357,9 +386,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -369,9 +399,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -381,9 +412,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -393,9 +425,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -405,9 +438,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -417,9 +451,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -429,9 +464,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -441,9 +477,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -453,9 +490,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -465,9 +503,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -477,9 +516,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -489,9 +529,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -501,9 +542,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -513,9 +555,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -525,9 +568,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -537,9 +581,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -549,9 +594,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -561,9 +607,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -573,9 +620,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -585,9 +633,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -597,9 +646,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -609,9 +659,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -621,9 +672,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -633,9 +685,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -645,9 +698,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -657,9 +711,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -669,9 +724,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -681,9 +737,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -693,9 +750,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -705,9 +763,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -717,9 +776,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -729,9 +789,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -741,9 +802,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -753,9 +815,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -765,9 +828,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -777,9 +841,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -789,9 +854,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -801,9 +867,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -813,9 +880,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -825,9 +893,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -837,9 +906,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -849,9 +919,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -861,9 +932,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -873,9 +945,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -885,9 +958,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -897,9 +971,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -909,9 +984,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -921,9 +997,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -933,9 +1010,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -945,9 +1023,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -957,9 +1036,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -969,9 +1049,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -981,9 +1062,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -993,9 +1075,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1005,9 +1088,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1017,9 +1101,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1029,9 +1114,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1041,9 +1127,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1053,9 +1140,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1065,9 +1153,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1077,9 +1166,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1089,9 +1179,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1101,9 +1192,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1113,9 +1205,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1125,9 +1218,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1137,9 +1231,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1149,9 +1244,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1161,9 +1257,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1173,9 +1270,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1185,9 +1283,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1197,9 +1296,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1209,9 +1309,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1221,9 +1322,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1233,9 +1335,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1245,9 +1348,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1257,9 +1361,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1269,9 +1374,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1281,9 +1387,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1293,9 +1400,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1305,9 +1413,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1317,9 +1426,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1329,9 +1439,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1341,9 +1452,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1353,9 +1465,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1365,9 +1478,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1377,9 +1491,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1389,9 +1504,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1401,9 +1517,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1413,9 +1530,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1425,9 +1543,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1437,9 +1556,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1449,9 +1569,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1461,9 +1582,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1473,9 +1595,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1485,9 +1608,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1497,9 +1621,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1509,9 +1634,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1521,9 +1647,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1533,9 +1660,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1545,9 +1673,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1557,9 +1686,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1569,9 +1699,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1581,9 +1712,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1593,9 +1725,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1605,9 +1738,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1617,9 +1751,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1629,9 +1764,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1641,9 +1777,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1653,9 +1790,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1665,9 +1803,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1677,9 +1816,10 @@
       "story": "footer",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1689,9 +1829,10 @@
       "story": "footer",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1701,9 +1842,10 @@
       "story": "footer",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1713,9 +1855,10 @@
       "story": "header",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1725,9 +1868,10 @@
       "story": "header",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1737,9 +1881,10 @@
       "story": "header",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1749,9 +1894,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1761,9 +1907,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1773,9 +1920,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1785,9 +1933,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1797,9 +1946,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1809,9 +1959,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1821,9 +1972,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1833,9 +1985,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1845,9 +1998,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1857,9 +2011,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1869,9 +2024,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1881,9 +2037,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1893,9 +2050,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1905,9 +2063,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1917,9 +2076,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1929,9 +2089,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1941,9 +2102,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1953,9 +2115,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1965,9 +2128,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1977,9 +2141,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -1989,9 +2154,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2001,9 +2167,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2013,9 +2180,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2025,9 +2193,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2037,9 +2206,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2049,9 +2219,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2061,9 +2232,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2073,9 +2245,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2085,9 +2258,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2097,9 +2271,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2109,9 +2284,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2121,9 +2297,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2133,9 +2310,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     },
     {
@@ -2145,9 +2323,10 @@
       "story": "main",
       "assertions": {
         "observable": true,
-        "targetRemovalDetected": true,
-        "operationMutationDetected": true,
-        "storyMutationDetected": true
+        "mutationsDetected": [
+          "remove-target",
+          "corrupt-target"
+        ]
       }
     }
   ]

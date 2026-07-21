@@ -142,11 +142,27 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousSpacing, 'before')).toBeNull();
       expect(wordAttr(previousSpacing, 'after')).toBe('120');
     });
-    revisionEvidence('ADV-PPR-EMISSION-01', revisionEvidenceCases({
+    await revisionEvidence('ADV-PPR-EMISSION-01', revisionEvidenceCases({
       elements: ['pPrChange'], operations: ['emit'], story: 'main',
-      fixture: () => ({ target: pPrChange as Element | null, previousSpacing }),
-      observable: (fixture, _element, context) => context.operation === 'emit' && context.story === 'main' && fixture.target?.getElementsByTagNameNS(W_NS, W.pPr).length === 1 && wordAttr(fixture.previousSpacing, 'after') === '120',
-      removeTarget: (fixture) => ({ ...fixture, target: null }),
+      buildFixture: () => ({ tracked: true, priorAfter: 120 }),
+      run: (fixture) => {
+        const indexed = createIndexedDocument(`<w:p><w:pPr><w:spacing w:after="${fixture.priorAfter}"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>`);
+        setParagraphSpacing(
+          indexed.doc,
+          { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 240 },
+          fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+        );
+        return indexed.doc;
+      },
+      observe: (output) => {
+        const change = output.getElementsByTagNameNS(W_NS, 'pPrChange').item(0) as Element | null;
+        const oldSpacing = change?.getElementsByTagNameNS(W_NS, W.spacing).item(0) as Element | null;
+        return change !== null && oldSpacing !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldSpacing, 'after') === '120';
+      },
+      mutations: () => [
+        { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+        { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorAfter: 999 }, context }) },
+      ],
     }));
   });
 
@@ -226,11 +242,27 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousTrHeight, 'val')).toBe('360');
       expect(wordAttr(previousTrHeight, 'hRule')).toBe('atLeast');
     });
-    revisionEvidence('ADV-TRPR-EMISSION-01', revisionEvidenceCases({
+    await revisionEvidence('ADV-TRPR-EMISSION-01', revisionEvidenceCases({
       elements: ['trPrChange'], operations: ['emit'], story: 'main',
-      fixture: () => ({ target: trPrChange as Element | null, previousTrHeight }),
-      observable: (fixture, _element, context) => context.operation === 'emit' && context.story === 'main' && fixture.target?.getElementsByTagNameNS(W_NS, W.trPr).length === 1 && wordAttr(fixture.previousTrHeight, 'val') === '360',
-      removeTarget: (fixture) => ({ ...fixture, target: null }),
+      buildFixture: () => ({ tracked: true, priorHeight: 360 }),
+      run: (fixture) => {
+        const input = makeDocument(`<w:tbl><w:tr><w:trPr><w:trHeight w:val="${fixture.priorHeight}" w:hRule="atLeast"/></w:trPr><w:tc><w:p/></w:tc></w:tr></w:tbl>`);
+        setTableRowHeight(
+          input,
+          { tableIndexes: [0], valueTwips: 480, rule: 'exact' },
+          fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+        );
+        return input;
+      },
+      observe: (output) => {
+        const change = output.getElementsByTagNameNS(W_NS, 'trPrChange').item(0) as Element | null;
+        const oldHeight = change?.getElementsByTagNameNS(W_NS, W.trHeight).item(0) as Element | null;
+        return change !== null && oldHeight !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldHeight, 'val') === '360';
+      },
+      mutations: () => [
+        { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+        { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorHeight: 999 }, context }) },
+      ],
     }));
   });
 
@@ -287,11 +319,27 @@ describe('layout tracked-change emission', () => {
           expect(getDirectChildrenByName(previousTcMar, W.left)).toHaveLength(0);
           expect(firstDirectChild(previousTcMar, W.top)).toBeDefined();
         });
-        revisionEvidence('ADV-TCPR-EMISSION-01', revisionEvidenceCases({
+        await revisionEvidence('ADV-TCPR-EMISSION-01', revisionEvidenceCases({
           elements: ['tcPrChange'], operations: ['emit'], story: 'main',
-          fixture: () => ({ target: tcPrChange as Element | null, previousTcMar }),
-          observable: (fixture, _element, context) => context.operation === 'emit' && context.story === 'main' && fixture.target?.getElementsByTagNameNS(W_NS, W.tcPr).length === 1 && getDirectChildrenByName(fixture.previousTcMar, W.left).length === 0,
-          removeTarget: (fixture) => ({ ...fixture, target: null }),
+          buildFixture: () => ({ tracked: true, priorTop: 100 }),
+          run: (fixture) => {
+            const input = makeDocument(`<w:tbl><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="${fixture.priorTop}" w:type="dxa"/></w:tcMar></w:tcPr><w:p/></w:tc></w:tr></w:tbl>`);
+            setTableCellPadding(
+              input,
+              { tableIndexes: [0], leftDxa: 240 },
+              fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+            );
+            return input;
+          },
+          observe: (output) => {
+            const change = output.getElementsByTagNameNS(W_NS, 'tcPrChange').item(0) as Element | null;
+            const oldTop = change?.getElementsByTagNameNS(W_NS, W.top).item(0) as Element | null;
+            return change !== null && oldTop !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldTop, 'w') === '100';
+          },
+          mutations: () => [
+            { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+            { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorTop: 999 }, context }) },
+          ],
         }));
       },
     );

@@ -40,25 +40,49 @@ function withoutElement(doc: Document, localName: string): Document {
   return clone;
 }
 
-interface DocumentEvidenceFixture {
-  target: Document;
-  observed: Document;
-}
-
 function documentEvidenceCases(options: {
   elements: readonly string[];
   operations: readonly string[];
   story?: string | ((element: string) => string);
-  fixture: (element: string, operation: string) => DocumentEvidenceFixture;
-  observable: (fixture: DocumentEvidenceFixture, element: string, context: { operation: string; story: string }) => boolean;
+  buildFixture: (element: string, operation: string, story: string) => Document | Promise<Document>;
+  run?: (fixture: Document, context: { operation: string; story: string }) => Document | Promise<Document>;
+  observe: (
+    run: { input: Document; output: Document },
+    element: string,
+    expected: { operation: string; story: string },
+  ) => boolean;
+  corruptTarget?: (fixture: Document, element: string) => Document;
 }) {
   return revisionEvidenceCases({
     elements: options.elements,
     operations: options.operations,
     story: options.story ?? 'main',
-    fixture: (element, operation) => options.fixture(element, operation),
-    observable: (fixture, element, context) => options.observable(fixture, element, context),
-    removeTarget: (fixture, element) => ({ ...fixture, target: withoutElement(fixture.target, element) }),
+    buildFixture: (element, context) => options.buildFixture(element, context.operation, context.story),
+    run: async (fixture, _element, context) => {
+      const input = cloneDocument(fixture);
+      if (options.run) return { input, output: await options.run(fixture, context) };
+      const output = cloneDocument(fixture);
+      if (context.operation === 'accept') acceptChanges(output);
+      else if (context.operation === 'reject') rejectChanges(output);
+      else if (context.operation !== 'preserve') throw new Error(`Unsupported document evidence operation: ${context.operation}`);
+      return { input, output };
+    },
+    observe: (run, element, expected) => options.observe(run, element, expected),
+    mutations: (element) => [
+      {
+        name: 'remove-target',
+        apply: (fixture, context) => ({ fixture: withoutElement(fixture, element), context }),
+      },
+      {
+        name: 'corrupt-target',
+        apply: (fixture, context) => ({
+          fixture: options.corruptTarget
+            ? options.corruptTarget(fixture, element)
+            : documentWith(`<q:p><q:${element} q:id="999" q:author="CORRUPT"/></q:p>`),
+          context,
+        }),
+      },
+    ],
   });
 }
 
@@ -141,16 +165,34 @@ describe('ECMA-376 advanced revision records', () => {
             expect(serializeXml(rejected)).toContain(revision.old);
           });
         }
-        revisionEvidence('ADV-PROPERTY-RESOLUTION-01', documentEvidenceCases({
+        const hasPropertyMarker = (output: Document, element: string, operation: string): boolean => {
+          const localByOperation: Record<string, { accept: string; reject: string }> = {
+            rPrChange: { accept: 'b', reject: 'i' },
+            pPrChange: { accept: 'jc', reject: 'keepNext' },
+            sectPrChange: { accept: 'pgSz', reject: 'pgSz' },
+            tblPrChange: { accept: 'tblStyle', reject: 'tblStyle' },
+            trPrChange: { accept: 'tblHeader', reject: 'cantSplit' },
+            tcPrChange: { accept: 'tcW', reject: 'tcW' },
+          };
+          const marker = output.getElementsByTagNameNS(W_NS, localByOperation[element]![operation as 'accept' | 'reject']).item(0);
+          if (!marker) return false;
+          if (element === 'sectPrChange' || element === 'tcPrChange') {
+            return marker.getAttributeNS(W_NS, 'w') === (operation === 'accept' ? '200' : '100');
+          }
+          if (element === 'tblPrChange' || element === 'pPrChange') {
+            return marker.getAttributeNS(W_NS, 'val') === (element === 'tblPrChange'
+              ? operation === 'accept' ? 'New' : 'Old'
+              : operation === 'accept' ? 'center' : null);
+          }
+          return true;
+        };
+        await revisionEvidence('ADV-PROPERTY-RESOLUTION-01', documentEvidenceCases({
           elements: ['rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'trPrChange', 'tcPrChange'],
           operations: ['accept', 'reject'],
-          fixture: (element, operation) => ({
-            target: sourceByElement.get(element)!,
-            observed: operation === 'accept' ? acceptedByElement.get(element)! : rejectedByElement.get(element)!,
-          }),
-          observable: (fixture, element, context) => count(fixture.target, element) > 0 &&
-            context.story === 'main' && ['accept', 'reject'].includes(context.operation) &&
-            count(fixture.observed, element) === 0,
+          buildFixture: (element) => cloneDocument(sourceByElement.get(element)!),
+          observe: (run, element, expected) => count(run.input, element) === 1 &&
+            count(run.output, element) === 0 &&
+            hasPropertyMarker(run.output, element, expected.operation),
         }));
       },
     );
@@ -179,15 +221,17 @@ describe('ECMA-376 advanced revision records', () => {
           expect(count(rejected, 'ins')).toBe(0);
           expect(count(rejected, 'del')).toBe(0);
         });
-        revisionEvidence('ADV-CONTENT-RESOLUTION-01', documentEvidenceCases({
+        await revisionEvidence('ADV-CONTENT-RESOLUTION-01', documentEvidenceCases({
           elements: ['ins', 'del'],
           operations: ['accept', 'reject'],
-          fixture: (_element, operation) => ({ target: source, observed: operation === 'accept' ? accepted : rejected }),
-          observable: (fixture, element, context) => {
-            const xml = serializeXml(fixture.observed);
-            if (count(fixture.target, element) === 0 || context.story !== 'main') return false;
-            if (element === 'ins') return count(fixture.observed, element) === 0 && (context.operation === 'accept' ? xml.includes('new') : context.operation === 'reject' && !xml.includes('new'));
-            return count(fixture.observed, element) === 0 && (context.operation === 'reject' ? xml.includes('old') : context.operation === 'accept' && !xml.includes('old'));
+          buildFixture: () => cloneDocument(source),
+          observe: (run, element, expected) => {
+            const expectedTarget = source.getElementsByTagNameNS(W_NS, element).item(0);
+            const inputTarget = run.input.getElementsByTagNameNS(W_NS, element).item(0);
+            if (!expectedTarget || !inputTarget || inputTarget.toString() !== expectedTarget.toString() || count(run.output, element) !== 0) return false;
+            const text = run.output.documentElement.textContent ?? '';
+            if (element === 'ins') return expected.operation === 'accept' ? text.includes('new') : !text.includes('new');
+            return expected.operation === 'reject' ? text.includes('old') : !text.includes('old');
           },
         }));
       },
@@ -212,20 +256,40 @@ describe('ECMA-376 advanced revision records', () => {
             expect(doc.getElementsByTagNameNS(W_NS, 'del').length).toBeGreaterThan(0);
           });
         }
-        revisionEvidence('ADV-CONTENT-EMISSION-01', documentEvidenceCases({
+        await revisionEvidence('ADV-CONTENT-EMISSION-01', revisionEvidenceCases({
           elements: ['ins', 'del'],
           operations: ['emit', 'comparison.inplace', 'comparison.rebuild'],
-          fixture: (_element, operation) => {
-            const selectedMode = operation.endsWith('.rebuild') ? 'rebuild' : 'inplace';
-            const observed = outputByMode.get(selectedMode)!;
-            return { target: observed, observed };
+          story: 'main',
+          buildFixture: () => ({ original: 'old clause', revised: 'new clause' }),
+          run: async (fixture, _element, context) => {
+            const modes = context.operation === 'emit'
+              ? ['inplace', 'rebuild'] as const
+              : [context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace'] as const;
+            const documents = new Map<string, Document>();
+            for (const mode of modes) {
+              const left = await buildSyntheticDocx({ paragraphs: [fixture.original] });
+              const right = await buildSyntheticDocx({ paragraphs: [fixture.revised] });
+              const result = await compareDocuments(left, right, { engine: 'atomizer', reconstructionMode: mode });
+              if (result.reconstructionModeUsed !== mode) return { documents: new Map<string, Document>() };
+              documents.set(mode, parseXml((await getResultParts(result.document)).documentXml));
+            }
+            return { documents };
           },
-          observable: (fixture, element, context) => {
-            if (count(fixture.target, element) === 0 || context.story !== 'main') return false;
-            const mode = context.operation.split('.')[1];
-            const modes = context.operation === 'emit' ? ['inplace', 'rebuild'] : mode ? [mode] : [];
-            return modes.length > 0 && modes.every((selected) => count(outputByMode.get(selected)!, element) > 0);
-          },
+          observe: (run, element) => run.documents.size > 0 &&
+            [...run.documents.values()].every((doc) => {
+              const target = doc.getElementsByTagNameNS(W_NS, element).item(0);
+              return target !== null && (target.textContent ?? '').includes(element === 'ins' ? 'new' : 'old');
+            }),
+          mutations: () => [
+            {
+              name: 'remove-target',
+              apply: (fixture, context) => ({ fixture: { ...fixture, revised: fixture.original }, context }),
+            },
+            {
+              name: 'corrupt-target',
+              apply: (_fixture, context) => ({ fixture: { original: 'alpha source', revised: 'beta target' }, context }),
+            },
+          ],
         }));
       },
     );
@@ -292,19 +356,34 @@ describe('ECMA-376 advanced revision records', () => {
           expect(withoutTargetDiagnostics.some((error) => error.code === 'REVISION_PLACEMENT_INVALID'), `${element} removal must not retain a placement outcome`).toBe(false);
         }
       }
-      revisionEvidence('ADV-VALIDATOR-COVERAGE-01', revisionEvidenceCases({
+      await revisionEvidence('ADV-VALIDATOR-COVERAGE-01', revisionEvidenceCases({
         elements: validatorElements,
         operations: ['validate'],
         story: 'main',
-        fixture: (element) => validatorFixtures.get(element)!,
-        observable: (fixture, element, context) => count(fixture.target, element) > 0 &&
-          context.operation === 'validate' && context.story === 'main' &&
-          !fixture.diagnostics.some((error) => error.code === 'REVISION_PLACEMENT_INVALID' || error.code === 'RANGE_PAIR_UNBALANCED'),
-        removeTarget: (fixture) => ({
-          ...fixture,
-          target: fixture.withoutTarget,
-          diagnostics: fixture.withoutTargetDiagnostics,
+        buildFixture: (element) => validatorFixtureFor(element),
+        run: async (fixture) => ({
+          fixture,
+          validation: await validateAiRevisions({
+            aiAuthor: 'SafeDocX AI',
+            stories: [{ part: 'word/document.xml', doc: fixture }],
+          }),
         }),
+        observe: (run, element) => count(run.fixture, element) > 0 &&
+          ![...run.validation.errors, ...run.validation.warnings].some((error) =>
+            error.code === 'REVISION_PLACEMENT_INVALID' || error.code === 'RANGE_PAIR_UNBALANCED'),
+        mutations: (element) => [
+          {
+            name: 'remove-target',
+            apply: (fixture, context) => ({ fixture: withoutElement(fixture, element), context }),
+          },
+          {
+            name: 'corrupt-target',
+            apply: (_fixture, context) => ({
+              fixture: parseXml(`<q:document xmlns:q="${W_NS}" xmlns:x="urn:corrupt"><q:body><q:p><x:${element}/></q:p></q:body></q:document>`),
+              context,
+            }),
+          },
+        ],
       }));
 
       for (const element of validatorElements.filter((name) => name.startsWith('customXml'))) {
@@ -340,15 +419,16 @@ describe('ECMA-376 advanced revision records', () => {
           expect(count(rejected, local)).toBe(1);
         }
       });
-      revisionEvidence('ADV-TOPOLOGY-PRESERVATION-01', documentEvidenceCases({
+      await revisionEvidence('ADV-TOPOLOGY-PRESERVATION-01', documentEvidenceCases({
         elements: ['cellDel', 'cellIns', 'cellMerge'],
         operations: ['accept', 'reject', 'preserve'],
-        fixture: (_element, operation) => ({ target: source, observed: operation === 'reject' ? rejected : accepted }),
-        observable: (fixture, element, context) => count(fixture.target, element) > 0 && context.story === 'main' && context.operation === 'accept'
-          ? count(accepted, element) === 1
-          : count(fixture.target, element) > 0 && context.story === 'main' && context.operation === 'reject'
-            ? count(rejected, element) === 1
-            : count(fixture.target, element) > 0 && context.story === 'main' && context.operation === 'preserve' && count(accepted, element) === 1 && count(rejected, element) === 1,
+        buildFixture: () => cloneDocument(source),
+        observe: (run, element) => {
+          const inputTarget = run.input.getElementsByTagNameNS(W_NS, element).item(0);
+          const outputTarget = run.output.getElementsByTagNameNS(W_NS, element).item(0);
+          return inputTarget?.getAttributeNS(W_NS, 'author') === 'Reviewer' &&
+            outputTarget?.getAttributeNS(W_NS, 'author') === 'Reviewer';
+        },
       }));
     },
   );
@@ -388,11 +468,18 @@ describe('ECMA-376 advanced revision records', () => {
             expect(count(rejected, local)).toBe(0);
           }
         });
-        revisionEvidence('ADV-MOVE-RESOLUTION-01', documentEvidenceCases({
+        await revisionEvidence('ADV-MOVE-RESOLUTION-01', documentEvidenceCases({
           elements: ['moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd'],
           operations: ['accept', 'reject'],
-          fixture: (_element, operation) => ({ target: source, observed: operation === 'accept' ? accepted : rejected }),
-          observable: (fixture, element, context) => count(fixture.target, element) > 0 && context.story === 'main' && ['accept', 'reject'].includes(context.operation) && count(fixture.observed, element) === 0,
+          buildFixture: () => cloneDocument(source),
+          observe: (run, element, expected) => {
+            const inputTarget = run.input.getElementsByTagNameNS(W_NS, element).item(0);
+            const xml = serializeXml(run.output);
+            const expectedText = expected.operation === 'accept' ? 'destination' : 'source';
+            const excludedText = expected.operation === 'accept' ? 'source' : 'destination';
+            return inputTarget?.getAttributeNS(W_NS, 'id') === '7' && count(run.output, element) === 0 &&
+              xml.includes(expectedText) && !xml.includes(excludedText);
+          },
         }));
       },
     );
@@ -432,7 +519,7 @@ describe('ECMA-376 advanced revision records', () => {
             expect(count(rejected, local)).toBe(1);
           }
         });
-        revisionEvidence('ADV-RANGE-PRESERVATION-01', documentEvidenceCases({
+        await revisionEvidence('ADV-RANGE-PRESERVATION-01', documentEvidenceCases({
           elements: [
             'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart',
             'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
@@ -440,8 +527,15 @@ describe('ECMA-376 advanced revision records', () => {
             'commentRangeStart', 'commentRangeEnd', 'commentReference', 'permStart', 'permEnd', 'proofErr',
           ],
           operations: ['accept', 'reject'],
-          fixture: (_element, operation) => ({ target: source, observed: operation === 'accept' ? accepted : rejected }),
-          observable: (fixture, element, context) => count(fixture.target, element) > 0 && context.story === 'main' && ['accept', 'reject'].includes(context.operation) && count(fixture.observed, element) === 1,
+          buildFixture: () => cloneDocument(source),
+          observe: (run, element) => {
+            const expectedTarget = source.getElementsByTagNameNS(W_NS, element).item(0);
+            const inputTarget = run.input.getElementsByTagNameNS(W_NS, element).item(0);
+            const outputTarget = run.output.getElementsByTagNameNS(W_NS, element).item(0);
+            return expectedTarget !== null && inputTarget !== null && outputTarget !== null &&
+              inputTarget.toString() === expectedTarget.toString() &&
+              outputTarget.toString() === expectedTarget.toString();
+          },
         }));
       },
     );
@@ -468,11 +562,16 @@ describe('ECMA-376 advanced revision records', () => {
             expect(count(rejected, local)).toBe(1);
           }
         });
-        revisionEvidence('ADV-UNRESOLVED-RECORDS-01', documentEvidenceCases({
+        await revisionEvidence('ADV-UNRESOLVED-RECORDS-01', documentEvidenceCases({
           elements: ['numberingChange', 'tblPrExChange', 'tblGridChange'],
           operations: ['accept', 'reject'],
-          fixture: (_element, operation) => ({ target: source, observed: operation === 'accept' ? accepted : rejected }),
-          observable: (fixture, element, context) => count(fixture.target, element) > 0 && context.story === 'main' && ['accept', 'reject'].includes(context.operation) && count(fixture.observed, element) === 1,
+          buildFixture: () => cloneDocument(source),
+          observe: (run, element) => {
+            const inputTarget = run.input.getElementsByTagNameNS(W_NS, element).item(0);
+            const outputTarget = run.output.getElementsByTagNameNS(W_NS, element).item(0);
+            return inputTarget?.getAttributeNS(W_NS, 'author') === 'Reviewer' &&
+              outputTarget?.getAttributeNS(W_NS, 'author') === 'Reviewer';
+          },
         }));
       },
     );
@@ -515,27 +614,38 @@ describe('ECMA-376 advanced revision records', () => {
           expect(rejectedHeader).toContain('<w:ins');
           expect(rejectedFooter).toContain('<w:ins');
         });
-        revisionEvidence('ADV-STORY-BOUNDARY-01', revisionEvidenceCases({
+        await revisionEvidence('ADV-STORY-BOUNDARY-01', revisionEvidenceCases({
           elements: ['header story revisions', 'footer story revisions'],
           operations: ['accept', 'reject', 'preserve'],
           story: (element) => element.startsWith('header') ? 'header' : 'footer',
-          fixture: (element) => {
-            const isHeader = element === 'header story revisions';
-            return {
-              target: parseXml(isHeader ? `<w:hdr xmlns:w="${W_NS}"><w:p>${revision}</w:p></w:hdr>` : `<w:ftr xmlns:w="${W_NS}"><w:p>${revision}</w:p></w:ftr>`),
-              acceptedXml: (isHeader ? header : footer) ?? '',
-              rejectedXml: (isHeader ? rejectedHeader : rejectedFooter) ?? '',
-            };
+          buildFixture: (_element, context) => ({ story: context.story, content: 'tracked' }),
+          run: async (fixture, _element, context) => {
+            const tracked = fixture.content === 'none'
+              ? ''
+              : `<w:ins w:id="7" w:author="Reviewer"><w:r><w:t>${fixture.content}</w:t></w:r></w:ins>`;
+            const bytes = await createZipBuffer({
+              '[Content_Types].xml': '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+              '_rels/.rels': '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>',
+              'word/document.xml': `<w:document xmlns:w="${W_NS}"><w:body><w:p/><w:sectPr/></w:body></w:document>`,
+              [`word/${fixture.story}1.xml`]: `<w:${fixture.story === 'header' ? 'hdr' : 'ftr'} xmlns:w="${W_NS}"><w:p>${tracked}</w:p></w:${fixture.story === 'header' ? 'hdr' : 'ftr'}>`,
+            });
+            const loaded = await DocxDocument.load(bytes);
+            if (context.operation === 'accept') await loaded.acceptChanges();
+            else if (context.operation === 'reject') await loaded.rejectChanges();
+            const output = (await loaded.toBuffer({ cleanBookmarks: false })).buffer;
+            return readZipText(output, `word/${context.story}1.xml`);
           },
-          observable: (fixture, _element, context) => {
-            if (count(fixture.target, 'ins') !== 1 || context.story !== (fixture.target.documentElement.localName === 'hdr' ? 'header' : 'footer')) return false;
-            return context.operation === 'accept'
-              ? fixture.acceptedXml.includes('<w:ins')
-              : context.operation === 'reject'
-                ? fixture.rejectedXml.includes('<w:ins')
-                : context.operation === 'preserve' && fixture.acceptedXml.includes('<w:ins') && fixture.rejectedXml.includes('<w:ins');
-          },
-          removeTarget: (fixture) => ({ ...fixture, target: withoutElement(fixture.target, 'ins') }),
+          observe: (xml) => xml?.includes('<w:ins') === true && xml.includes('tracked'),
+          mutations: () => [
+            {
+              name: 'remove-target',
+              apply: (fixture, context) => ({ fixture: { ...fixture, content: 'none' }, context }),
+            },
+            {
+              name: 'corrupt-target',
+              apply: (fixture, context) => ({ fixture: { ...fixture, content: 'corrupt' }, context }),
+            },
+          ],
         }));
       },
     );
@@ -571,20 +681,46 @@ describe('ECMA-376 advanced revision records', () => {
             }
           });
         }
-        revisionEvidence('ADV-COMPARE-MOVE-EMISSION-01', documentEvidenceCases({
+        await revisionEvidence('ADV-COMPARE-MOVE-EMISSION-01', revisionEvidenceCases({
           elements: ['moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd'],
           operations: ['emit', 'comparison.inplace', 'comparison.rebuild'],
-          fixture: (_element, operation) => {
-            const selectedMode = operation.endsWith('.rebuild') ? 'rebuild' : 'inplace';
-            const observed = outputByMode.get(selectedMode)!;
-            return { target: observed, observed };
+          story: 'main',
+          buildFixture: () => ({
+            original: ['this entire clause moves to another location', 'stable text', 'tail text'],
+            revised: ['stable text', 'this entire clause moves to another location', 'tail text'],
+          }),
+          run: async (fixture, _element, context) => {
+            const modes = context.operation === 'emit'
+              ? ['inplace', 'rebuild'] as const
+              : [context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace'] as const;
+            const documents = new Map<string, Document>();
+            for (const mode of modes) {
+              const left = await buildSyntheticDocx({ paragraphs: fixture.original });
+              const right = await buildSyntheticDocx({ paragraphs: fixture.revised });
+              const result = await compareDocuments(left, right, { engine: 'atomizer', reconstructionMode: mode });
+              if (result.reconstructionModeUsed !== mode) return { documents: new Map<string, Document>() };
+              documents.set(mode, parseXml((await getResultParts(result.document)).documentXml));
+            }
+            return { documents };
           },
-          observable: (fixture, element, context) => {
-            if (count(fixture.target, element) === 0 || context.story !== 'main') return false;
-            const mode = context.operation.split('.')[1];
-            const modes = context.operation === 'emit' ? ['inplace', 'rebuild'] : mode ? [mode] : [];
-            return modes.length > 0 && modes.every((selected) => count(outputByMode.get(selected)!, element) > 0);
-          },
+          observe: (run, element) => run.documents.size > 0 && [...run.documents.values()].every((doc) =>
+            count(doc, element) > 0 && serializeXml(doc).includes('this entire clause moves to another location')),
+          mutations: () => [
+            {
+              name: 'remove-target',
+              apply: (fixture, context) => ({ fixture: { ...fixture, revised: [...fixture.original] }, context }),
+            },
+            {
+              name: 'corrupt-target',
+              apply: (_fixture, context) => ({
+                fixture: {
+                  original: ['corrupt clause', 'stable text', 'tail text'],
+                  revised: ['stable text', 'corrupt clause', 'tail text'],
+                },
+                context,
+              }),
+            },
+          ],
         }));
       },
     );
@@ -674,27 +810,52 @@ describe('ECMA-376 advanced revision records', () => {
           'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
           'commentReference', 'permStart', 'permEnd', 'proofErr', 'w14:conflictIns', 'w14:conflictDel',
         ];
-        revisionEvidence('ADV-COMPARE-MODE-PRESERVATION-01', revisionEvidenceCases({
+        await revisionEvidence('ADV-COMPARE-MODE-PRESERVATION-01', revisionEvidenceCases({
           elements: preservationElements,
           operations: ['reconstruction.inplace', 'reconstruction.rebuild'],
           story: 'main',
-          fixture: (_element, operation) => ({
-            source: sourceDocument,
-            output: outputByMode.get(operation.endsWith('.rebuild') ? 'rebuild' : 'inplace')!,
-          }),
-          observable: (fixture, element, context) => {
-            const mode = context.operation.split('.')[1];
+          buildFixture: () => cloneDocument(sourceDocument),
+          run: async (fixture, _element, context) => {
+            const mode = context.operation.endsWith('.rebuild') ? 'rebuild' : 'inplace';
+            const bytes = await packageWithDocumentXml(serializeXml(fixture));
+            const result = await compareDocuments(bytes, bytes, { engine: 'atomizer', reconstructionMode: mode });
+            return {
+              input: fixture,
+              output: parseXml((await getResultParts(result.document)).documentXml),
+              modeUsed: result.reconstructionModeUsed,
+            };
+          },
+          observe: (run, element, expected) => {
+            const mode = expected.operation.split('.')[1];
             const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
-            if (!['inplace', 'rebuild'].includes(mode ?? '') || fixture.source.getElementsByTagNameNS(namespace, element.replace('w14:', '')).length === 0 || context.story !== 'main') return false;
-            const present = fixture.output.getElementsByTagNameNS(namespace, element.replace('w14:', '')).length > 0;
+            const local = element.replace('w14:', '');
+            const expectedTarget = sourceDocument.getElementsByTagNameNS(namespace, local).item(0);
+            const inputTarget = run.input.getElementsByTagNameNS(namespace, local).item(0);
+            if (!expectedTarget || !inputTarget || inputTarget.toString() !== expectedTarget.toString() || run.modeUsed !== mode) return false;
+            const present = run.output.getElementsByTagNameNS(namespace, local).length > 0;
             return mode === 'inplace' ? present : present === !absentFromRebuild.has(element);
           },
-          removeTarget: (fixture, element) => {
-            const clone = cloneDocument(fixture.source);
-            const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
-            for (const node of Array.from(clone.getElementsByTagNameNS(namespace, element.replace('w14:', '')))) node.parentNode?.removeChild(node);
-            return { ...fixture, source: clone };
-          },
+          mutations: (element) => [
+            {
+              name: 'remove-target',
+              apply: (fixture, context) => {
+                const clone = cloneDocument(fixture);
+                const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
+                for (const node of Array.from(clone.getElementsByTagNameNS(namespace, element.replace('w14:', '')))) node.parentNode?.removeChild(node);
+                return { fixture: clone, context };
+              },
+            },
+            {
+              name: 'corrupt-target',
+              apply: (fixture, context) => {
+                const clone = cloneDocument(fixture);
+                const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
+                const target = clone.getElementsByTagNameNS(namespace, element.replace('w14:', '')).item(0);
+                target?.setAttributeNS(namespace, `${target.prefix ?? 'q'}:id`, '999');
+                return { fixture: clone, context };
+              },
+            },
+          ],
         }));
       },
     );

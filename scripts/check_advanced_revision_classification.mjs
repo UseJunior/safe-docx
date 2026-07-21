@@ -114,9 +114,7 @@ function claimKey({ element, operation, story }) {
 function validateEvidenceResult(row) {
   const expected = {
     observable: true,
-    targetRemovalDetected: true,
-    operationMutationDetected: true,
-    storyMutationDetected: true,
+    mutationsDetected: ['remove-target', 'corrupt-target'],
   };
   if (JSON.stringify(row.assertions) !== JSON.stringify(expected)) {
     throw new Error(`${row.id}: incomplete mutation-sensitive result for ${row.element} ${row.operation} ${row.story}`);

@@ -160,7 +160,7 @@ test('rejects omission of an explicit empty normative anchor owner', async () =>
 
 test('rejects an executed evidence artifact with a missing mutation sentinel', async () => {
   const candidateResults = structuredClone(evidenceResults);
-  candidateResults.cases[0].assertions.targetRemovalDetected = false;
+  candidateResults.cases[0].assertions.mutationsDetected = ['remove-target'];
   await assert.rejects(
     validateAdvancedRevisionClassification(cloneManifest(), vocabulary, registry, leanLedger, candidateResults),
     /incomplete mutation-sensitive result/,
