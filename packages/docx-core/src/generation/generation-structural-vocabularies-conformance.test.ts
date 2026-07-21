@@ -84,6 +84,26 @@ type EnumClassificationCase = {
   mutate: (spec: DocumentSpec, value: string) => void;
 };
 
+type HexColorClassificationCase = {
+  path: string;
+  mutate: (spec: DocumentSpec, value: string) => void;
+};
+
+const HEX_COLOR_CLASSIFICATION_CASES: readonly HexColorClassificationCase[] = [
+  {
+    path: '/sections/0/blocks/0/borders/top/colorHex',
+    mutate: (spec, value) => { (spec.sections[0]!.blocks[0] as any).borders.top.colorHex = value; },
+  },
+  {
+    path: '/sections/0/blocks/0/rows/0/cells/0/shadingHex',
+    mutate: (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].shadingHex = value; },
+  },
+  {
+    path: '/styles/0/run/colorHex',
+    mutate: (spec, value) => { spec.styles![0]!.run = { colorHex: value }; },
+  },
+];
+
 const ENUM_CLASSIFICATION_CASES: readonly EnumClassificationCase[] = [
   {
     schemaType: 'ST_TblLayoutType',
@@ -176,6 +196,30 @@ describe('ECMA-376 tables, numbering, and styles evidence', () => {
         code: 'invalid_value',
         path: enumCase.path,
       }));
+    }
+  });
+
+  test('classifies ST_HexColor consistently across each touched API consumer', () => {
+    for (const hexColorCase of HEX_COLOR_CLASSIFICATION_CASES) {
+      const supported = representativeSpec();
+      hexColorCase.mutate(supported, 'A1b2C3');
+      expect(() => validateSpec(supported), `${hexColorCase.path} supported hex`).not.toThrow();
+
+      const unsupported = representativeSpec();
+      hexColorCase.mutate(unsupported, 'auto');
+      expect(() => validateSpec(unsupported), `${hexColorCase.path} schema-valid auto`).toThrowError(expect.objectContaining({
+        code: 'unsupported_feature',
+        path: hexColorCase.path,
+      }));
+
+      for (const malformedValue of ['not-hex', '#A1B2C3', 'A1B2C']) {
+        const malformed = representativeSpec();
+        hexColorCase.mutate(malformed, malformedValue);
+        expect(() => validateSpec(malformed), `${hexColorCase.path} malformed ${malformedValue}`).toThrowError(expect.objectContaining({
+          code: 'invalid_value',
+          path: hexColorCase.path,
+        }));
+      }
     }
   });
 

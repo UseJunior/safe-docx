@@ -104,6 +104,16 @@ function requireSupportedSchemaEnum(
   );
 }
 
+function requireSupportedHexColor(value: unknown, path: string): void {
+  if (typeof value === 'string' && COLOR_HEX_RE.test(value)) return;
+  if (value === 'auto') unsupportedApiValue(path, value, 'ST_HexColor');
+  throw new GenerationSpecError(
+    'invalid_value',
+    path,
+    `Value '${String(value)}' is outside the ST_HexColor schema domain`,
+  );
+}
+
 export function validateSpec(spec: DocumentSpec): void {
   if (!Array.isArray(spec.sections) || spec.sections.length === 0) {
     throw new GenerationSpecError('empty_sections', '/sections', 'DocumentSpec.sections must contain at least one section');
@@ -388,9 +398,7 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
       if (cell.vAlign !== undefined) {
         requireSupportedSchemaEnum(cell.vAlign, `${cellPath}/vAlign`, 'ST_VerticalJc', CELL_VERTICAL_ALIGNMENTS);
       }
-      if (cell.shadingHex !== undefined && !COLOR_HEX_RE.test(cell.shadingHex)) {
-        throw new GenerationSpecError('invalid_value', `${cellPath}/shadingHex`, `shadingHex must be six hex digits without '#', got '${cell.shadingHex}'`);
-      }
+      if (cell.shadingHex !== undefined) requireSupportedHexColor(cell.shadingHex, `${cellPath}/shadingHex`);
       if (cell.themeFill !== undefined) {
         validateThemeColorSlot(cell.themeFill, `${cellPath}/themeFill`, 'themeFill');
       }
@@ -437,9 +445,7 @@ function validateBorders(borders: TableBorders, path: string): void {
   for (const [edge, spec] of Object.entries(borders) as Array<[string, BorderSpec | undefined]>) {
     if (!spec) continue;
     requireSupportedSchemaEnum(spec.style, `${path}/${edge}/style`, 'ST_Border', BORDER_STYLES);
-    if (spec.colorHex !== undefined && !COLOR_HEX_RE.test(spec.colorHex)) {
-      throw new GenerationSpecError('invalid_value', `${path}/${edge}/colorHex`, `colorHex must be six hex digits without '#', got '${spec.colorHex}'`);
-    }
+    if (spec.colorHex !== undefined) requireSupportedHexColor(spec.colorHex, `${path}/${edge}/colorHex`);
     if (spec.sizeEighthPt !== undefined) {
       requireInteger(
         spec.sizeEighthPt,
@@ -572,10 +578,7 @@ function validateRunProps(props: RunProps, path: string): void {
   if (props.underline !== undefined) {
     requireSupportedSchemaEnum(props.underline, `${path}/underline`, 'ST_Underline', UNDERLINES);
   }
-  if (props.colorHex !== undefined && !COLOR_HEX_RE.test(props.colorHex)) {
-    if (props.colorHex === 'auto') unsupportedApiValue(`${path}/colorHex`, props.colorHex, 'ST_HexColor');
-    throw new GenerationSpecError('invalid_value', `${path}/colorHex`, `colorHex must be six hex digits without '#', got '${props.colorHex}'`);
-  }
+  if (props.colorHex !== undefined) requireSupportedHexColor(props.colorHex, `${path}/colorHex`);
   if (props.themeColor !== undefined) {
     validateThemeColorSlot(props.themeColor, `${path}/themeColor`, 'themeColor');
   }
