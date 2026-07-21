@@ -5,6 +5,7 @@ import { parseXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
+import { revisionEvidence } from '../testing/revision-evidence.js';
 import {
   getParagraphRuns,
   getParagraphText,
@@ -867,6 +868,10 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
 
       const insertedRun = p.getElementsByTagNameNS(W_NS, 'ins').item(0)!.getElementsByTagNameNS(W_NS, W.r).item(0)!;
       expect(insertedRun.getElementsByTagNameNS(W_NS, W.b)).toHaveLength(1);
+    });
+    revisionEvidence('ADV-RPR-EMISSION-01', {
+      elements: ['rPrChange'], operations: ['emit'], story: 'main',
+      passed: () => rPrChange.getElementsByTagNameNS(W_NS, W.rPr).length === 1 && rPrChange.getElementsByTagNameNS(W_NS, W.i).length === 1,
     });
   });
 

@@ -6,6 +6,7 @@ import { setParagraphSpacing, setTableCellPadding, setTableRowHeight } from './l
 import { OOXML, W } from './namespaces.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { parseXml } from './xml.js';
+import { revisionEvidence } from '../testing/revision-evidence.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Layout Primitives' });
 
@@ -141,6 +142,10 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousSpacing, 'before')).toBeNull();
       expect(wordAttr(previousSpacing, 'after')).toBe('120');
     });
+    revisionEvidence('ADV-PPR-EMISSION-01', {
+      elements: ['pPrChange'], operations: ['emit'], story: 'main',
+      passed: () => pPrChange.getElementsByTagNameNS(W_NS, W.pPr).length === 1 && wordAttr(previousSpacing, 'after') === '120',
+    });
   });
 
   test('tracked spacing normalizes live and prior snapshots with alternate prefixes', () => {
@@ -219,6 +224,10 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousTrHeight, 'val')).toBe('360');
       expect(wordAttr(previousTrHeight, 'hRule')).toBe('atLeast');
     });
+    revisionEvidence('ADV-TRPR-EMISSION-01', {
+      elements: ['trPrChange'], operations: ['emit'], story: 'main',
+      passed: () => trPrChange.getElementsByTagNameNS(W_NS, W.trPr).length === 1 && wordAttr(previousTrHeight, 'val') === '360',
+    });
   });
 
   test
@@ -273,6 +282,10 @@ describe('layout tracked-change emission', () => {
           expect(wordAttr(left, 'type')).toBe('dxa');
           expect(getDirectChildrenByName(previousTcMar, W.left)).toHaveLength(0);
           expect(firstDirectChild(previousTcMar, W.top)).toBeDefined();
+        });
+        revisionEvidence('ADV-TCPR-EMISSION-01', {
+          elements: ['tcPrChange'], operations: ['emit'], story: 'main',
+          passed: () => tcPrChange.getElementsByTagNameNS(W_NS, W.tcPr).length === 1 && getDirectChildrenByName(previousTcMar, W.left).length === 0,
         });
       },
     );

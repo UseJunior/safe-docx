@@ -11,6 +11,7 @@ import {
 } from '../src/index.js';
 import { buildDocxFromBodyXml } from '../src/testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
+import { revisionEvidence } from '../src/testing/revision-evidence.js';
 
 const TEST_FEATURE = 'add-ai-revision-validator';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -171,6 +172,10 @@ describe('validateAiRevisions', () => {
         });
         await and('legacy and wrong-namespace lookalike parents are rejected', () => {
           expect(invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toHaveLength(2);
+        });
+        revisionEvidence('ADV-NUMBERING-PLACEMENT-01', {
+          elements: ['numberingChange'], operations: ['validate'], story: 'main',
+          passed: () => valid.errors.every((error) => error.code !== 'REVISION_PLACEMENT_INVALID') && invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID').length === 2,
         });
       },
     );

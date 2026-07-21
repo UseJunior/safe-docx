@@ -9,12 +9,15 @@ import { createZipBuffer, readZipText } from '../primitives/zip.js';
 import { validateAiRevisions } from '../primitives/validate_ai_revisions.js';
 import { compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
+import { revisionEvidence } from '../testing/revision-evidence.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({
   feature: 'Advanced Revision Classification',
 });
 
 const W_NS = OOXML.W_NS;
+const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 const metadata = 'q:id="7" q:author="Reviewer" q:date="2026-07-20T12:00:00Z"';
 
 function documentWith(body: string): Document {
@@ -56,6 +59,8 @@ describe('ECMA-376 advanced revision records', () => {
           { local: 'trPrChange', current: 'trPr', old: '<q:cantSplit/>', shape: (change: string) => `<q:tbl><q:tr><q:trPr><q:tblHeader/>${change}</q:trPr><q:tc><q:p/></q:tc></q:tr></q:tbl>` },
           { local: 'tcPrChange', current: 'tcPr', old: '<q:tcW q:w="100" q:type="dxa"/>', shape: (change: string) => `<q:tbl><q:tr><q:tc><q:tcPr><q:tcW q:w="200" q:type="dxa"/>${change}</q:tcPr><q:p/></q:tc></q:tr></q:tbl>` },
         ];
+        const acceptedByElement = new Map<string, Document>();
+        const rejectedByElement = new Map<string, Document>();
 
         await given('run, paragraph-mark, paragraph, section, table, row, and cell property snapshots using a namespace alias', () => {});
 
@@ -63,6 +68,8 @@ describe('ECMA-376 advanced revision records', () => {
           const change = `<q:${revision.local} ${metadata}><q:${revision.current}>${revision.old}</q:${revision.current}></q:${revision.local}>`;
           const accepted = documentWith(revision.shape(change));
           const rejected = documentWith(revision.shape(change));
+          acceptedByElement.set(revision.local, accepted);
+          rejectedByElement.set(revision.local, rejected);
 
           await when(`${revision.local} is accepted and rejected`, () => {
             acceptChanges(accepted);
@@ -78,6 +85,15 @@ describe('ECMA-376 advanced revision records', () => {
             expect(serializeXml(rejected)).toContain(revision.old);
           });
         }
+        revisionEvidence('ADV-PROPERTY-RESOLUTION-01', {
+          elements: ['rPrChange', 'pPrChange', 'sectPrChange', 'tblPrChange', 'trPrChange', 'tcPrChange'],
+          operations: ['accept', 'reject'],
+          story: 'main',
+          passed: (element, operation) => count(
+            operation === 'accept' ? acceptedByElement.get(element)! : rejectedByElement.get(element)!,
+            element,
+          ) === 0,
+        });
       },
     );
 
@@ -104,6 +120,16 @@ describe('ECMA-376 advanced revision records', () => {
           expect(count(rejected, 'ins')).toBe(0);
           expect(count(rejected, 'del')).toBe(0);
         });
+        revisionEvidence('ADV-CONTENT-RESOLUTION-01', {
+          elements: ['ins', 'del'],
+          operations: ['accept', 'reject'],
+          story: 'main',
+          passed: (element, operation) => {
+            const xml = serializeXml(operation === 'accept' ? accepted : rejected);
+            if (element === 'ins') return count(operation === 'accept' ? accepted : rejected, element) === 0 && (operation === 'accept' ? xml.includes('new') : !xml.includes('new'));
+            return count(operation === 'accept' ? accepted : rejected, element) === 0 && (operation === 'reject' ? xml.includes('old') : !xml.includes('old'));
+          },
+        });
       },
     );
 
@@ -113,17 +139,29 @@ describe('ECMA-376 advanced revision records', () => {
       async ({ when, then }: AllureBddContext) => {
         const original = await buildSyntheticDocx({ paragraphs: ['old clause'] });
         const revised = await buildSyntheticDocx({ paragraphs: ['new clause'] });
+        const outputByMode = new Map<string, Document>();
         for (const mode of ['inplace', 'rebuild'] as const) {
           const result = await when(`${mode} compares replacement text`, () =>
             compareDocuments(original, revised, { engine: 'atomizer', reconstructionMode: mode }),
           );
           const doc = parseXml((await getResultParts(result.document)).documentXml);
+          outputByMode.set(mode, doc);
           await then(`${mode} emits both content wrappers`, () => {
             expect(result.reconstructionModeUsed).toBe(mode);
             expect(doc.getElementsByTagNameNS(W_NS, 'ins').length).toBeGreaterThan(0);
             expect(doc.getElementsByTagNameNS(W_NS, 'del').length).toBeGreaterThan(0);
           });
         }
+        revisionEvidence('ADV-CONTENT-EMISSION-01', {
+          elements: ['ins', 'del'],
+          operations: ['emit', 'comparison.inplace', 'comparison.rebuild'],
+          story: 'main',
+          passed: (element, operation) => {
+            const mode = operation.split('.')[1];
+            const modes = operation === 'emit' ? ['inplace', 'rebuild'] : mode ? [mode] : [];
+            return modes.every((mode) => count(outputByMode.get(mode)!, element) > 0);
+          },
+        });
       },
     );
 
@@ -151,6 +189,19 @@ describe('ECMA-376 advanced revision records', () => {
           error.code === 'REVISION_PLACEMENT_INVALID' || error.code === 'RANGE_PAIR_UNBALANCED',
         )).toEqual([]);
       });
+      revisionEvidence('ADV-VALIDATOR-COVERAGE-01', {
+        elements: [
+          'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd',
+          'tblPrExChange', 'tblGridChange', 'cellDel', 'cellIns', 'cellMerge',
+          'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart',
+          'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
+          'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
+        ],
+        operations: ['validate'],
+        story: 'main',
+        passed: () => !result.errors.some((error) =>
+          error.code === 'REVISION_PLACEMENT_INVALID' || error.code === 'RANGE_PAIR_UNBALANCED'),
+      });
     },
   );
 
@@ -174,6 +225,16 @@ describe('ECMA-376 advanced revision records', () => {
           expect(count(accepted, local)).toBe(1);
           expect(count(rejected, local)).toBe(1);
         }
+      });
+      revisionEvidence('ADV-TOPOLOGY-PRESERVATION-01', {
+        elements: ['cellDel', 'cellIns', 'cellMerge'],
+        operations: ['accept', 'reject', 'preserve'],
+        story: 'main',
+        passed: (element, operation) => operation === 'accept'
+          ? count(accepted, element) === 1
+          : operation === 'reject'
+            ? count(rejected, element) === 1
+            : count(accepted, element) === 1 && count(rejected, element) === 1,
       });
     },
   );
@@ -212,6 +273,12 @@ describe('ECMA-376 advanced revision records', () => {
             expect(count(rejected, local)).toBe(0);
           }
         });
+        revisionEvidence('ADV-MOVE-RESOLUTION-01', {
+          elements: ['moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd'],
+          operations: ['accept', 'reject'],
+          story: 'main',
+          passed: (element, operation) => count(operation === 'accept' ? accepted : rejected, element) === 0,
+        });
       },
     );
 
@@ -249,6 +316,17 @@ describe('ECMA-376 advanced revision records', () => {
             expect(count(rejected, local)).toBe(1);
           }
         });
+        revisionEvidence('ADV-RANGE-PRESERVATION-01', {
+          elements: [
+            'customXmlInsRangeStart', 'customXmlInsRangeEnd', 'customXmlDelRangeStart',
+            'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
+            'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd', 'bookmarkStart', 'bookmarkEnd',
+            'commentRangeStart', 'commentRangeEnd', 'commentReference', 'permStart', 'permEnd', 'proofErr',
+          ],
+          operations: ['accept', 'reject'],
+          story: 'main',
+          passed: (element, operation) => count(operation === 'accept' ? accepted : rejected, element) === 1,
+        });
       },
     );
 
@@ -272,6 +350,12 @@ describe('ECMA-376 advanced revision records', () => {
             expect(count(accepted, local)).toBe(1);
             expect(count(rejected, local)).toBe(1);
           }
+        });
+        revisionEvidence('ADV-UNRESOLVED-RECORDS-01', {
+          elements: ['numberingChange', 'tblPrExChange', 'tblGridChange'],
+          operations: ['accept', 'reject'],
+          story: 'main',
+          passed: (element, operation) => count(operation === 'accept' ? accepted : rejected, element) === 1,
         });
       },
     );
@@ -314,6 +398,21 @@ describe('ECMA-376 advanced revision records', () => {
           expect(rejectedHeader).toContain('<w:ins');
           expect(rejectedFooter).toContain('<w:ins');
         });
+        revisionEvidence('ADV-STORY-BOUNDARY-01', {
+          elements: ['header story revisions', 'footer story revisions'],
+          operations: ['accept', 'reject', 'preserve'],
+          stories: { 'header story revisions': 'header', 'footer story revisions': 'footer' },
+          passed: (element, operation) => {
+            const isHeader = element === 'header story revisions';
+            const acceptedXml = (isHeader ? header : footer) ?? '';
+            const rejectedXml = (isHeader ? rejectedHeader : rejectedFooter) ?? '';
+            return operation === 'accept'
+              ? acceptedXml.includes('<w:ins')
+              : operation === 'reject'
+                ? rejectedXml.includes('<w:ins')
+                : acceptedXml.includes('<w:ins') && rejectedXml.includes('<w:ins');
+          },
+        });
       },
     );
 
@@ -324,16 +423,17 @@ describe('ECMA-376 advanced revision records', () => {
           buildSyntheticDocx({ paragraphs: ['this entire clause moves to another location', 'stable text', 'tail text'] }),
         );
         const revised = await buildSyntheticDocx({ paragraphs: ['stable text', 'this entire clause moves to another location', 'tail text'] });
+        const outputByMode = new Map<string, Document>();
 
         for (const mode of ['inplace', 'rebuild'] as const) {
           const result = await when(`the pair is compared in ${mode} mode`, () =>
             compareDocuments(original, revised, {
               engine: 'atomizer',
               reconstructionMode: mode,
-              moveDetection: { detectMoves: true, moveMinimumWordCount: 5 },
             }),
           );
           const xml = (await getResultParts(result.document)).documentXml;
+          outputByMode.set(mode, parseXml(xml));
           await then(`${mode} output carries complete move markup`, () => {
             expect(result.reconstructionModeUsed).toBe(mode);
             for (const local of [
@@ -347,6 +447,16 @@ describe('ECMA-376 advanced revision records', () => {
             }
           });
         }
+        revisionEvidence('ADV-COMPARE-MOVE-EMISSION-01', {
+          elements: ['moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd'],
+          operations: ['emit', 'comparison.inplace', 'comparison.rebuild'],
+          story: 'main',
+          passed: (element, operation) => {
+            const mode = operation.split('.')[1];
+            const modes = operation === 'emit' ? ['inplace', 'rebuild'] : mode ? [mode] : [];
+            return modes.every((mode) => count(outputByMode.get(mode)!, element) > 0);
+          },
+        });
       },
     );
 
@@ -369,8 +479,17 @@ describe('ECMA-376 advanced revision records', () => {
           `<q:moveFrom q:id="44" q:author="R" q:date="2026-07-20T12:00:00Z"><q:r><q:delText>move</q:delText></q:r></q:moveFrom>` +
           `<q:moveFromRangeEnd q:id="43"/><q:moveToRangeStart q:id="45" q:name="m" q:author="R" q:date="2026-07-20T12:00:00Z"/>` +
           `<q:moveTo q:id="46" q:author="R" q:date="2026-07-20T12:00:00Z"><q:r><q:t>move</q:t></q:r></q:moveTo><q:moveToRangeEnd q:id="45"/>`;
+        const sourceDocument = parseXml(`<q:document xmlns:q="${W_NS}"><q:body><q:p>${advanced}</q:p></q:body></q:document>`);
+        sourceDocument.documentElement.setAttributeNS(XMLNS_NS, 'xmlns:w14', OOXML.W14_NS);
+        sourceDocument.documentElement.setAttributeNS(XMLNS_NS, 'xmlns:mc', MC_NS);
+        sourceDocument.documentElement.setAttributeNS(MC_NS, 'mc:Ignorable', 'w14');
+        expect(sourceDocument.documentElement.getAttributeNS(MC_NS, 'Ignorable')).toBe('w14');
+        expect(sourceDocument.documentElement.lookupNamespaceURI('w14')).toBe(OOXML.W14_NS);
+        const sourceXml = serializeXml(sourceDocument);
+        expect(sourceXml).toContain('xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"');
+        expect(sourceXml).toContain('mc:Ignorable="w14"');
         const input = await given('namespace-equivalent input containing representative advanced records', () =>
-          packageWithDocumentXml(`<q:document xmlns:q="${W_NS}"><q:body><q:p>${advanced}</q:p></q:body></q:document>`),
+          packageWithDocumentXml(sourceXml),
         );
 
         const outputByMode = new Map<string, Document>();
@@ -411,6 +530,33 @@ describe('ECMA-376 advanced revision records', () => {
           ]) expect(rebuild.getElementsByTagNameNS(W_NS, local).length).toBe(0);
           expect(rebuild.getElementsByTagNameNS('http://schemas.microsoft.com/office/word/2010/wordml', 'conflictIns').length).toBe(0);
           expect(rebuild.getElementsByTagNameNS('http://schemas.microsoft.com/office/word/2010/wordml', 'conflictDel').length).toBe(0);
+        });
+        const absentFromRebuild = new Set([
+          'ins', 'del', 'moveFrom', 'moveTo', 'customXmlInsRangeStart', 'customXmlInsRangeEnd',
+          'customXmlDelRangeStart', 'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart',
+          'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
+          'proofErr', 'w14:conflictIns', 'w14:conflictDel',
+        ]);
+        revisionEvidence('ADV-COMPARE-MODE-PRESERVATION-01', {
+          elements: [
+            'ins', 'del', 'moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd',
+            'moveToRangeStart', 'moveToRangeEnd', 'customXmlInsRangeStart', 'customXmlInsRangeEnd',
+            'customXmlDelRangeStart', 'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart',
+            'customXmlMoveFromRangeEnd', 'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
+            'bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd',
+            'commentReference', 'permStart', 'permEnd', 'proofErr', 'w14:conflictIns', 'w14:conflictDel',
+          ],
+          operations: ['reconstruction.inplace', 'reconstruction.rebuild'],
+          story: 'main',
+          passed: (element, operation) => {
+            const mode = operation.split('.')[1];
+            if (!mode) return false;
+            const doc = outputByMode.get(mode)!;
+            const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
+            const local = element.replace('w14:', '');
+            const present = doc.getElementsByTagNameNS(namespace, local).length > 0;
+            return mode === 'inplace' ? present : present === !absentFromRebuild.has(element);
+          },
         });
       },
     );
