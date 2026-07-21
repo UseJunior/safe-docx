@@ -24,6 +24,7 @@
  */
 
 import { GenerationSpecError } from './errors.js';
+import { WML_SCHEMA_ENUM_SETS, type WmlSchemaEnumType } from './schema-enum-domains.js';
 import type {
   BlockSpec,
   BorderSpec,
@@ -46,22 +47,15 @@ const LVL_JC_SET: ReadonlySet<string> = new Set(NUMBERING_LEVEL_JUSTIFICATIONS);
 const THEME_COLOR_SLOT_SET: ReadonlySet<string> = new Set(THEME_COLOR_SLOTS);
 const ALIGNMENTS = new Set(['left', 'center', 'right', 'justify']);
 const UNDERLINES = new Set(['single', 'double', 'none']);
-const SCHEMA_UNDERLINES_OUTSIDE_API = new Set([
-  'words', 'thick', 'dotted', 'dottedHeavy', 'dash', 'dashedHeavy', 'dashLong', 'dashLongHeavy',
-  'dotDash', 'dashDotHeavy', 'dotDotDash', 'dashDotDotHeavy', 'wave', 'wavyHeavy', 'wavyDouble',
-]);
 const TAB_ALIGNMENTS = new Set(['left', 'center', 'right']);
 const TAB_LEADERS = new Set(['none', 'dot', 'underscore']);
 const LINE_RULES = new Set(['auto', 'exact', 'atLeast']);
 const TABLE_LAYOUTS = new Set(['fixed', 'autofit']);
 const BORDER_STYLES = new Set(['single', 'double', 'none']);
-const SCHEMA_BORDER_STYLES_OUTSIDE_API = new Set(['wave']);
 const ROW_HEIGHT_RULES = new Set(['atLeast', 'exact']);
-const SCHEMA_ROW_HEIGHT_RULES = new Set([...ROW_HEIGHT_RULES, 'auto']);
 const CELL_VERTICAL_ALIGNMENTS = new Set(['top', 'center', 'bottom']);
 const VERTICAL_MERGES = new Set(['restart', 'continue']);
 const STYLE_TYPES = new Set(['paragraph', 'character']);
-const SCHEMA_STYLE_TYPES = new Set([...STYLE_TYPES, 'table', 'numbering']);
 const NUMBER_FORMATS = new Set(['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none']);
 const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
 
@@ -90,6 +84,23 @@ function unsupportedApiValue(path: string, value: unknown, schemaType: string): 
     'unsupported_feature',
     path,
     `Value '${String(value)}' is valid in ${schemaType} but is outside the DocumentSpec API-supported subset`,
+  );
+}
+
+function requireSupportedSchemaEnum(
+  value: unknown,
+  path: string,
+  schemaType: WmlSchemaEnumType,
+  supportedValues: ReadonlySet<string>,
+): void {
+  if (typeof value === 'string' && supportedValues.has(value)) return;
+  if (typeof value === 'string' && WML_SCHEMA_ENUM_SETS[schemaType].has(value)) {
+    unsupportedApiValue(path, value, schemaType);
+  }
+  throw new GenerationSpecError(
+    'invalid_value',
+    path,
+    `Value '${String(value)}' is outside the ${schemaType} schema domain`,
   );
 }
 
@@ -151,11 +162,9 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
       if (typeof level.lvlText !== 'string' || level.lvlText.length === 0) {
         throw new GenerationSpecError('invalid_value', `${levelPath}/lvlText`, 'Numbering levels require a lvlText pattern');
       }
-      if (!NUMBER_FORMATS.has(level.numFmt)) {
-        throw new GenerationSpecError('invalid_value', `${levelPath}/numFmt`, `Unsupported numbering format '${level.numFmt}'`);
-      }
-      if (level.suff !== undefined && !NUMBER_SUFFIXES.has(level.suff)) {
-        throw new GenerationSpecError('invalid_value', `${levelPath}/suff`, `Unsupported numbering suffix '${level.suff}'`);
+      requireSupportedSchemaEnum(level.numFmt, `${levelPath}/numFmt`, 'ST_NumberFormat', NUMBER_FORMATS);
+      if (level.suff !== undefined) {
+        requireSupportedSchemaEnum(level.suff, `${levelPath}/suff`, 'ST_LevelSuffix', NUMBER_SUFFIXES);
       }
       if (level.start !== undefined) {
         requireInteger(
@@ -164,12 +173,8 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
           'Level start must be a signed safe integer in the API-representable subset of ST_DecimalNumber',
         );
       }
-      if (level.lvlJc !== undefined && !LVL_JC_SET.has(level.lvlJc)) {
-        throw new GenerationSpecError(
-          'invalid_value',
-          `${levelPath}/lvlJc`,
-          `lvlJc must be one of ${NUMBERING_LEVEL_JUSTIFICATIONS.join(', ')}, got '${level.lvlJc}'`,
-        );
+      if (level.lvlJc !== undefined) {
+        requireSupportedSchemaEnum(level.lvlJc, `${levelPath}/lvlJc`, 'ST_Jc', LVL_JC_SET);
       }
       if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
       if (level.indentTwips) {
@@ -207,10 +212,7 @@ function validateStyles(styles: StyleSpec[]): Set<string> {
     if (!style.styleId || !style.name) {
       throw new GenerationSpecError('invalid_value', path, 'StyleSpec requires styleId and name');
     }
-    if (!STYLE_TYPES.has(style.type)) {
-      if (SCHEMA_STYLE_TYPES.has(style.type)) unsupportedApiValue(`${path}/type`, style.type, 'ST_StyleType');
-      throw new GenerationSpecError('invalid_value', `${path}/type`, `Unsupported style type '${style.type}'`);
-    }
+    requireSupportedSchemaEnum(style.type, `${path}/type`, 'ST_StyleType', STYLE_TYPES);
     if (ids.has(style.styleId)) {
       throw new GenerationSpecError('invalid_value', `${path}/styleId`, `Duplicate styleId '${style.styleId}'`);
     }
@@ -304,8 +306,8 @@ function validateBlock(
  * @conformance ECMA-376 edition 5, Part 1 § 17.4.48
  */
 function validateTable(table: TableSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>, story: StoryContext): void {
-  if (table.layout !== undefined && !TABLE_LAYOUTS.has(table.layout)) {
-    throw new GenerationSpecError('invalid_value', `${path}/layout`, `Unsupported table layout '${table.layout}'`);
+  if (table.layout !== undefined) {
+    requireSupportedSchemaEnum(table.layout, `${path}/layout`, 'ST_TblLayoutType', TABLE_LAYOUTS);
   }
   if (!Array.isArray(table.columnWidthsTwips) || table.columnWidthsTwips.length === 0) {
     throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips`, 'Tables require at least one column width');
@@ -347,9 +349,8 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
         0,
       );
     }
-    if (row.heightRule !== undefined && !ROW_HEIGHT_RULES.has(row.heightRule)) {
-      if (SCHEMA_ROW_HEIGHT_RULES.has(row.heightRule)) unsupportedApiValue(`${rowPath}/heightRule`, row.heightRule, 'ST_HeightRule');
-      throw new GenerationSpecError('invalid_value', `${rowPath}/heightRule`, `Unsupported row height rule '${row.heightRule}'`);
+    if (row.heightRule !== undefined) {
+      requireSupportedSchemaEnum(row.heightRule, `${rowPath}/heightRule`, 'ST_HeightRule', ROW_HEIGHT_RULES);
     }
 
     const currentMerges = new Map<number, number>();
@@ -372,8 +373,8 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
           );
         }
       }
-      if (cell.vMerge !== undefined && !VERTICAL_MERGES.has(cell.vMerge)) {
-        throw new GenerationSpecError('invalid_value', `${cellPath}/vMerge`, `Unsupported vertical merge value '${cell.vMerge}'`);
+      if (cell.vMerge !== undefined) {
+        requireSupportedSchemaEnum(cell.vMerge, `${cellPath}/vMerge`, 'ST_Merge', VERTICAL_MERGES);
       }
       if (cell.vMerge !== undefined) currentMerges.set(gridOffset, span);
       if (cell.widthTwips !== undefined) {
@@ -384,8 +385,8 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
         );
       }
       if (cell.borders) validateBorders(cell.borders, `${cellPath}/borders`);
-      if (cell.vAlign !== undefined && !CELL_VERTICAL_ALIGNMENTS.has(cell.vAlign)) {
-        throw new GenerationSpecError('invalid_value', `${cellPath}/vAlign`, `Unsupported cell vertical alignment '${cell.vAlign}'`);
+      if (cell.vAlign !== undefined) {
+        requireSupportedSchemaEnum(cell.vAlign, `${cellPath}/vAlign`, 'ST_VerticalJc', CELL_VERTICAL_ALIGNMENTS);
       }
       if (cell.shadingHex !== undefined && !COLOR_HEX_RE.test(cell.shadingHex)) {
         throw new GenerationSpecError('invalid_value', `${cellPath}/shadingHex`, `shadingHex must be six hex digits without '#', got '${cell.shadingHex}'`);
@@ -435,10 +436,7 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
 function validateBorders(borders: TableBorders, path: string): void {
   for (const [edge, spec] of Object.entries(borders) as Array<[string, BorderSpec | undefined]>) {
     if (!spec) continue;
-    if (!BORDER_STYLES.has(spec.style)) {
-      if (SCHEMA_BORDER_STYLES_OUTSIDE_API.has(spec.style)) unsupportedApiValue(`${path}/${edge}/style`, spec.style, 'ST_Border');
-      throw new GenerationSpecError('invalid_value', `${path}/${edge}/style`, `Unsupported border style '${spec.style}'`);
-    }
+    requireSupportedSchemaEnum(spec.style, `${path}/${edge}/style`, 'ST_Border', BORDER_STYLES);
     if (spec.colorHex !== undefined && !COLOR_HEX_RE.test(spec.colorHex)) {
       throw new GenerationSpecError('invalid_value', `${path}/${edge}/colorHex`, `colorHex must be six hex digits without '#', got '${spec.colorHex}'`);
     }
@@ -571,11 +569,8 @@ function validateInline(run: InlineSpec, path: string): void {
 }
 
 function validateRunProps(props: RunProps, path: string): void {
-  if (props.underline !== undefined && !UNDERLINES.has(props.underline)) {
-    if (SCHEMA_UNDERLINES_OUTSIDE_API.has(props.underline)) {
-      unsupportedApiValue(`${path}/underline`, props.underline, 'ST_Underline');
-    }
-    throw new GenerationSpecError('invalid_value', `${path}/underline`, `Unsupported underline value '${props.underline}'`);
+  if (props.underline !== undefined) {
+    requireSupportedSchemaEnum(props.underline, `${path}/underline`, 'ST_Underline', UNDERLINES);
   }
   if (props.colorHex !== undefined && !COLOR_HEX_RE.test(props.colorHex)) {
     if (props.colorHex === 'auto') unsupportedApiValue(`${path}/colorHex`, props.colorHex, 'ST_HexColor');

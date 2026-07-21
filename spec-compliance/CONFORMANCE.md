@@ -1059,9 +1059,13 @@ duplicate declarations, table-grid arithmetic, and style/numbering references
 before emission, then preserves the authored parts through package load/save.
 The XML Schema integer domains can exceed JavaScript's exact-number range;
 numeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and
-`Number.MAX_SAFE_INTEGER`. Schema-valid values outside the API subset, such as
-wave underlining, `auto` run color, and table/numbering style types, are
-reported as unsupported API features rather than schema-invalid XML. These
+`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated
+by this surface, the full lexical domain is pinned to the vendored transitional
+XSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,
+`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run
+color, and table/numbering style types, are reported as unsupported API
+features rather than schema-invalid XML. Values absent from the applicable XSD
+domain are reported as invalid. These
 claims do not cover Word's
 table layout algorithm or pagination, numbering rendering or complete
 override/counter behavior, style cascade or latent-style semantics,

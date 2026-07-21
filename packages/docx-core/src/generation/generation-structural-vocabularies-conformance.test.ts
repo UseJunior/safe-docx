@@ -1,6 +1,6 @@
 import { describe, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { testAllure } from '../testing/allure-test.js';
@@ -9,8 +9,10 @@ import { OOXML } from '../primitives/namespaces.js';
 import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
 import { generateDocx } from './compile.js';
+import { WML_SCHEMA_ENUM_VALUES, type WmlSchemaEnumType } from './schema-enum-domains.js';
 import { checkGeneratedPackage } from './structural-checks.js';
 import type { DocumentSpec } from './types.js';
+import { validateSpec } from './validate-spec.js';
 
 const test = testAllure.epic('Document Generation').withLabels({ feature: 'ECMA-376 Structural Vocabularies' });
 
@@ -64,7 +66,119 @@ function representativeSpec(): DocumentSpec {
   };
 }
 
+function vendoredSchemaEnumValues(name: WmlSchemaEnumType): string[] {
+  const schemaPath = resolve(process.cwd(), '../../spec-compliance/ecma-376/schemas/transitional/wml.xsd');
+  const schema = parseXml(readFileSync(schemaPath, 'utf8'));
+  const simpleType = Array.from(schema.getElementsByTagNameNS('http://www.w3.org/2001/XMLSchema', 'simpleType'))
+    .find((element) => element.getAttribute('name') === name);
+  expect(simpleType, `Missing ${name} in vendored transitional wml.xsd`).toBeDefined();
+  return Array.from(simpleType!.getElementsByTagNameNS('http://www.w3.org/2001/XMLSchema', 'enumeration'))
+    .map((element) => element.getAttribute('value'))
+    .filter((value): value is string => value !== null);
+}
+
+type EnumClassificationCase = {
+  schemaType: WmlSchemaEnumType;
+  supported: readonly string[];
+  path: string;
+  mutate: (spec: DocumentSpec, value: string) => void;
+};
+
+const ENUM_CLASSIFICATION_CASES: readonly EnumClassificationCase[] = [
+  {
+    schemaType: 'ST_TblLayoutType',
+    supported: ['fixed', 'autofit'],
+    path: '/sections/0/blocks/0/layout',
+    mutate: (spec, value) => { (spec.sections[0]!.blocks[0] as any).layout = value; },
+  },
+  {
+    schemaType: 'ST_Border',
+    supported: ['single', 'double', 'none'],
+    path: '/sections/0/blocks/0/borders/top/style',
+    mutate: (spec, value) => { (spec.sections[0]!.blocks[0] as any).borders.top.style = value; },
+  },
+  {
+    schemaType: 'ST_HeightRule',
+    supported: ['atLeast', 'exact'],
+    path: '/sections/0/blocks/0/rows/0/heightRule',
+    mutate: (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].heightRule = value; },
+  },
+  {
+    schemaType: 'ST_Merge',
+    supported: ['restart', 'continue'],
+    path: '/sections/0/blocks/0/rows/0/cells/0/vMerge',
+    mutate: (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].vMerge = value; },
+  },
+  {
+    schemaType: 'ST_VerticalJc',
+    supported: ['top', 'center', 'bottom'],
+    path: '/sections/0/blocks/0/rows/0/cells/0/vAlign',
+    mutate: (spec, value) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].vAlign = value; },
+  },
+  {
+    schemaType: 'ST_StyleType',
+    supported: ['paragraph', 'character'],
+    path: '/styles/0/type',
+    mutate: (spec, value) => { (spec.styles![0] as any).type = value; },
+  },
+  {
+    schemaType: 'ST_NumberFormat',
+    supported: ['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none'],
+    path: '/numbering/0/levels/0/numFmt',
+    mutate: (spec, value) => { (spec.numbering![0]!.levels[0] as any).numFmt = value; },
+  },
+  {
+    schemaType: 'ST_LevelSuffix',
+    supported: ['tab', 'space', 'nothing'],
+    path: '/numbering/0/levels/0/suff',
+    mutate: (spec, value) => { (spec.numbering![0]!.levels[0] as any).suff = value; },
+  },
+  {
+    schemaType: 'ST_Jc',
+    supported: ['left', 'center', 'right'],
+    path: '/numbering/0/levels/0/lvlJc',
+    mutate: (spec, value) => { (spec.numbering![0]!.levels[0] as any).lvlJc = value; },
+  },
+  {
+    schemaType: 'ST_Underline',
+    supported: ['single', 'double', 'none'],
+    path: '/styles/0/run/underline',
+    mutate: (spec, value) => { spec.styles![0]!.run = { underline: value as any }; },
+  },
+];
+
 describe('ECMA-376 tables, numbering, and styles evidence', () => {
+  test('keeps runtime enum domains identical to the vendored transitional XSD', () => {
+    for (const [schemaType, values] of Object.entries(WML_SCHEMA_ENUM_VALUES) as Array<
+      [WmlSchemaEnumType, readonly string[]]
+    >) {
+      expect(values, schemaType).toEqual(vendoredSchemaEnumValues(schemaType));
+    }
+  });
+
+  test('classifies every touched enum by its complete XSD domain complement', () => {
+    for (const enumCase of ENUM_CLASSIFICATION_CASES) {
+      const supported = new Set(enumCase.supported);
+      const complement = WML_SCHEMA_ENUM_VALUES[enumCase.schemaType].filter((value) => !supported.has(value));
+      for (const value of complement) {
+        const spec = representativeSpec();
+        enumCase.mutate(spec, value);
+        expect(() => validateSpec(spec), `${enumCase.schemaType}=${value}`).toThrowError(expect.objectContaining({
+          code: 'unsupported_feature',
+          path: enumCase.path,
+        }));
+      }
+
+      const invalid = `not-a-${enumCase.schemaType}`;
+      const spec = representativeSpec();
+      enumCase.mutate(spec, invalid);
+      expect(() => validateSpec(spec), `${enumCase.schemaType} invalid sentinel`).toThrowError(expect.objectContaining({
+        code: 'invalid_value',
+        path: enumCase.path,
+      }));
+    }
+  });
+
   test
     .conformance(
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.37' },
@@ -98,10 +212,10 @@ describe('ECMA-376 tables, numbering, and styles evidence', () => {
     )('separates schema-invalid enums from schema-valid values outside the API subset', async () => {
       const cases: Array<[string, 'invalid_value' | 'unsupported_feature', (spec: DocumentSpec) => void]> = [
         ['/sections/0/blocks/0/layout', 'invalid_value', (spec) => { (spec.sections[0]!.blocks[0] as any).layout = 'fluid'; }],
-        ['/sections/0/blocks/0/borders/top/style', 'unsupported_feature', (spec) => { (spec.sections[0]!.blocks[0] as any).borders.top.style = 'wave'; }],
+        ['/sections/0/blocks/0/borders/top/style', 'unsupported_feature', (spec) => { (spec.sections[0]!.blocks[0] as any).borders.top.style = 'thick'; }],
         ['/sections/0/blocks/0/rows/0/heightRule', 'unsupported_feature', (spec) => { (spec.sections[0]!.blocks[0] as any).rows[0].heightRule = 'auto'; }],
-        ['/sections/0/blocks/0/rows/0/cells/0/vAlign', 'invalid_value', (spec) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].vAlign = 'middle'; }],
-        ['/numbering/0/levels/0/numFmt', 'invalid_value', (spec) => { (spec.numbering![0]!.levels[0] as any).numFmt = 'ordinalish'; }],
+        ['/sections/0/blocks/0/rows/0/cells/0/vAlign', 'unsupported_feature', (spec) => { (spec.sections[0]!.blocks[0] as any).rows[0].cells[0].vAlign = 'both'; }],
+        ['/numbering/0/levels/0/numFmt', 'unsupported_feature', (spec) => { (spec.numbering![0]!.levels[0] as any).numFmt = 'ordinal'; }],
         ['/numbering/0/levels/0/suff', 'invalid_value', (spec) => { (spec.numbering![0]!.levels[0] as any).suff = 'comma'; }],
         ['/styles/0/type', 'unsupported_feature', (spec) => { (spec.styles![0] as any).type = 'table'; }],
         ['/styles/0/run/underline', 'unsupported_feature', (spec) => { spec.styles![0]!.run = { underline: 'wave' as any }; }],
