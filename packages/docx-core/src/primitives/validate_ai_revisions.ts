@@ -83,7 +83,7 @@ const RANGE_PAIRS: Array<{ start: string; end: string }> = [
  * Placement checks include numberingChange metadata even though semantic
  * accept/reject remains outside the supported resolver.
  *
- * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5 — numberingChange is schema vocabulary without a numbered Part 1 §17.13.5 heading, and safe-docx does not resolve its semantics
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.13.5 — numberingChange placement and metadata are validated, but safe-docx does not resolve its semantics
  */
 const TRACKED_CHANGE_PLACEMENTS: Record<string, readonly string[]> = {
   cellIns: ['tcPr'],
@@ -91,7 +91,7 @@ const TRACKED_CHANGE_PLACEMENTS: Record<string, readonly string[]> = {
   cellMerge: ['tcPr'],
   tblGridChange: ['tblGrid'],
   sectPrChange: ['sectPr'],
-  numberingChange: ['pPr', 'rPr'],
+  numberingChange: ['numPr', 'fldChar'],
 };
 
 function toStringSet(values: Iterable<string | number> | undefined): Set<string> {
@@ -109,10 +109,13 @@ function allW(doc: Document | Element, localName: string): Element[] {
   return Array.from(doc.getElementsByTagNameNS(W_NS, localName)) as Element[];
 }
 
-function parentLocalName(el: Element): string | null {
+function parentWordLocalName(el: Element): string | null {
   let node = el.parentNode;
   while (node) {
-    if (node.nodeType === 1) return (node as Element).localName;
+    if (node.nodeType === 1) {
+      const parent = node as Element;
+      return parent.namespaceURI === W_NS ? parent.localName : null;
+    }
     node = node.parentNode;
   }
   return null;
@@ -311,7 +314,7 @@ function checkPlacement(
 ): void {
   for (const [localName, allowedParents] of Object.entries(TRACKED_CHANGE_PLACEMENTS)) {
     for (const el of allW(story.doc, localName)) {
-      const parent = parentLocalName(el);
+      const parent = parentWordLocalName(el);
       if (parent && allowedParents.includes(parent)) continue;
       const classified = classifyRevision(el, aiAuthor, touchedRevisionIds);
       push(diagnostics, {

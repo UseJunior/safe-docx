@@ -96,7 +96,7 @@ describe('layout tracked-change emission', () => {
     expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, lineRule: 'loose' as never })).toThrow(RangeError);
   });
 
-  test('setParagraphSpacing emits pPrChange with the prior paragraph properties snapshot', async ({ given, when, then }: AllureBddContext) => {
+  test('[ADV-PPR-EMISSION-01] setParagraphSpacing emits pPrChange with the prior paragraph properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let paragraphId: string;
     let paragraph: Element;
@@ -177,7 +177,7 @@ describe('layout tracked-change emission', () => {
     ).toBe('yes');
   });
 
-  test('setTableRowHeight emits trPrChange with the prior row properties snapshot', async ({ given, when, then }: AllureBddContext) => {
+  test('[ADV-TRPR-EMISSION-01] setTableRowHeight emits trPrChange with the prior row properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let trPr: Element;
     let trHeight: Element;
@@ -223,7 +223,7 @@ describe('layout tracked-change emission', () => {
 
   test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.68' })(
-      'setTableCellPadding emits tcPrChange with the prior cell properties snapshot',
+      '[ADV-TCPR-EMISSION-01] setTableCellPadding emits tcPrChange with the prior cell properties snapshot',
       async ({ given, when, then }: AllureBddContext) => {
         let doc: Document;
         let tcMar: Element;

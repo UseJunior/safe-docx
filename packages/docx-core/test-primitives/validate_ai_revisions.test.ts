@@ -150,6 +150,31 @@ describe('validateAiRevisions', () => {
     });
   });
 
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5' })(
+      '[ADV-NUMBERING-PLACEMENT-01] accepts numberingChange only under schema-valid Word parents',
+      async ({ when, then, and }: AllureBddContext) => {
+        const metadata = `w:id="17" w:author="${AI}" w:date="2026-01-01T00:00:00Z"`;
+        const valid = await when('numbering changes are validated under numPr and fldChar', () =>
+          validateBody(
+            `<w:p><w:pPr><w:numPr><w:numberingChange ${metadata}/></w:numPr></w:pPr>` +
+            `<w:r><w:fldChar w:fldCharType="begin"><w:numberingChange w:id="18" w:author="${AI}" w:date="2026-01-01T00:00:00Z"/></w:fldChar></w:r></w:p>`,
+          ),
+        );
+        const invalid = await validateBody(
+          `<w:p><w:pPr><w:numberingChange ${metadata}/></w:pPr>` +
+          `<x:numPr xmlns:x="urn:not-word"><w:numberingChange w:id="18" w:author="${AI}" w:date="2026-01-01T00:00:00Z"/></x:numPr></w:p>`,
+        );
+
+        await then('both schema-valid placements avoid placement diagnostics', () => {
+          expect(valid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toEqual([]);
+        });
+        await and('legacy and wrong-namespace lookalike parents are rejected', () => {
+          expect(invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toHaveLength(2);
+        });
+      },
+    );
+
   test.openspec('relationship targets resolve to package parts')('Scenario: relationship targets resolve to package parts', async ({ when, then }: AllureBddContext) => {
     const buffer = await createZipBuffer(minimalPackageFiles({
       'word/_rels/document.xml.rels':

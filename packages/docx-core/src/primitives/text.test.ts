@@ -822,7 +822,7 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
     });
   });
 
-  test('emits rPrChange with the prior run properties when replacement formatting changes', async ({
+  test('[ADV-RPR-EMISSION-01] emits rPrChange with the prior run properties when replacement formatting changes', async ({
     given,
     when,
     then,

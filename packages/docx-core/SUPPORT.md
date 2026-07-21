@@ -104,6 +104,11 @@ table-grid/exception, and numbering revisions (`w:cellIns`/`w:cellDel`/`w:cellMe
 revision ranges are preserved but not interpreted. The package sweep reads `document.xml`,
 `footnotes.xml`, `endnotes.xml`, `comments.xml`, and `glossary/document.xml`. Parts it never sweeps —
 `styles.xml`, `numbering.xml`, headers/footers, relationships, and content types — are preservation-only.
+Comparison authors ordinary insertion/deletion and detected move wrappers in both in-place and rebuild
+modes. Equal pre-existing advanced records have a separate reconstruction posture: sampled wrappers and
+markers survive in-place, while rebuild resolves existing content wrappers and drops custom-XML and
+proofing/extension markers. Namespace-equivalent WordprocessingML prefixes are canonicalized at the
+comparison boundary; this does not amount to general XML canonicalization.
 The machine-readable operation matrix and drift gate live at
 `spec-compliance/manifests/ecma-376-advanced-revisions.json` and
 `npm run check:advanced-revision-classification`.

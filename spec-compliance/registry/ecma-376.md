@@ -51,6 +51,63 @@ never inside `<w:r>`. safe-docx's rebuild reconstructor emits them as
 siblings of `<w:r>`, not as leaves wrapped in a synthetic run. The
 authoritative list lives in `packages/docx-compare/src/atomizer.ts`.
 
+## [ECMA-PART1-17-13-6-1] Bookmark end
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.6.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+`w:bookmarkEnd` closes a bookmark range. safe-docx's advanced-record matrix
+claims only bounded preservation around accept/reject and comparison, not
+bookmark identity or consumer semantics.
+
+## [ECMA-PART1-17-13-6-2] Bookmark start
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.6.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+`w:bookmarkStart` opens a bookmark range. The matrix records sampled
+preservation only; range identity and bookmark semantics are separate gaps.
+
+## [ECMA-PART1-17-13-7-1] Permission range end
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.7.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permEnd
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+`w:permEnd` closes an editing-permission range. Preservation does not imply
+permission enforcement or validation of range identity.
+
+## [ECMA-PART1-17-13-7-2] Permission range start
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.7.2"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permStart
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+`w:permStart` opens an editing-permission range. safe-docx makes no claim that
+it enforces the permission represented by this marker.
+
 ## [ECMA-PART1-17-13-8-1] Proofing error anchors
 
 ```yaml
@@ -1107,7 +1164,119 @@ paths implement this merge in
 `packages/docx-core/src/primitives/reject_changes.ts` and
 `packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
-## [ECMA-PART1-17-13-5-21] Tracked move revisions (w:moveFrom / w:moveTo)
+## [ECMA-PART1-17-13-5-4] Custom XML deletion range end
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.4"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+`w:customXmlDelRangeEnd` is retained by ordinary accept/reject and sampled
+in-place reconstruction. Rebuild retention and custom-XML semantics are gaps.
+
+## [ECMA-PART1-17-13-5-5] Custom XML deletion range start
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.5"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+`w:customXmlDelRangeStart` has the same preservation-only boundary as its end
+marker; balanced IDs are validated without interpreting deletion semantics.
+
+## [ECMA-PART1-17-13-5-6] Custom XML insertion range end
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.6"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+This entry records bounded preservation and pairing validation for
+`w:customXmlInsRangeEnd`, not custom-XML revision semantics.
+
+## [ECMA-PART1-17-13-5-7] Custom XML insertion range start
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.7"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeStart
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+This entry records bounded preservation and pairing validation for
+`w:customXmlInsRangeStart`, not custom-XML revision semantics.
+
+## [ECMA-PART1-17-13-5-8] Custom XML move-source range end
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.8"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeEnd
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx validates balanced IDs and preserves the sampled marker outside
+rebuild mode; it does not interpret custom-XML move identity.
+
+## [ECMA-PART1-17-13-5-9] Custom XML move-source range start
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.9"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeStart
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+This start marker has the same bounded validation and preservation posture as
+its §17.13.5.8 end marker.
+
+## [ECMA-PART1-17-13-5-10] Custom XML move-destination range end
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.10"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeEnd
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx validates balanced IDs and preserves the sampled marker outside
+rebuild mode; it does not interpret custom-XML move identity.
+
+## [ECMA-PART1-17-13-5-11] Custom XML move-destination range start
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.11"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+This start marker has the same bounded validation and preservation posture as
+its §17.13.5.10 end marker.
+
+## [ECMA-PART1-17-13-5-21] Move source paragraph (w:moveFrom)
 
 ```yaml
 edition: 5
@@ -1118,14 +1287,107 @@ schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFro
 verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
 ```
 
-safe-docx consumes existing `w:moveFrom` and `w:moveTo` wrappers during
-accept/reject: accept removes the source and keeps the unwrapped destination;
-reject keeps the unwrapped source and removes the destination. It does not emit
-first-class moves. Range milestones are removed during resolution and their
-start/end IDs are checked by the AI-revision validator, but wrapper-to-range
-identity and full move-pair semantics remain a conformance gap. The compiled
-Lean checker projects text through move wrappers; it does not prove move-record
-semantics or range pairing.
+This subsection defines paragraph-level `w:moveFrom`. safe-docx consumes and
+authors bounded move markup, while complete wrapper/range identity remains a
+gap. Lean checks only the resulting text and field-marker projection.
+
+## [ECMA-PART1-17-13-5-22] Move source run content (w:moveFrom)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.22"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+Run-level move-source content is emitted and resolved in the bounded comparison
+surface. Pair identity and arbitrary nested move semantics are not claimed.
+
+## [ECMA-PART1-17-13-5-23] Move source range end
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.23"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+The engine emits, removes, and balances this marker but does not prove its
+identity relationship to every move wrapper.
+
+## [ECMA-PART1-17-13-5-24] Move source range start
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.24"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+The engine emits, removes, and balances this marker but does not prove its
+identity relationship to every move wrapper.
+
+## [ECMA-PART1-17-13-5-25] Move destination run content (w:moveTo)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.25"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+Run-level move-destination content is emitted and resolved in the bounded
+comparison surface. Complete pair semantics are not claimed.
+
+## [ECMA-PART1-17-13-5-26] Move destination paragraph (w:moveTo)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.26"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+Paragraph-level move-destination content has the same bounded support and
+pairing caveat as run-level content.
+
+## [ECMA-PART1-17-13-5-27] Move destination range end
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.27"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+The engine emits, removes, and balances this marker without claiming complete
+wrapper-to-range identity.
+
+## [ECMA-PART1-17-13-5-28] Move destination range start
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.28"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+The engine emits, removes, and balances this marker without claiming complete
+wrapper-to-range identity.
 
 ## [ECMA-PART1-17-13-5-29] Paragraph-property revisions (w:pPrChange)
 
@@ -1291,7 +1553,21 @@ A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
 the citation lint. For a deliberate divergence *inside a targeted section*, use
 `@conformance-gap` with a reason instead.
 
-## [ECMA-PART1-17-13-5-2] Cell-topology revisions (w:cellIns / w:cellDel / w:cellMerge)
+## [ECMA-PART1-17-13-5-1] Table cell deletion (w:cellDel)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellDel
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx validates placement and preserves sampled `w:cellDel` records, but
+does not apply table-topology deletion semantics.
+
+## [ECMA-PART1-17-13-5-2] Table cell insertion (w:cellIns)
 
 ```yaml
 edition: 5
@@ -1299,15 +1575,25 @@ part: 1
 section: "17.13.5.2"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellIns
-verifiedBy:
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
 ```
 
-ECMA-376 Part 1 §17.13.5.1–§17.13.5.3 define tracked changes to table-cell
-topology: `w:cellDel` (cell deletion), `w:cellIns` (cell insertion), and
-`w:cellMerge` (vertical merge/split). safe-docx surfaces no cell-topology
-mutation today — it neither authors these revision elements nor offers an
-accept/reject path dedicated to them — so it makes no conformance claim over
-this section.
+safe-docx validates placement and preserves sampled `w:cellIns` records, but
+does not apply table-topology insertion semantics.
+
+## [ECMA-PART1-17-13-5-3] Vertically merged or split table cells (w:cellMerge)
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.3"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellMerge
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+```
+
+safe-docx validates placement and preserves sampled `w:cellMerge` records,
+but does not interpret vertical merge/split topology.
 
 ## [ECMA-PART1-17-13-5-33] Table-grid revisions (w:tblGridChange)
 

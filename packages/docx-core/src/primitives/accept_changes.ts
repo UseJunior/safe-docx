@@ -287,6 +287,9 @@ function resolveParagraphMarkRevision(p: Element): void {
  * and mergeRuns).
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
