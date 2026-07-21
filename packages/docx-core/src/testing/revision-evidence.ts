@@ -11,7 +11,6 @@ export interface RevisionEvidenceCase<Fixture = unknown> {
   operation: string;
   story: string;
   fixture: Fixture;
-  targetPresent: (fixture: Fixture) => boolean;
   observable: (fixture: Fixture, context: RevisionEvidenceContext) => boolean;
   removeTarget: (fixture: Fixture) => Fixture;
 }
@@ -22,7 +21,6 @@ export interface RevisionEvidenceResult {
   operation: string;
   story: string;
   assertions: {
-    targetPresent: true;
     observable: true;
     targetRemovalDetected: true;
     operationMutationDetected: true;
@@ -35,19 +33,12 @@ export interface RevisionEvidenceCaseFactory<Fixture> {
   operations: readonly string[];
   story: string | ((element: string) => string);
   fixture: (element: string, operation: string, story: string) => Fixture;
-  targetPresent: (fixture: Fixture, element: string) => boolean;
-  observable: (fixture: Fixture, element: string, operation: string, story: string) => boolean;
+  observable: (fixture: Fixture, element: string, context: RevisionEvidenceContext) => boolean;
   removeTarget: (fixture: Fixture, element: string) => Fixture;
 }
 
 const MUTATED_OPERATION = '__revision_evidence_wrong_operation__';
 const MUTATED_STORY = '__revision_evidence_wrong_story__';
-
-function evaluate<Fixture>(evidence: RevisionEvidenceCase<Fixture>, fixture: Fixture, context: RevisionEvidenceContext): boolean {
-  const targetPresent = evidence.targetPresent(fixture);
-  const observable = evidence.observable(fixture, context);
-  return targetPresent && observable;
-}
 
 export function revisionEvidenceCases<Fixture>(factory: RevisionEvidenceCaseFactory<Fixture>): RevisionEvidenceCase<Fixture>[] {
   return factory.elements.flatMap((element) => factory.operations.map((operation) => {
@@ -57,11 +48,7 @@ export function revisionEvidenceCases<Fixture>(factory: RevisionEvidenceCaseFact
       operation,
       story,
       fixture: factory.fixture(element, operation, story),
-      targetPresent: (fixture) => factory.targetPresent(fixture, element),
-      observable: (fixture, context) =>
-        context.operation === operation &&
-        context.story === story &&
-        factory.observable(fixture, element, operation, story),
+      observable: (fixture, context) => factory.observable(fixture, element, context),
       removeTarget: (fixture) => factory.removeTarget(fixture, element),
     };
   }));
@@ -85,14 +72,12 @@ export function revisionEvidence<Fixture>(id: string, cases: readonly RevisionEv
     seen.add(key);
 
     const context = { operation: evidence.operation, story: evidence.story };
-    expect(evidence.targetPresent(evidence.fixture), `${id}: ${evidence.element} target is absent from its fixture`).toBe(true);
     expect(evidence.observable(evidence.fixture, context), `${id}: ${evidence.element} ${evidence.operation} in ${evidence.story}`).toBe(true);
 
     const withoutTarget = evidence.removeTarget(evidence.fixture);
-    expect(evidence.targetPresent(withoutTarget), `${id}: removing ${evidence.element} must remove the target`).toBe(false);
-    expect(evaluate(evidence, withoutTarget, context), `${id}: removing ${evidence.element} must invalidate the observable`).toBe(false);
-    expect(evaluate(evidence, evidence.fixture, { ...context, operation: MUTATED_OPERATION }), `${id}: changing the operation must invalidate the observable`).toBe(false);
-    expect(evaluate(evidence, evidence.fixture, { ...context, story: MUTATED_STORY }), `${id}: changing the story must invalidate the observable`).toBe(false);
+    expect(evidence.observable(withoutTarget, context), `${id}: removing ${evidence.element} must invalidate the observable itself`).toBe(false);
+    expect(evidence.observable(evidence.fixture, { ...context, operation: MUTATED_OPERATION }), `${id}: changing the operation must invalidate the observable itself`).toBe(false);
+    expect(evidence.observable(evidence.fixture, { ...context, story: MUTATED_STORY }), `${id}: changing the story must invalidate the observable itself`).toBe(false);
 
     const outputPath = process.env.SDX_REVISION_EVIDENCE_RESULTS;
     if (outputPath) {
@@ -102,7 +87,6 @@ export function revisionEvidence<Fixture>(id: string, cases: readonly RevisionEv
         operation: evidence.operation,
         story: evidence.story,
         assertions: {
-          targetPresent: true,
           observable: true,
           targetRemovalDetected: true,
           operationMutationDetected: true,

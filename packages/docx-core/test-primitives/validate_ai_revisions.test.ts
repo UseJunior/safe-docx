@@ -174,12 +174,25 @@ describe('validateAiRevisions', () => {
           expect(invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toHaveLength(2);
         });
         const source = doc(`<w:p><w:pPr><w:numPr><w:numberingChange ${metadata}/></w:numPr></w:pPr></w:p>`);
+        const withoutNumberingChange = doc('<w:p><w:pPr><w:numPr/></w:pPr></w:p>');
+        const removed = await validateAiRevisions({
+          aiAuthor: AI,
+          stories: [{ part: 'word/document.xml', doc: withoutNumberingChange }],
+        });
+        expect(withoutNumberingChange.getElementsByTagNameNS(W_NS, 'numberingChange')).toHaveLength(0);
+        expect(removed.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toEqual([]);
         revisionEvidence('ADV-NUMBERING-PLACEMENT-01', revisionEvidenceCases({
           elements: ['numberingChange'], operations: ['validate'], story: 'main',
-          fixture: () => ({ target: source.getElementsByTagNameNS(W_NS, 'numberingChange').item(0) as Element | null, valid, invalid }),
-          targetPresent: (fixture) => fixture.target !== null,
-          observable: (fixture) => fixture.valid.errors.every((error) => error.code !== 'REVISION_PLACEMENT_INVALID') && fixture.invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID').length === 2,
-          removeTarget: (fixture) => ({ ...fixture, target: null }),
+          fixture: () => ({ target: source, valid, invalid, removed }),
+          observable: (fixture, element, context) => fixture.target.getElementsByTagNameNS(W_NS, element).length === 1 &&
+            context.operation === 'validate' && context.story === 'main' &&
+            fixture.valid.errors.every((error) => error.code !== 'REVISION_PLACEMENT_INVALID') &&
+            fixture.invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID').length === 2,
+          removeTarget: (fixture, element) => {
+            const target = fixture.target.cloneNode(true) as Document;
+            for (const node of Array.from(target.getElementsByTagNameNS(W_NS, element))) node.parentNode?.removeChild(node);
+            return { ...fixture, target, valid: fixture.removed };
+          },
         }));
       },
     );

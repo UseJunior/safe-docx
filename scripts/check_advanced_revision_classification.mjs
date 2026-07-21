@@ -113,7 +113,6 @@ function claimKey({ element, operation, story }) {
 
 function validateEvidenceResult(row) {
   const expected = {
-    targetPresent: true,
     observable: true,
     targetRemovalDetected: true,
     operationMutationDetected: true,
@@ -172,7 +171,7 @@ export async function validateAdvancedRevisionClassification(manifest, vocabular
   const ids = new Set();
   const classifiedElements = new Set();
   const anchorsByElement = new Map();
-  if (evidenceResults?.schemaVersion !== 1 || !Array.isArray(evidenceResults.cases)) {
+  if (evidenceResults?.schemaVersion !== 2 || !Array.isArray(evidenceResults.cases)) {
     throw new Error('Unsupported or missing advanced-revision evidence results');
   }
   const executedClaimsByEvidence = new Map();
@@ -222,7 +221,10 @@ export async function validateAdvancedRevisionClassification(manifest, vocabular
 
     for (const element of record.elements ?? []) {
       if (!element.includes(' ') && !element.includes(':')) classifiedElements.add(element);
-      const elementAnchors = record.normativeSections?.[element] ?? [];
+      if (!Object.hasOwn(record.normativeSections ?? {}, element) || !Array.isArray(record.normativeSections[element])) {
+        throw new Error(`${record.id}: normativeSections must own an array for ${element}`);
+      }
+      const elementAnchors = record.normativeSections[element];
       if (anchorsByElement.has(element)) {
         anchorsByElement.set(element, [...new Set([...anchorsByElement.get(element), ...elementAnchors])]);
       } else {

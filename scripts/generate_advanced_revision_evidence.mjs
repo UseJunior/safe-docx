@@ -24,7 +24,7 @@ function canonicalize(lines) {
     keys.add(key);
   }
   rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-  return `${JSON.stringify({ schemaVersion: 1, generatedBy: 'npm run generate:advanced-revision-evidence', cases: rows }, null, 2)}\n`;
+  return `${JSON.stringify({ schemaVersion: 2, generatedBy: 'npm run generate:advanced-revision-evidence', cases: rows }, null, 2)}\n`;
 }
 
 const tempDir = await mkdtemp(path.join(tmpdir(), 'safe-docx-revision-evidence-'));

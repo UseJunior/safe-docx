@@ -5,16 +5,16 @@ import { revisionEvidence, revisionEvidenceCases } from './revision-evidence.js'
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Revision Evidence Contract' });
 
 describe('revision evidence contract', () => {
-  test('[ADV-EVIDENCE-CONTRACT-NEGATIVE] rejects a constant-true observable when the target is removed', () => {
-    expect(() => revisionEvidence('CONSTANT-TRUE', [{
-      element: 'ins',
-      operation: 'accept',
+  test('[ADV-EVIDENCE-CONTRACT-NEGATIVE] rejects a factory-path constant-true observable', () => {
+    const cases = revisionEvidenceCases({
+      elements: ['ins'],
+      operations: ['accept'],
       story: 'main',
-      fixture: { elements: ['ins'] },
-      targetPresent: () => true,
+      fixture: () => ({ elements: ['ins'] }),
       observable: () => true,
       removeTarget: () => ({ elements: [] }),
-    }])).toThrow(/removing ins must remove the target/);
+    });
+    expect(() => revisionEvidence('CONSTANT-TRUE', cases)).toThrow(/removing ins must invalidate the observable itself/);
   });
 
   test('[ADV-EVIDENCE-CONTRACT-NEGATIVE] rejects an aggregate no-errors observable that ignores operation and story', () => {
@@ -23,12 +23,9 @@ describe('revision evidence contract', () => {
       operations: ['validate'],
       story: 'main',
       fixture: () => ({ elements: ['customXmlInsRangeStart'], errors: [] as string[] }),
-      targetPresent: (fixture, element) => fixture.elements.includes(element),
       observable: (fixture) => fixture.errors.length === 0,
       removeTarget: (fixture, element) => ({ ...fixture, elements: fixture.elements.filter((candidate) => candidate !== element) }),
     });
-    aggregate[0]!.observable = (fixture) => fixture.errors.length === 0;
-
-    expect(() => revisionEvidence('AGGREGATE-NO-ERRORS', aggregate)).toThrow(/changing the operation must invalidate/);
+    expect(() => revisionEvidence('AGGREGATE-NO-ERRORS', aggregate)).toThrow(/removing customXmlInsRangeStart must invalidate the observable itself/);
   });
 });

@@ -145,8 +145,7 @@ describe('layout tracked-change emission', () => {
     revisionEvidence('ADV-PPR-EMISSION-01', revisionEvidenceCases({
       elements: ['pPrChange'], operations: ['emit'], story: 'main',
       fixture: () => ({ target: pPrChange as Element | null, previousSpacing }),
-      targetPresent: (fixture) => fixture.target !== null,
-      observable: (fixture) => fixture.target?.getElementsByTagNameNS(W_NS, W.pPr).length === 1 && wordAttr(fixture.previousSpacing, 'after') === '120',
+      observable: (fixture, _element, context) => context.operation === 'emit' && context.story === 'main' && fixture.target?.getElementsByTagNameNS(W_NS, W.pPr).length === 1 && wordAttr(fixture.previousSpacing, 'after') === '120',
       removeTarget: (fixture) => ({ ...fixture, target: null }),
     }));
   });
@@ -230,8 +229,7 @@ describe('layout tracked-change emission', () => {
     revisionEvidence('ADV-TRPR-EMISSION-01', revisionEvidenceCases({
       elements: ['trPrChange'], operations: ['emit'], story: 'main',
       fixture: () => ({ target: trPrChange as Element | null, previousTrHeight }),
-      targetPresent: (fixture) => fixture.target !== null,
-      observable: (fixture) => fixture.target?.getElementsByTagNameNS(W_NS, W.trPr).length === 1 && wordAttr(fixture.previousTrHeight, 'val') === '360',
+      observable: (fixture, _element, context) => context.operation === 'emit' && context.story === 'main' && fixture.target?.getElementsByTagNameNS(W_NS, W.trPr).length === 1 && wordAttr(fixture.previousTrHeight, 'val') === '360',
       removeTarget: (fixture) => ({ ...fixture, target: null }),
     }));
   });
@@ -292,8 +290,7 @@ describe('layout tracked-change emission', () => {
         revisionEvidence('ADV-TCPR-EMISSION-01', revisionEvidenceCases({
           elements: ['tcPrChange'], operations: ['emit'], story: 'main',
           fixture: () => ({ target: tcPrChange as Element | null, previousTcMar }),
-          targetPresent: (fixture) => fixture.target !== null,
-          observable: (fixture) => fixture.target?.getElementsByTagNameNS(W_NS, W.tcPr).length === 1 && getDirectChildrenByName(fixture.previousTcMar, W.left).length === 0,
+          observable: (fixture, _element, context) => context.operation === 'emit' && context.story === 'main' && fixture.target?.getElementsByTagNameNS(W_NS, W.tcPr).length === 1 && getDirectChildrenByName(fixture.previousTcMar, W.left).length === 0,
           removeTarget: (fixture) => ({ ...fixture, target: null }),
         }));
       },

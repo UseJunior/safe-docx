@@ -1841,7 +1841,10 @@
         "w14:conflictIns",
         "w14:conflictDel"
       ],
-      "normativeSections": {},
+      "normativeSections": {
+        "w14:conflictIns": [],
+        "w14:conflictDel": []
+      },
       "classification": "non-goal",
       "operations": {
         "emit": "non-goal",
@@ -1901,7 +1904,10 @@
         "header story revisions",
         "footer story revisions"
       ],
-      "normativeSections": {},
+      "normativeSections": {
+        "header story revisions": [],
+        "footer story revisions": []
+      },
       "classification": "preservation-only",
       "operations": {
         "emit": "non-goal",

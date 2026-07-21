@@ -148,6 +148,16 @@ test('rejects assigning an ECMA anchor to a w14 extension element', async () => 
   );
 });
 
+test('rejects omission of an explicit empty normative anchor owner', async () => {
+  const candidate = cloneManifest();
+  const conflicts = candidate.records.find((record) => record.elements.includes('w14:conflictIns'));
+  delete conflicts.normativeSections['w14:conflictIns'];
+  await assert.rejects(
+    validateAdvancedRevisionClassification(candidate, vocabulary, registry, leanLedger, evidenceResults),
+    /normativeSections must own an array for w14:conflictIns/,
+  );
+});
+
 test('rejects an executed evidence artifact with a missing mutation sentinel', async () => {
   const candidateResults = structuredClone(evidenceResults);
   candidateResults.cases[0].assertions.targetRemovalDetected = false;

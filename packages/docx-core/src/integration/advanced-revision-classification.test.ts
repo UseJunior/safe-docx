@@ -50,15 +50,14 @@ function documentEvidenceCases(options: {
   operations: readonly string[];
   story?: string | ((element: string) => string);
   fixture: (element: string, operation: string) => DocumentEvidenceFixture;
-  observable: (fixture: DocumentEvidenceFixture, element: string, operation: string) => boolean;
+  observable: (fixture: DocumentEvidenceFixture, element: string, context: { operation: string; story: string }) => boolean;
 }) {
   return revisionEvidenceCases({
     elements: options.elements,
     operations: options.operations,
     story: options.story ?? 'main',
     fixture: (element, operation) => options.fixture(element, operation),
-    targetPresent: (fixture, element) => count(fixture.target, element) > 0,
-    observable: (fixture, element, operation) => options.observable(fixture, element, operation),
+    observable: (fixture, element, context) => options.observable(fixture, element, context),
     removeTarget: (fixture, element) => ({ ...fixture, target: withoutElement(fixture.target, element) }),
   });
 }
@@ -149,7 +148,9 @@ describe('ECMA-376 advanced revision records', () => {
             target: sourceByElement.get(element)!,
             observed: operation === 'accept' ? acceptedByElement.get(element)! : rejectedByElement.get(element)!,
           }),
-          observable: (fixture, element) => count(fixture.observed, element) === 0,
+          observable: (fixture, element, context) => count(fixture.target, element) > 0 &&
+            context.story === 'main' && ['accept', 'reject'].includes(context.operation) &&
+            count(fixture.observed, element) === 0,
         }));
       },
     );
@@ -182,10 +183,11 @@ describe('ECMA-376 advanced revision records', () => {
           elements: ['ins', 'del'],
           operations: ['accept', 'reject'],
           fixture: (_element, operation) => ({ target: source, observed: operation === 'accept' ? accepted : rejected }),
-          observable: (fixture, element, operation) => {
+          observable: (fixture, element, context) => {
             const xml = serializeXml(fixture.observed);
-            if (element === 'ins') return count(fixture.observed, element) === 0 && (operation === 'accept' ? xml.includes('new') : !xml.includes('new'));
-            return count(fixture.observed, element) === 0 && (operation === 'reject' ? xml.includes('old') : !xml.includes('old'));
+            if (count(fixture.target, element) === 0 || context.story !== 'main') return false;
+            if (element === 'ins') return count(fixture.observed, element) === 0 && (context.operation === 'accept' ? xml.includes('new') : context.operation === 'reject' && !xml.includes('new'));
+            return count(fixture.observed, element) === 0 && (context.operation === 'reject' ? xml.includes('old') : context.operation === 'accept' && !xml.includes('old'));
           },
         }));
       },
@@ -218,10 +220,11 @@ describe('ECMA-376 advanced revision records', () => {
             const observed = outputByMode.get(selectedMode)!;
             return { target: observed, observed };
           },
-          observable: (_fixture, element, operation) => {
-            const mode = operation.split('.')[1];
-            const modes = operation === 'emit' ? ['inplace', 'rebuild'] : mode ? [mode] : [];
-            return modes.every((selected) => count(outputByMode.get(selected)!, element) > 0);
+          observable: (fixture, element, context) => {
+            if (count(fixture.target, element) === 0 || context.story !== 'main') return false;
+            const mode = context.operation.split('.')[1];
+            const modes = context.operation === 'emit' ? ['inplace', 'rebuild'] : mode ? [mode] : [];
+            return modes.length > 0 && modes.every((selected) => count(outputByMode.get(selected)!, element) > 0);
           },
         }));
       },
@@ -258,24 +261,50 @@ describe('ECMA-376 advanced revision records', () => {
         'customXmlDelRangeEnd', 'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
         'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
       ];
-      const validatorFixtures = new Map<string, { target: Document; diagnostics: Awaited<ReturnType<typeof validateAiRevisions>>['errors'] }>();
+      const validatorFixtures = new Map<string, {
+        target: Document;
+        diagnostics: Awaited<ReturnType<typeof validateAiRevisions>>['errors'];
+        withoutTarget: Document;
+        withoutTargetDiagnostics: Awaited<ReturnType<typeof validateAiRevisions>>['errors'];
+      }>();
       for (const element of validatorElements) {
         const target = validatorFixtureFor(element);
         const validation = await validateAiRevisions({
           aiAuthor: 'SafeDocX AI',
           stories: [{ part: 'word/document.xml', doc: target }],
         });
-        validatorFixtures.set(element, { target, diagnostics: [...validation.errors, ...validation.warnings] });
+        const withoutTarget = withoutElement(target, element);
+        const removedValidation = await validateAiRevisions({
+          aiAuthor: 'SafeDocX AI',
+          stories: [{ part: 'word/document.xml', doc: withoutTarget }],
+        });
+        const withoutTargetDiagnostics = [...removedValidation.errors, ...removedValidation.warnings];
+        validatorFixtures.set(element, {
+          target,
+          diagnostics: [...validation.errors, ...validation.warnings],
+          withoutTarget,
+          withoutTargetDiagnostics,
+        });
+        expect(count(withoutTarget, element), `${element} target-specific mutation must remove the element`).toBe(0);
+        if (element.includes('Range')) {
+          expect(withoutTargetDiagnostics.some((error) => error.code === 'RANGE_PAIR_UNBALANCED'), `${element} removal must produce its pair diagnostic`).toBe(true);
+        } else {
+          expect(withoutTargetDiagnostics.some((error) => error.code === 'REVISION_PLACEMENT_INVALID'), `${element} removal must not retain a placement outcome`).toBe(false);
+        }
       }
       revisionEvidence('ADV-VALIDATOR-COVERAGE-01', revisionEvidenceCases({
         elements: validatorElements,
         operations: ['validate'],
         story: 'main',
         fixture: (element) => validatorFixtures.get(element)!,
-        targetPresent: (fixture, element) => count(fixture.target, element) > 0,
-        observable: (fixture) => !fixture.diagnostics.some((error) =>
-          error.code === 'REVISION_PLACEMENT_INVALID' || error.code === 'RANGE_PAIR_UNBALANCED'),
-        removeTarget: (fixture, element) => ({ ...fixture, target: withoutElement(fixture.target, element) }),
+        observable: (fixture, element, context) => count(fixture.target, element) > 0 &&
+          context.operation === 'validate' && context.story === 'main' &&
+          !fixture.diagnostics.some((error) => error.code === 'REVISION_PLACEMENT_INVALID' || error.code === 'RANGE_PAIR_UNBALANCED'),
+        removeTarget: (fixture) => ({
+          ...fixture,
+          target: fixture.withoutTarget,
+          diagnostics: fixture.withoutTargetDiagnostics,
+        }),
       }));
 
       for (const element of validatorElements.filter((name) => name.startsWith('customXml'))) {
@@ -315,11 +344,11 @@ describe('ECMA-376 advanced revision records', () => {
         elements: ['cellDel', 'cellIns', 'cellMerge'],
         operations: ['accept', 'reject', 'preserve'],
         fixture: (_element, operation) => ({ target: source, observed: operation === 'reject' ? rejected : accepted }),
-        observable: (_fixture, element, operation) => operation === 'accept'
+        observable: (fixture, element, context) => count(fixture.target, element) > 0 && context.story === 'main' && context.operation === 'accept'
           ? count(accepted, element) === 1
-          : operation === 'reject'
+          : count(fixture.target, element) > 0 && context.story === 'main' && context.operation === 'reject'
             ? count(rejected, element) === 1
-            : count(accepted, element) === 1 && count(rejected, element) === 1,
+            : count(fixture.target, element) > 0 && context.story === 'main' && context.operation === 'preserve' && count(accepted, element) === 1 && count(rejected, element) === 1,
       }));
     },
   );
@@ -363,7 +392,7 @@ describe('ECMA-376 advanced revision records', () => {
           elements: ['moveFrom', 'moveTo', 'moveFromRangeStart', 'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd'],
           operations: ['accept', 'reject'],
           fixture: (_element, operation) => ({ target: source, observed: operation === 'accept' ? accepted : rejected }),
-          observable: (fixture, element) => count(fixture.observed, element) === 0,
+          observable: (fixture, element, context) => count(fixture.target, element) > 0 && context.story === 'main' && ['accept', 'reject'].includes(context.operation) && count(fixture.observed, element) === 0,
         }));
       },
     );
@@ -412,7 +441,7 @@ describe('ECMA-376 advanced revision records', () => {
           ],
           operations: ['accept', 'reject'],
           fixture: (_element, operation) => ({ target: source, observed: operation === 'accept' ? accepted : rejected }),
-          observable: (fixture, element) => count(fixture.observed, element) === 1,
+          observable: (fixture, element, context) => count(fixture.target, element) > 0 && context.story === 'main' && ['accept', 'reject'].includes(context.operation) && count(fixture.observed, element) === 1,
         }));
       },
     );
@@ -443,7 +472,7 @@ describe('ECMA-376 advanced revision records', () => {
           elements: ['numberingChange', 'tblPrExChange', 'tblGridChange'],
           operations: ['accept', 'reject'],
           fixture: (_element, operation) => ({ target: source, observed: operation === 'accept' ? accepted : rejected }),
-          observable: (fixture, element) => count(fixture.observed, element) === 1,
+          observable: (fixture, element, context) => count(fixture.target, element) > 0 && context.story === 'main' && ['accept', 'reject'].includes(context.operation) && count(fixture.observed, element) === 1,
         }));
       },
     );
@@ -498,13 +527,13 @@ describe('ECMA-376 advanced revision records', () => {
               rejectedXml: (isHeader ? rejectedHeader : rejectedFooter) ?? '',
             };
           },
-          targetPresent: (fixture) => count(fixture.target, 'ins') === 1,
-          observable: (fixture, _element, operation) => {
-            return operation === 'accept'
+          observable: (fixture, _element, context) => {
+            if (count(fixture.target, 'ins') !== 1 || context.story !== (fixture.target.documentElement.localName === 'hdr' ? 'header' : 'footer')) return false;
+            return context.operation === 'accept'
               ? fixture.acceptedXml.includes('<w:ins')
-              : operation === 'reject'
+              : context.operation === 'reject'
                 ? fixture.rejectedXml.includes('<w:ins')
-                : fixture.acceptedXml.includes('<w:ins') && fixture.rejectedXml.includes('<w:ins');
+                : context.operation === 'preserve' && fixture.acceptedXml.includes('<w:ins') && fixture.rejectedXml.includes('<w:ins');
           },
           removeTarget: (fixture) => ({ ...fixture, target: withoutElement(fixture.target, 'ins') }),
         }));
@@ -550,10 +579,11 @@ describe('ECMA-376 advanced revision records', () => {
             const observed = outputByMode.get(selectedMode)!;
             return { target: observed, observed };
           },
-          observable: (_fixture, element, operation) => {
-            const mode = operation.split('.')[1];
-            const modes = operation === 'emit' ? ['inplace', 'rebuild'] : mode ? [mode] : [];
-            return modes.every((selected) => count(outputByMode.get(selected)!, element) > 0);
+          observable: (fixture, element, context) => {
+            if (count(fixture.target, element) === 0 || context.story !== 'main') return false;
+            const mode = context.operation.split('.')[1];
+            const modes = context.operation === 'emit' ? ['inplace', 'rebuild'] : mode ? [mode] : [];
+            return modes.length > 0 && modes.every((selected) => count(outputByMode.get(selected)!, element) > 0);
           },
         }));
       },
@@ -652,13 +682,10 @@ describe('ECMA-376 advanced revision records', () => {
             source: sourceDocument,
             output: outputByMode.get(operation.endsWith('.rebuild') ? 'rebuild' : 'inplace')!,
           }),
-          targetPresent: (fixture, element) => {
+          observable: (fixture, element, context) => {
+            const mode = context.operation.split('.')[1];
             const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
-            return fixture.source.getElementsByTagNameNS(namespace, element.replace('w14:', '')).length > 0;
-          },
-          observable: (fixture, element, operation) => {
-            const mode = operation.split('.')[1];
-            const namespace = element.startsWith('w14:') ? OOXML.W14_NS : W_NS;
+            if (!['inplace', 'rebuild'].includes(mode ?? '') || fixture.source.getElementsByTagNameNS(namespace, element.replace('w14:', '')).length === 0 || context.story !== 'main') return false;
             const present = fixture.output.getElementsByTagNameNS(namespace, element.replace('w14:', '')).length > 0;
             return mode === 'inplace' ? present : present === !absentFromRebuild.has(element);
           },

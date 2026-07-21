@@ -872,8 +872,7 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
     revisionEvidence('ADV-RPR-EMISSION-01', revisionEvidenceCases({
       elements: ['rPrChange'], operations: ['emit'], story: 'main',
       fixture: () => rPrChange as Element | null,
-      targetPresent: (fixture) => fixture !== null,
-      observable: (fixture) => fixture?.getElementsByTagNameNS(W_NS, W.rPr).length === 1 && fixture.getElementsByTagNameNS(W_NS, W.i).length === 1,
+      observable: (fixture, _element, context) => context.operation === 'emit' && context.story === 'main' && fixture?.getElementsByTagNameNS(W_NS, W.rPr).length === 1 && fixture.getElementsByTagNameNS(W_NS, W.i).length === 1,
       removeTarget: () => null,
     }));
   });
