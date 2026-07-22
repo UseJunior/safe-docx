@@ -183,6 +183,40 @@ describe('Forced rebuild preserves unchanged inline content controls', () => {
   );
 
   test
+    .openspec('[SDX-SDT-01] Same-paragraph outside edit retains the complete inline SDT on forced rebuild')(
+    'uses the opaque paragraph identity when all surrounding text is replaced',
+    async ({ given, when, then }: AllureBddContext) => {
+      const control = inlineSdt('42', textRun('Stable controlled anchor'), { localNamespace: true });
+      let output = '';
+
+      await given('a control whose surrounding paragraph text has no useful lexical overlap', () => {});
+      await when('the entire ordinary prefix and suffix are replaced in the same paragraph slot', async () => {
+        output = await forcedRebuild(
+          await packageFor(paragraph(
+            'Original surrounding language alpha beta gamma delta. ',
+            control,
+            ' Former ending epsilon zeta eta theta.',
+          )),
+          await packageFor(paragraph(
+            'Replacement context one two three four. ',
+            control,
+            ' New conclusion five six seven eight.',
+          )),
+        );
+      });
+      await then('the control remains matched while accept and reject retain their respective surroundings', () => {
+        expect(elementsByName(output, OOXML.W_NS, 'sdt')).toHaveLength(1);
+        const accepted = extractTextWithParagraphs(acceptAllChanges(output));
+        const rejected = extractTextWithParagraphs(rejectAllChanges(output));
+        expect(accepted).toContain('Replacement context one two three four. Stable controlled anchor');
+        expect(accepted).not.toContain('Original surrounding language');
+        expect(rejected).toContain('Original surrounding language alpha beta gamma delta. Stable controlled anchor');
+        expect(rejected).not.toContain('Replacement context');
+      });
+    },
+  );
+
+  test
     .openspec('[SDX-SDT-03] Opaque namespace ownership preserves root, local, and aliased bindings')(
     'retains root and local namespace ownership plus extension prefix aliases',
     async ({ given, when, then, and }: AllureBddContext) => {
@@ -217,6 +251,36 @@ describe('Forced rebuild preserves unchanged inline content controls', () => {
       });
     },
   );
+
+  test
+    .openspec('[SDX-SDT-03] Opaque namespace ownership preserves root, local, and aliased bindings')(
+    'allows descendant-local extension bindings and legal prefix shadowing',
+    async ({ given, when, then }: AllureBddContext) => {
+      const control =
+        `<w:sdt xmlns:ext="${EXT_NS}" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ` +
+        `mc:Ignorable="ext" ext:flag="outer">` +
+        `<w:sdtPr><w:id w:val="91"/><ext:properties>` +
+        `<ext:payload xmlns:ext="${ALT_EXT_NS}" mc:Ignorable="ext" ext:sentinel="inner">` +
+        `<ext:nested>subtree-local</ext:nested></ext:payload>` +
+        `</ext:properties></w:sdtPr><w:sdtContent>${textRun('Scoped control')}</w:sdtContent></w:sdt>`;
+      let output = '';
+
+      await given('an opaque subtree that legally rebinds its extension prefix below the SDT boundary', () => {});
+      await when('an outside edit forces paragraph reconstruction', async () => {
+        output = await forcedRebuild(
+          await packageFor(paragraph('A ', control, ' old')),
+          await packageFor(paragraph('A ', control, ' new')),
+        );
+      });
+      await then('outer and descendant-local namespace ownership both survive', () => {
+        expect(elementsByName(output, EXT_NS, 'properties')).toHaveLength(1);
+        const payload = elementsByName(output, ALT_EXT_NS, 'payload')[0]!;
+        expect(payload.getAttributeNS(ALT_EXT_NS, 'sentinel')).toBe('inner');
+        expect(payload.getElementsByTagNameNS(ALT_EXT_NS, 'nested')[0]!.textContent).toBe('subtree-local');
+        expect(payload.lookupNamespaceURI('ext')).toBe(ALT_EXT_NS);
+      });
+    },
+  );
 });
 
 describe('Opaque inline content controls fail closed', () => {
@@ -231,29 +295,56 @@ describe('Opaque inline content controls fail closed', () => {
         localNamespace: true,
       });
       const unbound = stable.replace('mc:Ignorable="ext"', 'mc:Ignorable="ghost"');
+      const unboundUsage = stable
+        .replace('<ext:first ext:ordinal="1">', '<ghost:first>')
+        .replace('</ext:first>', '</ghost:first>');
       const empty = inlineSdt('5', '', { localNamespace: true });
       const collision = stable.replace(
         '<w:sdt',
         `<x:sdt xmlns:x="${OOXML.W_NS}" xmlns:w="urn:safe-docx:test:collision"`,
       ).replace('</w:sdt>', '</x:sdt>');
-      const cases: Array<[string, string, string]> = [
+      const cases: Array<[string, string, string, RegExp?]> = [
         ['controlled mutation', paragraph('A ', stable, ' Z'), paragraph('A ', changed, ' Z')],
         ['removed counterpart', paragraph('A ', stable, ' Z'), paragraph('A ', '', ' Z')],
         ['reordered controls', paragraph('A ', stable + second, ' Z'), paragraph('A ', second + stable, ' Z')],
         ['nested boundaries', paragraph('A ', nested, ' Z'), paragraph('A ', nested, ' Z')],
         ['unbound ignorable prefix', paragraph('A ', unbound, ' Z'), paragraph('A ', unbound, ' Z')],
+        [
+          'unbound descendant usage',
+          paragraph('A ', unboundUsage, ' Z'),
+          paragraph('A ', unboundUsage, ' Z'),
+          /Opaque passthrough:|NamespaceError:/,
+        ],
         ['conflicting namespace ownership', paragraph('A ', collision, ' Z'), paragraph('A ', collision, ' Z')],
         ['no atomizable controlled content', paragraph('A ', empty, ' Z'), paragraph('A ', empty, ' Z')],
       ];
 
       await given('opaque payload shapes that cannot be safely re-emitted', () => {});
       await then('every unsafe shape rejects instead of producing a partial SDT', async () => {
-        for (const [name, originalBody, revisedBody] of cases) {
+        for (const [name, originalBody, revisedBody, expectedError = /Opaque passthrough:/] of cases) {
           await expect(
             forcedRebuild(await packageFor(originalBody), await packageFor(revisedBody)),
             name,
-          ).rejects.toThrow(/Opaque passthrough:/);
+          ).rejects.toThrow(expectedError);
         }
+      });
+    },
+  );
+
+  test
+    .openspec('[SDX-SDT-04] Unsafe opaque payload fails closed')(
+    'rejects paragraph movement before correlation can flatten the control',
+    async ({ given, then }: AllureBddContext) => {
+      const control = inlineSdt('73', textRun('Move-sensitive control'), { localNamespace: true });
+      const controlledParagraph = paragraph('Controlled ', control, ' tail');
+      const ordinaryParagraph = paragraph('Ordinary paragraph', '', '');
+
+      await given('an unchanged control whose owning paragraph changes source-order position', () => {});
+      await then('forced rebuild rejects the unsupported movement before emitting document XML', async () => {
+        await expect(forcedRebuild(
+          await packageFor(controlledParagraph + ordinaryParagraph),
+          await packageFor(ordinaryParagraph + controlledParagraph),
+        )).rejects.toThrow(/changed paragraph ownership, moved, or mutated/);
       });
     },
   );
@@ -266,6 +357,8 @@ describe('Opaque inline content controls fail closed', () => {
         namespaceUri: OOXML.W_NS,
         localName: 'sdt',
         documentOrdinal: 0,
+        paragraphOrdinal: 0,
+        containerIdentity: `{${OOXML.W_NS}}body:0`,
         semanticFingerprint: 'test-only',
         sourceElement: document.documentElement,
         effectiveNamespaces: { w: OOXML.W_NS },

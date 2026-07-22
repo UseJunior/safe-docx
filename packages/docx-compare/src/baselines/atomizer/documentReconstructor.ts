@@ -34,7 +34,7 @@ import {
 } from './inPlaceModifier-wrappers.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
-import { renderOpaqueAtomSequence } from './opaquePassthrough.js';
+import { OpaquePassthroughError, renderOpaqueAtomSequence } from './opaquePassthrough.js';
 
 const SYNTHETIC_DOC = parseXml('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -640,6 +640,16 @@ function buildParagraphXml(
   hyperlinkRelResolver?: HyperlinkRelResolver
 ): string {
   const revisionCtx = createRevisionContext({ author, date: dateStr, idState: revState });
+  const hasOpaqueAtoms = group.runGroups.some((runGroup) =>
+    runGroup.atoms.some((atom) => atom.opaquePassthrough !== undefined),
+  );
+  if (
+    hasOpaqueAtoms &&
+    (isEntireParagraphWithStatus(group, CorrelationStatus.Inserted) ||
+      isEntireParagraphWithStatus(group, CorrelationStatus.Deleted))
+  ) {
+    throw new OpaquePassthroughError('control-bearing whole paragraph lost correlation');
+  }
 
   // Track empty paragraph statuses for debugging
   if (isEmptyParagraphGroup(group)) {
@@ -787,9 +797,6 @@ function buildParagraphXml(
   // Add run groups with track changes, restoring validated opaque boundaries
   // and hyperlink wrappers around the ordinary slices between them.
   const explicitMoveMarkers = collectExplicitMoveMarkers(group);
-  const hasOpaqueAtoms = group.runGroups.some((runGroup) =>
-    runGroup.atoms.some((atom) => atom.opaquePassthrough !== undefined),
-  );
   if (hasOpaqueAtoms) {
     parts.push(renderOpaqueAtomSequence(
       group.runGroups,

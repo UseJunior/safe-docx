@@ -28,3 +28,11 @@
 - [x] 5.1 Run focused tests, package build/lint, and mandatory repository pre-submit gates.
 - [x] 5.2 Run open-package and LibreOffice smoke checks when available.
 - [x] 5.3 Review the diff for bounded scope and commit with a conventional message explaining why, with `Ref: #582`.
+
+## 6. Independent review follow-up
+
+- [x] 6.1 Bind opaque ownership to paragraph/container identity and reject correlation loss before whole-paragraph emission.
+- [x] 6.2 Validate descendant namespace/MCE ownership at effective scope and cover local shadowing.
+- [x] 6.3 Make emitted-schema MCE preprocessing scope-aware and validate CI-captured positive output.
+- [x] 6.4 Constrain DPT pass statuses by normative versus metamorphic oracle class.
+- [x] 6.5 Re-run focused/full verification, DPT, schema, and LibreOffice checks and commit the follow-up.

@@ -13,5 +13,7 @@ rebuild scenario is the distinguishing evidence for that behavior.
 
 - **GIVEN** docx-platform-tests at commit `fe0ee99602e6f982255ecaa2b45d4936a7f46150`
 - **WHEN** both neutral content-control scenarios run through the SafeDocX adapter
-- **THEN** both scenario outcomes SHALL be pass-like (`pass`, `pass-divergent`, or `invariant-pass` according to oracle class)
+- **THEN** the normative scenario SHALL report only `pass` or `pass-divergent`
+- **AND** the metamorphic scenario SHALL report only `invariant-pass`
+- **AND** `unsupported` or `error` SHALL remain non-pass outcomes and SHALL NOT be accepted through a global pass-like set
 - **AND** the capability projection SHALL reference the refreshed pinned registry without claiming forced-rebuild coverage

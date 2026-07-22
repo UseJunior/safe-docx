@@ -77,7 +77,10 @@ import {
   type HyperlinkRelResolver,
   computeReconstructionStats,
 } from './documentReconstructor.js';
-import { bindOpaquePassthroughCounterparts } from './opaquePassthrough.js';
+import {
+  bindOpaquePassthroughCounterparts,
+  validateOpaquePassthroughCorrelation,
+} from './opaquePassthrough.js';
 import { modifyRevisedDocument, ContainerResolutionError } from './inPlaceModifier.js';
 import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
@@ -773,6 +776,9 @@ export async function compareDocumentsAtomizer(
 
     // Step 10b: Assign unified paragraph indices to handle atoms from different trees
     assignUnifiedParagraphIndices(originalAtoms, revisedAtoms, mergedAtoms, lcsResult);
+    if (outputMode === 'rebuild') {
+      validateOpaquePassthroughCorrelation(mergedAtoms);
+    }
 
     // Step 11: Reconstruct document with track changes
     let newDocumentXml: string;

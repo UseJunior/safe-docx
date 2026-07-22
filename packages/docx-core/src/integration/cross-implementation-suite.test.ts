@@ -78,6 +78,7 @@ function resolveSuiteAvailability(suiteDir: string): SuiteAvailability {
 interface SuiteResults {
   results: Array<{
     scenarioId: string;
+    oracleKind: string;
     outcomes: Record<
       string,
       {
@@ -117,8 +118,6 @@ interface ExpectedSupportDecision {
   supported: boolean;
   reason?: string;
 }
-
-const PASS_LIKE_OUTCOME_STATUSES = new Set(['pass', 'pass-divergent', 'invariant-pass']);
 
 interface ScenarioDefinition {
   operation: TestOperationDescriptor;
@@ -219,14 +218,27 @@ function outcomeMismatches(
       const definition = definitions.get(scenario.scenarioId);
       const support = decisions.get(scenario.scenarioId);
       const outcome = scenario.outcomes['safe-docx'];
-      const expectedStatus = support?.supported ? 'pass-like' : 'unsupported';
-      return { scenario, operationName: definition?.operation.operationName, outcome, expectedStatus };
+      let expectedStatuses = new Set<string>();
+      if (definition && support) {
+        if (!support.supported) {
+          expectedStatuses = new Set(['unsupported']);
+        } else if (scenario.oracleKind === 'ecma-conformance') {
+          expectedStatuses = new Set(['pass', 'pass-divergent']);
+        } else if (scenario.oracleKind === 'metamorphic-invariant') {
+          expectedStatuses = new Set(['invariant-pass']);
+        }
+      }
+      return {
+        scenario,
+        operationName: definition?.operation.operationName,
+        outcome,
+        expectedStatus: expectedStatuses.size > 0
+          ? [...expectedStatuses].join(' or ')
+          : 'a known scenario with an explicit support decision',
+        matches: expectedStatuses.has(outcome?.status ?? ''),
+      };
     })
-    .filter(({ outcome, expectedStatus }) =>
-      expectedStatus === 'pass-like'
-        ? !PASS_LIKE_OUTCOME_STATUSES.has(outcome?.status ?? '')
-        : outcome?.status !== expectedStatus,
-    );
+    .filter(({ matches }) => !matches);
 }
 
 const { available: suiteAvailable, runnerTsx: RUNNER_TSX, skipWarning } =
@@ -322,12 +334,15 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
         });
 
         await then('both ordinary content-control scenarios explicitly pass without implying rebuild coverage', async () => {
-          const outcomes = new Map(
-            results.results.map((scenario) => [scenario.scenarioId, scenario.outcomes['safe-docx']]),
+          const scenarios = new Map(
+            results.results.map((scenario) => [scenario.scenarioId, scenario]),
           );
-          for (const scenarioId of CONTENT_CONTROL_SCENARIO_IDS) {
-            expect(PASS_LIKE_OUTCOME_STATUSES.has(outcomes.get(scenarioId)?.status ?? '')).toBe(true);
-          }
+          const normative = scenarios.get(CONTENT_CONTROL_SCENARIO_IDS[0]);
+          const metamorphic = scenarios.get(CONTENT_CONTROL_SCENARIO_IDS[1]);
+          expect(normative?.oracleKind).toBe('ecma-conformance');
+          expect(['pass', 'pass-divergent']).toContain(normative?.outcomes['safe-docx']?.status);
+          expect(metamorphic?.oracleKind).toBe('metamorphic-invariant');
+          expect(metamorphic?.outcomes['safe-docx']?.status).toBe('invariant-pass');
         });
       } finally {
         rmSync(workDir, { recursive: true, force: true });
@@ -398,11 +413,53 @@ describe('Conformance adapter support classification', () => {
         const results: SuiteResults = {
           results: [{
             scenarioId: 'renamedEquivalentReplace',
+            oracleKind: 'ecma-conformance',
             outcomes: { 'safe-docx': { status: 'unsupported', reason: 'simulated narrowing' } },
           }],
         };
         expect(decisions.get('renamedEquivalentReplace')).toEqual({ supported: true });
         expect(outcomeMismatches(results, definitions, decisions)).toHaveLength(1);
+      });
+    },
+  );
+
+  test.openspec('[XIMPL-08] Supported and unsupported suite outcomes remain honest')(
+    'oracle classes reject cross-class pass statuses and errors cannot masquerade as unsupported',
+    async ({ then }: AllureBddContext) => {
+      const definitions = new Map<string, ScenarioDefinition>([
+        ['normative', { operation: { operationName: 'replaceFirstTextOccurrence' }, inputPath: 'unused' }],
+        ['metamorphic', { operation: { operationName: 'replaceFirstTextOccurrence' }, inputPath: 'unused' }],
+        ['unknown-oracle', { operation: { operationName: 'replaceFirstTextOccurrence' }, inputPath: 'unused' }],
+        ['unsupported', { operation: { operationName: 'unknownOperation' }, inputPath: 'unused' }],
+      ]);
+      const decisions = await expectedScenarioDecisions(definitions);
+
+      await then('each wrong-class or error outcome is reported as a mismatch', () => {
+        const results: SuiteResults = {
+          results: [
+            {
+              scenarioId: 'normative',
+              oracleKind: 'ecma-conformance',
+              outcomes: { 'safe-docx': { status: 'invariant-pass' } },
+            },
+            {
+              scenarioId: 'metamorphic',
+              oracleKind: 'metamorphic-invariant',
+              outcomes: { 'safe-docx': { status: 'pass' } },
+            },
+            {
+              scenarioId: 'unknown-oracle',
+              oracleKind: 'future-oracle',
+              outcomes: { 'safe-docx': { status: 'pass' } },
+            },
+            {
+              scenarioId: 'unsupported',
+              oracleKind: 'ecma-conformance',
+              outcomes: { 'safe-docx': { status: 'error', reason: 'simulated adapter error' } },
+            },
+          ],
+        };
+        expect(outcomeMismatches(results, definitions, decisions)).toHaveLength(4);
       });
     },
   );

@@ -46,6 +46,14 @@ crossed ordering, mixed ownership, nested supported boundaries, or a change
 status inside the boundary raise a dedicated reconstruction error. This pilot
 does not infer edits inside opaque XML.
 
+Each descriptor also records its source-order paragraph ordinal and structural
+container path. That identity is a coarse paragraph anchor when ordinary text
+around a control is wholly replaced. A changed paragraph ordinal or container,
+including paragraph movement, remains outside the pilot and fails before LCS
+reconstruction. After correlation, every emitted opaque atom must still be an
+equal revised-side atom in one reconstructed paragraph; otherwise preflight
+fails before whole-paragraph insertion/deletion branches can flatten it.
+
 ### One owner emits; all other owned atoms are suppressed
 
 The first merged atom for a validated occurrence emits the cloned boundary.
@@ -58,6 +66,9 @@ across multiple runs or word atoms.
 
 Capture resolves every prefix used by the boundary subtree (including prefixes
 named by `mc:Ignorable`) against declarations effective at the source node.
+Descendant validation derives a fresh effective scope at each element, so a
+valid local declaration or legal prefix shadow is retained while unbound or
+mismatched usage is rejected.
 Emission materializes required declarations on the cloned boundary when they
 are inherited from an ancestor. A prefix with no binding, conflicting bindings
 for one prefix, an unbound `mc:Ignorable` token, or a collision with the emitter's

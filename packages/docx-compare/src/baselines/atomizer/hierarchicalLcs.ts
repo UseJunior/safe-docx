@@ -399,6 +399,22 @@ function isEmptyParagraphGroup(group: ComparisonUnitGroup): boolean {
     group.atoms[0]!.contentElement.tagName === EMPTY_PARAGRAPH_TAG;
 }
 
+function opaqueGroupIdentity(group: ComparisonUnitGroup): string | null {
+  const descriptors = [...new Set(
+    group.atoms
+      .map((atom) => atom.opaquePassthrough)
+      .filter((descriptor) => descriptor !== undefined),
+  )];
+  if (descriptors.length === 0) return null;
+  return descriptors
+    .sort((left, right) => left.documentOrdinal - right.documentOrdinal)
+    .map((descriptor) =>
+      `${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
+      `${descriptor.documentOrdinal}\u0000${descriptor.semanticFingerprint}`,
+    )
+    .join('\u0001');
+}
+
 /**
  * Paragraph groups are considered coarse-equal if:
  * 1) Their raw text hash matches exactly, or
@@ -407,6 +423,11 @@ function isEmptyParagraphGroup(group: ComparisonUnitGroup): boolean {
  * Empty paragraphs intentionally require strict hash equality.
  */
 function groupsCoarselyEqual(a: ComparisonUnitGroup, b: ComparisonUnitGroup): boolean {
+  const aOpaqueIdentity = opaqueGroupIdentity(a);
+  const bOpaqueIdentity = opaqueGroupIdentity(b);
+  if (aOpaqueIdentity !== null || bOpaqueIdentity !== null) {
+    return aOpaqueIdentity !== null && aOpaqueIdentity === bOpaqueIdentity;
+  }
   if (a.textHash === b.textHash) {
     return true;
   }

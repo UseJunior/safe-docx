@@ -17,6 +17,7 @@ invariant, not an ECMA-376 conformance claim.
 - **THEN** `reconstructionModeUsed` SHALL be `rebuild`
 - **AND** the output SHALL contain one `w:sdt` with the same controlled text, ordered `w:sdtPr` and `w:sdtContent` structure, foreign extension payload, and effective namespace/MCE bindings
 - **AND** accepting changes SHALL retain the outside edit while rejecting changes SHALL retain the original outside text
+- **AND** wholesale replacement of ordinary surrounding text SHALL use the unchanged opaque boundary as a paragraph anchor when paragraph/container identity is unchanged
 
 #### Scenario: [SDX-SDT-02] Multiple and split-run inline controls retain deterministic paragraph order
 
@@ -31,12 +32,13 @@ invariant, not an ECMA-376 conformance claim.
 - **WHEN** the opaque node is re-emitted during forced rebuild
 - **THEN** every used prefix and ignorable token SHALL retain the same namespace URI and effective scope
 - **AND** ordered foreign children, attributes, and payload SHALL retain namespace-aware semantic equality
+- **AND** valid descendant-local declarations and legal prefix shadowing SHALL be resolved at their effective element scope
 
-#### Scenario: [SDX-SDT-04] Unsafe opaque payload fails closed
+#### Scenario: [SDX-SDT-04] Unsafe opaque payload or paragraph ownership fails closed
 
-- **GIVEN** an inline control with changed controlled content or properties, a missing or reordered counterpart, nested opaque boundaries, conflicting prefix ownership, an unbound used prefix, or an unbound `mc:Ignorable` token
+- **GIVEN** an inline control with changed controlled content or properties, a missing or reordered counterpart, moved paragraph ownership, whole-paragraph correlation loss, nested opaque boundaries, conflicting prefix ownership, an unbound used prefix, or an unbound `mc:Ignorable` token
 - **WHEN** forced rebuild attempts opaque passthrough
-- **THEN** reconstruction SHALL fail with an opaque-passthrough error
+- **THEN** reconstruction SHALL fail with an opaque-passthrough or XML namespace-well-formedness error
 - **AND** it SHALL NOT emit a flattened, stale, duplicated, or partially reconstructed `w:sdt`
 
 #### Scenario: [SDX-SDT-05] Real content-control corpus measurement is labeled without overclaiming

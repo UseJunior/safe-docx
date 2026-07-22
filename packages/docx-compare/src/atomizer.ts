@@ -25,6 +25,7 @@ import { OOXML } from '@usejunior/docx-core';
 import {
   captureInlineSdtPassthrough,
   sameOpaqueOwner,
+  validateInlineSdtNamespaceOwnership,
 } from './baselines/atomizer/opaquePassthrough.js';
 
 // =============================================================================
@@ -836,6 +837,7 @@ export function atomizeTree(
     consecutiveEmptyIndex: 0,
     lastContentHash: '',
   };
+  if (normalizedOptions.captureInlineSdtPassthrough) validateInlineSdtNamespaceOwnership(node);
   const rawAtoms = atomizeTreeInternal(node, ancestors, part, state, normalizedOptions);
   if (normalizedOptions.captureInlineSdtPassthrough) captureInlineSdtPassthrough(node, rawAtoms);
 

@@ -117,6 +117,10 @@ export interface OpaquePassthroughNode {
   namespaceUri: string;
   localName: string;
   documentOrdinal: number;
+  /** Source-order paragraph identity; movement is outside the pilot and fails closed. */
+  paragraphOrdinal: number;
+  /** Structural parent path (body or table/cell position) owning the paragraph. */
+  containerIdentity: string;
   semanticFingerprint: string;
   sourceElement: WmlElement;
   effectiveNamespaces: Readonly<Record<string, string>>;

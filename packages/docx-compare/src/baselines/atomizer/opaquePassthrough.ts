@@ -63,6 +63,17 @@ function effectiveMceDeclarations(element: Element): {
       const localName = attribute.localName ?? attribute.name;
       const accumulated = tokens.get(localName) ?? [];
       for (const token of attribute.value.trim().split(/\s+/).filter(Boolean)) {
+        if (localName === 'Ignorable') {
+          const declarationNamespace = node.lookupNamespaceURI(token);
+          if (!declarationNamespace) {
+            throw new OpaquePassthroughError(`mc:Ignorable names unbound prefix '${token}'`);
+          }
+          if (element.lookupNamespaceURI(token) !== declarationNamespace) {
+            throw new OpaquePassthroughError(
+              `inherited mc:Ignorable prefix '${token}' is shadowed at the opaque boundary`,
+            );
+          }
+        }
         if (!accumulated.includes(token)) accumulated.push(token);
       }
       tokens.set(localName, accumulated);
@@ -142,12 +153,74 @@ function nearestAncestor(element: Element, namespaceUri: string, localName: stri
   return null;
 }
 
-function validateMceBindings(element: Element, bindings: Readonly<Record<string, string>>): void {
-  const descendants = [element, ...Array.from(element.getElementsByTagName('*'))];
-  for (const descendant of descendants) {
-    for (let i = 0; i < descendant.attributes.length; i++) {
-      const attribute = descendant.attributes.item(i)!;
-      if (attribute.namespaceURI !== MC_NS || attribute.localName !== 'Ignorable') continue;
+function siblingOrdinal(element: Element): number {
+  let ordinal = 0;
+  let sibling = element.previousSibling;
+  while (sibling) {
+    if (
+      sibling.nodeType === 1 &&
+      (sibling as Element).namespaceURI === element.namespaceURI &&
+      (sibling as Element).localName === element.localName
+    ) {
+      ordinal++;
+    }
+    sibling = sibling.previousSibling;
+  }
+  return ordinal;
+}
+
+function structuralContainerIdentity(paragraph: Element): string {
+  const parts: string[] = [];
+  let current: Node | null = paragraph.parentNode;
+  while (current?.nodeType === 1) {
+    const element = current as Element;
+    if (
+      element.namespaceURI === OOXML.W_NS &&
+      (element.localName === 'body' || element.localName === 'tbl' ||
+        element.localName === 'tr' || element.localName === 'tc')
+    ) {
+      parts.unshift(`{${element.namespaceURI}}${element.localName}:${siblingOrdinal(element)}`);
+    }
+    current = current.parentNode;
+  }
+  return parts.join('/');
+}
+
+function withLocalNamespaceBindings(
+  element: Element,
+  inherited: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const bindings = { ...inherited };
+  for (let i = 0; i < element.attributes.length; i++) {
+    const attribute = element.attributes.item(i)!;
+    if (isXmlnsAttribute(attribute)) bindings[namespacePrefix(attribute)] = attribute.value;
+  }
+  return bindings;
+}
+
+function validateNamespaceOwnership(
+  element: Element,
+  inherited: Readonly<Record<string, string>>,
+): void {
+  const bindings = withLocalNamespaceBindings(element, inherited);
+  if (element.prefix) {
+    const ownedNamespace = bindings[element.prefix];
+    if (!ownedNamespace || ownedNamespace !== element.namespaceURI) {
+      throw new OpaquePassthroughError(
+        `prefix '${element.prefix}' has unbound or conflicting element ownership`,
+      );
+    }
+  }
+  for (let i = 0; i < element.attributes.length; i++) {
+    const attribute = element.attributes.item(i)!;
+    if (isXmlnsAttribute(attribute) || !attribute.prefix || attribute.prefix === 'xml') continue;
+    const ownedNamespace = bindings[attribute.prefix];
+    if (!ownedNamespace || ownedNamespace !== attribute.namespaceURI) {
+      throw new OpaquePassthroughError(
+        `prefix '${attribute.prefix}' has unbound or conflicting attribute ownership`,
+      );
+    }
+    if (attribute.namespaceURI === MC_NS && attribute.localName === 'Ignorable') {
       for (const prefix of attribute.value.trim().split(/\s+/).filter(Boolean)) {
         if (!bindings[prefix]) {
           throw new OpaquePassthroughError(`mc:Ignorable names unbound prefix '${prefix}'`);
@@ -155,25 +228,8 @@ function validateMceBindings(element: Element, bindings: Readonly<Record<string,
       }
     }
   }
-}
-
-function validateNamespaceOwnership(element: Element, bindings: Readonly<Record<string, string>>): void {
-  const descendants = [element, ...Array.from(element.getElementsByTagName('*'))];
-  for (const descendant of descendants) {
-    if (descendant.prefix && bindings[descendant.prefix] !== descendant.namespaceURI) {
-      throw new OpaquePassthroughError(
-        `prefix '${descendant.prefix}' has conflicting element ownership`,
-      );
-    }
-    for (let i = 0; i < descendant.attributes.length; i++) {
-      const attribute = descendant.attributes.item(i)!;
-      if (isXmlnsAttribute(attribute) || !attribute.prefix || attribute.prefix === 'xml') continue;
-      if (bindings[attribute.prefix] !== attribute.namespaceURI) {
-        throw new OpaquePassthroughError(
-          `prefix '${attribute.prefix}' has conflicting attribute ownership`,
-        );
-      }
-    }
+  for (const child of Array.from(element.childNodes)) {
+    if (child.nodeType === 1) validateNamespaceOwnership(child as Element, bindings);
   }
 }
 
@@ -185,6 +241,40 @@ function validateIgnorableTokens(
     if (!bindings[prefix]) {
       throw new OpaquePassthroughError(`mc:Ignorable names unbound prefix '${prefix}'`);
     }
+  }
+}
+
+function validateInlineSdtKnownStructure(boundary: Element): void {
+  const directChildren = Array.from(boundary.childNodes)
+    .filter((child): child is Element => child.nodeType === 1);
+  for (const child of directChildren) {
+    if (
+      (child.localName === 'sdtPr' || child.localName === 'sdtContent') &&
+      child.namespaceURI !== OOXML.W_NS
+    ) {
+      throw new OpaquePassthroughError(
+        `known child '${child.localName}' has conflicting WordprocessingML namespace ownership`,
+      );
+    }
+  }
+  if (!directChildren.some(
+    (child) => child.namespaceURI === OOXML.W_NS && child.localName === 'sdtContent',
+  )) {
+    throw new OpaquePassthroughError('inline w:sdt has no WordprocessingML w:sdtContent child');
+  }
+}
+
+/** Validate inline-SDT namespace scope before atomization clones leaf nodes. */
+export function validateInlineSdtNamespaceOwnership(root: Element): void {
+  for (const boundary of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'sdt'))) {
+    const paragraph = nearestAncestor(boundary, OOXML.W_NS, 'p');
+    if (!paragraph || boundary.parentNode !== paragraph) continue;
+    const bindings = effectiveNamespaces(boundary);
+    if (bindings.w !== OOXML.W_NS) {
+      throw new OpaquePassthroughError("inline w:sdt has conflicting 'w' namespace ownership");
+    }
+    validateInlineSdtKnownStructure(boundary);
+    validateNamespaceOwnership(boundary, bindings);
   }
 }
 
@@ -223,6 +313,10 @@ function materializeNamespaces(
  */
 export function captureInlineSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]): void {
   const descriptorByElement = new Map<Element, OpaquePassthroughNode>();
+  const paragraphOrdinals = new Map(
+    Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p'))
+      .map((paragraph, ordinal) => [paragraph, ordinal] as const),
+  );
   let nextOrdinal = 0;
   for (const boundary of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'sdt'))) {
     const paragraph = nearestAncestor(boundary, OOXML.W_NS, 'p');
@@ -238,13 +332,19 @@ export function captureInlineSdtPassthrough(root: Element, atoms: ComparisonUnit
     if (bindings.w !== OOXML.W_NS) {
       throw new OpaquePassthroughError("inline w:sdt has conflicting 'w' namespace ownership");
     }
+    validateInlineSdtKnownStructure(boundary);
     validateNamespaceOwnership(boundary, bindings);
-    validateMceBindings(boundary, bindings);
     validateIgnorableTokens(mceDeclarations.values, bindings);
+    const paragraphOrdinal = paragraphOrdinals.get(paragraph);
+    if (paragraphOrdinal === undefined) {
+      throw new OpaquePassthroughError('inline w:sdt paragraph has no source-order identity');
+    }
     descriptorByElement.set(boundary, {
       namespaceUri: OOXML.W_NS,
       localName: 'sdt',
       documentOrdinal: nextOrdinal++,
+      paragraphOrdinal,
+      containerIdentity: structuralContainerIdentity(paragraph),
       semanticFingerprint: semanticFingerprint(boundary, bindings, mceDeclarations.values),
       sourceElement: materializeNamespaces(
         boundary,
@@ -302,13 +402,41 @@ export function bindOpaquePassthroughCounterparts(
     const after = revised[i]!;
     if (
       before.documentOrdinal !== after.documentOrdinal ||
+      before.paragraphOrdinal !== after.paragraphOrdinal ||
+      before.containerIdentity !== after.containerIdentity ||
       before.namespaceUri !== after.namespaceUri ||
       before.localName !== after.localName ||
       before.semanticFingerprint !== after.semanticFingerprint
     ) {
-      throw new OpaquePassthroughError(`boundary ${i} changed or moved`);
+      throw new OpaquePassthroughError(`boundary ${i} changed paragraph ownership, moved, or mutated`);
     }
     after.emissionElement = before.sourceElement;
+  }
+}
+
+/** Reject opaque correlation loss before any whole-paragraph branch can emit. */
+export function validateOpaquePassthroughCorrelation(atoms: ComparisonUnitAtom[]): void {
+  const paragraphByDescriptor = new Map<OpaquePassthroughNode, number | undefined>();
+  for (const atom of atoms) {
+    const descriptor = atom.opaquePassthrough;
+    if (!descriptor) continue;
+    if (atom.correlationStatus !== CorrelationStatus.Equal) {
+      throw new OpaquePassthroughError(
+        `boundary ${descriptor.documentOrdinal} lost equal correlation (${atom.correlationStatus})`,
+      );
+    }
+    if (!descriptor.emissionElement || atom.sourceDocument !== 'revised') {
+      throw new OpaquePassthroughError(
+        `boundary ${descriptor.documentOrdinal} has no validated revised-side owner`,
+      );
+    }
+    if (!paragraphByDescriptor.has(descriptor)) {
+      paragraphByDescriptor.set(descriptor, atom.paragraphIndex);
+    } else if (paragraphByDescriptor.get(descriptor) !== atom.paragraphIndex) {
+      throw new OpaquePassthroughError(
+        `boundary ${descriptor.documentOrdinal} crossed reconstructed paragraph ownership`,
+      );
+    }
   }
 }
 
