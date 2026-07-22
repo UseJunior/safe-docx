@@ -31,8 +31,9 @@ inductive XmlTok
   | instrText (s : String)
   | delInstrText (s : String)
   | fldChar (k : FldCharKind)
-  | moveRangeStart (k : MoveRangeKind) (id name : String)
-  | moveRangeEnd (k : MoveRangeKind) (id : String)
+  | moveRangeStart (k : MoveRangeKind) (id : Int) (name : String)
+  | moveRangeEnd (k : MoveRangeKind) (id : Int)
+  | invalidMoveRangeId
   | enterReservedNote
   | exitReservedNote
   deriving DecidableEq, Repr, Inhabited
@@ -49,11 +50,12 @@ def decodeXmlText (s : String) : String :=
 def wmlNamespace : String :=
   "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
-def normalizeTagWhitespace (tag : String) : String :=
-  ((tag.replace "\n" " ").replace "\r" " ").replace "\t" " "
+def isXmlSpace (c : Char) : Bool :=
+  c == ' ' || c == '\t' || c == '\n' || c == '\r'
 
 def tagWords (tag : String) : List String :=
-  (normalizeTagWhitespace tag).splitOn " " |>.filter (· != "")
+  let normalized := ((tag.replace "\n" " ").replace "\r" " ").replace "\t" " "
+  normalized.splitOn " " |>.filter (· != "")
 
 def tagName (tag : String) : String :=
   let first := List.getD (tagWords tag) 0 tag
@@ -65,10 +67,18 @@ def isStartTag (tag name : String) : Bool :=
 def isEndTag (tag name : String) : Bool :=
   tag.startsWith ("/" ++ name)
 
-def tagPayload (segment : String) : String × String :=
-  match segment.splitOn ">" with
-  | [] => ("", "")
-  | tag :: rest => (tag, String.intercalate ">" rest)
+def tagPayloadAux : List Char → Option Char → List Char → Except String (String × String)
+  | [], _, _ => throw "malformed XML tag without closing >"
+  | c :: rest, some quote, acc =>
+    if c == quote then tagPayloadAux rest none (c :: acc)
+    else tagPayloadAux rest (some quote) (c :: acc)
+  | c :: rest, none, acc =>
+    if c == '"' || c == '\'' then tagPayloadAux rest (some c) (c :: acc)
+    else if c == '>' then return (String.ofList acc.reverse, String.ofList rest)
+    else tagPayloadAux rest none (c :: acc)
+
+def tagPayload (segment : String) : Except String (String × String) :=
+  tagPayloadAux segment.toList none []
 
 def splitQName (name : String) : String × String :=
   match name.splitOn ":" with
@@ -86,23 +96,61 @@ def namespaceLookup (bindings : NamespaceBindings) (key : String) : Option Strin
 def namespaceLookupD (bindings : NamespaceBindings) (key fallback : String) : String :=
   (namespaceLookup bindings key).getD fallback
 
-def attrTokenValue (token key : String) : Option String :=
-  let doubleMarker := key ++ "=\""
-  let singleMarker := key ++ "='"
-  if token.startsWith doubleMarker && token.endsWith "\"" then
-    some ((token.drop doubleMarker.length).dropEnd 1).toString
-  else if token.startsWith singleMarker && token.endsWith "'" then
-    some ((token.drop singleMarker.length).dropEnd 1).toString
-  else none
+abbrev XmlAttributes := List (String × String)
 
-def namespaceDeclarations (tag : String) : List (String × String) :=
-  (tagWords tag).filterMap fun rawToken =>
-    let token := if rawToken.endsWith "/" then (rawToken.dropEnd 1).toString else rawToken
-    if let some value := attrTokenValue token "xmlns" then some ("", value)
-    else if token.startsWith "xmlns:" then
-      let key := List.getD (token.splitOn "=") 0 ""
-      let pre := (List.getD (key.splitOn ":") 1 "")
-      (attrTokenValue token key).map fun value => (pre, value)
+inductive AttributeScanMode
+  | between
+  | name
+  | beforeEquals
+  | beforeValue
+  | value (quote : Char)
+  deriving DecidableEq, Repr, Inhabited
+
+structure AttributeScanState where
+  mode : AttributeScanMode := .between
+  name : String := ""
+  value : String := ""
+  attributes : XmlAttributes := []
+  valid : Bool := true
+  deriving Repr, Inhabited
+
+def scanAttributeChar (state : AttributeScanState) (c : Char) : AttributeScanState :=
+  if !state.valid then state
+  else match state.mode with
+  | .between =>
+    if isXmlSpace c || c == '/' then state
+    else { state with mode := .name, name := state.name.push c }
+  | .name =>
+    if c == '=' then { state with mode := .beforeValue }
+    else if isXmlSpace c then { state with mode := .beforeEquals }
+    else { state with name := state.name.push c }
+  | .beforeEquals =>
+    if isXmlSpace c then state
+    else if c == '=' then { state with mode := .beforeValue }
+    else { state with valid := false }
+  | .beforeValue =>
+    if isXmlSpace c then state
+    else if c == '"' || c == '\'' then { state with mode := .value c }
+    else { state with valid := false }
+  | .value quote =>
+    if c == quote then
+      { mode := .between, attributes := state.attributes ++ [(state.name, state.value)] }
+    else { state with value := state.value.push c }
+
+def attributeSuffix (tag : String) : String :=
+  let chars := tag.toList.dropWhile (fun c => !isXmlSpace c)
+  String.ofList chars
+
+def parseTagAttributes (tag : String) : Except String XmlAttributes := do
+  let final := (attributeSuffix tag).toList.foldl scanAttributeChar {}
+  if !final.valid || final.mode != .between then throw "malformed XML attributes"
+  return final.attributes
+
+def namespaceDeclarations (attributes : XmlAttributes) : List (String × String) :=
+  attributes.filterMap fun (key, value) =>
+    if key == "xmlns" then some ("", decodeXmlText value)
+    else if key.startsWith "xmlns:" then
+      some ((key.drop "xmlns:".length).toString, decodeXmlText value)
     else none
 
 def extendNamespaces (base : NamespaceBindings) (decls : List (String × String)) : NamespaceBindings :=
@@ -116,66 +164,88 @@ def resolveQName (bindings : NamespaceBindings) (name : String) : Except String 
   | some uri => return (uri, localName)
   | none => throw s!"unbound namespace prefix: {pre}"
 
-def canonicalizeWmlTag (tag localName : String) (bindings : NamespaceBindings) : String :=
-  let attrs := (tagWords tag).drop 1 |>.filter (fun token => !token.startsWith "xmlns")
-  let attrs := attrs.map fun rawToken =>
-    let token := if rawToken.endsWith "/" then (rawToken.dropEnd 1).toString else rawToken
-    let key := List.getD (token.splitOn "=") 0 token
+def canonicalizeWmlAttributes (attributes : XmlAttributes)
+    (bindings : NamespaceBindings) : XmlAttributes :=
+  attributes.filterMap fun (key, value) =>
+    if key == "xmlns" || key.startsWith "xmlns:" then none
+    else
     let (pre, attrLocal) := splitQName key
     if !pre.isEmpty && namespaceLookupD bindings pre "" == wmlNamespace then
-      match attrTokenValue token key with
-      | some value => "w:" ++ attrLocal ++ "=\"" ++ value ++ "\""
-      | none => token
-    else token
-  String.intercalate " " (("w:" ++ localName) :: attrs)
+      some ("w:" ++ attrLocal, decodeXmlText value)
+    else some (key, decodeXmlText value)
 
-def validateAttributeNamespaces (tag : String) (bindings : NamespaceBindings) : Except String Unit := do
-  for rawToken in (tagWords tag).drop 1 do
-    let token := if rawToken.endsWith "/" then (rawToken.dropEnd 1).toString else rawToken
-    let key := List.getD (token.splitOn "=") 0 token
+def validateAttributeNamespaces (attributes : XmlAttributes)
+    (bindings : NamespaceBindings) : Except String Unit := do
+  for (key, _) in attributes do
     if key == "xmlns" || key.startsWith "xmlns:" then continue
     let (pre, _) := splitQName key
     if !pre.isEmpty && (namespaceLookup bindings pre).isNone then
       throw s!"unbound namespace prefix on attribute: {pre}"
 
-def tagAttribute (tag key : String) : String :=
-  let tokens := (tagWords tag).drop 1 |>.map fun rawToken =>
-    if rawToken.endsWith "/" then (rawToken.dropEnd 1).toString else rawToken
-  match tokens.find? (fun token => token.startsWith (key ++ "=")) with
-  | some token => (attrTokenValue token key).getD ""
+def tagAttribute (attributes : XmlAttributes) (key : String) : String :=
+  match attributes.find? (fun binding => binding.1 == key) with
+  | some binding => binding.2
   | none => ""
 
-def tagToken (tag payload : String) : List XmlTok :=
-  if (isStartTag tag "w:footnote" || isStartTag tag "w:endnote") &&
-      (tag.contains "w:type=\"separator\"" ||
-       tag.contains "w:type=\"continuationSeparator\"") then [.enterReservedNote]
-  else if isEndTag tag "w:footnote" || isEndTag tag "w:endnote" then [.exitReservedNote]
-  else if isStartTag tag "w:p" then [.pBreak]
-  else if isStartTag tag "w:ins" then [.enter .ins]
-  else if isEndTag tag "w:ins" then [.exit .ins]
-  else if isStartTag tag "w:del" then [.enter .del]
-  else if isEndTag tag "w:del" then [.exit .del]
-  else if isStartTag tag "w:moveFromRangeStart" then
-    [.moveRangeStart .source (tagAttribute tag "w:id") (tagAttribute tag "w:name")]
-  else if isStartTag tag "w:moveFromRangeEnd" then
-    [.moveRangeEnd .source (tagAttribute tag "w:id")]
-  else if isStartTag tag "w:moveToRangeStart" then
-    [.moveRangeStart .destination (tagAttribute tag "w:id") (tagAttribute tag "w:name")]
-  else if isStartTag tag "w:moveToRangeEnd" then
-    [.moveRangeEnd .destination (tagAttribute tag "w:id")]
-  else if isStartTag tag "w:moveFrom" then [.enter .moveFrom]
-  else if isEndTag tag "w:moveFrom" then [.exit .moveFrom]
-  else if isStartTag tag "w:moveTo" then [.enter .moveTo]
-  else if isEndTag tag "w:moveTo" then [.exit .moveTo]
-  else if isStartTag tag "w:fldChar" then
-    if tag.contains "w:fldCharType=\"begin\"" then [.fldChar .begin]
-    else if tag.contains "w:fldCharType=\"separate\"" then [.fldChar .separate]
-    else if tag.contains "w:fldCharType=\"end\"" then [.fldChar .endf]
+def isAsciiDigit (c : Char) : Bool :=
+  '0' ≤ c && c ≤ '9'
+
+def decimalDigitsToNat (digits : List Char) : Nat :=
+  digits.foldl (fun value digit => value * 10 + (digit.toNat - '0'.toNat)) 0
+
+def parseDecimalNumber (value : String) : Option Int :=
+  let collapsed := value.trimAscii.toString
+  let (negative, digits) := match collapsed.toList with
+    | '+' :: rest => (false, rest)
+    | '-' :: rest => (true, rest)
+    | rest => (false, rest)
+  if digits.isEmpty || !digits.all isAsciiDigit then none
+  else
+    let magnitude := Int.ofNat (decimalDigitsToNat digits)
+    some (if negative then -magnitude else magnitude)
+
+def moveRangeStartToken (kind : MoveRangeKind) (attributes : XmlAttributes) : List XmlTok :=
+  match parseDecimalNumber (tagAttribute attributes "w:id") with
+  | some id => [.moveRangeStart kind id (tagAttribute attributes "w:name")]
+  | none => [.invalidMoveRangeId]
+
+def moveRangeEndToken (kind : MoveRangeKind) (attributes : XmlAttributes) : List XmlTok :=
+  match parseDecimalNumber (tagAttribute attributes "w:id") with
+  | some id => [.moveRangeEnd kind id]
+  | none => [.invalidMoveRangeId]
+
+def tagToken (closing : Bool) (localName : String) (attributes : XmlAttributes)
+    (payload : String) : List XmlTok :=
+  if !closing && (localName == "footnote" || localName == "endnote") &&
+      (tagAttribute attributes "w:type" == "separator" ||
+       tagAttribute attributes "w:type" == "continuationSeparator") then [.enterReservedNote]
+  else if closing && (localName == "footnote" || localName == "endnote") then [.exitReservedNote]
+  else if !closing && localName == "p" then [.pBreak]
+  else if !closing && localName == "ins" then [.enter .ins]
+  else if closing && localName == "ins" then [.exit .ins]
+  else if !closing && localName == "del" then [.enter .del]
+  else if closing && localName == "del" then [.exit .del]
+  else if !closing && localName == "moveFromRangeStart" then
+    moveRangeStartToken .source attributes
+  else if !closing && localName == "moveFromRangeEnd" then
+    moveRangeEndToken .source attributes
+  else if !closing && localName == "moveToRangeStart" then
+    moveRangeStartToken .destination attributes
+  else if !closing && localName == "moveToRangeEnd" then
+    moveRangeEndToken .destination attributes
+  else if !closing && localName == "moveFrom" then [.enter .moveFrom]
+  else if closing && localName == "moveFrom" then [.exit .moveFrom]
+  else if !closing && localName == "moveTo" then [.enter .moveTo]
+  else if closing && localName == "moveTo" then [.exit .moveTo]
+  else if !closing && localName == "fldChar" then
+    if tagAttribute attributes "w:fldCharType" == "begin" then [.fldChar .begin]
+    else if tagAttribute attributes "w:fldCharType" == "separate" then [.fldChar .separate]
+    else if tagAttribute attributes "w:fldCharType" == "end" then [.fldChar .endf]
     else []
-  else if isStartTag tag "w:t" then [.text (decodeXmlText payload)]
-  else if isStartTag tag "w:delText" then [.delText (decodeXmlText payload)]
-  else if isStartTag tag "w:instrText" then [.instrText (decodeXmlText payload)]
-  else if isStartTag tag "w:delInstrText" then [.delInstrText (decodeXmlText payload)]
+  else if !closing && localName == "t" then [.text (decodeXmlText payload)]
+  else if !closing && localName == "delText" then [.delText (decodeXmlText payload)]
+  else if !closing && localName == "instrText" then [.instrText (decodeXmlText payload)]
+  else if !closing && localName == "delInstrText" then [.delInstrText (decodeXmlText payload)]
   else []
 
 structure OpenElement where
@@ -195,10 +265,7 @@ def currentNamespaces (state : XmlParseState) : NamespaceBindings :=
 
 def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : String) :
     Except String XmlParseState := do
-  let parts := segment.splitOn ">"
-  if parts.length < 2 then throw "malformed XML tag without closing >"
-  let tag := List.getD parts 0 ""
-  let payload := String.intercalate ">" (parts.drop 1)
+  let (tag, payload) ← tagPayload segment
   let trimmed := tag.trimAscii.toString
   if trimmed.isEmpty then throw "empty XML tag"
   if trimmed.startsWith "?" || trimmed.startsWith "!" then return state
@@ -208,19 +275,20 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
     let (uri, localName) ← resolveQName top.namespaces rawName
     if uri != top.uri || localName != top.localName then
       throw s!"mismatched closing tag: {rawName}"
-    let emitted := if uri == wmlNamespace then tagToken ("/w:" ++ localName) payload else []
+    let emitted := if uri == wmlNamespace then tagToken true localName [] payload else []
     return { state with stack := state.stack.drop 1, tokens := state.tokens ++ emitted }
   let selfClosing := trimmed.endsWith "/"
   if state.rootSeen && state.stack.isEmpty then throw "multiple XML root elements"
   let rawName := List.getD (tagWords trimmed) 0 ""
-  let bindings := extendNamespaces (currentNamespaces state) (namespaceDeclarations trimmed)
-  validateAttributeNamespaces trimmed bindings
+  let attributes ← parseTagAttributes trimmed
+  let bindings := extendNamespaces (currentNamespaces state) (namespaceDeclarations attributes)
+  validateAttributeNamespaces attributes bindings
   let (uri, localName) ← resolveQName bindings rawName
   if !state.rootSeen then
     if uri != wmlNamespace || localName != expectedRoot then
       throw s!"unexpected root namespace={uri} local={localName}; expected namespace={wmlNamespace} local={expectedRoot}"
-  let canonical := if uri == wmlNamespace then canonicalizeWmlTag trimmed localName bindings else trimmed
-  let emitted := if uri == wmlNamespace then tagToken canonical payload else []
+  let canonicalAttributes := canonicalizeWmlAttributes attributes bindings
+  let emitted := if uri == wmlNamespace then tagToken false localName canonicalAttributes payload else []
   let next := { state with tokens := state.tokens ++ emitted, rootSeen := true }
   if selfClosing then return next
   return { next with stack := { uri, localName, namespaces := bindings } :: next.stack }
@@ -380,13 +448,13 @@ def validateFieldStructureTokens (toks : List XmlTok) : Bool :=
 
 structure MoveRangeFrame where
   kind : MoveRangeKind
-  id : String
+  id : Int
   name : String
   deriving DecidableEq, Repr, Inhabited
 
 structure MoveRangeState where
   stack : List MoveRangeFrame := []
-  seenIds : List String := []
+  seenIds : List Int := []
   sourceNames : List String := []
   destinationNames : List String := []
   valid : Bool := true
@@ -395,13 +463,16 @@ structure MoveRangeState where
 def invalidateMoveRanges (state : MoveRangeState) : MoveRangeState :=
   { state with valid := false }
 
+def moveRangeStartInvalid (state : MoveRangeState) (kind : MoveRangeKind)
+    (id : Int) (name : String) : Bool :=
+  let directionNames := match kind with
+    | .source => state.sourceNames
+    | .destination => state.destinationNames
+  !state.valid || name.isEmpty || state.seenIds.contains id || directionNames.contains name
+
 def stepMoveRanges (state : MoveRangeState) : XmlTok → MoveRangeState
   | .moveRangeStart kind id name =>
-    let directionNames := match kind with
-      | .source => state.sourceNames
-      | .destination => state.destinationNames
-    if !state.valid || id.isEmpty || name.isEmpty || state.seenIds.contains id ||
-        directionNames.contains name then
+    if moveRangeStartInvalid state kind id name then
       invalidateMoveRanges state
     else
       { state with
@@ -413,11 +484,12 @@ def stepMoveRanges (state : MoveRangeState) : XmlTok → MoveRangeState
   | .moveRangeEnd kind id =>
     match state.stack with
     | top :: rest =>
-      if state.valid && !id.isEmpty && top.kind == kind && top.id == id then
+      if state.valid && top.kind == kind && top.id == id then
         { state with stack := rest }
       else
         invalidateMoveRanges state
     | [] => invalidateMoveRanges state
+  | .invalidMoveRangeId => invalidateMoveRanges state
   | _ => state
 
 def moveRangeNamesMatch (sourceNames destinationNames : List String) : Bool :=
@@ -429,6 +501,131 @@ def validateMoveRanges (toks : List XmlTok) : Bool :=
   let final := toks.foldl stepMoveRanges {}
   final.valid && final.stack.isEmpty &&
     moveRangeNamesMatch final.sourceNames final.destinationNames
+
+def isMoveRangeMarker : XmlTok → Bool
+  | .moveRangeStart .. => true
+  | .moveRangeEnd .. => true
+  | .invalidMoveRangeId => true
+  | _ => false
+
+inductive MoveRangeTransition : MoveRangeState → XmlTok → MoveRangeState → Prop
+  | other (state : MoveRangeState) (tok : XmlTok) (h : isMoveRangeMarker tok = false) :
+      MoveRangeTransition state tok state
+  | start (state : MoveRangeState) (kind : MoveRangeKind) (id : Int) (name : String)
+      (h : moveRangeStartInvalid state kind id name = false) :
+      MoveRangeTransition state (.moveRangeStart kind id name)
+        { state with
+          stack := { kind, id, name } :: state.stack
+          seenIds := id :: state.seenIds
+          sourceNames := if kind == .source then name :: state.sourceNames else state.sourceNames
+          destinationNames :=
+            if kind == .destination then name :: state.destinationNames else state.destinationNames }
+  | end (state : MoveRangeState) (kind : MoveRangeKind) (id : Int)
+      (top : MoveRangeFrame) (rest : List MoveRangeFrame)
+      (hStack : state.stack = top :: rest)
+      (hValid : state.valid = true) (hKind : top.kind = kind) (hId : top.id = id) :
+      MoveRangeTransition state (.moveRangeEnd kind id) { state with stack := rest }
+
+inductive MoveRangeTrace : MoveRangeState → List XmlTok → MoveRangeState → Prop
+  | nil (state : MoveRangeState) : MoveRangeTrace state [] state
+  | cons (initial next final : MoveRangeState) (tok : XmlTok) (rest : List XmlTok)
+      (head : MoveRangeTransition initial tok next)
+      (tail : MoveRangeTrace next rest final) :
+      MoveRangeTrace initial (tok :: rest) final
+
+def MoveRangesWellFormed (toks : List XmlTok) : Prop :=
+  ∃ final : MoveRangeState,
+    MoveRangeTrace {} toks final ∧
+    final.stack = [] ∧
+    final.sourceNames.length = final.destinationNames.length ∧
+    (∀ name ∈ final.sourceNames, name ∈ final.destinationNames) ∧
+    (∀ name ∈ final.destinationNames, name ∈ final.sourceNames)
+
+theorem stepMoveRanges_invalid (state : MoveRangeState) (tok : XmlTok)
+    (h : state.valid = false) : (stepMoveRanges state tok).valid = false := by
+  cases tok with
+  | moveRangeStart kind id name =>
+    cases hInvalid : moveRangeStartInvalid state kind id name <;>
+      simp [stepMoveRanges, hInvalid, invalidateMoveRanges, h]
+  | moveRangeEnd =>
+    cases hStack : state.stack <;> simp [stepMoveRanges, hStack, invalidateMoveRanges, h]
+  | invalidMoveRangeId => simp [stepMoveRanges, invalidateMoveRanges]
+  | pBreak | enter | exit | text | delText | instrText | delInstrText | fldChar |
+      enterReservedNote | exitReservedNote => simp [stepMoveRanges, h]
+
+theorem foldMoveRanges_invalid (state : MoveRangeState) (toks : List XmlTok)
+    (h : state.valid = false) : (toks.foldl stepMoveRanges state).valid = false := by
+  induction toks generalizing state with
+  | nil => exact h
+  | cons tok rest ih =>
+    exact ih (stepMoveRanges state tok) (stepMoveRanges_invalid state tok h)
+
+theorem stepMoveRanges_transition_of_valid (state : MoveRangeState) (tok : XmlTok)
+    (h : (stepMoveRanges state tok).valid = true) :
+    MoveRangeTransition state tok (stepMoveRanges state tok) := by
+  cases tok with
+  | moveRangeStart kind id name =>
+    cases hInvalid : moveRangeStartInvalid state kind id name with
+    | false =>
+      have transition := MoveRangeTransition.start state kind id name hInvalid
+      simpa only [stepMoveRanges, hInvalid] using transition
+    | true => simp [stepMoveRanges, hInvalid, invalidateMoveRanges] at h
+  | moveRangeEnd kind id =>
+    cases hStack : state.stack with
+    | nil => simp [stepMoveRanges, hStack, invalidateMoveRanges] at h
+    | cons top rest =>
+      cases hValid : (state.valid && top.kind == kind && top.id == id) with
+      | false => simp [stepMoveRanges, hStack, hValid, invalidateMoveRanges] at h
+      | true =>
+        have hParts : state.valid = true ∧ top.kind = kind ∧ top.id = id := by
+          simp only [Bool.and_eq_true, beq_iff_eq] at hValid
+          exact ⟨hValid.1.1, hValid.1.2, hValid.2⟩
+        have transition := MoveRangeTransition.end state kind id top rest hStack
+          hParts.1 hParts.2.1 hParts.2.2
+        simpa only [stepMoveRanges, hStack, hValid] using transition
+  | invalidMoveRangeId => simp [stepMoveRanges, invalidateMoveRanges] at h
+  | pBreak => exact .other state .pBreak rfl
+  | enter wrapper => exact .other state (.enter wrapper) rfl
+  | exit wrapper => exact .other state (.exit wrapper) rfl
+  | text value => exact .other state (.text value) rfl
+  | delText value => exact .other state (.delText value) rfl
+  | instrText value => exact .other state (.instrText value) rfl
+  | delInstrText value => exact .other state (.delInstrText value) rfl
+  | fldChar kind => exact .other state (.fldChar kind) rfl
+  | enterReservedNote => exact .other state .enterReservedNote rfl
+  | exitReservedNote => exact .other state .exitReservedNote rfl
+
+theorem foldMoveRanges_trace_of_valid (state : MoveRangeState) (toks : List XmlTok)
+    (h : (toks.foldl stepMoveRanges state).valid = true) :
+    MoveRangeTrace state toks (toks.foldl stepMoveRanges state) := by
+  induction toks generalizing state with
+  | nil => exact .nil state
+  | cons tok rest ih =>
+    have hStep : (stepMoveRanges state tok).valid = true := by
+      cases hValid : (stepMoveRanges state tok).valid with
+      | false =>
+        have := foldMoveRanges_invalid (stepMoveRanges state tok) rest hValid
+        simp_all
+      | true => rfl
+    exact .cons state (stepMoveRanges state tok) (rest.foldl stepMoveRanges (stepMoveRanges state tok))
+      tok rest (stepMoveRanges_transition_of_valid state tok hStep)
+      (ih (stepMoveRanges state tok) h)
+
+theorem validateMoveRanges_sound (toks : List XmlTok) (h : validateMoveRanges toks = true) :
+    MoveRangesWellFormed toks := by
+  let final := toks.foldl stepMoveRanges {}
+  have hParts : (final.valid = true ∧ final.stack.isEmpty = true) ∧
+      moveRangeNamesMatch final.sourceNames final.destinationNames = true := by
+    simpa only [validateMoveRanges, final, Bool.and_eq_true] using h
+  have hNames : final.sourceNames.length = final.destinationNames.length ∧
+      (∀ name ∈ final.sourceNames, name ∈ final.destinationNames) ∧
+      (∀ name ∈ final.destinationNames, name ∈ final.sourceNames) := by
+    have hMatch := hParts.2
+    simp only [moveRangeNamesMatch, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hMatch
+    exact ⟨hMatch.1.1, fun name hName => List.contains_iff_mem.mp (hMatch.1.2 name hName),
+      fun name hName => List.contains_iff_mem.mp (hMatch.2 name hName)⟩
+  exact ⟨final, foldMoveRanges_trace_of_valid {} toks hParts.1.1,
+    List.isEmpty_iff.mp hParts.1.2, hNames.1, hNames.2.1, hNames.2.2⟩
 
 def tokenText : XmlTok → List Char
   | .text s => s.toList
@@ -536,10 +733,11 @@ theorem checker_sound (original revised combined : List XmlTok)
     (comparisonCheckerB original revised combined).acceptTextMatchesRevised = true ∧
     (comparisonCheckerB original revised combined).rejectTextMatchesOriginal = true ∧
     (comparisonCheckerB original revised combined).combinedHasNoFldCharInsideDel = true ∧
-    (comparisonCheckerB original revised combined).combinedHasValidMoveRanges = true := by
+    MoveRangesWellFormed combined := by
   simp only [CheckReport.passed, Bool.and_eq_true] at h
   rcases h with ⟨⟨⟨⟨⟨hAccept, hReject⟩, hAcceptText⟩, hRejectText⟩, hNoDelField⟩, hMoveRanges⟩
-  exact ⟨hAccept, hReject, hAcceptText, hRejectText, hNoDelField, hMoveRanges⟩
+  exact ⟨hAccept, hReject, hAcceptText, hRejectText, hNoDelField,
+    validateMoveRanges_sound combined hMoveRanges⟩
 
 theorem story_collection_checker_sound (stories : List NamedStoryTriple)
     (h : storyCollectionPassed (checkStoryCollection stories) = true) :
@@ -550,7 +748,7 @@ theorem story_collection_checker_sound (stories : List NamedStoryTriple)
       report.acceptTextMatchesRevised = true ∧
       report.rejectTextMatchesOriginal = true ∧
       report.combinedHasNoFldCharInsideDel = true ∧
-      report.combinedHasValidMoveRanges = true := by
+      MoveRangesWellFormed story.combined := by
   intro story hStory
   have hMember : checkNamedStory story ∈ checkStoryCollection stories := by
     exact List.mem_map.mpr ⟨story, hStory, rfl⟩

@@ -24,16 +24,14 @@ requireArray('checkedProperties', ledger.checkedProperties);
 requireArray('knownUncheckedAreas', ledger.knownUncheckedAreas);
 
 for (const element of ledger.parsedWordprocessingML?.elements ?? []) {
-  const leanName = element.replace(/^w:/, 'w:');
-  if (!lean.includes(`"${leanName}"`)) {
+  const localName = element.replace(/^w:/, '');
+  if (!lean.includes(`localName == "${localName}"`)) {
     errors.push(`ledger element ${element} is not referenced by XmlTripleChecker.lean`);
   }
 }
 
 for (const value of ledger.parsedWordprocessingML?.attributeValues?.['w:fldCharType'] ?? []) {
-  const raw = `w:fldCharType="${value}"`;
-  const escaped = `w:fldCharType=\\"${value}\\"`;
-  if (!lean.includes(raw) && !lean.includes(escaped)) {
+  if (!lean.includes(`tagAttribute attributes "w:fldCharType" == "${value}"`)) {
     errors.push(`ledger fldCharType value ${value} is not referenced by XmlTripleChecker.lean`);
   }
 }
@@ -72,7 +70,7 @@ if (!lean.includes('projectUserNoteTokens') || !lean.includes('story_collection_
 }
 
 for (const value of ledger.parsedWordprocessingML?.attributeValues?.['w:type'] ?? []) {
-  if (!lean.includes(`w:type=\\"${value}\\"`)) {
+  if (!lean.includes(`tagAttribute attributes "w:type" == "${value}"`)) {
     errors.push(`ledger reserved note type ${value} is not recognized by the Lean checker`);
   }
 }

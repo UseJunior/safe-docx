@@ -325,13 +325,20 @@ For moved destination (content moved TO):
 
 The system SHALL emit exactly one source range and one destination range per
 logical tracked move. The compiled fixed-story checker SHALL require unique
-non-empty range ids, balanced non-crossing same-direction start/end markers,
-one range per direction and `w:name`, and a one-to-one match between source and
-destination move names. It does not associate individual `w:moveFrom` or
+schema-valid `ST_DecimalNumber` range ids canonicalized as integers, non-empty
+move names, balanced non-crossing same-direction start/end markers, one range
+per direction and `w:name`, and a one-to-one match between source and
+destination move names. Both Strict and Transitional use the same integer type
+for these ids. The non-empty name rule deliberately strengthens the required
+`ST_String` schema attribute, whose lexical space includes the empty string.
+The checker does not associate individual `w:moveFrom` or
 `w:moveTo` wrapper revision IDs with those ranges. The public document-integrity
 certificate SHALL expose the bounded result `Tracked move range markers are
 structurally paired by range ID and move name.` and SHALL list wrapper-to-range
 revision-ID association as an exclusion.
+The move-range check SHALL be an optional additive field in the public v1
+certificate so certificates produced before this check remain valid v1 values;
+consumers SHALL treat absence as unavailable evidence, not as a passing result.
 
 #### Scenario: [MOVE-RANGE-PAIR-01] Inplace emission produces one range pair per logical move
 
@@ -352,7 +359,7 @@ revision-ID association as an exclusion.
 #### Scenario: [LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks
 
 - **GIVEN** a valid moved-text DOCX triple whose accept and reject text projections match
-- **WHEN** the compared story is mutated with a duplicate marker, missing marker, crossed range, or mismatched source/destination name
+- **WHEN** the compared story is mutated with a duplicate marker, missing marker, crossed range, mismatched source/destination name, malformed decimal id, numeric-id alias collision, or empty move name
 - **THEN** the move-range checker conjunct fails for every mutation
 - **AND** the accept and reject text checks continue to pass
 

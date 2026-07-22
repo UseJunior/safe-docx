@@ -76,7 +76,7 @@
     "For every supplied fixed story, rejecting all tracked changes in the compared story yields the same normalized text as the original story.",
     "For every supplied fixed story, accept and reject projections retain structurally valid Word field markers.",
     "For every supplied fixed story, the compared story has no Word field markers inside deletion markup.",
-    "For every supplied fixed story, tracked move ranges use unique non-empty IDs, have balanced non-crossing same-direction endpoints, occur once per source/destination move name, and pair source and destination identities by name.",
+    "For every supplied fixed story, tracked move ranges use schema-valid decimal IDs canonicalized to unique integer identities and non-empty names, have balanced non-crossing same-direction endpoints, occur once per source/destination move name, and pair source and destination identities by name.",
     "The main story is required; when any optional note story is present, absent sides are checked as empty stories.",
     "Reserved note entries are selected by namespace-qualified w:type separator or continuationSeparator, independent of numeric ID, and excluded by an idempotent Lean projection.",
     "Element and attribute prefixes are resolved to namespace URIs, and each fixed part must have its expected WordprocessingML expanded-name root.",

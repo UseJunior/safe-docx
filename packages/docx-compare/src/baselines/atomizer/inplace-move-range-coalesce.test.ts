@@ -4,12 +4,15 @@
  * @see https://github.com/UseJunior/safe-docx/issues/446
  */
 
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { buildSyntheticDocx, parseXml, serializeXml } from '@usejunior/docx-core';
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import { compareDocuments } from '../../index.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { coalesceMoveRangeMarkers } from './inPlaceModifier-postprocess.js';
+import { buildDocxFromBodyXml, paragraphWithText } from '../../testing/ooxml-fixtures.js';
 
 const TEST_FEATURE = 'Inplace Move-Range Coalescing';
 const test = testAllure
@@ -21,6 +24,9 @@ const test = testAllure
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.28' });
 
 const MOVED_PARAGRAPH = 'The quick brown fox jumps over the lazy dog today';
+const TEST_DIR = dirname(import.meta.url.replace('file://', ''));
+const LEAN_EXE = join(TEST_DIR, '../../../../../verification/lean/.lake/build/bin/leanDocxChecker');
+const describeWithLean = existsSync(LEAN_EXE) ? describe : describe.skip;
 
 function countTag(xml: string, tag: string): number {
   return (xml.match(new RegExp(`<${tag.replace(':', '\\:')}\\b`, 'g')) ?? []).length;
@@ -87,6 +93,50 @@ describe('Inplace move-range marker coalescing', () => {
         expect(toStart?.[1]).not.toBe(fromStart?.[1]);
       });
     });
+
+  describeWithLean('preserved move identity collision', () => {
+    test.openspec('[MOVE-RANGE-PAIR-01] Inplace emission produces one range pair per logical move')(
+    'seeds preserved range IDs and names before an end-to-end compare and certificate check', async () => {
+      const preservedMove =
+        '<w:p><w:moveFromRangeStart w:id="1" w:name="move1" w:author="Existing" ' +
+        'w:date="2026-07-20T00:00:00Z"/><w:moveFrom w:id="2" w:author="Existing">' +
+        '<w:r><w:delText>Preserved move</w:delText></w:r></w:moveFrom>' +
+        '<w:moveFromRangeEnd w:id="1"/></w:p>' +
+        '<w:p><w:moveToRangeStart w:id="3" w:name="move1" w:author="Existing" ' +
+        'w:date="2026-07-20T00:00:00Z"/><w:moveTo w:id="4" w:author="Existing">' +
+        '<w:r><w:t>Preserved move</w:t></w:r></w:moveTo>' +
+        '<w:moveToRangeEnd w:id="3"/></w:p>';
+      const original = await buildDocxFromBodyXml(
+        preservedMove + paragraphWithText(MOVED_PARAGRAPH) +
+        paragraphWithText('Middle paragraph stays put') + paragraphWithText('Final paragraph stays put'),
+      );
+      const revised = await buildDocxFromBodyXml(
+        preservedMove + paragraphWithText('Middle paragraph stays put') +
+        paragraphWithText('Final paragraph stays put') + paragraphWithText(MOVED_PARAGRAPH),
+      );
+
+      const result = await compareDocuments(original, revised, {
+        engine: 'atomizer',
+        reconstructionMode: 'inplace',
+        leanXmlVerifier: { enabled: true, executablePath: LEAN_EXE },
+      });
+      const xml = await documentXml(result.document);
+      const starts = Array.from(parseXml(xml).getElementsByTagName('w:moveFromRangeStart'));
+      const identities = starts.map((start) => ({
+        id: start.getAttribute('w:id'),
+        name: start.getAttribute('w:name'),
+      }));
+
+      expect(result.reconstructionModeUsed).toBe('inplace');
+      expect(identities).toContainEqual({ id: '1', name: 'move1' });
+      expect(identities.some(({ name }) => name === 'move2')).toBe(true);
+      expect(identities.filter(({ name }) => name === 'move2').map(({ id }) => id))
+        .not.toContain('1');
+      expect(xml).toContain('w:moveToRangeStart w:id="3" w:name="move1"');
+      expect(result.documentIntegrity?.status).toBe('passed');
+      expect(result.documentIntegrity?.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('passed');
+    });
+  });
 
   test('one logical move spanning paragraphs keeps generated boundaries and preserves existing markers', async ({
     given,

@@ -72,6 +72,8 @@ export interface InPlaceModifierOptions {
   author: string;
   /** Timestamp for track changes */
   date: Date;
+  /** Other input trees whose markup can be cloned into the inplace output. */
+  preservedRoots?: readonly Element[];
 }
 
 export function modifyRevisedDocument(
@@ -83,7 +85,7 @@ export function modifyRevisedDocument(
 ): string {
   const { author, date } = options;
   const dateStr = formatDate(date);
-  const state = createRevisionIdState();
+  const state = createRevisionIdState([revisedRoot, ...(options.preservedRoots ?? [])]);
 
   // In-place mode needs concrete AST node pointers for run/paragraph edits.
   // Populate these once up-front so handlers don't have to rescan ancestor chains.

@@ -6,6 +6,7 @@ import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { buildSyntheticDocx } from '@usejunior/docx-core';
 import { compareDocuments } from '../../index.js';
+import type { DocumentIntegrityCertificate } from '../../compare-types.js';
 import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
   acceptAllChanges,
@@ -389,14 +390,28 @@ describeWithLean('Lean fixed-story package protocol', () => {
         status: 'passed',
         claim: 'Tracked move range markers are structurally paired by range ID and move name.',
       });
-      expect(certificate.stories?.[0]?.checks.trackedMoveRangesAreCorrectlyPaired.status).toBe('passed');
+      expect(certificate.stories?.[0]?.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('passed');
       expect(certificate.exclusions).toContain(
         'association of individual moveFrom or moveTo wrapper revision IDs with move ranges',
       );
     });
 
+  test('accepts quoted move names with spaces and entities plus canonical endpoint aliases', async () => {
+    const original = await buildDocxFromBodyXml(originalMoveBody);
+    const revised = await buildDocxFromBodyXml(revisedMoveBody);
+    const body = validMoveBody
+      .replaceAll('w:name="move1"', "w:name = 'move one &amp; two > three'")
+      .replace('w:id="10"/>', 'w:id=" 010 "/>')
+      .replace('w:id="12"/>', 'w:id="+12"/>');
+    const combined = await buildDocxFromBodyXml(body);
+
+    const certificate = await run(original, revised, combined);
+    expect(certificate.status).toBe('passed');
+    expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('passed');
+  });
+
   test.openspec('[LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks')(
-    'mutation-checks duplicate, missing, crossed, and mismatched move-range markers', async () => {
+    'mutation-checks duplicate, missing, crossed, mismatched, malformed, aliased, and empty identities', async () => {
       const original = await buildDocxFromBodyXml(originalMoveBody);
       const revised = await buildDocxFromBodyXml(revisedMoveBody);
       const mutations = {
@@ -420,13 +435,28 @@ describeWithLean('Lean fixed-story package protocol', () => {
           '<w:moveToRangeStart w:id="12" w:name="move1"',
           '<w:moveToRangeStart w:id="12" w:name="move2"',
         ),
+        malformedDecimal: validMoveBody.replaceAll('w:id="10"', 'w:id="abc"'),
+        numericAlias: validMoveBody
+          .replace(
+            '<w:moveFromRangeStart w:id="10"',
+            '<w:moveFromRangeStart w:id="010" w:name="move2"/>' +
+            '<w:moveFromRangeEnd w:id="010"/>' +
+            '<w:moveFromRangeStart w:id="10"',
+          )
+          .replace(
+            '<w:moveToRangeStart w:id="12"',
+            '<w:moveToRangeStart w:id="22" w:name="move2"/>' +
+            '<w:moveToRangeEnd w:id="22"/>' +
+            '<w:moveToRangeStart w:id="12"',
+          ),
+        emptyName: validMoveBody.replaceAll('w:name="move1"', 'w:name=""'),
       } as const;
 
       for (const [mutation, body] of Object.entries(mutations)) {
         const combined = await buildDocxFromBodyXml(body);
         const certificate = await run(original, revised, combined);
         expect(certificate.status, mutation).toBe('failed');
-        expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired.status, mutation).toBe('failed');
+        expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status, mutation).toBe('failed');
         expect(certificate.checks.acceptingAllTrackedChangesMatchesRevisedText.status, mutation).toBe('passed');
         expect(certificate.checks.rejectingAllTrackedChangesMatchesOriginalText.status, mutation).toBe('passed');
       }
@@ -506,6 +536,50 @@ describe('Lean fixed-story protocol and security hardening', () => {
       await rm(fake.dir, { recursive: true, force: true });
     }
     });
+
+  test('keeps the additive v1 move-range check compatible with legacy producers and decoders', () => {
+    const unavailable = { status: 'not_evaluated', claim: 'Legacy producer did not evaluate this check.' } as const;
+    const legacyProducer: DocumentIntegrityCertificate = {
+      status: 'not_run',
+      reason: 'legacy producer fixture',
+      protocolVersion: 1,
+      verifier: 'Lean XML triple checker',
+      scope: 'word/document.xml',
+      reconstructionMode: 'inplace',
+      checks: {
+        acceptingAllTrackedChangesMatchesRevisedText: unavailable,
+        rejectingAllTrackedChangesMatchesOriginalText: unavailable,
+        acceptingAllTrackedChangesKeepsValidFieldStructure: unavailable,
+        rejectingAllTrackedChangesKeepsValidFieldStructure: unavailable,
+        comparedDocumentHasNoFieldMarkersInsideDeletions: unavailable,
+      },
+      inputSha256: {
+        originalDocumentXml: '0'.repeat(64),
+        revisedDocumentXml: '0'.repeat(64),
+        comparedDocumentXml: '0'.repeat(64),
+      },
+      exclusions: [],
+    };
+    expect(legacyProducer.checks.trackedMoveRangesAreCorrectlyPaired).toBeUndefined();
+
+    const decodeLegacyV1 = (value: DocumentIntegrityCertificate) => ({
+      protocolVersion: value.protocolVersion,
+      verifier: value.verifier,
+      scope: value.scope,
+      status: value.status,
+      acceptText: value.checks.acceptingAllTrackedChangesMatchesRevisedText,
+    });
+    expect(decodeLegacyV1({
+      ...legacyProducer,
+      checks: { ...legacyProducer.checks, trackedMoveRangesAreCorrectlyPaired: unavailable },
+    })).toEqual({
+      protocolVersion: 1,
+      verifier: 'Lean XML triple checker',
+      scope: 'word/document.xml',
+      status: 'not_run',
+      acceptText: unavailable,
+    });
+  });
 
   test.openspec('[LEAN-STORY-09] Inconsistent executable protocol is rejected')(
     'rejects duplicate, negative-count, inconsistent, and extra-field protocol reports', async () => {
