@@ -12,6 +12,9 @@ import { getParagraphRuns } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { childElements, isW } from './dom-helpers.js';
+import { getFirstChild } from './xml-helpers.js';
+import { extractEffectiveRunFormatting, parseStylesXml, type StylesModel } from './styles.js';
+import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
 import {
   createRevisionContainer,
   prepareElementForDeletion,
@@ -39,11 +42,48 @@ const FOOTNOTES_XML_TEMPLATE =
 
 // ── Types ───────────────────────────────────────────────────────────────
 
+/**
+ * One paragraph of a footnote body, retained at the same node-level fidelity as
+ * a document-body paragraph: the flattened visible `text`, an inline-tagged
+ * rendering (`tagged_text`) that preserves run-level bold/italic/underline/
+ * highlight/color/font (via {@link emitFormattingTags} in `full` mode — no
+ * baseline suppression, so every deviation survives), and the paragraph's
+ * `w:pStyle` id (e.g. `FootnoteText`).
+ */
+export type FootnoteParagraph = {
+  text: string;
+  tagged_text: string;
+  style: string | null;
+};
+
 export type Footnote = {
   id: number;
   displayNumber: number;
+  /**
+   * Flattened body text, `\n`-joined across paragraphs. Retained for
+   * backward-compatibility with serializers and `get_footnotes`; new consumers
+   * that need multi-paragraph structure or run formatting should read
+   * {@link Footnote.paragraphs}.
+   */
   text: string;
+  /**
+   * First paragraph that references this footnote. Retained for
+   * backward-compatibility; prefer {@link Footnote.refParagraphIds}, which
+   * captures every referencing paragraph (a malformed DOCX can illegally reuse
+   * one footnote id from multiple paragraphs).
+   */
   anchoredParagraphId: string | null;
+  /**
+   * Every distinct paragraph (by bookmark id) that carries a
+   * `w:footnoteReference` to this footnote, in document order. Usually one
+   * entry; empty when the note is orphaned (no reference in the body).
+   */
+  refParagraphIds: string[];
+  /**
+   * Structured, run-formatting-preserving body paragraphs. Present at
+   * node-level fidelity — see {@link FootnoteParagraph}.
+   */
+  paragraphs: FootnoteParagraph[];
 };
 
 export type AddFootnoteParams = {
@@ -221,7 +261,22 @@ function buildDisplayNumberMap(documentXml: Document, footnotesDoc: Document): M
 
 // ── Reading ─────────────────────────────────────────────────────────────
 
-export async function getFootnotes(zip: DocxZip, documentXml: Document): Promise<Footnote[]> {
+/**
+ * Read every user footnote body, retaining multi-paragraph structure and
+ * run-level formatting.
+ *
+ * `styles` is optional: when provided (from `DocxDocument.getStylesModel()`),
+ * the per-paragraph `tagged_text` resolves run formatting through the character-
+ * and paragraph-style chains (so e.g. a `Strong` character style renders `<b>`).
+ * When omitted, formatting is read from direct `w:rPr` only — the flattened
+ * `text` and the plural anchor map are unaffected either way, so existing
+ * callers that pass `(zip, documentXml)` keep their exact behavior.
+ */
+export async function getFootnotes(
+  zip: DocxZip,
+  documentXml: Document,
+  styles?: StylesModel,
+): Promise<Footnote[]> {
   const footnotesText = await zip.readTextOrNull('word/footnotes.xml');
   if (!footnotesText) return [];
 
@@ -230,23 +285,33 @@ export async function getFootnotes(zip: DocxZip, documentXml: Document): Promise
   if (fnEls.length === 0) return [];
 
   const displayMap = buildDisplayNumberMap(documentXml, footnotesDoc);
+  const stylesModel = styles ?? parseStylesXml(null);
 
-  // Build map of footnoteReference id → anchored paragraph bookmark id
-  const anchorMap = new Map<number, string | null>();
+  // Build map of footnoteReference id → every anchored paragraph bookmark id, in
+  // document order (deduplicated). The FIRST entry feeds the legacy
+  // `anchoredParagraphId`; the whole ordered list feeds `refParagraphIds`.
+  // A conforming DOCX references a footnote from exactly one paragraph, but a
+  // malformed one has been observed reusing an id across several — so we keep
+  // them all rather than silently dropping the extras.
+  const anchorMap = new Map<number, string[]>();
   const refs = documentXml.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference);
   for (let i = 0; i < refs.length; i++) {
     const ref = refs.item(i) as Element;
     const idStr = getWAttr(ref, 'id');
     if (!idStr) continue;
     const id = parseInt(idStr, 10);
-    if (anchorMap.has(id)) continue;
 
     // Walk up to enclosing <w:p>
     let parent = ref.parentNode;
     while (parent && parent.nodeType === 1) {
       const pel = parent as Element;
       if (pel.localName === W.p && pel.namespaceURI === OOXML.W_NS) {
-        anchorMap.set(id, getParagraphBookmarkId(pel));
+        const bookmarkId = getParagraphBookmarkId(pel);
+        if (bookmarkId != null) {
+          const existing = anchorMap.get(id) ?? [];
+          if (!existing.includes(bookmarkId)) existing.push(bookmarkId);
+          anchorMap.set(id, existing);
+        }
         break;
       }
       parent = parent.parentNode;
@@ -263,11 +328,13 @@ export async function getFootnotes(zip: DocxZip, documentXml: Document): Promise
     if (!idStr) continue;
     const id = parseInt(idStr, 10);
 
-    const text = extractFootnoteText(el);
+    const paragraphs = extractFootnoteParagraphs(el, stylesModel);
+    const text = paragraphs.map((p) => p.text).join('\n');
     const displayNumber = displayMap.get(id) ?? 0;
-    const anchoredParagraphId = anchorMap.get(id) ?? null;
+    const refParagraphIds = anchorMap.get(id) ?? [];
+    const anchoredParagraphId = refParagraphIds[0] ?? null;
 
-    footnotes.push({ id, displayNumber, text, anchoredParagraphId });
+    footnotes.push({ id, displayNumber, text, anchoredParagraphId, refParagraphIds, paragraphs });
   }
 
   // Sort by display number (document order)
@@ -276,37 +343,90 @@ export async function getFootnotes(zip: DocxZip, documentXml: Document): Promise
   return footnotes;
 }
 
-export async function getFootnote(zip: DocxZip, documentXml: Document, noteId: number): Promise<Footnote | null> {
-  const all = await getFootnotes(zip, documentXml);
+export async function getFootnote(
+  zip: DocxZip,
+  documentXml: Document,
+  noteId: number,
+  styles?: StylesModel,
+): Promise<Footnote | null> {
+  const all = await getFootnotes(zip, documentXml, styles);
   return all.find((f) => f.id === noteId) ?? null;
 }
 
 function extractFootnoteText(footnoteEl: Element): string {
+  return extractFootnoteParagraphs(footnoteEl, parseStylesXml(null))
+    .map((p) => p.text)
+    .join('\n');
+}
+
+/**
+ * Extract a footnote body as structured paragraphs, one {@link FootnoteParagraph}
+ * per `<w:p>`, preserving run-level formatting in `tagged_text`.
+ *
+ * The flattened `text` intentionally reproduces {@link extractFootnoteText}'s
+ * historical behavior byte-for-byte: `w:t` content concatenated, `w:tab`/`w:br`
+ * ignored, and runs carrying a `w:footnoteRef` marker (the auto-number glyph)
+ * skipped so the footnote number never leaks into the body text. The reserved
+ * separator paragraphs are filtered out by the caller (`isReservedFootnote`).
+ */
+function extractFootnoteParagraphs(footnoteEl: Element, styles: StylesModel): FootnoteParagraph[] {
   const paragraphs = footnoteEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
-  const paraTexts: string[] = [];
+  const out: FootnoteParagraph[] = [];
 
   for (let pi = 0; pi < paragraphs.length; pi++) {
     const p = paragraphs.item(pi) as Element;
+    const style = getFootnoteParagraphStyle(p);
+    const paraPPr = getFirstChild(p, OOXML.W_NS, W.pPr);
+
+    const annotated: AnnotatedRun[] = [];
+    const textParts: string[] = [];
     const runs = p.getElementsByTagNameNS(OOXML.W_NS, W.r);
-    const parts: string[] = [];
 
     for (let ri = 0; ri < runs.length; ri++) {
       const run = runs.item(ri) as Element;
-      // Skip runs that contain footnoteRef (metadata, not user text)
-      const fnRefs = run.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef);
-      if (fnRefs.length > 0) continue;
+      // Skip runs that contain footnoteRef (the auto-number glyph, not body text).
+      if (run.getElementsByTagNameNS(OOXML.W_NS, W.footnoteRef).length > 0) continue;
 
+      // Flattened text mirrors extractFootnoteText: only w:t content.
+      let runText = '';
       const ts = run.getElementsByTagNameNS(OOXML.W_NS, W.t);
       for (let ti = 0; ti < ts.length; ti++) {
-        const t = ts.item(ti) as Element;
-        parts.push(t.textContent ?? '');
+        runText += (ts.item(ti) as Element).textContent ?? '';
       }
+      if (!runText) continue;
+      textParts.push(runText);
+
+      const formatting = extractEffectiveRunFormatting({
+        run,
+        paragraphPPr: paraPPr ?? null,
+        paragraphStyleId: style,
+        styles,
+      });
+      annotated.push({ text: runText, formatting, hyperlinkUrl: null, charCount: runText.length, isHeaderRun: false });
     }
 
-    paraTexts.push(parts.join(''));
+    // `full` mode: no baseline suppression, so every run's bold/italic/etc.
+    // survives into tagged_text at node-level fidelity.
+    const tagged = mergeAdjacentTags(
+      emitFormattingTags({ runs: annotated, baseline: FOOTNOTE_TAG_BASELINE, formattingMode: 'full' }),
+    );
+
+    out.push({ text: textParts.join(''), tagged_text: tagged, style });
   }
 
-  return paraTexts.join('\n');
+  return out;
+}
+
+// `full` formatting mode ignores the baseline, but emitFormattingTags still
+// requires one; an all-false, unsuppressed baseline is the neutral choice.
+const FOOTNOTE_TAG_BASELINE = { bold: false, italic: false, underline: false, suppressed: false } as const;
+
+function getFootnoteParagraphStyle(p: Element): string | null {
+  const pPr = getFirstChild(p, OOXML.W_NS, W.pPr);
+  if (!pPr) return null;
+  const pStyle = getFirstChild(pPr, OOXML.W_NS, W.pStyle);
+  if (!pStyle) return null;
+  return getWAttr(pStyle, 'val');
 }
 
 // ── Insertion ───────────────────────────────────────────────────────────
