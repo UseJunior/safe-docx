@@ -387,9 +387,12 @@ describeWithLean('Lean fixed-story package protocol', () => {
       expect(certificate.status).toBe('passed');
       expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired).toEqual({
         status: 'passed',
-        claim: 'Tracked move ranges are correctly paired.',
+        claim: 'Tracked move range markers are structurally paired by range ID and move name.',
       });
       expect(certificate.stories?.[0]?.checks.trackedMoveRangesAreCorrectlyPaired.status).toBe('passed');
+      expect(certificate.exclusions).toContain(
+        'association of individual moveFrom or moveTo wrapper revision IDs with move ranges',
+      );
     });
 
   test.openspec('[LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks')(

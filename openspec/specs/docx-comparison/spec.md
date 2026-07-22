@@ -327,8 +327,11 @@ The system SHALL emit exactly one source range and one destination range per
 logical tracked move. The compiled fixed-story checker SHALL require unique
 non-empty range ids, balanced non-crossing same-direction start/end markers,
 one range per direction and `w:name`, and a one-to-one match between source and
-destination move names. The public document-integrity certificate SHALL expose
-the plain-language result `Tracked move ranges are correctly paired.`
+destination move names. It does not associate individual `w:moveFrom` or
+`w:moveTo` wrapper revision IDs with those ranges. The public document-integrity
+certificate SHALL expose the bounded result `Tracked move range markers are
+structurally paired by range ID and move name.` and SHALL list wrapper-to-range
+revision-ID association as an exclusion.
 
 #### Scenario: [MOVE-RANGE-PAIR-01] Inplace emission produces one range pair per logical move
 
@@ -343,7 +346,8 @@ the plain-language result `Tracked move ranges are correctly paired.`
 - **GIVEN** a compared fixed story with one uniquely identified, balanced move source range and one move destination range using the same name
 - **WHEN** the compiled Lean checker evaluates the DOCX triple
 - **THEN** the move-range checker conjunct passes
-- **AND** the public certificate says `Tracked move ranges are correctly paired.`
+- **AND** the public certificate says `Tracked move range markers are structurally paired by range ID and move name.`
+- **AND** the certificate excludes association of individual move-wrapper revision IDs with move ranges
 
 #### Scenario: [LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks
 

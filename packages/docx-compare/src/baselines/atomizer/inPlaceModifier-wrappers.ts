@@ -482,6 +482,8 @@ export function wrapAsMove(
   const rangeEnd = createEl(config.rangeEndTag, {
     'w:id': String(rangeId),
   });
+  state.generatedMoveRangeMarkers.add(rangeStart);
+  state.generatedMoveRangeMarkers.add(rangeEnd);
 
   // Insert: rangeStart -> moveWrapper(run) -> rangeEnd
   run.parentNode!.insertBefore(rangeStart, run);

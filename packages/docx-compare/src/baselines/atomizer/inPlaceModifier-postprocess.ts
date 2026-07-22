@@ -319,9 +319,11 @@ const MOVE_RANGE_MARKER_TAGS = [
  *
  * For each generated range id and move `w:name`, this keeps the FIRST range
  * Start and the LAST range End in document order and removes every intermediate
- * duplicate, even when a logical move spans multiple paragraphs. Groups with
- * inconsistent names for one id are left untouched so the Lean checker can
- * reject the malformed identity instead of this repair pass hiding it.
+ * duplicate, even when a logical move spans multiple paragraphs. Only marker
+ * nodes recorded by the current comparison pass are eligible, so pre-existing
+ * tracked moves remain untouched even if their IDs collide with generated IDs.
+ * Groups with inconsistent names for one id are left untouched so the Lean
+ * checker can reject the malformed identity instead of this repair pass hiding it.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
@@ -329,7 +331,10 @@ const MOVE_RANGE_MARKER_TAGS = [
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
  * @see https://github.com/UseJunior/safe-docx/issues/446
  */
-export function coalesceMoveRangeMarkers(root: Element): void {
+export function coalesceMoveRangeMarkers(
+  root: Element,
+  generatedMarkers: ReadonlySet<Element>,
+): void {
   for (const { start: startTag, end: endTag } of MOVE_RANGE_MARKER_TAGS) {
     const startsById = new Map<string, Element[]>();
     const namesById = new Map<string, Set<string>>();
@@ -337,6 +342,10 @@ export function coalesceMoveRangeMarkers(root: Element): void {
 
     function collect(node: Element): void {
       for (const child of childElements(node)) {
+        if (!generatedMarkers.has(child)) {
+          collect(child);
+          continue;
+        }
         const id = child.getAttribute('w:id');
         if (child.tagName === startTag && id) {
           const name = child.getAttribute('w:name');

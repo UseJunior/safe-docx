@@ -129,7 +129,7 @@ export function modifyRevisedDocument(
   // Coalesce duplicate move-range markers to one Start/End pair per move group
   // across the document (issue #446). The moveFrom clone path emits a range pair per
   // fragmented source atom; Word (and the rebuild path) emit exactly one.
-  coalesceMoveRangeMarkers(ctx.body);
+  coalesceMoveRangeMarkers(ctx.body, state.generatedMoveRangeMarkers);
 
   // Apply strict post-render consumer compatibility pass
   enforceConsumerCompatibility(revisedRoot, () => allocateRevisionId(state));

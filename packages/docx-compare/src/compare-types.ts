@@ -257,6 +257,7 @@ export interface DocumentIntegrityStoryCertificate {
     acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     comparedStoryHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+    /** Marker endpoints pair by range ID and source/destination ranges pair by move name. */
     trackedMoveRangesAreCorrectlyPaired: DocumentIntegrityCheckCertificate;
   };
   parsedTokenCounts: { original: number; revised: number; compared: number };
@@ -287,6 +288,7 @@ export interface DocumentIntegrityCertificate {
     acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     comparedDocumentHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+    /** Does not associate individual move-wrapper revision IDs with a range. */
     trackedMoveRangesAreCorrectlyPaired: DocumentIntegrityCheckCertificate;
   };
   /** Stable v1 main-story token counts. */

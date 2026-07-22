@@ -88,31 +88,46 @@ describe('Inplace move-range marker coalescing', () => {
       });
     });
 
-  test('one logical move spanning paragraphs keeps its first start and last end', async ({
+  test('one logical move spanning paragraphs keeps generated boundaries and preserves existing markers', async ({
     given,
     when,
     then,
   }: AllureBddContext) => {
     let root!: Element;
 
-    await given('duplicate same-id source range pairs in two paragraphs', () => {
+    let generatedMarkers!: Set<Element>;
+
+    await given('duplicate generated pairs plus an existing same-id pair across paragraphs', () => {
       root = parseXml(
         '<w:body xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
         '<w:p><w:moveFromRangeStart w:id="7" w:name="move1"/><w:moveFrom w:id="8"/></w:p>' +
         '<w:p><w:moveFromRangeEnd w:id="7"/><w:moveFromRangeStart w:id="7" w:name="move1"/>' +
-        '<w:moveFrom w:id="9"/><w:moveFromRangeEnd w:id="7"/></w:p></w:body>',
+        '<w:moveFrom w:id="9"/><w:moveFromRangeEnd w:id="7"/></w:p>' +
+        '<w:p><w:moveToRangeStart w:id="8" w:name="move1"/><w:moveTo w:id="10"/></w:p>' +
+        '<w:p><w:moveToRangeEnd w:id="8"/><w:moveToRangeStart w:id="8" w:name="move1"/>' +
+        '<w:moveTo w:id="11"/><w:moveToRangeEnd w:id="8"/></w:p>' +
+        '<w:p><w:moveFromRangeStart w:id="7" w:name="existingMove"/>' +
+        '<w:moveFrom w:id="12"/><w:moveFromRangeEnd w:id="7"/></w:p></w:body>',
       ).documentElement!;
+      generatedMarkers = new Set([
+        ...Array.from(root.getElementsByTagName('w:moveFromRangeStart')).slice(0, 2),
+        ...Array.from(root.getElementsByTagName('w:moveFromRangeEnd')).slice(0, 2),
+        ...Array.from(root.getElementsByTagName('w:moveToRangeStart')),
+        ...Array.from(root.getElementsByTagName('w:moveToRangeEnd')),
+      ]);
     });
 
     await when('the move-range postprocessor coalesces generated duplicates', () => {
-      coalesceMoveRangeMarkers(root);
+      coalesceMoveRangeMarkers(root, generatedMarkers);
     });
 
     await then('the document contains one range spanning both paragraphs', () => {
       const xml = serializeXml(root.ownerDocument!);
-      expect(countTag(xml, 'w:moveFromRangeStart')).toBe(1);
-      expect(countTag(xml, 'w:moveFromRangeEnd')).toBe(1);
-      expect(countTag(xml, 'w:moveFrom')).toBe(2);
+      expect(countTag(xml, 'w:moveFromRangeStart')).toBe(2);
+      expect(countTag(xml, 'w:moveFromRangeEnd')).toBe(2);
+      expect(countTag(xml, 'w:moveToRangeStart')).toBe(1);
+      expect(countTag(xml, 'w:moveToRangeEnd')).toBe(1);
+      expect(xml).toContain('w:name="existingMove"');
     });
   });
 });

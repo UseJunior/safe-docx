@@ -79,7 +79,7 @@ function unevaluatedChecks(): DocumentIntegrityCertificate['checks'] {
       'The compared document does not place Word field markers inside deletion markup.'
     ),
     trackedMoveRangesAreCorrectlyPaired: notEvaluated(
-      'Tracked move ranges are correctly paired.'
+      'Tracked move range markers are structurally paired by range ID and move name.'
     ),
   };
 }
@@ -116,7 +116,7 @@ function storyCertificate(story: LeanStoryJson): DocumentIntegrityStoryCertifica
       ),
       trackedMoveRangesAreCorrectlyPaired: check(
         checks.combinedHasValidMoveRanges,
-        'Tracked move ranges in this story are correctly paired.'
+        'Tracked move range markers in this story are structurally paired by range ID and move name.'
       ),
     },
     parsedTokenCounts: {
@@ -333,6 +333,7 @@ function baseCertificate(input: LeanVerifierInput): Omit<
     exclusions: [
       'relationships and note-reference integrity',
       'comments, headers, and footers',
+      'association of individual moveFrom or moveTo wrapper revision IDs with move ranges',
       'rendering and full ECMA-376 validation',
     ],
   };
@@ -397,7 +398,7 @@ export async function runLeanXmlTripleVerifier(input: LeanVerifierInput): Promis
           main.checks.comparedStoryHasNoFieldMarkersInsideDeletions,
         trackedMoveRangesAreCorrectlyPaired: check(
           mainReport.report.checks.combinedHasValidMoveRanges,
-          'Tracked move ranges are correctly paired.'
+          'Tracked move range markers are structurally paired by range ID and move name.'
         ),
       },
       parsedTokenCounts: main.parsedTokenCounts,
