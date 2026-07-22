@@ -130,4 +130,134 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Fore
       });
     },
   );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: a zero-length point bookmark next to a paragraph is not its anchor',
+    async ({ given, when, then }: AllureBddContext) => {
+      // ECMA-376 §17.13.6.2 pairs start/end by w:id — adjacency is not ownership.
+      // A point bookmark sitting just before a paragraph marks NO paragraph.
+      const doc = await given('a zero-length bookmark immediately before a paragraph', () =>
+        makeDoc(
+          `<w:bookmarkStart w:id="9" w:name="_RefPoint"/><w:bookmarkEnd w:id="9"/>` +
+            hostBookmarked('jr_para_real', 'target', 1),
+        ),
+      );
+
+      const found = await when('the point bookmark name is used as an anchor', () =>
+        findParagraphByBookmarkId(doc, '_RefPoint'),
+      );
+
+      await then('it resolves to nothing rather than the neighbouring paragraph', () => {
+        expect(found).toBeNull();
+      });
+    },
+  );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: a bookmark spanning several paragraphs is not any one paragraph\'s anchor',
+    async ({ given, when, then }: AllureBddContext) => {
+      const sibling = await given('a sibling-style bookmark wrapping three paragraphs', () =>
+        makeDoc(
+          `<w:bookmarkStart w:id="9" w:name="_TocOuterSpan"/>` +
+            `<w:p><w:r><w:t>first</w:t></w:r></w:p>` +
+            `<w:p><w:r><w:t>second</w:t></w:r></w:p>` +
+            `<w:p><w:r><w:t>third</w:t></w:r></w:p>` +
+            `<w:bookmarkEnd w:id="9"/>`,
+        ),
+      );
+      const inline = await given('an inline bookmark starting in the first paragraph and ending in the third', () =>
+        makeDoc(
+          `<w:p><w:bookmarkStart w:id="7" w:name="_TocInlineSpan"/><w:r><w:t>first</w:t></w:r></w:p>` +
+            `<w:p><w:r><w:t>second</w:t></w:r></w:p>` +
+            `<w:p><w:r><w:t>third</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p>`,
+        ),
+      );
+
+      const [a, b] = await when('each spanning bookmark is used as an anchor', () => [
+        findParagraphByBookmarkId(sibling, '_TocOuterSpan'),
+        findParagraphByBookmarkId(inline, '_TocInlineSpan'),
+      ]);
+
+      await then('neither resolves — a multi-paragraph range marks no single paragraph', () => {
+        expect(a).toBeNull();
+        expect(b).toBeNull();
+      });
+    },
+  );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: a foreign bookmark inside one paragraph resolves to it',
+    async ({ given, when, then }: AllureBddContext) => {
+      const doc = await given('a bookmark opened and closed inside a single paragraph', () =>
+        makeDoc(
+          `<w:p><w:bookmarkStart w:id="4" w:name="jr_para_inline"/><w:r><w:t>inline target</w:t></w:r>` +
+            `<w:bookmarkEnd w:id="4"/></w:p><w:p><w:r><w:t>other</w:t></w:r></w:p>`,
+        ),
+      );
+
+      const found = await when('the inside-style name is used as an anchor', () =>
+        findParagraphByBookmarkId(doc, 'jr_para_inline'),
+      );
+
+      await then('it resolves to that paragraph', () => {
+        expect(found).not.toBeNull();
+        expect(paragraphText(found as Element)).toBe('inline target');
+      });
+    },
+  );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: an unpaired or duplicated bookmark name refuses to resolve',
+    async ({ given, when, then }: AllureBddContext) => {
+      const unpaired = await given('a bookmarkStart whose w:id has no matching end', () =>
+        makeDoc(
+          `<w:bookmarkStart w:id="3" w:name="jr_para_unpaired"/>` +
+            `<w:p><w:r><w:t>orphan</w:t></w:r></w:p><w:bookmarkEnd w:id="99"/>`,
+        ),
+      );
+      const duplicated = await given('two different paragraphs carrying the same foreign name', () =>
+        makeDoc(hostBookmarked('jr_para_dup', 'first', 1) + hostBookmarked('jr_para_dup', 'second', 2)),
+      );
+
+      const [a, b] = await when('each malformed name is used as an anchor', () => [
+        findParagraphByBookmarkId(unpaired, 'jr_para_unpaired'),
+        findParagraphByBookmarkId(duplicated, 'jr_para_dup'),
+      ]);
+
+      await then('both refuse rather than guessing a paragraph', () => {
+        expect(a).toBeNull();
+        expect(b).toBeNull();
+      });
+    },
+  );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: stacked _bk_ names do not move an existing canonical lookup',
+    async ({ given, when, then }: AllureBddContext) => {
+      // Regression: widening resolution must not change where a canonical id
+      // resolves. Here paragraph 1 carries _bk_target as a NON-reported name.
+      const doc = await given('a paragraph carrying two _bk_ names and a second owning the reported one', () =>
+        makeDoc(
+          `<w:bookmarkStart w:id="1" w:name="_bk_target"/><w:bookmarkStart w:id="2" w:name="_bk_other"/>` +
+            `<w:p><w:r><w:t>first</w:t></w:r></w:p><w:bookmarkEnd w:id="2"/><w:bookmarkEnd w:id="1"/>` +
+            `<w:bookmarkStart w:id="3" w:name="_bk_target"/><w:p><w:r><w:t>second</w:t></w:r></w:p>` +
+            `<w:bookmarkEnd w:id="3"/>`,
+        ),
+      );
+
+      await then('paragraph 1 reports _bk_other, so _bk_target belongs to paragraph 2', () => {
+        const ps = doc.getElementsByTagNameNS(OOXML.W_NS, 'p');
+        expect(getParagraphBookmarkId(ps.item(0) as Element)).toBe('_bk_other');
+        expect(getParagraphBookmarkId(ps.item(1) as Element)).toBe('_bk_target');
+      });
+
+      const found = await when('the canonical id is used as an anchor', () =>
+        findParagraphByBookmarkId(doc, '_bk_target'),
+      );
+
+      await then('it still resolves to the paragraph that reports it', () => {
+        expect(paragraphText(found as Element)).toBe('second');
+      });
+    },
+  );
 });

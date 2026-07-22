@@ -126,16 +126,84 @@ function isParagraph(el: Element): boolean {
 }
 
 /**
+ * Document-order [enter, exit] span for every node, by pre-order walk.
+ *
+ * Lets us ask whether a bookmark's start..end range intersects a paragraph's
+ * subtree without relying on `compareDocumentPosition` (not dependable across
+ * the DOM implementations this package runs on).
+ */
+function buildDocumentOrderSpans(doc: Document): Map<Node, [number, number]> {
+  const spans = new Map<Node, [number, number]>();
+  let counter = 0;
+  const walk = (node: Node): void => {
+    const enter = counter++;
+    const children = node.childNodes;
+    for (let i = 0; i < children.length; i++) {
+      const child = children.item(i);
+      if (child) walk(child);
+    }
+    spans.set(node, [enter, counter - 1]);
+  };
+  if (doc.documentElement) walk(doc.documentElement);
+  return spans;
+}
+
+/**
+ * Paragraphs covered by the `w:id`-paired bookmark range named `name`.
+ *
+ * ECMA-376 Part 1 §17.13.6.2: a bookmark is a `w:bookmarkStart`/`w:bookmarkEnd`
+ * pair correlated by `w:id` — NOT by adjacency. Pairing by position is what lets
+ * a zero-length "point" bookmark sitting just before a paragraph, or a heading
+ * bookmark spanning several paragraphs, masquerade as that paragraph's anchor.
+ * We resolve the real range and report exactly which paragraphs it intersects.
+ */
+function paragraphsCoveredByBookmarkName(doc: Document, name: string): Element[] {
+  const starts = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart)).filter(
+    (el) => getAttr(el, 'name') === name,
+  );
+  // A well-formed document names a bookmark once. Two starts sharing a name is
+  // ambiguous; refuse to guess which one the caller meant.
+  const start = starts.length === 1 ? starts[0] : undefined;
+  if (!start) return [];
+  const id = getAttr(start, 'id');
+  if (!id) return [];
+
+  const ends = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkEnd)).filter(
+    (el) => getAttr(el, 'id') === id,
+  );
+  const end = ends.length === 1 ? ends[0] : undefined;
+  if (!end) return [];
+
+  const spans = buildDocumentOrderSpans(doc);
+  const startSpan = spans.get(start);
+  const endSpan = spans.get(end);
+  if (!startSpan || !endSpan) return [];
+
+  const covered: Element[] = [];
+  const paragraphs = doc.getElementsByTagNameNS(OOXML.W_NS, W.p);
+  for (let i = 0; i < paragraphs.length; i++) {
+    const p = paragraphs.item(i);
+    if (!p || !isParagraph(p)) continue;
+    const pSpan = spans.get(p);
+    if (!pSpan) continue;
+    // Ranges intersect iff each starts before the other ends.
+    if (startSpan[0] <= pSpan[1] && endSpan[1] >= pSpan[0]) covered.push(p);
+  }
+  return covered;
+}
+
+/**
  * Collect every bookmark name attached to a paragraph, in discovery order.
  *
  * Supports both attachment styles:
  *   1) sibling: `<w:bookmarkStart/> <w:p/> <w:bookmarkEnd/>`
  *   2) inside:  `<w:p><w:bookmarkStart/> ... </w:p>`
  *
- * Paragraphs routinely carry stacked bookmarks — our own `_bk_*`, `edit-*` spans,
- * Word's own `_Toc*`/`_Ref*`, and names owned by an embedding application (e.g.
- * a host that stamps its own stable paragraph ids). Returning all of them lets
- * callers resolve an anchor by any of these names, not just ours.
+ * NOTE: this is a *reporting* helper — it answers "what names sit around/inside
+ * this paragraph", by adjacency. It deliberately does NOT pair start/end by
+ * `w:id`, so it can include a neighbouring point bookmark or one end of a
+ * multi-paragraph range. Do not use it to resolve a caller-supplied anchor;
+ * `findParagraphByBookmarkId` does the id-paired, exactly-one-paragraph check.
  */
 export function getParagraphBookmarkNames(p: Element): string[] {
   const names: string[] = [];
@@ -297,20 +365,38 @@ export function insertSingleParagraphBookmark(doc: Document, p: Element): string
 }
 
 /**
- * Resolve an anchor to its paragraph by ANY bookmark name attached to it.
+ * Resolve a caller-supplied anchor to its paragraph.
  *
- * Anchors are not limited to safe-docx's own `_bk_*` ids. An embedding
- * application that already stamps stable per-paragraph bookmarks (and whose
- * pipeline may not preserve `w14:paraId`) can pass those names directly, instead
- * of having to reconstruct our content-derived ids — a reconstruction that has to
- * fall back to matching paragraph text, which is not a sound identity and can
- * silently target the wrong paragraph. Matching is exact on the bookmark name.
+ * Two strictly separated paths:
+ *
+ * 1. **Canonical `_bk_*`** — unchanged from before foreign anchors existed:
+ *    the first paragraph whose reported id equals `bookmarkId`. A `_bk_*` anchor
+ *    NEVER falls through to the foreign path, so widening cannot move an
+ *    existing lookup (a paragraph can carry several `_bk_*` names; only the
+ *    reported one may resolve it).
+ *
+ * 2. **Foreign name** (a host application's own stable paragraph bookmark, or a
+ *    Word `_Toc*`/`_Ref*`) — accepted ONLY when the `w:id`-paired bookmark range
+ *    covers exactly one paragraph. This rejects a zero-length point bookmark
+ *    adjacent to a paragraph (covers none) and a heading/TOC bookmark spanning
+ *    several (covers many). Both would otherwise resolve to a paragraph the
+ *    bookmark does not actually mark — i.e. edit the wrong clause.
+ *
+ * Anything ambiguous returns null so the caller can fall back rather than guess.
+ * Matching is exact on the bookmark name; see ECMA-376 Part 1 §17.13.6.2 for the
+ * start/end `w:id` pairing rule.
  */
 export function findParagraphByBookmarkId(doc: Document, bookmarkId: string): Element | null {
   const paragraphs = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.p));
+
+  // 1) Canonical path — byte-for-byte the pre-existing behavior.
   for (const p of paragraphs) {
     if (!isParagraph(p)) continue;
-    if (getParagraphBookmarkNames(p).includes(bookmarkId)) return p;
+    if (getParagraphBookmarkId(p) === bookmarkId) return p;
   }
-  return null;
+  if (bookmarkId.startsWith('_bk_')) return null;
+
+  // 2) Foreign path — qualified by the real, id-paired range.
+  const covered = paragraphsCoveredByBookmarkName(doc, bookmarkId);
+  return covered.length === 1 ? (covered[0] ?? null) : null;
 }

@@ -87,7 +87,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .boolean()
         .optional()
         .describe(
-          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
+          'When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph\'s normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT.',
         ),
       include_fingerprint_ordinal: z
         .boolean()
@@ -170,7 +170,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       target_paragraph_id: z
         .string()
         .describe(
-          'Paragraph anchor. Accepts a safe-docx `_bk_*` id, or any other bookmark name attached to the paragraph (e.g. a host application\'s own stable paragraph bookmark). Exact name match.',
+          'Paragraph anchor. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
         ),
       old_string: z.string(),
       new_string: z.string(),
@@ -192,7 +192,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       positional_anchor_node_id: z
         .string()
         .describe(
-          'Anchor paragraph. Accepts a safe-docx `_bk_*` id, or any other bookmark name attached to the paragraph (e.g. a host application\'s own stable paragraph bookmark). Exact name match.',
+          'Anchor paragraph. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused.',
         ),
       new_string: z.string(),
       instruction: z.string(),
@@ -201,7 +201,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .string()
         .optional()
         .describe(
-          'Paragraph _bk_* ID to clone formatting (pPr and template run) from instead of the positional anchor. Falls back to anchor with a warning if not found.',
+          'Paragraph anchor to clone formatting (pPr and template run) from instead of the positional anchor. Accepts a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. Falls back to anchor with a warning if not found.',
         ),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },

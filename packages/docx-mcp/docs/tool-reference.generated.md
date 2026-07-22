@@ -22,7 +22,7 @@ Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k 
 | `format` | `enum("toon", "json", "simple")` | no |  |
 | `comment_rendering` | `enum("none", "paragraph_notes", "endnotes", "inline_markers")` | no | How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. |
 | `show_formatting` | `boolean` | no | When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags. |
-| `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept only `_bk_*` IDs. No effect on TOON/simple output. Ignored for Google Docs and ODT. |
+| `include_fingerprint` | `boolean` | no | When true and format="json", include a portable content_fingerprint ("sha256:nfkc:<32hex>") on each paragraph. Read-only metadata derived from the paragraph's normalized visible text; NOT an edit anchor. Edit tools accept a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. No effect on TOON/simple output. Ignored for Google Docs and ODT. |
 | `include_fingerprint_ordinal` | `boolean` | no | When true together with include_fingerprint and format="json", add duplicate-disambiguation metadata to each paragraph: `content_fingerprint_ordinal` (1-based document-order position among paragraphs sharing the same content_fingerprint), `content_fingerprint_count_in_document` (total paragraphs sharing it, document-wide even under pagination), and `portable_paragraph_ref` ("<content_fingerprint>#<ordinal>"). Read-only disambiguator, NOT an edit anchor; reordering duplicates may change ordinals. No effect without include_fingerprint, and no effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false. |
 | `include_footnotes` | `boolean` | no | When true and format="json", attach a `footnotes` array ({id, display_number, text}) to each paragraph node for the footnotes anchored to it. Windowed to the returned slice (a paginated walk returns each footnote exactly once) and counted toward the read token budget. Footnotes with an empty body or no anchored paragraph are excluded — use get_footnotes for the authoritative full enumeration. No effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false. |
 
@@ -85,7 +85,7 @@ Replace text in a paragraph by provider paragraph id, preserving formatting wher
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
-| `target_paragraph_id` | `string` | yes | Paragraph anchor. Accepts a safe-docx `_bk_*` id, or any other bookmark name attached to the paragraph (e.g. a host application's own stable paragraph bookmark). Exact name match. |
+| `target_paragraph_id` | `string` | yes | Paragraph anchor. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
 | `old_string` | `string` | yes |  |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
@@ -102,11 +102,11 @@ Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DO
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
-| `positional_anchor_node_id` | `string` | yes | Anchor paragraph. Accepts a safe-docx `_bk_*` id, or any other bookmark name attached to the paragraph (e.g. a host application's own stable paragraph bookmark). Exact name match. |
+| `positional_anchor_node_id` | `string` | yes | Anchor paragraph. Accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly this one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. |
 | `new_string` | `string` | yes |  |
 | `instruction` | `string` | yes |  |
 | `position` | `enum("BEFORE", "AFTER")` | no |  |
-| `style_source_id` | `string` | no | Paragraph _bk_* ID to clone formatting (pPr and template run) from instead of the positional anchor. Falls back to anchor with a warning if not found. |
+| `style_source_id` | `string` | no | Paragraph anchor to clone formatting (pPr and template run) from instead of the positional anchor. Accepts a `_bk_*` ID, or (DOCX only) any other bookmark name whose w:id-paired range covers exactly that one paragraph. Falls back to anchor with a warning if not found. |
 
 ## `save`
 
