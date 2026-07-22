@@ -99,7 +99,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .boolean()
         .optional()
         .describe(
-          'When true and format="json", attach a `footnotes` array ({id, display_number, text}) to each paragraph node for the footnotes anchored to it. Windowed to the returned slice (a paginated walk returns each footnote exactly once) and counted toward the read token budget. Footnotes with an empty body or no anchored paragraph are excluded — use get_footnotes for the authoritative full enumeration. No effect on TOON/simple output. Ignored for Google Docs and ODT. Default: false.',
+          'Single-call body + footnotes retrieval. When true and format="json", the response gains a document-wide TOP-LEVEL `footnotes` array — each entry is {id, display_number, ref_paragraph_ids (an ARRAY of the paragraph ids that reference it), paragraphs[] ({text, tagged_text with run-level formatting tags, style})} — preserving multi-paragraph bodies and footnote-internal bold/italic/citation formatting. This top-level array is NOT inlined into content[], so the 1:1 content[] index invariant is preserved. For backward compatibility a lightweight per-node `footnotes` array ({id, display_number, text}) is ALSO attached to each paragraph node it anchors, windowed to the returned slice. When true and format="toon", a trailing `#FOOTNOTES` sidecar block is appended (symmetric with `#COMMENTS`). Footnotes with an empty body or display_number 0 are excluded. No effect on simple output. Ignored for Google Docs and ODT. Default: false.',
         ),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },

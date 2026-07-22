@@ -1043,7 +1043,7 @@ export class DocxDocument {
   }
 
   async getFootnotes(): Promise<Footnote[]> {
-    return getFootnotesImpl(this.zip, this.documentXml);
+    return getFootnotesImpl(this.zip, this.documentXml, this.getStylesModel());
   }
 
   /**
@@ -1091,7 +1091,7 @@ export class DocxDocument {
   }
 
   async getFootnote(noteId: number): Promise<Footnote | null> {
-    return getFootnoteImpl(this.zip, this.documentXml, noteId);
+    return getFootnoteImpl(this.zip, this.documentXml, noteId, this.getStylesModel());
   }
 
   /**
