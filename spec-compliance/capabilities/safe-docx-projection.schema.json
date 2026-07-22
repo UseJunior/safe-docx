@@ -17,33 +17,16 @@
       "enum": ["detect", "preserve", "parse", "validate", "generate", "edit", "compare", "acceptReject", "wordRoundtrip", "crossPlatform"]
     },
     "evidence": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "evidenceClass", "path", "selector", "implementationVersion", "lastVerifiedCommit"],
-          "properties": {
-            "kind": { "const": "local-test" },
-            "evidenceClass": { "enum": ["normative-behavioral-scenario", "behavioral-regression-test", "mutation-test", "real-document-corpus"] },
-            "path": { "type": "string", "pattern": "\\.test\\.ts$" },
-            "selector": { "type": "string", "minLength": 1 },
-            "implementationVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-            "lastVerifiedCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "evidenceClass", "path", "implementationVersion", "lastVerifiedCommit"],
-          "properties": {
-            "kind": { "const": "neutral-result" },
-            "evidenceClass": { "enum": ["normative-behavioral-scenario", "cross-implementation-differential"] },
-            "path": { "const": "spec-compliance/capabilities/upstream/capability-summary.json" },
-            "implementationVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-            "lastVerifiedCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
-          }
-        }
-      ]
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "evidenceClass", "path", "implementationVersion", "lastVerifiedCommit"],
+      "properties": {
+        "kind": { "const": "neutral-result" },
+        "evidenceClass": { "enum": ["normative-behavioral-scenario", "cross-implementation-differential"] },
+        "path": { "const": "spec-compliance/capabilities/upstream/capability-summary.json" },
+        "implementationVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "lastVerifiedCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+      }
     },
     "claim": {
       "type": "object",

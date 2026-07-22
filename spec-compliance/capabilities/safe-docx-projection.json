@@ -27,18 +27,9 @@
     {
       "capabilityId": "word.comments.anchors",
       "axis": "edit",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/primitives/comments.test.ts",
-          "selector": "defaults to full paragraph when start and end are omitted",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover bounded comment-anchor insertion shapes only.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -100,18 +91,9 @@
     {
       "capabilityId": "word.comments.content",
       "axis": "edit",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/primitives/comments.test.ts",
-          "selector": "uses custom initials when provided",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover bounded comment content and author metadata shapes only.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -149,18 +131,9 @@
     {
       "capabilityId": "word.comments.removal",
       "axis": "edit",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/test-primitives/delete_comment.test.ts",
-          "selector": "Scenario: delete root comment with no replies",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover bounded comment deletion shapes only.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -202,18 +175,9 @@
     {
       "capabilityId": "word.footers.default",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-sections-fields.test.ts",
-          "selector": "Scenario: header and footer parts are fully wired",
-          "evidenceClass": "normative-behavioral-scenario",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current generation tests cover the default footer relationship shape only.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -280,18 +244,9 @@
     {
       "capabilityId": "word.headers.default",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-sections-fields.test.ts",
-          "selector": "Scenario: header and footer parts are fully wired",
-          "evidenceClass": "normative-behavioral-scenario",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current generation tests cover bounded default and first-page header relationship shapes only.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -421,18 +376,9 @@
     {
       "capabilityId": "word.numbering.paragraph",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-numbering-recipes.test.ts",
-          "selector": "Scenario: numbering definitions are emitted",
-          "evidenceClass": "normative-behavioral-scenario",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only the authored numbering subset accepted by DocumentSpec.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -496,18 +442,9 @@
     {
       "capabilityId": "word.paragraphs.structure",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-skeleton.test.ts",
-          "selector": "Scenario: a minimal spec compiles to a loadable document",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only the DocumentSpec paragraph-generation subset.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -525,18 +462,9 @@
     {
       "capabilityId": "word.paragraphs.structure",
       "axis": "edit",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-mcp/src/tools/insert_paragraph.branch.test.ts",
-          "selector": "defaults to AFTER when position is omitted",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only bounded paragraph insertion behavior.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -554,18 +482,9 @@
     {
       "capabilityId": "word.paragraphs.structure",
       "axis": "acceptReject",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts",
-          "selector": "exercises ins + del + property-change resolution in one mixed-author document",
-          "evidenceClass": "mutation-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current corpus covers only bounded modeled revision shapes.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -659,18 +578,9 @@
     {
       "capabilityId": "word.revisions.moves",
       "axis": "acceptReject",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts",
-          "selector": "[ADV-MOVE-RESOLUTION-01] resolves move content while removing range markers without claiming pair semantics",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover move content resolution only; move-range pairing semantics remain limited.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -764,18 +674,9 @@
     {
       "capabilityId": "word.revisions.paragraph-properties",
       "axis": "acceptReject",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts",
-          "selector": "[ADV-PROPERTY-RESOLUTION-01] accepts and rejects all six supported property-change record shapes with namespace aliases",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only bounded property snapshot shapes.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -909,18 +810,9 @@
     {
       "capabilityId": "word.runs.formatting",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-styles-formatting.test.ts",
-          "selector": "Scenario: run properties are emitted at most once",
-          "evidenceClass": "normative-behavioral-scenario",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only the DocumentSpec direct-formatting subset.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -938,18 +830,9 @@
     {
       "capabilityId": "word.runs.formatting",
       "axis": "edit",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/primitives/comments.test.ts",
-          "selector": "preserves run formatting (rPr) on both halves of a split",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only bounded run-splitting edits with direct formatting.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -967,18 +850,9 @@
     {
       "capabilityId": "word.runs.formatting",
       "axis": "acceptReject",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts",
-          "selector": "[ADV-PROPERTY-RESOLUTION-01] accepts and rejects all six supported property-change record shapes with namespace aliases",
-          "evidenceClass": "behavioral-regression-test",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only bounded run-property snapshot shapes.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -1017,18 +891,9 @@
     {
       "capabilityId": "word.styles.paragraph",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-styles-formatting.test.ts",
-          "selector": "Scenario: declared styles are emitted into the style table",
-          "evidenceClass": "normative-behavioral-scenario",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only the DocumentSpec paragraph-style subset.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -1092,18 +957,9 @@
     {
       "capabilityId": "word.tables.cells",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-tables.test.ts",
-          "selector": "Scenario: table structural invariants hold",
-          "evidenceClass": "normative-behavioral-scenario",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only the DocumentSpec cell-content subset.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -1161,18 +1017,9 @@
     {
       "capabilityId": "word.tables.horizontal-merge",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-tables.test.ts",
-          "selector": "Scenario: merged cells keep the grid arithmetic consistent",
-          "evidenceClass": "normative-behavioral-scenario",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only bounded gridSpan generation shapes.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
@@ -1310,18 +1157,9 @@
     {
       "capabilityId": "word.tables.structure",
       "axis": "generate",
-      "status": "partial",
-      "evidence": [
-        {
-          "kind": "local-test",
-          "path": "packages/docx-core/src/generation/generation-tables.test.ts",
-          "selector": "Scenario: a fixed-layout table carries its grid",
-          "evidenceClass": "normative-behavioral-scenario",
-          "implementationVersion": "0.16.0",
-          "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
-        }
-      ],
-      "rationale": "Current tests cover only the DocumentSpec table-grid subset.",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
       "implementationVersion": "0.16.0",
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {

@@ -37,17 +37,18 @@ SHALL NOT be promoted to a newer SafeDocX version.
 - **WHEN** the capability projection check runs
 - **THEN** the check SHALL fail before publishing the report
 
-#### Scenario: Local evidence self-attests provenance
+#### Scenario: Unstructured local test is offered as positive evidence
 
-- **GIVEN** a local evidence item names a nonexistent commit, a version other than its package version at that commit, or text that is not an exact test title
+- **GIVEN** a local test entry names an exact test title but has no structured capability-and-axis metadata
 - **WHEN** the capability projection check runs
-- **THEN** the check SHALL fail before publishing the report
+- **THEN** the check SHALL fail because local tests cannot establish a positive row in this projection
 
 ### Requirement: Positive claims require executable evidence
 
-Every `supported`, `partial`, or `preservation-only` status SHALL reference an
-exact existing executable evidence path. Citations, source paths, and prose-only
-manifests SHALL NOT independently establish a positive status.
+Every `supported`, `partial`, or `preservation-only` status SHALL reference a
+pinned neutral scenario result with exact implementation provenance. Local
+tests without structured capability-and-axis metadata, citations, source paths,
+and prose-only manifests SHALL NOT independently establish a positive status.
 
 #### Scenario: Positive claim has only a citation
 
@@ -63,18 +64,29 @@ manifests SHALL NOT independently establish a positive status.
 
 ### Requirement: Pinned result rows are complete and internally consistent
 
-Every pinned summary row SHALL be unique, SHALL contain each applicable
-measured mapped scenario exactly once, and SHALL contain only known scenario
-identifiers. Every adapter outcome SHALL use nonnegative integer counts that
-sum to the row denominator. A positive neutral SafeDocX result SHALL cover and
-pass every row scenario; a cross-platform result SHALL also require a second
-adapter that covers and passes every row scenario.
+The measured scenario inventory SHALL equal every mapped scenario ID minus the
+declared unmeasured scenario IDs and SHALL exactly equal the source result
+scenario count. For every authored capability/axis pair with measured
+scenarios, the pinned summary SHALL contain exactly one row with exactly that
+mapped measured set. For every capability with measured scenarios, it SHALL
+contain exactly one cross-platform row with the exact union of that
+capability's measured mapped scenarios. Missing, extra, and duplicate rows
+SHALL be rejected. Every adapter outcome SHALL use nonnegative integer counts
+that sum to the row denominator. A positive neutral SafeDocX result SHALL cover
+and pass every row scenario; a cross-platform result SHALL also require a
+second adapter that covers and passes every row scenario.
 
 #### Scenario: Sparse adapter outcome is presented as complete
 
 - **GIVEN** a pinned row omits a mapped measured scenario or an adapter outcome uses a smaller denominator or inconsistent count sum
 - **WHEN** the capability projection check runs
 - **THEN** the check SHALL fail before the row can establish a claim
+
+#### Scenario: Measured rows are deleted while claims are downgraded
+
+- **GIVEN** measured authored and cross-platform rows are removed while their projection claims are downgraded
+- **WHEN** the capability projection check runs
+- **THEN** the check SHALL fail because the measured row map is incomplete
 
 ### Requirement: Deterministic capability reports
 

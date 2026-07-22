@@ -51,16 +51,18 @@ land as siblings of `registry/ecma-376.md` without restructuring this tree.
   reconcile every profile capability/axis pair in
   `capabilities/safe-docx-projection.json`, then run
   `npm run generate:capability-projection`. CI is offline and rejects pin,
-  denominator, evidence-path, or generated-report drift. A positive row means
-  only that its listed executable evidence passed within the stated scope; it
-  is not a general DOCX or ECMA-376 conformance claim.
+  denominator, measured-row inventory, evidence-path, or generated-report
+  drift. A positive row means only that its listed pinned neutral scenario
+  results passed within the stated scope; it is not a general DOCX or ECMA-376
+  conformance claim.
 
-Local evidence is read from the exact claimed Git commit, including the owning
-workspace package version, and selectors must be exact string-literal titles on
-recognized `test` or `it` calls. The Lean XML checker coverage registry is
-reported separately as scope metadata: it covers in-place main, footnote, and
-endnote text and field-marker projections with the registry's exact exclusions,
-but it does not establish any capability row without a pinned executable result.
+Local tests without structured capability-and-axis metadata cannot establish a
+positive row in this initial projection, even when an exact test title exists.
+Existing ECMA-376 and test registries remain authoritative outside this
+projection. The Lean XML checker coverage registry is reported separately as
+scope metadata: it covers in-place main, footnote, and endnote text and
+field-marker projections with the registry's exact exclusions, but it does not
+establish any capability row without a pinned executable result.
 
 The generated report names two different inventories. The profile denominator
 is the intersection of every profile axis with every capability's applicable
@@ -68,7 +70,10 @@ axes, including explicit gaps and untested rows. The evidence inventory starts
 with authored scenario mappings and adds derived cross-platform rows when a
 complete result run can support them. The pinned result snapshot may measure
 fewer rows still. These counts answer different questions and must not be used
-as interchangeable coverage percentages.
+as interchangeable coverage percentages. For its measured scenario inventory,
+the pinned snapshot must contain exactly one authored capability/axis row and
+one derived cross-platform union row for each capability with measured
+scenarios; missing, extra, or duplicate rows are rejected.
 
 See [`AGENTS.md`](./AGENTS.md) for the full citation rules and the
 [issue #227 problem statement](https://github.com/UseJunior/safe-docx/issues/227)

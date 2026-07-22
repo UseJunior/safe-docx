@@ -12,8 +12,9 @@ rewriting the neutral capability definitions.
 - Vendor the exact neutral capability, profile, and scenario-mapping inputs at
   a reviewed upstream commit, with version and content-hash provenance.
 - Add a SafeDocX-owned per-capability/per-axis status and evidence manifest.
-- Validate the upstream denominator, local evidence paths, status vocabulary,
-  and formal-verification claim boundaries.
+- Validate the upstream denominator, exact measured-row inventory, pinned
+  neutral-result evidence, status vocabulary, and formal-verification claim
+  boundaries.
 - Generate deterministic machine-readable and human-readable reports and wire
   their drift check into repository preflight.
 

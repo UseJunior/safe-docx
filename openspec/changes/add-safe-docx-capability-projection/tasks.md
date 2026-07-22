@@ -18,8 +18,10 @@
 
 ## 4. Independent-review repairs
 
-- [x] 4.1 Bind local and neutral evidence to uniquely resolved repository commits and package versions.
-- [x] 4.2 Require exact AST-recognized test titles and conservative evidence classes and scopes.
+- [x] 4.1 Bind neutral evidence to uniquely resolved repository commits and package versions.
+- [x] 4.2 Require conservative evidence classes and scopes while excluding unstructured local tests.
 - [x] 4.3 Enforce complete mapped scenario sets and count-conserving adapter outcomes.
 - [x] 4.4 Remove manifest-only Lean claims and report the exact non-claim formal boundary.
 - [x] 4.5 Add mutation coverage, deepen only the capability-check CI checkout, regenerate reports, and rerun all gates.
+- [x] 4.6 Downgrade unstructured local-test rows to untested and remove the local evidence kind.
+- [x] 4.7 Require the exact measured authored and cross-platform summary row map, including deletion probes.

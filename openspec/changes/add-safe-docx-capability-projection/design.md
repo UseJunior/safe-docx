@@ -1,10 +1,10 @@
 ## Context
 
 `open-agreements/docx-platform-tests` owns neutral capability definitions,
-applicable axes, profiles, and scenario mappings. SafeDocX owns product support
-claims and local evidence. CI must remain reproducible without network access,
-and existing conformance and Lean registries remain authoritative rather than
-being copied into a new truth source.
+applicable axes, profiles, scenario mappings, and measured scenario results.
+SafeDocX owns product support claims. CI must remain reproducible without
+network access, and existing conformance, test, and Lean registries remain
+authoritative rather than being copied into a new truth source.
 
 ## Goals / Non-Goals
 
@@ -25,10 +25,14 @@ being copied into a new truth source.
 - Use statuses `supported`, `partial`, `preservation-only`, `gap`, `non-goal`,
   and `untested`. The first three are positive and require exact executable
   evidence. `preservation-only` is valid only for the `preserve` axis.
-- Resolve local evidence commits through Git, read test and package metadata
-  from those commit objects, and recognize only exact string-literal test
-  titles. A local normative evidence class additionally requires structured
-  conformance metadata on that test call.
+- Permit positive rows only from pinned neutral scenario results in this
+  initial projection. Local tests without structured capability-and-axis
+  metadata cannot establish a positive row, even when an exact test title
+  exists; existing test and ECMA registries remain authoritative elsewhere.
+- Derive the exact measured summary row map from all mapped scenario IDs minus
+  the declared unmeasured IDs. Require one exact authored capability/axis row
+  for every measured mapping set and one exact cross-platform union row for
+  every capability with measured scenarios.
 - Treat claim package parts as a nonempty subset of the neutral capability
   parts, with stories derived from the claimed subset. This keeps each row no
   broader than the executable evidence it cites.

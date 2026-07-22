@@ -63,6 +63,7 @@ test('a Lean scope manifest cannot establish a positive claim', async () => {
   const claim = value.projection.claims.find(
     (candidate) => candidate.capabilityId === 'word.comments.anchors' && candidate.axis === 'edit'
   );
+  claim.status = 'supported';
   claim.evidence = [{
     kind: 'lean-checker',
     path: 'verification/registry/lean-xml-checker-coverage.json',
@@ -70,7 +71,7 @@ test('a Lean scope manifest cannot establish a positive claim', async () => {
     implementationVersion: claim.implementationVersion,
     lastVerifiedCommit: claim.lastVerifiedCommit,
   }];
-  await assert.rejects(() => validateProjection(value, root), /no executable evidence/);
+  await assert.rejects(() => validateProjection(value, root), /unsupported positive evidence kind lean-checker/);
 });
 
 test('an unmeasured neutral result cannot establish a positive claim', async () => {
@@ -119,20 +120,38 @@ test('a positive claim cannot advance beyond all of its evidence provenance', as
   await assert.rejects(() => validateProjection(value, root), /positive claim lacks evidence matching its version/);
 });
 
-test('a nonexistent local evidence commit is rejected', async () => {
+test('an unrelated exact local test title cannot establish a positive row', async () => {
   const value = await inputs();
-  const claim = value.projection.claims.find((candidate) => candidate.evidence.some((evidence) => evidence.kind === 'local-test'));
-  claim.lastVerifiedCommit = '0000000000000000000000000000000000000000';
-  claim.evidence[0].lastVerifiedCommit = claim.lastVerifiedCommit;
-  await assert.rejects(() => validateProjection(value, root), /local evidence commit does not exist/);
+  const claim = value.projection.claims.find(
+    (candidate) => candidate.capabilityId === 'word.comments.anchors' && candidate.axis === 'edit'
+  );
+  claim.status = 'partial';
+  claim.evidence = [{
+    kind: 'local-test',
+    path: 'packages/docx-core/src/primitives/comments.test.ts',
+    selector: 'uses custom initials when provided',
+    evidenceClass: 'behavioral-regression-test',
+    implementationVersion: claim.implementationVersion,
+    lastVerifiedCommit: claim.lastVerifiedCommit,
+  }];
+  await assert.rejects(() => validateProjection(value, root), /unsupported positive evidence kind local-test/);
 });
 
-test('a fabricated local implementation version is rejected against package metadata at the commit', async () => {
+test('a related exact local test title still cannot establish a positive row', async () => {
   const value = await inputs();
-  const claim = value.projection.claims.find((candidate) => candidate.evidence.some((evidence) => evidence.kind === 'local-test'));
-  claim.implementationVersion = '9.9.9';
-  claim.evidence[0].implementationVersion = claim.implementationVersion;
-  await assert.rejects(() => validateProjection(value, root), /local evidence version disagrees with package version at claimed commit/);
+  const claim = value.projection.claims.find(
+    (candidate) => candidate.capabilityId === 'word.comments.anchors' && candidate.axis === 'edit'
+  );
+  claim.status = 'partial';
+  claim.evidence = [{
+    kind: 'local-test',
+    path: 'packages/docx-core/src/primitives/comments.test.ts',
+    selector: 'defaults to full paragraph when start and end are omitted',
+    evidenceClass: 'behavioral-regression-test',
+    implementationVersion: claim.implementationVersion,
+    lastVerifiedCommit: claim.lastVerifiedCommit,
+  }];
+  await assert.rejects(() => validateProjection(value, root), /unsupported positive evidence kind local-test/);
 });
 
 test('a fabricated full neutral SHA sharing the adapter prefix is rejected', async () => {
@@ -142,34 +161,32 @@ test('a fabricated full neutral SHA sharing the adapter prefix is rejected', asy
   await assert.rejects(() => validateProjection(value, root), /neutral evidence commit disagrees with resolved result commit/);
 });
 
-test('a generic source substring is not accepted as a test selector', async () => {
+test('an arbitrary evidence kind cannot establish a positive row', async () => {
   const value = await inputs();
-  const claim = value.projection.claims.find((candidate) => candidate.evidence.some((evidence) => evidence.kind === 'local-test'));
-  claim.evidence[0].selector = 'word/document.xml';
-  await assert.rejects(() => validateProjection(value, root), /exact test title not found at claimed commit/);
+  const claim = value.projection.claims.find((candidate) => candidate.status === 'supported');
+  claim.evidence[0].kind = 'citation';
+  await assert.rejects(() => validateProjection(value, root), /unsupported positive evidence kind citation/);
 });
 
-test('an absent local test selector is rejected', async () => {
+test('neutral evidence must point to the pinned summary', async () => {
   const value = await inputs();
-  const claim = value.projection.claims.find((candidate) => candidate.evidence.some((evidence) => evidence.kind === 'local-test'));
-  claim.evidence[0].selector = 'this test title does not exist';
-  await assert.rejects(() => validateProjection(value, root), /exact test title not found at claimed commit/);
+  const claim = value.projection.claims.find((candidate) => candidate.status === 'supported');
+  claim.evidence[0].path = 'packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts';
+  await assert.rejects(() => validateProjection(value, root), /neutral evidence must reference the pinned summary/);
 });
 
-test('a local evidence path cannot escape the repository', async () => {
+test('a neutral evidence path cannot escape the repository', async () => {
   const value = await inputs();
-  const claim = value.projection.claims.find((candidate) => candidate.evidence.some((evidence) => evidence.kind === 'local-test'));
+  const claim = value.projection.claims.find((candidate) => candidate.status === 'supported');
   claim.evidence[0].path = '../outside.test.ts';
   await assert.rejects(() => validateProjection(value, root), /evidence path escapes repository/);
 });
 
-test('untagged local tests cannot self-classify as normative evidence', async () => {
+test('a non-positive row cannot retain local test evidence', async () => {
   const value = await inputs();
-  const claim = value.projection.claims.find((candidate) => candidate.evidence.some(
-    (evidence) => evidence.kind === 'local-test' && evidence.evidenceClass === 'behavioral-regression-test'
-  ));
-  claim.evidence[0].evidenceClass = 'normative-behavioral-scenario';
-  await assert.rejects(() => validateProjection(value, root), /normative evidence lacks structured conformance metadata/);
+  const claim = value.projection.claims.find((candidate) => candidate.status === 'untested');
+  claim.evidence = [{ kind: 'local-test' }];
+  await assert.rejects(() => validateProjection(value, root), /non-positive status must not carry evidence/);
 });
 
 test('a sparse second-adapter outcome is rejected', async () => {
@@ -211,6 +228,38 @@ test('summary rows must contain the exact mapped measured scenario set', async (
   const value = await inputs();
   value.summary.capabilities[0].scenarioIds.pop();
   await assert.rejects(() => validateProjection(value, root), /result scenarios do not exactly match mapped measured scenarios/);
+});
+
+test('a measured authored summary row cannot be deleted', async () => {
+  const value = await inputs();
+  value.summary.capabilities = value.summary.capabilities.filter(
+    (row) => !(row.capabilityId === 'word.text.find-replace' && row.axis === 'edit')
+  );
+  await assert.rejects(() => validateProjection(value, root), /summary is missing measured rows: word\.text\.find-replace\/edit/);
+});
+
+test('a measured cross-platform summary row cannot be deleted', async () => {
+  const value = await inputs();
+  value.summary.capabilities = value.summary.capabilities.filter(
+    (row) => !(row.capabilityId === 'word.text.find-replace' && row.axis === 'crossPlatform')
+  );
+  await assert.rejects(() => validateProjection(value, root), /summary is missing measured rows: word\.text\.find-replace\/crossPlatform/);
+});
+
+test('downgrading claims cannot conceal deleted measured find-replace rows', async () => {
+  const value = await inputs();
+  value.summary.capabilities = value.summary.capabilities.filter(
+    (row) => row.capabilityId !== 'word.text.find-replace'
+  );
+  for (const claim of value.projection.claims.filter((candidate) => candidate.capabilityId === 'word.text.find-replace')) {
+    claim.status = 'untested';
+    claim.evidence = [];
+    claim.rationale = 'Mutation probe.';
+  }
+  await assert.rejects(
+    () => validateProjection(value, root),
+    /summary is missing measured rows: word\.text\.find-replace\/edit, word\.text\.find-replace\/crossPlatform/
+  );
 });
 
 test('duplicate projection pairs are rejected', async () => {

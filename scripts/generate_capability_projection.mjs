@@ -6,7 +6,6 @@ import process from 'node:process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
-import ts from 'typescript';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const checkOnly = process.argv.includes('--check');
@@ -123,6 +122,17 @@ function validateSummary(capabilityById, mappings, summary) {
   const measured = new Set([...knownScenarioIds].filter((scenarioId) => !unmeasured.has(scenarioId)));
   assert(summary.sourceResults.scenarioCount === measured.size, 'summary scenarioCount disagrees with measured scenario inventory');
 
+  const expectedRows = new Map();
+  for (const mapping of mappings.mappings) {
+    if (!measured.has(mapping.scenarioId)) continue;
+    const authoredKey = pairKey(mapping.capabilityId, mapping.axis);
+    if (!expectedRows.has(authoredKey)) expectedRows.set(authoredKey, new Set());
+    expectedRows.get(authoredKey).add(mapping.scenarioId);
+    const crossPlatformKey = pairKey(mapping.capabilityId, 'crossPlatform');
+    if (!expectedRows.has(crossPlatformKey)) expectedRows.set(crossPlatformKey, new Set());
+    expectedRows.get(crossPlatformKey).add(mapping.scenarioId);
+  }
+
   const implementationNames = summary.sourceResults.implementations.map((item) => item.adapterName);
   assert(new Set(implementationNames).size === implementationNames.length, 'summary contains duplicate implementation adapters');
   const knownImplementations = new Set(implementationNames);
@@ -135,18 +145,15 @@ function validateSummary(capabilityById, mappings, summary) {
     assert(!rowKeys.has(key), `duplicate summary row ${row.capabilityId}/${row.axis}`);
     rowKeys.add(key);
 
+    const expectedScenarioIds = expectedRows.get(key);
+    assert(expectedScenarioIds, `unexpected summary row ${row.capabilityId}/${row.axis}`);
+
     const scenarioIds = new Set(row.scenarioIds);
     assert(scenarioIds.size === row.scenarioIds.length, `${row.capabilityId}/${row.axis}: duplicate result scenario ID`);
     for (const scenarioId of scenarioIds) {
       assert(knownScenarioIds.has(scenarioId), `${row.capabilityId}/${row.axis}: unknown result scenario ${scenarioId}`);
       assert(measured.has(scenarioId), `${row.capabilityId}/${row.axis}: result includes unmeasured scenario ${scenarioId}`);
     }
-    const expectedScenarioIds = new Set(mappings.mappings
-      .filter((mapping) => mapping.capabilityId === row.capabilityId
-        && (row.axis === 'crossPlatform' || mapping.axis === row.axis)
-        && measured.has(mapping.scenarioId))
-      .map((mapping) => mapping.scenarioId));
-    assert(expectedScenarioIds.size > 0, `${row.capabilityId}/${row.axis}: summary row has no mapped measured scenarios`);
     assert(setsEqual(scenarioIds, expectedScenarioIds), `${row.capabilityId}/${row.axis}: result scenarios do not exactly match mapped measured scenarios`);
 
     for (const [adapterName, outcome] of Object.entries(row.outcomes)) {
@@ -160,6 +167,10 @@ function validateSummary(capabilityById, mappings, summary) {
       assert(outcome.passLike <= outcome.denominator, `${row.capabilityId}/${row.axis}/${adapterName}: passLike exceeds denominator`);
     }
   }
+  const missingRows = [...expectedRows.keys()]
+    .filter((key) => !rowKeys.has(key))
+    .map((key) => key.replace('\u0000', '/'));
+  assert(missingRows.length === 0, `summary is missing measured rows: ${missingRows.join(', ')}`);
 }
 
 async function git(repositoryRoot, args, label) {
@@ -179,75 +190,6 @@ async function resolveCommit(repositoryRoot, revision, label) {
 
 async function readAtCommit(repositoryRoot, commit, relativePath, label) {
   return git(repositoryRoot, ['show', `${commit}:${relativePath}`], label);
-}
-
-function packageManifestPath(testPath) {
-  const match = /^packages\/([^/]+)\//.exec(testPath);
-  assert(match, `local evidence must belong to a workspace package: ${testPath}`);
-  return `packages/${match[1]}/package.json`;
-}
-
-function rootCallIdentifier(expression) {
-  if (ts.isIdentifier(expression)) return expression.text;
-  if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) return rootCallIdentifier(expression.expression);
-  if (ts.isCallExpression(expression)) return rootCallIdentifier(expression.expression);
-  return undefined;
-}
-
-function callChainHasProperty(expression, propertyName) {
-  if (ts.isPropertyAccessExpression(expression)) {
-    return expression.name.text === propertyName || callChainHasProperty(expression.expression, propertyName);
-  }
-  if (ts.isElementAccessExpression(expression) || ts.isCallExpression(expression)) return callChainHasProperty(expression.expression, propertyName);
-  return false;
-}
-
-export function findTestTitle(source, fileName, selector) {
-  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  let match;
-  function visit(node) {
-    if (ts.isCallExpression(node)
-      && (rootCallIdentifier(node.expression) === 'test' || rootCallIdentifier(node.expression) === 'it')
-      && node.arguments.length > 0
-      && ts.isStringLiteral(node.arguments[0])
-      && node.arguments[0].text === selector) {
-      match = { hasConformanceMetadata: callChainHasProperty(node.expression, 'conformance') };
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(sourceFile);
-  return match;
-}
-
-async function validateLocalEvidence(claim, evidence, repositoryRoot) {
-  const fullCommit = await resolveCommit(
-    repositoryRoot,
-    evidence.lastVerifiedCommit,
-    `${claim.capabilityId}/${claim.axis}: local evidence commit does not exist`
-  );
-  assert(fullCommit === evidence.lastVerifiedCommit, `${claim.capabilityId}/${claim.axis}: local evidence commit must be full and exact`);
-  const source = await readAtCommit(
-    repositoryRoot,
-    fullCommit,
-    evidence.path,
-    `${claim.capabilityId}/${claim.axis}: test path is absent at claimed commit: ${evidence.path}`
-  );
-  const manifestPath = packageManifestPath(evidence.path);
-  const manifestSource = await readAtCommit(
-    repositoryRoot,
-    fullCommit,
-    manifestPath,
-    `${claim.capabilityId}/${claim.axis}: package manifest is absent at claimed commit: ${manifestPath}`
-  );
-  const packageVersion = JSON.parse(manifestSource).version;
-  assert(evidence.implementationVersion === packageVersion, `${claim.capabilityId}/${claim.axis}: local evidence version disagrees with package version at claimed commit`);
-  assert(evidence.implementationVersion === claim.implementationVersion, `${claim.capabilityId}/${claim.axis}: local evidence version disagrees with claim`);
-  assert(evidence.lastVerifiedCommit === claim.lastVerifiedCommit, `${claim.capabilityId}/${claim.axis}: local evidence commit disagrees with claim`);
-  const testTitle = findTestTitle(source, evidence.path, evidence.selector);
-  assert(testTitle, `${claim.capabilityId}/${claim.axis}: exact test title not found at claimed commit: ${evidence.selector}`);
-  if (evidence.evidenceClass === 'normative-behavioral-scenario') {
-    assert(testTitle.hasConformanceMetadata, `${claim.capabilityId}/${claim.axis}: normative evidence lacks structured conformance metadata`);
-  }
 }
 
 function validateNeutralResult(claim, summary) {
@@ -277,29 +219,26 @@ async function validateEvidence(claim, summary, repositoryRoot) {
   assert(claim.evidence.length > 0, `${claim.capabilityId}/${claim.axis}: positive status requires executable evidence`);
   let executable = false;
   for (const evidence of claim.evidence) {
+    assert(evidence.kind === 'neutral-result', `${claim.capabilityId}/${claim.axis}: unsupported positive evidence kind ${evidence.kind}`);
     const absolute = path.resolve(repositoryRoot, evidence.path);
     assert(
       absolute.startsWith(`${path.resolve(repositoryRoot)}${path.sep}`),
       `${claim.capabilityId}/${claim.axis}: evidence path escapes repository`
     );
+    assert(evidence.path === paths.summary, `${claim.capabilityId}/${claim.axis}: neutral evidence must reference the pinned summary`);
     await access(absolute);
-    if (evidence.kind === 'local-test') {
-      await validateLocalEvidence(claim, evidence, repositoryRoot);
-      executable = true;
-    } else if (evidence.kind === 'neutral-result') {
-      const adapterVersion = summary.sourceResults.implementations.find((item) => item.adapterName === 'safe-docx')?.adapterVersion;
-      const match = /^(\d+\.\d+\.\d+)\+git\.([a-f0-9]{7,40})$/.exec(adapterVersion ?? '');
-      assert(match, `${claim.capabilityId}/${claim.axis}: pinned neutral result lacks SafeDocX version provenance`);
-      const fullCommit = await resolveCommit(repositoryRoot, match[2], `${claim.capabilityId}/${claim.axis}: pinned neutral SafeDocX commit does not resolve uniquely`);
-      assert(evidence.implementationVersion === match[1], `${claim.capabilityId}/${claim.axis}: neutral evidence version disagrees with result`);
-      assert(evidence.lastVerifiedCommit === fullCommit, `${claim.capabilityId}/${claim.axis}: neutral evidence commit disagrees with resolved result commit`);
-      const packageSource = await readAtCommit(repositoryRoot, fullCommit, 'packages/docx-core/package.json', `${claim.capabilityId}/${claim.axis}: neutral adapter package is absent at resolved commit`);
-      assert(JSON.parse(packageSource).version === match[1], `${claim.capabilityId}/${claim.axis}: neutral adapter version disagrees with package version at resolved commit`);
-      const expectedClass = claim.axis === 'crossPlatform' ? 'cross-implementation-differential' : 'normative-behavioral-scenario';
-      assert(evidence.evidenceClass === expectedClass, `${claim.capabilityId}/${claim.axis}: neutral evidence class must be ${expectedClass}`);
-      validateNeutralResult(claim, summary);
-      executable = true;
-    }
+    const adapterVersion = summary.sourceResults.implementations.find((item) => item.adapterName === 'safe-docx')?.adapterVersion;
+    const match = /^(\d+\.\d+\.\d+)\+git\.([a-f0-9]{7,40})$/.exec(adapterVersion ?? '');
+    assert(match, `${claim.capabilityId}/${claim.axis}: pinned neutral result lacks SafeDocX version provenance`);
+    const fullCommit = await resolveCommit(repositoryRoot, match[2], `${claim.capabilityId}/${claim.axis}: pinned neutral SafeDocX commit does not resolve uniquely`);
+    assert(evidence.implementationVersion === match[1], `${claim.capabilityId}/${claim.axis}: neutral evidence version disagrees with result`);
+    assert(evidence.lastVerifiedCommit === fullCommit, `${claim.capabilityId}/${claim.axis}: neutral evidence commit disagrees with resolved result commit`);
+    const packageSource = await readAtCommit(repositoryRoot, fullCommit, 'packages/docx-core/package.json', `${claim.capabilityId}/${claim.axis}: neutral adapter package is absent at resolved commit`);
+    assert(JSON.parse(packageSource).version === match[1], `${claim.capabilityId}/${claim.axis}: neutral adapter version disagrees with package version at resolved commit`);
+    const expectedClass = claim.axis === 'crossPlatform' ? 'cross-implementation-differential' : 'normative-behavioral-scenario';
+    assert(evidence.evidenceClass === expectedClass, `${claim.capabilityId}/${claim.axis}: neutral evidence class must be ${expectedClass}`);
+    validateNeutralResult(claim, summary);
+    executable = true;
   }
   assert(executable, `${claim.capabilityId}/${claim.axis}: no executable evidence`);
   assert(
