@@ -23,6 +23,7 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Bridge case provides a falsifiability layer for the new axiom | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Bridge file self-description stays accurate | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Building footnote mapping | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Compiled checker certifies structurally valid move ranges | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Continuation pattern inherits formatting | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Creating atom with revision detection | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Creating atom without revision context | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -43,11 +44,13 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Get format change revisions | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Hash calculation for content identity | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Identical text returns 1.0 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Inplace emission produces one range pair per logical move | covered | `packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts` |  |
 | Inplace reconstruction reports the pass that produced the output | covered | `packages/docx-core/src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
 | Move destination markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Move detected between similar blocks | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Move detection disabled | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Move source markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Move-range mutations fail independently of text checks | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Multiple properties changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | No common words returns 0.0 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | No format change | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |

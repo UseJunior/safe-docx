@@ -1,6 +1,6 @@
 {
   "checker": "safe-docx-lean-fixed-story-checker",
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "scope": {
     "inputs": [
       {
@@ -25,9 +25,9 @@
     },
     "documentSurfaces": {
       "covered": [
-        "word/document.xml text and field-marker token stream (required)",
-        "word/footnotes.xml user-note text and field-marker token stream (optional; absent sides modeled as empty when any side is present)",
-        "word/endnotes.xml user-note text and field-marker token stream (optional; absent sides modeled as empty when any side is present)"
+        "word/document.xml text, field-marker, and tracked-move-range token stream (required)",
+        "word/footnotes.xml user-note text, field-marker, and tracked-move-range token stream (optional; absent sides modeled as empty when any side is present)",
+        "word/endnotes.xml user-note text, field-marker, and tracked-move-range token stream (optional; absent sides modeled as empty when any side is present)"
       ],
       "outOfScope": [
         "word/comments.xml and all comment anchors, reference IDs, relationships, extension parts, and thread semantics",
@@ -47,6 +47,10 @@
       "w:del",
       "w:moveFrom",
       "w:moveTo",
+      "w:moveFromRangeStart",
+      "w:moveFromRangeEnd",
+      "w:moveToRangeStart",
+      "w:moveToRangeEnd",
       "w:fldChar",
       "w:t",
       "w:delText",
@@ -57,19 +61,41 @@
     ],
     "attributes": [
       "w:fldCharType",
+      "w:id",
+      "w:name",
       "w:type"
     ],
     "attributeValues": {
       "w:fldCharType": ["begin", "separate", "end"],
       "w:type": ["separator", "continuationSeparator"]
     },
-    "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"]
+    "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"],
+    "numericCharacterReferencesDecoded": ["decimal", "hexadecimal"],
+    "attributeParserPolicy": [
+      "requires XML whitespace between attributes",
+      "rejects duplicate exact and namespace-expanded attribute names",
+      "rejects malformed attribute transitions and character references",
+      "rejects literal and referenced characters outside the XML 1.0 character range",
+      "requires syntactically valid element and attribute QNames before namespace expansion",
+      "rejects empty prefixed namespace bindings and illegal xml or xmlns namespace rebinding",
+      "rejects duplicate ordinary attributes by expanded namespace URI and local name across every namespace; unprefixed attributes remain in no namespace",
+      "validates and decodes character data references in every element namespace before semantic token filtering",
+      "normalizes literal attribute CRLF, CR, LF, and tab to spaces before reference resolution, while numeric character references retain their referenced XML whitespace character"
+    ],
+    "acceptedXmlSubset": [
+      "package-part bytes must decode as UTF-8; one leading UTF-8 BOM is accepted and stripped",
+      "an optional leading XML 1.0 declaration with absent encoding or case-insensitive UTF-8 encoding and an optional standalone declaration",
+      "exactly one namespace-qualified root with matched element boundaries",
+      "XML whitespace only before and after the root",
+      "comments, processing instructions, DTDs, and CDATA are rejected rather than ignored"
+    ]
   },
   "checkedProperties": [
     "For every supplied fixed story, accepting all tracked changes in the compared story yields the same normalized text as the revised story.",
     "For every supplied fixed story, rejecting all tracked changes in the compared story yields the same normalized text as the original story.",
     "For every supplied fixed story, accept and reject projections retain structurally valid Word field markers.",
     "For every supplied fixed story, the compared story has no Word field markers inside deletion markup.",
+    "For every supplied fixed story, tracked move ranges use the ECMA schema's ST_DecimalNumber IDs canonicalized to unique integer identities, have balanced non-crossing same-direction endpoints, occur once per source/destination move name, and pair source and destination identities by name. As a stronger SafeDocX verifier policy beyond ECMA ST_String, move names must be non-empty.",
     "The main story is required; when any optional note story is present, absent sides are checked as empty stories.",
     "Reserved note entries are selected by namespace-qualified w:type separator or continuationSeparator, independent of numeric ID, and excluded by an idempotent Lean projection.",
     "Element and attribute prefixes are resolved to namespace URIs, and each fixed part must have its expected WordprocessingML expanded-name root.",
@@ -90,6 +116,26 @@
       "registryId": "ECMA-PART1-17-16-13",
       "section": "Part 1 §17.16.13",
       "claim": "The checker requires deleted field-code text to stay under deletion markup. Field-marker sequencing and placement are traced separately to Part 1 §17.16.18."
+    },
+    {
+      "registryId": "ECMA-PART1-17-13-5-23",
+      "section": "Part 1 §17.13.5.23",
+      "claim": "Move-source range ends must close the currently open source range with the same unique ID."
+    },
+    {
+      "registryId": "ECMA-PART1-17-13-5-24",
+      "section": "Part 1 §17.13.5.24",
+      "claim": "Move-source range starts carry the schema-required ST_DecimalNumber ID and ST_String name. The checker additionally requires unique IDs and non-empty names as SafeDocX verifier policy."
+    },
+    {
+      "registryId": "ECMA-PART1-17-13-5-27",
+      "section": "Part 1 §17.13.5.27",
+      "claim": "Move-destination range ends must close the currently open destination range with the same unique ID."
+    },
+    {
+      "registryId": "ECMA-PART1-17-13-5-28",
+      "section": "Part 1 §17.13.5.28",
+      "claim": "Move-destination range starts carry the schema-required ST_DecimalNumber ID and ST_String name. The checker additionally requires unique IDs, non-empty names, and one-to-one source-name pairing as SafeDocX verifier policy."
     }
   ],
   "knownUncheckedAreas": [
@@ -103,8 +149,8 @@
     "package-level OPC constraints",
     "field instruction parsing, evaluation, and cached-result correctness, including PAGE and NUMPAGES semantics",
     "OOXML extension and compatibility markup",
-    "advanced revision-record semantics, including property snapshots, move-range pairing, numbering/table/style revisions, custom XML revisions, conflict records, and annotation interactions",
-    "general-purpose XML canonicalization, DTDs, and CDATA beyond the checked WordprocessingML token surface"
+    "advanced revision-record semantics other than the checked move-range pairing subset, including property snapshots, numbering/table/style revisions, custom XML revisions, conflict records, and annotation interactions",
+    "general-purpose XML canonicalization beyond the checked WordprocessingML token surface; comments, processing instructions, DTDs, and CDATA are rejected by the accepted XML subset"
   ],
   "futureObligationQueue": []
 }

@@ -37,6 +37,7 @@ export * from './locator.js';
 export { buildTableMetaMap, deriveTableContext, type TableMeta } from './table_context.js';
 export {
   getParagraphBookmarkId,
+  getParagraphBookmarkNames,
   findParagraphByBookmarkId,
   cleanupInternalBookmarks,
   insertParagraphBookmarks,

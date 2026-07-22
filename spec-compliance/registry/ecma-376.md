@@ -457,6 +457,39 @@ Footer parts mirror header parts as `w:ftr` documents (word/footerN.xml);
 "Page X of Y" footers carry complete five-part PAGE/NUMPAGES fields with
 cached results.
 
+## [ECMA-PART1-11-3-3] Document Settings part
+
+```yaml
+edition: 5
+part: 1
+section: "11.3.3"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings
+verifiedBy: packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts
+```
+
+Generated packages carry one Document Settings part, registered through the
+main document relationship and package content types. The part contains the
+baseline compatibility structure plus conditional even/odd-header and color
+scheme settings. This entry covers part presence and package wiring, not the
+Microsoft-specific meaning of compatibility mode value 15.
+
+## [ECMA-PART1-17-15-3-4] w:compatSetting custom compatibility setting
+
+```yaml
+edition: 5
+part: 1
+section: "17.15.3.4"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting
+verifiedBy: packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts
+```
+
+Generation emits one custom compatibility setting under `w:compat`, carrying
+the required name, URI, and value attributes in the settings sequence. ECMA-376
+defines this extensibility structure; MS-DOCX §2.3.5, not ECMA-376, defines
+the Microsoft `compatibilityMode` values and assigns the semantics of value 15.
+
 ## [ECMA-PART1-17-10-1] w:evenAndOddHeaders setting
 
 ```yaml
@@ -469,9 +502,9 @@ verifiedBy:
 ```
 
 Even-page headers/footers are only honored when `w:evenAndOddHeaders` is
-set in word/settings.xml. Generation emits the settings part exactly when
-some section declares an `even` slot, so the declared content and the
-document-level switch can never drift apart.
+set in word/settings.xml. Generation always emits the baseline settings part
+and conditionally adds this switch exactly when some section declares an
+`even` slot, so the declared content and document-level switch cannot drift.
 
 ## [ECMA-PART1-17-16-18] w:fldChar five-part complex-field emission
 
@@ -1313,11 +1346,13 @@ part: 1
 section: "17.13.5.23"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-The engine emits, removes, and balances this marker but does not prove its
-identity relationship to every move wrapper.
+The engine coalesces generated source markers to one pair per logical move.
+The compiled fixed-story checker requires each end to close the currently open
+source range with the same unique id. Individual `w:moveFrom` revision ids are
+not associated with range ids.
 
 ## [ECMA-PART1-17-13-5-24] Move source range start
 
@@ -1327,11 +1362,15 @@ part: 1
 section: "17.13.5.24"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-The engine emits, removes, and balances this marker but does not prove its
-identity relationship to every move wrapper.
+The engine emits one source start per logical move. In both the Strict and
+Transitional schemas, `w:id` is an `ST_DecimalNumber` and the required `w:name`
+is an `ST_String`, which permits the empty string. The compiled fixed-story
+checker applies a stronger SafeDocX verifier policy: names must be non-empty,
+source ids and names must be unique, and a destination identity with the same
+name must exist. Non-empty `w:name` is not attributed to ECMA-376.
 
 ## [ECMA-PART1-17-13-5-25] Move destination run content (w:moveTo)
 
@@ -1369,11 +1408,13 @@ part: 1
 section: "17.13.5.27"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-The engine emits, removes, and balances this marker without claiming complete
-wrapper-to-range identity.
+The engine coalesces generated destination markers to one pair per logical move.
+The compiled fixed-story checker requires each end to close the currently open
+destination range with the same unique id. Individual `w:moveTo` revision ids
+are not associated with range ids.
 
 ## [ECMA-PART1-17-13-5-28] Move destination range start
 
@@ -1383,11 +1424,15 @@ part: 1
 section: "17.13.5.28"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-The engine emits, removes, and balances this marker without claiming complete
-wrapper-to-range identity.
+The engine emits one destination start per logical move. In both the Strict and
+Transitional schemas, `w:id` is an `ST_DecimalNumber` and the required `w:name`
+is an `ST_String`, which permits the empty string. The compiled fixed-story
+checker applies a stronger SafeDocX verifier policy: names must be non-empty,
+destination ids and names must be unique, and a source identity with the same
+name must exist. Non-empty `w:name` is not attributed to ECMA-376.
 
 ## [ECMA-PART1-17-13-5-29] Paragraph-property revisions (w:pPrChange)
 

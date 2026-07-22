@@ -35,7 +35,7 @@
       "word/footnotes.xml",
       "word/endnotes.xml"
     ],
-    "leanClaim": "Lean checks text and field-marker projections through ins, del, moveFrom, and moveTo in fixed stories and in-place mode. It does not prove advanced-record semantics, snapshots, pairing, annotations, relationships, or rebuild behavior."
+    "leanClaim": "Lean checks text and field-marker projections through ins, del, moveFrom, and moveTo in fixed stories and in-place mode. It also checks the bounded move-range pairing subset: unique ids, balanced non-crossing endpoints, and matching source/destination names. It does not prove other advanced-record semantics, snapshots, annotations, relationships, or rebuild behavior."
   },
   "records": [
     {
@@ -799,7 +799,7 @@
         },
         "lean": {
           "textFieldProjection": "non-goal",
-          "advancedRecordSemantics": "non-goal"
+          "advancedRecordSemantics": "implemented"
         }
       },
       "evidence": [
@@ -1009,7 +1009,7 @@
           ]
         }
       ],
-      "notes": "Emission and start/end balancing are tested, but wrapper-to-range identity and full pairing semantics remain gaps."
+      "notes": "The compiled fixed-story checker verifies unique IDs, balanced non-crossing endpoints, one range per direction/name, and source/destination name pairing. Individual w:moveFrom/w:moveTo revision IDs are not associated with range IDs, so complete wrapper identity remains a gap."
     },
     {
       "id": "advanced-revision.numbering-properties",

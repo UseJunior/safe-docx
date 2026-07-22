@@ -131,11 +131,19 @@ test('rejects reassignment of every manifest anchor to another element', async (
 
 test('rejects a blanket Lean semantics claim', async () => {
   const candidate = cloneManifest();
-  candidate.records[0].operations.lean.advancedRecordSemantics = 'implemented';
+  const nonMoveRecord = candidate.records.find((record) => record.id !== 'advanced-revision.moves-ranges');
+  nonMoveRecord.operations.lean.advancedRecordSemantics = 'implemented';
   await assert.rejects(
     validateAdvancedRevisionClassification(candidate, vocabulary, registry, leanLedger, evidenceResults),
-    /Lean does not verify advanced-record semantics/,
+    /Lean does not verify these advanced-record semantics/,
   );
+});
+
+test('allows the bounded Lean move-range semantics claim', async () => {
+  const candidate = cloneManifest();
+  const moves = candidate.records.find((record) => record.id === 'advanced-revision.moves-ranges');
+  moves.operations.lean.advancedRecordSemantics = 'implemented';
+  await validateAdvancedRevisionClassification(candidate, vocabulary, registry, leanLedger, evidenceResults);
 });
 
 test('rejects assigning an ECMA anchor to a w14 extension element', async () => {
