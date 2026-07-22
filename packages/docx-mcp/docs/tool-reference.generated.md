@@ -63,7 +63,7 @@ Search paragraphs with regex. Use file_path for session-based search, file_paths
 
 ## `batch_edit`
 
-Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Accepts inline steps or a plan_file_path JSON array.
+Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Accepts inline steps or a plan_file_path JSON array. Surface: revisionable — every applied step emits native OOXML tracked changes.
 
 - readOnly: `false`
 - destructive: `true`
@@ -76,7 +76,7 @@ Single-agent front door for applying multiple edit steps (replace_text, insert_p
 
 ## `replace_text`
 
-Replace text in a paragraph by provider paragraph id, preserving formatting where supported. Supports DOCX, ODT, and Google Docs.
+Replace text in a paragraph by provider paragraph id, preserving formatting where supported. Supports DOCX, ODT, and Google Docs. Surface: revisionable — DOCX edits emit native OOXML tracked changes (w:ins/w:del/w:rPrChange).
 
 - readOnly: `false`
 - destructive: `true`
@@ -93,7 +93,7 @@ Replace text in a paragraph by provider paragraph id, preserving formatting wher
 
 ## `insert_paragraph`
 
-Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.)
+Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DOCX, ODT, and Google Docs. (ODT paragraph ids are positional and shift after insertion — re-read before further edits.) Surface: revisionable — DOCX insertions emit native OOXML tracked changes.
 
 - readOnly: `false`
 - destructive: `true`
@@ -110,7 +110,7 @@ Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DO
 
 ## `save`
 
-Save document. For DOCX: saves clean and/or tracked changes output. For ODT: saves an .odt package. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX.
+Save document. For DOCX: saves clean and/or tracked changes output. For ODT: saves an .odt package. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX. Surface: revisionable — the save report lists both the AI revisions applied and a non-revision change manifest of any package-level mutations (comment/footnote side parts, relationships) that have no tracked-change wrapper.
 
 - readOnly: `false`
 - destructive: `true`
@@ -125,8 +125,8 @@ Save document. For DOCX: saves clean and/or tracked changes output. For ODT: sav
 | `allow_overwrite` | `boolean` | no |  |
 | `tracked_save_to_local_path` | `string` | no |  |
 | `tracked_changes_author` | `string` | no |  |
-| `tracked_changes_engine` | `enum("auto", "atomizer")` | no |  |
-| `fail_on_rebuild_fallback` | `boolean` | no | When true, return an error instead of a destructive output if the comparison engine falls back to rebuild mode (which destroys table structure). Default: false. |
+| `tracked_changes_engine` | `enum("auto", "atomizer")` | no | Deprecated and ignored (#126). The redline is now the session's write-time tracked markup, serialized directly — there is no comparison engine to select. Use the compare_documents tool for comparison-based redlines. |
+| `fail_on_rebuild_fallback` | `boolean` | no | Deprecated and ignored (#126). The default save no longer runs the comparison reconstruction engine, so there is no rebuild fallback to guard against; accepted for backward compatibility only. |
 
 ## `export`
 
@@ -158,7 +158,7 @@ Convert a DOCX document to OpenDocument Text (.odt) using the native model-to-mo
 
 ## `format_layout`
 
-Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only.
+Apply layout controls (paragraph spacing, table row height, cell padding). Google Docs supports paragraph spacing only. Surface: revisionable — DOCX geometry edits emit native property-change revisions (w:pPrChange/w:trPrChange/w:tcPrChange).
 
 - readOnly: `false`
 - destructive: `true`
@@ -182,6 +182,34 @@ Accept all tracked changes in the document body, producing a clean document with
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `file_path` | `string` | yes | Path to the DOCX or ODT file. |
+
+## `accept_ai_edits`
+
+Selectively accept tracked changes by revision id or author, leaving all other (e.g. third-party reviewer) revisions byte-untouched. Provide revision_ids (array of w:id values) to target specific revisions, or author to accept every revision by one actor. Sweeps document.xml and supported side-story parts (footnotes, endnotes, comments). An ambiguous overlap — a targeted revision structurally containing, or contained by, a non-targeted revision (nested ins/del/move) — hard-errors with code AMBIGUOUS_REVISION_OVERLAP and a structured `overlaps` list unless normalize_first is set (best-effort, no byte-identical promise).
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
+| `revision_ids` | `array<unknown>` | no | w:id values of the revisions to accept. Mutually preferred over author. |
+| `author` | `string` | no | Accept every revision authored by this w:author. Convenience alternative to revision_ids. |
+| `normalize_first` | `boolean` | no | Attempt best-effort resolution on an ambiguous (overlapping) revision graph instead of hard-erroring. No byte-identical guarantee. Default: false. |
+
+## `reject_ai_edits`
+
+Selectively reject tracked changes by revision id or author (restoring their pre-edit state), leaving all other revisions byte-untouched. Symmetric to accept_ai_edits: provide revision_ids or author, sweeps document.xml and supported side-story parts, and hard-errors on an ambiguous overlap (code AMBIGUOUS_REVISION_OVERLAP with a structured `overlaps` list) unless normalize_first is set.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | yes | Path to the DOCX or ODT file. |
+| `revision_ids` | `array<unknown>` | no | w:id values of the revisions to reject. Mutually preferred over author. |
+| `author` | `string` | no | Reject every revision authored by this w:author. Convenience alternative to revision_ids. |
+| `normalize_first` | `boolean` | no | Attempt best-effort resolution on an ambiguous (overlapping) revision graph instead of hard-erroring. No byte-identical guarantee. Default: false. |
 
 ## `has_tracked_changes`
 
@@ -222,7 +250,7 @@ Close an open file session, or close all sessions with explicit confirmation. Su
 
 ## `add_comment`
 
-Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies. Supports DOCX and ODT (ODT backs comments with office:annotation; threaded replies are DOCX-only).
+Add a comment or threaded reply to a document. Provide target_paragraph_id + anchor_text for root comments, or parent_comment_id for replies. Supports DOCX and ODT (ODT backs comments with office:annotation; threaded replies are DOCX-only). Surface: revisionable + package-mutation — the body-story comment reference is tracked (w:ins), while comment text and author metadata are recorded in the save report non-revision change manifest.
 
 - readOnly: `false`
 - destructive: `true`
@@ -250,7 +278,7 @@ Get all comments from the document with IDs, authors, dates, text, and anchored 
 
 ## `delete_comment`
 
-Delete a comment and all its threaded replies from the document. Cascade-deletes all descendants.
+Delete a comment and all its threaded replies from the document. Cascade-deletes all descendants. Surface: revisionable + package-mutation — the body-story comment reference removal is tracked (w:del), while comment/reply text cleanup is recorded in the save report non-revision change manifest.
 
 - readOnly: `false`
 - destructive: `true`
@@ -289,7 +317,7 @@ Get all footnotes from the document with IDs, display numbers, text, and anchore
 
 ## `add_footnote`
 
-Add a footnote anchored to a paragraph. Optionally position the reference after specific text using after_text. Note: [^N] markers in read_file output are display-only and not part of the editable text used by replace_text.
+Add a footnote anchored to a paragraph. Optionally position the reference after specific text using after_text. Note: [^N] markers in read_file output are display-only and not part of the editable text used by replace_text. Surface: revisionable + package-mutation — the footnote reference and note text are tracked (w:ins), while footnote-part creation and registration are recorded in the save report non-revision change manifest.
 
 - readOnly: `false`
 - destructive: `true`
@@ -303,7 +331,7 @@ Add a footnote anchored to a paragraph. Optionally position the reference after 
 
 ## `update_footnote`
 
-Update the text content of an existing footnote.
+Update the text content of an existing footnote. Surface: revisionable — note-text changes emit native OOXML tracked changes (w:ins/w:del) inside the footnote body.
 
 - readOnly: `false`
 - destructive: `true`
@@ -316,7 +344,7 @@ Update the text content of an existing footnote.
 
 ## `delete_footnote`
 
-Delete a footnote and its reference from the document.
+Delete a footnote and its reference from the document. Surface: revisionable — the reference and note text are removed as native OOXML tracked deletions (w:del).
 
 - readOnly: `false`
 - destructive: `true`
@@ -328,7 +356,7 @@ Delete a footnote and its reference from the document.
 
 ## `clear_formatting`
 
-Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs.
+Clear specific run-level formatting (bold, italic, underline, highlight, color, font) from paragraphs. Surface: revisionable — clearing emits a native run-property-change revision (w:rPrChange).
 
 - readOnly: `false`
 - destructive: `true`

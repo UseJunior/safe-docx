@@ -46,8 +46,10 @@ describe('Traceability: numbering level justification', () => {
     'Scenario: level justification is authorable',
     async ({ given, when, then, and, attachPrettyXml }: AllureBddContext) => {
       let buffer!: Buffer;
+      let generatedBytes!: Buffer;
       await given('a numbering definition with right/center levels and one default level', async () => {
         buffer = await generateDocx(justificationSpec());
+        generatedBytes = Buffer.from(buffer);
         expect((await checkGeneratedPackage(buffer)).ok).toBe(true);
       });
 
@@ -76,7 +78,7 @@ describe('Traceability: numbering level justification', () => {
 
       await and('a re-render of the same spec is byte-identical', async () => {
         const second = await generateDocx(justificationSpec());
-        expect(second.equals(buffer)).toBe(true);
+        expect(second.equals(generatedBytes)).toBe(true);
       });
 
       let rejection!: unknown;
@@ -100,7 +102,7 @@ describe('Traceability: numbering level justification', () => {
         const specError = rejection as GenerationSpecError;
         expect(specError.code).toBe('invalid_value');
         expect(specError.path).toBe('/numbering/0/levels/0/lvlJc');
-        expect(specError.message).toMatch(/lvlJc must be one of/);
+        expect(specError.message).toMatch(/outside the ST_Jc schema domain/);
       });
     },
   );

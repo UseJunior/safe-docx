@@ -10,6 +10,19 @@ const FOOTNOTE_TOUCHED_CONTEXT = {
   sideParts: ['word/footnotes.xml'],
 };
 
+// Non-revision parts add_footnote can mutate without a tracked-change wrapper.
+// The note text runs and the body-story w:footnoteReference are wrapped in w:ins
+// (Table A), but the <w:footnote> container element appended to footnotes.xml is
+// a structural addition with no revision wrapper, and the content-type /
+// relationship registration is created when footnote infrastructure is
+// bootstrapped. [Content_Types].xml is declared so bootstrap registration is
+// never under-reported.
+const FOOTNOTE_NON_REVISION_PARTS = [
+  'word/footnotes.xml',
+  '[Content_Types].xml',
+  'word/_rels/document.xml.rels',
+];
+
 export async function addFootnote(
   manager: SessionManager,
   params: {
@@ -56,6 +69,15 @@ export async function addFootnote(
     const result = await mutate(session.doc, ctx);
 
     manager.markEdited(session);
+    // The body-story w:footnoteReference and note text are tracked as w:ins
+    // (Table A), but creating word/footnotes.xml and registering the part in
+    // relationships/content-types is a package mutation with no revision
+    // wrapper (#122): record it in the non-revision manifest.
+    manager.recordNonRevisionChange(session, {
+      tool: 'add_footnote',
+      parts: FOOTNOTE_NON_REVISION_PARTS,
+      description: `Footnote ${result.noteId}: the <w:footnote> container element is appended to word/footnotes.xml as a structural addition (the note text runs are tracked separately as w:ins). When the document lacked footnote infrastructure, the part and its content-type/relationship registration were bootstrapped. The body-story footnote reference is also tracked as a w:ins revision.`,
+    });
     return ok(mergeSessionResolutionMetadata({
       note_id: result.noteId,
       target_paragraph_id: pid,

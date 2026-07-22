@@ -71,7 +71,7 @@ const SPEC_FAMILY_MAP = {
 };
 
 function deriveIdFromTagParts(spec, _edition, part, section) {
-  // ECMA-PART4-17-16-5 style (no brackets — those are heading syntax in the
+  // ECMA-PART1-17-16-13 style (no brackets — those are heading syntax in the
   // registry; the parser strips them). Edition is not part of the ID (lives
   // in the tag and the registry entry as a separate field).
   const family = SPEC_FAMILY_MAP[spec] ?? spec;

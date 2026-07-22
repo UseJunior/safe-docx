@@ -11,8 +11,8 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Atomizer Parity' });
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments, type CompareResult } from '../index.js';
-import { compareDocumentsBaselineB } from '../baselines/diffmatch/pipeline.js';
+import { compareDocuments, type CompareResult } from '@usejunior/docx-compare';
+import { compareDocumentsBaselineB } from '@usejunior/docx-compare';
 import {
   FIXTURE_STABLE_DATE,
   getIntegrationOutputModeLabel,

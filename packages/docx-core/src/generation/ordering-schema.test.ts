@@ -14,9 +14,8 @@ const WML_XSD_PATH = path.resolve(__dirname, '../../../../spec-compliance/ecma-3
 /**
  * Extract child element local names, in declaration order, from a named
  * complexType or group in the vendored WML schema. Declaration order inside
- * the type body is the schema's canonical property order (sequences enforce
- * it outright; the transitional EG_RPrBase choice still lists members in
- * canonical order).
+ * the type body is normative for sequences. Choice members are extracted as
+ * a vocabulary, without assigning semantic meaning to declaration order.
  */
 function schemaChildOrder(xsd: string, kind: 'complexType' | 'group', name: string): string[] {
   const open = new RegExp(`<xsd:${kind} name="${name}">`);
@@ -47,12 +46,12 @@ function expectSubsequence(table: readonly string[], schemaOrder: string[], labe
 
 describe('Traceability: property-order tables vs vendored schema', () => {
   test
-    .openspec('[SDX-GEN-043] property-order tables match the vendored schema')
+    .openspec('[SDX-GEN-043] property constraints match the vendored schema')
     .conformance(
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.1.26' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.2.28' },
     )(
-    'Scenario: property-order tables match the vendored schema',
+    'Scenario: property constraints match the vendored schema',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let xsd!: string;
       await given('the vendored transitional WML schema', async () => {
@@ -76,9 +75,10 @@ describe('Traceability: property-order tables vs vendored schema', () => {
         await attachPrettyJson('schema-declared-orders', orders);
       });
 
-      await then('every ordering table is a subsequence of the schema order', async () => {
+      await then('sequence tables follow schema order and rPr properties are unique choice members', async () => {
         expectSubsequence(PPR_ORDER, orders.pPr!, 'PPR_ORDER');
-        expectSubsequence(RPR_ORDER, orders.rPr!, 'RPR_ORDER');
+        expect(new Set(RPR_ORDER).size, 'RPR_ORDER must not permit duplicate direct properties').toBe(RPR_ORDER.length);
+        expect(RPR_ORDER.filter((name) => !orders.rPr!.includes(name))).toEqual([]);
         expectSubsequence(SECTPR_ORDER, orders.sectPr!, 'SECTPR_ORDER');
         expectSubsequence(TBLPR_ORDER, orders.tblPr!, 'TBLPR_ORDER');
         expectSubsequence(TRPR_ORDER, orders.trPr!, 'TRPR_ORDER');

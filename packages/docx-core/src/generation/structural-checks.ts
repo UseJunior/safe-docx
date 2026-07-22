@@ -208,7 +208,7 @@ function checkSectPr(contents: Map<string, string>): StructuralIssue[] {
   if (!documentXml) {
     return [{ check: 'sectpr', part: 'word/document.xml', message: 'Part is missing' }];
   }
-  const audit = auditSectPr(documentXml, contents.get('word/_rels/document.xml.rels') ?? null);
+  const audit = auditSectPr(documentXml, contents.get('word/_rels/document.xml.rels') ?? null, contents);
   for (const issue of audit.issues) {
     issues.push({ check: 'sectpr', part: 'word/document.xml', message: `${issue.type}: ${issue.message}` });
   }
@@ -233,6 +233,12 @@ function isStoryPart(name: string): boolean {
   );
 }
 
+/**
+ * Validate begin → separate → end field structure independently in each
+ * generated WordprocessingML story part.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
 function checkFieldPairing(contents: Map<string, string>): StructuralIssue[] {
   const issues: StructuralIssue[] = [];
   for (const [name, text] of contents) {

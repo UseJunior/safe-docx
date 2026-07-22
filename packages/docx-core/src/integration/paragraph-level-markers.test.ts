@@ -3,8 +3,8 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
-import { compareDocuments } from '../index.js';
-import { rejectAllChanges } from '../baselines/atomizer/trackChangesAcceptorAst.js';
+import { compareDocuments } from '@usejunior/docx-compare';
+import { rejectAllChanges } from '@usejunior/docx-compare';
 
 function countParagraphs(xml: string): number {
   return (xml.match(/<w:p(\s|>)/g) ?? []).length;

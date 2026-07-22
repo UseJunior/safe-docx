@@ -10,7 +10,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Auxiliary Part Merging' });
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 
 function countOccurrences(xml: string, pattern: RegExp): number {
