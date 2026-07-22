@@ -12,6 +12,8 @@ The contents are auditable in-repo:
 | `registry/ecma-376.md`        | Source of truth: targeted sections, Non-Goals, schema bindings.    |
 | `manifests/`                  | Machine-readable bounded conformance classifications.              |
 | `evidence/`                   | Generated, mutation-sensitive executable evidence results.         |
+| `capabilities/`               | Pinned neutral denominator and SafeDocX per-axis evidence claims.   |
+| `generated/safe-docx-capability-projection.*` | Generated per-axis report; do not edit by hand.      |
 | `ecma-376/coverage-ledger/`   | Planning ledgers for expanding coverage without overclaiming.      |
 | `ecma-376/schemas/`           | Vendored normative ECMA-376 XSDs (3.3 MB total, in-tree).          |
 | `ecma-376/COPYRIGHT.txt`      | Ecma International copyright notice preserved with the schemas.    |
@@ -42,6 +44,24 @@ land as siblings of `registry/ecma-376.md` without restructuring this tree.
   `npm run generate:advanced-revision-evidence`. CI reruns the focused tests
   and rejects the committed artifact if any element/operation/story result or
   target-removal, operation-mutation, or story-mutation sentinel drifts.
+- **Refreshing the capability projection.** Neutral definitions remain owned
+  by `open-agreements/docx-platform-tests`. Copy the reviewed registry files
+  from the exact upstream commit into `capabilities/upstream/`, update
+  `capabilities/upstream-pin.json` with the full commit and SHA-256 values,
+  reconcile every profile capability/axis pair in
+  `capabilities/safe-docx-projection.json`, then run
+  `npm run generate:capability-projection`. CI is offline and rejects pin,
+  denominator, evidence-path, or generated-report drift. A positive row means
+  only that its listed executable evidence passed within the stated scope; it
+  is not a general DOCX or ECMA-376 conformance claim.
+
+The generated report names two different inventories. The profile denominator
+is the intersection of every profile axis with every capability's applicable
+axes, including explicit gaps and untested rows. The evidence inventory starts
+with authored scenario mappings and adds derived cross-platform rows when a
+complete result run can support them. The pinned result snapshot may measure
+fewer rows still. These counts answer different questions and must not be used
+as interchangeable coverage percentages.
 
 See [`AGENTS.md`](./AGENTS.md) for the full citation rules and the
 [issue #227 problem statement](https://github.com/UseJunior/safe-docx/issues/227)

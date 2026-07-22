@@ -103,6 +103,8 @@ jobs:
         run: npm run check:spec-coverage
       - name: Verify ECMA-376 source artifacts and generated coverage
         run: npm run check:ecma-376-coverage
+      - name: Verify SafeDocX capability evidence projection
+        run: npm run check:capability-projection
 
   site-check:
     runs-on: ubuntu-latest

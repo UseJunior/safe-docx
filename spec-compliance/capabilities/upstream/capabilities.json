@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "registryVersion": 1,
+  "capabilities": [
+    {
+      "id": "word.comments.anchors",
+      "title": "Comment range anchors",
+      "family": "comments",
+      "description": "Range start, range end, and comment reference markup identify the commented document span.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.4.3" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.4.4" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.4.5" }
+      ],
+      "dependencies": ["word.comments.content"],
+      "applicableAxes": ["detect", "preserve", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml", "word/comments.xml"]
+    },
+    {
+      "id": "word.comments.content",
+      "title": "Comment content",
+      "family": "comments",
+      "description": "Comment records retain their author metadata and body content in the comments part.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.4.2" }
+      ],
+      "dependencies": [],
+      "applicableAxes": ["detect", "preserve", "parse", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/comments.xml"]
+    },
+    {
+      "id": "word.comments.removal",
+      "title": "Comment removal",
+      "family": "comments",
+      "description": "Removing comments removes their records and anchors while retaining document text.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.4.5" }
+      ],
+      "dependencies": ["word.comments.anchors", "word.comments.content"],
+      "applicableAxes": ["edit", "crossPlatform"],
+      "packageParts": ["word/document.xml", "word/comments.xml"]
+    },
+    {
+      "id": "word.headers.default",
+      "title": "Default section header",
+      "family": "stories",
+      "description": "A section references a default header part through the main document relationship graph.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.10.5" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["preserve", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml", "word/_rels/document.xml.rels", "word/header*.xml"]
+    },
+    {
+      "id": "word.footers.default",
+      "title": "Default section footer",
+      "family": "stories",
+      "description": "A section references a default footer part through the main document relationship graph.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.10.2" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["preserve", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml", "word/_rels/document.xml.rels", "word/footer*.xml"]
+    },
+    {
+      "id": "word.hyperlinks.external",
+      "title": "External hyperlinks",
+      "family": "hyperlinks",
+      "description": "Hyperlink display content resolves through an external relationship target.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.16.22" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml", "word/_rels/document.xml.rels"]
+    },
+    {
+      "id": "word.numbering.paragraph",
+      "title": "Paragraph numbering references",
+      "family": "numbering",
+      "description": "Paragraph numbering properties resolve to numbering definitions and level formats.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.3.1.19" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml", "word/numbering.xml", "word/_rels/document.xml.rels"]
+    },
+    {
+      "id": "word.paragraphs.structure",
+      "title": "Paragraph structure",
+      "family": "paragraphs",
+      "description": "Paragraphs contain ordered run-level content and preserve surrounding paragraph order.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.3.1.22" }
+      ],
+      "dependencies": [],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "generate", "edit", "compare", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.revisions.content",
+      "title": "Inserted and deleted run content",
+      "family": "revisions",
+      "description": "Accepting and rejecting insertion and deletion wrappers produces the specified content projection.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.14" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.18" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "compare", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.revisions.moves",
+      "title": "Move revisions",
+      "family": "revisions",
+      "description": "Move source and destination content resolve correctly when tracked changes are accepted or rejected.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.22" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.25" }
+      ],
+      "dependencies": ["word.revisions.content"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "compare", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.revisions.paragraph-mark",
+      "title": "Paragraph-mark revisions",
+      "family": "revisions",
+      "description": "Inserted and deleted paragraph marks merge or retain paragraphs under accept and reject operations.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.15" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.20" }
+      ],
+      "dependencies": ["word.paragraphs.structure", "word.revisions.content"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "compare", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.revisions.paragraph-properties",
+      "title": "Paragraph property revisions",
+      "family": "revisions",
+      "description": "Rejecting paragraph property changes restores the prior paragraph-property snapshot.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.29" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.revisions.run-properties",
+      "title": "Run property revisions",
+      "family": "revisions",
+      "description": "Accepting and rejecting run property changes selects the current or prior run-property snapshot.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.31" }
+      ],
+      "dependencies": ["word.runs.formatting"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.revisions.table-rows",
+      "title": "Table row revisions",
+      "family": "revisions",
+      "description": "Inserted and deleted table rows are retained or removed under accept and reject operations.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.12" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.13.5.17" }
+      ],
+      "dependencies": ["word.tables.rows"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.runs.formatting",
+      "title": "Direct run formatting",
+      "family": "formatting",
+      "description": "Run properties represent direct character formatting without mutating named style definitions.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.3.2.1" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.3.2.16" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.3.2.38" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.7.4.17" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "generate", "edit", "compare", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml", "word/styles.xml"]
+    },
+    {
+      "id": "word.styles.paragraph",
+      "title": "Named paragraph styles",
+      "family": "styles",
+      "description": "Paragraph style references resolve to definitions in the style part.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.3.1.27" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml", "word/styles.xml", "word/_rels/document.xml.rels"]
+    },
+    {
+      "id": "word.tables.cells",
+      "title": "Table cell content",
+      "family": "tables",
+      "description": "A table cell retains its surrounding table structure when its paragraph content is edited.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.4.66" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.3.3.31" }
+      ],
+      "dependencies": ["word.tables.structure", "word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.tables.horizontal-merge",
+      "title": "Horizontally merged table cells",
+      "family": "tables",
+      "description": "Horizontal cell merges use grid spans while preserving the table grid.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.4.17" }
+      ],
+      "dependencies": ["word.tables.cells"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.tables.rows",
+      "title": "Table rows",
+      "family": "tables",
+      "description": "Rows can be appended or deleted while the table grid and unaffected content remain intact.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.4.79" }
+      ],
+      "dependencies": ["word.tables.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "generate", "edit", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.tables.structure",
+      "title": "Table structure and grid",
+      "family": "tables",
+      "description": "Table rows and cells conform to a declared table grid and retain their structural boundaries.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.4.37" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "generate", "edit", "compare", "acceptReject", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
+      "id": "word.text.find-replace",
+      "title": "Text replacement across run boundaries",
+      "family": "text",
+      "description": "Text replacement operates on logical paragraph text without losing surrounding offsets or structure.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.3.3.31" }
+      ],
+      "dependencies": ["word.paragraphs.structure", "word.runs.formatting"],
+      "applicableAxes": ["preserve", "parse", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    }
+  ]
+}
