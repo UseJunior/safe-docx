@@ -60,7 +60,7 @@ describeWithLean('Lean XML triple verifier certificate', () => {
         expect(result.documentIntegrity?.status).toBe('passed');
         expect(result.documentIntegrity?.protocolVersion).toBe(1);
         expect(result.documentIntegrity?.scope).toBe('word/document.xml');
-        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(2);
+        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(3);
         expect(result.documentIntegrity?.fixedStoryScope).toEqual([
           'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
         ]);
@@ -171,6 +171,25 @@ const endnotes = (userBody: string) =>
   `<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>` +
   `<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>` +
   `<w:endnote w:id="1"><w:p>${userBody}</w:p></w:endnote></w:endnotes>`;
+
+const originalMoveBody =
+  paragraphWithText('Moved text') +
+  paragraphWithText('Anchor text');
+const revisedMoveBody =
+  paragraphWithText('Anchor text') +
+  paragraphWithText('Moved text');
+const validMoveBody =
+  '<w:p>' +
+  '<w:moveFromRangeStart w:id="10" w:name="move1" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+  '<w:moveFrom w:id="11" w:author="Comparison"><w:r><w:delText>Moved text</w:delText></w:r></w:moveFrom>' +
+  '<w:moveFromRangeEnd w:id="10"/>' +
+  '</w:p>' +
+  paragraphWithText('Anchor text') +
+  '<w:p>' +
+  '<w:moveToRangeStart w:id="12" w:name="move1" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+  '<w:moveTo w:id="13" w:author="Comparison"><w:r><w:t>Moved text</w:t></w:r></w:moveTo>' +
+  '<w:moveToRangeEnd w:id="12"/>' +
+  '</w:p>';
 
 describeWithLean('Lean fixed-story package protocol', () => {
   const run = (originalDocx: Buffer, revisedDocx: Buffer, comparedDocx: Buffer) =>
@@ -357,10 +376,62 @@ describeWithLean('Lean fixed-story package protocol', () => {
     );
     expect((await run(original, revised, combined)).status).toBe('passed');
   });
+
+  test.openspec('[LEAN-MOVE-RANGE-01] Compiled checker certifies structurally valid move ranges')(
+    'certifies unique, balanced, non-crossing move ranges with matching source and destination identities', async () => {
+      const original = await buildDocxFromBodyXml(originalMoveBody);
+      const revised = await buildDocxFromBodyXml(revisedMoveBody);
+      const combined = await buildDocxFromBodyXml(validMoveBody);
+
+      const certificate = await run(original, revised, combined);
+      expect(certificate.status).toBe('passed');
+      expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired).toEqual({
+        status: 'passed',
+        claim: 'Tracked move ranges are correctly paired.',
+      });
+      expect(certificate.stories?.[0]?.checks.trackedMoveRangesAreCorrectlyPaired.status).toBe('passed');
+    });
+
+  test.openspec('[LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks')(
+    'mutation-checks duplicate, missing, crossed, and mismatched move-range markers', async () => {
+      const original = await buildDocxFromBodyXml(originalMoveBody);
+      const revised = await buildDocxFromBodyXml(revisedMoveBody);
+      const mutations = {
+        duplicate: validMoveBody.replace(
+          '<w:moveFromRangeStart w:id="10"',
+          '<w:moveFromRangeStart w:id="10" w:name="move1" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+          '<w:moveFromRangeStart w:id="10"',
+        ),
+        missing: validMoveBody.replace('<w:moveFromRangeEnd w:id="10"/>', ''),
+        crossed: validMoveBody.replace(
+          '<w:moveFromRangeStart w:id="10" w:name="move1"',
+          '<w:moveFromRangeStart w:id="20" w:name="move2" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+          '<w:moveFromRangeStart w:id="10" w:name="move1"',
+        ).replace(
+          '<w:moveFromRangeEnd w:id="10"/>',
+          '<w:moveFromRangeEnd w:id="20"/><w:moveFromRangeEnd w:id="10"/>' +
+          '<w:moveToRangeStart w:id="22" w:name="move2" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+          '<w:moveToRangeEnd w:id="22"/>',
+        ),
+        mismatched: validMoveBody.replace(
+          '<w:moveToRangeStart w:id="12" w:name="move1"',
+          '<w:moveToRangeStart w:id="12" w:name="move2"',
+        ),
+      } as const;
+
+      for (const [mutation, body] of Object.entries(mutations)) {
+        const combined = await buildDocxFromBodyXml(body);
+        const certificate = await run(original, revised, combined);
+        expect(certificate.status, mutation).toBe('failed');
+        expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired.status, mutation).toBe('failed');
+        expect(certificate.checks.acceptingAllTrackedChangesMatchesRevisedText.status, mutation).toBe('passed');
+        expect(certificate.checks.rejectingAllTrackedChangesMatchesOriginalText.status, mutation).toBe('passed');
+      }
+    });
 });
 
 const validProtocolReport = {
-  protocolVersion: 2,
+  protocolVersion: 3,
   checker: 'safe-docx-lean-fixed-story-checker',
   passed: true,
   stories: [{
@@ -375,6 +446,7 @@ const validProtocolReport = {
         acceptTextMatchesRevised: true,
         rejectTextMatchesOriginal: true,
         combinedHasNoFldCharInsideDel: true,
+        combinedHasValidMoveRanges: true,
       },
     },
   }],
@@ -426,7 +498,7 @@ describe('Lean fixed-story protocol and security hardening', () => {
       });
       expect(result.status).toBe('passed');
       expect(result.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
-      expect(result.checkerProtocolVersion).toBe(2);
+      expect(result.checkerProtocolVersion).toBe(3);
     } finally {
       await rm(fake.dir, { recursive: true, force: true });
     }
@@ -436,6 +508,7 @@ describe('Lean fixed-story protocol and security hardening', () => {
     'rejects duplicate, negative-count, inconsistent, and extra-field protocol reports', async () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
     const variants = [
+      { ...validProtocolReport, protocolVersion: 2 },
       { ...validProtocolReport, stories: [...validProtocolReport.stories, validProtocolReport.stories[0]] },
       { ...validProtocolReport, stories: [{
         ...validProtocolReport.stories[0],

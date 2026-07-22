@@ -51,8 +51,8 @@ if (!ledger.scope?.reconstructionModes?.outOfScope?.includes('rebuild')) {
   errors.push('ledger must mark rebuild as out of scope');
 }
 
-if (ledger.protocolVersion !== 2 || !executable.includes('protocolVersion != 2')) {
-  errors.push('ledger and Lean executable must agree on protocol version 2');
+if (ledger.protocolVersion !== 3 || !executable.includes('protocolVersion != 3')) {
+  errors.push('ledger and Lean executable must agree on protocol version 3');
 }
 
 for (const part of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']) {
@@ -66,8 +66,9 @@ for (const part of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xm
   }
 }
 
-if (!lean.includes('projectUserNoteTokens') || !lean.includes('story_collection_checker_sound')) {
-  errors.push('Lean checker must retain the reserved-note projection and collection theorem');
+if (!lean.includes('projectUserNoteTokens') || !lean.includes('story_collection_checker_sound') ||
+    !lean.includes('validateMoveRanges')) {
+  errors.push('Lean checker must retain the reserved-note projection, move-range validation, and collection theorem');
 }
 
 for (const value of ledger.parsedWordprocessingML?.attributeValues?.['w:type'] ?? []) {

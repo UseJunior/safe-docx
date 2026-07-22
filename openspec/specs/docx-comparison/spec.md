@@ -321,6 +321,37 @@ For moved destination (content moved TO):
 - **THEN** `w:moveFromRangeStart` and `w:moveFromRangeEnd` share the same `w:id`
 - **AND** `w:moveToRangeStart` and `w:moveToRangeEnd` share the same `w:id`
 
+### Requirement: Tracked move ranges are structurally certified
+
+The system SHALL emit exactly one source range and one destination range per
+logical tracked move. The compiled fixed-story checker SHALL require unique
+non-empty range ids, balanced non-crossing same-direction start/end markers,
+one range per direction and `w:name`, and a one-to-one match between source and
+destination move names. The public document-integrity certificate SHALL expose
+the plain-language result `Tracked move ranges are correctly paired.`
+
+#### Scenario: [MOVE-RANGE-PAIR-01] Inplace emission produces one range pair per logical move
+
+- **GIVEN** one detected move whose source is split across multiple runs or paragraphs
+- **WHEN** inplace reconstruction emits tracked move markup
+- **THEN** the output contains exactly one `w:moveFromRangeStart` / `w:moveFromRangeEnd` pair
+- **AND** the output contains exactly one `w:moveToRangeStart` / `w:moveToRangeEnd` pair
+- **AND** each end reuses its start id and both directions use the same move name
+
+#### Scenario: [LEAN-MOVE-RANGE-01] Compiled checker certifies structurally valid move ranges
+
+- **GIVEN** a compared fixed story with one uniquely identified, balanced move source range and one move destination range using the same name
+- **WHEN** the compiled Lean checker evaluates the DOCX triple
+- **THEN** the move-range checker conjunct passes
+- **AND** the public certificate says `Tracked move ranges are correctly paired.`
+
+#### Scenario: [LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks
+
+- **GIVEN** a valid moved-text DOCX triple whose accept and reject text projections match
+- **WHEN** the compared story is mutated with a duplicate marker, missing marker, crossed range, or mismatched source/destination name
+- **THEN** the move-range checker conjunct fails for every mutation
+- **AND** the accept and reject text checks continue to pass
+
 ### Requirement: Format Change Info Interface
 
 The system SHALL provide a `FormatChangeInfo` interface with:
@@ -648,4 +679,3 @@ This requirement strengthens empirical falsifiability only; it introduces no Lea
 
 - **WHEN** a reader inspects the header comment blocks of `packages/docx-core/src/integration/lean-spec-bridge.test.ts`
 - **THEN** the "Coverage surfaces" block lists the field-bearing arbitrary and its operation families, the "Fallback semantics" block scopes the "field-free ⇒ no `ContainerResolutionError`" claim to the two original generators and documents the field-bearing arbitrary's narrower inplace-safe operation set, and the "Coverage limitations" note no longer implies all field-bearing input families live only in `collapsed-field-inplace.test.ts`
-

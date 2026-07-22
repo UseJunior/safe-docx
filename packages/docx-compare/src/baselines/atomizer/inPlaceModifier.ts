@@ -127,7 +127,7 @@ export function modifyRevisedDocument(
   mergeWhitespaceBridgedTrackChanges(ctx.body);
 
   // Coalesce duplicate move-range markers to one Start/End pair per move group
-  // per paragraph (issue #446). The moveFrom clone path emits a range pair per
+  // across the document (issue #446). The moveFrom clone path emits a range pair per
   // fragmented source atom; Word (and the rebuild path) emit exactly one.
   coalesceMoveRangeMarkers(ctx.body);
 

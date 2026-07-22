@@ -1,0 +1,118 @@
+/**
+ * Regression coverage for one move-range pair per logical move.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/446
+ */
+
+import { buildSyntheticDocx, parseXml, serializeXml } from '@usejunior/docx-core';
+import JSZip from 'jszip';
+import { describe, expect } from 'vitest';
+import { compareDocuments } from '../../index.js';
+import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
+import { coalesceMoveRangeMarkers } from './inPlaceModifier-postprocess.js';
+
+const TEST_FEATURE = 'Inplace Move-Range Coalescing';
+const test = testAllure
+  .epic('Document Comparison')
+  .withLabels({ feature: TEST_FEATURE })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.23' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.24' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.27' })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.28' });
+
+const MOVED_PARAGRAPH = 'The quick brown fox jumps over the lazy dog today';
+
+function countTag(xml: string, tag: string): number {
+  return (xml.match(new RegExp(`<${tag.replace(':', '\\:')}\\b`, 'g')) ?? []).length;
+}
+
+async function documentXml(docx: Buffer): Promise<string> {
+  const part = (await JSZip.loadAsync(docx)).file('word/document.xml');
+  if (!part) throw new Error('comparison result omitted word/document.xml');
+  return part.async('string');
+}
+
+describe('Inplace move-range marker coalescing', () => {
+  test.openspec('[MOVE-RANGE-PAIR-01] Inplace emission produces one range pair per logical move')(
+    'whole-paragraph move emits exactly one range pair per side despite run fragmentation', async ({
+      given,
+      when,
+      then,
+      and,
+    }: AllureBddContext) => {
+      let original!: Buffer;
+      let revised!: Buffer;
+      let result!: Awaited<ReturnType<typeof compareDocuments>>;
+      let xml!: string;
+
+      await given('a three-paragraph document where the first paragraph moves to the end', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: [MOVED_PARAGRAPH, 'Middle paragraph stays put', 'Final paragraph also stays'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['Middle paragraph stays put', 'Final paragraph also stays', MOVED_PARAGRAPH],
+        });
+      });
+
+      await when('the documents are compared in inplace mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+        xml = await documentXml(result.document);
+      });
+
+      await then('inplace reconstruction is used', () => {
+        expect(result.reconstructionModeUsed).toBe('inplace');
+      });
+
+      await and('exactly one source and destination range pair brackets the move', () => {
+        expect(countTag(xml, 'w:moveFromRangeStart')).toBe(1);
+        expect(countTag(xml, 'w:moveFromRangeEnd')).toBe(1);
+        expect(countTag(xml, 'w:moveToRangeStart')).toBe(1);
+        expect(countTag(xml, 'w:moveToRangeEnd')).toBe(1);
+        expect(countTag(xml, 'w:moveFrom')).toBeGreaterThan(1);
+      });
+
+      await and('each end reuses its start id and both directions share one move name', () => {
+        const fromStart = xml.match(/<w:moveFromRangeStart\s+w:id="([^"]+)"\s+w:name="([^"]+)"/);
+        const fromEnd = xml.match(/<w:moveFromRangeEnd\s+w:id="([^"]+)"/);
+        const toStart = xml.match(/<w:moveToRangeStart\s+w:id="([^"]+)"\s+w:name="([^"]+)"/);
+        const toEnd = xml.match(/<w:moveToRangeEnd\s+w:id="([^"]+)"/);
+        expect(fromStart).not.toBeNull();
+        expect(fromEnd?.[1]).toBe(fromStart?.[1]);
+        expect(toStart).not.toBeNull();
+        expect(toEnd?.[1]).toBe(toStart?.[1]);
+        expect(toStart?.[2]).toBe(fromStart?.[2]);
+        expect(toStart?.[1]).not.toBe(fromStart?.[1]);
+      });
+    });
+
+  test('one logical move spanning paragraphs keeps its first start and last end', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let root!: Element;
+
+    await given('duplicate same-id source range pairs in two paragraphs', () => {
+      root = parseXml(
+        '<w:body xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        '<w:p><w:moveFromRangeStart w:id="7" w:name="move1"/><w:moveFrom w:id="8"/></w:p>' +
+        '<w:p><w:moveFromRangeEnd w:id="7"/><w:moveFromRangeStart w:id="7" w:name="move1"/>' +
+        '<w:moveFrom w:id="9"/><w:moveFromRangeEnd w:id="7"/></w:p></w:body>',
+      ).documentElement!;
+    });
+
+    await when('the move-range postprocessor coalesces generated duplicates', () => {
+      coalesceMoveRangeMarkers(root);
+    });
+
+    await then('the document contains one range spanning both paragraphs', () => {
+      const xml = serializeXml(root.ownerDocument!);
+      expect(countTag(xml, 'w:moveFromRangeStart')).toBe(1);
+      expect(countTag(xml, 'w:moveFromRangeEnd')).toBe(1);
+      expect(countTag(xml, 'w:moveFrom')).toBe(2);
+    });
+  });
+});

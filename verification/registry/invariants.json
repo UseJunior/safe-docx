@@ -191,6 +191,21 @@
       "falsifier": "packages/docx-core/src/integration/lean-spec-bridge.test.ts"
     },
     {
+      "id": "INV-MOVE-RANGE-001",
+      "statement": "For every fixed WordprocessingML story accepted by the compiled checker, tracked move ranges have unique non-empty ids, balanced non-crossing endpoints, exactly one range per direction and move name, and matching source/destination move names.",
+      "tier": "proven",
+      "leanTheorem": "Tier2.XmlTripleChecker.checker_sound",
+      "leanFile": "verification/lean/Tier2/XmlTripleChecker.lean",
+      "productionSurface": "packages/docx-compare/src/baselines/atomizer/inPlaceModifier-postprocess.ts; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts",
+      "residualAxioms": [],
+      "caveats": [
+        "This is a per-document checker guarantee over the fixed main, footnote, and endnote stories, not a universal proof of every safe-docx emission path.",
+        "The checker pairs source and destination range identities by w:name but does not associate individual w:moveFrom or w:moveTo revision ids with a range id.",
+        "The public certificate remains limited to inplace reconstruction output."
+      ],
+      "falsifier": "lean-build: lake build and axiom audit; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
+    },
+    {
       "id": "INV-LO-ORACLE-001",
       "statement": "A local LibreOffice oracle agrees with the TypeScript accept/reject engine on the characterized paragraph-structure projection.",
       "tier": "empirically-validated",

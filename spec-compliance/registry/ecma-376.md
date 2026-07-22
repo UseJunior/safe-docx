@@ -1313,11 +1313,13 @@ part: 1
 section: "17.13.5.23"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-The engine emits, removes, and balances this marker but does not prove its
-identity relationship to every move wrapper.
+The engine coalesces generated source markers to one pair per logical move.
+The compiled fixed-story checker requires each end to close the currently open
+source range with the same unique id. Individual `w:moveFrom` revision ids are
+not associated with range ids.
 
 ## [ECMA-PART1-17-13-5-24] Move source range start
 
@@ -1327,11 +1329,12 @@ part: 1
 section: "17.13.5.24"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-The engine emits, removes, and balances this marker but does not prove its
-identity relationship to every move wrapper.
+The engine emits one source start per logical move. The compiled fixed-story
+checker requires a unique non-empty id and name, rejects duplicate source names,
+and requires a corresponding destination identity with the same name.
 
 ## [ECMA-PART1-17-13-5-25] Move destination run content (w:moveTo)
 
@@ -1369,11 +1372,13 @@ part: 1
 section: "17.13.5.27"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-The engine emits, removes, and balances this marker without claiming complete
-wrapper-to-range identity.
+The engine coalesces generated destination markers to one pair per logical move.
+The compiled fixed-story checker requires each end to close the currently open
+destination range with the same unique id. Individual `w:moveTo` revision ids
+are not associated with range ids.
 
 ## [ECMA-PART1-17-13-5-28] Move destination range start
 
@@ -1383,11 +1388,13 @@ part: 1
 section: "17.13.5.28"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart
-verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-The engine emits, removes, and balances this marker without claiming complete
-wrapper-to-range identity.
+The engine emits one destination start per logical move. The compiled
+fixed-story checker requires a unique non-empty id and name, rejects duplicate
+destination names, and requires a corresponding source identity with the same
+name.
 
 ## [ECMA-PART1-17-13-5-29] Paragraph-property revisions (w:pPrChange)
 

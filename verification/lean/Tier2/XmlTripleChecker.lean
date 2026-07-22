@@ -17,6 +17,11 @@ inductive FldCharKind
   | endf
   deriving DecidableEq, Repr, Inhabited
 
+inductive MoveRangeKind
+  | source
+  | destination
+  deriving DecidableEq, Repr, Inhabited
+
 inductive XmlTok
   | pBreak
   | enter (w : Wrapper)
@@ -26,6 +31,8 @@ inductive XmlTok
   | instrText (s : String)
   | delInstrText (s : String)
   | fldChar (k : FldCharKind)
+  | moveRangeStart (k : MoveRangeKind) (id name : String)
+  | moveRangeEnd (k : MoveRangeKind) (id : String)
   | enterReservedNote
   | exitReservedNote
   deriving DecidableEq, Repr, Inhabited
@@ -131,6 +138,13 @@ def validateAttributeNamespaces (tag : String) (bindings : NamespaceBindings) : 
     if !pre.isEmpty && (namespaceLookup bindings pre).isNone then
       throw s!"unbound namespace prefix on attribute: {pre}"
 
+def tagAttribute (tag key : String) : String :=
+  let tokens := (tagWords tag).drop 1 |>.map fun rawToken =>
+    if rawToken.endsWith "/" then (rawToken.dropEnd 1).toString else rawToken
+  match tokens.find? (fun token => token.startsWith (key ++ "=")) with
+  | some token => (attrTokenValue token key).getD ""
+  | none => ""
+
 def tagToken (tag payload : String) : List XmlTok :=
   if (isStartTag tag "w:footnote" || isStartTag tag "w:endnote") &&
       (tag.contains "w:type=\"separator\"" ||
@@ -141,6 +155,14 @@ def tagToken (tag payload : String) : List XmlTok :=
   else if isEndTag tag "w:ins" then [.exit .ins]
   else if isStartTag tag "w:del" then [.enter .del]
   else if isEndTag tag "w:del" then [.exit .del]
+  else if isStartTag tag "w:moveFromRangeStart" then
+    [.moveRangeStart .source (tagAttribute tag "w:id") (tagAttribute tag "w:name")]
+  else if isStartTag tag "w:moveFromRangeEnd" then
+    [.moveRangeEnd .source (tagAttribute tag "w:id")]
+  else if isStartTag tag "w:moveToRangeStart" then
+    [.moveRangeStart .destination (tagAttribute tag "w:id") (tagAttribute tag "w:name")]
+  else if isStartTag tag "w:moveToRangeEnd" then
+    [.moveRangeEnd .destination (tagAttribute tag "w:id")]
   else if isStartTag tag "w:moveFrom" then [.enter .moveFrom]
   else if isEndTag tag "w:moveFrom" then [.exit .moveFrom]
   else if isStartTag tag "w:moveTo" then [.enter .moveTo]
@@ -356,6 +378,58 @@ def isEnd : XmlTok → Bool
 def validateFieldStructureTokens (toks : List XmlTok) : Bool :=
   toks.countP isBegin == toks.countP isEnd && toks.foldl stepField (.ok []) == .ok []
 
+structure MoveRangeFrame where
+  kind : MoveRangeKind
+  id : String
+  name : String
+  deriving DecidableEq, Repr, Inhabited
+
+structure MoveRangeState where
+  stack : List MoveRangeFrame := []
+  seenIds : List String := []
+  sourceNames : List String := []
+  destinationNames : List String := []
+  valid : Bool := true
+  deriving Repr, Inhabited
+
+def invalidateMoveRanges (state : MoveRangeState) : MoveRangeState :=
+  { state with valid := false }
+
+def stepMoveRanges (state : MoveRangeState) : XmlTok → MoveRangeState
+  | .moveRangeStart kind id name =>
+    let directionNames := match kind with
+      | .source => state.sourceNames
+      | .destination => state.destinationNames
+    if !state.valid || id.isEmpty || name.isEmpty || state.seenIds.contains id ||
+        directionNames.contains name then
+      invalidateMoveRanges state
+    else
+      { state with
+        stack := { kind, id, name } :: state.stack
+        seenIds := id :: state.seenIds
+        sourceNames := if kind == .source then name :: state.sourceNames else state.sourceNames
+        destinationNames :=
+          if kind == .destination then name :: state.destinationNames else state.destinationNames }
+  | .moveRangeEnd kind id =>
+    match state.stack with
+    | top :: rest =>
+      if state.valid && !id.isEmpty && top.kind == kind && top.id == id then
+        { state with stack := rest }
+      else
+        invalidateMoveRanges state
+    | [] => invalidateMoveRanges state
+  | _ => state
+
+def moveRangeNamesMatch (sourceNames destinationNames : List String) : Bool :=
+  sourceNames.length == destinationNames.length &&
+  sourceNames.all destinationNames.contains &&
+  destinationNames.all sourceNames.contains
+
+def validateMoveRanges (toks : List XmlTok) : Bool :=
+  let final := toks.foldl stepMoveRanges {}
+  final.valid && final.stack.isEmpty &&
+    moveRangeNamesMatch final.sourceNames final.destinationNames
+
 def tokenText : XmlTok → List Char
   | .text s => s.toList
   | .delText s => s.toList
@@ -385,6 +459,7 @@ structure CheckReport where
   acceptTextMatchesRevised : Bool
   rejectTextMatchesOriginal : Bool
   combinedHasNoFldCharInsideDel : Bool
+  combinedHasValidMoveRanges : Bool
   deriving Repr, Inhabited
 
 def CheckReport.passed (r : CheckReport) : Bool :=
@@ -392,7 +467,8 @@ def CheckReport.passed (r : CheckReport) : Bool :=
   r.rejectPreservesFieldStructure &&
   r.acceptTextMatchesRevised &&
   r.rejectTextMatchesOriginal &&
-  r.combinedHasNoFldCharInsideDel
+  r.combinedHasNoFldCharInsideDel &&
+  r.combinedHasValidMoveRanges
 
 def comparisonCheckerB (original revised combined : List XmlTok) : CheckReport :=
   let acceptedCombined := acceptTokens combined
@@ -407,6 +483,7 @@ def comparisonCheckerB (original revised combined : List XmlTok) : CheckReport :
     rejectTextMatchesOriginal :=
       normalizeText (extractText rejectedCombined) == normalizeText (extractText rejectedOriginal)
     combinedHasNoFldCharInsideDel := !hasFldCharInsideDel combined
+    combinedHasValidMoveRanges := validateMoveRanges combined
   }
 
 structure NamedStoryTriple where
@@ -458,10 +535,11 @@ theorem checker_sound (original revised combined : List XmlTok)
     (comparisonCheckerB original revised combined).rejectPreservesFieldStructure = true ∧
     (comparisonCheckerB original revised combined).acceptTextMatchesRevised = true ∧
     (comparisonCheckerB original revised combined).rejectTextMatchesOriginal = true ∧
-    (comparisonCheckerB original revised combined).combinedHasNoFldCharInsideDel = true := by
+    (comparisonCheckerB original revised combined).combinedHasNoFldCharInsideDel = true ∧
+    (comparisonCheckerB original revised combined).combinedHasValidMoveRanges = true := by
   simp only [CheckReport.passed, Bool.and_eq_true] at h
-  rcases h with ⟨⟨⟨⟨hAccept, hReject⟩, hAcceptText⟩, hRejectText⟩, hNoDelField⟩
-  exact ⟨hAccept, hReject, hAcceptText, hRejectText, hNoDelField⟩
+  rcases h with ⟨⟨⟨⟨⟨hAccept, hReject⟩, hAcceptText⟩, hRejectText⟩, hNoDelField⟩, hMoveRanges⟩
+  exact ⟨hAccept, hReject, hAcceptText, hRejectText, hNoDelField, hMoveRanges⟩
 
 theorem story_collection_checker_sound (stories : List NamedStoryTriple)
     (h : storyCollectionPassed (checkStoryCollection stories) = true) :
@@ -471,7 +549,8 @@ theorem story_collection_checker_sound (stories : List NamedStoryTriple)
       report.rejectPreservesFieldStructure = true ∧
       report.acceptTextMatchesRevised = true ∧
       report.rejectTextMatchesOriginal = true ∧
-      report.combinedHasNoFldCharInsideDel = true := by
+      report.combinedHasNoFldCharInsideDel = true ∧
+      report.combinedHasValidMoveRanges = true := by
   intro story hStory
   have hMember : checkNamedStory story ∈ checkStoryCollection stories := by
     exact List.mem_map.mpr ⟨story, hStory, rfl⟩
@@ -489,6 +568,7 @@ def reportToJson (r : CheckReport) : Json :=
         , ("acceptTextMatchesRevised", boolJson r.acceptTextMatchesRevised)
         , ("rejectTextMatchesOriginal", boolJson r.rejectTextMatchesOriginal)
         , ("combinedHasNoFldCharInsideDel", boolJson r.combinedHasNoFldCharInsideDel)
+        , ("combinedHasValidMoveRanges", boolJson r.combinedHasValidMoveRanges)
         ])
     ]
 

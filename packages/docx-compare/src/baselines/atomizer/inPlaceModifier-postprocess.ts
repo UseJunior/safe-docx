@@ -306,7 +306,7 @@ const MOVE_RANGE_MARKER_TAGS = [
 
 /**
  * Collapse duplicate move-range markers so each move group is bracketed by
- * exactly ONE range Start and ONE range End per parent element.
+ * exactly ONE range Start and ONE range End per logical move side.
  *
  * The in-place moveFrom path clones one `<w:moveFrom>` wrapper per source atom
  * (word-level atomization fragments a moved paragraph into many atoms), and
@@ -317,54 +317,48 @@ const MOVE_RANGE_MARKER_TAGS = [
  * emits exactly one: a single Start before the first wrapper and a single End
  * after the last, with per-run `<w:moveFrom>` wrappers in between.
  *
- * For each parent element and each move `w:name`, this keeps the FIRST range
- * Start and the LAST range End (in document order) and removes every
- * intermediate duplicate. Coalescing is scoped per-parent so a move spanning
- * multiple paragraphs keeps one bracketing pair per paragraph, matching how the
- * rebuild path brackets multi-paragraph moves.
+ * For each generated range id and move `w:name`, this keeps the FIRST range
+ * Start and the LAST range End in document order and removes every intermediate
+ * duplicate, even when a logical move spans multiple paragraphs. Groups with
+ * inconsistent names for one id are left untouched so the Lean checker can
+ * reject the malformed identity instead of this repair pass hiding it.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.27
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
  * @see https://github.com/UseJunior/safe-docx/issues/446
  */
 export function coalesceMoveRangeMarkers(root: Element): void {
-  function coalesceInParent(parent: Element): void {
-    for (const { start: startTag, end: endTag } of MOVE_RANGE_MARKER_TAGS) {
-      // Group markers by move name (w:name lives on the Start; the paired End
-      // reuses the Start's w:id, so match ends back to a name via that id).
-      const startsByName = new Map<string, Element[]>();
-      const idToName = new Map<string, string>();
-      const endsByName = new Map<string, Element[]>();
+  for (const { start: startTag, end: endTag } of MOVE_RANGE_MARKER_TAGS) {
+    const startsById = new Map<string, Element[]>();
+    const namesById = new Map<string, Set<string>>();
+    const endsById = new Map<string, Element[]>();
 
-      for (const child of childElements(parent)) {
-        if (child.tagName === startTag) {
+    function collect(node: Element): void {
+      for (const child of childElements(node)) {
+        const id = child.getAttribute('w:id');
+        if (child.tagName === startTag && id) {
           const name = child.getAttribute('w:name');
-          if (!name) continue;
-          (startsByName.get(name) ?? startsByName.set(name, []).get(name)!).push(child);
-          const id = child.getAttribute('w:id');
-          if (id) idToName.set(id, name);
-        } else if (child.tagName === endTag) {
-          const id = child.getAttribute('w:id');
-          const name = id ? idToName.get(id) : undefined;
-          if (!name) continue;
-          (endsByName.get(name) ?? endsByName.set(name, []).get(name)!).push(child);
+          if (name) {
+            (startsById.get(id) ?? startsById.set(id, []).get(id)!).push(child);
+            (namesById.get(id) ?? namesById.set(id, new Set()).get(id)!).add(name);
+          }
+        } else if (child.tagName === endTag && id) {
+          (endsById.get(id) ?? endsById.set(id, []).get(id)!).push(child);
         }
-      }
-
-      // Keep only the first Start and the last End for each move name.
-      for (const [, starts] of startsByName) {
-        for (let i = 1; i < starts.length; i++) parent.removeChild(starts[i]!);
-      }
-      for (const [, ends] of endsByName) {
-        for (let i = 0; i < ends.length - 1; i++) parent.removeChild(ends[i]!);
+        collect(child);
       }
     }
-  }
 
-  function traverse(node: Element): void {
-    coalesceInParent(node);
-    for (const child of childElements(node)) traverse(child);
+    collect(root);
+    for (const [id, starts] of startsById) {
+      if (namesById.get(id)?.size !== 1) continue;
+      const ends = endsById.get(id) ?? [];
+      for (let i = 1; i < starts.length; i++) starts[i]!.parentNode?.removeChild(starts[i]!);
+      for (let i = 0; i < ends.length - 1; i++) ends[i]!.parentNode?.removeChild(ends[i]!);
+    }
   }
-
-  traverse(root);
 }
 
 // =============================================================================

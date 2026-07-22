@@ -257,6 +257,7 @@ export interface DocumentIntegrityStoryCertificate {
     acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     comparedStoryHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+    trackedMoveRangesAreCorrectlyPaired: DocumentIntegrityCheckCertificate;
   };
   parsedTokenCounts: { original: number; revised: number; compared: number };
   presence: { original: boolean; revised: boolean; compared: boolean };
@@ -286,11 +287,12 @@ export interface DocumentIntegrityCertificate {
     acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     comparedDocumentHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+    trackedMoveRangesAreCorrectlyPaired: DocumentIntegrityCheckCertificate;
   };
   /** Stable v1 main-story token counts. */
   parsedTokenCounts?: { original: number; revised: number; compared: number };
   /** Internal executable protocol used for package-level verification. */
-  checkerProtocolVersion?: 2;
+  checkerProtocolVersion?: 3;
   fixedStoryScope?: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
   inputPackageSha256?: { originalDocx: string; revisedDocx: string; comparedDocx: string };
   stories?: DocumentIntegrityStoryCertificate[];
