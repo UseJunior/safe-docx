@@ -93,6 +93,24 @@ partial def decodeXmlTextAux : List Char → Except String (List Char)
 def decodeXmlText (s : String) : Except String String := do
   return String.ofList (← decodeXmlTextAux s.toList)
 
+partial def decodeXmlAttributeValueAux : List Char → Except String (List Char)
+  | [] => pure []
+  | '&' :: rest => do
+    let (reference, suffix) := rest.span (· != ';')
+    let _ :: after := suffix | throw "unterminated XML reference"
+    let decoded ← decodeXmlReference reference
+    return decoded :: (← decodeXmlAttributeValueAux after)
+  | '\r' :: '\n' :: rest => return ' ' :: (← decodeXmlAttributeValueAux rest)
+  | '\r' :: rest => return ' ' :: (← decodeXmlAttributeValueAux rest)
+  | '\n' :: rest => return ' ' :: (← decodeXmlAttributeValueAux rest)
+  | '\t' :: rest => return ' ' :: (← decodeXmlAttributeValueAux rest)
+  | c :: rest => do
+    if !isLegalXmlChar c.toNat then throw "literal is not a legal XML character"
+    return c :: (← decodeXmlAttributeValueAux rest)
+
+def decodeXmlAttributeValue (s : String) : Except String String := do
+  return String.ofList (← decodeXmlAttributeValueAux s.toList)
+
 def wmlNamespace : String :=
   "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -243,7 +261,7 @@ def parseTagAttributes (tag : String) : Except String XmlAttributes := do
   return final.attributes
 
 def decodeXmlAttributes (attributes : XmlAttributes) : Except String XmlAttributes :=
-  attributes.mapM fun (key, value) => return (key, ← decodeXmlText value)
+  attributes.mapM fun (key, value) => return (key, ← decodeXmlAttributeValue value)
 
 def validateNamespaceDeclaration (pre uri : String) : Except String Unit := do
   if pre == "xmlns" then throw "the xmlns prefix cannot be rebound"

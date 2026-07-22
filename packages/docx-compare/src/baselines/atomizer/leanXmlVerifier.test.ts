@@ -359,6 +359,11 @@ describeWithLean('Lean fixed-story package protocol', () => {
         'xmlns:w=',
         'xmlns:a="urn:first" xmlns:a="urn:second" xmlns:w=',
       ),
+      normalizedNamespaceAliasCollision: xml.replace(
+        'xmlns:w=',
+        'xmlns:a="urn:normalized\tvalue" xmlns:b="urn:normalized value" ' +
+        'a:value="1" b:value="2" xmlns:w=',
+      ),
       invalidClosingQName: xml.replace('</w:p>', '</w:x:p>'),
       contentBeforeRoot: `garbage${xml}`,
       contentAfterRoot: `${xml}garbage`,
@@ -407,6 +412,10 @@ describeWithLean('Lean fixed-story package protocol', () => {
       ),
       mixedCaseUtf8Encoding: xml.replace('encoding="UTF-8"', 'encoding="uTf-8"'),
       leadingUtf8Bom: `\uFEFF${xml}`,
+      referencedWmlNamespace: xml.replace(
+        W_NS,
+        W_NS.replace('wordprocessingml', 'word&#112;rocessingml'),
+      ),
       noDeclarationWithWhitespace: ` \t\n${xml.replace(/^<\?xml[^?]*\?>/, '')}\r\n`,
     } as const;
 
@@ -502,6 +511,13 @@ describeWithLean('Lean fixed-story package protocol', () => {
     const revised = await buildDocxFromBodyXml(revisedMoveBody);
     const equivalentNames = [
       ['move one', 'move&#32;one'],
+      ['move\tone', 'move one'],
+      ['move\none', 'move one'],
+      ['move\rone', 'move one'],
+      ['move\r\none', 'move one'],
+      ['move&#9;one', 'move&#x9;one'],
+      ['move&#10;one', 'move&#xA;one'],
+      ['move&#13;one', 'move&#xD;one'],
       ['move>one', 'move&gt;one'],
       ['move&#32;one', 'move&#x20;one'],
       ['move&amp;one', 'move&#38;one'],
@@ -520,6 +536,27 @@ describeWithLean('Lean fixed-story package protocol', () => {
         certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status,
         `${sourceName} = ${destinationName}`,
       ).toBe('passed');
+    }
+  });
+
+  test('distinguishes normalized literal attribute whitespace from referenced whitespace', async () => {
+    const original = await buildDocxFromBodyXml(originalMoveBody);
+    const revised = await buildDocxFromBodyXml(revisedMoveBody);
+    const distinctions = [
+      ['move\tone', 'move&#9;one'],
+      ['move\none', 'move&#10;one'],
+      ['move\rone', 'move&#13;one'],
+      ['move\r\none', 'move  one'],
+    ] as const;
+
+    for (const [sourceName, destinationName] of distinctions) {
+      const body = validMoveBody
+        .replace('w:name="move1"', `w:name="${sourceName}"`)
+        .replace('w:name="move1"', `w:name="${destinationName}"`);
+      const combined = await buildDocxFromBodyXml(body);
+      const certificate = await run(original, revised, combined);
+      expect(certificate.status, `${sourceName} != ${destinationName}`).toBe('failed');
+      expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('failed');
     }
   });
 

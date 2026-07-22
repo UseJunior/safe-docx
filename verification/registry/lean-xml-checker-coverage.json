@@ -79,7 +79,8 @@
       "requires syntactically valid element and attribute QNames before namespace expansion",
       "rejects empty prefixed namespace bindings and illegal xml or xmlns namespace rebinding",
       "rejects duplicate ordinary attributes by expanded namespace URI and local name across every namespace; unprefixed attributes remain in no namespace",
-      "validates and decodes character data references in every element namespace before semantic token filtering"
+      "validates and decodes character data references in every element namespace before semantic token filtering",
+      "normalizes literal attribute CRLF, CR, LF, and tab to spaces before reference resolution, while numeric character references retain their referenced XML whitespace character"
     ],
     "acceptedXmlSubset": [
       "package-part bytes must decode as UTF-8; one leading UTF-8 BOM is accepted and stripped",

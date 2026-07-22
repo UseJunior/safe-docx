@@ -61,7 +61,9 @@ for (const required of ['isLegalXmlChar', 'duplicate XML attribute name',
   'isValidNcName', 'validateNamespaceDeclaration', 'parseXmlDeclaration',
   'ExpandedXmlAttribute', 'expandOrdinaryAttributes', 'canonicalizeAttributes',
   'resolveAttributeQName', 'validateUniqueExpandedAttributes', 'isUtf8Encoding',
-  'stripLeadingUtf8Bom', 'let decodedPayload ← decodeXmlText payload',
+  'stripLeadingUtf8Bom', 'decodeXmlAttributeValueAux',
+  'decodeXmlAttributeValue value', "| '\\r' :: '\\n' :: rest",
+  'let decodedPayload ← decodeXmlText payload',
   'non-whitespace content outside the XML root',
   'processing instructions are outside the accepted XML subset']) {
   if (!lean.includes(required)) {
