@@ -201,7 +201,7 @@ Also run checks specific to the changed surface, including generated tool docs, 
 - Do not force-push after review starts.
 - Use incremental commits during review; maintainers can squash or rebase after review.
 
-An advisory LLM quality gate reviews OOXML invariants, tracked-change behavior, side-part updates, and paired artifacts. If it reports a warning, either address it or explain why it does not apply. The checklist lives in `.github/llm-based-quality-gate/checklist.md` and is read from the PR base branch.
+The central LLM quality gate reviews OOXML invariants, tracked-change behavior, side-part updates, and paired artifacts. If it reports a warning, either address it or explain why it does not apply. The checklist lives in `.github/llm-based-quality-gate/checklist.md` and is read from the PR base branch.
 
 ## Documentation Changes
 
