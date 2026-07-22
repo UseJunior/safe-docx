@@ -35,12 +35,13 @@ interface LeanStoryJson {
       acceptTextMatchesRevised: boolean;
       rejectTextMatchesOriginal: boolean;
       combinedHasNoFldCharInsideDel: boolean;
+      combinedHasValidMoveRanges: boolean;
     };
   };
 }
 
 interface LeanVerifierJson {
-  protocolVersion: 2;
+  protocolVersion: 3;
   checker: string;
   passed: boolean;
   stories: LeanStoryJson[];
@@ -77,6 +78,9 @@ function unevaluatedChecks(): DocumentIntegrityCertificate['checks'] {
     comparedDocumentHasNoFieldMarkersInsideDeletions: notEvaluated(
       'The compared document does not place Word field markers inside deletion markup.'
     ),
+    trackedMoveRangesAreCorrectlyPaired: notEvaluated(
+      'Tracked move range markers are structurally paired by range ID and move name.'
+    ),
   };
 }
 
@@ -109,6 +113,10 @@ function storyCertificate(story: LeanStoryJson): DocumentIntegrityStoryCertifica
       comparedStoryHasNoFieldMarkersInsideDeletions: check(
         checks.combinedHasNoFldCharInsideDel,
         'The compared story does not place Word field markers inside deletion markup.'
+      ),
+      trackedMoveRangesAreCorrectlyPaired: check(
+        checks.combinedHasValidMoveRanges,
+        'Tracked move range markers in this story are structurally paired by range ID and move name.'
       ),
     },
     parsedTokenCounts: {
@@ -153,6 +161,7 @@ function isLeanStoryJson(value: unknown): value is LeanStoryJson {
     'acceptTextMatchesRevised',
     'rejectTextMatchesOriginal',
     'combinedHasNoFldCharInsideDel',
+    'combinedHasValidMoveRanges',
   ] as const;
   return (
     hasExactKeys(story, ['name', 'presence', 'parsedTokenCounts', 'report']) &&
@@ -215,7 +224,7 @@ function isLeanVerifierJson(value: unknown): value is LeanVerifierJson {
   const canonicalNames = ['main', 'footnotes', 'endnotes'].filter((name) => names.includes(name as LeanStoryJson['name']));
   return (
     hasExactKeys(root, ['protocolVersion', 'checker', 'passed', 'stories', 'presenceMismatches']) &&
-    root.protocolVersion === 2 &&
+    root.protocolVersion === 3 &&
     root.checker === 'safe-docx-lean-fixed-story-checker' &&
     typeof root.passed === 'boolean' &&
     Array.isArray(stories) &&
@@ -314,7 +323,7 @@ function baseCertificate(input: LeanVerifierInput): Omit<
       revisedDocumentXml: sha256(input.legacyDocumentXml.revised),
       comparedDocumentXml: sha256(input.legacyDocumentXml.compared),
     },
-    checkerProtocolVersion: 2,
+    checkerProtocolVersion: 3,
     fixedStoryScope: ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'],
     inputPackageSha256: {
       originalDocx: sha256(input.originalDocx),
@@ -324,6 +333,7 @@ function baseCertificate(input: LeanVerifierInput): Omit<
     exclusions: [
       'relationships and note-reference integrity',
       'comments, headers, and footers',
+      'association of individual moveFrom or moveTo wrapper revision IDs with move ranges',
       'rendering and full ECMA-376 validation',
     ],
   };
@@ -363,13 +373,14 @@ export async function runLeanXmlTripleVerifier(input: LeanVerifierInput): Promis
       writeFile(comparedDocxPath, snapshot.comparedDocx),
     ]);
     const stdout = await runExecutable(executablePath, JSON.stringify({
-      protocolVersion: 2, originalDocxPath, revisedDocxPath, comparedDocxPath,
+      protocolVersion: 3, originalDocxPath, revisedDocxPath, comparedDocxPath,
     }), timeoutMs);
     const parsed: unknown = JSON.parse(stdout);
     if (!isLeanVerifierJson(parsed)) throw new Error('Lean fixed-story checker returned an unexpected JSON shape');
     const stories = parsed.stories.map(storyCertificate);
+    const mainReport = parsed.stories.find((story) => story.name === 'main');
     const main = stories.find((story) => story.name === 'main');
-    if (!main) throw new Error('Lean fixed-story checker omitted the required main story');
+    if (!main || !mainReport) throw new Error('Lean fixed-story checker omitted the required main story');
     return {
       ...base,
       status: parsed.passed ? 'passed' : 'failed',
@@ -385,6 +396,10 @@ export async function runLeanXmlTripleVerifier(input: LeanVerifierInput): Promis
           main.checks.rejectingAllTrackedChangesKeepsValidFieldStructure,
         comparedDocumentHasNoFieldMarkersInsideDeletions:
           main.checks.comparedStoryHasNoFieldMarkersInsideDeletions,
+        trackedMoveRangesAreCorrectlyPaired: check(
+          mainReport.report.checks.combinedHasValidMoveRanges,
+          'Tracked move range markers are structurally paired by range ID and move name.'
+        ),
       },
       parsedTokenCounts: main.parsedTokenCounts,
       presenceMismatches: parsed.presenceMismatches,

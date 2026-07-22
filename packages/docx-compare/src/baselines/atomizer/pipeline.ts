@@ -55,7 +55,7 @@ import {
   type HyperlinkRelEntry,
 } from '@usejunior/docx-core';
 import { OOXML } from '@usejunior/docx-core';
-import { detectMovesInAtomList } from '../../move-detection.js';
+import { collectPreservedMoveNames, detectMovesInAtomList } from '../../move-detection.js';
 import { detectFormatChangesInAtomList } from '../../format-detection.js';
 import {
   parseDocumentXml,
@@ -751,7 +751,8 @@ export async function compareDocumentsAtomizer(
       // Move detection looks at the revised atoms with Inserted status
       // and original atoms with Deleted status
       const allAtoms = [...originalAtoms, ...revisedAtoms];
-      detectMovesInAtomList(allAtoms, moveSettings);
+      const preservedMoveNames = collectPreservedMoveNames([originalTree, revisedTree]);
+      detectMovesInAtomList(allAtoms, moveSettings, preservedMoveNames);
     }
 
     // Step 9: Run format detection
@@ -776,7 +777,7 @@ export async function compareDocumentsAtomizer(
         originalAtoms,
         revisedAtoms,
         mergedAtoms,
-        { author, date }
+        { author, date, preservedRoots: [originalTree] }
       );
     } else {
       // Rebuild mode: reconstruct from atoms using original as the structural base.
