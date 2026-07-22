@@ -3,10 +3,11 @@
  *
  * Drives the REAL suite runner (open-agreements/docx-platform-tests) against
  * the safe-docx conformance adapter (`src/cli/conformance-adapter.ts`) via a
- * temporary adapter registry, and asserts every suite scenario reports
- * `pass`. safe-docx disagreeing with a suite expectation fails this test —
- * the suite's assertions derive from cited ECMA-376 clauses, so a failure
- * here is a conformance finding, not a flake.
+ * temporary adapter registry. Every scenario using an implemented operation
+ * must report `pass`; operations outside the adapter's supported set must
+ * report `unsupported`. A supported-operation disagreement fails this test —
+ * the suite's assertions derive from cited standards clauses, so a failure is
+ * a conformance finding, not a flake.
  *
  * Gating (Lean-differential-harness pattern): the suite checkout is located
  * via the DOCX_PLATFORM_TESTS_DIR environment variable; when it is unset,
@@ -22,10 +23,11 @@
  */
 
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect } from 'vitest';
+import { SUPPORTED_CONFORMANCE_OPERATIONS } from '../cli/conformance-adapter.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
 // Named const (not an inline literal) so `scripts/validate_allure_test_labels.mjs`
@@ -78,6 +80,48 @@ interface SuiteResults {
   }>;
 }
 
+interface ScenarioManifest {
+  scenarioId: string;
+  operationDescriptor: { operationName: string };
+}
+
+const PRIOR_REQUIRED_SCENARIO_IDS = new Set([
+  'acceptDeletedParagraphMarkMergesParagraphs',
+  'acceptDeletionsRemovesDelContent',
+  'acceptFormattingChangeKeepsNewRunProperties',
+  'acceptInsertionsUnwrapsInsWrappers',
+  'acceptNestedDeletionInsideInsertion',
+  'rejectDeletionsRestoresDelContent',
+  'rejectFormattingChangeRestoresPriorRunProperties',
+  'rejectInsertedParagraphMarkMergesParagraphs',
+  'rejectInsertionsRemovesInsContent',
+  'rejectNestedDeletionInsideInsertion',
+  'replaceFirstOccurrencePreservesOffsets',
+  'replaceTextAcrossRunBoundary',
+]);
+const COMPATIBILITY_MODE_SCENARIO_ID = 'composeCompatibilityMode15WritesCompatSetting';
+const EXPECTED_UNSUPPORTED_SCENARIO_IDS = new Set([
+  'acceptDeletedTableRowRemovesEntireRow',
+  'rejectInsertedTableRowRemovesEntireRow',
+]);
+
+function scenarioManifestPaths(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return scenarioManifestPaths(path);
+    return entry.name === 'scenario.json' ? [path] : [];
+  });
+}
+
+function loadScenarioOperations(suiteDir: string): Map<string, string> {
+  return new Map(
+    scenarioManifestPaths(join(suiteDir, 'scenarios')).map((path) => {
+      const manifest = JSON.parse(readFileSync(path, 'utf8')) as ScenarioManifest;
+      return [manifest.scenarioId, manifest.operationDescriptor.operationName];
+    }),
+  );
+}
+
 const { available: suiteAvailable, runnerTsx: RUNNER_TSX, skipWarning } =
   resolveSuiteAvailability(SUITE_DIR);
 if (skipWarning) {
@@ -101,9 +145,12 @@ function warnOnPinMismatch(): void {
 }
 
 describeMaybe('Cross-implementation conformance suite self-check', () => {
+  // coverage-rationale: one real runner invocation jointly proves checkout, prior adapter, compatibility-mode, and honest-outcome policy.
   test
     .openspec('[XIMPL-01] Suite checkout present and safe-docx agrees')
-    .openspec('[XIMPL-04] acceptAllTrackedChanges round-trip through the adapter')(
+    .openspec('[XIMPL-04] acceptAllTrackedChanges round-trip through the adapter')
+    .openspec('[XIMPL-07] Compatibility mode generation validates and declines honestly')
+    .openspec('[XIMPL-08] Supported and unsupported suite outcomes remain honest')(
     'safe-docx adapter passes every docx-platform-tests scenario',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const workDir = mkdtempSync(join(tmpdir(), 'ximpl-'));
@@ -111,9 +158,11 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
         const registryPath = join(workDir, 'adapters.json');
         const resultsPath = join(workDir, 'results.json');
         let results: SuiteResults = { results: [] };
+        let scenarioOperations = new Map<string, string>();
 
         await given('a temp registry pointing the suite runner at the safe-docx adapter', async () => {
           warnOnPinMismatch();
+          scenarioOperations = loadScenarioOperations(SUITE_DIR);
           writeFileSync(
             registryPath,
             JSON.stringify({
@@ -136,15 +185,27 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
           await attachPrettyJson('suite-results', results);
         });
 
-        await then('every scenario outcome for safe-docx is pass', async () => {
+        await then('supported scenarios pass and unsupported operations remain explicit', async () => {
           expect(results.results.length).toBeGreaterThan(0);
-          const failures = results.results
-            .map((scenario) => ({ scenario, outcome: scenario.outcomes['safe-docx'] }))
-            .filter(({ outcome }) => outcome?.status !== 'pass');
-          const detail = failures
+          expect(results.results).toHaveLength(scenarioOperations.size);
+          const mismatches = results.results
+            .map((scenario) => {
+              const operationName = scenarioOperations.get(scenario.scenarioId);
+              const outcome = scenario.outcomes['safe-docx'];
+              const expectedStatus =
+                operationName &&
+                SUPPORTED_CONFORMANCE_OPERATIONS.has(operationName) &&
+                !EXPECTED_UNSUPPORTED_SCENARIO_IDS.has(scenario.scenarioId)
+                  ? 'pass'
+                  : 'unsupported';
+              return { scenario, operationName, outcome, expectedStatus };
+            })
+            .filter(({ outcome, expectedStatus }) => outcome?.status !== expectedStatus);
+          const detail = mismatches
             .map(
-              ({ scenario, outcome }) =>
-                `${scenario.scenarioId}: ${outcome?.status ?? 'missing'} ` +
+              ({ scenario, operationName, outcome, expectedStatus }) =>
+                `${scenario.scenarioId} (${operationName ?? 'missing operation'}): ` +
+                `expected ${expectedStatus}, got ${outcome?.status ?? 'missing'} ` +
                 (outcome?.reason ?? '') +
                 (outcome?.assertionResults ?? [])
                   .filter((a) => !a.passed)
@@ -152,7 +213,16 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
                   .join(''),
             )
             .join('\n');
-          expect(failures.length, detail).toBe(0);
+          expect(mismatches.length, detail).toBe(0);
+        });
+
+        await then('all prior required scenarios and compatibility mode 15 explicitly pass', async () => {
+          const outcomes = new Map(
+            results.results.map((scenario) => [scenario.scenarioId, scenario.outcomes['safe-docx']]),
+          );
+          const required = [...PRIOR_REQUIRED_SCENARIO_IDS, COMPATIBILITY_MODE_SCENARIO_ID];
+          const failures = required.filter((scenarioId) => outcomes.get(scenarioId)?.status !== 'pass');
+          expect(failures, `required scenarios did not pass: ${failures.join(', ')}`).toEqual([]);
         });
       } finally {
         rmSync(workDir, { recursive: true, force: true });
@@ -255,6 +325,97 @@ describe('Conformance adapter protocol behavior', () => {
       }
     },
     60_000,
+  );
+
+  test.openspec('[XIMPL-07] Compatibility mode generation validates and declines honestly')(
+    'compatibility mode generation rejects malformed descriptors and declines unsupported modes',
+    async ({ given, when, then }: AllureBddContext) => {
+      const workDir = mkdtempSync(join(tmpdir(), 'ximpl-compat-proto-'));
+      try {
+        const operationPath = join(workDir, 'operation.json');
+        const outputPath = join(workDir, 'output.docx');
+        let malformed!: SpawnSyncReturns<string>;
+        let invalidBody!: SpawnSyncReturns<string>;
+        let unsupported!: SpawnSyncReturns<string>;
+
+        await given('malformed and unsupported compatibility mode descriptors', async () => {});
+
+        await when('the adapter receives a nonnumeric mode and then mode 14', async () => {
+          writeFileSync(
+            operationPath,
+            JSON.stringify({
+              operationName: 'composeDocumentWithCompatibilityMode',
+              compatibilityMode: '15',
+              bodyText: 'Invalid mode type',
+            }),
+          );
+          malformed = spawnSync(
+            TSX_BIN,
+            [
+              ADAPTER_ENTRY,
+              '--protocol-version', '1',
+              '--operation', operationPath,
+              '--input', join(workDir, 'unused.docx'),
+              '--output', outputPath,
+            ],
+            { encoding: 'utf8', timeout: 60_000 },
+          );
+
+          writeFileSync(
+            operationPath,
+            JSON.stringify({
+              operationName: 'composeDocumentWithCompatibilityMode',
+              compatibilityMode: 15,
+              bodyText: 15,
+            }),
+          );
+          invalidBody = spawnSync(
+            TSX_BIN,
+            [
+              ADAPTER_ENTRY,
+              '--protocol-version', '1',
+              '--operation', operationPath,
+              '--input', join(workDir, 'unused.docx'),
+              '--output', outputPath,
+            ],
+            { encoding: 'utf8', timeout: 60_000 },
+          );
+
+          writeFileSync(
+            operationPath,
+            JSON.stringify({
+              operationName: 'composeDocumentWithCompatibilityMode',
+              compatibilityMode: 14,
+              bodyText: 'Unsupported mode',
+            }),
+          );
+          unsupported = spawnSync(
+            TSX_BIN,
+            [
+              ADAPTER_ENTRY,
+              '--protocol-version', '1',
+              '--operation', operationPath,
+              '--input', join(workDir, 'unused.docx'),
+              '--output', outputPath,
+            ],
+            { encoding: 'utf8', timeout: 60_000 },
+          );
+        });
+
+        await then('malformed inputs exit 1 and unsupported mode exits 2 without output', async () => {
+          expect(malformed.status, malformed.stderr).toBe(1);
+          expect(malformed.stderr).toContain('integer compatibilityMode');
+          expect(invalidBody.status, invalidBody.stderr).toBe(1);
+          expect(invalidBody.stderr).toContain('string bodyText');
+          expect(unsupported.status, unsupported.stderr).toBe(2);
+          expect(unsupported.stdout).toContain('only implements compatibilityMode 15');
+          expect(existsSync(outputPath)).toBe(false);
+        });
+      } finally {
+        rmSync(workDir, { recursive: true, force: true });
+      }
+    },
+    120_000,
   );
 
   test.openspec('[XIMPL-06] Protocol version mismatch exits with code 3')(

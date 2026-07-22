@@ -1,6 +1,6 @@
 # SafeDocX Capability Projection
 
-Pinned neutral registry: `open-agreements/docx-platform-tests@09e4c2c8a2fac214a1f02ed787e8ed9a0404217b`
+Pinned neutral registry: `open-agreements/docx-platform-tests@19f051ed645cbc8613a5967e02d7f87ef7824454`
 
 Profile: `current-neutral-surface` (registry version 1)
 
@@ -22,14 +22,14 @@ Exact known unchecked areas: full ECMA-376 schema validation; rendering equivale
 
 ## Denominator
 
-Profile capability/axis pairs: **59**
+Profile capability/axis pairs: **62**
 
 | Axis | Pairs |
 |---|---:|
-| generate | 13 |
-| edit | 15 |
+| generate | 14 |
+| edit | 16 |
 | acceptReject | 10 |
-| crossPlatform | 21 |
+| crossPlatform | 22 |
 
 ## Evidence Inventory
 
@@ -37,12 +37,12 @@ These counts are not interchangeable denominators. The profile cross-product inc
 
 | Count | Value | Meaning |
 |---|---:|---|
-| Profile capability/axis pairs | 59 | Every applicable pair selected by the pinned profile |
-| Authored mapping pairs | 26 | Distinct capability/axis pairs with neutral scenarios |
-| Complete-run derived cross-platform pairs | 21 | One potential cross-platform row per mapped capability |
-| Expected complete summary rows | 47 | 26 authored plus 21 derived rows |
+| Profile capability/axis pairs | 62 | Every applicable pair selected by the pinned profile |
+| Authored mapping pairs | 27 | Distinct capability/axis pairs with neutral scenarios |
+| Complete-run derived cross-platform pairs | 22 | One potential cross-platform row per mapped capability |
+| Expected complete summary rows | 49 | 27 authored plus 22 derived rows |
 | Pinned measured summary rows | 8 | Rows actually backed by the pinned result snapshot |
-| Pinned measured / unmeasured scenarios | 12 / 25 | Result-snapshot state at the pinned commit |
+| Pinned measured / unmeasured scenarios | 12 / 26 | Result-snapshot state at the pinned commit |
 
 ## Status Counts
 
@@ -53,7 +53,7 @@ These counts are not interchangeable denominators. The profile cross-product inc
 | preservation-only | 0 |
 | gap | 3 |
 | non-goal | 0 |
-| untested | 48 |
+| untested | 51 |
 
 ## Evidence Projection
 
@@ -99,6 +99,9 @@ These counts are not interchangeable denominators. The profile cross-product inc
 | `word.runs.formatting` | crossPlatform | untested | `word/document.xml`, `word/styles.xml`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | The pinned neutral result set has no measured cross-platform row for this pair. |
 | `word.runs.formatting` | edit | untested | `word/document.xml`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection. |
 | `word.runs.formatting` | generate | untested | `word/document.xml`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection. |
+| `word.settings.compatibility-mode` | crossPlatform | untested | `[Content_Types].xml`, `_rels/.rels`, `word/document.xml`, `word/_rels/document.xml.rels`, `word/settings.xml`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | The pinned neutral result set has no measured cross-platform row for this pair. |
+| `word.settings.compatibility-mode` | edit | untested | `[Content_Types].xml`, `_rels/.rels`, `word/document.xml`, `word/_rels/document.xml.rels`, `word/settings.xml`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | No pinned neutral result measures SafeDocX editing this setting, so the pair remains untested. |
+| `word.settings.compatibility-mode` | generate | untested | `[Content_Types].xml`, `_rels/.rels`, `word/document.xml`, `word/_rels/document.xml.rels`, `word/settings.xml`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | The compatibility-mode scenario is unmeasured in the pinned neutral result, so local adapter tests cannot establish a positive projection row. |
 | `word.styles.paragraph` | crossPlatform | untested | `word/document.xml`, `word/styles.xml`, `word/_rels/document.xml.rels`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | The pinned neutral result set has no measured cross-platform row for this pair. |
 | `word.styles.paragraph` | edit | untested | `word/document.xml`, `word/styles.xml`, `word/_rels/document.xml.rels`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | No pinned neutral result or mapped local executable evidence is asserted for this pair. |
 | `word.styles.paragraph` | generate | untested | `word/document.xml`, `word/styles.xml`, `word/_rels/document.xml.rels`<br>stories: main<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection. |

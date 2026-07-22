@@ -45,6 +45,7 @@
     "applyNamedParagraphStyleSetsPStyleReference",
     "applyNumberingToParagraphAttachesNumPr",
     "commentPartRecordsAuthorInitialsAndText",
+    "composeCompatibilityMode15WritesCompatSetting",
     "composeFormattedRunCarriesBoldItalicSize",
     "composeHeaderTextAddsSectionHeaderReference",
     "composeHyperlinkCreatesRelationshipReferencedLink",

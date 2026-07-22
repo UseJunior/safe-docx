@@ -33,6 +33,7 @@
       "enum": [
         "normative-schema",
         "normative-prose",
+        "normative-microsoft-extension",
         "metamorphic-invariant",
         "observed-word-behavior",
         "cross-implementation-evidence",

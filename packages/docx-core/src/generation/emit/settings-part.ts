@@ -1,10 +1,9 @@
 /**
  * word/settings.xml emitter.
  *
- * Emitted on every package. The part always carries a `w:compat` block with a
- * `compatibilityMode=15` compatSetting (Word 2013+ / mode 15) so Microsoft Word
- * opens generated documents in the current format rather than the legacy
- * "Compatibility Mode" (which shows a banner in the title bar). Conditional
+ * Emitted on every package. ECMA-376 defines the Document Settings part and the
+ * custom `w:compatSetting` container; MS-DOCX §2.3.5 separately assigns the
+ * Microsoft-specific `compatibilityMode=15` semantics used here. Conditional
  * settings are folded in when the document needs them: `w:evenAndOddHeaders`
  * for any section declaring an even-page header or footer, and
  * `w:clrSchemeMapping` when theme-relative authoring or a custom theme is used.
@@ -12,7 +11,10 @@
  * The `w:compat` block is static (no clock/random), preserving the compiler's
  * byte-for-byte determinism guarantee.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 11.3.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.15.3.4
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
+ * @see MS-DOCX §2.3.5 compatibilityMode
  */
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
@@ -24,7 +26,7 @@ import type { BlockSpec, DocumentSpec, InlineSpec, TableCellSpec } from '../type
 const SETTINGS_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml';
 const SETTINGS_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings';
 
-/** Word 2013+ compatibility mode; clears Word's legacy "Compatibility Mode" banner. */
+/** MS-DOCX §2.3.5 mode 15; clears Word's legacy "Compatibility Mode" banner. */
 const COMPATIBILITY_MODE_15 = '15';
 const COMPAT_SETTING_URI = 'http://schemas.microsoft.com/office/word';
 

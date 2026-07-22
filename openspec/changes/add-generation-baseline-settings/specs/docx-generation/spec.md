@@ -5,10 +5,12 @@
 Every package produced by `generateDocx` SHALL include `word/settings.xml`,
 registered with a content-type Override and a document relationship that
 resolves, so authored output carries the settings part a Word-authored document
-carries. The part SHALL always contain a `w:compat` block with a
-`compatibilityMode=15` compatSetting (Word 2013+ / mode 15) so Microsoft Word
-opens the document in the current format rather than legacy "Compatibility
-Mode". Conditional settings — `w:evenAndOddHeaders` when a section declares an
+carries. Per ECMA-376 5th edition Part 1 §17.15.3.4, the part SHALL always
+contain a `w:compat` block with a custom compatSetting. That setting SHALL use
+the `compatibilityMode=15` name, URI, and value whose Microsoft-specific
+semantics are defined separately by MS-DOCX §2.3.5, so Microsoft Word opens the
+document in the current format rather than legacy "Compatibility Mode".
+Conditional settings — `w:evenAndOddHeaders` when a section declares an
 even-page header or footer, and `w:clrSchemeMapping` when theme-relative
 authoring or a custom theme is used — SHALL be folded into the same part when
 needed, ordered before the `w:compat` block. The part SHALL be static so the

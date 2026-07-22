@@ -35,12 +35,12 @@ the `#487` bytes.
 
 | Artifact | Emitter revision | Word for Mac | Pages | Google Docs import | LibreOffice |
 |---|---|---|---|---|---|
-| `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | pending automated rerun |
-| `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | pending automated rerun |
-| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | pending automated rerun |
-| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | pending automated rerun |
-| `generation-phase5-numbering.docx` (three-level legal numbering through the document façade) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | pending automated rerun |
-| `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | pending automated rerun |
+| `generation-phase1-minimal.docx` (plain paragraphs + explicit page setup) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | clean (identity + PDF probes, 2026-07-22) |
+| `generation-phase2-styled.docx` (named style + run formatting + tabs/indent/justify) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | clean (identity + PDF probes, 2026-07-22) |
+| `generation-phase3-cover-body.docx` (titlePg cover header → body header, Page X of Y field footer, page break) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | clean (identity + PDF probes, 2026-07-22) |
+| `generation-phase4-tables.docx` (fixed-grid bordered table, shaded merged header row, repeating-header flag) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | clean (identity + PDF probes, 2026-07-22) |
+| `generation-phase5-numbering.docx` (three-level legal numbering through the document façade) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | clean (identity + PDF probes, 2026-07-22) |
+| `generation-phase6-drafting-notes.docx` (anchored comments with commentsExtended/people ancillary parts) | #487 (+ compat settings) | — | clean (#482 bytes, 2026-07-06) | clean (#482 bytes, 2026-07-07) | clean (identity + PDF probes, 2026-07-22) |
 
 ## Per-reader notes
 
@@ -125,3 +125,8 @@ the `#487` bytes.
   `resolveSoffice()` is null and the probes skip; this remains a local-only
   signal. (A future hardening could gate on `probeSofficeUsable()` too, so an
   installed-but-crashing binary skips instead of failing.)
+- #487 (2026-07-22, LibreOffice headless on macOS): all six deterministic
+  compatibility-settings artifacts passed both load→save identity and PDF
+  conversion. The first parallel test attempt hit the documented macOS
+  `Abort trap: 6`; the isolated retry passed, followed by a sequential all-six
+  artifact run with non-empty DOCX and PDF outputs.

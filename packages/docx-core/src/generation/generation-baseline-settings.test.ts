@@ -22,7 +22,13 @@ import { checkGeneratedPackage } from './structural-checks.js';
 import type { DocumentSpec } from './types.js';
 
 const TEST_FEATURE = 'add-generation-baseline-settings';
-const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
+const test = testAllure
+  .epic('Document Generation')
+  .withLabels({ feature: TEST_FEATURE })
+  .conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '11.3.3' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.15.3.4' },
+  );
 
 /** A minimal spec that needs no conditional settings (no even headers, no theme). */
 function plainSpec(): DocumentSpec {
@@ -62,6 +68,7 @@ describe('Baseline settings part', () => {
 
       await then('it contains word/settings.xml', async () => {
         expect(zipNames, 'missing word/settings.xml').toContain('word/settings.xml');
+        expect(zipNames.filter((name) => name.endsWith('/')), 'wall-clock-stamped directory entries').toEqual([]);
       });
 
       await then('the settings part is wired and registered exactly once', async () => {

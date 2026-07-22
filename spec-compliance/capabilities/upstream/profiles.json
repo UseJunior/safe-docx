@@ -22,6 +22,7 @@
         "word.revisions.run-properties",
         "word.revisions.table-rows",
         "word.runs.formatting",
+        "word.settings.compatibility-mode",
         "word.styles.paragraph",
         "word.tables.cells",
         "word.tables.horizontal-merge",

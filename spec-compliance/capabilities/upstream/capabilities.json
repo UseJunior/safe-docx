@@ -192,6 +192,23 @@
       "packageParts": ["word/document.xml", "word/styles.xml"]
     },
     {
+      "id": "word.settings.compatibility-mode",
+      "title": "Word compatibility mode setting",
+      "family": "settings",
+      "description": "A custom compatibility setting in the document settings part declares the Microsoft Word feature set requested when editing the document.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "11.3.3" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.15.3.4" },
+        { "standard": "ECMA-376", "edition": 5, "part": 4, "section": "9.2.3" }
+      ],
+      "microsoftExtensions": [
+        { "standard": "MS-DOCX", "section": "2.3.5", "clauseTitle": "compatibilityMode" }
+      ],
+      "dependencies": [],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "generate", "edit", "crossPlatform"],
+      "packageParts": ["[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels", "word/settings.xml"]
+    },
+    {
       "id": "word.styles.paragraph",
       "title": "Named paragraph styles",
       "family": "styles",
