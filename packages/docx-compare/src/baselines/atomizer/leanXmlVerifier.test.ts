@@ -410,6 +410,64 @@ describeWithLean('Lean fixed-story package protocol', () => {
     expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('passed');
   });
 
+  test('pairs semantically equal move names across literal, entity, decimal, hex, and supplementary forms', async () => {
+    const original = await buildDocxFromBodyXml(originalMoveBody);
+    const revised = await buildDocxFromBodyXml(revisedMoveBody);
+    const equivalentNames = [
+      ['move one', 'move&#32;one'],
+      ['move>one', 'move&gt;one'],
+      ['move&#32;one', 'move&#x20;one'],
+      ['move&amp;one', 'move&#38;one'],
+      ['move😀one', 'move&#x1F600;one'],
+      ['move&#128512;one', 'move&#x1F600;one'],
+    ] as const;
+
+    for (const [sourceName, destinationName] of equivalentNames) {
+      const body = validMoveBody
+        .replace('w:name="move1"', `w:name="${sourceName}"`)
+        .replace('w:name="move1"', `w:name="${destinationName}"`);
+      const combined = await buildDocxFromBodyXml(body);
+      const certificate = await run(original, revised, combined);
+      expect(certificate.status, `${sourceName} = ${destinationName}`).toBe('passed');
+      expect(
+        certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status,
+        `${sourceName} = ${destinationName}`,
+      ).toBe('passed');
+    }
+  });
+
+  test('fails closed on malformed or ambiguous XML attributes and character references', async () => {
+    const original = await buildDocxFromBodyXml(originalMoveBody);
+    const revised = await buildDocxFromBodyXml(revisedMoveBody);
+    const malformedInputs = {
+      adjacentAttributes: validMoveBody.replace('w:id="10" w:name=', 'w:id="10"w:name='),
+      duplicateId: validMoveBody.replace('w:id="10"', 'w:id="10" w:id="10"'),
+      duplicateName: validMoveBody.replace('w:name="move1"', 'w:name="move1" w:name="move1"'),
+      duplicateExpandedId: validMoveBody.replace(
+        '<w:moveFromRangeStart w:id="10"',
+        `<w:moveFromRangeStart xmlns:x="${W_NS}" w:id="10" x:id="10"`,
+      ),
+      missingEquals: validMoveBody.replace('w:id="10"', 'w:id "10"'),
+      unquotedValue: validMoveBody.replace('w:id="10"', 'w:id=10'),
+      literalLessThan: validMoveBody.replace('w:name="move1"', 'w:name="move<one"'),
+      emptyDecimalReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#;"'),
+      emptyHexReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#x;"'),
+      malformedDecimalReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#12x;"'),
+      malformedHexReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#xGG;"'),
+      unterminatedReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#32"'),
+      unknownEntity: validMoveBody.replace('w:name="move1"', 'w:name="move&unknown;"'),
+      nulReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#0;"'),
+      controlReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#1;"'),
+      surrogateReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#xD800;"'),
+      outOfRangeReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#x110000;"'),
+    } as const;
+
+    for (const [mutation, body] of Object.entries(malformedInputs)) {
+      const combined = await buildDocxFromBodyXml(body);
+      expect((await run(original, revised, combined)).status, mutation).toBe('not_run');
+    }
+  });
+
   test.openspec('[LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks')(
     'mutation-checks duplicate, missing, crossed, mismatched, malformed, aliased, and empty identities', async () => {
       const original = await buildDocxFromBodyXml(originalMoveBody);
@@ -455,7 +513,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
       for (const [mutation, body] of Object.entries(mutations)) {
         const combined = await buildDocxFromBodyXml(body);
         const certificate = await run(original, revised, combined);
-        expect(certificate.status, mutation).toBe('failed');
+        expect(certificate.status, `${mutation}: ${certificate.reason}`).toBe('failed');
         expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status, mutation).toBe('failed');
         expect(certificate.checks.acceptingAllTrackedChangesMatchesRevisedText.status, mutation).toBe('passed');
         expect(certificate.checks.rejectingAllTrackedChangesMatchesOriginalText.status, mutation).toBe('passed');

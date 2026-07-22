@@ -36,9 +36,30 @@ for (const value of ledger.parsedWordprocessingML?.attributeValues?.['w:fldCharT
   }
 }
 
+const namedEntityPatterns = {
+  '&lt;': "| ['l', 't']",
+  '&gt;': "| ['g', 't']",
+  '&quot;': "| ['q', 'u', 'o', 't']",
+  '&apos;': "| ['a', 'p', 'o', 's']",
+  '&amp;': "| ['a', 'm', 'p']",
+};
 for (const entity of ledger.parsedWordprocessingML?.xmlEntitiesDecoded ?? []) {
-  if (!lean.includes(`"${entity}"`)) {
+  if (!namedEntityPatterns[entity] || !lean.includes(namedEntityPatterns[entity])) {
     errors.push(`ledger XML entity ${entity} is not decoded by XmlTripleChecker.lean`);
+  }
+}
+
+const numericReferences = ledger.parsedWordprocessingML?.numericCharacterReferencesDecoded ?? [];
+if (!numericReferences.includes('decimal') || !lean.includes('malformed decimal XML reference')) {
+  errors.push('ledger and Lean checker must cover decimal XML numeric character references');
+}
+if (!numericReferences.includes('hexadecimal') || !lean.includes('malformed hexadecimal XML reference')) {
+  errors.push('ledger and Lean checker must cover hexadecimal XML numeric character references');
+}
+for (const required of ['isLegalXmlChar', 'duplicate XML attribute name',
+  'duplicate XML attribute expanded name', '.afterValue =>']) {
+  if (!lean.includes(required)) {
+    errors.push(`fail-closed XML attribute parser coverage requires ${required}`);
   }
 }
 

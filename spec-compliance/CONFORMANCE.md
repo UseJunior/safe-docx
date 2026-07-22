@@ -1160,9 +1160,12 @@ not associated with range ids.
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart`
 - **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 
-The engine emits one source start per logical move. The compiled fixed-story
-checker requires a unique non-empty id and name, rejects duplicate source names,
-and requires a corresponding destination identity with the same name.
+The engine emits one source start per logical move. In both the Strict and
+Transitional schemas, `w:id` is an `ST_DecimalNumber` and the required `w:name`
+is an `ST_String`, which permits the empty string. The compiled fixed-story
+checker applies a stronger SafeDocX verifier policy: names must be non-empty,
+source ids and names must be unique, and a destination identity with the same
+name must exist. Non-empty `w:name` is not attributed to ECMA-376.
 
 ### ECMA-PART1-17-13-5-25 — Move destination run content (w:moveTo)
 
@@ -1207,10 +1210,12 @@ are not associated with range ids.
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart`
 - **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 
-The engine emits one destination start per logical move. The compiled
-fixed-story checker requires a unique non-empty id and name, rejects duplicate
-destination names, and requires a corresponding source identity with the same
-name.
+The engine emits one destination start per logical move. In both the Strict and
+Transitional schemas, `w:id` is an `ST_DecimalNumber` and the required `w:name`
+is an `ST_String`, which permits the empty string. The compiled fixed-story
+checker applies a stronger SafeDocX verifier policy: names must be non-empty,
+destination ids and names must be unique, and a source identity with the same
+name must exist. Non-empty `w:name` is not attributed to ECMA-376.
 
 ### ECMA-PART1-17-13-5-29 — Paragraph-property revisions (w:pPrChange)
 

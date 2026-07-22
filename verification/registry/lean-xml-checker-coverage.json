@@ -69,14 +69,21 @@
       "w:fldCharType": ["begin", "separate", "end"],
       "w:type": ["separator", "continuationSeparator"]
     },
-    "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"]
+    "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"],
+    "numericCharacterReferencesDecoded": ["decimal", "hexadecimal"],
+    "attributeParserPolicy": [
+      "requires XML whitespace between attributes",
+      "rejects duplicate exact and namespace-expanded attribute names",
+      "rejects malformed attribute transitions and character references",
+      "rejects numeric character references outside the XML 1.0 character range"
+    ]
   },
   "checkedProperties": [
     "For every supplied fixed story, accepting all tracked changes in the compared story yields the same normalized text as the revised story.",
     "For every supplied fixed story, rejecting all tracked changes in the compared story yields the same normalized text as the original story.",
     "For every supplied fixed story, accept and reject projections retain structurally valid Word field markers.",
     "For every supplied fixed story, the compared story has no Word field markers inside deletion markup.",
-    "For every supplied fixed story, tracked move ranges use schema-valid decimal IDs canonicalized to unique integer identities and non-empty names, have balanced non-crossing same-direction endpoints, occur once per source/destination move name, and pair source and destination identities by name.",
+    "For every supplied fixed story, tracked move ranges use the ECMA schema's ST_DecimalNumber IDs canonicalized to unique integer identities, have balanced non-crossing same-direction endpoints, occur once per source/destination move name, and pair source and destination identities by name. As a stronger SafeDocX verifier policy beyond ECMA ST_String, move names must be non-empty.",
     "The main story is required; when any optional note story is present, absent sides are checked as empty stories.",
     "Reserved note entries are selected by namespace-qualified w:type separator or continuationSeparator, independent of numeric ID, and excluded by an idempotent Lean projection.",
     "Element and attribute prefixes are resolved to namespace URIs, and each fixed part must have its expected WordprocessingML expanded-name root.",
@@ -106,7 +113,7 @@
     {
       "registryId": "ECMA-PART1-17-13-5-24",
       "section": "Part 1 §17.13.5.24",
-      "claim": "Move-source range starts carry a unique non-empty ID and move name."
+      "claim": "Move-source range starts carry the schema-required ST_DecimalNumber ID and ST_String name. The checker additionally requires unique IDs and non-empty names as SafeDocX verifier policy."
     },
     {
       "registryId": "ECMA-PART1-17-13-5-27",
@@ -116,7 +123,7 @@
     {
       "registryId": "ECMA-PART1-17-13-5-28",
       "section": "Part 1 §17.13.5.28",
-      "claim": "Move-destination range starts carry a unique non-empty ID and pair one-to-one with source move names."
+      "claim": "Move-destination range starts carry the schema-required ST_DecimalNumber ID and ST_String name. The checker additionally requires unique IDs, non-empty names, and one-to-one source-name pairing as SafeDocX verifier policy."
     }
   ],
   "knownUncheckedAreas": [

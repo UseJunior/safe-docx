@@ -38,14 +38,58 @@ inductive XmlTok
   | exitReservedNote
   deriving DecidableEq, Repr, Inhabited
 
-def decodeXmlText (s : String) : String :=
-  let quote := String.ofList [Char.ofNat 34]
-  let apostrophe := String.ofList [Char.ofNat 39]
-  let s := s.replace "&lt;" "<"
-  let s := s.replace "&gt;" ">"
-  let s := s.replace "&quot;" quote
-  let s := s.replace "&apos;" apostrophe
-  s.replace "&amp;" "&"
+def asciiDigitValue (c : Char) : Option Nat :=
+  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat) else none
+
+def hexDigitValue (c : Char) : Option Nat :=
+  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c && c ≤ 'f' then some (10 + c.toNat - 'a'.toNat)
+  else if 'A' ≤ c && c ≤ 'F' then some (10 + c.toNat - 'A'.toNat)
+  else none
+
+def parseReferenceDigits (base : Nat) (digitValue : Char → Option Nat)
+    (digits : List Char) : Option Nat :=
+  if digits.isEmpty then none
+  else digits.foldlM (fun value digit => do
+    let digitValue ← digitValue digit
+    return value * base + digitValue) 0
+
+def isLegalXmlChar (value : Nat) : Bool :=
+  value == 0x9 || value == 0xA || value == 0xD ||
+    (0x20 ≤ value && value ≤ 0xD7FF) ||
+    (0xE000 ≤ value && value ≤ 0xFFFD) ||
+    (0x10000 ≤ value && value ≤ 0x10FFFF)
+
+def decodeXmlReference (reference : List Char) : Except String Char := do
+  let value ← match reference with
+    | ['l', 't'] => pure 0x3C
+    | ['g', 't'] => pure 0x3E
+    | ['a', 'm', 'p'] => pure 0x26
+    | ['q', 'u', 'o', 't'] => pure 0x22
+    | ['a', 'p', 'o', 's'] => pure 0x27
+    | '#' :: 'x' :: digits =>
+      match parseReferenceDigits 16 hexDigitValue digits with
+      | some value => pure value
+      | none => throw "malformed hexadecimal XML reference"
+    | '#' :: digits =>
+      match parseReferenceDigits 10 asciiDigitValue digits with
+      | some value => pure value
+      | none => throw "malformed decimal XML reference"
+    | _ => throw "unknown XML entity reference"
+  if !isLegalXmlChar value then throw "XML reference is not a legal XML character"
+  return Char.ofNat value
+
+partial def decodeXmlTextAux : List Char → Except String (List Char)
+  | [] => pure []
+  | '&' :: rest => do
+    let (reference, suffix) := rest.span (· != ';')
+    let _ :: after := suffix | throw "unterminated XML reference"
+    let decoded ← decodeXmlReference reference
+    return decoded :: (← decodeXmlTextAux after)
+  | c :: rest => return c :: (← decodeXmlTextAux rest)
+
+def decodeXmlText (s : String) : Except String String := do
+  return String.ofList (← decodeXmlTextAux s.toList)
 
 def wmlNamespace : String :=
   "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -104,6 +148,8 @@ inductive AttributeScanMode
   | beforeEquals
   | beforeValue
   | value (quote : Char)
+  | afterValue
+  | trailingSlash
   deriving DecidableEq, Repr, Inhabited
 
 structure AttributeScanState where
@@ -118,11 +164,16 @@ def scanAttributeChar (state : AttributeScanState) (c : Char) : AttributeScanSta
   if !state.valid then state
   else match state.mode with
   | .between =>
-    if isXmlSpace c || c == '/' then state
+    if isXmlSpace c then state
+    else if c == '/' then { state with mode := .trailingSlash }
+    else if c == '=' || c == '"' || c == '\'' || c == '<' || c == '>' then
+      { state with valid := false }
     else { state with mode := .name, name := state.name.push c }
   | .name =>
     if c == '=' then { state with mode := .beforeValue }
     else if isXmlSpace c then { state with mode := .beforeEquals }
+    else if c == '"' || c == '\'' || c == '<' || c == '>' || c == '/' then
+      { state with valid := false }
     else { state with name := state.name.push c }
   | .beforeEquals =>
     if isXmlSpace c then state
@@ -134,8 +185,15 @@ def scanAttributeChar (state : AttributeScanState) (c : Char) : AttributeScanSta
     else { state with valid := false }
   | .value quote =>
     if c == quote then
-      { mode := .between, attributes := state.attributes ++ [(state.name, state.value)] }
+      { mode := .afterValue, attributes := state.attributes ++ [(state.name, state.value)] }
+    else if c == '<' then { state with valid := false }
     else { state with value := state.value.push c }
+  | .afterValue =>
+    if isXmlSpace c then { state with mode := .between }
+    else if c == '/' then { state with mode := .trailingSlash }
+    else { state with valid := false }
+  | .trailingSlash =>
+    if isXmlSpace c then state else { state with valid := false }
 
 def attributeSuffix (tag : String) : String :=
   let chars := tag.toList.dropWhile (fun c => !isXmlSpace c)
@@ -143,14 +201,22 @@ def attributeSuffix (tag : String) : String :=
 
 def parseTagAttributes (tag : String) : Except String XmlAttributes := do
   let final := (attributeSuffix tag).toList.foldl scanAttributeChar {}
-  if !final.valid || final.mode != .between then throw "malformed XML attributes"
+  let complete := final.mode == .between || final.mode == .afterValue ||
+    final.mode == .trailingSlash
+  if !final.valid || !complete then throw "malformed XML attributes"
+  if final.attributes.any (fun attr =>
+      (final.attributes.filter fun other => other.1 == attr.1).length > 1) then
+    throw "duplicate XML attribute name"
   return final.attributes
+
+def decodeXmlAttributes (attributes : XmlAttributes) : Except String XmlAttributes :=
+  attributes.mapM fun (key, value) => return (key, ← decodeXmlText value)
 
 def namespaceDeclarations (attributes : XmlAttributes) : List (String × String) :=
   attributes.filterMap fun (key, value) =>
-    if key == "xmlns" then some ("", decodeXmlText value)
+    if key == "xmlns" then some ("", value)
     else if key.startsWith "xmlns:" then
-      some ((key.drop "xmlns:".length).toString, decodeXmlText value)
+      some ((key.drop "xmlns:".length).toString, value)
     else none
 
 def extendNamespaces (base : NamespaceBindings) (decls : List (String × String)) : NamespaceBindings :=
@@ -171,8 +237,8 @@ def canonicalizeWmlAttributes (attributes : XmlAttributes)
     else
     let (pre, attrLocal) := splitQName key
     if !pre.isEmpty && namespaceLookupD bindings pre "" == wmlNamespace then
-      some ("w:" ++ attrLocal, decodeXmlText value)
-    else some (key, decodeXmlText value)
+      some ("w:" ++ attrLocal, value)
+    else some (key, value)
 
 def validateAttributeNamespaces (attributes : XmlAttributes)
     (bindings : NamespaceBindings) : Except String Unit := do
@@ -214,7 +280,7 @@ def moveRangeEndToken (kind : MoveRangeKind) (attributes : XmlAttributes) : List
   | some id => [.moveRangeEnd kind id]
   | none => [.invalidMoveRangeId]
 
-def tagToken (closing : Bool) (localName : String) (attributes : XmlAttributes)
+def tagTokenDecoded (closing : Bool) (localName : String) (attributes : XmlAttributes)
     (payload : String) : List XmlTok :=
   if !closing && (localName == "footnote" || localName == "endnote") &&
       (tagAttribute attributes "w:type" == "separator" ||
@@ -242,11 +308,15 @@ def tagToken (closing : Bool) (localName : String) (attributes : XmlAttributes)
     else if tagAttribute attributes "w:fldCharType" == "separate" then [.fldChar .separate]
     else if tagAttribute attributes "w:fldCharType" == "end" then [.fldChar .endf]
     else []
-  else if !closing && localName == "t" then [.text (decodeXmlText payload)]
-  else if !closing && localName == "delText" then [.delText (decodeXmlText payload)]
-  else if !closing && localName == "instrText" then [.instrText (decodeXmlText payload)]
-  else if !closing && localName == "delInstrText" then [.delInstrText (decodeXmlText payload)]
+  else if !closing && localName == "t" then [.text payload]
+  else if !closing && localName == "delText" then [.delText payload]
+  else if !closing && localName == "instrText" then [.instrText payload]
+  else if !closing && localName == "delInstrText" then [.delInstrText payload]
   else []
+
+def tagToken (closing : Bool) (localName : String) (attributes : XmlAttributes)
+    (payload : String) : Except String (List XmlTok) := do
+  return tagTokenDecoded closing localName attributes (← decodeXmlText payload)
 
 structure OpenElement where
   uri : String
@@ -275,12 +345,13 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
     let (uri, localName) ← resolveQName top.namespaces rawName
     if uri != top.uri || localName != top.localName then
       throw s!"mismatched closing tag: {rawName}"
-    let emitted := if uri == wmlNamespace then tagToken true localName [] payload else []
+    let emitted ← if uri == wmlNamespace then tagToken true localName [] payload else pure []
     return { state with stack := state.stack.drop 1, tokens := state.tokens ++ emitted }
   let selfClosing := trimmed.endsWith "/"
   if state.rootSeen && state.stack.isEmpty then throw "multiple XML root elements"
   let rawName := List.getD (tagWords trimmed) 0 ""
-  let attributes ← parseTagAttributes trimmed
+  let rawAttributes ← parseTagAttributes trimmed
+  let attributes ← decodeXmlAttributes rawAttributes
   let bindings := extendNamespaces (currentNamespaces state) (namespaceDeclarations attributes)
   validateAttributeNamespaces attributes bindings
   let (uri, localName) ← resolveQName bindings rawName
@@ -288,7 +359,11 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
     if uri != wmlNamespace || localName != expectedRoot then
       throw s!"unexpected root namespace={uri} local={localName}; expected namespace={wmlNamespace} local={expectedRoot}"
   let canonicalAttributes := canonicalizeWmlAttributes attributes bindings
-  let emitted := if uri == wmlNamespace then tagToken false localName canonicalAttributes payload else []
+  if canonicalAttributes.any (fun attr =>
+      (canonicalAttributes.filter fun other => other.1 == attr.1).length > 1) then
+    throw "duplicate XML attribute expanded name"
+  let emitted ← if uri == wmlNamespace then
+    tagToken false localName canonicalAttributes payload else pure []
   let next := { state with tokens := state.tokens ++ emitted, rootSeen := true }
   if selfClosing then return next
   return { next with stack := { uri, localName, namespaces := bindings } :: next.stack }
