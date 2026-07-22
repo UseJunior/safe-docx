@@ -204,8 +204,11 @@ function paragraphsCoveredByBookmarkName(doc: Document, name: string): Element[]
     if (!p || !isParagraph(p)) continue;
     const pSpan = spans.get(p);
     if (!pSpan) continue;
-    // Intersect the covered content with the paragraph's subtree.
-    if (contentFirst <= pSpan[1] && contentLast >= pSpan[0]) covered.push(p);
+    // Intersect against the paragraph's CHILDREN (pSpan[0] + 1 …), not its own
+    // element position. A bookmark that closes at the very start of a paragraph
+    // (start before it, end as its first child) otherwise covers only the `w:p`
+    // boundary itself — no content — and would still claim the paragraph.
+    if (contentFirst <= pSpan[1] && contentLast >= pSpan[0] + 1) covered.push(p);
   }
   return covered;
 }

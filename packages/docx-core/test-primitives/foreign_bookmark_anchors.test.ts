@@ -329,4 +329,58 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Fore
       });
     },
   );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: a bookmark closing at a paragraph\'s very start covers no content',
+    async ({ given, when, then }: AllureBddContext) => {
+      // Start sits before the paragraph, end is the paragraph's FIRST child, so
+      // the range encloses only the w:p boundary — no runs. Intersecting the
+      // paragraph's own element position (rather than its children) previously
+      // let this claim the paragraph.
+      const doc = await given('a bookmark ending at the start of the following paragraph', () =>
+        makeDoc(
+          `<w:bookmarkStart w:id="9" w:name="_RefBoundary"/>` +
+            `<w:p><w:bookmarkEnd w:id="9"/><w:r><w:t>victim</w:t></w:r></w:p>`,
+        ),
+      );
+
+      const found = await when('the boundary bookmark name is used as an anchor', () =>
+        findParagraphByBookmarkId(doc, '_RefBoundary'),
+      );
+
+      await then('it resolves to nothing — it marks no content in that paragraph', () => {
+        expect(found).toBeNull();
+      });
+    },
+  );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: a bookmark wrapping content resolves across attachment shapes',
+    async ({ given, when, then }: AllureBddContext) => {
+      // Positive control for the boundary rule above: ranges that really do
+      // cover content must still resolve, including partial-run and table cases.
+      const partial = await given('a bookmark around one run of a multi-run paragraph', () =>
+        makeDoc(
+          `<w:p><w:r><w:t>prefix</w:t></w:r><w:bookmarkStart w:id="7" w:name="Partial"/>` +
+            `<w:r><w:t>marked</w:t></w:r><w:bookmarkEnd w:id="7"/><w:r><w:t>suffix</w:t></w:r></w:p>`,
+        ),
+      );
+      const cell = await given('a bookmark wrapping a paragraph inside a table cell', () =>
+        makeDoc(
+          `<w:tbl><w:tr><w:tc><w:bookmarkStart w:id="11" w:name="CellPara"/>` +
+            `<w:p><w:r><w:t>cell marked</w:t></w:r></w:p><w:bookmarkEnd w:id="11"/></w:tc></w:tr></w:tbl>`,
+        ),
+      );
+
+      const [a, b] = await when('each content-covering bookmark is used as an anchor', () => [
+        findParagraphByBookmarkId(partial, 'Partial'),
+        findParagraphByBookmarkId(cell, 'CellPara'),
+      ]);
+
+      await then('both resolve to their paragraph', () => {
+        expect(paragraphText(a as Element)).toBe('prefixmarkedsuffix');
+        expect(paragraphText(b as Element)).toBe('cell marked');
+      });
+    },
+  );
 });
