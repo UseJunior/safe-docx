@@ -98,6 +98,52 @@ describe('minimal re-serialization on save (issue #408)', () => {
     });
   });
 
+  test('toAcceptedBuffer accepts AI edits on an isolated copy while restoring untouched blocks and leaving the source marked up (#126)', async ({ given, when, then }: AllureBddContext) => {
+    // A middle paragraph carrying an AI-authored redline, between the same two
+    // proofErr/rsid-fragmented neighbors the #408 guarantee protects.
+    const P2_TRACKED =
+      `<w:p w14:paraId="0000BBBB">` +
+      `<w:del w:id="1" w:author="AI Bot" w:date="2026-01-01T00:00:00Z"><w:r><w:delText>{placeholder}</w:delText></w:r></w:del>` +
+      `<w:ins w:id="2" w:author="AI Bot" w:date="2026-01-01T00:00:00Z"><w:r><w:t>two (2) years</w:t></w:r></w:ins>` +
+      `</w:p>`;
+    let doc: DocxDocument;
+    let originalXml = '';
+    let acceptedXml = '';
+    let blocksRestored = 0;
+    let sourceStillMarked = false;
+
+    await given('a normalized session whose middle paragraph carries an AI redline', async () => {
+      ({ doc, originalXml } = await openLikeASession(P1 + P2_TRACKED + P3));
+    });
+
+    await when('the clean artifact is produced by accepting the AI author on an isolated copy', async () => {
+      const accepted = await doc.toAcceptedBuffer({ author: 'AI Bot', normalizeFirst: true }, { cleanBookmarks: true });
+      blocksRestored = accepted.blocksRestored;
+      acceptedXml = (await readZipText(accepted.buffer, 'word/document.xml'))!;
+      // The source document must keep its markup so a paired tracked artifact
+      // can still serialize the redline.
+      const sourceXml = (await readZipText((await doc.toBuffer({ cleanBookmarks: true })).buffer, 'word/document.xml'))!;
+      sourceStillMarked = sourceXml.includes('<w:ins') || sourceXml.includes('<w:del');
+    });
+
+    await then('untouched neighbors stay byte-identical, the redline is accepted, and the source is unmutated', () => {
+      const original = bodyBlocks(originalXml);
+      const saved = bodyBlocks(acceptedXml);
+      expect(saved).toHaveLength(original.length);
+      // P1 and P3 regain their pristine proofErr + rsid form from the true source.
+      expect(saved[0]).toBe(original[0]);
+      expect(saved[2]).toBe(original[2]);
+      expect(saved[0]).toContain('proofErr');
+      expect(blocksRestored).toBeGreaterThanOrEqual(2);
+      // The edited paragraph is accepted to its final text with no residual markup.
+      expect(saved[1]).toContain('two (2) years');
+      expect(saved[1]).not.toContain('w:ins');
+      expect(saved[1]).not.toContain('w:del');
+      // Non-destructive: accepting on the isolated copy left the source marked up.
+      expect(sourceStillMarked).toBe(true);
+    });
+  });
+
   test('a zero-edit save round-trips document.xml element-identically', async ({ given, when, then }: AllureBddContext) => {
     let doc: DocxDocument;
     let originalXml = '';

@@ -118,9 +118,9 @@ spec type, so reading applications display correct values without recomputation 
 ### Requirement: Named styles and run formatting
 
 The compiler SHALL emit a `styles.xml` part containing document defaults, a Normal style,
-and every declared named style, and SHALL emit run properties (bold, italic, underline,
-color, font, size) and paragraph properties (alignment, spacing, indentation, tabs) in the
-child order required by the WML schema.
+and every declared named style. It SHALL emit each supported direct run property (bold,
+italic, underline, color, font, size) at most once and SHALL emit paragraph properties
+(alignment, spacing, indentation, tabs) in the child order required by the WML schema.
 
 #### Scenario: [SDX-GEN-040] declared styles are emitted into the style table
 - **GIVEN** a spec declaring a named paragraph style based on Normal
@@ -128,10 +128,10 @@ child order required by the WML schema.
 - **THEN** `word/styles.xml` SHALL contain document defaults, Normal, and the declared style with its `basedOn` link
 - **AND** paragraphs referencing the style SHALL carry the matching `w:pStyle`
 
-#### Scenario: [SDX-GEN-041] run properties are emitted in schema order
+#### Scenario: [SDX-GEN-041] run properties are emitted at most once
 - **GIVEN** a run specifying bold, italic, underline, color, font, and size
 - **WHEN** the document is generated
-- **THEN** the run's `w:rPr` children SHALL appear in the WML schema sequence
+- **THEN** each supported direct property SHALL occur at most once under the run's `w:rPr`
 - **AND** the formatting SHALL survive a round-trip through the run-formatting reader
 
 #### Scenario: [SDX-GEN-042] paragraph properties are emitted in schema order
@@ -139,7 +139,7 @@ child order required by the WML schema.
 - **WHEN** the document is generated
 - **THEN** the paragraph's `w:pPr` children SHALL appear in the WML schema sequence
 
-#### Scenario: [SDX-GEN-043] property-order tables match the vendored schema
+#### Scenario: [SDX-GEN-043] property constraints match the vendored schema
 - **GIVEN** the emitter's ordered property tables
 - **WHEN** they are compared against the vendored transitional WML schema
 - **THEN** each table's relative order SHALL match the schema's declared sequence

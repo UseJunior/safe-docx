@@ -1,0 +1,1976 @@
+{
+  "schemaVersion": 3,
+  "standard": "ECMA-376",
+  "edition": 5,
+  "part": 1,
+  "scope": "WordprocessingML advanced revision records",
+  "statuses": {
+    "implemented": "safe-docx performs the named bounded operation and element-specific executable evidence is listed",
+    "preservation-only": "safe-docx retains the sampled markup without claiming its revision semantics",
+    "conformance-gap": "the sampled behavior is executable but does not implement complete ECMA-376 semantics",
+    "non-goal": "safe-docx makes no claim for this operation"
+  },
+  "operationSemantics": {
+    "comparison": "whether comparison authors the record from an original/revised pair",
+    "reconstruction": "whether an already-present equal record survives reconstruction",
+    "inplace": "the atomizer in-place reconstruction path",
+    "rebuild": "the atomizer rebuild reconstruction path"
+  },
+  "storyScope": {
+    "acceptReject": [
+      "word/document.xml",
+      "word/footnotes.xml",
+      "word/endnotes.xml",
+      "word/comments.xml",
+      "word/glossary/document.xml"
+    ],
+    "preservationOnly": [
+      "word/header*.xml",
+      "word/footer*.xml",
+      "word/styles.xml",
+      "word/numbering.xml"
+    ],
+    "leanReads": [
+      "word/document.xml",
+      "word/footnotes.xml",
+      "word/endnotes.xml"
+    ],
+    "leanClaim": "Lean checks text and field-marker projections through ins, del, moveFrom, and moveTo in fixed stories and in-place mode. It does not prove advanced-record semantics, snapshots, pairing, annotations, relationships, or rebuild behavior."
+  },
+  "records": [
+    {
+      "id": "advanced-revision.content-insert-delete",
+      "elements": [
+        "ins",
+        "del"
+      ],
+      "normativeSections": {
+        "ins": [
+          "ECMA-PART1-17-13-5"
+        ],
+        "del": [
+          "ECMA-PART1-17-13-5"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "implemented",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "implemented",
+          "rebuild": "implemented"
+        },
+        "reconstruction": {
+          "inplace": "preservation-only",
+          "rebuild": "conformance-gap"
+        },
+        "lean": {
+          "textFieldProjection": "implemented",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-CONTENT-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "ins",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "ins",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "del",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "del",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-CONTENT-EMISSION-01",
+          "sources": [
+            "packages/docx-compare/src/baselines/atomizer/inPlaceModifier.ts",
+            "packages/docx-compare/src/baselines/atomizer/documentReconstructor.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "ins",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "ins",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "ins",
+              "operation": "comparison.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "del",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "del",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "del",
+              "operation": "comparison.rebuild",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+          "sources": [
+            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "ins",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "ins",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "del",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "del",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Comparison authors ordinary content revisions in both modes. Equal pre-existing wrappers survive in-place reconstruction but rebuild resolves them."
+    },
+    {
+      "id": "advanced-revision.run-properties",
+      "elements": [
+        "rPrChange"
+      ],
+      "normativeSections": {
+        "rPrChange": [
+          "ECMA-PART1-17-13-5-31"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "implemented",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-RPR-EMISSION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/track-changes-emitter.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/primitives/text.test.ts"
+          },
+          "claims": [
+            {
+              "element": "rPrChange",
+              "operation": "emit",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-PROPERTY-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "rPrChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "rPrChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Emission is limited to supported run-formatting mutations; semantic comparison and mode preservation are not claimed."
+    },
+    {
+      "id": "advanced-revision.paragraph-mark-run-properties",
+      "elements": [
+        "rPrChange"
+      ],
+      "normativeSections": {
+        "rPrChange": [
+          "ECMA-PART1-17-13-5-30"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-PROPERTY-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "rPrChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "rPrChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "The paragraph-mark parent context is exercised separately; no primitive authors this context."
+    },
+    {
+      "id": "advanced-revision.paragraph-properties",
+      "elements": [
+        "pPrChange"
+      ],
+      "normativeSections": {
+        "pPrChange": [
+          "ECMA-PART1-17-13-5-29"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "implemented",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-PPR-EMISSION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/layout.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/primitives/layout.test.ts"
+          },
+          "claims": [
+            {
+              "element": "pPrChange",
+              "operation": "emit",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-PROPERTY-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "pPrChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "pPrChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Emission is limited to supported paragraph-layout mutations."
+    },
+    {
+      "id": "advanced-revision.table-row-properties",
+      "elements": [
+        "trPrChange"
+      ],
+      "normativeSections": {
+        "trPrChange": [
+          "ECMA-PART1-17-13-5-37"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "implemented",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-TRPR-EMISSION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/layout.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/primitives/layout.test.ts"
+          },
+          "claims": [
+            {
+              "element": "trPrChange",
+              "operation": "emit",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-PROPERTY-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "trPrChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "trPrChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "advanced-revision.table-cell-properties",
+      "elements": [
+        "tcPrChange"
+      ],
+      "normativeSections": {
+        "tcPrChange": [
+          "ECMA-PART1-17-13-5-36"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "implemented",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-TCPR-EMISSION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/layout.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/primitives/layout.test.ts"
+          },
+          "claims": [
+            {
+              "element": "tcPrChange",
+              "operation": "emit",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-PROPERTY-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "tcPrChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "tcPrChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "advanced-revision.section-properties",
+      "elements": [
+        "sectPrChange"
+      ],
+      "normativeSections": {
+        "sectPrChange": [
+          "ECMA-PART1-17-13-5-32"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-PROPERTY-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "sectPrChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "sectPrChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "advanced-revision.table-properties",
+      "elements": [
+        "tblPrChange"
+      ],
+      "normativeSections": {
+        "tblPrChange": [
+          "ECMA-PART1-17-13-5-34"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-PROPERTY-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "tblPrChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "tblPrChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "advanced-revision.moves-content",
+      "elements": [
+        "moveFrom",
+        "moveTo"
+      ],
+      "normativeSections": {
+        "moveFrom": [
+          "ECMA-PART1-17-13-5-21",
+          "ECMA-PART1-17-13-5-22"
+        ],
+        "moveTo": [
+          "ECMA-PART1-17-13-5-25",
+          "ECMA-PART1-17-13-5-26"
+        ]
+      },
+      "classification": "implemented",
+      "operations": {
+        "emit": "implemented",
+        "accept": "implemented",
+        "reject": "implemented",
+        "comparison": {
+          "inplace": "implemented",
+          "rebuild": "implemented"
+        },
+        "reconstruction": {
+          "inplace": "preservation-only",
+          "rebuild": "conformance-gap"
+        },
+        "lean": {
+          "textFieldProjection": "implemented",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-MOVE-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "moveFrom",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "moveFrom",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "moveTo",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "moveTo",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-COMPARE-MOVE-EMISSION-01",
+          "sources": [
+            "packages/docx-compare/src/move-detection.ts",
+            "packages/docx-compare/src/baselines/atomizer/inPlaceModifier.ts",
+            "packages/docx-compare/src/baselines/atomizer/documentReconstructor.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "moveFrom",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "moveFrom",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveFrom",
+              "operation": "comparison.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "moveTo",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "moveTo",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveTo",
+              "operation": "comparison.rebuild",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+          "sources": [
+            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "moveFrom",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveFrom",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "moveTo",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveTo",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Generated moves are supported in both modes. Equal pre-existing wrappers survive in-place but are resolved by rebuild; Lean checks projected text only."
+    },
+    {
+      "id": "advanced-revision.moves-ranges",
+      "elements": [
+        "moveFromRangeStart",
+        "moveFromRangeEnd",
+        "moveToRangeStart",
+        "moveToRangeEnd"
+      ],
+      "normativeSections": {
+        "moveFromRangeEnd": [
+          "ECMA-PART1-17-13-5-23"
+        ],
+        "moveFromRangeStart": [
+          "ECMA-PART1-17-13-5-24"
+        ],
+        "moveToRangeEnd": [
+          "ECMA-PART1-17-13-5-27"
+        ],
+        "moveToRangeStart": [
+          "ECMA-PART1-17-13-5-28"
+        ]
+      },
+      "classification": "conformance-gap",
+      "operations": {
+        "emit": "implemented",
+        "accept": "conformance-gap",
+        "reject": "conformance-gap",
+        "validate": "implemented",
+        "comparison": {
+          "inplace": "implemented",
+          "rebuild": "implemented"
+        },
+        "reconstruction": {
+          "inplace": "preservation-only",
+          "rebuild": "preservation-only"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-MOVE-RESOLUTION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "moveFromRangeStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeEnd",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeEnd",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-VALIDATOR-COVERAGE-01",
+          "sources": [
+            "packages/docx-core/src/primitives/validate_ai_revisions.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "moveFromRangeStart",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeEnd",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeStart",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeEnd",
+              "operation": "validate",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-COMPARE-MOVE-EMISSION-01",
+          "sources": [
+            "packages/docx-compare/src/move-detection.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "moveFromRangeStart",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeStart",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeStart",
+              "operation": "comparison.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeEnd",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeEnd",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeEnd",
+              "operation": "comparison.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeStart",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeStart",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeStart",
+              "operation": "comparison.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeEnd",
+              "operation": "emit",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeEnd",
+              "operation": "comparison.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeEnd",
+              "operation": "comparison.rebuild",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+          "sources": [
+            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "moveFromRangeStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveFromRangeEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "moveToRangeEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Emission and start/end balancing are tested, but wrapper-to-range identity and full pairing semantics remain gaps."
+    },
+    {
+      "id": "advanced-revision.numbering-properties",
+      "elements": [
+        "numberingChange"
+      ],
+      "normativeSections": {
+        "numberingChange": [
+          "ECMA-PART1-17-13-5"
+        ]
+      },
+      "classification": "conformance-gap",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "conformance-gap",
+        "reject": "conformance-gap",
+        "validate": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-UNRESOLVED-RECORDS-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "numberingChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "numberingChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-NUMBERING-PLACEMENT-01",
+          "sources": [
+            "packages/docx-core/src/primitives/validate_ai_revisions.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/test-primitives/validate_ai_revisions.test.ts"
+          },
+          "claims": [
+            {
+              "element": "numberingChange",
+              "operation": "validate",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Metadata and the XSD-declared numPr/fldChar parents are validated; semantic resolution and emission are absent."
+    },
+    {
+      "id": "advanced-revision.table-grid-and-exceptions",
+      "elements": [
+        "tblPrExChange",
+        "tblGridChange"
+      ],
+      "normativeSections": {
+        "tblPrExChange": [
+          "ECMA-PART1-17-13-5-35"
+        ],
+        "tblGridChange": [
+          "ECMA-PART1-17-13-5-33"
+        ]
+      },
+      "classification": "conformance-gap",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "conformance-gap",
+        "reject": "conformance-gap",
+        "validate": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-UNRESOLVED-RECORDS-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "tblPrExChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "tblPrExChange",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "tblGridChange",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "tblGridChange",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-VALIDATOR-COVERAGE-01",
+          "sources": [
+            "packages/docx-core/src/primitives/validate_ai_revisions.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "tblPrExChange",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "tblGridChange",
+              "operation": "validate",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Metadata is recognized and tblGridChange placement is checked; neither record is semantically resolved."
+    },
+    {
+      "id": "advanced-revision.cell-topology",
+      "elements": [
+        "cellDel",
+        "cellIns",
+        "cellMerge"
+      ],
+      "normativeSections": {
+        "cellDel": [
+          "ECMA-PART1-17-13-5-1"
+        ],
+        "cellIns": [
+          "ECMA-PART1-17-13-5-2"
+        ],
+        "cellMerge": [
+          "ECMA-PART1-17-13-5-3"
+        ]
+      },
+      "classification": "preservation-only",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "conformance-gap",
+        "reject": "conformance-gap",
+        "preserve": "preservation-only",
+        "validate": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-TOPOLOGY-PRESERVATION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "cellDel",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "cellDel",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "cellDel",
+              "operation": "preserve",
+              "story": "main"
+            },
+            {
+              "element": "cellIns",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "cellIns",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "cellIns",
+              "operation": "preserve",
+              "story": "main"
+            },
+            {
+              "element": "cellMerge",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "cellMerge",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "cellMerge",
+              "operation": "preserve",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-VALIDATOR-COVERAGE-01",
+          "sources": [
+            "packages/docx-core/src/primitives/validate_ai_revisions.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "cellDel",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "cellIns",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "cellMerge",
+              "operation": "validate",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Existing records are tolerated and retained by ordinary accept/reject, but topology semantics are not applied."
+    },
+    {
+      "id": "advanced-revision.custom-xml-ranges",
+      "elements": [
+        "customXmlInsRangeStart",
+        "customXmlInsRangeEnd",
+        "customXmlDelRangeStart",
+        "customXmlDelRangeEnd",
+        "customXmlMoveFromRangeStart",
+        "customXmlMoveFromRangeEnd",
+        "customXmlMoveToRangeStart",
+        "customXmlMoveToRangeEnd"
+      ],
+      "normativeSections": {
+        "customXmlDelRangeEnd": [
+          "ECMA-PART1-17-13-5-4"
+        ],
+        "customXmlDelRangeStart": [
+          "ECMA-PART1-17-13-5-5"
+        ],
+        "customXmlInsRangeEnd": [
+          "ECMA-PART1-17-13-5-6"
+        ],
+        "customXmlInsRangeStart": [
+          "ECMA-PART1-17-13-5-7"
+        ],
+        "customXmlMoveFromRangeEnd": [
+          "ECMA-PART1-17-13-5-8"
+        ],
+        "customXmlMoveFromRangeStart": [
+          "ECMA-PART1-17-13-5-9"
+        ],
+        "customXmlMoveToRangeEnd": [
+          "ECMA-PART1-17-13-5-10"
+        ],
+        "customXmlMoveToRangeStart": [
+          "ECMA-PART1-17-13-5-11"
+        ]
+      },
+      "classification": "preservation-only",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "preservation-only",
+        "reject": "preservation-only",
+        "validate": "implemented",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "preservation-only",
+          "rebuild": "conformance-gap"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-RANGE-PRESERVATION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "customXmlInsRangeStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "customXmlInsRangeStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "customXmlInsRangeEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "customXmlInsRangeEnd",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeEnd",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeEnd",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeEnd",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-VALIDATOR-COVERAGE-01",
+          "sources": [
+            "packages/docx-core/src/primitives/validate_ai_revisions.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "customXmlInsRangeStart",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "customXmlInsRangeEnd",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeStart",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeEnd",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeStart",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeEnd",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeStart",
+              "operation": "validate",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeEnd",
+              "operation": "validate",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+          "sources": [
+            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "customXmlInsRangeStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "customXmlInsRangeStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "customXmlInsRangeEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "customXmlInsRangeEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "customXmlDelRangeEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveFromRangeEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "customXmlMoveToRangeEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "Accept/reject preserves these markers and validates balanced IDs. In-place preserves sampled equal markers; rebuild removes them."
+    },
+    {
+      "id": "advanced-revision.annotations-and-ranges",
+      "elements": [
+        "bookmarkStart",
+        "bookmarkEnd",
+        "commentRangeStart",
+        "commentRangeEnd",
+        "commentReference",
+        "permStart",
+        "permEnd",
+        "proofErr"
+      ],
+      "normativeSections": {
+        "bookmarkEnd": [
+          "ECMA-PART1-17-13-6-1"
+        ],
+        "bookmarkStart": [
+          "ECMA-PART1-17-13-6-2"
+        ],
+        "commentRangeEnd": [
+          "ECMA-PART1-17-13-4-3"
+        ],
+        "commentRangeStart": [
+          "ECMA-PART1-17-13-4-4"
+        ],
+        "commentReference": [
+          "ECMA-PART1-17-13-4-5"
+        ],
+        "permEnd": [
+          "ECMA-PART1-17-13-7-1"
+        ],
+        "permStart": [
+          "ECMA-PART1-17-13-7-2"
+        ],
+        "proofErr": [
+          "ECMA-PART1-17-13-8-1"
+        ]
+      },
+      "classification": "preservation-only",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "preservation-only",
+        "reject": "preservation-only",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "preservation-only",
+          "rebuild": "conformance-gap"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-RANGE-PRESERVATION-01",
+          "sources": [
+            "packages/docx-core/src/primitives/accept_changes.ts",
+            "packages/docx-core/src/primitives/reject_changes.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "bookmarkStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "bookmarkStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "bookmarkEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "bookmarkEnd",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "commentRangeStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "commentRangeStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "commentRangeEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "commentRangeEnd",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "commentReference",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "commentReference",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "permStart",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "permStart",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "permEnd",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "permEnd",
+              "operation": "reject",
+              "story": "main"
+            },
+            {
+              "element": "proofErr",
+              "operation": "accept",
+              "story": "main"
+            },
+            {
+              "element": "proofErr",
+              "operation": "reject",
+              "story": "main"
+            }
+          ]
+        },
+        {
+          "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+          "sources": [
+            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "bookmarkStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "bookmarkStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "bookmarkEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "bookmarkEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "commentRangeStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "commentRangeStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "commentRangeEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "commentRangeEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "commentReference",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "commentReference",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "permStart",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "permStart",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "permEnd",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "permEnd",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "proofErr",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "proofErr",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "These records have their own normative sections. Preservation does not prove bookmark, comment, permission, or proofing semantics. Rebuild drops proofErr."
+    },
+    {
+      "id": "advanced-revision.conflicts",
+      "elements": [
+        "w14:conflictIns",
+        "w14:conflictDel"
+      ],
+      "normativeSections": {
+        "w14:conflictIns": [],
+        "w14:conflictDel": []
+      },
+      "classification": "non-goal",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "non-goal",
+        "reject": "non-goal",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "preservation-only",
+          "rebuild": "conformance-gap"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-COMPARE-MODE-PRESERVATION-01",
+          "sources": [
+            "packages/docx-compare/src/baselines/atomizer/pipeline.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "w14:conflictIns",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "w14:conflictIns",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            },
+            {
+              "element": "w14:conflictDel",
+              "operation": "reconstruction.inplace",
+              "story": "main"
+            },
+            {
+              "element": "w14:conflictDel",
+              "operation": "reconstruction.rebuild",
+              "story": "main"
+            }
+          ]
+        }
+      ],
+      "notes": "w14 conflict records are Microsoft extensions, not ECMA-376 Part 1 denominator entries. The sampled mode difference is recorded without a semantic claim."
+    },
+    {
+      "id": "advanced-revision.header-footer-stories",
+      "elements": [
+        "header story revisions",
+        "footer story revisions"
+      ],
+      "normativeSections": {
+        "header story revisions": [],
+        "footer story revisions": []
+      },
+      "classification": "preservation-only",
+      "operations": {
+        "emit": "non-goal",
+        "accept": "conformance-gap",
+        "reject": "conformance-gap",
+        "preserve": "preservation-only",
+        "comparison": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "reconstruction": {
+          "inplace": "non-goal",
+          "rebuild": "non-goal"
+        },
+        "lean": {
+          "textFieldProjection": "non-goal",
+          "advancedRecordSemantics": "non-goal"
+        }
+      },
+      "evidence": [
+        {
+          "id": "ADV-STORY-BOUNDARY-01",
+          "sources": [
+            "packages/docx-core/src/primitives/revision-parts.ts"
+          ],
+          "test": {
+            "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts"
+          },
+          "claims": [
+            {
+              "element": "header story revisions",
+              "operation": "accept",
+              "story": "header"
+            },
+            {
+              "element": "header story revisions",
+              "operation": "reject",
+              "story": "header"
+            },
+            {
+              "element": "header story revisions",
+              "operation": "preserve",
+              "story": "header"
+            },
+            {
+              "element": "footer story revisions",
+              "operation": "accept",
+              "story": "footer"
+            },
+            {
+              "element": "footer story revisions",
+              "operation": "reject",
+              "story": "footer"
+            },
+            {
+              "element": "footer story revisions",
+              "operation": "preserve",
+              "story": "footer"
+            }
+          ]
+        }
+      ],
+      "notes": "Package load/save preserves these parts, but package-wide accept/reject does not sweep them and Lean does not read them. Comparison mode behavior is not claimed here."
+    }
+  ]
+}

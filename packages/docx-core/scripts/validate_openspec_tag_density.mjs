@@ -35,7 +35,11 @@ import ts from 'typescript';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
-const TEST_ROOT = path.join(PACKAGE_ROOT, 'src');
+const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+const TEST_ROOTS = [
+  path.join(PACKAGE_ROOT, 'src'),
+  path.join(REPO_ROOT, 'packages', 'docx-compare', 'src'),
+];
 
 const DEFAULT_THRESHOLD = 3;
 
@@ -211,14 +215,14 @@ export function analyzeFile(absPath, content, threshold = DEFAULT_THRESHOLD) {
 
 async function main() {
   const { strict, threshold } = parseArgs(process.argv.slice(2));
-  const testFiles = await listTestFiles(TEST_ROOT);
+  const testFiles = (await Promise.all(TEST_ROOTS.map((root) => listTestFiles(root)))).flat().sort();
 
   const violations = [];
   let highDensityTotal = 0;
 
   for (const absPath of testFiles) {
     const content = await fs.readFile(absPath, 'utf-8');
-    const rel = path.relative(PACKAGE_ROOT, absPath).split(path.sep).join('/');
+    const rel = path.relative(REPO_ROOT, absPath).split(path.sep).join('/');
     for (const finding of analyzeFile(absPath, content, threshold)) {
       highDensityTotal += 1;
       if (!finding.hasRationale) {

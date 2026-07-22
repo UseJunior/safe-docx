@@ -11,14 +11,14 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments, type ReconstructionMode } from '../index.js';
+import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   compareTexts,
   extractTextWithParagraphs,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Stability Invariants' });
 

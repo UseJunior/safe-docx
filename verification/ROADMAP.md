@@ -2,6 +2,8 @@
 
 **Status (2026-06-01)**: Stages 1-6 of the Lean 4 verification spike shipped via PR #164 (merged 2026-05-11). Tiers 1, 1.5, and 1.6 are complete. Tier 2 is **complete**: OpenSpec change `add-ooxml-doc-subset-and-inv-field-001-proof` (issue #201) landed the definitional `OoxmlDoc` subset and **closed `inv_field_001`**, and the successor `add-inv-rt-001-proof` **closed `inv_rt_001`** with the same "definitional model + machine-checked lemma + single named residual axiom" shape. The spike is now **zero-`sorry`**, carrying exactly two named residual axioms (`compareDocumentXml_output_preservation_friendly`, `compareDocumentXml_output_text_roundtrip`), both owned by Tier 3. Tier 2.5 / 3 / 3+ remain not started.
 
+**Direction update (2026-07-07)**: rather than treat Tier 3 (universal discharge of the two axioms) as the sole next climb, the work now runs a parallel **verified-checker (translation-validation) architecture** plus a trust/demo packaging track — see "Direction change (2026-07-07)" below. The first OpenSpec change on this track is `add-invariant-registry-and-axiom-audit` (Increment 1: machine-readable invariant registry + a `#print axioms` CI gate that pins the axiom allowlist — the two residual obligations, the `compareDocumentXml` signature axiom, and Lean's standard trusted axioms).
+
 ## How to use this document
 
 This file is an engineering-internal tracker for verification work next to `verification/lean/`. Updates land through normal PRs. The tiers below are roadmap buckets, not formal release gates, and the estimates are wide error bars against a moving target whose dominant cost is modeling scope rather than theorem-prover keystrokes.
@@ -201,6 +203,57 @@ Rough additional effort beyond Tier 3: **2-4 years.**
 
 The cost driver here is engine evolution. Even a correct proof target today can drift as new comparison features or document-shape repairs are added.
 
+## Direction change (2026-07-07): verified-checker architecture + a trust/demo track
+
+Everything above frames assurance as a climb up the tiers: prove more of the engine, discharge the residual axioms, chase the bug-class layer. That climb is real but slow — Tier 3 alone is a 1.5–3 year modeling effort against a moving target, and none of it is visible to a developer or AI lab deciding whether to trust the MCP/CLI tools. This section records a second, parallel direction adopted to maximize assurance-per-effort *and* legibility: a verified-checker (translation-validation) architecture, plus the packaging that turns existing proofs into something an evaluator can see.
+
+Two facts drive it:
+
+1. **The engine already runs closely related checks at runtime — but they are the theorems' *conclusions*, not the axioms' *premises*.** `evaluateSafetyChecks` (`packages/docx-core/src/baselines/atomizer/pipeline.ts`) runs accept-all/reject-all, field-structure validation of the accepted/rejected output, and accept/reject text round-trip comparisons on every inplace candidate. Those are (close to) the conclusions of `inv_field_001`/`inv_rt_001`. What the residual axioms actually assert — `preservationFriendly combined` and the `revisedText`/`originalText` projection equalities (`Spec.lean`) — is **not** currently computed. The checker increment therefore *adds* those premise checks (the plumbing to attach them cheaply exists); it does not merely relabel today's checks. Nothing today connects any runtime check to the machine-checked lemmas.
+2. **The MCP edit tools ride a second, unmodeled accept/reject engine.** `packages/docx-core/src/primitives/{accept,reject}_changes.ts` — the paragraph-mark/merge path that `insert_paragraph` and the other MCP write tools actually exercise — is neither in the Lean model nor differentially tested against it. The tools most agents call sit outside the verified surface.
+
+### The verified checker (translation validation)
+
+Rather than model `compareDocumentXml` definitionally (Tier 3 as conceived above), prove an **axiom-free** theorem about a small executable checker and run it on every real output:
+
+> `checker_sound : ∀ (a b combined : Doc), comparisonCheckerB a b combined = true → validateFieldStructure (accept combined) ∧ validateFieldStructure (reject combined) ∧ normalizeText (extractText (accept combined)) = normalizeText (extractText (accept b)) ∧ normalizeText (extractText (reject combined)) = normalizeText (extractText (reject a))`
+
+`comparisonCheckerB` is a decidable `Bool`-valued conjunction of exactly the axioms' premises: `preservationFriendly combined` (its conjuncts in `Tier2/AcceptReject.lean` are already decidable equalities over `walkBlocks`/`countBlocks`) and the two `revisedText`/`originalText` projection equalities from `Spec.lean` (decidable). Note these premise checks are **new runtime work** — today's `evaluateSafetyChecks` computes the theorems' conclusions, not these premises (see fact 1 above). The proof composes already-closed lemmas (`field_structure_preserved_doc`, `extractText_reject`, `extractText_accept_normalized`), so `#print axioms checker_sound` shows **no residual-obligation axiom**. Running the checker on a real output replaces the two axioms, *for that document*, with the runtime check actually passing. This delivers per-document instances of exactly what Tier 3 would prove universally — and covers wild documents the definitional model would never parse — at a fraction of the cost. Discharging the axioms universally (Tier 3) is not abandoned; it is demoted below the checker, and the honest residual the checker does *not* guard (the rebuild-fallback path) is called out as its own future checker.
+
+### The honest four-tier taxonomy
+
+Every generated trust artifact carries this taxonomy verbatim; no artifact may collapse tiers. It is itself the differentiator against competitors who say "battle-tested."
+
+1. **Proven** (model-internal, no assumptions beyond Lean+mathlib): the LCS family + DP equivalence.
+2. **Proven modulo one named axiom**: INV-FIELD-001, INV-RT-001 — or, once the checker ships, "proven, with the premise established per-document at runtime."
+3. **Empirically validated** (deterministic differential / property test): Lean↔TS extensional equivalence (the 1.19M-pair sweep, the helper differential with G1–G5 closed, the fast-check bridge, the local-only LibreOffice oracle).
+4. **Tested-only / unverified**: rebuild-fallback mode, ancillary parts (bookmarks/comments/footnotes), formatting, rendering (Tier 3/3+ above).
+
+### Interleaved increment sequence
+
+Proof and packaging interleave so every public artifact ships with the strongest proof backing available at that point, and the demo lands mid-sequence. Each increment is one OpenSpec change + PR.
+
+- **Inc 1 — LANDED — Invariant registry + `#print axioms` CI gate** (packaging; no new proofs). `verification/registry/invariants.json` (mirroring `spec-compliance/registry/`) as the source of truth — per invariant: ID, plain-English statement, tier, exact Lean theorem name + file, production surface mirrored, residual axioms, scope caveats, and the **falsifier** (the CI job/test that fails if the claim breaks). A new `verification/lean/AxiomAudit.lean` + a `lean-build.yml` step that runs `#print axioms` on the flagship theorems and diffs the observed union against a committed allowlist `verification/lean/expected-axioms.txt` — the two residual-obligation axioms, the uninterpreted signature axiom `LeanSpike.compareDocumentXml` (the engine function itself is declared as an `axiom`; verified by running `#print axioms` on the current spike), and Lean's `propext`/`Classical.choice`/`Quot.sound` — closing the gap where a future PR could silently add another axiom; plus a `schedule:` trigger, since the workflow is path-filtered today. Generated `verification/INVARIANTS.md` via a `scripts/generate_invariants_doc.mjs` cloned from `scripts/generate_conformance_doc.mjs`, drift-checked by `check:invariants-doc`. **This is the first OpenSpec change spun up: `add-invariant-registry-and-axiom-audit`.**
+- **Inc 2 — Verified comparison checker** (proof). `Tier2/Checker.lean` (`comparisonCheckerB` + axiom-free `checker_sound`); a compiled `leanChecker` exe on the `DifferentialHelpers.lean` wire pattern; a TS mirror in `evaluateSafetyChecks` emitting a `certificate` field on `CompareResult`, differential-validated against the exe.
+- **Inc 3 — Per-save verification certificate** (packaging; needs 1+2). A `verification` block on the `save` tool response (`packages/docx-mcp/src/tools/save.ts`) and the compare CLI: which runtime checks ran, `engine_mode`, and per-invariant `{ tier, applies, note }` where `applies` is *computed* from `trackedReconstructionMode === 'inplace'`, not asserted. No `verified: true` boolean anywhere.
+- **Inc 4 — One-command red-team demo** (packaging; needs 3). `packages/docx-mcp/src/cli/commands/verify_demo.ts`: a silent edit is refused by the AI-revision guard; the tracked edit lands and prints the certificate; a Node-only replay of INV-RT-001 on the demo's own redline; the invariant table + repro commands. Best single demo for an AI-lab audience.
+- **Inc 5 — MCP no-silent-mutation certificate + primitives-engine differential** (proof; the flagship product law). Add `PPr.mark` to `Tier2/OoxmlModel.lean` (paragraph-mark revisions `insert_paragraph` emits), extend `accept`/`reject`, re-prove the preservation and round-trip lemmas (paragraph-merge shown walk-invariant is the one real new obligation); run the primitives-side engine against the same Lean spec three-way alongside the atomizer helpers; a runtime `tokenProjection(rejectAll(after)) = tokenProjection(rejectAll(before))` certificate in `preflightAiRevisionMutation` (`packages/docx-mcp/src/tools/ai_revision_guard.ts`).
+- **Inc 6 — Flagship theorem INV-EDIT-001** (proof; needs 5). `Tier2/EditOps.lean` models the MCP edit ops and proves perfect revertability (`tokenProjection (reject (applyOps ops d)) = tokenProjection (reject d)`), by construction per-op then folded over sequences.
+- **Inc 7 — Trust surface** (packaging; needs 1, generates from it). `site/src/trust/verification.njk` + a card, fed from the registry via a `generate_trust_metrics.mjs` sibling (lead with the G4/G5 "verification found real engine bugs" narrative); an `AUTO-GENERATED` "Machine-checked invariants" README block synced by `scripts/sync_readme_blocks.mjs`; `verification/AUDIT.md` ("verify this in 10 minutes"). Problem-first, undersell — state the unverified Tier 3/3+ remainder in the same breath.
+
+**Deferred, gated on data:** definitional `compareDocumentXml` (Tier 3 above) and broad OOXML model widening. Model-coverage telemetry from Incs 2–5 (parse-into-`Doc` rate, checker pass rate on the real-doc corpus) turns "widen toward bookmarks/comments/footnotes next?" into a measured decision; those invariants should enter as decidable checker conjuncts with small preservation lemmas (e.g. `checkRangePairs` in `validate_ai_revisions.ts` is already the runtime half), not deep model widenings.
+
+Dependency graph:
+
+```
+Inc1 (registry + axiom gate) ─► Inc2 (verified checker) ─► Inc3 (save certificate) ─► Inc4 (verify-demo)
+Inc1 ───────────────────────────────────────────────────────────────────────────────► Inc7 (site/README/audit)
+Inc2 ─► Inc5 (pPr marks + 3-way differential + no-silent-mutation cert) ─► Inc6 (INV-EDIT-001)
+Deferred: definitional compareDocumentXml, broad model widening — gated on corpus/telemetry data
+```
+
+This direction keeps the OpenSpec-per-work-item discipline the rest of the roadmap already assumes: Inc 1 is scaffolded as `add-invariant-registry-and-axiom-audit`, and each later increment gets its own change when its work begins.
+
 ## How estimates were calibrated
 
 - The original spike was time-boxed at 6 weeks.
@@ -215,8 +268,6 @@ Why it may not generalize:
 
 The roadmap therefore uses wide error bars such as **4-12 months** instead of point predictions. Those ranges are meant to communicate uncertainty, not precision.
 
-## Why this is not (yet) an OpenSpec change
+## Why this roadmap is not itself an OpenSpec change
 
-OpenSpec change proposals are the right vehicle once Tier 2 is actually being worked on. They force scope clarity and design review around a concrete definitional model. Right now Tier 2 is still not started, and the spike itself is already bounded and documented in `verification/lean/README.md`.
-
-For the current state, a lightweight roadmap is sufficient. The natural next OpenSpec artifact is not "verification roadmap"; it is something closer to "build a definitional `OoxmlDoc` subset and close `INV-FIELD-001` against it."
+This file stays a lightweight engineering-internal tracker; OpenSpec change proposals are the per-work-item vehicle. That pattern has already run its course once — Tier 2 was scoped and closed through `add-ooxml-doc-subset-and-inv-field-001-proof` and `add-inv-rt-001-proof`, exactly as the original version of this section predicted — and it continues under the 2026-07-07 direction change: each increment gets its own OpenSpec change when its work begins, starting with `add-invariant-registry-and-axiom-audit` (Increment 1). The roadmap records direction and status; the changes carry the reviewable scope.

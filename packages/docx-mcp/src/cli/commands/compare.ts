@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { compareDocuments, type CompareOptions } from '@usejunior/docx-core';
+import { compareDocuments, type CompareOptions } from '@usejunior/docx-compare';
 
 const SUPPORTED_ENGINES: ReadonlySet<NonNullable<CompareOptions['engine']>> = new Set([
   'auto',
