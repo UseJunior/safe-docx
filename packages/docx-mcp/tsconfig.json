@@ -15,5 +15,10 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
-  "references": [{ "path": "../docx-core" }, { "path": "../odf-core" }, { "path": "../google-docs-core" }]
+  "references": [
+    { "path": "../docx-core" },
+    { "path": "../docx-compare" },
+    { "path": "../odf-core" },
+    { "path": "../google-docs-core" }
+  ]
 }

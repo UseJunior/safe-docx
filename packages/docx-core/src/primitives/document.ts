@@ -351,7 +351,8 @@ export class DocxDocument {
 
   /**
    * Accept all tracked changes in document.xml plus supported revisionable
-   * side-story parts, producing clean XML with no revision markup.
+   * side-story parts, resolving the supported revision subset. Unsupported
+   * advanced records remain classified gaps or preservation-only markup.
    */
   async acceptChanges(): Promise<AcceptChangesResult> {
     const total = emptyAcceptChangesResult();
@@ -1042,7 +1043,7 @@ export class DocxDocument {
   }
 
   async getFootnotes(): Promise<Footnote[]> {
-    return getFootnotesImpl(this.zip, this.documentXml);
+    return getFootnotesImpl(this.zip, this.documentXml, this.getStylesModel());
   }
 
   /**
@@ -1090,7 +1091,7 @@ export class DocxDocument {
   }
 
   async getFootnote(noteId: number): Promise<Footnote | null> {
-    return getFootnoteImpl(this.zip, this.documentXml, noteId);
+    return getFootnoteImpl(this.zip, this.documentXml, noteId, this.getStylesModel());
   }
 
   /**

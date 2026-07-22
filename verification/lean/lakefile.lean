@@ -28,3 +28,9 @@ lean_exe leanDifferential where
 @[default_target]
 lean_exe leanHelperDifferential where
   root := `DifferentialHelpers
+
+-- Runtime fixed-story verifier: extracts the selected WordprocessingML parts
+-- from the actual original/revised/combined DOCX packages and checks them.
+@[default_target]
+lean_exe leanDocxChecker where
+  root := `LeanDocxChecker

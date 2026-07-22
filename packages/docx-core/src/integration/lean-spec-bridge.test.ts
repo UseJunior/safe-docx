@@ -132,7 +132,7 @@ const TEST_FEATURE = 'Lean Spec Bridge (fast-check)';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: TEST_FEATURE })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
 
 const TRACKED_REVISION_AUTHOR = 'Lean Bridge';
 const TRACKED_REVISION_DATE = '2026-05-11T00:00:00Z';

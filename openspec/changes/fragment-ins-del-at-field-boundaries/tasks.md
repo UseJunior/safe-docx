@@ -22,7 +22,7 @@
 
 ## 4. Phase 1.5 — Field-change classifier (DROPPED per design Decision 1)
 
-Per ECMA-376 Part 4 § 17.16.5, only `<w:del>` bars `w:fldChar`; `<w:ins>` and `<w:moveTo>` may contain `w:fldChar`. So only the deletion path needs fragmentation. The check at the deletion site reduces to `atom.collapsedFieldAtoms !== undefined` and does not warrant a separate classifier module. The 5-class classifier was a leftover from an earlier draft that proposed symmetric fragmentation across all three handlers (that draft was rejected after it regressed the NVCA fixtures — see design.md Decision 1).
+Per ECMA-376 Part 1 §§17.16.13 and 17.16.18, the deleted field-code payload is contained by `<w:del>` while field characters remain outside that payload; `<w:ins>` and `<w:moveTo>` may contain `w:fldChar`. So only the deletion path needs fragmentation. The check at the deletion site reduces to `atom.collapsedFieldAtoms !== undefined` and does not warrant a separate classifier module. The 5-class classifier was a leftover from an earlier draft that proposed symmetric fragmentation across all three handlers (that draft was rejected after it regressed the NVCA fixtures — see design.md Decision 1).
 
 - [x] 4.1 SKIPPED — superseded by Decision 1.
 

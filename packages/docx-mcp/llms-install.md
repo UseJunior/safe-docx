@@ -2,7 +2,7 @@
 
 SafeDocX (`@usejunior/safe-docx`) is a local MCP server for AI-powered DOCX editing with tracked changes, redlining, and formatting preservation.
 
-**Server command:** `npx -y @usejunior/safe-docx`
+**Install:** Follow [`docs/installation.md`](../../docs/installation.md), then use the installed executable's absolute path as the server command.
 **Transport:** stdio
 **Runtime:** Node.js >= 18
 
@@ -14,8 +14,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 {
   "mcpServers": {
     "safe-docx": {
-      "command": "npx",
-      "args": ["-y", "@usejunior/safe-docx"]
+      "command": "/absolute/path/to/safe-docx",
+      "args": []
     }
   }
 }
@@ -26,7 +26,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 Run in your terminal:
 
 ```bash
-claude mcp add safe-docx -- npx -y @usejunior/safe-docx
+claude mcp add safe-docx -- /absolute/path/to/safe-docx
 ```
 
 ## Gemini CLI
@@ -37,8 +37,8 @@ Install from the extension gallery (requires `gemini-cli-extension` GitHub topic
 {
   "mcpServers": {
     "safe-docx": {
-      "command": "npx",
-      "args": ["-y", "@usejunior/safe-docx"]
+      "command": "/absolute/path/to/safe-docx",
+      "args": []
     }
   }
 }
@@ -52,8 +52,8 @@ Add to your Cline MCP settings (`cline_mcp_settings.json`):
 {
   "mcpServers": {
     "safe-docx": {
-      "command": "npx",
-      "args": ["-y", "@usejunior/safe-docx"]
+      "command": "/absolute/path/to/safe-docx",
+      "args": []
     }
   }
 }
@@ -63,8 +63,8 @@ Add to your Cline MCP settings (`cline_mcp_settings.json`):
 
 Any MCP client that supports stdio transport can use SafeDocX. Configure with:
 
-- **Command:** `npx`
-- **Arguments:** `["-y", "@usejunior/safe-docx"]`
+- **Command:** the absolute path returned by `command -v safe-docx` or `where safe-docx`
+- **Arguments:** none
 - **Transport:** stdio
 
 Example JSON config:
@@ -73,8 +73,8 @@ Example JSON config:
 {
   "mcpServers": {
     "safe-docx": {
-      "command": "npx",
-      "args": ["-y", "@usejunior/safe-docx"]
+      "command": "/absolute/path/to/safe-docx",
+      "args": []
     }
   }
 }

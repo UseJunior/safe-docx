@@ -142,7 +142,7 @@ const test = testAllure
     story: 'Collapsed Field Multi-Run Replay',
     severity: 'critical',
   })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
 
 describe('Collapsed field inplace reconstruction', () => {
   describe('Dedicated-run field (PAGEREF)', () => {

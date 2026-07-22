@@ -14,9 +14,36 @@
 
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
-import { sha1, EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
+import { EMPTY_PARAGRAPH_TAG, getIdentityId, IdentityInterner } from '../../atomizer.js';
 import { computeAtomLcs, type LcsResult } from './atomLcs.js';
 import { debug } from './debug.js';
+
+/**
+ * Sub-namespace prefixes for the per-compare group interner. `textHash` mixes
+ * empty-group identities with raw paragraph text in a single field, so the
+ * empty-group key is prefixed with a control byte (which paragraph text never
+ * contains) to keep the two provably disjoint. Normalized text is prefixed too
+ * so its keys never alias a raw `textHash` key.
+ */
+const EMPTY_GROUP_KEY_PREFIX = '\u0000eg\u0000';
+const NORMALIZED_KEY_PREFIX = '\u0000nz\u0000';
+
+/**
+ * Build a group's coarse identity token from its text content, interned to an
+ * integer. Empty-paragraph groups key on the single atom's interned identity
+ * (context-aware) instead of the empty text, mirroring the previous use of the
+ * atom's context-aware `sha1Hash`.
+ */
+function internGroupTextHash(
+  atoms: ComparisonUnitAtom[],
+  textContent: string,
+  isEmpty: boolean,
+  interner: IdentityInterner
+): number {
+  return isEmpty
+    ? interner.intern(EMPTY_GROUP_KEY_PREFIX + String(getIdentityId(atoms[0]!)))
+    : interner.intern(textContent);
+}
 
 /**
  * Maximum atoms in a group before we split on w:br boundaries.
@@ -41,10 +68,10 @@ export interface ComparisonUnitGroup {
   paragraphIndex: number;
   /** Atoms in this paragraph */
   atoms: ComparisonUnitAtom[];
-  /** Hash of concatenated text content for paragraph-level matching */
-  textHash: string;
-  /** Hash of normalized text used only for matching heuristics */
-  normalizedTextHash: string;
+  /** Interned identity of the concatenated text content for paragraph-level matching */
+  textHash: number;
+  /** Interned identity of the normalized text used only for matching heuristics */
+  normalizedTextHash: number;
   /** Concatenated text content for similarity calculation */
   textContent: string;
 }
@@ -76,7 +103,8 @@ export interface GroupLcsResult {
  * @returns Array of paragraph groups in document order
  */
 export function groupAtomsByParagraphIndex(
-  atoms: ComparisonUnitAtom[]
+  atoms: ComparisonUnitAtom[],
+  interner: IdentityInterner
 ): ComparisonUnitGroup[] {
   const groups = new Map<number, ComparisonUnitAtom[]>();
 
@@ -96,18 +124,16 @@ export function groupAtomsByParagraphIndex(
     const atoms = groups.get(idx)!;
     const textContent = extractGroupTextContent(atoms);
 
-    // For empty paragraph groups, use the atom's sha1Hash (which has context)
-    // instead of the empty text hash. This prevents all empty paragraphs from
-    // matching each other regardless of position.
+    // For empty paragraph groups, key on the atom's context-aware identity
+    // instead of the empty text, so empty paragraphs don't all match each other
+    // regardless of position.
     const isEmptyParagraphGroup = atoms.length === 1 &&
       atoms[0]!.contentElement.tagName === EMPTY_PARAGRAPH_TAG;
 
-    const textHash = isEmptyParagraphGroup
-      ? atoms[0]!.sha1Hash  // Use context-aware atom hash
-      : sha1(textContent);
+    const textHash = internGroupTextHash(atoms, textContent, isEmptyParagraphGroup, interner);
     const normalizedTextHash = isEmptyParagraphGroup
       ? textHash
-      : sha1(normalizeText(textContent));
+      : interner.intern(NORMALIZED_KEY_PREFIX + normalizeText(textContent));
 
     result.push({
       paragraphIndex: idx,
@@ -126,20 +152,19 @@ export function groupAtomsByParagraphIndex(
  */
 function createGroup(
   atoms: ComparisonUnitAtom[],
-  groupIndex: number
+  groupIndex: number,
+  interner: IdentityInterner
 ): ComparisonUnitGroup {
   const textContent = extractGroupTextContent(atoms);
 
-  // For empty paragraph groups, use the atom's sha1Hash (which has context)
+  // For empty paragraph groups, key on the atom's context-aware identity.
   const isEmptyGroup = atoms.length === 1 &&
     atoms[0]!.contentElement.tagName === EMPTY_PARAGRAPH_TAG;
 
-  const textHash = isEmptyGroup
-    ? atoms[0]!.sha1Hash
-    : sha1(textContent);
+  const textHash = internGroupTextHash(atoms, textContent, isEmptyGroup, interner);
   const normalizedTextHash = isEmptyGroup
     ? textHash
-    : sha1(normalizeText(textContent));
+    : interner.intern(NORMALIZED_KEY_PREFIX + normalizeText(textContent));
 
   return {
     paragraphIndex: groupIndex,
@@ -161,7 +186,8 @@ function createGroup(
  * @returns Array of groups, potentially more than the number of paragraphs
  */
 export function groupAtomsByParagraphAndBreaks(
-  atoms: ComparisonUnitAtom[]
+  atoms: ComparisonUnitAtom[],
+  interner: IdentityInterner
 ): ComparisonUnitGroup[] {
   // First, group by paragraph index
   const paragraphMap = new Map<number, ComparisonUnitAtom[]>();
@@ -186,7 +212,7 @@ export function groupAtomsByParagraphAndBreaks(
 
     // Small paragraph - keep as-is
     if (paraAtoms.length <= MAX_ATOMS_BEFORE_SPLIT) {
-      result.push(createGroup(paraAtoms, groupIndex++));
+      result.push(createGroup(paraAtoms, groupIndex++, interner));
       continue;
     }
 
@@ -199,7 +225,7 @@ export function groupAtomsByParagraphAndBreaks(
       // Split AFTER w:br (keep the break with the preceding content)
       if (atom.contentElement.tagName === 'w:br') {
         if (currentAtoms.length > 0) {
-          result.push(createGroup(currentAtoms, groupIndex++));
+          result.push(createGroup(currentAtoms, groupIndex++, interner));
           currentAtoms = [];
         }
       }
@@ -207,7 +233,7 @@ export function groupAtomsByParagraphAndBreaks(
 
     // Don't forget trailing atoms after last break
     if (currentAtoms.length > 0) {
-      result.push(createGroup(currentAtoms, groupIndex++));
+      result.push(createGroup(currentAtoms, groupIndex++, interner));
     }
   }
 
@@ -816,9 +842,12 @@ export function hierarchicalCompare(
 ): LcsResult {
   const { similarityThreshold = DEFAULT_PARAGRAPH_SIMILARITY_THRESHOLD } = options;
 
-  // Step 1: Group atoms by paragraph, splitting large paragraphs on w:br
-  const originalGroups = groupAtomsByParagraphAndBreaks(originalAtoms);
-  const revisedGroups = groupAtomsByParagraphAndBreaks(revisedAtoms);
+  // Step 1: Group atoms by paragraph, splitting large paragraphs on w:br. Both
+  // sides share one group interner so equal paragraph text gets equal group ids
+  // across documents (the coarse-alignment analogue of the atom interner).
+  const groupInterner = new IdentityInterner();
+  const originalGroups = groupAtomsByParagraphAndBreaks(originalAtoms, groupInterner);
+  const revisedGroups = groupAtomsByParagraphAndBreaks(revisedAtoms, groupInterner);
 
   // Count empty paragraph groups
   const origEmptyGroups = originalGroups.filter(g => isEmptyParagraphGroup(g));

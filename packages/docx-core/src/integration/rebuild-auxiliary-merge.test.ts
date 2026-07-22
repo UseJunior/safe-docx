@@ -389,6 +389,92 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Issue #470: commentsExtended row dropped for a MULTI-PARAGRAPH comment
+  //
+  // Word keys each <w15:commentEx> threading row by the comment's LAST content
+  // paragraph's w14:paraId (Word extension-part behavior, [MS-DOCX] w15) — not
+  // the first. The comment-merge post-pass previously keyed its lookups by the
+  // FIRST <w:p> paraId, so a multi-paragraph comment's commentEx row never
+  // matched and was silently dropped from rebuild output, breaking the
+  // paraIdParent thread graph. Single-paragraph comments (first === last) are
+  // unaffected.
+  // ---------------------------------------------------------------------------
+  describe('Multi-paragraph comment threading row keyed by last content paraId (issue #470)', () => {
+    test('rebuild preserves the commentEx row keyed by the LAST content paragraph', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('revised carries a two-paragraph comment whose commentEx row is keyed by the last paragraph', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+        });
+
+        // Start from a single-paragraph comment fixture, then splice a SECOND
+        // content <w:p> (paraId 00000009) into comment id=1 so it becomes a
+        // multi-paragraph comment, and re-key its w15:commentEx row by that
+        // LAST paragraph's paraId — matching what Word writes. We mutate the
+        // archive directly (rather than extend the fixture DSL) because
+        // last-para keying is an issue-#470 regression check, not a recurring
+        // fixture need.
+        const baseRevised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'First line of the comment',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(baseRevised);
+
+        // Append a second content paragraph inside comment id=1's body.
+        const commentsXml = await zip.file('word/comments.xml')!.async('string');
+        zip.file(
+          'word/comments.xml',
+          commentsXml.replace(
+            '</w:comment>',
+            `<w:p w14:paraId="00000009"><w:r><w:t>Second line of the comment</w:t></w:r></w:p></w:comment>`
+          )
+        );
+
+        // Re-key the commentEx row from the first paraId (00000001) to the
+        // last content paragraph's paraId (00000009), as Word does.
+        const exXml = await zip.file('word/commentsExtended.xml')!.async('string');
+        zip.file(
+          'word/commentsExtended.xml',
+          exXml.replace('w15:paraId="00000001"', 'w15:paraId="00000009"')
+        );
+
+        revised = (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the last-paragraph-keyed commentEx row survives the merge', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        // Both comment paragraphs made it into comments.xml.
+        expect(parts.commentsXml).not.toBeNull();
+        expect(parts.commentsXml!).toContain('First line of the comment');
+        expect(parts.commentsXml!).toContain('Second line of the comment');
+
+        // Regression: the w15:commentEx row keyed by the LAST paragraph's
+        // paraId (00000009) must be present. Before the fix the merge looked
+        // it up under the FIRST paraId (00000001) and dropped it, leaving no
+        // commentEx row for this comment at all.
+        expect(parts.commentsExtendedXml).not.toBeNull();
+        expect(parts.commentsExtendedXml!).toContain('w15:paraId="00000009"');
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Issue #108: Reply comments dropped in rebuild mode
   //
   // Root comments have a <w:commentReference> in document.xml; replies do not.

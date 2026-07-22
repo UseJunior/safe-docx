@@ -1,7 +1,7 @@
 /**
  * accept_changes — accept all tracked changes in a OOXML document body.
  *
- * Produces a clean document with no revision markup by:
+ * Resolves the supported revision subset by:
  * - Removing w:del elements and their content
  * - Unwrapping w:ins elements (promoting children)
  * - Removing w:moveFrom (source), unwrapping w:moveTo (destination)
@@ -9,6 +9,10 @@
  * - Stripping paragraph-level revision markers, merging a paragraph whose
  *   mark was a tracked deletion into the following paragraph
  * - Cleaning up move range markers and rsidDel attributes
+ *
+ * Numbering, table-grid/exception, cell-topology, custom XML, and extension
+ * conflict records are not semantically resolved here; see the advanced
+ * revision classification manifest.
  *
  * Operates on the W3C DOM (`@xmldom/xmldom`) — the same API used
  * throughout docx-primitives-ts (contrast with docx-comparison's
@@ -277,10 +281,27 @@ function resolveParagraphMarkRevision(p: Element): void {
 
 /**
  * Accept all tracked changes in the document body or story root, producing a
- * clean document with no revision markup.
+ * document with supported revision records resolved.
  *
  * Mutates the Document in place (same convention as simplifyRedlines
  * and mergeRuns).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.moves
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.run-properties-paragraph-mark
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.section-properties
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-properties
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-cell-properties
  */
 export function acceptChanges(
   doc: Document,

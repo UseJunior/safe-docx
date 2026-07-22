@@ -10,6 +10,7 @@ import {
   formatToonDataLine,
   formatToonCommentLines,
   formatToonCommentsEndnotesBlock,
+  formatToonFootnotesEndnotesBlock,
   collectInlineCommentMarkers,
   collectTableMarkerInfo,
   formatTableMarker,
@@ -20,6 +21,7 @@ import {
   type DocumentViewComment,
   type DocumentViewNode,
   type Footnote,
+  type ToonFootnoteEndnote,
 } from '@usejunior/docx-core';
 import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -262,6 +264,48 @@ function attachParagraphFootnotes(
   });
 }
 
+/**
+ * The top-level `footnotes` field for JSON output (#207). Unlike the per-node
+ * inline attachment (#158), this is document-wide (never windowed) and carries
+ * the full-fidelity shape: `ref_paragraph_ids` (an ARRAY — a malformed DOCX can
+ * reuse one footnote id from several paragraphs) and multi-paragraph
+ * `paragraphs[]` with run-formatting-preserving `tagged_text`. Reserved
+ * scaffolding notes (display_number 0 / empty body) are omitted so the array
+ * matches the visible `[^N]` markers in the body.
+ */
+type TopLevelFootnote = {
+  id: string;
+  display_number: number;
+  ref_paragraph_ids: string[];
+  paragraphs: { text: string; tagged_text: string; style: string | null }[];
+};
+
+function isRenderableFootnote(footnote: Footnote): boolean {
+  return footnote.displayNumber > 0 && footnote.text.trim().length > 0;
+}
+
+function buildTopLevelFootnotes(footnotes: readonly Footnote[]): TopLevelFootnote[] {
+  return footnotes.filter(isRenderableFootnote).map((footnote) => ({
+    id: String(footnote.id),
+    display_number: footnote.displayNumber,
+    ref_paragraph_ids: [...footnote.refParagraphIds],
+    paragraphs: footnote.paragraphs.map((p) => ({
+      text: p.text,
+      tagged_text: p.tagged_text,
+      style: p.style,
+    })),
+  }));
+}
+
+function buildToonFootnotes(footnotes: readonly Footnote[]): ToonFootnoteEndnote[] {
+  return footnotes.filter(isRenderableFootnote).map((footnote) => ({
+    id: String(footnote.id),
+    displayNumber: footnote.displayNumber,
+    refParagraphIds: footnote.refParagraphIds,
+    paragraphs: footnote.paragraphs.map((p) => ({ text: p.text })),
+  }));
+}
+
 function collectSimpleCommentSuffixes(
   comments: readonly DocumentViewComment[],
   parentId?: number,
@@ -461,27 +505,52 @@ export async function readFile(
       });
     }
 
-    // Opt-in inline footnote bodies (#158), JSON-only in v1. Attachment runs
-    // on the already-windowed slice, so pagination semantics come for free:
-    // a footnote appears exactly on the page whose slice contains its anchor
-    // paragraph. Attaching BEFORE the budget renderers means the payload
-    // counts toward the same token budget as the rest of the node — no
-    // exemption. Mirrors the comment_load_error contract: a footnote part
-    // that fails to parse degrades to metadata, never fails the read.
+    // Opt-in footnote retrieval (#158 inline bodies, #207 single-call full-
+    // fidelity). When include_footnotes is set we load footnotes ONCE and use
+    // them three ways:
+    //   1. JSON: attach inline `footnotes:[{id,display_number,text}]` per node
+    //      (#158). Runs on the already-windowed slice, so pagination comes for
+    //      free and the payload counts toward the same token budget.
+    //   2. JSON: a TOP-LEVEL `footnotes` array (#207) with ref_paragraph_ids[]
+    //      and multi-paragraph `paragraphs[]` — the full-fidelity ingest. Kept
+    //      OUT of content[] to preserve the 1:1 content[] index invariant that
+    //      edit tooling relies on. Document-wide (never windowed).
+    //   3. TOON: a trailing `#FOOTNOTES` sidecar (#207), symmetric with
+    //      `#COMMENTS`.
+    // Mirrors the comment_load_error contract: a footnote part that fails to
+    // parse degrades to metadata, never fails the read.
     let footnoteLoadError: string | null = null;
-    if (params.include_footnotes && format === 'json') {
+    let topLevelFootnotes: TopLevelFootnote[] | null = null;
+    let toonFootnotes: ToonFootnoteEndnote[] | null = null;
+    if (params.include_footnotes) {
       try {
         // ODT and Google Doc sessions have no footnote primitive; the flag
         // no-ops there (same contract as include_fingerprint) instead of
         // reporting a missing-method as a load error.
         if (typeof session.doc.getFootnotes === 'function') {
           const footnotes = await session.doc.getFootnotes();
-          jsonNodes = attachParagraphFootnotes(jsonNodes, footnotes);
+          if (format === 'json') {
+            jsonNodes = attachParagraphFootnotes(jsonNodes, footnotes);
+            const built = buildTopLevelFootnotes(footnotes);
+            // Omit the field entirely when there are no renderable footnotes, so
+            // a footnote-free document's output stays clean (and byte-identical
+            // to the default path save for the absent field).
+            topLevelFootnotes = built.length > 0 ? built : null;
+          } else if (format === 'toon') {
+            toonFootnotes = buildToonFootnotes(footnotes);
+          }
         }
       } catch (e: unknown) {
         footnoteLoadError = errorMessage(e);
       }
     }
+
+    // The trailing #FOOTNOTES sidecar for TOON output. Empty (null) unless
+    // include_footnotes produced footnotes for a toon read.
+    const toonFootnotesSuffix =
+      toonFootnotes && toonFootnotes.length > 0
+        ? '\n' + formatToonFootnotesEndnotesBlock(toonFootnotes).join('\n')
+        : '';
 
     let content: string;
     let paragraphsReturned: number;
@@ -493,9 +562,9 @@ export async function readFile(
       } else if (format === 'simple') {
         content = renderSimpleWithTableMarkers(enriched);
       } else {
-        content = commentRendering === 'endnotes'
+        content = (commentRendering === 'endnotes'
           ? renderToonWithCommentEndnotes(enriched)
-          : renderToon(enriched);
+          : renderToon(enriched)) + toonFootnotesSuffix;
       }
       paragraphsReturned = enriched.length;
     } else {
@@ -505,7 +574,9 @@ export async function readFile(
         format === 'json'
           ? renderJsonWithBudget(jsonNodes, budget)
           : renderWithBudget(enriched, format, budget, commentRendering);
-      content = result.content;
+      // The #FOOTNOTES sidecar is document-wide and appended after budgeting —
+      // like the top-level JSON `footnotes`, it is not subject to windowing.
+      content = format === 'toon' ? result.content + toonFootnotesSuffix : result.content;
       paragraphsReturned = result.count;
 
       const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
@@ -517,6 +588,7 @@ export async function readFile(
         paragraphs_returned: paragraphsReturned,
         ...(result.warnings ? { warnings: result.warnings } : {}),
         ...paginationMeta,
+        ...(topLevelFootnotes != null ? { footnotes: topLevelFootnotes } : {}),
         ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
         ...(footnoteLoadError != null ? { footnote_load_error: footnoteLoadError } : {}),
       }, metadata));
@@ -530,6 +602,7 @@ export async function readFile(
       total_paragraphs: totalParagraphs,
       paragraphs_returned: paragraphsReturned,
       ...paginationMeta,
+      ...(topLevelFootnotes != null ? { footnotes: topLevelFootnotes } : {}),
       ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
       ...(footnoteLoadError != null ? { footnote_load_error: footnoteLoadError } : {}),
     }, metadata));

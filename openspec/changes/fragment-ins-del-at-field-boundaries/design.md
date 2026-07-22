@@ -24,7 +24,7 @@ Three years of round-trip incidents in adjacent open-source projects (LibreOffic
 
 **What**: Only `insertDeletedRun:923` fragments collapsed-field atoms. `handleInserted:1957` and `handleMovedDestination:2300` keep their existing single-wrapper behavior. No 5-class classifier or cross-atom pairing is required — the engine just checks `atom.collapsedFieldAtoms !== undefined` at the deletion site.
 
-**Why**: ECMA-376 Part 4 § 17.16.5 forbids `w:fldChar` inside `<w:del>` only. Per the canonical FORMCHECKBOX→FORMFIELDTEXT modification example in Microsoft Learn's `DeletedFieldCode` docs (quoting ISO/IEC 29500-1 1st Edition verbatim), `<w:ins>` legitimately contains `w:fldChar`. So insertion-side fragmentation is not required for conformance.
+**Why**: ECMA-376 Part 1 §§17.16.13 and 17.16.18 define deleted field-code containment and complex-field characters. Per the canonical FORMCHECKBOX→FORMFIELDTEXT modification example, `<w:ins>` legitimately contains `w:fldChar`. So insertion-side fragmentation is not required for this implementation constraint.
 
 An earlier draft of this design proposed symmetric fragmentation across all three handlers (informed by Steven's #217 comment from 2026-05-22 which suggested the bridge-test insertion `assertRecursivelyWellformed` would fire after fragmentation). When implemented, that regressed the NVCA fixtures (`nvca-coi-regression.test.ts`, `nvca-structural-regression.test.ts`) with `rejectText` failures because the inserted-side fragmentation interacts with mixed-run revised-document patterns in ways that drop end-fldChars on the reject path. The narrowed scope:
 
@@ -51,7 +51,7 @@ An earlier draft of this design proposed symmetric fragmentation across all thre
 
 **What**: `handleInserted` and `handleMovedDestination` keep their existing behavior — wrap the entire field sequence in one `<w:ins>` (or `<w:moveTo>`).
 
-**Why**: ECMA-376 Part 4 § 17.16.5 bars `w:fldChar` from `<w:del>` only. `<w:ins>` and `<w:moveTo>` may contain `w:fldChar` markers. An earlier draft of this design (informed by Steven's #217 comment from 2026-05-22 which suggested the `lean-spec-bridge.test.ts` insertion over-check would also need to be relaxed) attempted symmetric fragmentation across all three handlers. When implemented, that broke the NVCA regression fixtures (`nvca-coi-regression.test.ts`, `nvca-structural-regression.test.ts`) — both fell back to rebuild with `rejectText` failures because the inserted-side fragmentation interacts with mixed-run revised-document patterns in ways that drop end-fldChars on the reject path.
+**Why**: ECMA-376 Part 1 §§17.16.13 and 17.16.18 support keeping `w:fldChar` outside the deleted field-code payload. `<w:ins>` and `<w:moveTo>` may contain `w:fldChar` markers. An earlier draft of this design (informed by Steven's #217 comment from 2026-05-22 which suggested the `lean-spec-bridge.test.ts` insertion over-check would also need to be relaxed) attempted symmetric fragmentation across all three handlers. When implemented, that broke the NVCA regression fixtures (`nvca-coi-regression.test.ts`, `nvca-structural-regression.test.ts`) — both fell back to rebuild with `rejectText` failures because the inserted-side fragmentation interacts with mixed-run revised-document patterns in ways that drop end-fldChars on the reject path.
 
 Narrowing the scope to deletion-side fragmentation:
 
@@ -66,7 +66,7 @@ If future work needs `<w:ins>` fragmentation for a real-world conformance reason
 
 **What**: For whole-field deletion, fragment the field the same way as a modification — emit `[begin]`, `[separate]`, `[end]` runs unwrapped at sibling level; wrap the `[instrText]` (renamed to `delInstrText`) and `[result]` (renamed to `delText`) runs in `<w:del>`.
 
-**Why**: ECMA-376 Part 4 § 17.16.5 (Deleted Field Code / delInstrText) specifies that `w:delInstrText` MUST appear inside `<w:del>` ("If this element is not contained within a del element, then the document is non-conformant"). The canonical example for a tracked field modification — quoted verbatim from ISO/IEC 29500-1 1st Edition via Microsoft Learn — keeps `w:fldChar` markers OUTSIDE the `<w:ins>` / `<w:del>` wrappers:
+**Why**: ECMA-376 Part 1 §17.16.13 (Deleted Field Code / delInstrText) specifies that `w:delInstrText` MUST appear inside `<w:del>` ("If this element is not contained within a del element, then the document is non-conformant"). The canonical example for a tracked field modification keeps the §17.16.18 `w:fldChar` markers OUTSIDE the `<w:ins>` / `<w:del>` wrappers:
 
 ```xml
 <w:fldChar w:fldCharType="begin"/>
@@ -84,7 +84,7 @@ ECMA-376 is silent on whole-field deletion specifically — the spec gives only 
 **Trade-off**: On accept, the empty shell `[begin][separate][end]` is structurally valid but semantically degenerate. Microsoft Word renders an empty field as nothing (no field code, no result), which matches the user's intent of "delete this field." If empirical round-trip testing in Phase 9 surfaces a rendering problem, we will iterate — but the alternative (leaving fldChar inside `<w:del>`, the current behavior) is unambiguously non-conformant per `pipeline.ts:407`'s own runtime check.
 
 **Research sources consulted**:
-- ECMA-376 Part 4 § 17.16.5 (delInstrText) — Microsoft Learn `DeletedFieldCode` class documentation [quotes ISO/IEC 29500-1 1st Edition verbatim].
+- ECMA-376 Part 1 §17.16.13 (`delInstrText`) and §17.16.18 (`fldChar`).
 - ECMA-376 Part 4 § 17.16.18 (fldChar) — c-rex.net mirror; documents only that `fldChar`'s parent element is `<r>`, no explicit ban on `<w:del>` ancestry in schema, but no example showing `w:fldChar` inside `<w:del>` either.
 - The canonical FORMCHECKBOX→FORMTEXT example is the only authoritative XML the spec provides for a tracked field-content change. We extend it.
 - docx4j forum and openxml.info section 17.16 were consulted but did not contain a whole-field-deletion example.

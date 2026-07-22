@@ -33,7 +33,7 @@ import { assertDefined } from '../../testing/test-utils.js';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: 'Inplace Modifier' })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
 
 /**
  * Create a mock atom for testing.
@@ -1748,6 +1748,28 @@ describe('inPlaceModifier', () => {
         const innerRPr = childElements(rPrChanges[0]!).find((c) => c.tagName === 'w:rPr')!;
         expect(childElements(innerRPr).map((c) => c.tagName)).toEqual(['w:color']);
       });
+    });
+
+    test('excludes alternate-prefix rPrChange records from the prior-properties snapshot', () => {
+      const r = el('w:r', {}, [el('w:rPr'), el('w:t', {}, undefined, 'text')]);
+      const oldRPr = el('w:rPr', {}, [el('w:b')]);
+      const priorChange = oldRPr.ownerDocument.createElementNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+        'q:rPrChange',
+      );
+      priorChange.appendChild(el('w:rPr', {}, [el('w:i')]));
+      oldRPr.appendChild(priorChange);
+
+      addFormatChange(r, oldRPr, author, dateStr, createRevisionIdState());
+
+      const currentRPr = childElements(r).find((child) => child.localName === 'rPr')!;
+      const change = childElements(currentRPr).find((child) => child.localName === 'rPrChange')!;
+      const snapshot = childElements(change).find((child) => child.localName === 'rPr')!;
+      expect(childElements(snapshot).map((child) => child.localName)).toEqual(['b']);
+      expect(snapshot.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+        'rPrChange',
+      )).toHaveLength(0);
     });
   });
 
