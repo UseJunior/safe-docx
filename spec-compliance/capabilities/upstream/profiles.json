@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "registryVersion": 1,
+  "profiles": [
+    {
+      "id": "current-neutral-surface",
+      "title": "Current neutral scenario surface",
+      "description": "All capabilities represented by committed neutral scenarios; this profile carries no product-specific weighting.",
+      "capabilityIds": [
+        "word.comments.anchors",
+        "word.comments.content",
+        "word.comments.removal",
+        "word.footers.default",
+        "word.headers.default",
+        "word.hyperlinks.external",
+        "word.numbering.paragraph",
+        "word.paragraphs.structure",
+        "word.revisions.content",
+        "word.revisions.moves",
+        "word.revisions.paragraph-mark",
+        "word.revisions.paragraph-properties",
+        "word.revisions.run-properties",
+        "word.revisions.table-rows",
+        "word.runs.formatting",
+        "word.styles.paragraph",
+        "word.tables.cells",
+        "word.tables.horizontal-merge",
+        "word.tables.rows",
+        "word.tables.structure",
+        "word.text.find-replace"
+      ],
+      "axes": ["generate", "edit", "acceptReject", "crossPlatform"]
+    }
+  ]
+}
