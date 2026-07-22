@@ -2,7 +2,7 @@ import { describe, expect } from 'vitest';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { compareDocuments } from '@usejunior/docx-core';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { parseXml } from '@usejunior/docx-core';
 
 import { extractRevisions_tool } from './extract_revisions.js';
@@ -30,7 +30,7 @@ const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SIMPLE_FIXTURE_DIR = path.resolve(
   TEST_DIR,
-  '../../../docx-core/src/testing/fixtures/simple-word-change',
+  '../../../docx-compare/src/testing/fixtures/simple-word-change',
 );
 
 type RevisionSummary = {

@@ -45,15 +45,21 @@ test('snapshot flags a missing suite package', () => {
   assert.ok(errors.some((e) => /missing expected suite package\(s\): packages\/safe-docx-mcpb/.test(e)));
 });
 
-test('odf-core is on every release loop and the publish surface', () => {
-  // The 2026-06 revision folded odf-core into the suite train; regression-pin it.
+test('split runtime packages are on every release loop and the publish surface', () => {
+  // The 2026-06 revision folded odf-core into the suite train; #128 split
+  // docx-compare out of docx-core while keeping the suite version-locked.
   for (const loop of EXPECTED_LOOPS) {
     assert.ok(
       loop.includes('packages/odf-core') || loop.includes('@usejunior/odf-core'),
       `expected odf-core in loop: ${loop.join(', ')}`,
     );
+    assert.ok(
+      loop.includes('packages/docx-compare') || loop.includes('@usejunior/docx-compare'),
+      `expected docx-compare in loop: ${loop.join(', ')}`,
+    );
   }
   assert.ok(PUBLISH_DIRS.includes('packages/odf-core'));
+  assert.ok(PUBLISH_DIRS.includes('packages/docx-compare'));
 });
 
 test('snapshot flags a wrong loop count', () => {

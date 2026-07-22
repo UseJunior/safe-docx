@@ -23,13 +23,13 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
   compareTexts,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import fs from 'fs';
 import path from 'path';

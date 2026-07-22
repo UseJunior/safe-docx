@@ -40,6 +40,7 @@ export const EXPECTED_LOOPS = [
   // "Verify tag matches package suite versions" (version-pin)
   [
     'packages/docx-core',
+    'packages/docx-compare',
     'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
@@ -49,6 +50,7 @@ export const EXPECTED_LOOPS = [
   // "Guard against duplicate publish"
   [
     '@usejunior/docx-core',
+    '@usejunior/docx-compare',
     '@usejunior/odf-core',
     '@usejunior/docx-mcp',
     '@usejunior/google-docs-core',
@@ -57,6 +59,7 @@ export const EXPECTED_LOOPS = [
   // "Verify package contents (dry-run)"
   [
     'packages/docx-core',
+    'packages/docx-compare',
     'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
@@ -66,6 +69,7 @@ export const EXPECTED_LOOPS = [
   // same-version workspace deps resolve from local tarballs (issue #395)
   [
     'packages/docx-core',
+    'packages/docx-compare',
     'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
@@ -74,11 +78,13 @@ export const EXPECTED_LOOPS = [
   // "Publish to npm (trusted publishing)" — name:dir pairs
   [
     '@usejunior/docx-core',
+    '@usejunior/docx-compare',
     '@usejunior/odf-core',
     '@usejunior/docx-mcp',
     '@usejunior/google-docs-core',
     '@usejunior/safe-docx',
     'packages/docx-core',
+    'packages/docx-compare',
     'packages/odf-core',
     'packages/docx-mcp',
     'packages/google-docs-core',
@@ -91,6 +97,7 @@ export const EXPECTED_LOOPS = [
 // release at tag time.
 export const PUBLISH_DIRS = [
   'packages/docx-core',
+  'packages/docx-compare',
   'packages/odf-core',
   'packages/docx-mcp',
   'packages/google-docs-core',

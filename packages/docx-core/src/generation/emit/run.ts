@@ -17,7 +17,12 @@ import type { FieldSpec, InlineSpec, RunProps } from '../types.js';
 import type { BlockEmitContext } from './emit-context.js';
 import { buildRunPropsElement } from './properties.js';
 
-/** Instruction text per field, with the canonical surrounding spaces. */
+/**
+ * Instruction text per supported field, with canonical surrounding spaces.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.44
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.42
+ */
 const FIELD_INSTRUCTION_TEXT: Record<FieldSpec['field'], string> = {
   PAGE: ' PAGE ',
   NUMPAGES: ' NUMPAGES ',

@@ -15,13 +15,13 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   extractTextWithParagraphs,
   rejectAllChanges,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 
 // =============================================================================
 // Fixture: Dedicated-run PAGEREF field (field chars in separate runs)
@@ -142,7 +142,7 @@ const test = testAllure
     story: 'Collapsed Field Multi-Run Replay',
     severity: 'critical',
   })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
 
 describe('Collapsed field inplace reconstruction', () => {
   describe('Dedicated-run field (PAGEREF)', () => {

@@ -11,6 +11,7 @@ import {
 } from '../src/index.js';
 import { buildDocxFromBodyXml } from '../src/testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from './helpers/allure-test.js';
+import { revisionEvidence, revisionEvidenceCases } from '../src/testing/revision-evidence.js';
 
 const TEST_FEATURE = 'add-ai-revision-validator';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -149,6 +150,62 @@ describe('validateAiRevisions', () => {
       expect(result.errors.some((e) => e.code === 'REVISION_PLACEMENT_INVALID')).toBe(true);
     });
   });
+
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5' })(
+      '[ADV-NUMBERING-PLACEMENT-01] accepts numberingChange only under schema-valid Word parents',
+      async ({ when, then, and }: AllureBddContext) => {
+        const metadata = `w:id="17" w:author="${AI}" w:date="2026-01-01T00:00:00Z"`;
+        const valid = await when('numbering changes are validated under numPr and fldChar', () =>
+          validateBody(
+            `<w:p><w:pPr><w:numPr><w:numberingChange ${metadata}/></w:numPr></w:pPr>` +
+            `<w:r><w:fldChar w:fldCharType="begin"><w:numberingChange w:id="18" w:author="${AI}" w:date="2026-01-01T00:00:00Z"/></w:fldChar></w:r></w:p>`,
+          ),
+        );
+        const invalid = await validateBody(
+          `<w:p><w:pPr><w:numberingChange ${metadata}/></w:pPr>` +
+          `<x:numPr xmlns:x="urn:not-word"><w:numberingChange w:id="18" w:author="${AI}" w:date="2026-01-01T00:00:00Z"/></x:numPr></w:p>`,
+        );
+
+        await then('both schema-valid placements avoid placement diagnostics', () => {
+          expect(valid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toEqual([]);
+        });
+        await and('legacy and wrong-namespace lookalike parents are rejected', () => {
+          expect(invalid.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toHaveLength(2);
+        });
+        const withoutNumberingChange = doc('<w:p><w:pPr><w:numPr/></w:pPr></w:p>');
+        const removed = await validateAiRevisions({
+          aiAuthor: AI,
+          stories: [{ part: 'word/document.xml', doc: withoutNumberingChange }],
+        });
+        expect(withoutNumberingChange.getElementsByTagNameNS(W_NS, 'numberingChange')).toHaveLength(0);
+        expect(removed.errors.filter((error) => error.code === 'REVISION_PLACEMENT_INVALID')).toEqual([]);
+        await revisionEvidence('ADV-NUMBERING-PLACEMENT-01', revisionEvidenceCases({
+          elements: ['numberingChange'], operations: ['validate'], story: 'main',
+          buildFixture: () => ({ kind: 'valid' as 'valid' | 'removed' | 'corrupt' }),
+          run: async (fixture) => {
+            const target = fixture.kind === 'valid'
+              ? doc(`<w:p><w:pPr><w:numPr><w:numberingChange ${metadata}/></w:numPr></w:pPr></w:p>`)
+              : fixture.kind === 'removed'
+                ? doc('<w:p><w:pPr><w:numPr/></w:pPr></w:p>')
+                : doc(`<w:p><w:pPr><w:numberingChange ${metadata}/></w:pPr></w:p>`);
+            return {
+              target,
+              validation: await validateAiRevisions({
+                aiAuthor: AI,
+                stories: [{ part: 'word/document.xml', doc: target }],
+              }),
+            };
+          },
+          observe: (run, element) => run.target.getElementsByTagNameNS(W_NS, element).length === 1 &&
+            run.validation.errors.every((error) => error.code !== 'REVISION_PLACEMENT_INVALID'),
+          mutations: () => [
+            { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, kind: 'removed' as const }, context }) },
+            { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, kind: 'corrupt' as const }, context }) },
+          ],
+        }));
+      },
+    );
 
   test.openspec('relationship targets resolve to package parts')('Scenario: relationship targets resolve to package parts', async ({ when, then }: AllureBddContext) => {
     const buffer = await createZipBuffer(minimalPackageFiles({

@@ -21,6 +21,8 @@
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.6
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.comments.collection
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.comments.comment
  */
 
 import { createWmlElement, createWmlTextElement } from '../../primitives/dom-helpers.js';

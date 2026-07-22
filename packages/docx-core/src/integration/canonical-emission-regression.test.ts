@@ -3,7 +3,6 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   DocxDocument,
   OOXML,
-  compareDocuments,
   createRevisionContext,
   createRevisionIdState,
   createZipBuffer,
@@ -11,6 +10,7 @@ import {
   readZipText,
   replaceParagraphTextRange,
 } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({
