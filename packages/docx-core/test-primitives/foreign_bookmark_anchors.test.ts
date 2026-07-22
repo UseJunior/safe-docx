@@ -134,7 +134,7 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Fore
   test.openspec('an anchor may be any bookmark name on the paragraph')(
     'Scenario: a zero-length point bookmark next to a paragraph is not its anchor',
     async ({ given, when, then }: AllureBddContext) => {
-      // ECMA-376 §17.13.6.2 pairs start/end by w:id — adjacency is not ownership.
+      // Bookmarks pair start/end by w:id — adjacency is not ownership.
       // A point bookmark sitting just before a paragraph marks NO paragraph.
       const doc = await given('a zero-length bookmark immediately before a paragraph', () =>
         makeDoc(
@@ -257,6 +257,75 @@ describe('Traceability: document-paragraph-id-stability-and-fingerprint — Fore
 
       await then('it still resolves to the paragraph that reports it', () => {
         expect(paragraphText(found as Element)).toBe('second');
+      });
+    },
+  );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: a zero-length point bookmark INSIDE a paragraph is not its anchor',
+    async ({ given, when, then }: AllureBddContext) => {
+      // A point bookmark marks no content wherever it sits. Measuring the marker
+      // positions (rather than the content between them) previously let an
+      // inline point resolve to — and mutate — its enclosing paragraph.
+      const doc = await given('a bookmark opened and immediately closed inside a paragraph', () =>
+        makeDoc(
+          `<w:p><w:r><w:t>before</w:t></w:r>` +
+            `<w:bookmarkStart w:id="5" w:name="_RefPointInside"/><w:bookmarkEnd w:id="5"/>` +
+            `<w:r><w:t>after</w:t></w:r></w:p>`,
+        ),
+      );
+
+      const found = await when('the inline point bookmark name is used as an anchor', () =>
+        findParagraphByBookmarkId(doc, '_RefPointInside'),
+      );
+
+      await then('it resolves to nothing rather than the enclosing paragraph', () => {
+        expect(found).toBeNull();
+      });
+    },
+  );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: an end marker preceding its start does not resolve',
+    async ({ given, when, then }: AllureBddContext) => {
+      const doc = await given('a bookmarkEnd positioned before its bookmarkStart', () =>
+        makeDoc(
+          `<w:p><w:r><w:t>before</w:t></w:r><w:bookmarkEnd w:id="6"/>` +
+            `<w:r><w:t>middle</w:t></w:r><w:bookmarkStart w:id="6" w:name="_RefReversed"/>` +
+            `<w:r><w:t>after</w:t></w:r></w:p>`,
+        ),
+      );
+
+      const found = await when('the reversed bookmark name is used as an anchor', () =>
+        findParagraphByBookmarkId(doc, '_RefReversed'),
+      );
+
+      await then('the malformed range is refused', () => {
+        expect(found).toBeNull();
+      });
+    },
+  );
+
+  test.openspec('an anchor may be any bookmark name on the paragraph')(
+    'Scenario: two bookmarkStarts sharing one w:id are ambiguous and refused',
+    async ({ given, when, then }: AllureBddContext) => {
+      const doc = await given('two differently-named starts reusing a single w:id', () =>
+        makeDoc(
+          `<w:bookmarkStart w:id="8" w:name="jr_para_dupid_first"/>` +
+            `<w:p><w:r><w:t>first</w:t></w:r></w:p>` +
+            `<w:bookmarkStart w:id="8" w:name="jr_para_dupid_second"/>` +
+            `<w:p><w:r><w:t>second</w:t></w:r></w:p><w:bookmarkEnd w:id="8"/>`,
+        ),
+      );
+
+      const [a, b] = await when('each name sharing the w:id is used as an anchor', () => [
+        findParagraphByBookmarkId(doc, 'jr_para_dupid_first'),
+        findParagraphByBookmarkId(doc, 'jr_para_dupid_second'),
+      ]);
+
+      await then('neither resolves — the pairing is ambiguous', () => {
+        expect(a).toBeNull();
+        expect(b).toBeNull();
       });
     },
   );

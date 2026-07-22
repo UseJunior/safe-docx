@@ -156,6 +156,8 @@ function buildDocumentOrderSpans(doc: Document): Map<Node, [number, number]> {
  * a zero-length "point" bookmark sitting just before a paragraph, or a heading
  * bookmark spanning several paragraphs, masquerade as that paragraph's anchor.
  * We resolve the real range and report exactly which paragraphs it intersects.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
  */
 function paragraphsCoveredByBookmarkName(doc: Document, name: string): Element[] {
   const starts = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart)).filter(
@@ -168,6 +170,12 @@ function paragraphsCoveredByBookmarkName(doc: Document, name: string): Element[]
   const id = getAttr(start, 'id');
   if (!id) return [];
 
+  // The same w:id must not be opened twice — pairing would be ambiguous.
+  const startsWithId = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart)).filter(
+    (el) => getAttr(el, 'id') === id,
+  );
+  if (startsWithId.length !== 1) return [];
+
   const ends = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkEnd)).filter(
     (el) => getAttr(el, 'id') === id,
   );
@@ -179,6 +187,16 @@ function paragraphsCoveredByBookmarkName(doc: Document, name: string): Element[]
   const endSpan = spans.get(end);
   if (!startSpan || !endSpan) return [];
 
+  // Measure the CONTENT strictly between the markers, not the markers themselves.
+  // Using marker positions would let a zero-length "point" bookmark — whose start
+  // and end are adjacent — intersect whatever paragraph encloses or follows it,
+  // and that paragraph is not marked by the bookmark at all.
+  const contentFirst = startSpan[1] + 1;
+  const contentLast = endSpan[0] - 1;
+  // Empty interval => a point bookmark (marks no content). Also rejects an end
+  // that precedes its start, which is malformed rather than a covering range.
+  if (contentFirst > contentLast) return [];
+
   const covered: Element[] = [];
   const paragraphs = doc.getElementsByTagNameNS(OOXML.W_NS, W.p);
   for (let i = 0; i < paragraphs.length; i++) {
@@ -186,8 +204,8 @@ function paragraphsCoveredByBookmarkName(doc: Document, name: string): Element[]
     if (!p || !isParagraph(p)) continue;
     const pSpan = spans.get(p);
     if (!pSpan) continue;
-    // Ranges intersect iff each starts before the other ends.
-    if (startSpan[0] <= pSpan[1] && endSpan[1] >= pSpan[0]) covered.push(p);
+    // Intersect the covered content with the paragraph's subtree.
+    if (contentFirst <= pSpan[1] && contentLast >= pSpan[0]) covered.push(p);
   }
   return covered;
 }
@@ -383,8 +401,9 @@ export function insertSingleParagraphBookmark(doc: Document, p: Element): string
  *    bookmark does not actually mark — i.e. edit the wrong clause.
  *
  * Anything ambiguous returns null so the caller can fall back rather than guess.
- * Matching is exact on the bookmark name; see ECMA-376 Part 1 §17.13.6.2 for the
- * start/end `w:id` pairing rule.
+ * Matching is exact on the bookmark name.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
  */
 export function findParagraphByBookmarkId(doc: Document, bookmarkId: string): Element | null {
   const paragraphs = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.p));
