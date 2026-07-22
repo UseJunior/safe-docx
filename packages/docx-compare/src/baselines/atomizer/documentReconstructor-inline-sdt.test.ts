@@ -34,10 +34,11 @@ import {
 
 const EXT_NS = 'urn:safe-docx:test:opaque-extension';
 const ALT_EXT_NS = 'urn:safe-docx:test:opaque-extension-alias';
+const TEST_FEATURE = 'Document Reconstructor Inline SDT';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'Document Reconstructor Inline SDT',
+    feature: TEST_FEATURE,
     story: 'Opaque Inline Content Control Preservation In Rebuild',
     severity: 'critical',
   })
