@@ -23,7 +23,7 @@ import { emitFontTablePart } from './emit/font-table-part.js';
 import { emitHeaderFooterParts } from './emit/header-footer-part.js';
 import { emitNumberingPartIfNeeded } from './emit/numbering-part.js';
 import { emitPackageParts } from './emit/package-parts.js';
-import { emitSettingsPartIfNeeded } from './emit/settings-part.js';
+import { emitSettingsPart } from './emit/settings-part.js';
 import { emitStylesPart } from './emit/styles-part.js';
 import { emitThemePart } from './emit/theme-part.js';
 import { emitWebSettingsPart } from './emit/web-settings-part.js';
@@ -54,7 +54,7 @@ export async function generateDocx(spec: DocumentSpec, opts?: GenerateDocxOption
   ctx.setFileContent('word/document.xml', documentPartXml);
   if (notes) emitCommentsPartsIfNeeded(spec, ctx, notes);
   emitStylesPart(spec, ctx);
-  emitSettingsPartIfNeeded(spec, ctx);
+  emitSettingsPart(spec, ctx);
   // Standard ancillary parts every Word-authored package carries (issue #482):
   // theme → fontTable → webSettings, ordered for stable rId allocation. Package
   // plumbing must stay last — it assembles [Content_Types].xml from the registry.

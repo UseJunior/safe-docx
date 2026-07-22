@@ -25,7 +25,7 @@ async function inputs() {
 
 test('the committed projection matches the exact upstream denominator', async () => {
   const result = await validateProjection(await inputs(), root);
-  assert.equal(result.denominator, 59);
+  assert.equal(result.denominator, 62);
 });
 
 test('a positive claim without executable evidence is rejected', async () => {
@@ -83,6 +83,24 @@ test('an unmeasured neutral result cannot establish a positive claim', async () 
   claim.evidence = [{
     kind: 'neutral-result',
     evidenceClass: 'cross-implementation-differential',
+    path: 'spec-compliance/capabilities/upstream/capability-summary.json',
+    implementationVersion: '0.15.0',
+    lastVerifiedCommit: '459051c072daca16cf02d8406c439d81281d382f',
+  }];
+  claim.rationale = 'Mutation probe.';
+  await assert.rejects(() => validateProjection(value, root), /no pinned neutral result row/);
+});
+
+test('the unmeasured compatibility scenario cannot establish a positive generation row', async () => {
+  const value = await inputs();
+  const claim = value.projection.claims.find(
+    (candidate) =>
+      candidate.capabilityId === 'word.settings.compatibility-mode' && candidate.axis === 'generate'
+  );
+  claim.status = 'supported';
+  claim.evidence = [{
+    kind: 'neutral-result',
+    evidenceClass: 'normative-behavioral-scenario',
     path: 'spec-compliance/capabilities/upstream/capability-summary.json',
     implementationVersion: '0.15.0',
     lastVerifiedCommit: '459051c072daca16cf02d8406c439d81281d382f',

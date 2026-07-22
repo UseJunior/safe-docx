@@ -889,6 +889,78 @@
       }
     },
     {
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The compatibility-mode scenario is unmeasured in the pinned neutral result, so local adapter tests cannot establish a positive projection row.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "[Content_Types].xml",
+          "_rels/.rels",
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/settings.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result measures SafeDocX editing this setting, so the pair remains untested.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "[Content_Types].xml",
+          "_rels/.rels",
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/settings.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "[Content_Types].xml",
+          "_rels/.rels",
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/settings.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
       "capabilityId": "word.styles.paragraph",
       "axis": "generate",
       "status": "untested",

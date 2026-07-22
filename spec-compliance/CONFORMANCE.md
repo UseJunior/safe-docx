@@ -37,6 +37,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-10-6` | w:titlePg first-page header/footer switch | 5 | 1 | 17.10.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:titlePg` | — |
 | `ECMA-PART1-17-10-4` | w:hdr header part emission | 5 | 1 | 17.10.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hdr` | — |
 | `ECMA-PART1-17-10-3` | w:ftr footer part emission | 5 | 1 | 17.10.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr` | — |
+| `ECMA-PART1-11-3-3` | Document Settings part | 5 | 1 | 11.3.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
+| `ECMA-PART1-17-15-3-4` | w:compatSetting custom compatibility setting | 5 | 1 | 17.15.3.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-10-1` | w:evenAndOddHeaders setting | 5 | 1 | 17.10.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders` | — |
 | `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json |
 | `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts |
@@ -462,6 +464,33 @@ Footer parts mirror header parts as `w:ftr` documents (word/footerN.xml);
 "Page X of Y" footers carry complete five-part PAGE/NUMPAGES fields with
 cached results.
 
+### ECMA-PART1-11-3-3 — Document Settings part
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 11.3.3
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings`
+- **Verified by:** packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts
+
+Generated packages carry one Document Settings part, registered through the
+main document relationship and package content types. The part contains the
+baseline compatibility structure plus conditional even/odd-header and color
+scheme settings. This entry covers part presence and package wiring, not the
+Microsoft-specific meaning of compatibility mode value 15.
+
+### ECMA-PART1-17-15-3-4 — w:compatSetting custom compatibility setting
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.15.3.4
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting`
+- **Verified by:** packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts
+
+Generation emits one custom compatibility setting under `w:compat`, carrying
+the required name, URI, and value attributes in the settings sequence. ECMA-376
+defines this extensibility structure; MS-DOCX §2.3.5, not ECMA-376, defines
+the Microsoft `compatibilityMode` values and assigns the semantics of value 15.
+
 ### ECMA-PART1-17-10-1 — w:evenAndOddHeaders setting
 
 - **Edition:** ECMA-376 5
@@ -470,9 +499,9 @@ cached results.
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders`
 
 Even-page headers/footers are only honored when `w:evenAndOddHeaders` is
-set in word/settings.xml. Generation emits the settings part exactly when
-some section declares an `even` slot, so the declared content and the
-document-level switch can never drift apart.
+set in word/settings.xml. Generation always emits the baseline settings part
+and conditionally adds this switch exactly when some section declares an
+`even` slot, so the declared content and document-level switch cannot drift.
 
 ### ECMA-PART1-17-16-18 — w:fldChar five-part complex-field emission
 

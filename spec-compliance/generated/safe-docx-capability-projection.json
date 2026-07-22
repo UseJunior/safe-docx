@@ -2,26 +2,26 @@
   "schemaVersion": 1,
   "generatedFrom": {
     "repository": "open-agreements/docx-platform-tests",
-    "commit": "09e4c2c8a2fac214a1f02ed787e8ed9a0404217b",
+    "commit": "19f051ed645cbc8613a5967e02d7f87ef7824454",
     "registryVersion": 1,
     "profileId": "current-neutral-surface"
   },
   "profileDenominator": {
-    "capabilityAxisPairs": 59,
+    "capabilityAxisPairs": 62,
     "byAxis": {
-      "generate": 13,
-      "edit": 15,
+      "generate": 14,
+      "edit": 16,
       "acceptReject": 10,
-      "crossPlatform": 21
+      "crossPlatform": 22
     }
   },
   "evidenceInventory": {
-    "authoredMappingPairs": 26,
-    "crossPlatformDerivedPairsInCompleteRun": 21,
-    "expectedCompleteSummaryRows": 47,
+    "authoredMappingPairs": 27,
+    "crossPlatformDerivedPairsInCompleteRun": 22,
+    "expectedCompleteSummaryRows": 49,
     "pinnedMeasuredSummaryRows": 8,
     "pinnedMeasuredScenarios": 12,
-    "pinnedUnmeasuredScenarios": 25
+    "pinnedUnmeasuredScenarios": 26
   },
   "statusCounts": {
     "supported": 8,
@@ -29,7 +29,7 @@
     "preservation-only": 0,
     "gap": 3,
     "non-goal": 0,
-    "untested": 48
+    "untested": 51
   },
   "formalAssuranceBoundary": {
     "establishesCapabilityClaims": false,
@@ -1048,6 +1048,84 @@
       },
       "title": "Direct run formatting",
       "family": "formatting"
+    },
+    {
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "[Content_Types].xml",
+          "_rels/.rels",
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/settings.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Word compatibility mode setting",
+      "family": "settings"
+    },
+    {
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result measures SafeDocX editing this setting, so the pair remains untested.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "[Content_Types].xml",
+          "_rels/.rels",
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/settings.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Word compatibility mode setting",
+      "family": "settings"
+    },
+    {
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The compatibility-mode scenario is unmeasured in the pinned neutral result, so local adapter tests cannot establish a positive projection row.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "[Content_Types].xml",
+          "_rels/.rels",
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/settings.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Word compatibility mode setting",
+      "family": "settings"
     },
     {
       "capabilityId": "word.styles.paragraph",
