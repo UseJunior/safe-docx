@@ -7,7 +7,7 @@
 
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
-import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
+import { EMPTY_PARAGRAPH_TAG, getIdentityId } from '../../atomizer.js';
 import { debug } from './debug.js';
 
 /**
@@ -49,6 +49,22 @@ export function computeAtomLcs(
   const n = original.length;
   const m = revised.length;
 
+  // Select the equality comparator once, not per DP cell. Use the integer-id path
+  // only when EVERY atom on both sides carries an interned id (the production
+  // pipeline path): equality is then a single integer compare — no sha1Hash string
+  // compare and no recursive textContent DOM walk. Checking every atom (not just
+  // the first) is required for soundness — a mixed array where only some atoms are
+  // interned must NOT take the id path, or two un-interned atoms would compare
+  // `undefined === undefined` and match spuriously. The O(n+m) scan is negligible
+  // beside the O(n*m) DP. Duck-typed atoms in direct-call unit tests carry no id
+  // and fall back to the legacy hash+text+tag comparison the id relation reproduces.
+  const useIds =
+    original.every((a) => getIdentityId(a) !== undefined) &&
+    revised.every((a) => getIdentityId(a) !== undefined);
+  const eq = useIds
+    ? (a: ComparisonUnitAtom, b: ComparisonUnitAtom): boolean => getIdentityId(a) === getIdentityId(b)
+    : atomsEqual;
+
   // Build LCS length table
   // dp[i][j] = length of LCS of original[0..i-1] and revised[0..j-1]
   const dp: number[][] = Array(n + 1)
@@ -57,7 +73,7 @@ export function computeAtomLcs(
 
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
-      if (atomsEqual(original[i - 1]!, revised[j - 1]!)) {
+      if (eq(original[i - 1]!, revised[j - 1]!)) {
         dp[i]![j] = dp[i - 1]![j - 1]! + 1;
       } else {
         dp[i]![j] = Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
@@ -71,7 +87,7 @@ export function computeAtomLcs(
   let j = m;
 
   while (i > 0 && j > 0) {
-    if (atomsEqual(original[i - 1]!, revised[j - 1]!)) {
+    if (eq(original[i - 1]!, revised[j - 1]!)) {
       matches.unshift({ originalIndex: i - 1, revisedIndex: j - 1 });
       i--;
       j--;

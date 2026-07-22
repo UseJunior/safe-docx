@@ -5,6 +5,7 @@ import { parseXml } from './xml.js';
 import { OOXML, W } from './namespaces.js';
 import { SafeDocxError } from './errors.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
+import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 import {
   getParagraphRuns,
   getParagraphText,
@@ -822,7 +823,7 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
     });
   });
 
-  test('emits rPrChange with the prior run properties when replacement formatting changes', async ({
+  test('[ADV-RPR-EMISSION-01] emits rPrChange with the prior run properties when replacement formatting changes', async ({
     given,
     when,
     then,
@@ -868,6 +869,31 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
       const insertedRun = p.getElementsByTagNameNS(W_NS, 'ins').item(0)!.getElementsByTagNameNS(W_NS, W.r).item(0)!;
       expect(insertedRun.getElementsByTagNameNS(W_NS, W.b)).toHaveLength(1);
     });
+    await revisionEvidence('ADV-RPR-EMISSION-01', revisionEvidenceCases({
+      elements: ['rPrChange'], operations: ['emit'], story: 'main',
+      buildFixture: () => ({ tracked: true, priorItalic: true }),
+      run: (fixture) => {
+        const input = makeDoc(`<w:p><w:r><w:rPr>${fixture.priorItalic ? '<w:i/>' : '<w:u w:val="single"/>'}</w:rPr><w:t>Hello</w:t></w:r></w:p>`);
+        const paragraph = firstParagraph(input);
+        replaceParagraphTextRange(
+          paragraph,
+          0,
+          5,
+          [{ text: 'New', addRunProps: { bold: true } }],
+          fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+        );
+        return paragraph;
+      },
+      observe: (output) => {
+        const change = output.getElementsByTagNameNS(W_NS, 'rPrChange').item(0);
+        return change?.getAttributeNS(W_NS, 'author') === 'SafeDocX AI' &&
+          change.getElementsByTagNameNS(W_NS, W.i).length === 1;
+      },
+      mutations: () => [
+        { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+        { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorItalic: false }, context }) },
+      ],
+    }));
   });
 
   test('does not emit rPrChange when source rPr only differs by pretty-printing whitespace', async ({

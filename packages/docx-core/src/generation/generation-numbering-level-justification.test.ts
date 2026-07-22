@@ -102,7 +102,7 @@ describe('Traceability: numbering level justification', () => {
         const specError = rejection as GenerationSpecError;
         expect(specError.code).toBe('invalid_value');
         expect(specError.path).toBe('/numbering/0/levels/0/lvlJc');
-        expect(specError.message).toMatch(/lvlJc must be one of/);
+        expect(specError.message).toMatch(/outside the ST_Jc schema domain/);
       });
     },
   );

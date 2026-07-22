@@ -26,7 +26,7 @@ def fixedStories : List FixedStory :=
 
 def requestFromJson (j : Json) : Except String Request := do
   let protocolVersion ← j.getObjValAs? Nat "protocolVersion"
-  if protocolVersion != 2 then
+  if protocolVersion != 3 then
     throw s!"unsupported protocolVersion: {protocolVersion}"
   return {
     originalDocxPath := (← j.getObjValAs? String "originalDocxPath")
@@ -181,7 +181,7 @@ def runRequest (req : Request) : IO Json := do
   let reports := checkStoryCollection loaded.stories
   let passed := loaded.mismatches.isEmpty && storyCollectionPassed reports
   return Json.mkObj
-    [ ("protocolVersion", toJson (2 : Nat))
+    [ ("protocolVersion", toJson (3 : Nat))
     , ("checker", toJson "safe-docx-lean-fixed-story-checker")
     , ("passed", toJson passed)
     , ("stories", Json.arr (reports.map storyReportToJson).toArray)
