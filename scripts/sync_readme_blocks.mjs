@@ -9,7 +9,7 @@ const repoRoot = path.resolve(__dirname, '..');
 
 const SOURCE = 'README.md';
 const TARGETS = ['README.es.md', 'README.zh.md', 'README.de.md', 'README.pt-br.md'];
-const BLOCKS = ['badges', 'lang-nav', 'architecture-diagram'];
+const BLOCKS = ['badges', 'lang-nav'];
 
 const BEGIN = (name) => `<!-- SYNC:${name} BEGIN -->`;
 const END = (name) => `<!-- SYNC:${name} END -->`;

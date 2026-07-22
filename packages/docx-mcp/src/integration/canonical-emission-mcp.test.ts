@@ -7,7 +7,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { openSession, assertSuccess, registerCleanup } from '../testing/session-test-utils.js';
 import { replaceText } from '../tools/replace_text.js';
 import { insertParagraph } from '../tools/insert_paragraph.js';
-import { applyPlan } from '../tools/apply_plan.js';
+import { batchEdit } from '../tools/batch_edit.js';
 import { clearFormatting } from '../tools/clear_formatting.js';
 import { formatLayout } from '../tools/format_layout.js';
 import { addComment } from '../tools/add_comment.js';
@@ -31,7 +31,7 @@ function createManager(aiAuthor: string = AI_AUTHOR): SessionManager {
 function makeDocXml(bodyXml: string): string {
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-    `<w:document xmlns:w="${W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">` +
+    `<w:document xmlns:w="${W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">` +
     `<w:body>${bodyXml}<w:sectPr/></w:body>` +
     `</w:document>`
   );
@@ -43,10 +43,13 @@ async function saveAndReadParts(
   outputPath: string,
   partPaths: string[],
 ): Promise<Record<string, string>> {
+  // #126: write-time tracked markup lands in the tracked (redline) artifact; the
+  // clean artifact now accepts the AI's edits. Verify the emitted wrappers via the
+  // tracked output.
   const saved = await save(mgr, {
     file_path: inputPath,
     save_to_local_path: outputPath,
-    save_format: 'clean',
+    save_format: 'tracked',
     clean_bookmarks: true,
   });
   assertSuccess(saved, 'save');
@@ -166,7 +169,7 @@ describe('Tool integration through SessionManager: canonical revision emission',
     });
   });
 
-  test('apply_plan saves SafeDocX-authored tracked output for delegated edits', async ({
+  test('batch_edit saves SafeDocX-authored tracked output for delegated edits', async ({
     given,
     when,
     then,
@@ -178,8 +181,8 @@ describe('Tool integration through SessionManager: canonical revision emission',
       opened = await openSession(['Hello world'], { mgr: createManager() });
     });
 
-    await when('apply_plan runs replace_text and insert_paragraph steps', async () => {
-      const applied = await applyPlan(opened.mgr, {
+    await when('batch_edit runs replace_text and insert_paragraph steps', async () => {
+      const applied = await batchEdit(opened.mgr, {
         file_path: opened.inputPath,
         steps: [
           {
@@ -200,7 +203,7 @@ describe('Tool integration through SessionManager: canonical revision emission',
           },
         ],
       });
-      assertSuccess(applied, 'apply_plan');
+      assertSuccess(applied, 'batch_edit');
 
       const parts = await saveAndReadParts(
         opened.mgr,
@@ -268,6 +271,8 @@ describe('Tool integration through SessionManager: canonical revision emission',
         xml: makeDocXml(
           '<w:p><w:r><w:t>Spacing paragraph.</w:t></w:r></w:p>' +
             '<w:tbl>' +
+            '<w:tblPr/>' +
+            '<w:tblGrid><w:gridCol/><w:gridCol/></w:tblGrid>' +
             '<w:tr>' +
             '<w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc>' +
             '<w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc>' +

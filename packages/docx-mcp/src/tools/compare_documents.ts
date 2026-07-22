@@ -3,7 +3,7 @@ import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
-import { compareDocuments, type CompareOptions } from '@usejunior/docx-core';
+import { compareDocuments, type CompareOptions } from '@usejunior/docx-compare';
 import {
   mergeSessionResolutionMetadata,
   resolveSessionForTool,

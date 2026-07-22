@@ -68,7 +68,7 @@ function renderTextWithFootnotes(raw: string, refs?: FootnoteRefs): string {
  * otherwise pass through and execute on click. Relative URLs and fragments (no scheme) are kept.
  */
 const SAFE_URL_SCHEMES = new Set(['http', 'https', 'mailto', 'tel']);
-function isSafeHref(href: string): boolean {
+export function isSafeHref(href: string): boolean {
   // Strip whitespace/control chars browsers ignore (e.g. `java\tscript:`) before scheme-matching.
   const v = href.replace(/[\u0000-\u0020]/g, '').toLowerCase();
   const scheme = /^([a-z][a-z0-9+.-]*):/.exec(v);
@@ -131,7 +131,9 @@ export function inlineTagsToHtml(text: string, refs?: FootnoteRefs): string {
       continue;
     }
     const tag = token.value;
-    if (tag === '<highlight>') out += '<mark>';
+    // The serializer renders compact-mode views, but tolerate the full-mode attributed form
+    // (<highlight color="...">) so a full-mode tagged_text can't leak raw markup into HTML.
+    if (tag === '<highlight>' || tag.startsWith('<highlight ')) out += '<mark>';
     else if (tag === '</highlight>') out += '</mark>';
     else if (tag.startsWith('<font ')) out += fontTagToSpan(tag);
     else if (tag === '</font>') out += '</span>';

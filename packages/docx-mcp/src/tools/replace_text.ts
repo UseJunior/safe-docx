@@ -1,11 +1,13 @@
-import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { ERROR_PREVIEW_CHARS, RESULT_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
+import { preflightAiRevisionMutation } from './ai_revision_guard.js';
 import {
   OOXML,
   W,
+  DocxDocument,
   findUniqueSubstringMatch,
   applyDocumentQuoteStyle,
   getParagraphRuns,
@@ -52,10 +54,10 @@ function headerFormattingToAddRunProps(formatting: unknown): NonNullable<Replace
 }
 
 function findHeaderRoleModelAddRunProps(
-  session: DocxSession,
+  doc: Pick<DocxDocument, 'buildDocumentView'>,
   anchorParagraphId: string,
 ): NonNullable<ReplacementPart['addRunProps']> | null {
-  const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
+  const { nodes } = doc.buildDocumentView({ includeSemanticTags: false });
   const anchorIdx = nodes.findIndex((n) => n.id === anchorParagraphId);
   if (anchorIdx < 0) return null;
 
@@ -167,6 +169,11 @@ export async function replaceText(
     font_size?: number;
     font_name?: string;
     color?: string;
+    /**
+     * Internal (not exposed in the MCP tool schema): set by batch_edit, which
+     * preflights the whole step sequence once instead of per step.
+     */
+    skip_ai_revision_preflight?: boolean;
   },
   ctx?: RevisionContext,
 ): Promise<ToolResponse> {
@@ -175,10 +182,6 @@ export async function replaceText(
     if (!resolved.ok) return resolved.response;
     const { session, metadata } = resolved;
     const revisionCtx = ctx ?? await getRevisionContextForSession(session);
-
-    if (params.normalize_first) {
-      session.doc.mergeRunsOnly();
-    }
 
     const { target_paragraph_id: pid } = params;
     const oldStr = stripSearchTags(params.old_string);
@@ -201,16 +204,9 @@ export async function replaceText(
       return err('MULTIPLE_MATCHES', `Found ${textMatch.matchCount} matches for '${previewText(oldStr, ERROR_PREVIEW_CHARS)}' in paragraph. Need unique match.`);
     }
 
-    const pEl = session.doc.getParagraphElementById(pid);
-    if (!pEl) {
-      return err('ANCHOR_NOT_FOUND', `Paragraph ID ${pid} not found in document`);
-    }
-
     const matchedOldStr = textMatch.matchedText;
     const matchStart = textMatch.start;
     const matchEnd = textMatch.end;
-    const paraRuns = getParagraphRuns(pEl);
-    const { templateRun: contextTemplateRun, allOverlappedRunsHighlighted } = chooseContextTemplateRun(paraRuns, matchStart, matchEnd);
     
     const explicitAddProps: NonNullable<ReplacementPart['addRunProps']> = {};
     if (params.bold !== undefined) explicitAddProps.bold = params.bold;
@@ -221,33 +217,13 @@ export async function replaceText(
     if (params.font_name !== undefined) explicitAddProps.fontName = params.font_name;
     if (params.color !== undefined) explicitAddProps.color = params.color;
     
-    const shouldClearHighlight = params.clear_highlight || (allOverlappedRunsHighlighted && !hasHighlightTags(newStr) && isLikelyFieldPlaceholder(oldStr));
-
-    let replaceText: string | ReplacementPart[] = newStr;
     const hasMarkup = hasAnyMarkupTags(newStr);
     
     if (hasMarkup) {
-      let segs: ReturnType<typeof splitTaggedText>;
       try {
-        segs = splitTaggedText(newStr);
+        splitTaggedText(newStr);
       } catch (e: unknown) {
         return err(errorMessage(e), `Tag parse error in new_string: ${errorMessage(e)}`);
-      }
-      const headerAddProps = segs.some((s) => s.header) ? findHeaderRoleModelAddRunProps(session, pid) : null;
-
-      const parts: ReplacementPart[] = [];
-      for (const s of segs) {
-        if (!s.text) continue;
-        const segAddProps = mergeAddRunProps(mergeAddRunProps(segmentAddRunProps(s), explicitAddProps), s.header ? headerAddProps : null);
-        const clearHighlight = shouldClearHighlight && !s.highlighting;
-        parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
-      }
-      replaceText = parts;
-      if (revisionCtx) {
-        replaceParagraphTextRange(pEl, matchStart, matchEnd, replaceText, revisionCtx);
-        invalidateDocumentCaches(session.doc);
-      } else {
-        session.doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText });
       }
     } else {
       // Fix 2: Transfer document quote style to new_string for non-exact matches.
@@ -255,40 +231,77 @@ export async function replaceText(
         newStr = applyDocumentQuoteStyle(matchedOldStr, newStr);
       }
 
-      // Fix 1: Range trimming — compute common prefix/suffix between matched old text
-      // and new text, then only replace the changed middle. This preserves formatting
-      // on unchanged prefix/suffix characters and naturally avoids field intersections.
+    }
+
+    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined): void => {
+      if (params.normalize_first) {
+        doc.mergeRunsOnly();
+      }
+
+      const pEl = doc.getParagraphElementById(pid);
+      if (!pEl) {
+        throw new Error(`Paragraph ID ${pid} not found in document`);
+      }
+
+      const paraRuns = getParagraphRuns(pEl);
+      const { templateRun: contextTemplateRun, allOverlappedRunsHighlighted } = chooseContextTemplateRun(paraRuns, matchStart, matchEnd);
+      const localShouldClearHighlight = params.clear_highlight || (allOverlappedRunsHighlighted && !hasHighlightTags(newStr) && isLikelyFieldPlaceholder(oldStr));
+
+      if (hasMarkup) {
+        const segs = splitTaggedText(newStr);
+        const headerAddProps = segs.some((s) => s.header) ? findHeaderRoleModelAddRunProps(doc, pid) : null;
+        const parts: ReplacementPart[] = [];
+        for (const s of segs) {
+          if (!s.text) continue;
+          const segAddProps = mergeAddRunProps(mergeAddRunProps(segmentAddRunProps(s), explicitAddProps), s.header ? headerAddProps : null);
+          const clearHighlight = localShouldClearHighlight && !s.highlighting;
+          parts.push({ text: s.text, templateRun: contextTemplateRun ?? undefined, addRunProps: segAddProps, clearHighlight });
+        }
+        if (activeCtx) {
+          replaceParagraphTextRange(pEl, matchStart, matchEnd, parts, activeCtx);
+          invalidateDocumentCaches(doc);
+        } else {
+          doc.replaceText({ targetParagraphId: pid, findText: matchedOldStr, replaceText: parts });
+        }
+        return;
+      }
+
       const prefixLen = commonPrefixLength(matchedOldStr, newStr);
       const suffixLen = commonSuffixLength(matchedOldStr, newStr, prefixLen);
       const trimmedNewStr = newStr.slice(prefixLen, newStr.length - suffixLen);
       const trimmedStart = matchStart + prefixLen;
       const trimmedEnd = matchEnd - suffixLen;
 
-      if (trimmedStart < trimmedEnd || trimmedNewStr.length > 0) {
-        // There IS a changed middle — trim and replace.
-        let trimmedReplace: string | ReplacementPart[];
-        if (shouldClearHighlight || Object.keys(explicitAddProps).length > 0) {
-          const { templateRun } = chooseContextTemplateRun(paraRuns, trimmedStart, trimmedEnd);
-          trimmedReplace = [{ text: trimmedNewStr, templateRun: templateRun ?? undefined,
-                              addRunProps: explicitAddProps, clearHighlight: shouldClearHighlight }];
-        } else {
-          trimmedReplace = trimmedNewStr;
-        }
+      if (trimmedStart >= trimmedEnd && trimmedNewStr.length === 0) return;
 
-        if (revisionCtx) {
-          replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, revisionCtx);
-          invalidateDocumentCaches(session.doc);
-        } else {
-          session.doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
-        }
-        // Range trimming splits the original run at prefix/suffix boundaries, producing
-        // adjacent runs with identical formatting. Merge them back to keep output clean.
-        // preserveRsidIdentity keeps the merge from rewriting rsids on runs the caller
-        // never touched — see #286.
-        session.doc.mergeRunsOnly({ preserveRsidIdentity: true });
+      let trimmedReplace: string | ReplacementPart[];
+      if (localShouldClearHighlight || Object.keys(explicitAddProps).length > 0) {
+        const { templateRun } = chooseContextTemplateRun(paraRuns, trimmedStart, trimmedEnd);
+        trimmedReplace = [{
+          text: trimmedNewStr,
+          templateRun: templateRun ?? undefined,
+          addRunProps: explicitAddProps,
+          clearHighlight: localShouldClearHighlight,
+        }];
+      } else {
+        trimmedReplace = trimmedNewStr;
       }
-      // else: text is identical after normalization — no-op
-    }
+
+      if (activeCtx) {
+        replaceParagraphTextRange(pEl, trimmedStart, trimmedEnd, trimmedReplace, activeCtx);
+        invalidateDocumentCaches(doc);
+      } else {
+        doc.replaceTextAtRange({ targetParagraphId: pid, start: trimmedStart, end: trimmedEnd, replaceText: trimmedReplace });
+      }
+      doc.mergeRunsOnly({ preserveRsidIdentity: true });
+    };
+
+    const revisionPreflight = params.skip_ai_revision_preflight
+      ? null
+      : await preflightAiRevisionMutation(session, revisionCtx, mutate);
+    if (revisionPreflight) return revisionPreflight;
+
+    mutate(session.doc, revisionCtx);
     manager.markEdited(session);
 
     return ok(mergeSessionResolutionMetadata({

@@ -340,7 +340,9 @@ describe('Parity regression', () => {
     let saved: Awaited<ReturnType<typeof save>>;
 
     await given('the simple-word-change fixture is open with "The" replaced by "TheX"', async () => {
-      mgr = createTestSessionManager();
+      // Production sessions carry an AI author, so edits emit write-time tracked
+      // markup that the tracked artifact serializes directly (#126).
+      mgr = createTestSessionManager({ defaultAiAuthor: 'Safe-Docx Test' });
       const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
       trackedPath = path.join(tmpDir, 'tracked.docx');
       const opened = await openDocument(mgr, { file_path: SIMPLE_WORD_CHANGE_FIXTURE });
@@ -353,14 +355,13 @@ describe('Parity regression', () => {
       assertSuccess(edited, 'edit');
     });
 
-    await when('save is called with track_changes=true using the atomizer engine', async () => {
+    await when('save is called with track_changes=true', async () => {
       saved = await save(mgr, {
         file_path: filePath,
         save_to_local_path: trackedPath,
         track_changes: true,
         author: 'Safe-Docx Test',
         clean_bookmarks: true,
-        tracked_changes_engine: 'atomizer',
       });
     });
 
@@ -423,7 +424,7 @@ describe('Parity regression', () => {
     let saved: Awaited<ReturnType<typeof save>>;
 
     await given('the simple-word-change fixture is open with "The" replaced by "TheX"', async () => {
-      mgr = createTestSessionManager();
+      mgr = createTestSessionManager({ defaultAiAuthor: 'Safe-Docx Test' });
       const tmpDir = await createTrackedTempDir('safe-docx-ts-test-');
       cleanPath = path.join(tmpDir, 'output.clean.docx');
       trackedPath = path.join(tmpDir, 'output.redline.docx');
@@ -444,7 +445,6 @@ describe('Parity regression', () => {
         tracked_save_to_local_path: trackedPath,
         track_changes: false,
         clean_bookmarks: true,
-        tracked_changes_engine: 'atomizer',
       });
     });
 

@@ -71,6 +71,8 @@ jobs:
         run: npm run lint:workspaces
       - name: Check for import cycles
         run: npm run check:cycles
+      - name: Check for raw control bytes in source
+        run: npm run check:control-bytes
       - name: Check release isolation (ODF decoupling guard)
         run: npm run check:release-isolation
       - name: Test release-isolation guard
@@ -80,6 +82,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0 # Capability evidence is verified against historical local commits.
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 20
@@ -99,6 +103,10 @@ jobs:
           exit 1
       - name: Validate OpenSpec traceability coverage
         run: npm run check:spec-coverage
+      - name: Verify ECMA-376 source artifacts and generated coverage
+        run: npm run check:ecma-376-coverage
+      - name: Verify SafeDocX capability evidence projection
+        run: npm run check:capability-projection
 
   site-check:
     runs-on: ubuntu-latest
@@ -233,7 +241,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@87557b9c84dde89fdd9b10e88954ac2f4248e463 # v3
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v3
         with:
           languages: javascript-typescript
           config-file: ./.github/codeql/codeql-config.yml
@@ -257,7 +265,7 @@ jobs:
       - name: Build workspaces
         run: npm run build
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@87557b9c84dde89fdd9b10e88954ac2f4248e463 # v3
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v3
 
   semgrep:
     uses: ./.github/workflows/semgrep.yml
@@ -286,6 +294,14 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+      # Schema-backed workspace tests invoke the same vendored-XSD validator as
+      # the emitted-document gate below, so xmllint must exist before tests run.
+      - name: Install XML schema validator
+        run: |
+          if ! command -v xmllint >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends libxml2-utils
+          fi
       - name: Install dependencies (npm ci with retry)
         run: |
           for attempt in 1 2 3; do
@@ -307,6 +323,7 @@ jobs:
           pack_dir="$(mktemp -d)"
           run_dir="$(mktemp -d)"
           core_tgz="$(cd packages/docx-core && npm pack --silent --pack-destination "$pack_dir")"
+          compare_tgz="$(cd packages/docx-compare && npm pack --silent --pack-destination "$pack_dir")"
           odf_tgz="$(cd packages/odf-core && npm pack --silent --pack-destination "$pack_dir")"
           mcp_tgz="$(cd packages/docx-mcp && npm pack --silent --pack-destination "$pack_dir")"
           safe_tgz="$(cd packages/safe-docx && npm pack --silent --pack-destination "$pack_dir")"
@@ -315,7 +332,7 @@ jobs:
           for attempt in 1 2 3; do
             echo "runtime smoke attempt ${attempt}/3"
             rm -rf node_modules package-lock.json
-            if npm install --no-audit --no-fund "$pack_dir/$core_tgz" "$pack_dir/$odf_tgz" "$pack_dir/$mcp_tgz" "$pack_dir/$safe_tgz" >/dev/null \
+            if npm install --no-audit --no-fund "$pack_dir/$core_tgz" "$pack_dir/$compare_tgz" "$pack_dir/$odf_tgz" "$pack_dir/$mcp_tgz" "$pack_dir/$safe_tgz" >/dev/null \
               && ./node_modules/.bin/safe-docx --help; then
               popd
               rm -rf "$pack_dir" "$run_dir"
@@ -331,14 +348,24 @@ jobs:
           exit 1
       - name: Test workspaces (with coverage)
         if: matrix.coverage
+        env:
+          SDX_SCHEMA_CORPUS_DIR: ${{ runner.temp }}/schema-corpus
         run: |
           npm run test:coverage -w @usejunior/docx-core
+          npm run test:coverage -w @usejunior/docx-compare
           npm run test:coverage -w @usejunior/docx-mcp
           npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
       - name: Test workspaces
         if: ${{ !matrix.coverage }}
+        env:
+          SDX_SCHEMA_CORPUS_DIR: ${{ runner.temp }}/schema-corpus
         run: npm run test
+      - name: Validate emitted document.xml corpus against ECMA-376 schema
+        run: |
+          node scripts/check_emitted_document_schema.mjs --self-test \
+            --known-failures coverage/emitted-schema-known-failures.json \
+            "$RUNNER_TEMP/schema-corpus"
       - name: Generate package coverage dashboard + enforce ratchet
         if: matrix.coverage
         run: |
@@ -356,15 +383,17 @@ jobs:
             coverage/package-coverage-summary.json
             coverage/package-coverage-table.txt
             packages/docx-core/coverage/coverage-summary.json
+            packages/docx-compare/coverage/coverage-summary.json
             packages/docx-mcp/coverage/coverage-summary.json
             packages/docx-core/coverage/lcov.info
+            packages/docx-compare/coverage/lcov.info
             packages/docx-mcp/coverage/lcov.info
       - name: Upload coverage to Codecov
         if: ${{ matrix.coverage && !cancelled() }}
         continue-on-error: true
         uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6.0.1
         with:
-          files: ./packages/docx-core/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
+          files: ./packages/docx-core/coverage/lcov.info,./packages/docx-compare/coverage/lcov.info,./packages/docx-mcp/coverage/lcov.info
           disable_search: true
           use_oidc: true
           fail_ci_if_error: false

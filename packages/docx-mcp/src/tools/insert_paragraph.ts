@@ -1,4 +1,5 @@
 import {
+  DocxDocument,
   getParagraphRuns,
   hasHyperlinkTags,
   type RevisionContext,
@@ -6,11 +7,12 @@ import {
   stripAllInlineTags,
   type ReplacementPart,
 } from '@usejunior/docx-core';
-import { SessionManager, getRevisionContextForSession, type DocxSession } from '../session/manager.js';
+import { SessionManager, getRevisionContextForSession } from '../session/manager.js';
 import { errorMessage } from "../error_utils.js";
 import { err, ok, type ToolResponse } from './types.js';
 import { RESULT_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
+import { preflightAiRevisionMutation } from './ai_revision_guard.js';
 import {
   splitTaggedText,
   segmentAddRunProps,
@@ -66,10 +68,10 @@ function headerFormattingToAddRunProps(formatting: unknown): NonNullable<Replace
 }
 
 function findHeaderRoleModelAddRunProps(
-  session: DocxSession,
+  doc: Pick<DocxDocument, 'buildDocumentView'>,
   anchorParagraphId: string,
 ): NonNullable<ReplacementPart['addRunProps']> | null {
-  const { nodes } = session.doc.buildDocumentView({ includeSemanticTags: false });
+  const { nodes } = doc.buildDocumentView({ includeSemanticTags: false });
   const anchorIdx = nodes.findIndex((n) => n.id === anchorParagraphId);
   if (anchorIdx < 0) return null;
 
@@ -120,6 +122,11 @@ export async function insertParagraph(
     position?: string; // BEFORE|AFTER
     style_source_id?: string;
     target_style?: string;
+    /**
+     * Internal (not exposed in the MCP tool schema): set by batch_edit, which
+     * preflights the whole step sequence once instead of per step.
+     */
+    skip_ai_revision_preflight?: boolean;
   },
   ctx?: RevisionContext,
 ): Promise<ToolResponse> {
@@ -171,31 +178,46 @@ export async function insertParagraph(
     }
     const plainParagraphs = paragraphInputs.map((p) => stripAllInlineTags(p));
 
-    const res = session.doc.insertParagraph({
-      positionalAnchorNodeId: params.positional_anchor_node_id,
-      relativePosition: positionUpper as 'BEFORE' | 'AFTER',
-      newText: plainParagraphs.join('\n\n'),
-      styleSourceId: styleSourceId,
-    }, revisionCtx);
+    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) => {
+      const res = doc.insertParagraph({
+        positionalAnchorNodeId: params.positional_anchor_node_id,
+        relativePosition: positionUpper as 'BEFORE' | 'AFTER',
+        newText: plainParagraphs.join('\n\n'),
+        styleSourceId: styleSourceId,
+      }, activeCtx);
 
-    const needsHeaderRoleModel = parsedParagraphs.some((segs) => segs.some((s) => s.header));
-    const headerAddProps = needsHeaderRoleModel
-      ? findHeaderRoleModelAddRunProps(session, params.positional_anchor_node_id)
-      : null;
+      const needsHeaderRoleModel = parsedParagraphs.some((segs) => segs.some((s) => s.header));
+      const headerAddProps = needsHeaderRoleModel
+        ? findHeaderRoleModelAddRunProps(doc, params.positional_anchor_node_id)
+        : null;
 
-    for (let i = 0; i < res.newParagraphIds.length; i++) {
-      const newPid = res.newParagraphIds[i]!;
-      const segs = parsedParagraphs[i] ?? [];
-      const plainText = plainParagraphs[i] ?? '';
-      const pEl = session.doc.getParagraphElementById(newPid);
-      if (!pEl) continue;
-      const runs = getParagraphRuns(pEl);
-      const templateRun = chooseRunByOverlap(runs, 0, Math.max(plainText.length, 1)) ?? runs[0]?.r ?? null;
+      for (let i = 0; i < res.newParagraphIds.length; i++) {
+        const newPid = res.newParagraphIds[i]!;
+        const segs = parsedParagraphs[i] ?? [];
+        const plainText = plainParagraphs[i] ?? '';
+        const pEl = doc.getParagraphElementById(newPid);
+        if (!pEl) continue;
+        const runs = getParagraphRuns(pEl);
+        const templateRun = chooseRunByOverlap(runs, 0, Math.max(plainText.length, 1)) ?? runs[0]?.r ?? null;
 
-      const replacementParts = buildReplacementPartsForInsert(segs, templateRun, headerAddProps);
-      if (!replacementParts || replacementParts.length === 0) continue;
-      session.doc.replaceText({ targetParagraphId: newPid, findText: plainText, replaceText: replacementParts });
-    }
+        const replacementParts = buildReplacementPartsForInsert(segs, templateRun, headerAddProps);
+        if (!replacementParts || replacementParts.length === 0) continue;
+        doc.replaceText({ targetParagraphId: newPid, findText: plainText, replaceText: replacementParts });
+      }
+
+      return res;
+    };
+
+    const revisionPreflight = params.skip_ai_revision_preflight
+      ? null
+      : await preflightAiRevisionMutation(
+          session,
+          revisionCtx,
+          (doc, activeCtx) => { mutate(doc, activeCtx); },
+        );
+    if (revisionPreflight) return revisionPreflight;
+
+    const res = mutate(session.doc, revisionCtx);
 
     manager.markEdited(session);
 

@@ -16,23 +16,23 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | `layout.ts` — `setParagraphSpacing` | `packages/docx-core/src/primitives/layout.ts` | `w:pPrChange` | Paragraph spacing mutations change paragraph properties, not spacer-paragraph structure. **Verified by [120.8] (#143) regression test.** |
 | `layout.ts` — `setTableRowHeight` | `packages/docx-core/src/primitives/layout.ts` | `w:trPrChange` | Row geometry changes belong under row-property revisions. **Verified by [120.8] (#143) regression test.** |
 | `layout.ts` — `setTableCellPadding` | `packages/docx-core/src/primitives/layout.ts` | `w:tcPrChange` | Cell padding changes belong under cell-property revisions. **Verified by [120.8] (#143) regression test.** |
-| `comments.ts` — `addComment` | `packages/docx-core/src/primitives/comments.ts` | `w:ins` | The comment anchor inserted into the body story and the initial comment text are revisionable content. Companion package bootstrap is listed in Table B. **Verified by [120.8] (#143) regression test.** |
-| `comments.ts` — `deleteComment` | `packages/docx-core/src/primitives/comments.ts` | `w:del` | Deleting a comment removes body anchors and comment/reply text. Cleanup of `commentsExtended.xml` remains the Table B companion. **Verified by [120.8] (#143) regression test.** |
+| `comments.ts` — `addComment` | `packages/docx-core/src/primitives/comments.ts` | `w:ins` | Only the body-story `w:commentReference` run is wrapped in `w:ins`; range markers and root-comment text in `comments.xml` are not revision-wrapped. Comment body text, author metadata, and package bootstrap are listed in Table B. **Verified by [120.8] (#143) regression test.** |
+| `comments.ts` — `deleteComment` | `packages/docx-core/src/primitives/comments.ts` | `w:del` | Only the removed body-story `w:commentReference` run is wrapped in `w:del`; range markers are removed structurally, and comment/reply text removal from `comments.xml` is a Table B side-part mutation. `commentsExtended.xml` cleanup is also the Table B companion. **Verified by [120.8] (#143) regression test.** |
 | `footnotes.ts` — `addFootnote` | `packages/docx-core/src/primitives/footnotes.ts` | `w:ins` | The inserted `w:footnoteReference` in the body story and the new footnote text both belong to the revisionable surface. Companion package bootstrap is listed in Table B. **Verified by [120.8] (#143) regression test.** |
 | `footnotes.ts` — `updateFootnoteText` | `packages/docx-core/src/primitives/footnotes.ts` | `w:ins`, `w:del` | Updating note text is a content revision inside the footnote body. **Verified by [120.8] (#143) regression test.** |
 | `footnotes.ts` — `deleteFootnote` | `packages/docx-core/src/primitives/footnotes.ts` | `w:del` | Deleting a note removes both the body reference and the note text. **Verified by [120.8] (#143) regression test.** |
 | `replace_text` | `packages/docx-mcp/src/tools/replace_text.ts` | `w:ins`, `w:del`, `w:rPrChange` | MCP wrapper over `text.ts`; the supported contract is native tracked insertion/deletion plus any explicit inline formatting deltas. **Verified by [120.8] (#143) regression test.** |
 | `insert_paragraph` | `packages/docx-mcp/src/tools/insert_paragraph.ts` | `w:ins`, `w:pPrChange`, `w:rPrChange` | Paragraph insertion is body-content creation. Paragraph/run formatting inherited from `style_source_id` stays inside the revisionable surface. **Verified by [120.8] (#143) regression test.** |
-| `apply_plan` | `packages/docx-mcp/src/tools/apply_plan.ts` | `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange` | Plan execution is only an orchestrator, but every applied step delegates to revisionable body-edit primitives. **Verified by [120.8] (#143) regression test.** |
+| `batch_edit` | `packages/docx-mcp/src/tools/batch_edit.ts` | `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange` | Batch execution is only an orchestrator, but every applied step delegates to revisionable body-edit primitives. **Verified by [120.8] (#143) regression test.** |
 | `clear_formatting` | `packages/docx-mcp/src/tools/clear_formatting.ts` | `w:rPrChange` | Run-property clearing is a run formatting revision, not a package mutation. **Verified by [120.8] (#143) regression test.** |
 | `format_layout` | `packages/docx-mcp/src/tools/format_layout.ts` | `w:pPrChange`, `w:trPrChange`, `w:tcPrChange` | Deterministic OOXML geometry edits belong under native property-change revisions. **Verified by [120.8] (#143) regression test.** |
-| `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | `w:ins` (root-comment mode only) | Root comment anchors and root-comment text are part of the revisionable surface. **Reply-mode** dispatches through `comments.ts` `addCommentReply` which is Table B (side-part metadata only; no body revision marker). Missing comment infrastructure is also a Table B companion. **Verified by [120.8] (#143) regression test.** |
-| `delete_comment` | `packages/docx-mcp/src/tools/delete_comment.ts` | `w:del` | Comment deletion removes body anchors and user-authored comment text. `commentsExtended.xml` cleanup is the Table B companion. **Verified by [120.8] (#143) regression test.** |
+| `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | `w:ins` (root-comment mode only) | Root-comment mode wraps only the body-story `w:commentReference` run in `w:ins`; range markers and root-comment text in `comments.xml` are not revision-wrapped. **Reply-mode** dispatches through `comments.ts` `addCommentReply` which is Table B (side-part metadata only; no body revision marker). Missing comment infrastructure is also a Table B companion. **Verified by [120.8] (#143) regression test.** |
+| `delete_comment` | `packages/docx-mcp/src/tools/delete_comment.ts` | `w:del` | Comment deletion wraps only the removed body-story `w:commentReference` run in `w:del`; range markers and `comments.xml` comment/reply text are removed as Table B side-part/structural mutations. `commentsExtended.xml` cleanup is the Table B companion. **Verified by [120.8] (#143) regression test.** |
 | `add_footnote` | `packages/docx-mcp/src/tools/add_footnote.ts` | `w:ins` | Footnote reference insertion and note-body creation are revisionable content. Missing footnote infrastructure is the Table B companion. **Verified by [120.8] (#143) regression test.** |
 | `update_footnote` | `packages/docx-mcp/src/tools/update_footnote.ts` | `w:ins`, `w:del` | Note text replacement belongs inside the revisionable surface. **Verified by [120.8] (#143) regression test.** |
 | `delete_footnote` | `packages/docx-mcp/src/tools/delete_footnote.ts` | `w:del` | Footnote deletion removes both reference and note text. **Verified by [120.8] (#143) regression test.** |
 | `compare_documents` | `packages/docx-mcp/src/tools/compare_documents.ts` | `w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, `w:moveFromRangeStart`/`End`, `w:moveToRangeStart`/`End`, `w:pPrChange`, `w:rPrChange` | Opt-in whole-document redlining tool. The atomizer engine runs move detection and format detection, so the actual emission set is broader than `w:ins`/`w:del`. Comparison-time emission, not write-time. `#118` removes it from the default finalization path for supported AI edits but leaves it available as a legacy redlining tier. |
-| `save` (tracked branch) | `packages/docx-mcp/src/tools/save.ts` | `w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, `w:moveFromRangeStart`/`End`, `w:moveToRangeStart`/`End`, `w:pPrChange`, `w:rPrChange` | Only the tracked-output branch belongs here, because it delegates to `compareDocuments(...)`. Comparison-time emission, not write-time. Clean-only save is just serialization. |
+| `save` (tracked branch) | `packages/docx-mcp/src/tools/save.ts` | Existing session-authored `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange`, and other write-time revision markup emitted by revisionable edit primitives | Only the tracked-output branch belongs here. It serializes the session's write-time revision markup directly and reports `tracked_changes_source: "write-time"`; it no longer derives default tracked output by delegating to `compareDocuments(...)`. Clean-only save serializes the accepted document state. |
 
 ## Table B: Package-level (non-revisionable) mutations
 
@@ -40,15 +40,78 @@ Use the alternate contract below whenever a primitive/tool mutates relationships
 
 | Primitive / tool | Source path | What it mutates | Alternate contract |
 | --- | --- | --- | --- |
-| `comments.ts` — `bootstrapCommentParts` | `packages/docx-core/src/primitives/comments.ts` | Creates `word/comments.xml`, `word/commentsExtended.xml`, and `word/people.xml`; updates `word/_rels/document.xml.rels`; updates `[Content_Types].xml`. Companion body/comment-text rows are in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
-| `comments.ts` — threaded comment metadata (`addComment`, `deleteComment`) | `packages/docx-core/src/primitives/comments.ts` | Maintains `commentsExtended.xml` reply graph and `people.xml` author metadata that Word needs for comments and threaded replies. `addComment` always writes author metadata to `people.xml`, even for root comments without a thread. Companion root-comment/deletion content rows are in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
+| `comments.ts` — `bootstrapCommentParts` | `packages/docx-core/src/primitives/comments.ts` | Creates `word/comments.xml`, `word/commentsExtended.xml`, and `word/people.xml`; updates `word/_rels/document.xml.rels`; updates `[Content_Types].xml`. Companion body-story `w:commentReference` rows are in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
+| `comments.ts` — comment side parts (`addComment`, `deleteComment`) | `packages/docx-core/src/primitives/comments.ts` | Adds/removes root comment body text in `comments.xml`, maintains the `commentsExtended.xml` reply graph, and records `people.xml` author metadata that Word needs for comments and threaded replies. `addComment` always writes author metadata to `people.xml`, even for root comments without a thread. Companion body-story `w:commentReference` rows are in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 | `comments.ts` — `addCommentReply` | `packages/docx-core/src/primitives/comments.ts` | Adds reply content to `comments.xml`, links reply metadata in `commentsExtended.xml`, and records author metadata in `people.xml`. Replies are side-part metadata writes with no body anchor per reply, so no body revision marker is emitted. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup; cannot be selectively rejected by author-based accept/reject. |
 | `footnotes.ts` — `bootstrapFootnoteParts` | `packages/docx-core/src/primitives/footnotes.ts` | Creates `word/footnotes.xml`; updates `word/_rels/document.xml.rels`; updates `[Content_Types].xml`. Companion reference/note-text rows are in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
-| `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | Always writes author metadata to `people.xml`. May also trigger comment-part bootstrap (`comments.xml`, `commentsExtended.xml`, relationships, content types) when the package lacks comment infrastructure, and writes to `commentsExtended.xml` for threaded replies. Companion anchor/text row is in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
-| `delete_comment` | `packages/docx-mcp/src/tools/delete_comment.ts` | Removes threaded-comment companion metadata from `commentsExtended.xml` alongside the Table A content deletion. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
+| `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | Adds root comment body text to `comments.xml` and always writes author metadata to `people.xml`. May also trigger comment-part bootstrap (`comments.xml`, `commentsExtended.xml`, relationships, content types) when the package lacks comment infrastructure, and writes to `commentsExtended.xml` for threaded replies. Companion body-story `w:commentReference` row is in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
+| `delete_comment` | `packages/docx-mcp/src/tools/delete_comment.ts` | Removes comment/reply body text from `comments.xml` and threaded-comment companion metadata from `commentsExtended.xml` alongside the Table A body-story reference deletion. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 | `add_footnote` | `packages/docx-mcp/src/tools/add_footnote.ts` | May trigger footnote-part bootstrap and companion package registration when the document has no footnote infrastructure yet. Companion reference/text row is in Table A. | Recorded in the session's non-revision change manifest (per #122) and surfaced in the save report. Not wrapped in OOXML revision markup. |
 
 No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement, header/footer part creation, image-part insertion, or `core.xml` / `app.xml` metadata editing. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation.
+
+### Non-revision change manifest (implemented in [#122](https://github.com/UseJunior/safe-docx/issues/122))
+
+Table B mutations are recorded in a per-session **non-revision change manifest**
+(`DocxSession.nonRevisionManifest`, populated via `SessionManager.recordNonRevisionChange`).
+Each entry is `{ tool, editRevision, parts, description }`, where `parts` names the
+package parts mutated without a tracked-change wrapper. The `save` report surfaces
+the manifest as `non_revision_changes` (omitted when empty), so package-level
+mutations are accounted for alongside the tracked revisions list rather than
+landing silently. The dual-surface tools that record entries are `add_comment`,
+`delete_comment`, and `add_footnote`; the write surface of every tool is
+classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
+(`surface`: `revisionable` | `package-mutation` | `internal`, plus
+`emitsNonRevisionChanges`).
+
+### Accept/reject invariant coverage (implemented in [#124](https://github.com/UseJunior/safe-docx/issues/124))
+
+Selective accept/reject ([#123](https://github.com/UseJunior/safe-docx/issues/123)) is exercised by a
+mixed-author invariant corpus at
+`packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts`. Each fixture carries an
+AI-authored revision, a foreign (reviewer) revision, and one document feature; after `acceptAIEdits`
+/ `rejectAIEdits` targeting the AI author the corpus asserts, per fixture, that **every** AI revision
+was resolved (0 remain), that the foreign revisions are **byte-identical** — their serialized
+subtrees, by author, are exactly equal (same set and count) before and after — that the feature is
+preserved, that field structure stays balanced, and that the body passes structural lint.
+
+| Feature / revision preserved | Accept | Reject |
+| --- | --- | --- |
+| `w:ins` / `w:del` (body) | ✅ | ✅ |
+| `w:rPrChange` (foreign property change) | ✅ | ✅ |
+| `w:sectPrChange` (foreign section-properties change) | ✅ | ✅ |
+| `w:tcPrChange` (foreign table-cell-properties change) | ✅ | ✅ |
+| Comment range markers (`w:commentRangeStart`/`End`) | ✅ | ✅ |
+| Bookmarks (`_bk_*` internal + user) | ✅ | ✅ |
+| Content controls (`w:sdt`) | ✅ | ✅ |
+| Field codes (`w:fldChar` / `w:instrText`) | ✅ | ✅ |
+| Numbering reference (`w:numPr`) | ✅ | ✅ |
+| Paragraph / table styles (`w:pStyle`, table structure) | ✅ | ✅ |
+| Footnotes — reviewer revision inside a note (side part) | ✅ | ✅ |
+| Endnotes — reviewer revision inside a note (side part) | ✅ | ✅ |
+
+`validateDocument` is **body-level structural lint** (bookmark pairing, tracked-change wrapper
+attributes, `w:fldChar` begin/end balance) — it is the CI assertion that the sweep did not corrupt the
+body, **not** a guarantee that Word/LibreOffice will open the file without recovery. Representative
+accepted fixtures (bookmarks, field codes) were additionally opened in **LibreOffice 25.8 headless**
+locally (`soffice --convert-to pdf`, no recovery prompt); Word round-trip is manual/pending.
+
+**Scope.** accept/reject resolves `w:ins`, `w:del`, `w:moveFrom`/`w:moveTo`, and the property changes
+`w:rPrChange`/`w:pPrChange`/`w:sectPrChange`/`w:tblPrChange`/`w:trPrChange`/`w:tcPrChange`. Move range
+markers are removed, but wrapper-to-range identity semantics are not proven. Cell-topology,
+table-grid/exception, and numbering revisions (`w:cellIns`/`w:cellDel`/`w:cellMerge`/
+`w:tblGridChange`/`w:tblPrExChange`/`w:numberingChange`) are **not** resolved by the engine; custom XML
+revision ranges are preserved but not interpreted. The package sweep reads `document.xml`,
+`footnotes.xml`, `endnotes.xml`, `comments.xml`, and `glossary/document.xml`. Parts it never sweeps —
+`styles.xml`, `numbering.xml`, headers/footers, relationships, and content types — are preservation-only.
+Comparison authors ordinary insertion/deletion and detected move wrappers in both in-place and rebuild
+modes. Equal pre-existing advanced records have a separate reconstruction posture: sampled wrappers and
+markers survive in-place, while rebuild resolves existing content wrappers and drops custom-XML and
+proofing/extension markers. Namespace-equivalent WordprocessingML prefixes are canonicalized at the
+comparison boundary; this does not amount to general XML canonicalization.
+The machine-readable operation matrix and drift gate live at
+`spec-compliance/manifests/ecma-376-advanced-revisions.json` and
+`npm run check:advanced-revision-classification`.
 
 ## Internal / non-contract utilities
 
@@ -57,6 +120,7 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 ### `docx-core` primitive files
 
 - `accept_changes.ts` — tracked-change consumer that accepts existing `w:ins` / `w:del` / property-change markup in `document.xml` and supported side-story parts (`footnotes.xml`, `endnotes.xml`, `comments.xml`) instead of creating new AI-authored revisions.
+- `accept_ai_edits.ts` — tracked-change consumer that selectively accepts/rejects existing revisions by id or author ([#123](https://github.com/UseJunior/safe-docx/issues/123)) and detects ambiguous overlaps; it resolves existing markup rather than originating AI-authored revisions, so it is not a write-time emission surface.
 - `bookmarks.ts` — internal paragraph-bookmark scaffolding for stable selectors and anchor lookup, not user-visible AI content authorship.
 - `document.ts` — `DocxDocument` facade that routes to lower-level primitives; the contract is defined at the delegated primitive level, not this wrapper.
 - `document_view.ts` — read-only projection layer for toon/json/simple views, style discovery, and footnote marker display.
@@ -84,6 +148,8 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 ### `docx-mcp` read-only, orchestration, and session files
 
 - `accept_changes.ts` — MCP wrapper that consumes existing tracked changes by accepting them.
+- `accept_ai_edits.ts` — MCP wrapper that selectively accepts existing tracked changes by revision id or author ([#123](https://github.com/UseJunior/safe-docx/issues/123)); a consumer, not a write-time revision emitter.
+- `reject_ai_edits.ts` — MCP wrapper that selectively rejects existing tracked changes by revision id or author; symmetric consumer to `accept_ai_edits.ts`.
 - `close_file.ts` — session lifecycle control only.
 - `comparison_defaults.ts` — comparison configuration constant, not an MCP mutation surface by itself.
 - `docx_archive_guard.ts` — archive safety validator that checks zip bomb and entry-size limits before load.
@@ -94,8 +160,6 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 - `get_session_status.ts` — session metadata and open-document state only.
 - `grep.ts` — read/search tool with no mutation behavior.
 - `has_tracked_changes.ts` — tracked-change presence detector over existing OOXML.
-- `init_plan.ts` — plan-session metadata initializer only.
-- `merge_plans.ts` — read/merge validator for plan JSON, not a document mutator by itself.
 - `open_document.ts` — session/bootstrap entrypoint that opens a document and reports available tools.
 - `pagination.ts` — token-budget estimation and pagination math only.
 - `path_policy.ts` — filesystem policy enforcement only.
@@ -130,6 +194,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 ### `packages/docx-core/src/primitives`
 
 - `accept_changes.ts` — Internal / non-contract utilities
+- `accept_ai_edits.ts` — Internal / non-contract utilities
 - `bookmarks.ts` — Internal / non-contract utilities
 - `comments.ts` — Table A and Table B
 - `document.ts` — Internal / non-contract utilities
@@ -161,9 +226,10 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 ### `packages/docx-mcp/src/tools`
 
 - `accept_changes.ts` — Internal / non-contract utilities
+- `accept_ai_edits.ts` — Internal / non-contract utilities
 - `add_comment.ts` — Table A and Table B
 - `add_footnote.ts` — Table A and Table B
-- `apply_plan.ts` — Table A
+- `batch_edit.ts` — Table A
 - `clear_formatting.ts` — Table A
 - `close_file.ts` — Internal / non-contract utilities
 - `compare_documents.ts` — Table A
@@ -179,15 +245,14 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `get_session_status.ts` — Internal / non-contract utilities
 - `grep.ts` — Internal / non-contract utilities
 - `has_tracked_changes.ts` — Internal / non-contract utilities
-- `init_plan.ts` — Internal / non-contract utilities
 - `insert_paragraph.ts` — Table A
-- `merge_plans.ts` — Internal / non-contract utilities
 - `open_document.ts` — Internal / non-contract utilities
 - `pagination.ts` — Internal / non-contract utilities
 - `path_policy.ts` — Internal / non-contract utilities
 - `preview.ts` — Internal / non-contract utilities
 - `provider_guard.ts` — Internal / non-contract utilities
 - `read_file.ts` — Internal / non-contract utilities
+- `reject_ai_edits.ts` — Internal / non-contract utilities
 - `replace_text.ts` — Table A
 - `save.ts` — Table A
 - `session_resolution.ts` — Internal / non-contract utilities
@@ -205,4 +270,4 @@ These ECMA-376 elements stay in the canonical vocabulary even though the current
 - `w:cellIns`, `w:cellDel`, and `w:cellMerge` — no dedicated cell-topology mutation file is surfaced today.
 - `w:numberingChange` — no dedicated numbering mutation file is surfaced today.
 - `w:rPrChange` and `w:pPrChange` already apply to accept/reject flow as well as live AI formatting/property edits.
-- `compare_documents.ts` and `save.ts` still rely on comparison-time reconstruction today, which is why `#120` remains the next required implementation step.
+- `compare_documents.ts` remains the opt-in comparison-time reconstruction surface. The default `save` tracked-output path serializes write-time revision markup directly, so supported AI edits no longer rely on comparison-time reconstruction during finalization.

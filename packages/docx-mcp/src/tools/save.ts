@@ -3,16 +3,20 @@ import { errorCode, errorMessage } from "../error_utils.js";
 import fs from 'node:fs/promises';
 import { SessionManager } from '../session/manager.js';
 import { err, ok, type ToolResponse } from './types.js';
-import { DocxZip, compareDocuments, parseXml, type CompareOptions, type CompareResult } from '@usejunior/docx-core';
+import {
+  DocxZip,
+  TRACKED_CHANGE_ELEMENT_NAME_SET,
+  parseXml,
+} from '@usejunior/docx-core';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
+import { getAiRevisionBaseline, splitIntroducedDiagnostics } from './ai_revision_guard.js';
 import { enforceWritePathPolicy, resolvesToSamePath } from './path_policy.js';
-import { DEFAULT_RECONSTRUCTION_MODE } from './comparison_defaults.js';
 
 type SaveFormat = 'clean' | 'tracked' | 'both';
 type SaveRevisionSummary = { count: number; author: string; ids?: number[] };
+type TrackedChangesStats = { insertions: number; deletions: number; modifications: number };
 
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-const REVISION_ELEMENT_NAMES = new Set(['ins', 'del', 'pPrChange', 'rPrChange', 'trPrChange', 'tcPrChange']);
 
 function expandPath(inputPath: string): string {
   return inputPath.startsWith('~') ? path.join(process.env.HOME || '', inputPath.slice(1)) : inputPath;
@@ -37,17 +41,6 @@ function defaultTrackedPath(cleanPath: string, timestamp: string): string {
   const parsed = path.parse(cleanPath);
   const ext = parsed.ext || '.docx';
   return path.join(parsed.dir, `${parsed.name}.redline.${timestamp}${ext}`);
-}
-
-async function runWithoutConsoleLog<T>(fn: () => Promise<T>): Promise<T> {
-  if (process.env.SAFE_DOCX_ALLOW_COMPARISON_STDOUT === '1') return fn();
-  const originalLog = console.log;
-  console.log = () => {};
-  try {
-    return await fn();
-  } finally {
-    console.log = originalLog;
-  }
 }
 
 function getWordAttr(element: Element, localName: string): string | null {
@@ -75,7 +68,7 @@ async function collectAiRevisionSummary(
 
     const doc = parseXml(xml);
     for (const node of Array.from(doc.getElementsByTagName('*'))) {
-      if (node.namespaceURI !== WORDPROCESSING_ML_NS || !REVISION_ELEMENT_NAMES.has(node.localName)) {
+      if (node.namespaceURI !== WORDPROCESSING_ML_NS || !TRACKED_CHANGE_ELEMENT_NAME_SET.has(node.localName)) {
         continue;
       }
       if (getWordAttr(node, 'author') !== author) continue;
@@ -100,6 +93,31 @@ async function collectAiRevisionSummary(
   };
 }
 
+/**
+ * Count tracked-change stats directly from the write-time markup carried by the
+ * session document (#126) — no comparison. Insertions/deletions are w:ins/w:del;
+ * modifications are the property-change records (w:rPrChange/pPrChange/…).
+ */
+async function collectTrackedStats(buffer: Buffer, author: string | null): Promise<TrackedChangesStats> {
+  const zip = await DocxZip.load(buffer);
+  const stats: TrackedChangesStats = { insertions: 0, deletions: 0, modifications: 0 };
+  for (const fileName of zip.listFiles()) {
+    if (!fileName.startsWith('word/') || !fileName.endsWith('.xml')) continue;
+    const xml = await zip.readTextOrNull(fileName);
+    if (!xml) continue;
+    const doc = parseXml(xml);
+    for (const node of Array.from(doc.getElementsByTagName('*'))) {
+      if (node.namespaceURI !== WORDPROCESSING_ML_NS || !TRACKED_CHANGE_ELEMENT_NAME_SET.has(node.localName)) continue;
+      // When an author is set, count only that actor's write-time revisions.
+      if (author && getWordAttr(node, 'author') !== author) continue;
+      if (node.localName === 'ins') stats.insertions += 1;
+      else if (node.localName === 'del') stats.deletions += 1;
+      else if (node.localName.endsWith('Change')) stats.modifications += 1;
+    }
+  }
+  return stats;
+}
+
 export async function save(
   manager: SessionManager,
   params: {
@@ -113,7 +131,9 @@ export async function save(
     allow_overwrite?: boolean;
     tracked_save_to_local_path?: string;
     tracked_changes_author?: string;
-    tracked_changes_engine?: CompareOptions['engine'];
+    // Deprecated (#126): comparison-based redlines moved to the compare_documents
+    // tool. Accepted for backward compatibility but no longer affect the save path.
+    tracked_changes_engine?: 'auto' | 'atomizer';
     fail_on_rebuild_fallback?: boolean;
   },
 ): Promise<ToolResponse> {
@@ -154,23 +174,16 @@ export async function save(
     }
     const format: SaveFormat = formatRaw;
 
-    const engine = params.tracked_changes_engine ?? 'atomizer';
-    if (engine !== 'auto' && engine !== 'atomizer' && engine !== 'wmlcomparer') {
-      return err('INVALID_TRACKED_ENGINE', `Invalid tracked_changes_engine: ${String(engine)}`, "Use one of: 'auto' or 'atomizer'.");
-    }
-    if (engine === 'wmlcomparer') {
-      return err('INVALID_TRACKED_ENGINE', "tracked_changes_engine 'wmlcomparer' is not supported here", "Use 'auto' or 'atomizer'.");
-    }
-    const trackedEngine: CompareOptions['engine'] = engine;
-
     const clean = params.clean_bookmarks ?? true;
-    const author = params.tracked_changes_author ?? params.author ?? 'SafeDocX';
+    // Display author for the tracked-changes report. The actual markup author is
+    // whatever the write-time emitter recorded on session.doc (#120/#126); no
+    // comparison re-authoring happens here.
+    const author = params.tracked_changes_author ?? params.author ?? session.aiAuthor ?? 'SafeDocX';
     const allowOverwrite = params.allow_overwrite ?? false;
     const cacheKey = JSON.stringify({
       revision: session.editRevision,
       format,
       clean_bookmarks: clean,
-      tracked_engine: trackedEngine,
       tracked_author: author,
     });
 
@@ -179,61 +192,97 @@ export async function save(
 
     let revisedBuffer: Buffer;
     let trackedBuffer: Buffer | null;
-    let trackedStats: { insertions: number; deletions: number; modifications: number } | null;
-    let trackedReconstructionMode: CompareResult['reconstructionModeUsed'];
-    let trackedFallbackReason: CompareResult['fallbackReason'];
-    let trackedFallbackDiagnostics: CompareResult['fallbackDiagnostics'];
+    let trackedStats: TrackedChangesStats | null;
     let bookmarksRemoved: number;
+    let blocksRestored: number;
     let exportTimestamp: string;
 
     // Run implicit validation before producing save artifacts.
     const validation = session.doc.validate();
+    let aiRevisionValidation = session.aiAuthor
+      ? await session.doc.validateAiRevisions(session.aiAuthor)
+      : undefined;
+    if (aiRevisionValidation && aiRevisionValidation.errors.length > 0) {
+      // AI-attributed errors always fail the save. Unattributable errors
+      // (field structure, package invariants — no w:author) fail only when
+      // they were not already present in the originally-loaded file; the
+      // session's AI edits did not introduce those.
+      const attributed = aiRevisionValidation.errors.filter((e) => e.author === session.aiAuthor);
+      const unattributed = aiRevisionValidation.errors.filter((e) => e.author !== session.aiAuthor);
+      let introduced = unattributed;
+      let demoted: typeof unattributed = [];
+      if (unattributed.length > 0) {
+        const baseline = await getAiRevisionBaseline(session);
+        ({ introduced, demoted } = splitIntroducedDiagnostics(unattributed, baseline));
+      }
+      const failing = [...attributed, ...introduced];
+      aiRevisionValidation = {
+        valid: failing.length === 0,
+        errors: failing,
+        warnings: [...aiRevisionValidation.warnings, ...demoted],
+      };
+      if (failing.length > 0) {
+        return {
+          ...err(
+            'INVALID_AI_REVISIONS',
+            'Session contains invalid AI-authored tracked-change markup.',
+            'Repair the AI-authored revisions before saving a redline artifact.',
+          ),
+          diagnostics: {
+            errors: failing,
+            warnings: aiRevisionValidation.warnings,
+          },
+        };
+      }
+    }
 
     if (cached) {
       revisedBuffer = cached.revisedBuffer;
       trackedBuffer = cached.trackedBuffer;
       trackedStats = cached.trackedStats;
-      trackedReconstructionMode = cached.trackedReconstructionMode;
-      trackedFallbackReason = cached.trackedFallbackReason;
-      trackedFallbackDiagnostics = cached.trackedFallbackDiagnostics;
       bookmarksRemoved = cached.bookmarksRemoved;
+      blocksRestored = cached.blocksRestored;
       exportTimestamp = cached.exportedAtUtc;
     } else {
-      const revised = await session.doc.toBuffer({ cleanBookmarks: clean });
-      revisedBuffer = revised.buffer;
-      bookmarksRemoved = revised.bookmarksRemoved;
+      exportTimestamp = formatUtcTimestamp(new Date());
       trackedBuffer = null;
       trackedStats = null;
-      trackedReconstructionMode = undefined;
-      trackedFallbackReason = undefined;
-      trackedFallbackDiagnostics = undefined;
-      exportTimestamp = formatUtcTimestamp(new Date());
 
-      if (format === 'tracked' || format === 'both') {
-        // Lazily generate comparison baselines if not yet available.
-        await manager.ensureBaselines(session);
-        const baselineBuffer = session.comparisonBaseline ?? session.originalBuffer;
-        const trackedRes = await runWithoutConsoleLog(() =>
-          compareDocuments(baselineBuffer, revisedBuffer, {
-            author,
-            engine: trackedEngine,
-            reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
-          }),
+      // CLEAN artifact (#126): accept the AI actor's write-time edits so the
+      // artifact is a genuinely clean document. Pre-existing third-party tracked
+      // changes are preserved — SafeDocX never silently accepts another
+      // reviewer's revisions (normalizeFirst keeps the accept best-effort and
+      // never hard-errors on an unusual overlap during finalization). With no AI
+      // author there is no write-time AI markup, so the document serializes as-is
+      // with a minimal, blast-radius-matching diff.
+      if (session.aiAuthor) {
+        // Accept the AI actor's write-time edits on an isolated copy so the
+        // session (and its tracked artifact) keep the markup, while untouched
+        // body blocks stay byte-identical to the source via minimal
+        // reserialization against the true original document.xml (#408).
+        const cleaned = await session.doc.toAcceptedBuffer(
+          { author: session.aiAuthor, normalizeFirst: true },
+          { cleanBookmarks: clean },
         );
-        trackedBuffer = trackedRes.document;
-        trackedStats = trackedRes.stats;
-        trackedReconstructionMode = trackedRes.reconstructionModeUsed;
-        trackedFallbackReason = trackedRes.fallbackReason;
-        trackedFallbackDiagnostics = trackedRes.fallbackDiagnostics;
+        revisedBuffer = cleaned.buffer;
+        bookmarksRemoved = cleaned.bookmarksRemoved;
+        blocksRestored = cleaned.blocksRestored;
+      } else {
+        const revised = await session.doc.toBuffer({ cleanBookmarks: clean, minimalReserialization: clean });
+        revisedBuffer = revised.buffer;
+        bookmarksRemoved = revised.bookmarksRemoved;
+        blocksRestored = revised.blocksRestored;
       }
 
-      if (params.fail_on_rebuild_fallback && trackedReconstructionMode === 'rebuild') {
-        return err(
-          'REBUILD_FALLBACK',
-          'Tracked output would use rebuild mode which destroys table structure. ' +
-            (trackedFallbackReason ? `Reason: ${trackedFallbackReason}.` : ''),
-          "Use save_format: 'clean' or fix the document to pass inplace safety checks.",
-        );
+      // TRACKED artifact (#126): the session's write-time tracked markup,
+      // serialized directly. No comparison, no reconstruction — the redline is
+      // exactly what the write-time emitter authored (author, stable ids, and any
+      // pre-existing reviewer revisions preserved). Comparison-based redlining is
+      // available only via the compare_documents tool.
+      if (format === 'tracked' || format === 'both') {
+        const tracked = await session.doc.toBuffer({ cleanBookmarks: clean });
+        trackedBuffer = tracked.buffer;
+        trackedStats = await collectTrackedStats(trackedBuffer, session.aiAuthor);
       }
 
       manager.setSaveCache(session, {
@@ -241,15 +290,12 @@ export async function save(
         revision: session.editRevision,
         format,
         cleanBookmarks: clean,
-        trackedEngine,
         trackedAuthor: author,
         revisedBuffer,
         trackedBuffer,
         trackedStats,
-        trackedReconstructionMode,
-        trackedFallbackReason,
-        trackedFallbackDiagnostics,
         bookmarksRemoved: clean ? bookmarksRemoved : 0,
+        blocksRestored,
         exportedAtUtc: exportTimestamp,
         cachedAtIso: new Date().toISOString(),
       });
@@ -296,9 +342,12 @@ export async function save(
       await fs.writeFile(trackedPath, new Uint8Array(trackedBuffer));
     }
 
-    const revisions = format === 'tracked'
-      ? undefined
-      : await collectAiRevisionSummary(revisedBuffer, session.aiAuthor);
+    // Summarize the AI's revisions from the session's write-time markup (#126).
+    // The clean artifact has accepted them away, so summarize the tracked
+    // artifact when present, else the session document directly.
+    const revisionSummarySource = trackedBuffer
+      ?? (await session.doc.toBuffer({ cleanBookmarks: false })).buffer;
+    const revisions = await collectAiRevisionSummary(revisionSummarySource, session.aiAuthor);
 
     const returnedVariants =
       format === 'clean'
@@ -318,28 +367,36 @@ export async function save(
       tracked_saved_to: trackedPath,
       size_bytes: format === 'tracked' ? trackedBuffer?.length : revisedBuffer.length,
       tracked_size_bytes: trackedBuffer?.length,
-      tracked_changes_engine: format === 'tracked' || format === 'both' ? trackedEngine : undefined,
+      // The redline is the write-time markup as authored — no comparison engine
+      // or reconstruction is involved (#126).
+      tracked_changes_source: format === 'tracked' || format === 'both' ? 'write-time' : undefined,
       tracked_changes_author: format === 'tracked' || format === 'both' ? author : undefined,
       tracked_changes_stats: trackedStats ?? undefined,
-      tracked_reconstruction_mode: trackedReconstructionMode,
-      tracked_fallback_reason: trackedFallbackReason,
-      tracked_fallback_diagnostics: trackedFallbackDiagnostics,
-      tracked_rebuild_warning: trackedReconstructionMode === 'rebuild'
-        ? 'Rebuild mode was used which may alter document structure (tables, fonts, etc.)'
-        : undefined,
       revisions,
+      // #122: package-level mutations with no native OOXML revision wrapper
+      // (comment/footnote side parts, relationships, content types) are not
+      // tracked changes, so surface them explicitly alongside the revisions
+      // list rather than letting them land silently.
+      non_revision_changes: session.nonRevisionManifest.length > 0
+        ? session.nonRevisionManifest
+        : undefined,
       exported_at_utc: exportTimestamp,
       bookmarks_removed: clean ? bookmarksRemoved : 0,
+      blocks_restored: blocksRestored,
       returned_variants: returnedVariants,
       available_variants: ['clean', 'redline'],
       cache_hit: cacheHit,
       format_source: formatSource,
       parameter_warning: parameterWarning,
-      validation: validation.warnings.length > 0
-        ? { warnings: validation.warnings.map(w => ({ code: w.code, message: w.message })) }
+      validation: validation.warnings.length > 0 || (aiRevisionValidation?.warnings.length ?? 0) > 0
+        ? {
+            warnings: [
+              ...validation.warnings.map(w => ({ code: w.code, message: w.message })),
+              ...(aiRevisionValidation?.warnings ?? []),
+            ],
+          }
         : { valid: true },
       message:
-        (trackedReconstructionMode === 'rebuild' ? 'WARNING: Tracked output used REBUILD mode which may alter table structure and fonts. Verify tables in Word. ' : '') +
         (format === 'clean'
           ? `${cacheHit ? 'Cached ' : ''}document saved to ${savePath}`
           : format === 'tracked'

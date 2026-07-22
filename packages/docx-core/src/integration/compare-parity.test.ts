@@ -13,8 +13,8 @@ import { describe, expect, beforeAll } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { type CompareResult } from '../index.js';
-import { compareDocumentsBaselineB } from '../baselines/diffmatch/pipeline.js';
+import { type CompareResult } from '@usejunior/docx-compare';
+import { compareDocumentsBaselineB } from '@usejunior/docx-compare';
 import {
   FIXTURE_STABLE_DATE,
   getIntegrationOutputModeLabel,

@@ -11,12 +11,24 @@ type McpComment = {
   initials: string;
   text: string;
   anchored_paragraph_id: string | null;
+  // Range metadata resolved from commentRangeStart/commentRangeEnd markers.
+  // Absent for legacy paragraph-attached comments without range markers.
+  end_paragraph_id?: string | null;
+  start_run_index?: number;
+  start_char_offset?: number;
+  end_run_index?: number;
+  end_char_offset?: number;
   replies: McpComment[];
 };
 
 const MAX_REPLY_DEPTH = 10;
 
 function mapComment(c: Comment, depth = 0): McpComment {
+  // The primitive resolver only yields a non-null anchoredParagraphId (and a
+  // non-undefined run index) when range markers exist; without them every range
+  // field stays undefined so the serialized shape is unchanged for legacy comments.
+  const hasRangeMarkers =
+    c.anchoredParagraphId !== null || c.startRunIndex !== undefined || c.endRunIndex !== undefined;
   return {
     id: c.id,
     author: c.author,
@@ -24,6 +36,11 @@ function mapComment(c: Comment, depth = 0): McpComment {
     initials: c.initials,
     text: c.text,
     anchored_paragraph_id: c.anchoredParagraphId,
+    end_paragraph_id: hasRangeMarkers ? c.endParagraphId : undefined,
+    start_run_index: c.startRunIndex,
+    start_char_offset: c.startCharOffset,
+    end_run_index: c.endRunIndex,
+    end_char_offset: c.endCharOffset,
     replies: depth < MAX_REPLY_DEPTH ? c.replies.map((r) => mapComment(r, depth + 1)) : [],
   };
 }

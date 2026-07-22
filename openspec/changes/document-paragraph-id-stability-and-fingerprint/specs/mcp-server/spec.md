@@ -50,7 +50,7 @@ The fingerprint SHALL be computed as `"sha256:nfkc:" + sha256( stripCfInvisibles
 
 The fingerprint is a content hash, not a paragraph key. Two paragraphs with identical normalized visible text SHALL produce identical fingerprints by design — for example, two list items both reading "Reserved." in different sections of the same contract. Consumers needing per-paragraph identity MUST use `_bk_*` IDs.
 
-The fingerprint is read-only metadata. Edit tools (`replace_text`, `insert_paragraph`, `apply_plan`, etc.) SHALL continue to accept ONLY `_bk_*` identifiers as anchors. `content_fingerprint` SHALL NEVER be accepted as an edit anchor.
+The fingerprint is read-only metadata. Edit tools (`replace_text`, `insert_paragraph`, `batch_edit`, etc.) SHALL continue to accept ONLY `_bk_*` identifiers as anchors. `content_fingerprint` SHALL NEVER be accepted as an edit anchor.
 
 The `sha256:nfkc:` prefix is intentional version reservation. Future algorithm bumps SHALL emit a different prefix (e.g. `sha256:nfkc-strip:`). Consumers SHALL store and compare the full prefixed string so an algorithm bump cleanly invalidates old hashes. On algorithm bumps, downstream indexes either reindex against the new prefix or rely on a documented dual-emit migration window — no `fingerprint_version` parameter is exposed on the tool schema.
 

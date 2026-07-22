@@ -668,15 +668,25 @@ function verbatimCheckPage(htmlPath, expectedSection) {
 function stripHtmlTags(html) {
   // Wiki-added annotation spans must be removed BEFORE generic tag stripping,
   // otherwise their inner text ("2-hop, out of wiki scope") leaks into the
-  // verbatim comparison.
-  return html
-    .replace(/<span class="oos-tag">[^<]*<\/span>/g, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
+  // verbatim comparison. Loop until stable: nested/adjacent angle brackets can
+  // re-form a "<...>" that a single pass leaves behind.
+  let out = html;
+  let prev;
+  do {
+    prev = out;
+    out = out
+      .replace(/<span class="oos-tag">[^<]*<\/span>/g, '')
+      .replace(/<[^>]+>/g, '');
+  } while (out !== prev);
+  // Decode entities; &amp; MUST be decoded last so an encoded sequence like
+  // "&amp;lt;" resolves to the literal "&lt;" rather than being double-decoded
+  // into "<".
+  return out
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
 }
 
 // -------------------------------------------------------------------------

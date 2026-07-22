@@ -307,6 +307,52 @@ describe("extractScenarios", () => {
     expect(Object.keys(scenario!.narrative).sort()).toEqual(["motivatingProblem"]);
   });
 
+  it("extracts @suiteScenarioIds as a string array outside the narrative object", () => {
+    const filePath = writeFixture(`
+      const test = testAllure.epic("DOCX Primitives").withLabels({ feature: "Track Changes", visibility: "public" });
+
+      /**
+       * @suiteScenarioIds docx/track-changes/a, docx/track-changes/b
+       * @motivatingProblem ${words(60)}
+       */
+      test.openspec("join keys")("Scenario: cross-impl join", async () => {});
+    `);
+
+    const [scenario] = extractScenarios(filePath);
+
+    expect(scenario?.suiteScenarioIds).toEqual(["docx/track-changes/a", "docx/track-changes/b"]);
+    expect(scenario?.narrative as Record<string, unknown>).not.toHaveProperty("suiteScenarioIds");
+    expect(scenario?.narrative).toEqual({ motivatingProblem: words(60) });
+  });
+
+  it("splits @suiteScenarioIds on commas and whitespace across multiple lines", () => {
+    const filePath = writeFixture(`
+      const test = testAllure.epic("DOCX Primitives").withLabels({ feature: "Track Changes" });
+
+      /**
+       * @suiteScenarioIds docx/one
+       *   docx/two,docx/three
+       */
+      test.openspec("multiline")("Scenario: multiline ids", async () => {});
+    `);
+
+    const [scenario] = extractScenarios(filePath);
+
+    expect(scenario?.suiteScenarioIds).toEqual(["docx/one", "docx/two", "docx/three"]);
+  });
+
+  it("omits suiteScenarioIds when no @suiteScenarioIds tag is present", () => {
+    const filePath = writeFixture(`
+      const test = testAllure.epic("DOCX Primitives").withLabels({ feature: "Track Changes" });
+
+      test.openspec("none")("Scenario: no join keys", async () => {});
+    `);
+
+    const [scenario] = extractScenarios(filePath);
+
+    expect(scenario?.suiteScenarioIds).toBeUndefined();
+  });
+
   it("preserves rejected aliases in the narrative so the validator can report them explicitly", () => {
     // The extractor distinguishes "unknown JSDoc tag" (drop) from
     // "rejected alias the schema knows about" (keep, so the validator can

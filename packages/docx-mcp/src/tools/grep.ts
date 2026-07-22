@@ -90,6 +90,28 @@ export async function grep(
     const searchXml = params.search_xml ?? false;
     const includeContext = params.include_context ?? true;
 
+    // This tool accepts user-supplied regex by design, so the pattern cannot be
+    // escaped. Bound the count and combined length instead: catastrophic
+    // backtracking (ReDoS) scales with pattern size, so capping it limits the
+    // worst-case cost a single malformed pattern can impose.
+    const MAX_PATTERNS = 64;
+    const MAX_COMBINED_PATTERN_LENGTH = 2000;
+    if (patterns.length > MAX_PATTERNS) {
+      return err(
+        'PATTERN_LIMIT_EXCEEDED',
+        `Too many patterns: ${patterns.length} (max ${MAX_PATTERNS}).`,
+        `Split the search into batches of at most ${MAX_PATTERNS} patterns.`,
+      );
+    }
+    const combinedPatternLength = patterns.reduce((sum, p) => sum + p.length, 0);
+    if (combinedPatternLength > MAX_COMBINED_PATTERN_LENGTH) {
+      return err(
+        'PATTERN_LIMIT_EXCEEDED',
+        `Combined pattern length ${combinedPatternLength} exceeds ${MAX_COMBINED_PATTERN_LENGTH} characters.`,
+        'Use shorter or fewer patterns.',
+      );
+    }
+
     const patternStr = wholeWord ? `\\b(${patterns.join('|')})\\b` : `(${patterns.join('|')})`;
     let re: RegExp;
     try {

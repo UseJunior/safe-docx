@@ -40,13 +40,13 @@ resolves to a registry section ID.
 
 #### Scenario: valid tag resolves to a known section
 
-- **GIVEN** a registry entry `[ECMA-PART4-17-16-5]`
-- **WHEN** a JSDoc block contains `@conformance ECMA-376 edition 5, Part 4 § 17.16.5`
+- **GIVEN** a registry entry `[ECMA-PART1-17-16-13]`
+- **WHEN** a JSDoc block contains `@conformance ECMA-376 edition 5, Part 1 § 17.16.13`
 - **THEN** the citation-hygiene lint SHALL accept the tag
 
 #### Scenario: tag value missing an edition fails
 
-- **WHEN** a JSDoc block contains `@conformance ECMA-376 Part 4 § 17.16.5` (no edition)
+- **WHEN** a JSDoc block contains `@conformance ECMA-376 Part 1 § 17.16.13` (no edition)
 - **THEN** the lint SHALL fail with a grammar error
 
 #### Scenario: tag value pointing at an unknown section fails
@@ -56,7 +56,7 @@ resolves to a registry section ID.
 
 #### Scenario: tag value containing an issue reference fails
 
-- **WHEN** a JSDoc block contains `@conformance ECMA-376 edition 5, Part 4 § 17.16.5 (#217)`
+- **WHEN** a JSDoc block contains `@conformance ECMA-376 edition 5, Part 1 § 17.16.13 (#217)`
 - **THEN** the lint SHALL fail; the `#NNN` reference MUST move to a
   `@see` tag or surrounding prose
 
@@ -66,13 +66,13 @@ Source code intentionally diverging from a normative requirement SHALL use a `@c
 
 #### Scenario: gap tag with a reason passes the lint
 
-- **GIVEN** a JSDoc block with `@conformance-gap ECMA-376 edition 5, Part 4 § 17.16.5 — Word ≤ 2010 deviates`
+- **GIVEN** a JSDoc block with `@conformance-gap ECMA-376 edition 5, Part 1 § 17.16.13 — Word ≤ 2010 deviates`
 - **THEN** the lint SHALL accept the tag and the coverage report SHALL
   classify the site as `intentional-gap`
 
 #### Scenario: gap tag without a reason fails
 
-- **WHEN** a JSDoc block contains `@conformance-gap ECMA-376 edition 5, Part 4 § 17.16.5` (no em-dash + reason)
+- **WHEN** a JSDoc block contains `@conformance-gap ECMA-376 edition 5, Part 1 § 17.16.13` (no em-dash + reason)
 - **THEN** the lint SHALL fail
 
 ### Requirement: Scoped citation-hygiene lint
@@ -93,7 +93,7 @@ files, `__tests__/` directories, `docs/`, `verification/`,
 #### Scenario: test description with ECMA-376 mention requires `.conformance()`
 
 - **GIVEN** a test file with `describe('ECMA-376 fragmentation', …)` or
-  `it('emits per ECMA-376 §17.16.5', …)`
+  `it('emits per ECMA-376 §17.16.13', …)`
 - **WHEN** the test does not call `testAllure.conformance({…})`
 - **THEN** the lint SHALL fail
 
@@ -146,13 +146,13 @@ grammar, and the lint SHALL reject any annotation pointing at a Non-Goal.
 - **WHEN** source code contains `@conformance ECMA-376 edition 5, Part 1 § 17.99`
 - **THEN** the lint SHALL fail
 
-### Requirement: CONFORMANCE.md and README marker block are generated
+### Requirement: CONFORMANCE.md is generated and README files link to it
 
-The repository SHALL generate `spec-compliance/CONFORMANCE.md` and the
-`<!-- AUTO-GENERATED:conformance-summary -->` marker block in the canonical
-`README.md` from the registry, and the drift check
-`npm run check:conformance-doc` SHALL fail if either output disagrees
-with the committed version.
+The repository SHALL generate `spec-compliance/CONFORMANCE.md` from the
+registry, and the drift check `npm run check:conformance-doc` SHALL fail if
+that output disagrees with the committed version. Canonical and localized
+README files SHALL link to `spec-compliance/CONFORMANCE.md` without
+reproducing generated claim counts.
 
 #### Scenario: hand-editing CONFORMANCE.md fails drift
 
@@ -165,28 +165,22 @@ with the committed version.
 
 - **WHEN** a contributor adds a new section to `registry/ecma-376.md`
   but does not run the generator
-- **THEN** `npm run check:conformance-doc` SHALL fail because the
-  generated `CONFORMANCE.md` and canonical `README.md` marker block are out
-  of date
+- **THEN** `npm run check:conformance-doc` SHALL fail because the generated
+  `CONFORMANCE.md` is out of date
 
-#### Scenario: missing marker block in canonical README fails drift
+#### Scenario: README provides progressive disclosure
 
-- **WHEN** a contributor accidentally removes the
-  `<!-- AUTO-GENERATED:conformance-summary START -->` …
-  `END` markers from `README.md`
-- **THEN** `npm run check:conformance-doc` SHALL fail with a clear
-  "marker block missing" error
+- **WHEN** a reader inspects the canonical or a localized README
+- **THEN** the README SHALL link to `spec-compliance/CONFORMANCE.md`
+- **AND** it SHALL NOT reproduce generated section, Non-Goal, or gap counts
 
-#### Scenario: localized READMEs carry static translated conformance links
+#### Scenario: localized README links are translated
 
 - **GIVEN** localized READMEs such as `README.es.md`, `README.zh.md`,
   `README.pt-br.md`, and `README.de.md`
-- **WHEN** `npm run check:conformance-doc` verifies generated conformance
-  documentation
-- **THEN** the drift gate SHALL NOT verify those localized README files
-- **AND** localized READMEs SHALL carry hand-translated static content that
-  links to `spec-compliance/CONFORMANCE.md` instead of the dynamic
-  `<!-- AUTO-GENERATED:conformance-summary -->` marker block
+- **WHEN** a reader opens a localized README
+- **THEN** it SHALL carry hand-translated static content that links to
+  `spec-compliance/CONFORMANCE.md`
 
 ### Requirement: `testAllure.conformance({…})` helper
 
@@ -197,10 +191,10 @@ and mirrors the existing `.openspec(…)` hook pattern.
 
 #### Scenario: helper emits structured label
 
-- **GIVEN** a test calling `testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' })`
+- **GIVEN** a test calling `testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' })`
 - **WHEN** the test runs
 - **THEN** the Allure result SHALL include
-  `label('conformance', 'ECMA-376/edition-5/part-4/17.16.5')`
+  `label('conformance', 'ECMA-376/edition-5/part-1/17.16.13')`
 - **AND** the helper SHALL NOT overload the `story` label
 
 ### Requirement: CI gates publish conformance checks explicitly
@@ -222,4 +216,3 @@ as a top-level concern.
 - **GIVEN** the root `package.json` script `preflight:ci`
 - **THEN** the script SHALL invoke both new conformance checks
   alongside existing checks
-

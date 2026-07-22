@@ -12,12 +12,13 @@
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 
+const TEST_FEATURE = 'Cross-story Field Closure (#212)';
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Cross-story Field Closure (#212)' })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .withLabels({ feature: TEST_FEATURE })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
 
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 const NS14 = 'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"';
@@ -180,7 +181,7 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
     },
   );
 
-  test(
+  test.openspec('Rebuild fallback only after all inplace passes fail')(
     'globally-balanced but per-story-unbalanced field across body and footnote is rejected',
     async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
       let original: Buffer = Buffer.alloc(0);

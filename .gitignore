@@ -2,6 +2,8 @@ node_modules/
 dist/
 *.tgz
 .DS_Store
+# Scratch outputs (schema-validation corpus runs, oracle scratch, etc.)
+.tmp/
 # Office lock files (Word/Excel/PowerPoint create these while a file is open)
 ~$*
 .mcpregistry_*
@@ -21,6 +23,7 @@ coverage/
 coverage/*
 !coverage/package-coverage-baseline.json
 !coverage/allure-test-filename-baseline.json
+!coverage/emitted-schema-known-failures.json
 packages/*/coverage/
 .claude/settings.local.json
 

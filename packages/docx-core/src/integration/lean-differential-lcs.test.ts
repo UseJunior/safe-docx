@@ -36,7 +36,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect } from 'vitest';
-import { computeAtomLcs } from '../baselines/atomizer/atomLcs.js';
+import { computeAtomLcs } from '@usejunior/docx-compare';
 import { CorrelationStatus, type ComparisonUnitAtom, type OpcPart } from '../core-types.js';
 import { el } from '../testing/dom-test-helpers.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
@@ -47,7 +47,7 @@ const TEST_FEATURE = 'Lean Differential Harness (LCS)';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: TEST_FEATURE })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
 
 const INTEGRATION_DIR = dirname(import.meta.url.replace('file://', ''));
 const PROJECT_ROOT = join(INTEGRATION_DIR, '../../../..');
@@ -264,6 +264,11 @@ if (!exeExists) {
 const describeMaybe = exeExists ? describe : describe.skip;
 
 describeMaybe('Lean Differential Harness - LCS extensional equivalence', () => {
+  // coverage-rationale: LEAN-DIFF-01/02/03/05 are all observed from one invocation of
+  // the compiled Lean differential harness — extensional match against the TS LCS, the
+  // exhaustive zero-divergence sweep, the clean skip without the Lean toolchain, and the
+  // DP-vs-recursive agreement are facets of the same sweep and cannot be separated
+  // without rebuilding and rerunning the Lean executable per scenario.
   test
     .openspec('[LEAN-DIFF-01] Compiled Lean LCS matches the TS LCS on generated atom-array pairs')
     .openspec('[LEAN-DIFF-02] Exhaustive sweep reproduces the documented zero-divergence result')

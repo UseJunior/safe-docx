@@ -89,8 +89,8 @@
 import fc from 'fast-check';
 import { DOMParser } from '@xmldom/xmldom';
 import { describe } from 'vitest';
-import { compareDocuments, type ReconstructionMode } from '../index.js';
-import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
+import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { validateFieldStructure } from '@usejunior/docx-compare';
 import {
   COMPLETE_PAGE_FIELD,
   COMPLETE_PAGEREF_FIELD,
@@ -108,7 +108,7 @@ import {
   rejectAllChanges,
   extractTextWithParagraphs,
   normalizeText,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { DocxDocument } from '../primitives/document.js';
 import { getParagraphBookmarkId } from '../primitives/bookmarks.js';
@@ -132,7 +132,7 @@ const TEST_FEATURE = 'Lean Spec Bridge (fast-check)';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: TEST_FEATURE })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
 
 const TRACKED_REVISION_AUTHOR = 'Lean Bridge';
 const TRACKED_REVISION_DATE = '2026-05-11T00:00:00Z';
@@ -356,18 +356,20 @@ const trackedFootnoteAnchorScenarioArb: fc.Arbitrary<FootnoteAnchorScenario> = p
 // inserts included. The relaxation did its discovery job: it surfaced two
 // genuine engine bug classes, pinned per the bounded-remediation discipline
 // (narrow, named, issue-linked exclusions + the characterization test
-// 'INV-RT-001 pinned engine bugs …' below) rather than fixed here:
-//   - Issue #358: inline run-level pre-tracked `w:ins` ORIGINALS stay excluded
-//     — the engine flattens the original's inline insertion provenance
-//     unconditionally, so reject(combined) keeps text reject(original) drops
-//     for EVERY revised counterpart (probed: matched, deleted, identical,
-//     unrelated). Paragraph-insert originals are INCLUDED: paragraph-MARK
-//     provenance threads correctly (stacked PPR-DEL(Comparison) +
-//     PPR-INS(input-author) marks compose under mark-based accept/reject).
+// 'INV-RT-001 pinned engine bugs …' below) rather than fixed inline:
+//   - Issue #358 (FIXED): inline run-level and paragraph-insert pre-tracked
+//     `w:ins` ORIGINALS are back in scope. The engine now threads the
+//     original's insertion provenance through both reconstruction paths —
+//     matched content keeps its original-author `w:ins` wrapper and
+//     comparison-deleted content nests `w:del(Comparison)` INSIDE the
+//     restored `w:ins(original-author)` — so reject(combined) drops exactly
+//     what reject(original) drops. Dedicated regression coverage lives in
+//     pretracked-ins-provenance.test.ts.
 //   - Issue #359: pairs whose pre-tracked-insertion text collides with the
 //     other side's plain text are excluded via `hasInsProvenanceCollision` on
-//     the pair arbitrary below.
+//     the pair arbitrary below, and stay pinned in the characterization test.
 const trackedOriginalScenarioArb: fc.Arbitrary<TrackedScenario> = fc.oneof(
+  trackedInsertionScenarioArb,
   trackedDeletionScenarioArb,
   trackedParagraphInsertScenarioArb,
   trackedParagraphPropertyScenarioArb,
@@ -431,12 +433,16 @@ function textsCollide(claimed: string, otherRawParagraphs: string[]): boolean {
   );
 }
 
-// Issue #359: pre-tracked-insertion content that textually collides with the
-// other input's plain text loses provenance through the comparison (the
-// combined output keeps exactly one lineage's claim), so the global reject
-// projection diverges and the engine falls back — with a law-violating rebuild
-// output in the paragraph-insert shapes. Until #359 lands, exclude exactly the
-// colliding pairs; the characterization test below pins today's behavior.
+// Issue #359: REVISED-side pre-tracked-insertion content that textually
+// collides with the original's plain text keeps the revised lineage's claim
+// (the physical `w:ins` wrapper survives around content whose original lineage
+// was plain), so the inplace candidate's reject projection diverges and the
+// engine permanently falls back to rebuild. The #358 fix resolved the
+// original-side half of this filter's old scope; the filter stays pair-level
+// (both directions) because the property asserts inplace mode and the
+// revised-side fallback is unconditional on collision. Until #359 lands,
+// exclude exactly the colliding pairs; the characterization test below pins
+// today's behavior.
 function hasInsProvenanceCollision(pair: TrackedScenarioPair): boolean {
   const originalRaw = scenarioRawParagraphTexts(pair.originalScenario);
   const revisedRaw = scenarioRawParagraphTexts(pair.revisedScenario);
@@ -1444,48 +1450,36 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
   );
 
   test(
-    'INV-RT-001 pinned engine bugs: pre-tracked insertion provenance is lost across comparison (#358, #359)',
+    'INV-RT-001 pinned engine bug: revised-side pre-tracked insertion provenance is lost on collision (#359)',
     async ({ given, when, then }: AllureBddContext) => {
-      // Characterization of TODAY's behavior for the two engine bug classes the
-      // #347 arbitrary relaxation surfaced (pin + file, fix in their own PRs —
+      // Characterization of TODAY's behavior for the remaining engine bug class
+      // the #347 arbitrary relaxation surfaced (pin + file, fix in its own PR —
       // mirroring how [LEAN-HELP-08] pinned G5 before its fix). Each case
-      // asserts the CURRENT divergence precisely so the eventual fixes flip
+      // asserts the CURRENT divergence precisely so the eventual fix flips
       // this test deliberately rather than silently:
-      //   - #358: the original's inline run-level `w:ins` provenance is
-      //     flattened, so reject(combined) keeps text reject(original) drops —
-      //     on BOTH reconstruction paths (the rebuild fallback output violates
-      //     the projection law too, unchecked per #226).
-      //   - #359: pre-tracked-insertion text colliding with the other side's
-      //     plain text keeps exactly one lineage's provenance. The inline shape
-      //     (the #339 flake) is rescued by the rebuild fallback; the
-      //     paragraph-insert shapes ship law-violating output.
+      //   - #359: REVISED-side pre-tracked-insertion text colliding with the
+      //     original's plain text keeps exactly one lineage's provenance — the
+      //     revised document's physical `w:ins` wrapper survives around content
+      //     whose original lineage was plain, so the inplace candidate's reject
+      //     projection drops text reject(original) keeps and the engine
+      //     permanently falls back to rebuild. The rebuild output happens to
+      //     satisfy the projection law for these shapes (the inline shape is
+      //     the #339 flake, rescued; the paragraph-insert shape holds via the
+      //     #431 mark-merge rule), so the residual harm is the lost provenance
+      //     and the unconditional fallback, not a law violation.
+      //   - #358 (original-side provenance flattening, both inline and
+      //     paragraph-insert shapes) is FIXED: those pairs now stay inplace and
+      //     are covered by trackedOriginalScenarioArb above plus the dedicated
+      //     regression suite in pretracked-ins-provenance.test.ts.
       interface PinnedProvenanceCase {
         name: string;
         build: () => Promise<{ original: Buffer; revised: Buffer }>;
         // Normalized reject projections asserted VERBATIM as they are today.
-        // When they differ, the shipped output violates the projection law.
         expectedRejectCombined: string;
         expectedRejectOriginal: string;
       }
 
       const cases: PinnedProvenanceCase[] = [
-        {
-          name: '#358 inline-ins original vs clean revised equal to accept(original)',
-          build: async () => ({
-            original: (
-              await materializeTrackedScenario({
-                family: 'w:ins',
-                paragraphs: ['Alpha'],
-                paragraphIndex: 0,
-                offset: 'Alpha'.length,
-                insertedText: ' beta',
-              })
-            ).document,
-            revised: await buildSyntheticDocx({ paragraphs: ['Alpha beta'] }),
-          }),
-          expectedRejectCombined: 'Alpha beta',
-          expectedRejectOriginal: 'Alpha',
-        },
         {
           name: '#359 inline-ins revised colliding with a plain original word (#339 shape, rebuild rescues)',
           build: async () => ({
@@ -1504,6 +1498,11 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
           expectedRejectOriginal: '!\n!\nI',
         },
         {
+          // Before #431 the combined output rejected to 'Alpha text.' (the
+          // PPR-INS mark dropped the whole flattened paragraph, a law
+          // violation). The mark-merge rule keeps the flattened content, which
+          // here happens to match reject(original) — the law holds for this
+          // colliding shape even though the provenance is still lost (#359).
           name: '#359 paragraph-insert revised colliding with a plain original paragraph',
           build: async () => ({
             original: await buildSyntheticDocx({ paragraphs: ['Alpha text.', 'Added para.'] }),
@@ -1517,37 +1516,20 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
               })
             ).document,
           }),
-          expectedRejectCombined: 'Alpha text.',
-          expectedRejectOriginal: 'Alpha text.\nAdded para.',
-        },
-        {
-          name: '#359 paragraph-insert original appearing plain in the revised',
-          build: async () => ({
-            original: (
-              await materializeTrackedScenario({
-                family: 'paragraph-insert',
-                paragraphs: ['Alpha text.'],
-                anchorIndex: 0,
-                relativePosition: 'AFTER',
-                newParagraphText: 'Added para.',
-              })
-            ).document,
-            revised: await buildSyntheticDocx({ paragraphs: ['Alpha text.', 'Added para.'] }),
-          }),
           expectedRejectCombined: 'Alpha text.\nAdded para.',
-          expectedRejectOriginal: 'Alpha text.',
+          expectedRejectOriginal: 'Alpha text.\nAdded para.',
         },
       ];
 
       await given(
-        'minimal repro pairs for the #358 and #359 pre-tracked insertion provenance bug classes',
+        'minimal repro pairs for the #359 revised-side pre-tracked insertion provenance bug class',
         async () => {},
       );
 
       await when('each pair runs through the live inplace-requested comparison', async () => {});
 
       await then(
-        'every case falls back on rejectText today, accept projections hold, and the reject divergences match the filed issues verbatim',
+        'every case falls back on rejectText today, accept projections hold, and the reject divergences match the filed issue verbatim',
         async () => {
           for (const pinned of cases) {
             const { original, revised } = await pinned.build();
@@ -1598,10 +1580,13 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-FBA-01/02/04/05 are four facets of one field-bearing
+  // property run — the shared arbitrary, the per-operation assertion strength, the
+  // floored (not filtered) coverage, and the bridge-file self-description are all
+  // observed from this single live-engine property and cannot be split without
+  // re-running the same property against the same generated pairs.
   test
-    .openspec(
-      '[LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations',
-    )
+    .openspec('[LEAN-FBA-01] Field-bearing arbitrary drives INV-FIELD-001 across operations')
     .openspec('[LEAN-FBA-02] Per-operation assertion strength matches the post-#217 engine')
     .openspec('[LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered')
     .openspec('[LEAN-FBA-05] Bridge file self-description stays accurate')(
@@ -1663,7 +1648,19 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-RT-01..04 are the round-trip lemma cluster (accept-side
+  // and reject-side lemmas, the `inv_rt_001` proof that composes them, and the
+  // documented residual obligations); this is the one TS-side bridge test that
+  // exercises accept/reject round-trip equality on the live engine, so the cluster
+  // discharges here together, alongside the field-bearing arbitrary (FBA-03) and its
+  // floored coverage (FBA-04). The single-fixture [LEAN-RT-05] falsifiability case is
+  // deliberately NOT here — it lives on its own fixture test (see below) because it
+  // requires a single deterministic case, not this 100-run property (cf. #513).
   test
+    .openspec('[LEAN-RT-01] Accept-side round-trip lemma is closed')
+    .openspec('[LEAN-RT-02] Reject-side round-trip lemma is closed')
+    .openspec('[LEAN-RT-03] `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas')
+    .openspec('[LEAN-RT-04] Residual obligations and the normalizeText modeling gap are documented')
     .openspec('[LEAN-FBA-03] Field-bearing arbitrary drives INV-RT-001 round-trip')
     .openspec('[LEAN-FBA-04] Fallback is falsification and coverage is floored, not silently filtered')(
     'INV-RT-001: paired round-trip text equality on field-bearing inplace comparison output',
@@ -1717,6 +1714,11 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
+  // coverage-rationale: LEAN-FRAG-01..04 are four facets of one fragmented-field
+  // property run — the shared arbitrary that drives both residual axioms, the
+  // fallback-is-legitimate (mode-independent) outcome, the floored mode/operation
+  // coverage, and the bridge-file self-description — all observed from this single
+  // property and inseparable without re-running it.
   test
     .openspec('[LEAN-FRAG-01] Fragmented-field arbitrary drives both residual axioms across operations')
     .openspec('[LEAN-FRAG-02] Inplace fallback is a legitimate, mode-independent outcome, not falsification')
@@ -1870,7 +1872,7 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 
-  test(
+  test.openspec('[LEAN-RT-05] Bridge case provides a falsifiability layer for the new axiom')(
     'INV-RT-001: field-bearing inplace comparison output round-trips on accept/reject (axiom falsifiability layer)',
     async ({ given, when, then }: AllureBddContext) => {
       // Falsifiability layer for the residual axiom
@@ -1998,4 +2000,3 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
     },
   );
 });
-

@@ -1,7 +1,7 @@
 {
   "name": "@usejunior/docx-mcp",
-  "version": "0.10.0",
-  "description": "MCP server for reading, editing, and comparing Word (.docx) and OpenDocument (.odt) files with tracked changes. For Claude, Gemini CLI, Cursor, and any MCP client. MIT licensed.",
+  "version": "0.17.0",
+  "description": "MCP server for reading, editing, and comparing Word (.docx) and OpenDocument (.odt) files with tracked changes. For Claude, Gemini CLI, Cursor, and any MCP client. Apache-2.0 licensed.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "clean:dist": "node -e \"const { rmSync } = require('node:fs'); rmSync('dist', { recursive: true, force: true });\"",
-    "build": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/odf-core --if-present && npm run build -w @usejunior/google-docs-core --if-present && npm run clean:dist && tsc -p tsconfig.build.json",
+    "build": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/docx-compare && npm run build -w @usejunior/odf-core --if-present && npm run build -w @usejunior/google-docs-core --if-present && npm run clean:dist && tsc -p tsconfig.build.json",
     "dev": "tsx watch src/cli.ts",
     "check:spec-coverage": "node scripts/validate_openspec_coverage.mjs",
     "conformance:discover": "tsx scripts/discover_docx_fixtures.ts --out conformance/discovery.report.json",
@@ -19,16 +19,17 @@
     "conformance:smoke": "tsx scripts/run_conformance_harness.ts --manifest conformance/fixtures.manifest.json --mode smoke --report conformance/smoke-report.json",
     "docs:generate:tools": "node --import tsx scripts/generate_tool_reference.ts",
     "test:conformance": "vitest run src/conformance/harness.test.ts",
-    "test": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/odf-core --if-present && npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs",
-    "test:run": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/odf-core --if-present && npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run",
-    "test:coverage": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/odf-core --if-present && npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
+    "test": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/docx-compare && npm run build -w @usejunior/odf-core --if-present && npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs",
+    "test:run": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/docx-compare && npm run build -w @usejunior/odf-core --if-present && npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run",
+    "test:coverage": "npm run build -w @usejunior/docx-core && npm run build -w @usejunior/docx-compare && npm run build -w @usejunior/odf-core --if-present && npm run check:spec-coverage && node ../../node_modules/vitest/vitest.mjs run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcov",
     "prepack": "npm run build",
-    "lint": "tsc -b --pretty false"
+    "lint": "tsc --noEmit --pretty false"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@usejunior/docx-core": "^0.10.0",
-    "@usejunior/odf-core": "^0.10.0",
+    "@usejunior/docx-compare": "^0.17.0",
+    "@usejunior/docx-core": "^0.17.0",
+    "@usejunior/odf-core": "^0.17.0",
     "@xmldom/xmldom": "^0.9.10",
     "zod": "^4.3.6"
   },
@@ -52,17 +53,18 @@
     "access": "public"
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "peerDependencies": {
-    "@usejunior/google-docs-core": "^0.10.0"
+    "@usejunior/google-docs-core": "^0.17.0"
   },
   "peerDependenciesMeta": {
     "@usejunior/google-docs-core": {
       "optional": true
     }
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "mcp",
     "mcp-server",

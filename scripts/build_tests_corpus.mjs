@@ -15,6 +15,7 @@ import Ajv from 'ajv';
 import {
   CANONICAL_SECTION_ORDER,
   extractScenarios,
+  suiteScenarioIdsSchema,
   validateTags,
 } from '../packages/test-narrative/dist/index.js';
 import { loadRegistry } from './lib/conformance-registry.mjs';
@@ -241,6 +242,23 @@ function sectionsForEntry(scenario, result, conformanceClaims) {
   return CANONICAL_SECTION_ORDER.filter((section) => present.has(section));
 }
 
+function buildCrossImplementation(fileRel, scenario) {
+  // Renderer-facing join keys between this corpus entry and the cross-impl
+  // suite repo. Authored as a `@suiteScenarioIds` JSDoc tag; emitted only when
+  // present so entries without it stay clean and schema-valid.
+  if (!scenario.suiteScenarioIds) return undefined;
+  const parsed = suiteScenarioIdsSchema.safeParse(scenario.suiteScenarioIds);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
+      .join('; ');
+    throw new Error(
+      `${fileRel}:${scenario.sourceRef.line}: invalid @suiteScenarioIds tag: ${issues}`,
+    );
+  }
+  return { suiteScenarioIds: [...parsed.data] };
+}
+
 function buildCorpusEntries() {
   const registry = loadRegistry();
   if (registry.errors.length > 0) {
@@ -306,12 +324,14 @@ function buildCorpusEntries() {
 
       const conformanceClaims = resolveConformanceClaims(matchedResult.result, registry);
       const results = serializeResult(matchedResult.result);
+      const crossImplementation = buildCrossImplementation(file.rel, scenario);
       entries.push({
         id: stableEntryId(packageName, scenario),
         package: packageName,
         scenarioName: normalizeScenarioName(scenario.scenarioName),
         sourceRef: serializeSourceRef(scenario.sourceRef),
         sections: sectionsForEntry(scenario, results, conformanceClaims),
+        ...(crossImplementation ? { crossImplementation } : {}),
         narrative: { ...scenario.narrative },
         scenario: {
           bddSteps: scenario.bddSteps.map(serializeBddStep),

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect } from 'vitest';
 
 import { MCP_TOOLS, dispatchToolCall } from '../server.js';
-import { mergePlans } from './merge_plans.js';
+import { batchEdit } from './batch_edit.js';
 import { readFile } from './read_file.js';
 import { testAllure } from '../testing/allure-test.js';
 import {
@@ -51,42 +51,34 @@ describe('Traceability: Batch Apply and Strict Anchor Resolution', () => {
   humanReadableTest.openspec('legacy aliases are rejected inside plan operations')(
     'Scenario: legacy aliases are rejected inside plan operations',
     async () => {
-      const result = await mergePlans({
-        plans: [
+      const manager = createTestSessionManager();
+      const filePath = await writeDocx(['Alpha clause']);
+      const result = await batchEdit(manager, {
+        file_path: filePath,
+        steps: [
           {
-            plan_id: 'legacy-edit',
-            base_revision: 1,
-            steps: [
-              {
-                step_id: 's1',
-                operation: 'smart_edit',
-                target_paragraph_id: '_bk_1',
-                old_string: 'old',
-                new_string: 'new',
-                instruction: 'legacy operation',
-              },
-            ],
+            step_id: 's1',
+            operation: 'smart_edit',
+            target_paragraph_id: '_bk_1',
+            old_string: 'Alpha',
+            new_string: 'Beta',
+            instruction: 'legacy operation',
           },
           {
-            plan_id: 'legacy-insert',
-            base_revision: 1,
-            steps: [
-              {
-                step_id: 's2',
-                operation: 'smart_insert',
-                positional_anchor_node_id: '_bk_1',
-                new_string: 'new paragraph',
-                instruction: 'legacy operation',
-              },
-            ],
+            step_id: 's2',
+            operation: 'smart_insert',
+            positional_anchor_node_id: '_bk_1',
+            new_string: 'New paragraph',
+            instruction: 'legacy operation',
           },
         ],
       });
 
       expect(result.success).toBe(false);
       if (result.success) return;
-      const conflicts = result.conflicts as Array<{ code: string }>;
-      expect(conflicts.some((conflict) => conflict.code === 'INVALID_STEP_OPERATION')).toBe(true);
+      expect(result.error.code).toBe('NORMALIZATION_ERROR');
+      expect(result.error.message).toContain('smart_edit');
+      expect(result.error.message).toContain('smart_insert');
     },
   );
 

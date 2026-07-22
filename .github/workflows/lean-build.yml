@@ -1,10 +1,14 @@
 name: Lean Build
 
 on:
+  schedule:
+    - cron: '17 6 * * 1'
   push:
     branches: [main]
     paths:
       - 'verification/lean/**'
+      - 'verification/registry/**'
+      - 'scripts/normalize_lean_axioms.mjs'
       - '.github/workflows/lean-build.yml'
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
       # The differential gate guards the production TS LCS against the Lean model,
@@ -20,6 +24,8 @@ on:
     branches: [main]
     paths:
       - 'verification/lean/**'
+      - 'verification/registry/**'
+      - 'scripts/normalize_lean_axioms.mjs'
       - '.github/workflows/lean-build.yml'
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
       - 'packages/docx-core/src/baselines/atomizer/atomLcs.ts'
@@ -99,6 +105,23 @@ jobs:
       - name: Build LeanSpike
         working-directory: verification/lean
         run: lake build
+
+      - name: Audit Lean axiom allowlist
+        working-directory: verification/lean
+        run: |
+          lake env lean AxiomAudit.lean > /tmp/axiom-audit-raw.txt
+          node ../../scripts/normalize_lean_axioms.mjs /tmp/axiom-audit-raw.txt > /tmp/axiom-audit-observed.txt
+          sort -u expected-axioms.txt > /tmp/axiom-audit-expected.txt
+          echo "Observed axiom union:"
+          cat /tmp/axiom-audit-observed.txt
+          if ! diff -u /tmp/axiom-audit-expected.txt /tmp/axiom-audit-observed.txt; then
+            echo "ERROR: Lean axiom allowlist drift detected."
+            echo "Unexpected observed axioms:"
+            comm -13 /tmp/axiom-audit-expected.txt /tmp/axiom-audit-observed.txt || true
+            echo "Allowlisted axioms no longer observed:"
+            comm -23 /tmp/axiom-audit-expected.txt /tmp/axiom-audit-observed.txt || true
+            exit 1
+          fi
 
       # Audit uses grep (POSIX-guaranteed on ubuntu-latest) rather than ripgrep
       # — rg is NOT pre-installed on the default runner image. `-w` matches the

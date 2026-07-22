@@ -1,13 +1,18 @@
 /**
  * accept_changes — accept all tracked changes in a OOXML document body.
  *
- * Produces a clean document with no revision markup by:
+ * Resolves the supported revision subset by:
  * - Removing w:del elements and their content
  * - Unwrapping w:ins elements (promoting children)
  * - Removing w:moveFrom (source), unwrapping w:moveTo (destination)
  * - Removing all *PrChange property change records
- * - Stripping paragraph-level revision markers
+ * - Stripping paragraph-level revision markers, merging a paragraph whose
+ *   mark was a tracked deletion into the following paragraph
  * - Cleaning up move range markers and rsidDel attributes
+ *
+ * Numbering, table-grid/exception, cell-topology, custom XML, and extension
+ * conflict records are not semantically resolved here; see the advanced
+ * revision classification manifest.
  *
  * Operates on the W3C DOM (`@xmldom/xmldom`) — the same API used
  * throughout docx-primitives-ts (contrast with docx-comparison's
@@ -24,6 +29,22 @@ export type AcceptChangesResult = {
   movesResolved: number;
   propertyChangesResolved: number;
 };
+
+/**
+ * Predicate selecting which revision elements a sweep processes. The default
+ * ({@link ACCEPT_ALL}) processes every revision — the original whole-document
+ * behavior. `acceptAIEdits`/`rejectAIEdits` (#123) pass a predicate that matches
+ * only the targeted revision ids so foreign (non-target) revisions are left
+ * byte-untouched.
+ */
+export type RevisionFilter = (el: Element) => boolean;
+
+const ACCEPT_ALL: RevisionFilter = () => true;
+
+/** The package-wide revision id (`w:id`) of a revision element, if any. */
+export function revisionElementId(el: Element): string | null {
+  return el.getAttributeNS(W_NS, 'id') ?? el.getAttribute('w:id');
+}
 
 // ── DOM helpers (internal) ──────────────────────────────────────────
 
@@ -49,8 +70,12 @@ function collectByLocalName(container: Document | Element, localName: string): E
   return Array.from(container.getElementsByTagNameNS(W_NS, localName));
 }
 
-function removeAllByLocalName(container: Document | Element, localName: string): number {
-  const elements = collectByLocalName(container, localName);
+function removeAllByLocalName(
+  container: Document | Element,
+  localName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): number {
+  const elements = collectByLocalName(container, localName).filter(filter);
   let count = 0;
   for (const el of elements) {
     if (el.parentNode) {
@@ -61,8 +86,12 @@ function removeAllByLocalName(container: Document | Element, localName: string):
   return count;
 }
 
-function unwrapAllByLocalName(container: Document | Element, localName: string): number {
-  const elements = collectByLocalName(container, localName);
+function unwrapAllByLocalName(
+  container: Document | Element,
+  localName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): number {
+  const elements = collectByLocalName(container, localName).filter(filter);
   // Sort deepest-first to handle nested wrappers correctly
   elements.sort((a, b) => getDepth(b) - getDepth(a));
   let count = 0;
@@ -83,7 +112,11 @@ function unwrapAllByLocalName(container: Document | Element, localName: string):
  * Check if a paragraph has a paragraph-level revision marker.
  * Pattern: w:p > w:pPr > w:rPr > w:del (or w:ins)
  */
-function paragraphHasParaMarker(p: Element, markerLocalName: string): boolean {
+function paragraphHasParaMarker(
+  p: Element,
+  markerLocalName: string,
+  filter: RevisionFilter = ACCEPT_ALL,
+): boolean {
   for (let i = 0; i < p.childNodes.length; i++) {
     const child = p.childNodes[i]!;
     if (!isW(child, 'pPr')) continue;
@@ -92,7 +125,7 @@ function paragraphHasParaMarker(p: Element, markerLocalName: string): boolean {
       if (!isW(pPrChild, 'rPr')) continue;
       for (let k = 0; k < pPrChild.childNodes.length; k++) {
         const rPrChild = pPrChild.childNodes[k]!;
-        if (isW(rPrChild, markerLocalName)) return true;
+        if (isW(rPrChild, markerLocalName) && filter(rPrChild)) return true;
       }
     }
   }
@@ -105,59 +138,224 @@ const PR_CHANGE_LOCALS = [
   'tblPrChange', 'trPrChange', 'tcPrChange',
 ];
 
+// Marker-ish elements that may sit between two paragraphs at block level
+// without ending the search for a merge target: the full EG_RangeMarkupElements
+// schema group (wml.xsd), plus permStart/permEnd range markers and proofErr
+// proofing anchors.
+const RANGE_MARKUP_BLOCK_SIBLING_LOCALS = new Set([
+  'bookmarkStart', 'bookmarkEnd',
+  'commentRangeStart', 'commentRangeEnd',
+  'moveFromRangeStart', 'moveFromRangeEnd',
+  'moveToRangeStart', 'moveToRangeEnd',
+  'customXmlInsRangeStart', 'customXmlInsRangeEnd',
+  'customXmlDelRangeStart', 'customXmlDelRangeEnd',
+  'customXmlMoveFromRangeStart', 'customXmlMoveFromRangeEnd',
+  'customXmlMoveToRangeStart', 'customXmlMoveToRangeEnd',
+  'permStart', 'permEnd',
+  'proofErr',
+]);
+
+/**
+ * Find the next sibling paragraph a paragraph-mark revision can merge into,
+ * skipping block-level range/annotation markers. Returns null when the next
+ * block is not a paragraph (table, sdt, sectPr, end of parent).
+ */
+function findFollowingSiblingParagraph(p: Element): Element | null {
+  let sibling: Node | null = p.nextSibling;
+  while (sibling) {
+    if (sibling.nodeType === 1) {
+      if (isW(sibling, 'p')) return sibling;
+      const el = sibling as Element;
+      if (el.namespaceURI === W_NS && RANGE_MARKUP_BLOCK_SIBLING_LOCALS.has(el.localName ?? '')) {
+        sibling = sibling.nextSibling;
+        continue;
+      }
+      return null;
+    }
+    sibling = sibling.nextSibling;
+  }
+  return null;
+}
+
+/** True iff the paragraph still holds content beyond w:pPr and bare annotation markers. */
+function paragraphHasContent(p: Element): boolean {
+  for (let i = 0; i < p.childNodes.length; i++) {
+    const child = p.childNodes[i]!;
+    if (child.nodeType !== 1) continue;
+    if (isW(child, 'pPr')) continue;
+    const el = child as Element;
+    if (el.namespaceURI === W_NS && RANGE_MARKUP_BLOCK_SIBLING_LOCALS.has(el.localName ?? '')) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * True iff removing an emptied mark-revised paragraph keeps its parent
+ * structurally valid for Word: the parent must retain at least one block
+ * element, must not end on a w:tbl (a trailing table needs a following
+ * paragraph), and two tables must not become adjacent (Word merges
+ * back-to-back tables). w:sectPr is ignored — a trailing body sectPr is not a
+ * block element.
+ */
+function canSafelyRemoveEmptyParagraph(p: Element): boolean {
+  const blockSibling = (start: Node | null, dir: 'previousSibling' | 'nextSibling'): Element | null => {
+    let sibling = start;
+    while (sibling) {
+      if (sibling.nodeType === 1) {
+        const el = sibling as Element;
+        if (
+          (el.namespaceURI === W_NS && RANGE_MARKUP_BLOCK_SIBLING_LOCALS.has(el.localName ?? '')) ||
+          isW(el, 'sectPr')
+        ) {
+          sibling = sibling[dir];
+          continue;
+        }
+        return el;
+      }
+      sibling = sibling[dir];
+    }
+    return null;
+  };
+
+  const prev = blockSibling(p.previousSibling, 'previousSibling');
+  const next = blockSibling(p.nextSibling, 'nextSibling');
+  if (!prev && !next) return false;
+  if (prev && isW(prev, 'tbl') && !next) return false;
+  if (prev && next && isW(prev, 'tbl') && isW(next, 'tbl')) return false;
+  return true;
+}
+
+/**
+ * Resolve a paragraph whose paragraph MARK revision was applied (deleted mark
+ * accepted): the paragraph break disappears, so the paragraph's remaining
+ * content merges into the FOLLOWING paragraph. The surviving (following)
+ * paragraph keeps its own w:pPr — formatting follows the surviving paragraph
+ * mark — and the merged-away paragraph's w:pPr is dropped.
+ *
+ * The revision targets only the mark, never the paragraph's contents, so the
+ * contents must not be dropped wholesale. When no following sibling paragraph
+ * exists (last block, or the next block is a table), there is no break to
+ * remove into: content-bearing paragraphs are kept, and emptied ones are
+ * removed only where removal keeps the parent structurally valid
+ * (canSafelyRemoveEmptyParagraph).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see https://github.com/UseJunior/safe-docx/issues/431
+ */
+function resolveParagraphMarkRevision(p: Element): void {
+  const parent = p.parentNode;
+  if (!parent) return;
+
+  const target = findFollowingSiblingParagraph(p);
+  if (!target) {
+    if (!paragraphHasContent(p) && canSafelyRemoveEmptyParagraph(p)) {
+      parent.removeChild(p);
+    }
+    return;
+  }
+
+  // Insertion point: before the target's first non-pPr child (the merged
+  // content precedes the target's own content in document order).
+  let ref: Node | null = null;
+  for (let i = 0; i < target.childNodes.length; i++) {
+    const c = target.childNodes[i]!;
+    if (c.nodeType === 1 && isW(c as Element, 'pPr')) continue;
+    ref = c;
+    break;
+  }
+
+  const toMove: Node[] = [];
+  for (let i = 0; i < p.childNodes.length; i++) {
+    const c = p.childNodes[i]!;
+    if (c.nodeType === 1 && isW(c as Element, 'pPr')) continue;
+    toMove.push(c);
+  }
+  for (const c of toMove) {
+    target.insertBefore(c, ref);
+  }
+  parent.removeChild(p);
+}
+
 // ── Public API ──────────────────────────────────────────────────────
 
 /**
  * Accept all tracked changes in the document body or story root, producing a
- * clean document with no revision markup.
+ * document with supported revision records resolved.
  *
  * Mutates the Document in place (same convention as simplifyRedlines
  * and mergeRuns).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.21
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.25
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.26
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.30
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.34
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.moves
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.run-properties-paragraph-mark
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.section-properties
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-properties
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.revisions.table-cell-properties
  */
-export function acceptChanges(doc: Document): AcceptChangesResult {
+export function acceptChanges(
+  doc: Document,
+  opts?: { filter?: RevisionFilter },
+): AcceptChangesResult {
+  const filter = opts?.filter ?? ACCEPT_ALL;
+  const selective = filter !== ACCEPT_ALL;
   const root = doc.getElementsByTagNameNS(W_NS, 'body').item(0) ?? doc.documentElement;
   if (!root) {
     return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
   }
 
-  // Phase A — Identify paragraphs to remove
-  const paragraphsToRemove = new Set<Element>();
+  // Phase A — Identify paragraphs whose MARK is a tracked deletion
+  const markDeletedParagraphs: Element[] = [];
   const allParagraphs = collectByLocalName(root, 'p');
 
   for (const p of allParagraphs) {
-    // Remove a paragraph iff its paragraph MARK is a tracked deletion
-    // (w:p > w:pPr > w:rPr > w:del) — the paragraph break itself was deleted.
-    // We deliberately do NOT drop a paragraph based on content ("all runs inside
+    // A paragraph-mark deletion (w:p > w:pPr > w:rPr > w:del) means the
+    // paragraph BREAK was deleted — accepting it merges the paragraph into the
+    // following one (resolveParagraphMarkRevision); the contents are deleted
+    // only via their own run-level w:del wrappers.
+    // We deliberately do NOT touch a paragraph based on content ("all runs inside
     // w:del/w:moveFrom"): a run-level deletion under an untracked mark means text was
     // deleted from a pre-existing paragraph, which Word/LibreOffice keep (empty) on
     // accept. safe-docx's deleted paragraphs always carry the mark now, so the
     // mark-based rule suffices and is Word-faithful. (Mirrors acceptAllChanges and the
     // reject-side rule.)
-    if (paragraphHasParaMarker(p, 'del')) {
-      paragraphsToRemove.add(p);
+    if (paragraphHasParaMarker(p, 'del', filter)) {
+      markDeletedParagraphs.push(p);
     }
   }
 
   // Phase B — Remove deletions and move sources
-  const deletionsAccepted = removeAllByLocalName(root, 'del');
-  const moveFromRemoved = removeAllByLocalName(root, 'moveFrom');
-  removeAllByLocalName(root, 'moveFromRangeStart');
-  removeAllByLocalName(root, 'moveFromRangeEnd');
-  removeAllByLocalName(root, 'moveToRangeStart');
-  removeAllByLocalName(root, 'moveToRangeEnd');
+  const deletionsAccepted = removeAllByLocalName(root, 'del', filter);
+  const moveFromRemoved = removeAllByLocalName(root, 'moveFrom', filter);
+  removeAllByLocalName(root, 'moveFromRangeStart', filter);
+  removeAllByLocalName(root, 'moveFromRangeEnd', filter);
+  removeAllByLocalName(root, 'moveToRangeStart', filter);
+  removeAllByLocalName(root, 'moveToRangeEnd', filter);
 
   // Phase C — Unwrap insertions and move destinations (depth-sorted)
-  const insertionsAccepted = unwrapAllByLocalName(root, 'ins');
-  const moveToUnwrapped = unwrapAllByLocalName(root, 'moveTo');
+  const insertionsAccepted = unwrapAllByLocalName(root, 'ins', filter);
+  const moveToUnwrapped = unwrapAllByLocalName(root, 'moveTo', filter);
 
   // Phase D — Remove property change records
   let propertyChangesResolved = 0;
   for (const localName of PR_CHANGE_LOCALS) {
-    propertyChangesResolved += removeAllByLocalName(root, localName);
+    propertyChangesResolved += removeAllByLocalName(root, localName, filter);
   }
 
   // Phase E — Cleanup
-  // Strip paragraph-level revision markers from w:pPr/w:rPr
+  // Strip paragraph-level revision markers from w:pPr/w:rPr (only those the
+  // filter selects, so a selective accept leaves foreign paragraph-mark
+  // revisions byte-untouched).
   for (const p of collectByLocalName(root, 'p')) {
     for (let i = 0; i < p.childNodes.length; i++) {
       const child = p.childNodes[i]!;
@@ -169,7 +367,7 @@ export function acceptChanges(doc: Document): AcceptChangesResult {
         const toRemove: Element[] = [];
         for (let k = 0; k < pPrChild.childNodes.length; k++) {
           const rPrChild = pPrChild.childNodes[k]!;
-          if (isW(rPrChild, 'ins') || isW(rPrChild, 'del')) {
+          if ((isW(rPrChild, 'ins') || isW(rPrChild, 'del')) && filter(rPrChild)) {
             toRemove.push(rPrChild as Element);
           }
         }
@@ -180,23 +378,29 @@ export function acceptChanges(doc: Document): AcceptChangesResult {
     }
   }
 
-  // Remove paragraphs collected in Phase A (check parentNode still exists)
-  for (const p of paragraphsToRemove) {
-    if (p.parentNode) {
-      p.parentNode.removeChild(p);
-    }
+  // Resolve paragraphs collected in Phase A: merge each into its following
+  // paragraph (document order, so consecutive mark-deleted paragraphs cascade
+  // forward into the first surviving one).
+  for (const p of markDeletedParagraphs) {
+    resolveParagraphMarkRevision(p);
   }
 
-  // Strip w:rsidDel attributes on remaining elements
-  const allElements = root.getElementsByTagNameNS(W_NS, '*');
-  for (let i = 0; i < allElements.length; i++) {
-    const el = allElements[i]!;
-    if (el.hasAttributeNS(W_NS, 'rsidDel')) {
-      el.removeAttributeNS(W_NS, 'rsidDel');
-    }
-    // Also check prefixed form
-    if (el.hasAttribute('w:rsidDel')) {
-      el.removeAttribute('w:rsidDel');
+  // Strip w:rsidDel attributes on remaining elements. Skipped in selective
+  // mode: rsidDel is a document-wide save-id, and a selective accept must not
+  // mutate elements outside the targeted revision set (the mixed-author
+  // byte-identical invariant, #125). The accepted revisions are removed/unwrapped
+  // above, taking their own rsidDel with them.
+  if (!selective) {
+    const allElements = root.getElementsByTagNameNS(W_NS, '*');
+    for (let i = 0; i < allElements.length; i++) {
+      const el = allElements[i]!;
+      if (el.hasAttributeNS(W_NS, 'rsidDel')) {
+        el.removeAttributeNS(W_NS, 'rsidDel');
+      }
+      // Also check prefixed form
+      if (el.hasAttribute('w:rsidDel')) {
+        el.removeAttribute('w:rsidDel');
+      }
     }
   }
 

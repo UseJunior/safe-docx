@@ -7,7 +7,7 @@ import { readFile } from './read_file.js';
 const test = testAllure.epic('Document Reading');
 
 const W_DOC_OPEN =
-  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">';
+  '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">';
 
 function makeDocumentXml(bodyXml: string): string {
   return (

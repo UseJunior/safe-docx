@@ -117,6 +117,19 @@ export type DocumentViewNode = {
 
   // Metadata for JSON mode / parity tooling.
   clean_text: string;
+  /**
+   * Raw visible paragraph text (field codes stripped) BEFORE CR/LF removal,
+   * trimming, and manual-list-label stripping — i.e. exactly `getParagraphText(p)`.
+   * This is the coordinate system that `replaceParagraphTextRange` /
+   * `DocxDocument.replaceTextAtRange` operate in. Selector patterns are authored
+   * against `clean_text`; {@link buildCleanToRawOffsetMap} uses `raw_text` +
+   * `clean_text` to translate a matched clean-text span back to raw offsets so
+   * mutation lands on the right characters.
+   *
+   * Optional only so legacy test fixtures that hand-build nodes stay valid; the
+   * real builder (`buildNodesForDocumentView`) always populates it.
+   */
+  raw_text?: string;
   tagged_text: string;
   list_metadata: ListMetadata;
   style_fingerprint: FormattingFingerprint;
@@ -126,6 +139,18 @@ export type DocumentViewNode = {
   paragraph_indents_pt: { left: number; first_line: number };
   numbering: { num_id: string | null; ilvl: number | null; is_auto_numbered: boolean };
   heading?: HeadingValue;
+  /**
+   * Footnote references this paragraph visibly anchors, in document order, each
+   * with the display number assigned by the view's numbering authority (the
+   * sequential scan of `document.xml` references, reserved separator IDs
+   * skipped). References inside field code (between `w:fldChar` begin and
+   * separate) are hidden text and excluded. This is the single derivation of
+   * "which footnotes does this paragraph reference" — consumers render from it
+   * instead of re-walking the paragraph DOM. Omitted when empty, matching the
+   * `heading` convention.
+   * @see #393
+   */
+  footnote_refs?: Array<{ id: number; display: number }>;
   header_formatting: HeaderFormatting | null;
   body_run_formatting: RunFormatting | null;
   table_context?: TableContext;

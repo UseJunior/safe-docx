@@ -11,7 +11,11 @@
  *    `text:insertion` region; inserted content stays inline. Forward (a following kept paragraph
  *    exists): start at the inserted run's first paragraph, end at the following paragraph's start.
  *    End-of-document: start at the preceding paragraph's end, end at the inserted run's last
- *    paragraph's end.
+ *    paragraph's end — UNLESS the preceding paragraph lives inside a table cell, where the
+ *    bracket stays within the inserted run (start at its first paragraph's start). A span from a
+ *    table-cell paragraph into a body paragraph encodes a paragraph-break merge LibreOffice
+ *    cannot perform across a table boundary, so rejecting it strands an empty body paragraph
+ *    (issue #380).
  *  - Deletion (paragraph-break merge): the deleted paragraphs live out-of-line in a `text:deletion`
  *    region; an inline `text:change` point marker sits in the nearest SURVIVING paragraph — at the
  *    start of the following one (forward) or the end of the preceding one (backward, for a run
@@ -19,7 +23,18 @@
  *    itself reaches end-of-document (a dissimilar whole-paragraph replacement of the LAST
  *    paragraph) also anchors BACKWARD: the insertion's bracket is end-anchored there, so a forward
  *    marker would sit inside the insertion span and rejecting the insertion would remove the
- *    deletion's restore point (issue #367). Consecutive deletions coalesce into ONE region with
+ *    deletion's restore point (issue #367). When that composition's backward anchor would be a
+ *    table-cell paragraph, the insertion bracket stays within the inserted run instead (see
+ *    above), so the deletion anchors at the inserted run's first paragraph's START — before the
+ *    co-located `text:change-start`, hence still outside the insertion span — and its region
+ *    stores NO merge-artifact paragraph: rejecting the content-only insertion leaves one
+ *    residual empty paragraph behind, and that residual paragraph is the merge slot the
+ *    artifact normally provides (issue #380). A PURE end-of-document deletion (no paired
+ *    insertion) whose backward anchor is a table-cell paragraph likewise cannot anchor in the
+ *    cell — LibreOffice would restore the deleted paragraph INSIDE the cell (issue #540); instead
+ *    a fresh empty body `text:p` is appended after the table to host the marker and serve as the
+ *    (no-artifact) merge slot, so rejecting restores the paragraph after the table. Consecutive
+ *    deletions coalesce into ONE region with
  *    all deleted paragraphs plus one empty merge-artifact paragraph (artifact last for forward,
  *    first for backward). `text:change` is inline and is never a direct block child of
  *    `office:text`.
@@ -221,10 +236,17 @@ export function emitTrackedChanges(params: EmitParams): EmitResult {
     ...deleteRuns.map((dr) => ({
       id: dr.id,
       build: () => {
-        const forward = !anchorsBackward(dr, insertRuns, m);
+        const mode = deletionAnchorMode(dr, insertRuns, revisedBlocks, m);
         const deletedPs = dr.originalIndices.map((i) => revisedDoc.importNode(originalBlocks[i]!, true) as Element);
-        const artifact = makeEmptyParagraph(revisedDoc, originalBlocks[dr.originalIndices[0]!]!);
-        const stored = forward ? [...deletedPs, artifact] : [artifact, ...deletedPs];
+        // 'insertion-start' and 'residual-body' store no merge artifact: the residual empty
+        // body paragraph — left by rejecting a co-located content-only insertion (issue #380)
+        // or synthesized after the trailing table (issue #540) — IS the merge slot.
+        const stored =
+          mode === 'insertion-start' || mode === 'residual-body'
+            ? deletedPs
+            : mode === 'forward'
+              ? [...deletedPs, makeEmptyParagraph(revisedDoc, originalBlocks[dr.originalIndices[0]!]!)]
+              : [makeEmptyParagraph(revisedDoc, originalBlocks[dr.originalIndices[0]!]!), ...deletedPs];
         return makeDeletionRegion(revisedDoc, dr.id, author, date, stored);
       },
     })),
@@ -255,10 +277,23 @@ export function emitTrackedChanges(params: EmitParams): EmitResult {
   // --- Place whole-paragraph deletion point markers.
   for (const run of deleteRuns) {
     const marker = makeMarker(revisedDoc, 'change', run.id);
-    if (!anchorsBackward(run, insertRuns, m)) {
-      prepend(revisedBlocks[run.revisedCursor]!, marker);
-    } else {
+    const mode = deletionAnchorMode(run, insertRuns, revisedBlocks, m);
+    if (mode === 'backward') {
       appendOutsideInsertionStart(revisedBlocks[Math.min(run.revisedCursor, m) - 1]!, marker);
+    } else if (mode === 'residual-body') {
+      // Pure end-of-document deletion after a trailing table (issue #540): synthesize an empty
+      // body paragraph after the table to host the marker, so Reject All restores the deleted
+      // paragraph AFTER the table rather than inside the cell. The paragraph inherits the deleted
+      // block's style and is the region's merge slot.
+      const residual = makeEmptyParagraph(revisedDoc, originalBlocks[run.originalIndices[0]!]!);
+      prepend(residual, marker);
+      officeText.appendChild(residual);
+    } else {
+      // 'forward' and 'insertion-start' both prepend at the cursor block. For 'insertion-start'
+      // the co-located insertion's `change-start` was prepended first (insertion markers are
+      // placed before deletion markers), so this prepend lands the marker BEFORE it — outside
+      // the insertion span, satisfying the issue #367 invariant.
+      prepend(revisedBlocks[run.revisedCursor]!, marker);
     }
   }
   return result;
@@ -324,18 +359,51 @@ function placeModifyMarkers(doc: Document, block: Element, placements: MarkerPla
 }
 
 /**
- * Whether a deletion run anchors its point marker BACKWARD (end of the preceding surviving
- * paragraph). True when the run reaches end-of-document, and ALSO when its forward anchor would
- * be the first paragraph of an insert run that itself reaches end-of-document: that insertion's
- * bracket is end-anchored (`text:change-start` at the end of the preceding kept paragraph), so a
- * forward marker would sit INSIDE the insertion span and rejecting the insertion would remove
- * the deletion's restore point (issue #367). With no preceding paragraph (`revisedCursor` 0)
- * there is nothing to anchor backward to, so the forward placement stands.
+ * How a deletion run anchors its point marker:
+ *  - `forward`: start of the following surviving paragraph (the default).
+ *  - `backward`: end of the preceding surviving paragraph. Chosen when the run reaches
+ *    end-of-document, and ALSO when its forward anchor would be the first paragraph of an insert
+ *    run that itself reaches end-of-document: that insertion's bracket is end-anchored
+ *    (`text:change-start` at the end of the preceding kept paragraph), so a forward marker would
+ *    sit INSIDE the insertion span and rejecting the insertion would remove the deletion's
+ *    restore point (issue #367). With no preceding paragraph (`revisedCursor` 0) there is
+ *    nothing to anchor backward to, so the forward placement stands.
+ *  - `insertion-start`: start of the end-of-document insert run's first paragraph, before its
+ *    `text:change-start`. Chosen instead of `backward` when the backward anchor would be a
+ *    table-cell paragraph: there the insertion bracket stays within the inserted run (see
+ *    `placeInsertionMarkers`), so the paragraph start is outside the insertion span, and the
+ *    deletion's region stores no merge-artifact paragraph (issue #380).
+ *  - `residual-body`: a fresh empty body `text:p` appended after the trailing table hosts the
+ *    marker at its start. Chosen instead of `backward` for a PURE end-of-document deletion (no
+ *    paired insertion) whose backward anchor would be a table-cell paragraph: anchoring in the
+ *    cell makes LibreOffice Reject All restore the deleted body paragraph INSIDE the cell
+ *    (issue #540). LibreOffice cannot delete a document's final paragraph mark nor merge a body
+ *    paragraph into a table cell, so the faithful shape keeps a residual empty body paragraph
+ *    after the table — the merge slot — and the deletion's region stores no merge-artifact
+ *    paragraph (mirrors the `insertion-start` residual, whose slot is left by rejecting a
+ *    content-only insertion). Reject re-inserts the stored paragraphs there, after the table.
  */
-function anchorsBackward(run: DeleteRun, insertRuns: InsertRun[], m: number): boolean {
-  if (run.revisedCursor >= m) return true;
-  if (run.revisedCursor === 0) return false;
-  return insertRuns.some((ins) => ins.a === run.revisedCursor && ins.b === m - 1);
+type DeletionAnchorMode = 'forward' | 'backward' | 'insertion-start' | 'residual-body';
+
+function deletionAnchorMode(
+  run: DeleteRun,
+  insertRuns: InsertRun[],
+  revisedBlocks: Element[],
+  m: number,
+): DeletionAnchorMode {
+  if (run.revisedCursor >= m) return isInsideTableCell(revisedBlocks[m - 1]!) ? 'residual-body' : 'backward';
+  if (run.revisedCursor === 0) return 'forward';
+  if (!insertRuns.some((ins) => ins.a === run.revisedCursor && ins.b === m - 1)) return 'forward';
+  return isInsideTableCell(revisedBlocks[run.revisedCursor - 1]!) ? 'insertion-start' : 'backward';
+}
+
+/** Whether a block lives inside a `table:table-cell` (its paragraph break cannot merge outward). */
+function isInsideTableCell(block: Element): boolean {
+  for (let node: Node | null = block.parentNode; node && node.nodeType === 1; node = node.parentNode) {
+    const el = node as Element;
+    if (el.namespaceURI === ODF_NS.TABLE && el.localName === 'table-cell') return true;
+  }
+  return false;
 }
 
 /**
@@ -361,9 +429,16 @@ function placeInsertionMarkers(doc: Document, revisedBlocks: Element[], run: Ins
     // Forward bracket: start of inserted run … start of following paragraph.
     prepend(revisedBlocks[run.a]!, start);
     prepend(revisedBlocks[run.b + 1]!, end);
-  } else if (hasPreceding) {
+  } else if (hasPreceding && !isInsideTableCell(revisedBlocks[run.a - 1]!)) {
     // End-of-document: end of preceding paragraph … end of inserted run.
     revisedBlocks[run.a - 1]!.appendChild(start);
+    revisedBlocks[run.b]!.appendChild(end);
+  } else if (hasPreceding) {
+    // End-of-document after a table: the preceding paragraph is a table-cell paragraph, and a
+    // span from a cell into the body encodes a paragraph-break merge LibreOffice cannot perform
+    // across the table boundary — rejecting it strands an empty body paragraph (issue #380).
+    // Keep the bracket within the inserted run instead.
+    prepend(revisedBlocks[run.a]!, start);
     revisedBlocks[run.b]!.appendChild(end);
   } else {
     // Entire revised document is inserted: bracket from the first paragraph's start to the last's end.
