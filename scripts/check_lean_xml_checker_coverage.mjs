@@ -57,7 +57,10 @@ if (!numericReferences.includes('hexadecimal') || !lean.includes('malformed hexa
   errors.push('ledger and Lean checker must cover hexadecimal XML numeric character references');
 }
 for (const required of ['isLegalXmlChar', 'duplicate XML attribute name',
-  'duplicate XML attribute expanded name', '.afterValue =>']) {
+  'duplicate XML attribute expanded name', '.afterValue =>', 'parseQName',
+  'isValidNcName', 'validateNamespaceDeclaration', 'parseXmlDeclaration',
+  'non-whitespace content outside the XML root',
+  'processing instructions are outside the accepted XML subset']) {
   if (!lean.includes(required)) {
     errors.push(`fail-closed XML attribute parser coverage requires ${required}`);
   }

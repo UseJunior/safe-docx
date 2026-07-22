@@ -86,7 +86,9 @@ partial def decodeXmlTextAux : List Char → Except String (List Char)
     let _ :: after := suffix | throw "unterminated XML reference"
     let decoded ← decodeXmlReference reference
     return decoded :: (← decodeXmlTextAux after)
-  | c :: rest => return c :: (← decodeXmlTextAux rest)
+  | c :: rest => do
+    if !isLegalXmlChar c.toNat then throw "literal is not a legal XML character"
+    return c :: (← decodeXmlTextAux rest)
 
 def decodeXmlText (s : String) : Except String String := do
   return String.ofList (← decodeXmlTextAux s.toList)
@@ -124,11 +126,36 @@ def tagPayloadAux : List Char → Option Char → List Char → Except String (S
 def tagPayload (segment : String) : Except String (String × String) :=
   tagPayloadAux segment.toList none []
 
-def splitQName (name : String) : String × String :=
+def isXmlNameStartChar (c : Char) : Bool :=
+  let value := c.toNat
+  ('A' ≤ c && c ≤ 'Z') || ('a' ≤ c && c ≤ 'z') || c == '_' ||
+    (0xC0 ≤ value && value ≤ 0xD6) || (0xD8 ≤ value && value ≤ 0xF6) ||
+    (0xF8 ≤ value && value ≤ 0x2FF) || (0x370 ≤ value && value ≤ 0x37D) ||
+    (0x37F ≤ value && value ≤ 0x1FFF) || (0x200C ≤ value && value ≤ 0x200D) ||
+    (0x2070 ≤ value && value ≤ 0x218F) || (0x2C00 ≤ value && value ≤ 0x2FEF) ||
+    (0x3001 ≤ value && value ≤ 0xD7FF) || (0xF900 ≤ value && value ≤ 0xFDCF) ||
+    (0xFDF0 ≤ value && value ≤ 0xFFFD) || (0x10000 ≤ value && value ≤ 0xEFFFF)
+
+def isXmlNameChar (c : Char) : Bool :=
+  let value := c.toNat
+  isXmlNameStartChar c || c == '-' || c == '.' || ('0' ≤ c && c ≤ '9') ||
+    value == 0xB7 || (0x0300 ≤ value && value ≤ 0x036F) ||
+    (0x203F ≤ value && value ≤ 0x2040)
+
+def isValidNcName (name : String) : Bool :=
+  match name.toList with
+  | [] => false
+  | first :: rest => isXmlNameStartChar first && rest.all isXmlNameChar
+
+def parseQName (name : String) : Except String (String × String) := do
   match name.splitOn ":" with
-  | [localName] => ("", localName)
-  | [pre, localName] => (pre, localName)
-  | _ => ("", "")
+  | [localName] =>
+    if isValidNcName localName then return ("", localName)
+    throw s!"invalid qualified name: {name}"
+  | [pre, localName] =>
+    if isValidNcName pre && isValidNcName localName then return (pre, localName)
+    throw s!"invalid qualified name: {name}"
+  | _ => throw s!"invalid qualified name: {name}"
 
 abbrev NamespaceBindings := List (String × String)
 
@@ -141,6 +168,12 @@ def namespaceLookupD (bindings : NamespaceBindings) (key fallback : String) : St
   (namespaceLookup bindings key).getD fallback
 
 abbrev XmlAttributes := List (String × String)
+
+def xmlNamespace : String :=
+  "http://www.w3.org/XML/1998/namespace"
+
+def xmlnsNamespace : String :=
+  "http://www.w3.org/2000/xmlns/"
 
 inductive AttributeScanMode
   | between
@@ -212,39 +245,49 @@ def parseTagAttributes (tag : String) : Except String XmlAttributes := do
 def decodeXmlAttributes (attributes : XmlAttributes) : Except String XmlAttributes :=
   attributes.mapM fun (key, value) => return (key, ← decodeXmlText value)
 
-def namespaceDeclarations (attributes : XmlAttributes) : List (String × String) :=
-  attributes.filterMap fun (key, value) =>
-    if key == "xmlns" then some ("", value)
-    else if key.startsWith "xmlns:" then
-      some ((key.drop "xmlns:".length).toString, value)
-    else none
+def validateNamespaceDeclaration (pre uri : String) : Except String Unit := do
+  if pre == "xmlns" then throw "the xmlns prefix cannot be rebound"
+  if pre == "xml" && uri != xmlNamespace then throw "the xml prefix has a fixed namespace"
+  if pre != "xml" && uri == xmlNamespace then throw "the XML namespace requires the xml prefix"
+  if uri == xmlnsNamespace then throw "the xmlns namespace cannot be bound"
+  if !pre.isEmpty && uri.isEmpty then throw "a namespace prefix cannot bind an empty URI"
+
+def namespaceDeclarations (attributes : XmlAttributes) : Except String (List (String × String)) :=
+  attributes.foldlM (fun declarations (key, value) => do
+    if key == "xmlns" then
+      validateNamespaceDeclaration "" value
+      return ("", value) :: declarations
+    let (pre, localName) ← parseQName key
+    if pre == "xmlns" then
+      validateNamespaceDeclaration localName value
+      return (localName, value) :: declarations
+    return declarations) []
 
 def extendNamespaces (base : NamespaceBindings) (decls : List (String × String)) : NamespaceBindings :=
   decls.foldl (fun acc binding => binding :: acc.filter (fun old => old.1 != binding.1)) base
 
 def resolveQName (bindings : NamespaceBindings) (name : String) : Except String (String × String) := do
-  let (pre, localName) := splitQName name
-  if localName.isEmpty then throw s!"invalid qualified name: {name}"
+  let (pre, localName) ← parseQName name
   if pre.isEmpty then return (namespaceLookupD bindings "" "", localName)
   match namespaceLookup bindings pre with
   | some uri => return (uri, localName)
   | none => throw s!"unbound namespace prefix: {pre}"
 
 def canonicalizeWmlAttributes (attributes : XmlAttributes)
-    (bindings : NamespaceBindings) : XmlAttributes :=
-  attributes.filterMap fun (key, value) =>
-    if key == "xmlns" || key.startsWith "xmlns:" then none
+    (bindings : NamespaceBindings) : Except String XmlAttributes :=
+  attributes.foldlM (fun canonical (key, value) => do
+    if key == "xmlns" || key.startsWith "xmlns:" then return canonical
     else
-    let (pre, attrLocal) := splitQName key
+    let (pre, attrLocal) ← parseQName key
     if !pre.isEmpty && namespaceLookupD bindings pre "" == wmlNamespace then
-      some ("w:" ++ attrLocal, value)
-    else some (key, value)
+      return canonical ++ [("w:" ++ attrLocal, value)]
+    return canonical ++ [(key, value)]) []
 
 def validateAttributeNamespaces (attributes : XmlAttributes)
     (bindings : NamespaceBindings) : Except String Unit := do
   for (key, _) in attributes do
     if key == "xmlns" || key.startsWith "xmlns:" then continue
-    let (pre, _) := splitQName key
+    let (pre, _) ← parseQName key
     if !pre.isEmpty && (namespaceLookup bindings pre).isNone then
       throw s!"unbound namespace prefix on attribute: {pre}"
 
@@ -327,51 +370,114 @@ structure XmlParseState where
   stack : List OpenElement := []
   tokens : List XmlTok := []
   rootSeen : Bool := false
+  declarationAllowed : Bool := false
 
 def currentNamespaces (state : XmlParseState) : NamespaceBindings :=
   match state.stack with
   | top :: _ => top.namespaces
-  | [] => [("xml", "http://www.w3.org/XML/1998/namespace")]
+  | [] => [("xml", xmlNamespace)]
+
+def dropLastString (value : String) : String :=
+  String.ofList value.toList.dropLast
+
+def isValidEncodingName (value : String) : Bool :=
+  match value.toList with
+  | [] => false
+  | first :: rest =>
+    (('A' ≤ first && first ≤ 'Z') || ('a' ≤ first && first ≤ 'z')) &&
+      rest.all fun c =>
+        ('A' ≤ c && c ≤ 'Z') || ('a' ≤ c && c ≤ 'z') ||
+        ('0' ≤ c && c ≤ '9') || c == '.' || c == '_' || c == '-'
+
+def parseXmlDeclaration (trimmed : String) : Except String Unit := do
+  if !trimmed.endsWith "?" then throw "malformed XML declaration"
+  let body := dropLastString (trimmed.drop 1).toString
+  let attributes ← parseTagAttributes body
+  if attributes.any (fun attr => attr.2.contains '&') then
+    throw "XML declaration values cannot contain references"
+  match attributes with
+  | [("version", "1.0")] => pure ()
+  | [("version", "1.0"), ("encoding", encoding)] =>
+    if isValidEncodingName encoding then pure () else throw "invalid XML declaration encoding"
+  | [("version", "1.0"), ("standalone", standalone)] =>
+    if standalone == "yes" || standalone == "no" then pure ()
+    else throw "invalid XML standalone value"
+  | [("version", "1.0"), ("encoding", encoding), ("standalone", standalone)] =>
+    if !isValidEncodingName encoding then throw "invalid XML declaration encoding"
+    if standalone != "yes" && standalone != "no" then throw "invalid XML standalone value"
+    pure ()
+  | _ => throw "unsupported or malformed XML declaration"
+
+def finishXmlSegment (state : XmlParseState) (payload : String) : Except String XmlParseState := do
+  if state.stack.isEmpty && !payload.toList.all isXmlSpace then
+    throw "non-whitespace content outside the XML root"
+  return state
 
 def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : String) :
     Except String XmlParseState := do
   let (tag, payload) ← tagPayload segment
   let trimmed := tag.trimAscii.toString
   if trimmed.isEmpty then throw "empty XML tag"
-  if trimmed.startsWith "?" || trimmed.startsWith "!" then return state
+  if trimmed.startsWith "?" then
+    if List.getD (tagWords trimmed) 0 "" != "?xml" then
+      throw "processing instructions are outside the accepted XML subset"
+    if !state.declarationAllowed || state.rootSeen || !state.stack.isEmpty then
+      throw "XML declaration must be the first construct"
+    parseXmlDeclaration trimmed
+    return ← finishXmlSegment { state with declarationAllowed := false } payload
+  if trimmed.startsWith "!" then
+    throw "comments, CDATA, and markup declarations are outside the accepted XML subset"
   if trimmed.startsWith "/" then
-    let rawName := ((List.getD (tagWords trimmed) 0 "").drop 1).toString
+    let rawName := (trimmed.drop 1).toString
+    if rawName.toList.any isXmlSpace || rawName.endsWith "/" then
+      throw "malformed closing tag"
     let some top := state.stack.head? | throw "unexpected closing tag"
     let (uri, localName) ← resolveQName top.namespaces rawName
     if uri != top.uri || localName != top.localName then
       throw s!"mismatched closing tag: {rawName}"
     let emitted ← if uri == wmlNamespace then tagToken true localName [] payload else pure []
-    return { state with stack := state.stack.drop 1, tokens := state.tokens ++ emitted }
+    let next := { state with
+      stack := state.stack.drop 1
+      tokens := state.tokens ++ emitted
+      declarationAllowed := false }
+    return ← finishXmlSegment next payload
   let selfClosing := trimmed.endsWith "/"
   if state.rootSeen && state.stack.isEmpty then throw "multiple XML root elements"
-  let rawName := List.getD (tagWords trimmed) 0 ""
+  let firstWord := List.getD (tagWords trimmed) 0 ""
+  let rawName := if selfClosing && firstWord.endsWith "/" then
+    dropLastString firstWord else firstWord
   let rawAttributes ← parseTagAttributes trimmed
   let attributes ← decodeXmlAttributes rawAttributes
-  let bindings := extendNamespaces (currentNamespaces state) (namespaceDeclarations attributes)
+  let declarations ← namespaceDeclarations attributes
+  let bindings := extendNamespaces (currentNamespaces state) declarations
   validateAttributeNamespaces attributes bindings
   let (uri, localName) ← resolveQName bindings rawName
   if !state.rootSeen then
     if uri != wmlNamespace || localName != expectedRoot then
       throw s!"unexpected root namespace={uri} local={localName}; expected namespace={wmlNamespace} local={expectedRoot}"
-  let canonicalAttributes := canonicalizeWmlAttributes attributes bindings
+  let canonicalAttributes ← canonicalizeWmlAttributes attributes bindings
   if canonicalAttributes.any (fun attr =>
       (canonicalAttributes.filter fun other => other.1 == attr.1).length > 1) then
     throw "duplicate XML attribute expanded name"
   let emitted ← if uri == wmlNamespace then
     tagToken false localName canonicalAttributes payload else pure []
-  let next := { state with tokens := state.tokens ++ emitted, rootSeen := true }
-  if selfClosing then return next
+  let next := { state with
+    tokens := state.tokens ++ emitted
+    rootSeen := true
+    declarationAllowed := false }
+  if selfClosing then return ← finishXmlSegment next payload
   return { next with stack := { uri, localName, namespaces := bindings } :: next.stack }
 
 def parseXmlTokensForRoot (xml expectedRoot : String) : Except String (List XmlTok) := do
-  let segments := (xml.splitOn "<").drop 1
+  if !xml.toList.all (fun c => isLegalXmlChar c.toNat) then
+    throw "XML contains a disallowed literal character"
+  let pieces := xml.splitOn "<"
+  let leadingText := List.getD pieces 0 ""
+  if !leadingText.toList.all isXmlSpace then throw "non-whitespace content before the XML root"
+  let segments := pieces.drop 1
   if segments.isEmpty then throw "XML has no root element"
-  let final ← segments.foldlM (parseXmlSegment expectedRoot) {}
+  let initial : XmlParseState := { declarationAllowed := leadingText.isEmpty }
+  let final ← segments.foldlM (parseXmlSegment expectedRoot) initial
   if !final.rootSeen then throw "XML has no root element"
   if !final.stack.isEmpty then throw "XML has unclosed elements"
   return final.tokens

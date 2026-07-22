@@ -329,6 +329,69 @@ describeWithLean('Lean fixed-story package protocol', () => {
     expect((await run(malformed, malformed, malformed)).status).toBe('not_run');
   });
 
+  test('rejects illegal literal characters, invalid QNames, and content outside the root', async () => {
+    const base = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const xml = await readPart(base, 'word/document.xml');
+    const malformedInputs = {
+      controlInText: xml.replace('Body', 'B\u0001ody'),
+      controlInAttribute: xml.replace('xmlns:w=', '_bad="\u000B" xmlns:w='),
+      noncharacterFffe: xml.replace('Body', 'B\uFFFEody'),
+      noncharacterFfff: xml.replace('Body', 'B\uFFFFody'),
+      multipleElementColons: xml.replace('<w:p>', '<w:x:p>'),
+      emptyElementPrefix: xml.replace('<w:p>', '<:p>'),
+      emptyElementLocalName: xml.replace('<w:p>', '<w:>'),
+      invalidElementStart: xml.replace('<w:p>', '<w:1p>'),
+      multipleAttributeColons: xml.replace('xmlns:w=', 'xmlns:w:x='),
+      emptyAttributePrefix: xml.replace('xmlns:w=', ':bad="x" xmlns:w='),
+      emptyAttributeLocalName: xml.replace('xmlns:w=', 'w:="x" xmlns:w='),
+      invalidAttributeStart: xml.replace('xmlns:w=', '1bad="x" xmlns:w='),
+      reboundXmlPrefix: xml.replace('xmlns:w=', 'xmlns:xml="urn:not-xml" xmlns:w='),
+      reboundXmlnsPrefix: xml.replace('xmlns:w=', 'xmlns:xmlns="urn:not-xmlns" xmlns:w='),
+      aliasedXmlNamespace: xml.replace(
+        'xmlns:w=',
+        `xmlns:x="http://www.w3.org/XML/1998/namespace" xmlns:w=`,
+      ),
+      invalidClosingQName: xml.replace('</w:p>', '</w:x:p>'),
+      contentBeforeRoot: `garbage${xml}`,
+      contentAfterRoot: `${xml}garbage`,
+      contentAfterDeclaration: xml.replace('?>', '?>garbage'),
+      secondRoot: `${xml}<w:document xmlns:w="${W_NS}"/>`,
+      leadingWhitespaceBeforeDeclaration: ` \n${xml}`,
+      unsupportedComment: xml.replace('?>', '?><!-- comment -->'),
+      unsupportedProcessingInstruction: xml.replace('?>', '?><?work value?>'),
+      unsupportedDoctype: xml.replace('?>', '?><!DOCTYPE w:document>'),
+      unsupportedCdata: xml.replace('<w:body>', '<w:body><![CDATA[text]]>'),
+      malformedDeclaration: xml.replace('version="1.0"', 'version="1.1"'),
+    } as const;
+
+    for (const [mutation, malformedXml] of Object.entries(malformedInputs)) {
+      const malformedDocx = await replacePart(base, 'word/document.xml', malformedXml);
+      expect((await run(malformedDocx, malformedDocx, malformedDocx)).status, mutation).toBe('not_run');
+    }
+  });
+
+  test('accepts legal XML character, QName, declaration, and root-whitespace boundaries', async () => {
+    const legalText = `legal\t\n\r \u00B7\uD7FF\uE000\uFFFD\u{10000}`;
+    const base = await buildDocxFromBodyXml(
+      `<w:p><w:_extension _meta="${legalText}"/><w:r><w:t>${legalText}</w:t></w:r></w:p>`,
+    );
+    const xml = await readPart(base, 'word/document.xml');
+    const legalInputs = {
+      emittedDeclaration: xml,
+      minimalDeclaration: xml.replace(/^<\?xml[^?]*\?>/, "<?xml version='1.0'?>"),
+      standaloneDeclaration: xml.replace(
+        /^<\?xml[^?]*\?>/,
+        '<?xml version="1.0" standalone="no"?>',
+      ),
+      noDeclarationWithWhitespace: ` \t\n${xml.replace(/^<\?xml[^?]*\?>/, '')}\r\n`,
+    } as const;
+
+    for (const [control, legalXml] of Object.entries(legalInputs)) {
+      const legalDocx = await replacePart(base, 'word/document.xml', legalXml);
+      expect((await run(legalDocx, legalDocx, legalDocx)).status, control).toBe('passed');
+    }
+  });
+
   test('rejects balanced malformed end-before-begin and repeated-separate fields per story', async () => {
     const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
     const endThenBegin =

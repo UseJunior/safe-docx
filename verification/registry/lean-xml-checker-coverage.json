@@ -75,7 +75,15 @@
       "requires XML whitespace between attributes",
       "rejects duplicate exact and namespace-expanded attribute names",
       "rejects malformed attribute transitions and character references",
-      "rejects numeric character references outside the XML 1.0 character range"
+      "rejects literal and referenced characters outside the XML 1.0 character range",
+      "requires syntactically valid element and attribute QNames before namespace expansion",
+      "rejects empty prefixed namespace bindings and illegal xml or xmlns namespace rebinding"
+    ],
+    "acceptedXmlSubset": [
+      "an optional leading XML 1.0 declaration with optional encoding and standalone declarations",
+      "exactly one namespace-qualified root with matched element boundaries",
+      "XML whitespace only before and after the root",
+      "comments, processing instructions, DTDs, and CDATA are rejected rather than ignored"
     ]
   },
   "checkedProperties": [
@@ -138,7 +146,7 @@
     "field instruction parsing, evaluation, and cached-result correctness, including PAGE and NUMPAGES semantics",
     "OOXML extension and compatibility markup",
     "advanced revision-record semantics other than the checked move-range pairing subset, including property snapshots, numbering/table/style revisions, custom XML revisions, conflict records, and annotation interactions",
-    "general-purpose XML canonicalization, DTDs, and CDATA beyond the checked WordprocessingML token surface"
+    "general-purpose XML canonicalization beyond the checked WordprocessingML token surface; comments, processing instructions, DTDs, and CDATA are rejected by the accepted XML subset"
   ],
   "futureObligationQueue": []
 }

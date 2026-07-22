@@ -201,6 +201,7 @@
       "caveats": [
         "MoveRangesWellFormed is witnessed by an inductive trace whose starts require fresh Int ids and fresh non-empty directional names, whose ends pop the exact same-direction id, and whose final state has an empty stack and matching source/destination name membership.",
         "Both Strict and Transitional schemas type move range ids as ST_DecimalNumber restricted from xsd:integer. Numeric aliases canonicalize to Int and malformed ids reject. Required ST_String names can be empty at schema level; the checker deliberately imposes a stronger non-empty identity rule.",
+        "The parser accepts one namespace-qualified XML root, optional leading XML 1.0 declaration, and whitespace outside the root. It validates XML 1.0 literal/reference characters and QNames, and rejects comments, other processing instructions, DTDs, and CDATA rather than treating them as checked content.",
         "This is a per-document checker guarantee over the fixed main, footnote, and endnote stories, not a universal proof of every safe-docx emission path.",
         "The checker pairs source and destination range identities by w:name but does not associate individual w:moveFrom or w:moveTo revision ids with a range id.",
         "The public certificate remains limited to inplace reconstruction output."
