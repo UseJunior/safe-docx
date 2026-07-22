@@ -22,6 +22,9 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | — |
 | `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts |
 | `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | — |
+| `ECMA-PART1-17-5-2-31` | w:sdt inline-level structured document tag | 5 | 1 | 17.5.2.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts |
+| `ECMA-PART1-17-5-2-36` | w:sdtContent inline-level structured document tag content | 5 | 1 | 17.5.2.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentRun` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts |
+| `ECMA-PART1-17-5-2-38` | w:sdtPr structured document tag properties | 5 | 1 | 17.5.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts |
 | `ECMA-PART1-17-6-17` | w:sectPr document-final section properties | 5 | 1 | 17.6.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | — |
 | `ECMA-PART1-17-6-13` | w:pgSz page size emission | 5 | 1 | 17.6.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz` | — |
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | — |
@@ -248,6 +251,43 @@ lives in `packages/docx-core/src/atomizer.ts`
 (`nearestHyperlinkAncestor`) and
 `packages/docx-core/src/baselines/atomizer/documentReconstructor.ts`
 (hyperlink wrapper re-emission).
+
+### ECMA-PART1-17-5-2-31 — w:sdt inline-level structured document tag
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.31
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+
+An inline `w:sdt` is a run-level structured document tag whose ordered children
+are its properties, optional end properties, and content. The issue #582 pilot
+preserves an unchanged inline SDT as one opaque semantic boundary during rebuild;
+it does not author or edit controls and makes no claim about block, row, or cell
+SDTs.
+
+### ECMA-PART1-17-5-2-36 — w:sdtContent inline-level structured document tag content
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.36
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentRun`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+
+The pilot retains the inline control's run-level `w:sdtContent` subtree and its
+controlled text when that subtree is unchanged between comparison inputs.
+
+### ECMA-PART1-17-5-2-38 — w:sdtPr structured document tag properties
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.38
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+
+The pilot retains known and ignorable-extension children under `w:sdtPr` in
+their source order. Retention of unknown extension payload is a metamorphic
+SafeDocX invariant, not an ECMA-376 requirement.
 
 ### ECMA-PART1-17-6-17 — w:sectPr document-final section properties
 

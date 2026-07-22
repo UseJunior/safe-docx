@@ -3,6 +3,24 @@
   "registryVersion": 1,
   "mappings": [
     {
+      "scenarioId": "unrelatedTextEditPreservesOpaqueInlineContentControl",
+      "capabilityId": "word.content-controls.inline",
+      "axis": "preserve",
+      "oracleClasses": ["metamorphic-invariant"]
+    },
+    {
+      "scenarioId": "unrelatedTextEditPreservesInlineContentControlStructure",
+      "capabilityId": "word.content-controls.inline",
+      "axis": "preserve",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "unrelatedTextEditPreservesInlineContentControlStructure",
+      "capabilityId": "word.text.find-replace",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
       "scenarioId": "addCommentBracketsRangeWithMatchingIds",
       "capabilityId": "word.comments.anchors",
       "axis": "edit",
@@ -35,14 +53,14 @@
     {
       "scenarioId": "appendParagraphPreservesExistingContent",
       "capabilityId": "word.paragraphs.structure",
-      "axis": "generate",
-      "oracleClasses": ["normative-prose"]
-    },
-    {
-      "scenarioId": "appendParagraphPreservesExistingContent",
-      "capabilityId": "word.paragraphs.structure",
       "axis": "preserve",
       "oracleClasses": ["metamorphic-invariant"]
+    },
+    {
+      "scenarioId": "appendParagraphAddsTrailingParagraph",
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose"]
     },
     {
       "scenarioId": "composeFormattedRunCarriesBoldItalicSize",
@@ -102,7 +120,7 @@
       "scenarioId": "composeCompatibilityMode15WritesCompatSetting",
       "capabilityId": "word.settings.compatibility-mode",
       "axis": "generate",
-      "oracleClasses": ["normative-prose", "normative-microsoft-extension", "metamorphic-invariant"]
+      "oracleClasses": ["normative-prose", "normative-microsoft-extension"]
     },
     {
       "scenarioId": "directFormattingDoesNotBakeIntoStyleDefinition",
@@ -138,10 +156,10 @@
       "scenarioId": "replaceTextInsideTableCellPreservesStructure",
       "capabilityId": "word.tables.cells",
       "axis": "preserve",
-      "oracleClasses": ["metamorphic-invariant", "normative-prose"]
+      "oracleClasses": ["metamorphic-invariant"]
     },
     {
-      "scenarioId": "replaceTextInsideTableCellPreservesStructure",
+      "scenarioId": "replaceTextInsideTableCellUpdatesTargetText",
       "capabilityId": "word.text.find-replace",
       "axis": "edit",
       "oracleClasses": ["normative-prose"]

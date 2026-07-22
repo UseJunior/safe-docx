@@ -22,6 +22,10 @@ import {
   findChildByTagName,
 } from '@usejunior/docx-core';
 import { OOXML } from '@usejunior/docx-core';
+import {
+  captureInlineSdtPassthrough,
+  sameOpaqueOwner,
+} from './baselines/atomizer/opaquePassthrough.js';
 
 // =============================================================================
 // Shared synthetic document for creating virtual elements
@@ -527,6 +531,8 @@ export interface AtomizeTreeOptions {
    * Default: false.
    */
   atomizeParagraphLevelMarkers?: boolean;
+  /** Capture unchanged inline SDTs as bounded opaque rebuild nodes. */
+  captureInlineSdtPassthrough?: boolean;
 }
 
 /**
@@ -822,6 +828,7 @@ export function atomizeTree(
     mergePunctuationAcrossRuns: options.mergePunctuationAcrossRuns ?? true,
     splitTextIntoWords: options.splitTextIntoWords ?? true,
     atomizeParagraphLevelMarkers: options.atomizeParagraphLevelMarkers ?? false,
+    captureInlineSdtPassthrough: options.captureInlineSdtPassthrough ?? false,
   };
 
   const state: AtomizationState = {
@@ -830,6 +837,7 @@ export function atomizeTree(
     lastContentHash: '',
   };
   const rawAtoms = atomizeTreeInternal(node, ancestors, part, state, normalizedOptions);
+  if (normalizedOptions.captureInlineSdtPassthrough) captureInlineSdtPassthrough(node, rawAtoms);
 
   // Step 1: Collapse field sequences into single atoms based on visible text
   // This allows matching between hardcoded text and field references
@@ -1079,6 +1087,7 @@ export function collapseFieldSequences(
           collapsedFieldAtoms: fieldAtoms,
           // Inherit rPr from first atom in the field sequence
           rPr: firstAtom.rPr,
+          opaquePassthrough: firstAtom.opaquePassthrough,
         },
         (self) => hashElement(self.contentElement),
         elementIdentityString(virtualElement),
@@ -1169,6 +1178,7 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
         splitFromAtom: atom,
         // Share rPr reference (read-only after atomization)
         rPr: atom.rPr,
+        opaquePassthrough: atom.opaquePassthrough,
       },
       (self) => hashElement(self.contentElement),
       elementIdentityString(wordElement),
@@ -1361,6 +1371,10 @@ function canMergeAtoms(
   // Never merge collapsed fields - they should stay as separate atoms for finer-grained diff
   if (a.collapsedFieldAtoms || b.collapsedFieldAtoms) return false;
 
+  // Opaque boundaries own ordering. Never absorb plain text into a boundary,
+  // cross between two controls, or lose the descriptor retained by the target.
+  if (!sameOpaqueOwner(a, b)) return false;
+
   // Must be in the same paragraph
   const aPara = a.ancestorElements.find((e) => e.tagName === 'w:p');
   const bPara = b.ancestorElements.find((e) => e.tagName === 'w:p');
@@ -1442,6 +1456,8 @@ function canMergePunctuation(
 
   // Never merge collapsed fields
   if (a.collapsedFieldAtoms || b.collapsedFieldAtoms) return false;
+
+  if (!sameOpaqueOwner(a, b)) return false;
 
   // Must be in the same paragraph
   const aPara = a.ancestorElements.find((e) => e.tagName === 'w:p');

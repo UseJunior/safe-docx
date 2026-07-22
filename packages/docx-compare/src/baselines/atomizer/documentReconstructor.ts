@@ -34,6 +34,7 @@ import {
 } from './inPlaceModifier-wrappers.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
+import { renderOpaqueAtomSequence } from './opaquePassthrough.js';
 
 const SYNTHETIC_DOC = parseXml('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -783,13 +784,27 @@ function buildParagraphXml(
     parts.push(serializeToXml(group.pPr));
   }
 
-  // Add run groups with track changes, restoring w:hyperlink wrappers when
-  // the paragraph contains hyperlink atoms (issue #368). Hyperlink-free
-  // paragraphs keep the legacy per-group emission byte-identical.
+  // Add run groups with track changes, restoring validated opaque boundaries
+  // and hyperlink wrappers around the ordinary slices between them.
   const explicitMoveMarkers = collectExplicitMoveMarkers(group);
-  if (paragraphHasHyperlinkAtoms(group)) {
+  const hasOpaqueAtoms = group.runGroups.some((runGroup) =>
+    runGroup.atoms.some((atom) => atom.opaquePassthrough !== undefined),
+  );
+  if (hasOpaqueAtoms) {
+    parts.push(renderOpaqueAtomSequence(
+      group.runGroups,
+      (ordinaryGroups) => paragraphHasHyperlinkAtoms({ ...group, runGroups: ordinaryGroups })
+        ? buildRunGroupsWithHyperlinks(
+            ordinaryGroups, author, dateStr, revState, explicitMoveMarkers, hyperlinkRelResolver,
+          )
+        : ordinaryGroups
+            .map((runGroup) => buildRunGroupXml(runGroup, author, dateStr, revState, explicitMoveMarkers))
+            .join(''),
+      serializeToXml,
+    ));
+  } else if (paragraphHasHyperlinkAtoms(group)) {
     parts.push(buildRunGroupsWithHyperlinks(
-      group.runGroups, author, dateStr, revState, explicitMoveMarkers, hyperlinkRelResolver
+      group.runGroups, author, dateStr, revState, explicitMoveMarkers, hyperlinkRelResolver,
     ));
   } else {
     for (const runGroup of group.runGroups) {

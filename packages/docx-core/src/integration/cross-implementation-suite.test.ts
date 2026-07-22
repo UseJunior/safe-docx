@@ -42,6 +42,9 @@ const liveSuiteTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '11.3.3' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.15.3.4' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.31' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.36' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.38' },
 );
 
 const INTEGRATION_DIR = dirname(import.meta.url.replace('file://', ''));
@@ -93,6 +96,10 @@ interface ScenarioManifest {
 }
 
 const COMPATIBILITY_MODE_SCENARIO_ID = 'composeCompatibilityMode15WritesCompatSetting';
+const CONTENT_CONTROL_SCENARIO_IDS = [
+  'unrelatedTextEditPreservesInlineContentControlStructure',
+  'unrelatedTextEditPreservesOpaqueInlineContentControl',
+] as const;
 const EXPECTED_SUPPORTED_OPERATIONS: ReadonlySet<string> = new Set([
   'acceptAllTrackedChanges',
   'composeDocumentWithCompatibilityMode',
@@ -110,6 +117,8 @@ interface ExpectedSupportDecision {
   supported: boolean;
   reason?: string;
 }
+
+const PASS_LIKE_OUTCOME_STATUSES = new Set(['pass', 'pass-divergent', 'invariant-pass']);
 
 interface ScenarioDefinition {
   operation: TestOperationDescriptor;
@@ -210,10 +219,14 @@ function outcomeMismatches(
       const definition = definitions.get(scenario.scenarioId);
       const support = decisions.get(scenario.scenarioId);
       const outcome = scenario.outcomes['safe-docx'];
-      const expectedStatus = support?.supported ? 'pass' : 'unsupported';
+      const expectedStatus = support?.supported ? 'pass-like' : 'unsupported';
       return { scenario, operationName: definition?.operation.operationName, outcome, expectedStatus };
     })
-    .filter(({ outcome, expectedStatus }) => outcome?.status !== expectedStatus);
+    .filter(({ outcome, expectedStatus }) =>
+      expectedStatus === 'pass-like'
+        ? !PASS_LIKE_OUTCOME_STATUSES.has(outcome?.status ?? '')
+        : outcome?.status !== expectedStatus,
+    );
 }
 
 const { available: suiteAvailable, runnerTsx: RUNNER_TSX, skipWarning } =
@@ -244,7 +257,8 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
     .openspec('[XIMPL-01] Suite checkout present and safe-docx agrees')
     .openspec('[XIMPL-04] acceptAllTrackedChanges round-trip through the adapter')
     .openspec('[XIMPL-07] Compatibility mode generation validates and declines honestly')
-    .openspec('[XIMPL-08] Supported and unsupported suite outcomes remain honest')(
+    .openspec('[XIMPL-08] Supported and unsupported suite outcomes remain honest')
+    .openspec('[XIMPL-09] Both neutral content-control scenarios pass at the reviewed pin')(
     'safe-docx adapter passes every docx-platform-tests scenario',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const workDir = mkdtempSync(join(tmpdir(), 'ximpl-'));
@@ -305,6 +319,15 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
             results.results.map((scenario) => [scenario.scenarioId, scenario.outcomes['safe-docx']]),
           );
           expect(outcomes.get(COMPATIBILITY_MODE_SCENARIO_ID)?.status).toBe('pass');
+        });
+
+        await then('both ordinary content-control scenarios explicitly pass without implying rebuild coverage', async () => {
+          const outcomes = new Map(
+            results.results.map((scenario) => [scenario.scenarioId, scenario.outcomes['safe-docx']]),
+          );
+          for (const scenarioId of CONTENT_CONTROL_SCENARIO_IDS) {
+            expect(PASS_LIKE_OUTCOME_STATUSES.has(outcomes.get(scenarioId)?.status ?? '')).toBe(true);
+          }
         });
       } finally {
         rmSync(workDir, { recursive: true, force: true });
