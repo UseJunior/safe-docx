@@ -44,15 +44,20 @@ function bareSpec(): DocumentSpec {
   return spec;
 }
 
+async function generatedCommentXml(): Promise<{ documentXml: string; commentsXml: string }> {
+  const buffer = await generateDocx(notedSpec());
+  return {
+    documentXml: (await readZipText(buffer, 'word/document.xml'))!,
+    commentsXml: (await readZipText(buffer, 'word/comments.xml'))!,
+  };
+}
+
+function directElementChildren(element: Element): Element[] {
+  return Array.from(element.childNodes).filter((node): node is Element => node.nodeType === 1);
+}
+
 describe('Traceability: separable drafting-note layer', () => {
-  test
-    .openspec('[SDX-GEN-080] a drafting note becomes an anchored comment')
-    .conformance(
-      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.6' },
-      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' },
-      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' },
-      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' },
-    )(
+  test.openspec('[SDX-GEN-080] a drafting note becomes an anchored comment')(
     'Scenario: a drafting note becomes an anchored comment',
     async ({ given, when, then, attachPrettyXml }: AllureBddContext) => {
       let buffer!: Buffer;
@@ -92,6 +97,110 @@ describe('Traceability: separable drafting-note layer', () => {
         expect(starts.map((el) => el.getAttribute('w:id'))).toEqual(['1', '2']);
         expect(ends.map((el) => el.getAttribute('w:id'))).toEqual(['1', '2']);
         expect(refs.map((el) => el.getAttribute('w:id'))).toEqual(['1', '2']);
+      });
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.6' })(
+    'w:comments is the root of the generated comment collection',
+    async ({ given, when, then }: AllureBddContext) => {
+      let commentsXml!: string;
+      let root!: Element;
+      await given('a generated document containing drafting notes', async () => {
+        ({ commentsXml } = await generatedCommentXml());
+      });
+      await when('word/comments.xml is parsed', () => {
+        root = parseXml(commentsXml).documentElement!;
+      });
+      await then('the part root is the WordprocessingML comments collection', () => {
+        expect(root.namespaceURI).toBe('http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+        expect(root.localName).toBe('comments');
+      });
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2' })(
+    'each generated comment ID matches its range and reference IDs',
+    async ({ given, when, then }: AllureBddContext) => {
+      let documentXml!: string;
+      let commentsXml!: string;
+      await given('a generated document containing two drafting notes', async () => {
+        ({ documentXml, commentsXml } = await generatedCommentXml());
+      });
+      await when('comment definitions and body anchors are read', () => {});
+      await then('definition, start, end, and reference ID sequences are identical', () => {
+        const comments = parseXml(commentsXml);
+        const document = parseXml(documentXml);
+        const ids = (name: string, dom: Document) =>
+          Array.from(dom.getElementsByTagName(`w:${name}`)).map((element) => element.getAttribute('w:id'));
+        expect(ids('comment', comments)).toEqual(['1', '2']);
+        expect(ids('commentRangeStart', document)).toEqual(ids('comment', comments));
+        expect(ids('commentRangeEnd', document)).toEqual(ids('comment', comments));
+        expect(ids('commentReference', document)).toEqual(ids('comment', comments));
+      });
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.4' })(
+    'commentRangeStart is a direct paragraph child before the anchored content',
+    async ({ given, when, then }: AllureBddContext) => {
+      let documentXml!: string;
+      await given('a generated paragraph carrying a drafting note', async () => {
+        ({ documentXml } = await generatedCommentXml());
+      });
+      await when('the first range start and its paragraph children are inspected', () => {});
+      await then('the start is a direct child immediately before the first content run', () => {
+        const start = parseXml(documentXml).getElementsByTagName('w:commentRangeStart').item(0)!;
+        const paragraph = start.parentNode as Element;
+        const children = directElementChildren(paragraph);
+        const startIndex = children.indexOf(start);
+        expect(paragraph.localName).toBe('p');
+        expect(startIndex).toBeGreaterThanOrEqual(0);
+        expect(children[startIndex + 1]?.localName).toBe('r');
+        expect(children[startIndex + 1]?.textContent).toContain('Confidentiality survives three years.');
+      });
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.3' })(
+    'commentRangeEnd is a direct paragraph child after the anchored content',
+    async ({ given, when, then }: AllureBddContext) => {
+      let documentXml!: string;
+      await given('a generated paragraph carrying a drafting note', async () => {
+        ({ documentXml } = await generatedCommentXml());
+      });
+      await when('the first range end and its paragraph children are inspected', () => {});
+      await then('the end directly follows the final anchored content run', () => {
+        const end = parseXml(documentXml).getElementsByTagName('w:commentRangeEnd').item(0)!;
+        const paragraph = end.parentNode as Element;
+        const children = directElementChildren(paragraph);
+        const endIndex = children.indexOf(end);
+        expect(paragraph.localName).toBe('p');
+        expect(children[endIndex - 1]?.localName).toBe('r');
+        expect(children[endIndex - 1]?.textContent).toContain('Confidentiality survives three years.');
+      });
+    },
+  );
+
+  test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })(
+    'commentReference is inside the trailing paragraph run',
+    async ({ given, when, then }: AllureBddContext) => {
+      let documentXml!: string;
+      await given('a generated paragraph carrying a drafting note', async () => {
+        ({ documentXml } = await generatedCommentXml());
+      });
+      await when('the first comment reference and its ancestors are inspected', () => {});
+      await then('the reference is in a run that trails the range end', () => {
+        const document = parseXml(documentXml);
+        const reference = document.getElementsByTagName('w:commentReference').item(0)!;
+        const run = reference.parentNode as Element;
+        const paragraph = run.parentNode as Element;
+        const children = directElementChildren(paragraph);
+        expect(run.localName).toBe('r');
+        expect(paragraph.localName).toBe('p');
+        expect(directElementChildren(run)).toEqual([reference]);
+        expect(children.at(-1)).toBe(run);
+        expect(children.at(-2)?.localName).toBe('commentRangeEnd');
       });
     },
   );

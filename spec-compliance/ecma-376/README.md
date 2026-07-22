@@ -1,9 +1,10 @@
 # ECMA-376 vendored normative schemas
 
-This directory holds unmodified copies of the XML schemas distributed with
-ECMA-376, 5th Edition (Office Open XML File Formats). The PDF narrative parts
-of the standard are **not** vendored here — they remain at the canonical
-[Ecma International download page](https://ecma-international.org/publications-and-standards/standards/ecma-376/).
+This directory holds the unchanged official ECMA-376 ZIP publications under
+`source-artifacts/` and unmodified extracted schema copies under `schemas/`.
+The ZIPs, including their PDF narrative parts, are the immutable upstream
+source. The extracted schemas remain the convenient declaration-resolution
+surface used by the existing conformance registry.
 
 The conformance registry at `../registry/ecma-376.md` binds safe-docx claims
 to specific declarations in these files via `schemaRef:` fields.
@@ -43,15 +44,19 @@ safe-docx-authored entry schema used by the emitted-document schema gate
 W3C `xml.xsd` that the ECMA-376 schemas import without a schemaLocation.
 Nothing under `schemas/` is modified to make validation work.
 
-## Why XSDs and not PDFs?
+## Source artifacts and derived schemas
 
-The XSDs encode the **machine-readable** structural rules of ECMA-376 —
+The official ZIPs are recorded in
+`../manifests/ecma-376-artifacts.json` with SHA-256 identities. Generated
+vocabulary is read directly from the nested XSD archive in the Part 4 ZIP and
+records that input checksum. The coverage check also verifies that every
+extracted Strict, Transitional, and OPC XSD matches its nested official source
+byte for byte. The extracted XSDs encode the **machine-readable** structural rules of ECMA-376 —
 element names, attribute types, restrictions, enumerations, and value
 patterns. A `@conformance` claim that names `wml.xsd#element:delInstrText`
-resolves without leaving the repo. The PDFs (the human-readable narrative)
-total ~48 MB and are deferred to a coordinated follow-up change
-(`vendor-ecma-376-pdfs`); section-level URLs in the registry's `url:` field
-link to the canonical Ecma download page in the meantime.
+resolves without leaving the repo. The PDFs remain inside the unchanged ZIPs;
+section-level locators in the spec-reference manifest identify their source
+artifact and section.
 
 ## License
 

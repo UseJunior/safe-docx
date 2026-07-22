@@ -220,7 +220,9 @@ export function createWmlElement(
   const el = doc.createElementNS(OOXML.W_NS, `w:${localTag}`);
   if (attrs) {
     for (const [k, v] of Object.entries(attrs)) {
-      el.setAttribute(k, v);
+      if (k.startsWith('w:')) el.setAttributeNS(OOXML.W_NS, k, v);
+      else if (k.startsWith('xml:')) el.setAttributeNS('http://www.w3.org/XML/1998/namespace', k, v);
+      else el.setAttribute(k, v);
     }
   }
   return el;
@@ -232,7 +234,7 @@ export function createWmlElement(
  */
 export function createWmlTextElement(doc: Document, text: string): Element {
   const el = doc.createElementNS(OOXML.W_NS, 'w:t');
-  el.setAttribute('xml:space', 'preserve');
+  el.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
   el.appendChild(doc.createTextNode(text));
   return el;
 }

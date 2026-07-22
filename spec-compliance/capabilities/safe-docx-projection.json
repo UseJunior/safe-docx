@@ -1,0 +1,1294 @@
+{
+  "schemaVersion": 1,
+  "profileId": "current-neutral-surface",
+  "claims": [
+    {
+      "capabilityId": "word.comments.anchors",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/comments.xml"
+        ],
+        "stories": [
+          "main",
+          "comments"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.comments.anchors",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/comments.xml"
+        ],
+        "stories": [
+          "main",
+          "comments"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.comments.anchors",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/comments.xml"
+        ],
+        "stories": [
+          "main",
+          "comments"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.comments.content",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/comments.xml"
+        ],
+        "stories": [
+          "comments"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.comments.content",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/comments.xml"
+        ],
+        "stories": [
+          "comments"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.comments.content",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/comments.xml"
+        ],
+        "stories": [
+          "comments"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.comments.removal",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/comments.xml"
+        ],
+        "stories": [
+          "main",
+          "comments"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.comments.removal",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/comments.xml"
+        ],
+        "stories": [
+          "main",
+          "comments"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.footers.default",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/footer*.xml"
+        ],
+        "stories": [
+          "main",
+          "footers"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.footers.default",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/footer*.xml"
+        ],
+        "stories": [
+          "main",
+          "footers"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.footers.default",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/footer*.xml"
+        ],
+        "stories": [
+          "main",
+          "footers"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.headers.default",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/header*.xml"
+        ],
+        "stories": [
+          "main",
+          "headers"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.headers.default",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/header*.xml"
+        ],
+        "stories": [
+          "main",
+          "headers"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.headers.default",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/header*.xml"
+        ],
+        "stories": [
+          "main",
+          "headers"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.hyperlinks.external",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.hyperlinks.external",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.hyperlinks.external",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.numbering.paragraph",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/numbering.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.numbering.paragraph",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/numbering.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.numbering.paragraph",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/numbering.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "acceptReject",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "evidenceClass": "normative-behavioral-scenario",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f"
+        }
+      ],
+      "rationale": "Every mapped scenario in the pinned neutral result row is pass-like for SafeDocX.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.content",
+      "axis": "crossPlatform",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "evidenceClass": "cross-implementation-differential",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f"
+        }
+      ],
+      "rationale": "Every mapped scenario in the pinned neutral result row is pass-like for SafeDocX and at least one other adapter.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.moves",
+      "axis": "acceptReject",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.moves",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.paragraph-mark",
+      "axis": "acceptReject",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "evidenceClass": "normative-behavioral-scenario",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f"
+        }
+      ],
+      "rationale": "Every mapped scenario in the pinned neutral result row is pass-like for SafeDocX.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.paragraph-mark",
+      "axis": "crossPlatform",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "evidenceClass": "cross-implementation-differential",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f"
+        }
+      ],
+      "rationale": "Every mapped scenario in the pinned neutral result row is pass-like for SafeDocX and at least one other adapter.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.paragraph-properties",
+      "axis": "acceptReject",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.paragraph-properties",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.run-properties",
+      "axis": "acceptReject",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "evidenceClass": "normative-behavioral-scenario",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f"
+        }
+      ],
+      "rationale": "Every mapped scenario in the pinned neutral result row is pass-like for SafeDocX.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.run-properties",
+      "axis": "crossPlatform",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "evidenceClass": "cross-implementation-differential",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f"
+        }
+      ],
+      "rationale": "Every mapped scenario in the pinned neutral result row is pass-like for SafeDocX and at least one other adapter.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.table-rows",
+      "axis": "acceptReject",
+      "status": "gap",
+      "evidence": [],
+      "rationale": "Inserted and deleted table-row resolution has no passing pinned evidence and remains an explicit conformance gap.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.revisions.table-rows",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.runs.formatting",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.runs.formatting",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.runs.formatting",
+      "axis": "acceptReject",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.runs.formatting",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/styles.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.styles.paragraph",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/styles.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.styles.paragraph",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/styles.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.styles.paragraph",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/styles.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.cells",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.cells",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.cells",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.horizontal-merge",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.horizontal-merge",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.horizontal-merge",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.rows",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.rows",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.rows",
+      "axis": "acceptReject",
+      "status": "gap",
+      "evidence": [],
+      "rationale": "Inserted and deleted table-row resolution has no passing pinned evidence and remains an explicit conformance gap.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.rows",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.structure",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.structure",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.structure",
+      "axis": "acceptReject",
+      "status": "gap",
+      "evidence": [],
+      "rationale": "The profile pair is not established by current table-revision evidence.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.tables.structure",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral result set has no measured cross-platform row for this pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.text.find-replace",
+      "axis": "edit",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "evidenceClass": "normative-behavioral-scenario",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f"
+        }
+      ],
+      "rationale": "Every mapped scenario in the pinned neutral result row is pass-like for SafeDocX.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    },
+    {
+      "capabilityId": "word.text.find-replace",
+      "axis": "crossPlatform",
+      "status": "supported",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "evidenceClass": "cross-implementation-differential",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f"
+        }
+      ],
+      "rationale": "Every mapped scenario in the pinned neutral result row is pass-like for SafeDocX and at least one other adapter.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      }
+    }
+  ]
+}

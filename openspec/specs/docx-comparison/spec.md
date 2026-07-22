@@ -539,13 +539,17 @@ The system SHALL provide friendly names for common run properties:
 - **THEN** the local name (`emboss`) is used as the property name
 
 ### Requirement: Inplace Reconstruction Cross-Run Recovery
-The atomizer comparison pipeline SHALL evaluate cross-run inplace reconstruction passes before using rebuild fallback when `reconstructionMode` is `inplace`.
+The atomizer comparison pipeline SHALL evaluate cross-run inplace reconstruction passes before using rebuild fallback when `reconstructionMode` is `inplace`, and SHALL report which inplace pass produced the output.
 
-#### Scenario: Cross-run pass rescues inplace output
-- **GIVEN** a run-fragmented document pair where no-cross-run inplace passes fail round-trip safety
-- **WHEN** cross-run inplace passes are evaluated
-- **THEN** the pipeline SHALL keep `reconstructionModeUsed` as `inplace` if any cross-run pass satisfies all safety checks
-- **AND** tracked output SHALL avoid rebuild fallback-driven structure loss
+The pipeline evaluates inplace passes in a fixed order — `inplace_word_split`, `inplace_run_level`, `inplace_word_split_cross_run`, `inplace_run_level_cross_run` — selecting the first whose reconstruction satisfies every round-trip safety check. The cross-run passes are a safety net for run-fragmented documents that the no-cross-run passes cannot reconstruct safely.
+
+As of this requirement's last revision that safety net is not reachable by any known input: `inplace_run_level` deletes and re-inserts whole runs, which preserves normalized text by construction, so it satisfies the round-trip text checks on every case that `inplace_word_split` fails — the cross-run passes are therefore never the selected rescuer. A prior "Cross-run pass rescues inplace output" scenario asserted that unreachable branch and could not be honestly mapped to a test; it is reclassified as a documented residual rather than a routinely-exercised path. The general recovery guarantee is preserved by the "Rebuild fallback only after all inplace passes fail" scenario, which requires the cross-run passes to be evaluated before any rebuild fallback. Reachability of the cross-run passes (candidate dead code superseded by `inplace_word_split` / premerge improvements) is tracked as an engine follow-up. See #469.
+
+#### Scenario: Inplace reconstruction reports the pass that produced the output
+- **GIVEN** a run-fragmented document pair compared with `reconstructionMode: inplace` whose first inplace pass fails a round-trip safety check
+- **WHEN** a later inplace pass satisfies every safety check and is selected
+- **THEN** the result SHALL report `inplaceSuccessDiagnostics.passUsed` naming the selected pass
+- **AND** `inplaceSuccessDiagnostics.precedingFailedAttempts` SHALL list every earlier pass that failed a safety check, in evaluation order
 
 #### Scenario: Rebuild fallback only after all inplace passes fail
 - **GIVEN** all inplace passes (no-cross-run and cross-run) fail at least one safety check

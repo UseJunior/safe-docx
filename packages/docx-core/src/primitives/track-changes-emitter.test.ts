@@ -276,6 +276,38 @@ describe('track-changes-emitter', () => {
     });
   });
 
+  test('buildRPrChangeElement excludes alternate-prefix WML changes and preserves extension markup', () => {
+    const rPr = parseFragment(
+      '<w:rPr xmlns:q="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:x="urn:example:extension"><w:b/><q:rPrChange q:id="99"><q:rPr/></q:rPrChange><x:rPrChange x:keep="yes"/></w:rPr>',
+    );
+
+    const result = buildRPrChangeElement(
+      rPr,
+      createRevisionContext({
+        author: 'Comparison',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      }),
+    );
+    const snapshot = result.getElementsByTagNameNS(
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+      'rPr',
+    ).item(0) as Element;
+
+    expect(
+      snapshot.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+        'rPrChange',
+      ).length,
+    ).toBe(0);
+    expect(
+      snapshot
+        .getElementsByTagNameNS('urn:example:extension', 'rPrChange')
+        .item(0)
+        ?.getAttribute('x:keep'),
+    ).toBe('yes');
+  });
+
   test('convertSerializedDeletionContent converts entity-laden text without corrupting it', async ({ given, when, then }: AllureBddContext) => {
     let content: string;
     let converted: string;

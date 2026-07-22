@@ -7,9 +7,10 @@ import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
 import { OOXML } from '../primitives/namespaces.js';
 import { generateDocx } from './compile.js';
+import { buildRunPropsElement } from './emit/properties.js';
 import { GenerationSpecError } from './errors.js';
 import { checkGeneratedPackage } from './structural-checks.js';
-import type { DocumentSpec } from './types.js';
+import type { DocumentSpec, HighlightColor } from './types.js';
 
 const TEST_FEATURE = 'add-docx-generation';
 const test = testAllure.epic('Document Generation').withLabels({ feature: TEST_FEATURE });
@@ -108,6 +109,26 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
     },
   );
 
+  test('StyleSpec paragraph properties use the same runtime validation as authored paragraphs', async () => {
+    const cases: Array<[string, (paragraph: NonNullable<NonNullable<DocumentSpec['styles']>[number]['paragraph']>) => void]> = [
+      ['alignment', (paragraph) => { paragraph.alignment = 'distributed' as never; }],
+      ['spacing/beforeTwips', (paragraph) => { paragraph.spacing = { beforeTwips: -1 }; }],
+      ['tabs/0/posTwips', (paragraph) => { paragraph.tabs = [{ posTwips: -1, align: 'left' }]; }],
+      ['indent/firstLineTwips', (paragraph) => { paragraph.indent = { firstLineTwips: -1 }; }],
+      ['indent', (paragraph) => { paragraph.indent = { firstLineTwips: 120, hangingTwips: 120 }; }],
+    ];
+
+    for (const [suffix, mutate] of cases) {
+      const spec = styledSpec();
+      const paragraph = spec.styles![0]!.paragraph!;
+      mutate(paragraph);
+      await expect(generateDocx(spec)).rejects.toMatchObject({
+        code: 'invalid_value',
+        path: `/styles/0/paragraph/${suffix}`,
+      });
+    }
+  });
+
   test
     .openspec('[SDX-GEN-040] declared styles are emitted into the style table')
     .conformance(
@@ -146,9 +167,9 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
   );
 
   test
-    .openspec('[SDX-GEN-041] run properties are emitted in schema order')
+    .openspec('[SDX-GEN-041] run properties are emitted at most once')
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.2.28' })(
-    'Scenario: run properties are emitted in schema order',
+    'Scenario: run properties are emitted at most once',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let buffer!: Buffer;
       await given('a run specifying bold, italic, underline, color, font, and size', async () => {
@@ -170,10 +191,18 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
         expect(rPr).toBeTruthy();
       });
 
-      await then('the rPr children appear in the WML schema sequence', async () => {
+      await then('each direct rPr property occurs at most once with exact authored values', async () => {
         const names = wChildNames(rPr);
         await attachPrettyJson('rpr-child-order', names);
         expect(names).toEqual(['rFonts', 'b', 'bCs', 'i', 'iCs', 'color', 'sz', 'szCs', 'u']);
+        expect(new Set(names).size).toBe(names.length);
+        expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:ascii')).toBe('Georgia');
+        expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:hAnsi')).toBe('Georgia');
+        expect(getDirectChildrenByName(rPr, 'rFonts')[0]!.getAttribute('w:cs')).toBe('Georgia');
+        expect(getDirectChildrenByName(rPr, 'color')[0]!.getAttribute('w:val')).toBe('1F4E79');
+        expect(getDirectChildrenByName(rPr, 'sz')[0]!.getAttribute('w:val')).toBe('24');
+        expect(getDirectChildrenByName(rPr, 'szCs')[0]!.getAttribute('w:val')).toBe('24');
+        expect(getDirectChildrenByName(rPr, 'u')[0]!.getAttribute('w:val')).toBe('single');
       });
 
       await then('the formatting survives a round-trip through the run-formatting reader', async () => {
@@ -193,6 +222,39 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
           fontName: 'Georgia',
           fontSizePt: 12,
         });
+      });
+
+      await then('the direct run properties survive a package load/save round-trip unchanged', async () => {
+        const loaded = await DocxDocument.load(buffer);
+        const saved = await loaded.toBuffer();
+        const savedDocument = await loadPart(saved.buffer, 'word/document.xml');
+        const savedRPr = savedDocument.getElementsByTagNameNS(OOXML.W_NS, 'rPr').item(0)!;
+        expect(wChildNames(savedRPr)).toEqual(wChildNames(rPr));
+        expect(savedRPr.toString()).toBe(rPr.toString());
+      });
+
+      await then('malformed run property values are rejected before XML emission', async () => {
+        const malformed: DocumentSpec = {
+          sections: [{ blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'x', colorHex: '#red', sizePt: 0, highlight: 'glow' as HighlightColor }] }] }],
+        };
+        await expect(generateDocx(malformed)).rejects.toMatchObject({
+          code: 'invalid_value',
+          path: '/sections/0/blocks/0/runs/0/colorHex',
+        });
+        const invalidUnderline = styledSpec();
+        (invalidUnderline.sections[0]!.blocks[0] as any).runs = [{ kind: 'text', text: 'x', underline: 'zigzag' }];
+        await expect(generateDocx(invalidUnderline)).rejects.toMatchObject({ code: 'invalid_value', path: '/sections/0/blocks/0/runs/0/underline' });
+      });
+
+      await then('live builder attributes are namespace-correct before and after serialization', async () => {
+        const host = parseXml(`<x:root xmlns:x="urn:test" xmlns:q="${OOXML.W_NS}"/>`);
+        const live = buildRunPropsElement(host, { font: 'Georgia', underline: 'single' })!;
+        const font = getDirectChildrenByName(live, 'rFonts')[0]!;
+        const underline = getDirectChildrenByName(live, 'u')[0]!;
+        expect(font.getAttributeNodeNS(OOXML.W_NS, 'ascii')?.value).toBe('Georgia');
+        expect(underline.getAttributeNodeNS(OOXML.W_NS, 'val')?.value).toBe('single');
+        const reparsed = parseXml(live.toString()).documentElement;
+        expect(getDirectChildrenByName(reparsed, 'u')[0]!.getAttributeNS(OOXML.W_NS, 'val')).toBe('single');
       });
     },
   );
@@ -224,6 +286,47 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
         const tab = pPr.getElementsByTagName('w:tab').item(0)!;
         expect(tab.getAttribute('w:pos')).toBe('4320');
         expect(tab.getAttribute('w:leader')).toBe('dot');
+        const spacing = getDirectChildrenByName(pPr, 'spacing')[0]!;
+        expect(spacing.getAttribute('w:before')).toBe('0');
+        expect(spacing.getAttribute('w:after')).toBe('200');
+        expect(spacing.getAttribute('w:line')).toBe('276');
+        expect(spacing.getAttribute('w:lineRule')).toBe('auto');
+        const ind = getDirectChildrenByName(pPr, 'ind')[0]!;
+        expect(ind.getAttribute('w:left')).toBe('720');
+        expect(ind.getAttribute('w:hanging')).toBe('360');
+      });
+
+      await then('the direct paragraph properties survive a package load/save round-trip unchanged', async () => {
+        const loaded = await DocxDocument.load(buffer);
+        const saved = await loaded.toBuffer();
+        const savedDocument = await loadPart(saved.buffer, 'word/document.xml');
+        const savedParagraph = savedDocument.getElementsByTagNameNS(OOXML.W_NS, 'p').item(1)!;
+        const savedPPr = getDirectChildrenByName(savedParagraph, 'pPr')[0]!;
+        expect(wChildNames(savedPPr)).toEqual(wChildNames(pPr));
+        expect(savedPPr.toString()).toBe(pPr.toString());
+      });
+
+      await then('malformed paragraph property values are rejected before XML emission', async () => {
+        const malformed: DocumentSpec = {
+          sections: [{ blocks: [{ kind: 'paragraph', tabs: [{ posTwips: -1, align: 'left' }], runs: [{ kind: 'text', text: 'x' }] }] }],
+        };
+        await expect(generateDocx(malformed)).rejects.toMatchObject({
+          code: 'invalid_value',
+          path: '/sections/0/blocks/0/tabs/0/posTwips',
+        });
+        const probes: Array<{ path: string; mutate: (paragraph: any) => void }> = [
+          { path: '/sections/0/blocks/0/alignment', mutate: (p) => { p.alignment = 'diagonal'; } },
+          { path: '/sections/0/blocks/0/spacing/beforeTwips', mutate: (p) => { p.spacing = { beforeTwips: -1 }; } },
+          { path: '/sections/0/blocks/0/tabs/0/posTwips', mutate: (p) => { p.tabs = [{ posTwips: 1.5, align: 'left' }]; } },
+          { path: '/sections/0/blocks/0/indent/firstLineTwips', mutate: (p) => { p.indent = { firstLineTwips: -1 }; } },
+          { path: '/sections/0/blocks/0/indent', mutate: (p) => { p.indent = { firstLineTwips: 120, hangingTwips: 120 }; } },
+        ];
+        for (const probe of probes) {
+          const invalid = styledSpec();
+          invalid.sections[0]!.blocks = [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'x' }] }];
+          probe.mutate(invalid.sections[0]!.blocks[0]);
+          await expect(generateDocx(invalid)).rejects.toMatchObject({ code: 'invalid_value', path: probe.path });
+        }
       });
     },
   );

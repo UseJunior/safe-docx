@@ -24,6 +24,7 @@
  */
 
 import { GenerationSpecError } from './errors.js';
+import { WML_SCHEMA_ENUM_SETS, type WmlSchemaEnumType } from './schema-enum-domains.js';
 import type {
   BlockSpec,
   BorderSpec,
@@ -44,6 +45,30 @@ const TWO_HEX_RE = /^[0-9A-Fa-f]{2}$/;
 const HIGHLIGHT_COLOR_SET: ReadonlySet<string> = new Set(HIGHLIGHT_COLORS);
 const LVL_JC_SET: ReadonlySet<string> = new Set(NUMBERING_LEVEL_JUSTIFICATIONS);
 const THEME_COLOR_SLOT_SET: ReadonlySet<string> = new Set(THEME_COLOR_SLOTS);
+const ALIGNMENTS = new Set(['left', 'center', 'right', 'justify']);
+const UNDERLINES = new Set(['single', 'double', 'none']);
+const TAB_ALIGNMENTS = new Set(['left', 'center', 'right']);
+const TAB_LEADERS = new Set(['none', 'dot', 'underscore']);
+const LINE_RULES = new Set(['auto', 'exact', 'atLeast']);
+const TABLE_LAYOUTS = new Set(['fixed', 'autofit']);
+const BORDER_STYLES = new Set(['single', 'double', 'none']);
+const ROW_HEIGHT_RULES = new Set(['atLeast', 'exact']);
+const CELL_VERTICAL_ALIGNMENTS = new Set(['top', 'center', 'bottom']);
+const VERTICAL_MERGES = new Set(['restart', 'continue']);
+const STYLE_TYPES = new Set(['paragraph', 'character']);
+const NUMBER_FORMATS = new Set(['decimal', 'lowerLetter', 'upperLetter', 'lowerRoman', 'upperRoman', 'bullet', 'none']);
+const NUMBER_SUFFIXES = new Set(['tab', 'space', 'nothing']);
+
+function requireInteger(value: unknown, path: string, description: string, minimum?: number, maximum?: number): void {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    (minimum !== undefined && value < minimum) ||
+    (maximum !== undefined && value > maximum)
+  ) {
+    throw new GenerationSpecError('invalid_value', path, description);
+  }
+}
 
 function unsupported(path: string, feature: string): never {
   throw new GenerationSpecError(
@@ -51,6 +76,41 @@ function unsupported(path: string, feature: string): never {
     path,
     `Spec feature '${feature}' is declared in the DocumentSpec type surface but its emitter has not shipped yet; ` +
       'it is rejected rather than silently ignored',
+  );
+}
+
+function unsupportedApiValue(path: string, value: unknown, schemaType: string): never {
+  throw new GenerationSpecError(
+    'unsupported_feature',
+    path,
+    `Value '${String(value)}' is valid in ${schemaType} but is outside the DocumentSpec API-supported subset`,
+  );
+}
+
+function requireSupportedSchemaEnum(
+  value: unknown,
+  path: string,
+  schemaType: WmlSchemaEnumType,
+  supportedValues: ReadonlySet<string>,
+): void {
+  if (typeof value === 'string' && supportedValues.has(value)) return;
+  if (typeof value === 'string' && WML_SCHEMA_ENUM_SETS[schemaType].has(value)) {
+    unsupportedApiValue(path, value, schemaType);
+  }
+  throw new GenerationSpecError(
+    'invalid_value',
+    path,
+    `Value '${String(value)}' is outside the ${schemaType} schema domain`,
+  );
+}
+
+function requireSupportedHexColor(value: unknown, path: string): void {
+  if (typeof value === 'string' && COLOR_HEX_RE.test(value)) return;
+  if (value === 'auto') unsupportedApiValue(path, value, 'ST_HexColor');
+  throw new GenerationSpecError(
+    'invalid_value',
+    path,
+    `Value '${String(value)}' is outside the ST_HexColor schema domain`,
   );
 }
 
@@ -80,7 +140,12 @@ function validateTheme(spec: DocumentSpec): void {
   }
 }
 
-/** Returns numId handle → set of declared levels, for list-reference checks. */
+/**
+ * Returns numId handle -> set of declared levels, for list-reference checks.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.17
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.28
+ */
 function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number>> {
   const declared = new Map<string, Set<number>>();
   definitions.forEach((definition, index) => {
@@ -107,24 +172,49 @@ function validateNumbering(definitions: NumberingSpec[]): Map<string, Set<number
       if (typeof level.lvlText !== 'string' || level.lvlText.length === 0) {
         throw new GenerationSpecError('invalid_value', `${levelPath}/lvlText`, 'Numbering levels require a lvlText pattern');
       }
-      if (level.start !== undefined && (!Number.isInteger(level.start) || level.start < 0)) {
-        throw new GenerationSpecError('invalid_value', `${levelPath}/start`, 'Level start must be a non-negative integer');
+      requireSupportedSchemaEnum(level.numFmt, `${levelPath}/numFmt`, 'ST_NumberFormat', NUMBER_FORMATS);
+      if (level.suff !== undefined) {
+        requireSupportedSchemaEnum(level.suff, `${levelPath}/suff`, 'ST_LevelSuffix', NUMBER_SUFFIXES);
       }
-      if (level.lvlJc !== undefined && !LVL_JC_SET.has(level.lvlJc)) {
-        throw new GenerationSpecError(
-          'invalid_value',
-          `${levelPath}/lvlJc`,
-          `lvlJc must be one of ${NUMBERING_LEVEL_JUSTIFICATIONS.join(', ')}, got '${level.lvlJc}'`,
+      if (level.start !== undefined) {
+        requireInteger(
+          level.start,
+          `${levelPath}/start`,
+          'Level start must be a signed safe integer in the API-representable subset of ST_DecimalNumber',
         );
       }
+      if (level.lvlJc !== undefined) {
+        requireSupportedSchemaEnum(level.lvlJc, `${levelPath}/lvlJc`, 'ST_Jc', LVL_JC_SET);
+      }
       if (level.runProps) validateRunProps(level.runProps, `${levelPath}/runProps`);
+      if (level.indentTwips) {
+        if (level.indentTwips.left !== undefined) {
+          requireInteger(
+            level.indentTwips.left,
+            `${levelPath}/indentTwips/left`,
+            'Numbering left indentation must be a signed safe integer in the API-representable subset of ST_SignedTwipsMeasure',
+          );
+        }
+        if (level.indentTwips.hanging !== undefined) {
+          requireInteger(
+            level.indentTwips.hanging,
+            `${levelPath}/indentTwips/hanging`,
+            'Numbering hanging indentation must be a non-negative safe integer in the API-representable subset of ST_TwipsMeasure',
+            0,
+          );
+        }
+      }
     });
     declared.set(definition.numId, levels);
   });
   return declared;
 }
 
-/** Returns the set of resolvable style ids (declared styles + implicit Normal). */
+/**
+ * Returns the set of resolvable style ids (declared styles + implicit Normal).
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.4.17
+ */
 function validateStyles(styles: StyleSpec[]): Set<string> {
   const ids = new Set<string>(['Normal']);
   styles.forEach((style, index) => {
@@ -132,10 +222,12 @@ function validateStyles(styles: StyleSpec[]): Set<string> {
     if (!style.styleId || !style.name) {
       throw new GenerationSpecError('invalid_value', path, 'StyleSpec requires styleId and name');
     }
+    requireSupportedSchemaEnum(style.type, `${path}/type`, 'ST_StyleType', STYLE_TYPES);
     if (ids.has(style.styleId)) {
       throw new GenerationSpecError('invalid_value', `${path}/styleId`, `Duplicate styleId '${style.styleId}'`);
     }
     ids.add(style.styleId);
+    if (style.paragraph) validateParagraphProps(style.paragraph, `${path}/paragraph`);
     if (style.run) validateRunProps(style.run, `${path}/run`);
   });
   // basedOn / next must resolve against the full declared set (forward refs allowed).
@@ -219,16 +311,33 @@ function validateBlock(
  * vertical-merge continuation must sit at exactly the grid position and
  * span of a merge cell in the previous row — otherwise readers either show
  * a recovery dialog or silently reflow the table.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.37
+ * @conformance ECMA-376 edition 5, Part 1 § 17.4.48
  */
 function validateTable(table: TableSpec, path: string, styleIds: Set<string>, numbering: Map<string, Set<number>>, story: StoryContext): void {
+  if (table.layout !== undefined) {
+    requireSupportedSchemaEnum(table.layout, `${path}/layout`, 'ST_TblLayoutType', TABLE_LAYOUTS);
+  }
   if (!Array.isArray(table.columnWidthsTwips) || table.columnWidthsTwips.length === 0) {
     throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips`, 'Tables require at least one column width');
   }
   table.columnWidthsTwips.forEach((width, i) => {
-    if (!(width > 0) || !Number.isFinite(width)) {
-      throw new GenerationSpecError('invalid_value', `${path}/columnWidthsTwips/${i}`, 'Column widths must be positive finite twips');
-    }
+    requireInteger(
+      width,
+      `${path}/columnWidthsTwips/${i}`,
+      'Column widths must be non-negative safe integers in the API-representable integer branch of ST_TwipsMeasure',
+      0,
+    );
   });
+  const totalWidth = table.columnWidthsTwips.reduce((sum, width) => sum + width, 0);
+  if (!Number.isSafeInteger(totalWidth)) {
+    throw new GenerationSpecError(
+      'invalid_value',
+      `${path}/columnWidthsTwips`,
+      'The table width sum must remain a safe integer so w:tblW serializes exactly',
+    );
+  }
   if (table.borders) validateBorders(table.borders, `${path}/borders`);
   if (!Array.isArray(table.rows) || table.rows.length === 0) {
     throw new GenerationSpecError('invalid_value', `${path}/rows`, 'Tables require at least one row');
@@ -242,8 +351,16 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
     if (!Array.isArray(row.cells) || row.cells.length === 0) {
       throw new GenerationSpecError('invalid_value', `${rowPath}/cells`, 'Rows require at least one cell');
     }
-    if (row.heightTwips !== undefined && (!(row.heightTwips > 0) || !Number.isFinite(row.heightTwips))) {
-      throw new GenerationSpecError('invalid_value', `${rowPath}/heightTwips`, 'Row height must be positive finite twips');
+    if (row.heightTwips !== undefined) {
+      requireInteger(
+        row.heightTwips,
+        `${rowPath}/heightTwips`,
+        'Row height must be a non-negative safe integer in the ST_TwipsMeasure domain',
+        0,
+      );
+    }
+    if (row.heightRule !== undefined) {
+      requireSupportedSchemaEnum(row.heightRule, `${rowPath}/heightRule`, 'ST_HeightRule', ROW_HEIGHT_RULES);
     }
 
     const currentMerges = new Map<number, number>();
@@ -266,14 +383,22 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
           );
         }
       }
+      if (cell.vMerge !== undefined) {
+        requireSupportedSchemaEnum(cell.vMerge, `${cellPath}/vMerge`, 'ST_Merge', VERTICAL_MERGES);
+      }
       if (cell.vMerge !== undefined) currentMerges.set(gridOffset, span);
-      if (cell.widthTwips !== undefined && (!(cell.widthTwips > 0) || !Number.isFinite(cell.widthTwips))) {
-        throw new GenerationSpecError('invalid_value', `${cellPath}/widthTwips`, 'Cell width must be positive finite twips');
+      if (cell.widthTwips !== undefined) {
+        requireInteger(
+          cell.widthTwips,
+          `${cellPath}/widthTwips`,
+          'Cell width must be a signed safe integer in the API-representable integer branch of ST_MeasurementOrPercent',
+        );
       }
       if (cell.borders) validateBorders(cell.borders, `${cellPath}/borders`);
-      if (cell.shadingHex !== undefined && !COLOR_HEX_RE.test(cell.shadingHex)) {
-        throw new GenerationSpecError('invalid_value', `${cellPath}/shadingHex`, `shadingHex must be six hex digits without '#', got '${cell.shadingHex}'`);
+      if (cell.vAlign !== undefined) {
+        requireSupportedSchemaEnum(cell.vAlign, `${cellPath}/vAlign`, 'ST_VerticalJc', CELL_VERTICAL_ALIGNMENTS);
       }
+      if (cell.shadingHex !== undefined) requireSupportedHexColor(cell.shadingHex, `${cellPath}/shadingHex`);
       if (cell.themeFill !== undefined) {
         validateThemeColorSlot(cell.themeFill, `${cellPath}/themeFill`, 'themeFill');
       }
@@ -287,8 +412,12 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
       }
       if (cell.marginsTwips) {
         for (const [key, value] of Object.entries(cell.marginsTwips)) {
-          if (value !== undefined && (typeof value !== 'number' || value < 0 || !Number.isFinite(value))) {
-            throw new GenerationSpecError('invalid_value', `${cellPath}/marginsTwips/${key}`, 'Cell margins must be non-negative finite twips');
+          if (value !== undefined) {
+            requireInteger(
+              value,
+              `${cellPath}/marginsTwips/${key}`,
+              'Cell margins must be signed safe integers in the API-representable integer branch of ST_MeasurementOrPercent',
+            );
           }
         }
       }
@@ -315,11 +444,15 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
 function validateBorders(borders: TableBorders, path: string): void {
   for (const [edge, spec] of Object.entries(borders) as Array<[string, BorderSpec | undefined]>) {
     if (!spec) continue;
-    if (spec.colorHex !== undefined && !COLOR_HEX_RE.test(spec.colorHex)) {
-      throw new GenerationSpecError('invalid_value', `${path}/${edge}/colorHex`, `colorHex must be six hex digits without '#', got '${spec.colorHex}'`);
-    }
-    if (spec.sizeEighthPt !== undefined && (!(spec.sizeEighthPt > 0) || !Number.isFinite(spec.sizeEighthPt))) {
-      throw new GenerationSpecError('invalid_value', `${path}/${edge}/sizeEighthPt`, 'Border size must be positive finite eighth-points');
+    requireSupportedSchemaEnum(spec.style, `${path}/${edge}/style`, 'ST_Border', BORDER_STYLES);
+    if (spec.colorHex !== undefined) requireSupportedHexColor(spec.colorHex, `${path}/${edge}/colorHex`);
+    if (spec.sizeEighthPt !== undefined) {
+      requireInteger(
+        spec.sizeEighthPt,
+        `${path}/${edge}/sizeEighthPt`,
+        'Border size must be a non-negative safe integer in the ST_EighthPointMeasure domain',
+        0,
+      );
     }
   }
 }
@@ -369,13 +502,7 @@ function validateParagraph(
       `Paragraph references undeclared style '${paragraph.styleId}'`,
     );
   }
-  if (paragraph.tabs) {
-    paragraph.tabs.forEach((stop, i) => {
-      if (!(stop.posTwips >= 0) || !Number.isFinite(stop.posTwips)) {
-        throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/posTwips`, 'Tab stop position must be a non-negative finite twips value');
-      }
-    });
-  }
+  validateParagraphProps(paragraph, path);
 
   if (!Array.isArray(paragraph.runs)) {
     throw new GenerationSpecError('invalid_value', `${path}/runs`, 'Paragraph runs must be an array');
@@ -383,6 +510,45 @@ function validateParagraph(
   paragraph.runs.forEach((run, runIndex) => {
     validateInline(run, `${path}/runs/${runIndex}`);
   });
+}
+
+type ParagraphProperties = NonNullable<StyleSpec['paragraph']>;
+
+/** Validate the paragraph-property subset shared by body paragraphs and styles. */
+function validateParagraphProps(props: ParagraphProperties, path: string): void {
+  if (props.tabs) {
+    props.tabs.forEach((stop, i) => {
+      requireInteger(stop.posTwips, `${path}/tabs/${i}/posTwips`, 'Tab stop position must be a non-negative safe integer in twips', 0);
+      if (!TAB_ALIGNMENTS.has(stop.align)) throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/align`, `Unsupported tab alignment '${stop.align}'`);
+      if (stop.leader !== undefined && !TAB_LEADERS.has(stop.leader)) throw new GenerationSpecError('invalid_value', `${path}/tabs/${i}/leader`, `Unsupported tab leader '${stop.leader}'`);
+    });
+  }
+  if (props.alignment !== undefined && !ALIGNMENTS.has(props.alignment)) {
+    throw new GenerationSpecError('invalid_value', `${path}/alignment`, `Unsupported paragraph alignment '${props.alignment}'`);
+  }
+  if (props.spacing) {
+    for (const key of ['beforeTwips', 'afterTwips'] as const) {
+      const value = props.spacing[key];
+      if (value !== undefined) requireInteger(value, `${path}/spacing/${key}`, `${key} must be a non-negative safe integer`, 0);
+    }
+    if (props.spacing.lineTwips !== undefined) requireInteger(props.spacing.lineTwips, `${path}/spacing/lineTwips`, 'lineTwips must be a safe integer');
+    if (props.spacing.lineRule !== undefined && !LINE_RULES.has(props.spacing.lineRule)) {
+      throw new GenerationSpecError('invalid_value', `${path}/spacing/lineRule`, `Unsupported line rule '${props.spacing.lineRule}'`);
+    }
+  }
+  if (props.indent) {
+    for (const key of ['leftTwips', 'rightTwips'] as const) {
+      const value = props.indent[key];
+      if (value !== undefined) requireInteger(value, `${path}/indent/${key}`, `${key} must be a safe integer`);
+    }
+    for (const key of ['firstLineTwips', 'hangingTwips'] as const) {
+      const value = props.indent[key];
+      if (value !== undefined) requireInteger(value, `${path}/indent/${key}`, `${key} must be a non-negative safe integer`, 0);
+    }
+    if (props.indent.firstLineTwips !== undefined && props.indent.hangingTwips !== undefined) {
+      throw new GenerationSpecError('invalid_value', `${path}/indent`, 'firstLineTwips and hangingTwips are mutually exclusive');
+    }
+  }
 }
 
 function validateInline(run: InlineSpec, path: string): void {
@@ -409,9 +575,10 @@ function validateInline(run: InlineSpec, path: string): void {
 }
 
 function validateRunProps(props: RunProps, path: string): void {
-  if (props.colorHex !== undefined && !COLOR_HEX_RE.test(props.colorHex)) {
-    throw new GenerationSpecError('invalid_value', `${path}/colorHex`, `colorHex must be six hex digits without '#', got '${props.colorHex}'`);
+  if (props.underline !== undefined) {
+    requireSupportedSchemaEnum(props.underline, `${path}/underline`, 'ST_Underline', UNDERLINES);
   }
+  if (props.colorHex !== undefined) requireSupportedHexColor(props.colorHex, `${path}/colorHex`);
   if (props.themeColor !== undefined) {
     validateThemeColorSlot(props.themeColor, `${path}/themeColor`, 'themeColor');
   }

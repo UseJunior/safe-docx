@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 1,
+  "registryVersion": 1,
+  "mappings": [
+    {
+      "scenarioId": "addCommentBracketsRangeWithMatchingIds",
+      "capabilityId": "word.comments.anchors",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "commentPartRecordsAuthorInitialsAndText",
+      "capabilityId": "word.comments.content",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "removeAllCommentsStripsAnchorsKeepsText",
+      "capabilityId": "word.comments.removal",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "replaceFirstOccurrencePreservesOffsets",
+      "capabilityId": "word.text.find-replace",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "replaceTextAcrossRunBoundary",
+      "capabilityId": "word.text.find-replace",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "appendParagraphPreservesExistingContent",
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "appendParagraphPreservesExistingContent",
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "preserve",
+      "oracleClasses": ["metamorphic-invariant"]
+    },
+    {
+      "scenarioId": "composeFormattedRunCarriesBoldItalicSize",
+      "capabilityId": "word.runs.formatting",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "composeHeaderTextAddsSectionHeaderReference",
+      "capabilityId": "word.headers.default",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "composeHyperlinkCreatesRelationshipReferencedLink",
+      "capabilityId": "word.hyperlinks.external",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "composeParagraphsProduceTextRuns",
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "composeTableProducesGridMatchingCellMatrix",
+      "capabilityId": "word.tables.structure",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "insertParagraphAfterAnchorShiftsSubsequent",
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "applyNamedParagraphStyleSetsPStyleReference",
+      "capabilityId": "word.styles.paragraph",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "applyNumberingToParagraphAttachesNumPr",
+      "capabilityId": "word.numbering.paragraph",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "composeNumberedListResolvesToDecimalFormat",
+      "capabilityId": "word.numbering.paragraph",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "directFormattingDoesNotBakeIntoStyleDefinition",
+      "capabilityId": "word.runs.formatting",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "setDefaultFooterTextAddsFooterReference",
+      "capabilityId": "word.footers.default",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "appendTableRowExtendsRowCountKeepingGrid",
+      "capabilityId": "word.tables.rows",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "deleteTableRowRemovesRowAndContent",
+      "capabilityId": "word.tables.rows",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "horizontalMergeSetsGridSpanKeepingGrid",
+      "capabilityId": "word.tables.horizontal-merge",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "replaceTextInsideTableCellPreservesStructure",
+      "capabilityId": "word.tables.cells",
+      "axis": "preserve",
+      "oracleClasses": ["metamorphic-invariant", "normative-prose"]
+    },
+    {
+      "scenarioId": "replaceTextInsideTableCellPreservesStructure",
+      "capabilityId": "word.text.find-replace",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "setTableCellTextReplacesCellContentOnly",
+      "capabilityId": "word.tables.cells",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "acceptDeletedParagraphMarkMergesParagraphs",
+      "capabilityId": "word.revisions.paragraph-mark",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "acceptDeletedTableRowRemovesEntireRow",
+      "capabilityId": "word.revisions.table-rows",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "acceptDeletedTableRowRemovesEntireRow",
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "acceptDeletionsRemovesDelContent",
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "acceptFormattingChangeKeepsNewRunProperties",
+      "capabilityId": "word.revisions.run-properties",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "acceptInsertionsUnwrapsInsWrappers",
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "acceptMoveRemovesSourceAndUnwrapsDestination",
+      "capabilityId": "word.revisions.moves",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "acceptNestedDeletionInsideInsertion",
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "rejectDeletionsRestoresDelContent",
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "rejectFormattingChangeRestoresPriorRunProperties",
+      "capabilityId": "word.revisions.run-properties",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "rejectInsertedParagraphMarkMergesParagraphs",
+      "capabilityId": "word.revisions.paragraph-mark",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "rejectInsertedTableRowRemovesEntireRow",
+      "capabilityId": "word.revisions.table-rows",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "rejectInsertedTableRowRemovesEntireRow",
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "rejectInsertionsRemovesInsContent",
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "rejectMoveRestoresSourceRemovesDestination",
+      "capabilityId": "word.revisions.moves",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    },
+    {
+      "scenarioId": "rejectNestedDeletionInsideInsertion",
+      "capabilityId": "word.revisions.content",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "rejectParagraphPropertiesChangeRestoresPrior",
+      "capabilityId": "word.revisions.paragraph-properties",
+      "axis": "acceptReject",
+      "oracleClasses": ["normative-prose", "serialization-specific"]
+    }
+  ]
+}

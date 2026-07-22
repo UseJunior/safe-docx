@@ -39,8 +39,11 @@ export async function createTrackedTempDir(prefix = 'safe-docx-test-'): Promise<
 // Session manager factory
 // ---------------------------------------------------------------------------
 
-export function createTestSessionManager(opts?: { ttlMs?: number }): SessionManager {
-  return new SessionManager({ ttlMs: opts?.ttlMs ?? 60 * 60 * 1000 });
+export function createTestSessionManager(opts?: { ttlMs?: number; defaultAiAuthor?: string | null }): SessionManager {
+  return new SessionManager({
+    ttlMs: opts?.ttlMs ?? 60 * 60 * 1000,
+    ...(opts?.defaultAiAuthor !== undefined ? { defaultAiAuthor: opts.defaultAiAuthor } : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------

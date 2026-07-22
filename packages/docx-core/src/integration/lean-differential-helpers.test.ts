@@ -61,9 +61,9 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import fc from 'fast-check';
 import { beforeAll, describe, expect } from 'vitest';
-import { acceptAllChanges, rejectAllChanges } from '../baselines/atomizer/trackChangesAcceptorAst.js';
-import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
-import { parseDocumentXml } from '../baselines/atomizer/xmlToWmlElement.js';
+import { acceptAllChanges, rejectAllChanges } from '@usejunior/docx-compare';
+import { validateFieldStructure } from '@usejunior/docx-compare';
+import { parseDocumentXml } from '@usejunior/docx-compare';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   resolveSoffice,
@@ -78,7 +78,7 @@ const TEST_FEATURE = 'Lean Differential Harness (Tier 2 helpers)';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: TEST_FEATURE })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
 
 const INTEGRATION_DIR = dirname(import.meta.url.replace('file://', ''));
 const PROJECT_ROOT = join(INTEGRATION_DIR, '../../../..');

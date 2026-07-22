@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "repository": "open-agreements/docx-platform-tests",
+  "commit": "09e4c2c8a2fac214a1f02ed787e8ed9a0404217b",
+  "registrySchemaVersion": 1,
+  "registryVersion": 1,
+  "profileId": "current-neutral-surface",
+  "files": [
+    { "path": "spec-compliance/capabilities/upstream/capabilities.json", "sha256": "4f39591149016781172f0ecca591b3bebaaeee6d95e97a2040c0ae27d4c95d97" },
+    { "path": "spec-compliance/capabilities/upstream/capabilities.schema.json", "sha256": "fa682a813ccf1191d6c3a3360b78478c639fa64de6e3e0361733a0885867abc0" },
+    { "path": "spec-compliance/capabilities/upstream/profiles.json", "sha256": "0867a3e5f2e884afd2c13f6a89b524d9e46f984e807b95b060e1a5fd774b3c58" },
+    { "path": "spec-compliance/capabilities/upstream/profiles.schema.json", "sha256": "a61419d3cff77a658f7e9190869426e9177725dfd87c6f9131fa20c934885ef0" },
+    { "path": "spec-compliance/capabilities/upstream/scenario-capabilities.json", "sha256": "4b1b2dd3898edeab927c9ee0d15889eef8fd96322369e3e2c80bfb171e8fb3c1" },
+    { "path": "spec-compliance/capabilities/upstream/scenario-capabilities.schema.json", "sha256": "44c4938ed3a4927b8cb3827494364542a8606259d1649229fcf732e7525a723d" },
+    { "path": "spec-compliance/capabilities/upstream/capability-summary.json", "sha256": "848116a673367bad2a3a6abb127a1dcf51e871e6d51fd252b68d6c82269c28d0" }
+  ]
+}

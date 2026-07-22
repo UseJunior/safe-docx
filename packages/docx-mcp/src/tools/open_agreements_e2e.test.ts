@@ -12,7 +12,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DocxZip } from '@usejunior/docx-core';
+import { DocxZip, parseXml } from '@usejunior/docx-core';
 
 import { SessionManager } from '../session/manager.js';
 import { openDocument } from './open_document.js';
@@ -33,8 +33,15 @@ function fixtureDocx(name: string): string {
   return path.join(FIXTURES_DIR, name);
 }
 
+// Production MCP sessions always carry an AI author, so edits emit write-time
+// tracked markup that the tracked artifact serializes directly (#126). The
+// author matches `tracked_changes_author` below so the save report's stats
+// count these revisions.
+const E2E_AUTHOR = 'E2E Test';
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
 function createMgr(): SessionManager {
-  return new SessionManager({ ttlMs: 60 * 60 * 1000 });
+  return new SessionManager({ ttlMs: 60 * 60 * 1000, defaultAiAuthor: E2E_AUTHOR });
 }
 
 const tempDirs: string[] = [];
@@ -55,6 +62,17 @@ async function makeTempDir(prefix = 'safe-docx-e2e-'): Promise<string> {
 
 function countTables(xml: string): number {
   return (xml.match(/<w:tbl[\s>]/g) || []).length;
+}
+
+// Concatenate the text of every <w:t> run, ignoring run boundaries and the
+// pretty-print whitespace between them. Write-time redlines split edited words
+// across runs (char-level minimal diff), so a raw-XML substring check is
+// unreliable; the concatenated run text is the reading a user actually sees
+// (kept + inserted text; deleted <w:delText> is excluded).
+function concatRunText(documentXml: string): string {
+  const dom = parseXml(documentXml);
+  const runs = Array.from(dom.getElementsByTagNameNS(W_NS, 't')) as Element[];
+  return runs.map((run) => run.textContent ?? '').join('');
 }
 
 function hasXmlDeclaration(xml: string): boolean {
@@ -167,19 +185,18 @@ describe('Open Agreements E2E: Mutual NDA', () => {
         save_to_local_path: cleanPath,
         save_format: 'both',
         tracked_save_to_local_path: trackedPath,
-        tracked_changes_author: 'E2E Test',
-        fail_on_rebuild_fallback: true,
+        tracked_changes_author: E2E_AUTHOR,
       });
       expect(dlRes.success).toBe(true);
     });
 
-    await then('the save produces zero false tracked changes using inplace mode', () => {
+    await then('the save produces zero false tracked changes from write-time markup', () => {
       const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
         { insertions: number; deletions: number; modifications: number } | undefined;
       expect(stats).toBeDefined();
       const totalChanges = (stats!.insertions + stats!.deletions + stats!.modifications);
       expect(totalChanges).toBe(0);
-      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
+      expect((dlRes as Record<string, unknown>).tracked_changes_source).toBe('write-time');
     });
     await and('tables and XML declarations are preserved in both output variants', async () => {
       const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
@@ -249,8 +266,7 @@ describe('Open Agreements E2E: Mutual NDA', () => {
         save_to_local_path: cleanPath,
         save_format: 'both',
         tracked_save_to_local_path: trackedPath,
-        tracked_changes_author: 'E2E Test',
-        fail_on_rebuild_fallback: true,
+        tracked_changes_author: E2E_AUTHOR,
       });
       expect(dlRes.success).toBe(true);
 
@@ -261,8 +277,8 @@ describe('Open Agreements E2E: Mutual NDA', () => {
     });
 
     await then('both outputs contain the replacement word and tracked changes are minimal', () => {
-      expect(cleanDocXml).toContain('collaboration');
-      expect(trackedDocXml).toContain('collaboration');
+      expect(concatRunText(cleanDocXml)).toContain('collaboration');
+      expect(concatRunText(trackedDocXml)).toContain('collaboration');
 
       const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
         { insertions: number; deletions: number; modifications: number };
@@ -270,7 +286,7 @@ describe('Open Agreements E2E: Mutual NDA', () => {
       const totalChanges = stats.insertions + stats.deletions + stats.modifications;
       expect(totalChanges).toBeGreaterThan(0);
       expect(totalChanges).toBeLessThan(10);
-      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
+      expect((dlRes as Record<string, unknown>).tracked_changes_source).toBe('write-time');
     });
     await and('tables, XML declarations, and most zip entries are unchanged', async () => {
       const origZip = await DocxZip.load(await fs.readFile(docPath) as Buffer);
@@ -318,19 +334,18 @@ describe('Open Agreements E2E: Letter of Intent', () => {
         save_to_local_path: cleanPath,
         save_format: 'both',
         tracked_save_to_local_path: trackedPath,
-        tracked_changes_author: 'E2E Test',
-        fail_on_rebuild_fallback: true,
+        tracked_changes_author: E2E_AUTHOR,
       });
       expect(dlRes.success).toBe(true);
     });
 
-    await then('zero false tracked changes are produced using inplace reconstruction', () => {
+    await then('zero false tracked changes are produced from write-time markup', () => {
       const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
         { insertions: number; deletions: number; modifications: number } | undefined;
       expect(stats).toBeDefined();
       const totalChanges = (stats!.insertions + stats!.deletions + stats!.modifications);
       expect(totalChanges).toBe(0);
-      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
+      expect((dlRes as Record<string, unknown>).tracked_changes_source).toBe('write-time');
     });
     await and('XML declarations are preserved in both outputs', async () => {
       const cleanZip = await DocxZip.load(await fs.readFile(cleanPath) as Buffer);
@@ -395,8 +410,7 @@ describe('Open Agreements E2E: Letter of Intent', () => {
         save_to_local_path: cleanPath,
         save_format: 'both',
         tracked_save_to_local_path: trackedPath,
-        tracked_changes_author: 'E2E Test',
-        fail_on_rebuild_fallback: true,
+        tracked_changes_author: E2E_AUTHOR,
       });
       expect(dlRes.success).toBe(true);
 
@@ -407,8 +421,12 @@ describe('Open Agreements E2E: Letter of Intent', () => {
     });
 
     await then('both outputs contain the replacement word and tracked changes are minimal', () => {
-      expect(cleanDocXml).toContain('arrangement');
-      expect(trackedDocXml).toContain('arrangement');
+      // Write-time redlines are char-level minimal diffs, so the new word can
+      // span multiple runs (e.g. "a" + "rrang" + "ement"). Assert on the
+      // concatenated run text, which is robust to run boundaries and the
+      // pretty-print whitespace between them; a raw-XML substring is not.
+      expect(concatRunText(cleanDocXml)).toContain('arrangement');
+      expect(concatRunText(trackedDocXml)).toContain('arrangement');
 
       const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
         { insertions: number; deletions: number; modifications: number };
@@ -416,7 +434,7 @@ describe('Open Agreements E2E: Letter of Intent', () => {
       const totalChanges = stats.insertions + stats.deletions + stats.modifications;
       expect(totalChanges).toBeGreaterThan(0);
       expect(totalChanges).toBeLessThan(10);
-      expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).not.toBe('rebuild');
+      expect((dlRes as Record<string, unknown>).tracked_changes_source).toBe('write-time');
     });
     await and('XML declarations are preserved in both outputs', () => {
       expect(hasXmlDeclaration(cleanDocXml)).toBe(true);
@@ -425,7 +443,7 @@ describe('Open Agreements E2E: Letter of Intent', () => {
   });
 });
 
-describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
+describe('Open Agreements E2E: Run-fragmented templates preserve table structure', () => {
   registerTempCleanup();
 
   const fixtures = [
@@ -434,7 +452,7 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
   ] as const;
 
   for (const fixture of fixtures) {
-    test(`${fixture} stays inplace with table structure preserved`, async ({ given, when, then, and }: AllureBddContext) => {
+    test(`${fixture} preserves table structure through a write-time tracked save`, async ({ given, when, then, and }: AllureBddContext) => {
       let mgr: ReturnType<typeof createMgr>;
       let filePath: string;
       let docPath: string;
@@ -469,8 +487,7 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
           save_to_local_path: cleanPath,
           save_format: 'both',
           tracked_save_to_local_path: trackedPath,
-          tracked_changes_author: 'E2E Test',
-          fail_on_rebuild_fallback: true,
+          tracked_changes_author: E2E_AUTHOR,
         });
         expect(dlRes.success).toBe(true);
 
@@ -482,8 +499,8 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
         trackedDocXml = await trackedZip.readText('word/document.xml');
       });
 
-      await then('reconstruction mode is inplace and table counts are preserved', () => {
-        expect((dlRes as Record<string, unknown>).tracked_reconstruction_mode).toBe('inplace');
+      await then('the redline is write-time markup and table counts are preserved', () => {
+        expect((dlRes as Record<string, unknown>).tracked_changes_source).toBe('write-time');
 
         const origTables = countTables(origDocXml);
         expect(origTables).toBeGreaterThan(0);
@@ -491,8 +508,8 @@ describe('Open Agreements E2E: Run-fragmented templates remain inplace', () => {
         expect(countTables(trackedDocXml)).toBeGreaterThanOrEqual(origTables);
       });
       await and('the replacement text appears in both outputs and tracked changes are minimal', () => {
-        expect(cleanDocXml).toContain(newText);
-        expect(trackedDocXml).toContain(newText);
+        expect(concatRunText(cleanDocXml)).toContain(newText);
+        expect(concatRunText(trackedDocXml)).toContain(newText);
 
         const stats = (dlRes as Record<string, unknown>).tracked_changes_stats as
           { insertions: number; deletions: number; modifications: number };
