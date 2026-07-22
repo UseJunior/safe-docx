@@ -202,7 +202,10 @@ test('a sparse second-adapter outcome is rejected', async () => {
 
 test('a partial SafeDocX outcome cannot establish a neutral claim', async () => {
   const value = await inputs();
-  value.summary.capabilities[0].outcomes['safe-docx'].passLike -= 1;
+  const outcome = value.summary.capabilities[0].outcomes['safe-docx'];
+  outcome.counts.pass -= 1;
+  outcome.counts.fail = (outcome.counts.fail ?? 0) + 1;
+  outcome.passLike -= 1;
   await assert.rejects(() => validateProjection(value, root), /neutral SafeDocX result is not fully pass-like/);
 });
 
@@ -210,6 +213,29 @@ test('adapter outcome counts must sum to their denominator', async () => {
   const value = await inputs();
   value.summary.capabilities[0].outcomes['safe-docx'].counts.pass -= 1;
   await assert.rejects(() => validateProjection(value, root), /counts do not sum to denominator/);
+});
+
+test('fail counts cannot contradict the derived pass-like total', async () => {
+  const value = await inputs();
+  const outcome = value.summary.capabilities[0].outcomes['safe-docx'];
+  outcome.counts = { fail: outcome.denominator };
+  outcome.passLike = outcome.denominator;
+  await assert.rejects(() => validateProjection(value, root), /passLike disagrees with pass and pass-divergent counts/);
+});
+
+test('adapter outcome counts reject invented result statuses', async () => {
+  const value = await inputs();
+  const outcome = value.summary.capabilities[0].outcomes['safe-docx'];
+  outcome.counts = { invented: outcome.denominator };
+  await assert.rejects(() => validateProjection(value, root), /counts contain an unknown result status/);
+});
+
+test('pass-divergent counts contribute to a valid pass-like total', async () => {
+  const value = await inputs();
+  const outcome = value.summary.capabilities[0].outcomes['safe-docx'];
+  outcome.counts = { 'pass-divergent': outcome.denominator };
+  outcome.passLike = outcome.denominator;
+  await assert.doesNotReject(() => validateProjection(value, root));
 });
 
 test('duplicate summary rows are rejected', async () => {

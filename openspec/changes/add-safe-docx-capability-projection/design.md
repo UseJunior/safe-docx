@@ -33,6 +33,10 @@ authoritative rather than being copied into a new truth source.
   the declared unmeasured IDs. Require one exact authored capability/axis row
   for every measured mapping set and one exact cross-platform union row for
   every capability with measured scenarios.
+- Accept only the upstream result statuses `pass`, `pass-divergent`, `fail`,
+  `error`, and `unsupported`, and derive each pass-like total exactly as `pass`
+  plus `pass-divergent`. This prevents count-conserving but semantically
+  contradictory rows from establishing evidence.
 - Treat claim package parts as a nonempty subset of the neutral capability
   parts, with stories derived from the claimed subset. This keeps each row no
   broader than the executable evidence it cites.

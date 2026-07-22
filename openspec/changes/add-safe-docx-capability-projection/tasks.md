@@ -25,3 +25,4 @@
 - [x] 4.5 Add mutation coverage, deepen only the capability-check CI checkout, regenerate reports, and rerun all gates.
 - [x] 4.6 Downgrade unstructured local-test rows to untested and remove the local evidence kind.
 - [x] 4.7 Require the exact measured authored and cross-platform summary row map, including deletion probes.
+- [x] 4.8 Restrict outcome count statuses and verify pass-like totals are derived from pass and pass-divergent counts.

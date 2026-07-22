@@ -72,13 +72,22 @@ mapped measured set. For every capability with measured scenarios, it SHALL
 contain exactly one cross-platform row with the exact union of that
 capability's measured mapped scenarios. Missing, extra, and duplicate rows
 SHALL be rejected. Every adapter outcome SHALL use nonnegative integer counts
-that sum to the row denominator. A positive neutral SafeDocX result SHALL cover
-and pass every row scenario; a cross-platform result SHALL also require a
-second adapter that covers and passes every row scenario.
+whose keys are limited to `pass`, `pass-divergent`, `fail`, `error`, and
+`unsupported` and that sum to the row denominator. Its pass-like total SHALL
+equal the sum of its `pass` and `pass-divergent` counts. A positive neutral
+SafeDocX result SHALL cover and pass every row scenario; a cross-platform
+result SHALL also require a second adapter that covers and passes every row
+scenario.
 
 #### Scenario: Sparse adapter outcome is presented as complete
 
 - **GIVEN** a pinned row omits a mapped measured scenario or an adapter outcome uses a smaller denominator or inconsistent count sum
+- **WHEN** the capability projection check runs
+- **THEN** the check SHALL fail before the row can establish a claim
+
+#### Scenario: Adapter outcome semantics are contradictory
+
+- **GIVEN** an adapter outcome uses an unknown result status or reports a pass-like total different from its `pass` plus `pass-divergent` counts
 - **WHEN** the capability projection check runs
 - **THEN** the check SHALL fail before the row can establish a claim
 

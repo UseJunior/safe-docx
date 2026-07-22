@@ -26,6 +26,7 @@ const paths = {
 };
 
 const POSITIVE_STATUSES = new Set(['supported', 'partial', 'preservation-only']);
+const UPSTREAM_RESULT_STATUSES = new Set(['pass', 'pass-divergent', 'fail', 'error', 'unsupported']);
 const execFileAsync = promisify(execFile);
 const REQUIRED_PINNED_FILES = new Set([
   paths.capabilities,
@@ -160,11 +161,13 @@ function validateSummary(capabilityById, mappings, summary) {
       assert(knownImplementations.has(adapterName), `${row.capabilityId}/${row.axis}: outcome references unknown adapter ${adapterName}`);
       assert(Number.isInteger(outcome.denominator) && outcome.denominator >= 0, `${row.capabilityId}/${row.axis}/${adapterName}: denominator must be a nonnegative integer`);
       assert(Number.isInteger(outcome.passLike) && outcome.passLike >= 0, `${row.capabilityId}/${row.axis}/${adapterName}: passLike must be a nonnegative integer`);
-      const countValues = Object.values(outcome.counts);
+      const countEntries = Object.entries(outcome.counts);
+      assert(countEntries.every(([status]) => UPSTREAM_RESULT_STATUSES.has(status)), `${row.capabilityId}/${row.axis}/${adapterName}: counts contain an unknown result status`);
+      const countValues = countEntries.map(([, count]) => count);
       assert(countValues.every((count) => Number.isInteger(count) && count >= 0), `${row.capabilityId}/${row.axis}/${adapterName}: counts must be nonnegative integers`);
       assert(countValues.reduce((total, count) => total + count, 0) === outcome.denominator, `${row.capabilityId}/${row.axis}/${adapterName}: counts do not sum to denominator`);
       assert(outcome.denominator === scenarioIds.size, `${row.capabilityId}/${row.axis}/${adapterName}: denominator does not cover every row scenario`);
-      assert(outcome.passLike <= outcome.denominator, `${row.capabilityId}/${row.axis}/${adapterName}: passLike exceeds denominator`);
+      assert(outcome.passLike === (outcome.counts.pass ?? 0) + (outcome.counts['pass-divergent'] ?? 0), `${row.capabilityId}/${row.axis}/${adapterName}: passLike disagrees with pass and pass-divergent counts`);
     }
   }
   const missingRows = [...expectedRows.keys()]
