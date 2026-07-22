@@ -45,7 +45,7 @@ jobs:
         run: |
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           TAG_VERSION="${TAG_REF#v}"
-          for pkg in packages/docx-core packages/docx-mcp packages/google-docs-core packages/safe-docx packages/safe-docx-mcpb; do
+          for pkg in packages/docx-core packages/docx-compare packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx packages/safe-docx-mcpb; do
             PKG_VERSION="$(node -p "require('./${pkg}/package.json').version")"
             if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
               echo "Tag version ($TAG_VERSION) must match ${pkg}/package.json version ($PKG_VERSION)."
@@ -119,15 +119,46 @@ jobs:
 
       - name: Guard against duplicate publish
         run: |
+          # A partially-published tag must stay recoverable. The publish step
+          # aborts on the first failure, so a new package in the suite (whose
+          # name does not exist on npm yet, and which OIDC trusted publishing
+          # therefore cannot bootstrap) leaves the earlier packages published
+          # and the rest not — see the v0.16.0 run, where docx-core landed and
+          # docx-compare hit ENEEDAUTH. Failing here on *any* already-published
+          # package made that state unrecoverable by re-run. Fail only when the
+          # whole suite is already on npm, which is the real duplicate release.
           TAG_REF="${RELEASE_TAG:-$GITHUB_REF_NAME}"
           VERSION="${TAG_REF#v}"
-          for pkg in @usejunior/docx-core @usejunior/docx-mcp @usejunior/google-docs-core @usejunior/safe-docx; do
+          published=0
+          total=0
+          for pkg in @usejunior/docx-core @usejunior/docx-compare @usejunior/odf-core @usejunior/docx-mcp @usejunior/google-docs-core @usejunior/safe-docx; do
+            total=$((total + 1))
             if npm view "$pkg@$VERSION" version >/dev/null 2>&1; then
-              echo "$pkg@$VERSION already exists on npm."
-              exit 1
+              echo "$pkg@$VERSION already exists on npm — will be skipped."
+              published=$((published + 1))
+            else
+              echo "$pkg@$VERSION not yet published."
             fi
-            echo "$pkg@$VERSION not yet published."
           done
+          if [ "$published" -eq "$total" ]; then
+            echo "Every package in the suite is already published at $VERSION; nothing to release."
+            exit 1
+          fi
+          if [ "$published" -gt 0 ]; then
+            echo "::warning::Resuming a partial release: $published/$total packages already published at $VERSION."
+          fi
+
+      # Schema-backed workspace tests shell out to xmllint against the vendored
+      # ECMA-376 XSDs, so it must exist before tests run. ci.yml already does
+      # this ("Install XML schema validator"); release.yml did not, so those
+      # tests failed here with spawnSync status null while passing in CI — a
+      # preflight-only failure that blocks EVERY release. Keep the two in step.
+      - name: Install XML schema validator
+        run: |
+          if ! command -v xmllint >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends libxml2-utils
+          fi
 
       - name: Test workspaces
         run: npm run test
@@ -135,6 +166,7 @@ jobs:
       - name: Package-level smoke tests
         run: |
           npm run test:run -w @usejunior/docx-core
+          npm run test:run -w @usejunior/docx-compare
           npm run test:run -w @usejunior/docx-mcp
           npm run test:run -w @usejunior/safe-docx
           npm run test:run -w @usejunior/safedocx-mcpb
@@ -156,7 +188,7 @@ jobs:
 
       - name: Verify package contents (dry-run)
         run: |
-          for pkg in packages/docx-core packages/docx-mcp packages/google-docs-core packages/safe-docx; do
+          for pkg in packages/docx-core packages/docx-compare packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx; do
             echo "Dry-run pack: $pkg"
             (cd "$pkg" && npm pack --dry-run)
           done
@@ -170,15 +202,21 @@ jobs:
         run: |
           pack_dir="$(mktemp -d)"
           run_dir="$(mktemp -d)"
-          core_tgz="$(cd packages/docx-core && npm pack --silent --pack-destination "$pack_dir")"
-          mcp_tgz="$(cd packages/docx-mcp && npm pack --silent --pack-destination "$pack_dir")"
-          safe_tgz="$(cd packages/safe-docx && npm pack --silent --pack-destination "$pack_dir")"
+          # Pack ALL publishable packages (same list as publish-suite): any
+          # same-version workspace dep must resolve from a local tarball, not
+          # the registry — at preflight time this run's versions aren't on npm
+          # yet, so a registry fallback always ETARGETs (issue #395).
+          tarballs=()
+          for pkg in packages/docx-core packages/docx-compare packages/odf-core packages/docx-mcp packages/google-docs-core packages/safe-docx; do
+            tgz="$(cd "$pkg" && npm pack --silent --pack-destination "$pack_dir")"
+            tarballs+=("$pack_dir/$tgz")
+          done
           pushd "$run_dir"
           npm init -y >/dev/null
           for attempt in 1 2 3; do
             echo "runtime smoke attempt ${attempt}/3"
             rm -rf node_modules package-lock.json
-            if npm install --no-audit --no-fund "$pack_dir/$core_tgz" "$pack_dir/$mcp_tgz" "$pack_dir/$safe_tgz" >/dev/null \
+            if npm install --no-audit --no-fund "${tarballs[@]}" >/dev/null \
               && ./node_modules/.bin/safe-docx --help; then
               popd
               rm -rf "$pack_dir" "$run_dir"
@@ -240,6 +278,7 @@ jobs:
       - name: Build publishable packages
         run: |
           npm run build -w @usejunior/docx-core
+          npm run build -w @usejunior/docx-compare
           npm run build -w @usejunior/docx-mcp
           npm run build -w @usejunior/google-docs-core
           npm run build -w @usejunior/safe-docx
@@ -252,12 +291,16 @@ jobs:
           npm config delete //registry.npmjs.org/:_authToken || true
 
           # Publish in dependency order.
-          for entry in "@usejunior/docx-core:packages/docx-core" "@usejunior/docx-mcp:packages/docx-mcp" "@usejunior/google-docs-core:packages/google-docs-core" "@usejunior/safe-docx:packages/safe-docx"; do
+          for entry in "@usejunior/docx-core:packages/docx-core" "@usejunior/docx-compare:packages/docx-compare" "@usejunior/odf-core:packages/odf-core" "@usejunior/docx-mcp:packages/docx-mcp" "@usejunior/google-docs-core:packages/google-docs-core" "@usejunior/safe-docx:packages/safe-docx"; do
             PKG_NAME="${entry%%:*}"
             PKG_DIR="${entry##*:}"
+            # Skip rather than abort: a re-run of a partially-published tag must
+            # be able to walk past what already landed and publish the rest.
+            # Publishing is still all-or-nothing per package — npm rejects a
+            # duplicate version — so skipping cannot overwrite anything.
             if npm view "$PKG_NAME@$VERSION" version >/dev/null 2>&1; then
-              echo "$PKG_NAME@$VERSION already exists on npm."
-              exit 1
+              echo "$PKG_NAME@$VERSION already exists on npm — skipping."
+              continue
             fi
             echo "Publishing $PKG_NAME from $PKG_DIR"
             (cd "$PKG_DIR" && npm publish --access public --provenance)

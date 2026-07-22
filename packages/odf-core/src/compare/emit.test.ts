@@ -19,6 +19,23 @@ function contentXml(paras: string[]): string {
 </office:document-content>`;
 }
 
+/**
+ * Content.xml whose body is an intro paragraph, a one-cell table, then `trailingParas` — the
+ * issue #380 shape (a signature table followed by the document's last paragraph(s)).
+ */
+function contentXmlWithTable(trailingParas: string[]): string {
+  const tail = trailingParas.map((t) => `<text:p>${t}</text:p>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:xml="http://www.w3.org/XML/1998/namespace">
+  <office:body><office:text><text:p>Intro</text:p><table:table><table:table-row><table:table-cell><text:p>Cell</text:p></table:table-cell></table:table-row></table:table>${tail}</office:text></office:body>
+</office:document-content>`;
+}
+
 function officeText(xml: string): Element {
   const doc = parseXml(xml);
   return doc.getElementsByTagNameNS(ODF_NS.OFFICE, 'text').item(0) as Element;
@@ -139,6 +156,25 @@ describe('compareOdf — ODF tracked-changes emission', () => {
     expect(firstTwo).toEqual(['change', 'change-start']); // deletion point BEFORE insertion start
   });
 
+  it('[OCMP-11] replaced LAST paragraph: deletion anchors backward, outside the insertion bracket', () => {
+    // Whole-paragraph replacement at end-of-document (issue #367): the insertion bracket is
+    // end-anchored, so the deletion marker must move to the end of the preceding kept paragraph
+    // (before the change-start) instead of the start of the inserted replacement paragraph.
+    const { contentXml: out, stats } = compareOdf(contentXml(['A', 'B']), contentXml(['A', 'X']));
+    expect(stats).toEqual({ insertions: 1, deletions: 1, modifications: 0 });
+    const ot = officeText(out);
+    const regions = trackedRegions(ot);
+    expect(regions).toHaveLength(2);
+    const delRegion = regions.find((r) => childByName(r, ODF_NS.TEXT, 'deletion'))!;
+    expect(deletionStored(delRegion)).toEqual(['', 'B']); // backward merge: empty artifact first
+    const [pa, px] = bodyParagraphs(ot);
+    // End of kept "A": deletion point marker BEFORE the insertion's change-start.
+    const lastTwo = elementChildren(pa!).slice(-2).map((e) => e.localName);
+    expect(lastTwo).toEqual(['change', 'change-start']);
+    expect(lastElLocal(px!)).toBe('change-end'); // insertion bracket itself is unchanged
+    expect(firstElLocal(px!)).not.toBe('change'); // nothing anchored inside the inserted paragraph
+  });
+
   it('[OCMP-05] change ids are unique across regions', () => {
     const out = compareOdf(contentXml(['A', 'B', 'C']), contentXml(['A', 'X', 'C'])).contentXml;
     const ids = [...out.matchAll(/xml:id="(ct\d+)"/g)].map((m) => m[1]);
@@ -170,6 +206,147 @@ describe('compareOdf — ODF tracked-changes emission', () => {
     // The kept cell paragraph "Cell2" carries the inline deletion marker at its start.
     expect(out).toMatch(/<table:table-cell><text:p><text:change [^>]*\/>Cell2<\/text:p>/);
     expect(OdfDocument.fromContentXml(out).getParagraphs().map((p) => p.text)).toEqual(['Cell2']);
+  });
+
+  it('replaced LAST paragraph after a table: bracket stays inside the inserted run, deletion stores no artifact (issue #380)', () => {
+    // The backward anchor would be a table-cell paragraph. A change-start there spans from the
+    // cell into the body — a paragraph-break merge LibreOffice cannot perform across the table
+    // boundary, so reject-all stranded an empty trailing paragraph.
+    const { contentXml: out, stats } = compareOdf(
+      contentXmlWithTable(['Old closing words.']),
+      contentXmlWithTable(['Fresh unrelated sentence.']),
+    );
+    expect(stats).toEqual({ insertions: 1, deletions: 1, modifications: 0 });
+    const ot = officeText(out);
+    const regions = trackedRegions(ot);
+    expect(regions).toHaveLength(2);
+    const delRegion = regions.find((r) => childByName(r, ODF_NS.TEXT, 'deletion'))!;
+    // No merge-artifact paragraph: the residual empty paragraph left by rejecting the
+    // content-only insertion bracket is the merge slot the artifact normally provides.
+    expect(deletionStored(delRegion)).toEqual(['Old closing words.']);
+    // The table-cell paragraph carries no markers.
+    expect(out).toContain('<table:table-cell><text:p>Cell</text:p></table:table-cell>');
+    // Replacement paragraph: deletion point first (outside the span), then the bracket.
+    const ps = bodyParagraphs(ot);
+    const lastP = ps[ps.length - 1]!;
+    expect(
+      elementChildren(lastP)
+        .slice(0, 2)
+        .map((e) => e.localName),
+    ).toEqual(['change', 'change-start']);
+    expect(lastElLocal(lastP)).toBe('change-end');
+  });
+
+  it('coalesced multi-paragraph replacement after a table also stores no artifact (issue #380)', () => {
+    const out = compareOdf(
+      contentXmlWithTable(['Old clause one entirely.', 'Old clause two entirely.']),
+      contentXmlWithTable(['Fresh unrelated sentence.']),
+    ).contentXml;
+    const regions = trackedRegions(officeText(out));
+    const delRegion = regions.find((r) => childByName(r, ODF_NS.TEXT, 'deletion'))!;
+    // Both deleted paragraphs, no artifact: rejecting the insertion leaves ONE residual empty
+    // paragraph, and re-inserting two stored paragraphs contributes the one missing break.
+    expect(deletionStored(delRegion)).toEqual(['Old clause one entirely.', 'Old clause two entirely.']);
+  });
+
+  it('end-of-document insertion after a trailing table brackets only the inserted run (issue #380)', () => {
+    const out = compareOdf(contentXmlWithTable([]), contentXmlWithTable(['Appended after the table.'])).contentXml;
+    const ot = officeText(out);
+    const ps = bodyParagraphs(ot);
+    const lastP = ps[ps.length - 1]!;
+    expect(firstElLocal(lastP)).toBe('change-start');
+    expect(lastElLocal(lastP)).toBe('change-end');
+    expect(out).toContain('<table:table-cell><text:p>Cell</text:p></table:table-cell>');
+  });
+
+  it('pure end-of-document deletion after a table anchors in a synthesized residual body paragraph (issue #540)', () => {
+    // The backward anchor would be the table-cell paragraph; anchoring there makes LibreOffice
+    // restore the deleted body paragraph INSIDE the cell on reject. The emitter instead appends a
+    // residual empty body paragraph after the table to host the marker (its no-artifact merge slot).
+    const { contentXml: out, stats } = compareOdf(
+      contentXmlWithTable(['Drop this trailing paragraph.']),
+      contentXmlWithTable([]),
+    );
+    expect(stats).toEqual({ insertions: 0, deletions: 1, modifications: 0 });
+    const ot = officeText(out);
+    const regions = trackedRegions(ot);
+    expect(regions).toHaveLength(1);
+    // No merge-artifact paragraph: the synthesized residual empty body paragraph is the merge slot.
+    expect(deletionStored(regions[0]!)).toEqual(['Drop this trailing paragraph.']);
+    // The table-cell paragraph carries no markers.
+    expect(out).toContain('<table:table-cell><text:p>Cell</text:p></table:table-cell>');
+    // The marker lives at the start of a trailing empty body paragraph after the table.
+    const ps = bodyParagraphs(ot);
+    const residual = ps[ps.length - 1]!;
+    expect(firstElLocal(residual)).toBe('change');
+    expect(residual.textContent).toBe('');
+    // Exactly one in-body change marker, and it is not inside the cell.
+    expect(out.match(/<text:change /g) ?? []).toHaveLength(1);
+    expect(out).not.toMatch(/<table:table-cell>(?:(?!<\/table:table-cell>)[\s\S])*<text:change /);
+  });
+
+  it('coalesced multi-paragraph end-of-document deletion after a table stores no artifact (issue #540)', () => {
+    const out = compareOdf(
+      contentXmlWithTable(['First trailing.', 'Second trailing.']),
+      contentXmlWithTable([]),
+    ).contentXml;
+    const regions = trackedRegions(officeText(out));
+    expect(regions).toHaveLength(1);
+    // Both deleted paragraphs, no artifact: the one synthesized residual empty paragraph supplies
+    // the single missing break when reject re-inserts the two stored paragraphs.
+    expect(deletionStored(regions[0]!)).toEqual(['First trailing.', 'Second trailing.']);
+    expect(out.match(/<text:change /g) ?? []).toHaveLength(1);
+  });
+
+  it('residual body paragraph is appended AFTER the trailing table, in document order (issue #540)', () => {
+    // The residual must land after the real table element, not merely after the last collected
+    // paragraph — otherwise reject would restore the paragraph in the wrong place.
+    const out = compareOdf(
+      contentXmlWithTable(['Drop this trailing paragraph.']),
+      contentXmlWithTable([]),
+    ).contentXml;
+    const ot = officeText(out);
+    // Direct office:text child order: tracked-changes, intro paragraph, table, residual paragraph.
+    const order = elementChildren(ot).map((e) => e.localName);
+    expect(order).toEqual(['tracked-changes', 'p', 'table', 'p']);
+    const residual = elementChildren(ot).at(-1)!;
+    expect(residual.localName).toBe('p');
+    expect(firstElLocal(residual)).toBe('change');
+    expect(residual.textContent).toBe('');
+  });
+
+  it('residual-body deletion coexists with an unrelated earlier insertion (issue #540)', () => {
+    // A leading inserted paragraph plus the pure end-of-document deletion after a table: the
+    // synthesized residual (appended last, after all other marker placement) must not disturb the
+    // insertion's bracket, and the two regions keep distinct ids.
+    const { contentXml: out, stats } = compareOdf(
+      contentXmlWithTable(['Drop this trailing paragraph.']),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:dc="http://purl.org/dc/elements/1.1/"
+  xmlns:xml="http://www.w3.org/XML/1998/namespace">
+  <office:body><office:text><text:p>Fresh lead paragraph.</text:p><text:p>Intro</text:p><table:table><table:table-row><table:table-cell><text:p>Cell</text:p></table:table-cell></table:table-row></table:table></office:text></office:body>
+</office:document-content>`,
+    );
+    expect(stats).toEqual({ insertions: 1, deletions: 1, modifications: 0 });
+    const ot = officeText(out);
+    const regions = trackedRegions(ot);
+    expect(regions).toHaveLength(2);
+    // Distinct ids for the two regions (one insertion, one deletion).
+    const ids = [...out.matchAll(/xml:id="(ct\d+)"/g)].map((mm) => mm[1]);
+    expect(new Set(ids).size).toBe(2);
+    // The inserted lead paragraph keeps its own change-start bracket (undisturbed by the residual).
+    const ps = bodyParagraphs(ot);
+    expect(ps[0]!.textContent).toBe('Fresh lead paragraph.');
+    expect(firstElLocal(ps[0]!)).toBe('change-start');
+    // The deletion's marker lives in the synthesized trailing residual, not in the cell.
+    const residual = ps.at(-1)!;
+    expect(firstElLocal(residual)).toBe('change');
+    expect(residual.textContent).toBe('');
+    expect(out).toContain('<table:table-cell><text:p>Cell</text:p></table:table-cell>');
   });
 
   it('fails closed when every paragraph is deleted (no anchor)', () => {

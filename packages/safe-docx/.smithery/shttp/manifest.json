@@ -6,7 +6,7 @@
     "serverCard": {
       "serverInfo": {
         "name": "safe-docx",
-        "version": "0.9.1"
+        "version": "0.17.0"
       },
       "tools": [
         {
@@ -121,68 +121,8 @@
           }
         },
         {
-          "name": "init_plan",
-          "description": "Initialize revision-bound context metadata for coordinated multi-agent planning.",
-          "inputSchema": {
-            "type": "object",
-            "properties": {
-              "file_path": {
-                "type": "string",
-                "description": "Path to the DOCX file."
-              },
-              "plan_name": {
-                "type": "string"
-              },
-              "orchestrator_id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "file_path"
-            ],
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "additionalProperties": false
-          },
-          "annotations": {
-            "readOnlyHint": true,
-            "destructiveHint": false
-          }
-        },
-        {
-          "name": "merge_plans",
-          "description": "Deterministically merge multiple sub-agent plans and detect hard conflicts before apply.",
-          "inputSchema": {
-            "type": "object",
-            "properties": {
-              "plans": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {},
-                  "additionalProperties": {}
-                }
-              },
-              "fail_on_conflict": {
-                "type": "boolean"
-              },
-              "require_shared_base_revision": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "plans"
-            ],
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "additionalProperties": false
-          },
-          "annotations": {
-            "readOnlyHint": true,
-            "destructiveHint": false
-          }
-        },
-        {
-          "name": "apply_plan",
-          "description": "Validate and apply a batch of edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first; applies only if all pass. Accepts inline steps or a plan_file_path. Compatible with merge_plans output.",
+          "name": "batch_edit",
+          "description": "Single-agent front door for applying multiple edit steps (replace_text, insert_paragraph) to a document in one call. Validates all steps first, rejects conflicts before applying anything, then executes valid steps sequentially. Accepts inline steps or a plan_file_path JSON array.",
           "inputSchema": {
             "type": "object",
             "properties": {

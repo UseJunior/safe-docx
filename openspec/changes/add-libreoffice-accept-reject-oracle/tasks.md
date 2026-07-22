@@ -28,3 +28,17 @@
 - [x] 4.2 `verification/ROADMAP.md`: record the oracle voter landed (accept/reject is now oracle-backed for the
       pinned cases); note it is a local-only check.
 - [ ] 4.3 Ship: peer-review (codex + agy), open PR, `/automerge-smoke`. Update memory (committed oracle helper).
+
+## 5. Trust-boundary characterization (#362)
+
+- [x] 5.1 Add an `identity` op to `OracleJob` / the Basic macro (load→save, NO dispatch) so LibreOffice's
+      handling of UNRESOLVED tracked changes can be probed.
+- [x] 5.2 Promote the `.tmp/lo-oracle-vet/` fixtures into a committed gated test
+      (`libreoffice-oracle-trust-boundary.test.ts`): accept/reject text+shape for simple ins, simple del,
+      fully-deleted nested ins (both collapse), discriminating del+ins stack (accept=`NEW` / reject=`ORIG`),
+      partial del-in-ins (`AB[CD]EF` → accept=`ABEF` / reject=empty), each also cross-checked against the TS
+      engine (`[LO-ORACLE-TRUST-01..03]`).
+- [x] 5.3 Characterize the known LibreOffice save defect via the identity path: a fully-deleted insertion
+      loses its `<w:ins>` wrapper on load→save, while the stack and partial controls round-trip cleanly
+      (`[LO-ORACLE-TRUST-04]`, upstream filing tracked in #346).
+- [x] 5.4 Document the trust boundary in this change (proposal Risks / Limitations + spec requirement).

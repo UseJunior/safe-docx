@@ -1,6 +1,6 @@
 /**
  * Batched edit command. Converts repeatable --replace/--insert-after/--insert-before
- * flags into apply_plan steps, then calls dispatchToolCall.
+ * flags into batch_edit steps, then calls dispatchToolCall.
  */
 import { SessionManager } from '../../session/manager.js';
 import { dispatchToolCall } from '../../server.js';
@@ -132,7 +132,7 @@ export async function runEditCommand(args: EditCommandArgs, opts: EditCommandIO)
   const mgr = new SessionManager({ defaultAiAuthor: resolveCliAiAuthor() });
   const defaultInstruction = args.instruction ?? 'CLI batch edit';
 
-  // Build apply_plan steps
+  // Build batch_edit steps
   let stepCounter = 0;
   const steps: Record<string, unknown>[] = [];
 
@@ -160,8 +160,8 @@ export async function runEditCommand(args: EditCommandArgs, opts: EditCommandIO)
     });
   }
 
-  // Apply plan
-  const applyResult = await dispatchToolCall(mgr, 'apply_plan', {
+  // Apply batch
+  const applyResult = await dispatchToolCall(mgr, 'batch_edit', {
     file_path: args.file_path,
     steps,
   });
@@ -169,7 +169,7 @@ export async function runEditCommand(args: EditCommandArgs, opts: EditCommandIO)
   const applySuccess = (applyResult as { success?: boolean }).success;
   if (applySuccess === false) {
     opts.writeError(JSON.stringify(applyResult, null, 2));
-    throw new Error('Edit apply_plan failed');
+    throw new Error('Edit batch_edit failed');
   }
 
   // Save if output path specified

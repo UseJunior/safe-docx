@@ -3,6 +3,8 @@ import { describe, expect } from "vitest";
 import {
   CANONICAL_SECTION_ORDER,
   rejectedAliases,
+  SUITE_SCENARIO_IDS_TAG,
+  suiteScenarioIdsSchema,
   tagDefinitions,
   tagSchema,
   validateTags,
@@ -141,6 +143,32 @@ describe("tagSchema", () => {
     const tagNames = Object.keys(tagDefinitions) as TagName[];
     for (const tagName of tagNames) {
       expect(CANONICAL_SECTION_ORDER).toContain(tagName);
+    }
+  });
+
+  it("keeps the suite-scenario-id tag outside the prose tag definitions", () => {
+    expect(SUITE_SCENARIO_IDS_TAG).toBe("suiteScenarioIds");
+    expect(Object.keys(tagDefinitions)).not.toContain(SUITE_SCENARIO_IDS_TAG);
+  });
+
+  it("accepts a non-empty list of unique suite scenario ids", () => {
+    expect(suiteScenarioIdsSchema.safeParse(["docx/a", "docx/b"]).success).toBe(true);
+  });
+
+  it("rejects an empty suite-scenario-id list", () => {
+    expect(suiteScenarioIdsSchema.safeParse([]).success).toBe(false);
+  });
+
+  it("rejects blank suite scenario ids", () => {
+    expect(suiteScenarioIdsSchema.safeParse(["docx/a", "   "]).success).toBe(false);
+  });
+
+  it("rejects duplicate suite scenario ids", () => {
+    const result = suiteScenarioIdsSchema.safeParse(["docx/a", "docx/a"]);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(JSON.stringify(result.error.issues)).toContain("duplicates");
     }
   });
 });

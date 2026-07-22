@@ -23,3 +23,11 @@
 - [x] 5.2 Create design with the three options and recommendation
 - [x] 5.3 Create `release-publishing` capability spec with scenarios
 - [x] 5.4 `openspec validate add-odf-release-isolation --strict` passes
+
+## 6. Revision (2026-06-10, issue #372): fold odf-core into the suite train
+- [x] 6.1 Drop `private: true` from `packages/odf-core` and add `publishConfig.access: public` (other publish metadata already present)
+- [x] 6.2 Add `@usejunior/odf-core` to `docx-mcp` `dependencies` (ODF works out of the box; gdocs stays optional-peer)
+- [x] 6.3 Add odf-core to all four `release.yml` loops, publish ordered after docx-core / before docx-mcp
+- [x] 6.4 Guard: include odf-core in `EXPECTED_LOOPS`; replace the ODF-private assertion with the publish-list-publishable assertion; update tests
+- [x] 6.5 Rewrite the `release-publishing` delta to the revised policy (ORP-01..05); proposal addendum records the reversal rationale
+- [x] 6.6 Sync human-facing format claims: npm descriptions/keywords (`odt`, `opendocument`, `libreoffice`), `server.json`, MCPB manifest, `gemini-extension.json`, root + docx-mcp READMEs

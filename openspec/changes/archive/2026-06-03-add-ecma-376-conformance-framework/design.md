@@ -59,7 +59,7 @@ divergence with an explicit reason.
 **Grammar** (lint-enforced):
 `@conformance <SPEC> edition <N>, Part <N> § <SECTION>`
 
-Edition is **required** because Part 4 § 17.16.5 exists in both the 4th
+Edition is **required** because Part 1 § 17.16.13 exists in multiple
 and 5th editions and may differ. A repo-wide grep at design time found
 28 ECMA-376 mentions; zero disambiguate the edition.
 
@@ -155,7 +155,7 @@ are unaffected.
 Three worked examples in this change. Backfill is a separate change.
 
 - `pipeline.ts:418` — `validateFieldStructure`, the three Part 4
-  constraints on complex fields. Anchors `[ECMA-PART4-17-16-5]`.
+  deleted field-code constraints. Anchors `[ECMA-PART1-17-16-13]`.
 - `atomizer.ts:219` — paragraph-level OOXML markers list. Anchors
   `[ECMA-PART1-17-13-5]`.
 - `footnotes.ts:6` (file-leading JSDoc) and `core-types.ts:340`
@@ -172,7 +172,7 @@ formally verifies field-structure preservation. The TS runtime is
 file-level pointer**, not naming specific predicate names (those are
 still evolving — round-2 review found that the proof's predicate names
 had already changed from earlier drafts). The Lean change adds an
-outbound doc comment naming `[ECMA-PART4-17-16-5]` when its files land.
+outbound doc comment naming `[ECMA-PART1-17-16-13]` when its files land.
 Either change can land first; the dependency is one-directional and
 non-blocking.
 

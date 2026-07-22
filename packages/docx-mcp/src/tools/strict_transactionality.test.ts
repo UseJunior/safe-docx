@@ -40,6 +40,8 @@ describe('format_layout: strict failure transactionality', () => {
         `<w:body>` +
         `<w:p><w:r><w:t>Alpha</w:t></w:r></w:p>` +
         `<w:tbl>` +
+        `<w:tblPr/>` +
+        `<w:tblGrid><w:gridCol/></w:tblGrid>` +
         `<w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc></w:tr>` +
         `<w:tr><w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc></w:tr>` +
         `</w:tbl>` +

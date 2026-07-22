@@ -2,8 +2,8 @@
   "manifest_version": "0.3",
   "name": "safe-docx",
   "display_name": "Safe Docx",
-  "version": "0.9.1",
-  "description": "AI-native Word document editing with stable paragraph anchors and deterministic DOCX operations.",
+  "version": "0.17.0",
+  "description": "AI-native Word (.docx) and OpenDocument (.odt) editing with stable paragraph anchors and deterministic document operations.",
   "long_description": "Safe Docx lets Claude work directly with .docx files on your local filesystem. It provides stable paragraph IDs (_bk_*) for precise editing while preserving formatting and structure.\n\nCore capabilities include reading/searching content, formatting-preserving edits and inserts, deterministic layout controls, tracked-changes output, comments, footnote tools, document comparison, and revision extraction.",
   "author": {
     "name": "OpenAgreements",
@@ -29,16 +29,12 @@
       "description": "Search for text patterns in the document."
     },
     {
-      "name": "init_plan",
-      "description": "Initialize revision-bound metadata for coordinated planning."
+      "name": "get_document_outline",
+      "description": "Get a compact structural map of the document's headings with stable paragraph IDs."
     },
     {
-      "name": "merge_plans",
-      "description": "Merge multiple sub-agent plans and detect conflicts."
-    },
-    {
-      "name": "apply_plan",
-      "description": "Validate and apply a batch of edit steps in one transaction."
+      "name": "batch_edit",
+      "description": "Validate, conflict-check, and apply multiple edit steps in one call."
     },
     {
       "name": "replace_text",
@@ -57,12 +53,24 @@
       "description": "Export a document to a portable Markdown rendering on disk (lossy; DOCX only)."
     },
     {
+      "name": "convert_to_odt",
+      "description": "Convert a DOCX document to OpenDocument Text (.odt) on disk (semantic, intentionally lossy; DOCX only)."
+    },
+    {
       "name": "format_layout",
       "description": "Apply deterministic paragraph/table layout formatting controls."
     },
     {
       "name": "accept_changes",
       "description": "Accept tracked changes in the document body."
+    },
+    {
+      "name": "accept_ai_edits",
+      "description": "Selectively accept tracked changes by revision id or author, preserving other reviewers' revisions."
+    },
+    {
+      "name": "reject_ai_edits",
+      "description": "Selectively reject tracked changes by revision id or author, preserving other reviewers' revisions."
     },
     {
       "name": "has_tracked_changes",
@@ -131,7 +139,7 @@
   "privacy_policies": [
     "https://usejunior.com/privacy_policy"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "compatibility": {
     "claude_desktop": ">=0.10.0",
     "platforms": [

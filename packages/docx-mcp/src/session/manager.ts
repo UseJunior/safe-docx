@@ -1,21 +1,25 @@
-import { randomBytes } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import {
   DocxDocument,
   DocxZip,
+  REVISION_ID_ELEMENT_NAME_SET,
+  enumerateRevisionStoryPartPaths,
   createRevisionContext,
   createRevisionIdState,
   parseXml,
   type NormalizationResult,
   type ParagraphRevision,
-  type ReconstructionMode,
-  type ReconstructionFallbackReason,
-  type ReconstructionFallbackDiagnostics,
   type RevisionContext,
   type RevisionIdState,
 } from '@usejunior/docx-core';
+import type {
+  ReconstructionMode,
+  ReconstructionFallbackReason,
+  ReconstructionFallbackDiagnostics,
+} from '@usejunior/docx-compare';
 // NOTE: @usejunior/odf-core is an OPTIONAL provider (private/unpublished, like
 // @usejunior/google-docs-core) and is intentionally NOT imported here. A static
 // import in this always-loaded module would make a production install of the
@@ -37,15 +41,12 @@ export type SaveCacheEntry = {
   revision: number;
   format: SaveFormat;
   cleanBookmarks: boolean;
-  trackedEngine: 'auto' | 'atomizer';
   trackedAuthor: string;
   revisedBuffer: Buffer;
   trackedBuffer: Buffer | null;
   trackedStats: TrackedChangesStats | null;
-  trackedReconstructionMode?: ReconstructionMode;
-  trackedFallbackReason?: ReconstructionFallbackReason;
-  trackedFallbackDiagnostics?: ReconstructionFallbackDiagnostics;
   bookmarksRemoved: number;
+  blocksRestored: number;
   exportedAtUtc: string;
   cachedAtIso: string;
 };
@@ -53,6 +54,30 @@ export type SaveCacheEntry = {
 export type ExtractionCacheEntry = {
   revision: number;
   changes: ParagraphRevision[];
+};
+
+/**
+ * A package-level (non-revision) mutation recorded during a session.
+ *
+ * Per #122, AI-attributed writes in the *revisionable* surface must land as
+ * native OOXML tracked-change markup. Writes in the *package-mutation* surface
+ * (side-story parts, relationships, content types — things OOXML has no native
+ * revision wrapper for) cannot be tracked, so instead of being emitted silently
+ * they are recorded here and surfaced in the save report. This keeps the
+ * "every AI mutation is accounted for" invariant honest even where the mutation
+ * is not, and cannot be, a tracked change.
+ *
+ * @see packages/docx-core/SUPPORT.md (Table B) for the ratified classification.
+ */
+export type NonRevisionChange = {
+  /** MCP tool that produced the change (e.g. `add_comment`). */
+  tool: string;
+  /** Session edit revision at which the change was recorded. */
+  editRevision: number;
+  /** Package parts mutated without tracked-change markup. */
+  parts: string[];
+  /** Human-readable summary of what was mutated and why it is untracked. */
+  description: string;
 };
 
 export type DocxSession = {
@@ -81,6 +106,12 @@ export type DocxSession = {
   editRevision: number;
   saveCache: Map<string, SaveCacheEntry>;
   extractionCache: ExtractionCacheEntry | null;
+  /**
+   * Non-revision (package-mutation) changes recorded this session, in order.
+   * Surfaced in the save report so package-level mutations that have no native
+   * OOXML revision wrapper are still accounted for (#122).
+   */
+  nonRevisionManifest: NonRevisionChange[];
   createdAt: Date;
   lastAccessedAt: Date;
   expiresAt: Date;
@@ -125,49 +156,6 @@ const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml
  * `<w:comment w:id>`, `<w:footnote w:id>`, `<w:bookmarkStart w:id>`) from
  * spuriously inflating the starting revision-id counter.
  */
-const REVISION_ID_ELEMENT_LOCAL_NAMES = new Set<string>([
-  'ins',
-  'del',
-  'moveFrom',
-  'moveTo',
-  'moveFromRangeStart',
-  'moveFromRangeEnd',
-  'moveToRangeStart',
-  'moveToRangeEnd',
-  'pPrChange',
-  'rPrChange',
-  'tblPrChange',
-  'trPrChange',
-  'tcPrChange',
-  'sectPrChange',
-  'cellIns',
-  'cellDel',
-  'cellMerge',
-  'customXmlInsRangeStart',
-  'customXmlInsRangeEnd',
-  'customXmlDelRangeStart',
-  'customXmlDelRangeEnd',
-  'customXmlMoveFromRangeStart',
-  'customXmlMoveFromRangeEnd',
-  'customXmlMoveToRangeStart',
-  'customXmlMoveToRangeEnd',
-]);
-
-/**
- * Fixed package paths that can carry package-wide revision attributes.
- * `commentsExtended.xml` and `people.xml` are intentionally excluded — they
- * use `w15:paraId` / `w15:author` identifiers, not revision `w:id` values.
- */
-const FIXED_REVISION_ID_SEED_PARTS = [
-  'word/comments.xml',
-  'word/footnotes.xml',
-  'word/endnotes.xml',
-  'word/glossary/document.xml',
-] as const;
-
-/** Matches numbered header/footer parts such as `word/header1.xml`. */
-const NUMBERED_HEADER_FOOTER_RE = /^word\/(header|footer)\d*\.xml$/;
-
 function normalizeAiAuthor(author: string | null | undefined): string | null {
   if (typeof author !== 'string') return null;
   const trimmed = author.trim();
@@ -202,7 +190,7 @@ export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdSta
   for (const doc of docs) {
     for (const node of Array.from(doc.getElementsByTagName('*'))) {
       const localName = node.localName ?? '';
-      if (!REVISION_ID_ELEMENT_LOCAL_NAMES.has(localName)) continue;
+      if (!REVISION_ID_ELEMENT_NAME_SET.has(localName)) continue;
       if (node.namespaceURI && node.namespaceURI !== WORDPROCESSING_ML_NS) continue;
       const value = getWordIdValue(node);
       if (value !== null && value > maxId) {
@@ -214,7 +202,7 @@ export function inferStartingRevisionIdState(...docs: Document[]): RevisionIdSta
   return createRevisionIdState(maxId + 1);
 }
 
-async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> {
+export async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> {
   const docs: Document[] = [];
 
   let zip: DocxZip;
@@ -224,12 +212,7 @@ async function getSidePartRevisionSeedDocs(buffer: Buffer): Promise<Document[]> 
     return docs;
   }
 
-  const seedPaths = new Set<string>(FIXED_REVISION_ID_SEED_PARTS);
-  for (const entry of zip.listFiles()) {
-    if (NUMBERED_HEADER_FOOTER_RE.test(entry)) seedPaths.add(entry);
-  }
-
-  for (const partPath of seedPaths) {
+  for (const partPath of enumerateRevisionStoryPartPaths(zip)) {
     if (!zip.hasFile(partPath)) continue;
     let xml: string | null;
     try {
@@ -335,10 +318,11 @@ export class SessionManager {
   private newSessionId(): string {
     // Format: ses_[12 alphanumeric] — kept for temp dir naming only.
     const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const bytes = randomBytes(12);
     let out = '';
     for (let i = 0; i < 12; i++) {
-      out += alphabet[bytes[i] % alphabet.length];
+      // randomInt gives a uniform value in [0, alphabet.length); avoids the
+      // modulo bias of randomBytes()[i] % alphabet.length (256 % 62 != 0).
+      out += alphabet[randomInt(alphabet.length)];
     }
     return `ses_${out}`;
   }
@@ -377,6 +361,7 @@ export class SessionManager {
       editRevision: 0,
       saveCache: new Map<string, SaveCacheEntry>(),
       extractionCache: null,
+      nonRevisionManifest: [],
       createdAt: now,
       lastAccessedAt: now,
       expiresAt,
@@ -476,10 +461,12 @@ export class SessionManager {
     const doc = await DocxDocument.load(session.originalBuffer);
     doc.normalize();
     doc.insertParagraphBookmarks('_baseline');
-    const [clean, bookmarked] = await Promise.all([
-      doc.toBuffer({ cleanBookmarks: true }),
-      doc.toBuffer({ cleanBookmarks: false }),
-    ]);
+    // Sequential on purpose: toBuffer() temporarily swaps document.xml inside
+    // the shared zip, so concurrent calls on one document race on that state.
+    // Baselines stay fully normalized (no minimalReserialization) — the
+    // comparison pipeline expects normalized-vs-normalized inputs.
+    const clean = await doc.toBuffer({ cleanBookmarks: true });
+    const bookmarked = await doc.toBuffer({ cleanBookmarks: false });
     session.comparisonBaseline = clean.buffer;
     session.comparisonBaselineWithBookmarks = bookmarked.buffer;
   }
@@ -565,6 +552,19 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Record a package-level (non-revision) mutation for later surfacing in the
+   * save report (#122). Call this after a successful mutation whose effect is
+   * not, and cannot be, captured by OOXML tracked-change markup — e.g. creating
+   * `word/comments.xml`, rewriting relationships, or editing side-story parts.
+   */
+  recordNonRevisionChange(
+    session: DocxSession,
+    change: Omit<NonRevisionChange, 'editRevision'>,
+  ): void {
+    session.nonRevisionManifest.push({ ...change, editRevision: session.editRevision });
+  }
+
   getSaveCache(session: DocxSession, cacheKey: string): SaveCacheEntry | null {
     return session.saveCache.get(cacheKey) ?? null;
   }
@@ -616,7 +616,8 @@ export class SessionManager {
   }
 
   async saveTo(session: DocxSession, savePath: string, opts?: { cleanBookmarks?: boolean }): Promise<void> {
-    const { buffer } = await session.doc.toBuffer({ cleanBookmarks: opts?.cleanBookmarks ?? true });
+    const cleanBookmarks = opts?.cleanBookmarks ?? true;
+    const { buffer } = await session.doc.toBuffer({ cleanBookmarks, minimalReserialization: cleanBookmarks });
     await fs.writeFile(savePath, new Uint8Array(buffer));
   }
 

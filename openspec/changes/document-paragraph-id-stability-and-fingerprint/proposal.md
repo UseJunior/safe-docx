@@ -20,7 +20,7 @@ Tracks issue #156.
 - **New: opt-in `content_fingerprint`**: `read_file(format="json", include_fingerprint=true)` adds `content_fingerprint: "sha256:nfkc:<32hex>"` to each paragraph node.
   - Algorithm: `sha256(NFKC(visibleText).replace(/\s+/g, " ").trim())`, hex-truncated to 32 chars (128 bits), prefixed `sha256:nfkc:` for forward compatibility.
   - Input is the raw paragraph visible text (same `getParagraphText()` surface used by the `_bk_*` fallback seed) — NOT post-processed `clean_text` (which strips list labels and gets enriched with footnote display markers in `read_file.ts`).
-  - Read-only metadata. Edit tools (`replace_text`, `insert_paragraph`, `apply_plan`, etc.) continue to accept ONLY `_bk_*` IDs as anchors. `content_fingerprint` is never an edit anchor.
+  - Read-only metadata. Edit tools (`replace_text`, `insert_paragraph`, `batch_edit`, etc.) continue to accept ONLY `_bk_*` IDs as anchors. `content_fingerprint` is never an edit anchor.
   - Off by default — JSON mode is already token-budgeted.
 - **New helper**: `computeContentFingerprint()` in `@usejunior/docx-core` (re-exported from package index for downstream reuse).
 - **Generated tool reference**: regenerate `packages/docx-mcp/docs/tool-reference.generated.md` after `tool_catalog.ts` schema change.

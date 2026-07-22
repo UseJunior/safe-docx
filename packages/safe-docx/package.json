@@ -1,7 +1,7 @@
 {
   "name": "@usejunior/safe-docx",
-  "version": "0.9.1",
-  "description": "Edit Word (.docx) documents with tracked changes, redlines, and formatting preservation. Built for AI coding agents. MIT licensed, 100% local processing.",
+  "version": "0.17.0",
+  "description": "Edit Word (.docx) and OpenDocument (.odt) files with tracked changes, redlines, and formatting preservation. Built for AI coding agents. Apache-2.0 licensed, 100% local processing.",
   "mcpName": "io.github.UseJunior/safe-docx",
   "type": "module",
   "main": "./index.js",
@@ -25,7 +25,7 @@
     "safedocx": "./bin/safe-docx.js"
   },
   "dependencies": {
-    "@usejunior/docx-mcp": "^0.9.1"
+    "@usejunior/docx-mcp": "^0.17.0"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -42,9 +42,10 @@
     "index.js",
     "index.d.ts",
     "README.md",
-    "server.json"
+    "server.json",
+    "NOTICE"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "mcp",
     "mcp-server",
@@ -84,7 +85,10 @@
     "local-first",
     "offline",
     "diff",
-    "safedocx"
+    "safedocx",
+    "odt",
+    "opendocument",
+    "libreoffice"
   ],
   "homepage": "https://usejunior.com/developer-tools/safe-docx",
   "bugs": {

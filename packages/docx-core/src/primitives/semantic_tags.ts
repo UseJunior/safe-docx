@@ -31,6 +31,7 @@ export function stripHyperlinkTags(text: string): string {
 export function hasHighlightTags(text: string): boolean {
   return (
     text.includes(`<${HIGHLIGHT_TAG}>`) ||
+    text.includes(`<${HIGHLIGHT_TAG} `) || // full-mode attributed form: <highlight color="...">
     text.includes(`</${HIGHLIGHT_TAG}>`) ||
     text.includes('<highlighting>') ||
     text.includes('</highlighting>')
@@ -39,7 +40,7 @@ export function hasHighlightTags(text: string): boolean {
 
 export function stripHighlightTags(text: string): string {
   return text
-    .replaceAll(new RegExp(`<${HIGHLIGHT_TAG}>`, 'g'), '')
+    .replaceAll(new RegExp(`<${HIGHLIGHT_TAG}\\b[^>]*>`, 'g'), '')
     .replaceAll(new RegExp(`</${HIGHLIGHT_TAG}>`, 'g'), '')
     .replaceAll(/<highlighting>/g, '')
     .replaceAll(/<\/highlighting>/g, '');

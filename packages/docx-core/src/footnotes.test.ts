@@ -128,7 +128,8 @@ describe('findReferencesInOrder', () => {
 
 describe('FootnoteNumberingTracker', () => {
   describe('basic numbering', () => {
-    test('assigns sequential display numbers', async ({ given, when, then }: AllureBddContext) => {
+    test.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' })(
+      'assigns sequential display numbers', async ({ given, when, then }: AllureBddContext) => {
       let document: Element;
       let tracker: FootnoteNumberingTracker;
 
@@ -145,7 +146,8 @@ describe('FootnoteNumberingTracker', () => {
         expect(tracker.getFootnoteDisplayNumber('3')).toBe(2);
         expect(tracker.getFootnoteDisplayNumber('8')).toBe(3);
       });
-    });
+      },
+    );
 
     test('returns undefined for unknown ID', async ({ given, when, then }: AllureBddContext) => {
       let tracker: FootnoteNumberingTracker;

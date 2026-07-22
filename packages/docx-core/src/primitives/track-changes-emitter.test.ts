@@ -10,11 +10,13 @@ import {
   buildRPrChangeElement,
   buildTcPrChangeElement,
   buildTrPrChangeElement,
+  convertSerializedDeletionContent,
   createRevisionContainer,
   createRevisionContext,
   createRevisionIdState,
   wrapElementWithDel,
   wrapElementWithIns,
+  wrapSerializedContentWithDel,
 } from './track-changes-emitter.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({
@@ -271,6 +273,143 @@ describe('track-changes-emitter', () => {
       expect(serialized).toContain('<w:rPrChange ');
       expect(serialized).toContain('<w:rPr><w:b/></w:rPr>');
       expect(serialized).not.toContain('w:rPrChange w:id="99"');
+    });
+  });
+
+  test('buildRPrChangeElement excludes alternate-prefix WML changes and preserves extension markup', () => {
+    const rPr = parseFragment(
+      '<w:rPr xmlns:q="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:x="urn:example:extension"><w:b/><q:rPrChange q:id="99"><q:rPr/></q:rPrChange><x:rPrChange x:keep="yes"/></w:rPr>',
+    );
+
+    const result = buildRPrChangeElement(
+      rPr,
+      createRevisionContext({
+        author: 'Comparison',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      }),
+    );
+    const snapshot = result.getElementsByTagNameNS(
+      'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+      'rPr',
+    ).item(0) as Element;
+
+    expect(
+      snapshot.getElementsByTagNameNS(
+        'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+        'rPrChange',
+      ).length,
+    ).toBe(0);
+    expect(
+      snapshot
+        .getElementsByTagNameNS('urn:example:extension', 'rPrChange')
+        .item(0)
+        ?.getAttribute('x:keep'),
+    ).toBe('yes');
+  });
+
+  test('convertSerializedDeletionContent converts entity-laden text without corrupting it', async ({ given, when, then }: AllureBddContext) => {
+    let content: string;
+    let converted: string;
+
+    await given('serialized run content whose text holds escaped angle brackets and ampersands', () => {
+      content =
+        '<w:r><w:t xml:space="preserve">if a &lt; b &amp;&amp; b &gt; c</w:t></w:r>';
+    });
+
+    await when('the content is converted for deletion', () => {
+      converted = convertSerializedDeletionContent(content);
+    });
+
+    await then('the renamed element preserves the entity references and attributes', () => {
+      expect(converted).toBe(
+        '<w:r><w:delText xml:space="preserve">if a &lt; b &amp;&amp; b &gt; c</w:delText></w:r>',
+      );
+    });
+  });
+
+  test('convertSerializedDeletionContent converts every w:t in a run with multiple text children', async ({ given, when, then }: AllureBddContext) => {
+    let content: string;
+    let converted: string;
+
+    await given('a run holding consecutive w:t elements and a field instruction', () => {
+      content =
+        '<w:r><w:t>first</w:t><w:t xml:space="preserve"> second</w:t><w:instrText>PAGEREF _Ref1</w:instrText></w:r>';
+    });
+
+    await when('the content is converted for deletion', () => {
+      converted = convertSerializedDeletionContent(content);
+    });
+
+    await then('all text children are renamed and none survive as insertion-style tags', () => {
+      expect(converted).toBe(
+        '<w:r><w:delText>first</w:delText><w:delText xml:space="preserve"> second</w:delText><w:delInstrText>PAGEREF _Ref1</w:delInstrText></w:r>',
+      );
+    });
+  });
+
+  test('convertSerializedDeletionContent converts shapes the legacy regex sweep missed', async ({ given, when, then }: AllureBddContext) => {
+    let selfClosing: string;
+    let gtInAttribute: string;
+
+    await given('runs with a self-closing w:t and an attribute value containing ">"', () => {
+      selfClosing = '<w:r><w:t/></w:r>';
+      gtInAttribute = '<w:r><w:t w14:textId="a>b">text</w:t></w:r>';
+    });
+
+    await when('the content is converted for deletion', () => {
+      selfClosing = convertSerializedDeletionContent(selfClosing);
+      gtInAttribute = convertSerializedDeletionContent(gtInAttribute);
+    });
+
+    await then('both shapes are renamed instead of leaking w:t into the deletion wrapper', () => {
+      expect(selfClosing).toBe('<w:r><w:delText/></w:r>');
+      expect(gtInAttribute).toContain('<w:delText ');
+      expect(gtInAttribute).toContain('text</w:delText>');
+      expect(gtInAttribute).not.toContain('<w:t');
+    });
+  });
+
+  test('convertSerializedDeletionContent leaves non-text run content untouched', async ({ given, when, then }: AllureBddContext) => {
+    let content: string;
+    let converted: string;
+
+    await given('serialized run content with no convertible text elements', () => {
+      content = '<w:r><w:rPr><w:b/></w:rPr><w:tab/><w:br w:type="page"/></w:r>';
+    });
+
+    await when('the content is converted for deletion', () => {
+      converted = convertSerializedDeletionContent(content);
+    });
+
+    await then('the content is returned byte-for-byte unchanged', () => {
+      expect(converted).toBe(content);
+    });
+  });
+
+  test('wrapSerializedContentWithDel wraps converted content with revision metadata', async ({ given, when, then }: AllureBddContext) => {
+    let wrapped: string;
+
+    await given('serialized run content with text', () => {
+      wrapped = '';
+    });
+
+    await when('the content is wrapped in a w:del element', () => {
+      wrapped = wrapSerializedContentWithDel(
+        '<w:r><w:t>gone</w:t></w:r>',
+        createRevisionContext({
+          author: 'Comparison',
+          date: '2026-05-03T14:15:16Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('the wrapper carries revision metadata around deletion-style content', () => {
+      expect(wrapped).toBe(
+        '<w:del w:id="1" w:author="Comparison" w:date="2026-05-03T14:15:16Z">' +
+          '<w:r><w:delText>gone</w:delText></w:r></w:del>',
+      );
     });
   });
 });

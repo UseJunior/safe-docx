@@ -7,18 +7,20 @@ import { SessionManager, type GDocsSession, type OdfSession } from './session/ma
 import { SAFE_DOCX_MCP_TOOLS } from './tool_catalog.js';
 import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
-import { initPlan } from './tools/init_plan.js';
+import { getDocumentOutline } from './tools/get_document_outline.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
-import { mergePlans } from './tools/merge_plans.js';
-import { applyPlan } from './tools/apply_plan.js';
+import { batchEdit } from './tools/batch_edit.js';
 import { save } from './tools/save.js';
 import { exportDocument } from './tools/export.js';
+import { convertToOdt } from './tools/convert_to_odt.js';
 import { getFileStatus } from './tools/get_file_status.js';
 import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
 import { closeFile } from './tools/close_file.js';
 import { formatLayout } from './tools/format_layout.js';
 import { acceptChanges } from './tools/accept_changes.js';
+import { acceptAiEdits } from './tools/accept_ai_edits.js';
+import { rejectAiEdits } from './tools/reject_ai_edits.js';
 import { addComment } from './tools/add_comment.js';
 import { getComments } from './tools/get_comments.js';
 import { deleteComment } from './tools/delete_comment.js';
@@ -89,7 +91,7 @@ async function loadGDocsHandlers(): Promise<typeof gdocsHandlers> {
 
 async function loadOdfHandlers(): Promise<typeof odfHandlers> {
   if (odfHandlers) return odfHandlers;
-  const [readFile, replaceText, grep, insertParagraph, addComment, getComments, save, getFileStatus, closeFile] = await Promise.all([
+  const [readFile, replaceText, grep, insertParagraph, addComment, getComments, save, getFileStatus, closeFile, compareDocuments] = await Promise.all([
     import('./tools/odf/read_file.js'),
     import('./tools/odf/replace_text.js'),
     import('./tools/odf/grep.js'),
@@ -99,6 +101,7 @@ async function loadOdfHandlers(): Promise<typeof odfHandlers> {
     import('./tools/odf/save.js'),
     import('./tools/odf/get_file_status.js'),
     import('./tools/odf/close_file.js'),
+    import('./tools/odf/compare_documents.js'),
   ]);
   odfHandlers = {
     read_file: readFile.odfReadFile,
@@ -110,6 +113,7 @@ async function loadOdfHandlers(): Promise<typeof odfHandlers> {
     save: save.odfSave,
     get_file_status: getFileStatus.odfGetFileStatus,
     close_file: closeFile.odfCloseFile,
+    compare_documents: compareDocuments.odfCompareDocumentsSession,
   };
   return odfHandlers;
 }
@@ -158,12 +162,10 @@ export async function dispatchToolCall(
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'grep');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'grep');
       return await grep(sessions, args as Parameters<typeof grep>[1]);
-    case 'init_plan':
-      return await initPlan(sessions, args as Parameters<typeof initPlan>[1]);
-    case 'merge_plans':
-      return await mergePlans(args as Parameters<typeof mergePlans>[0]);
-    case 'apply_plan':
-      return await applyPlan(sessions, args as Parameters<typeof applyPlan>[1]);
+    case 'get_document_outline':
+      return await getDocumentOutline(sessions, args as Parameters<typeof getDocumentOutline>[1]);
+    case 'batch_edit':
+      return await batchEdit(sessions, args as Parameters<typeof batchEdit>[1]);
     case 'replace_text':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'replace_text');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'replace_text');
@@ -178,11 +180,17 @@ export async function dispatchToolCall(
       return await save(sessions, args as Parameters<typeof save>[1]);
     case 'export':
       return await exportDocument(sessions, args as Parameters<typeof exportDocument>[1]);
+    case 'convert_to_odt':
+      return await convertToOdt(sessions, args as Parameters<typeof convertToOdt>[1]);
     case 'format_layout':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'format_layout');
       return await formatLayout(sessions, args as Parameters<typeof formatLayout>[1]);
     case 'accept_changes':
       return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
+    case 'accept_ai_edits':
+      return await acceptAiEdits(sessions, args as Parameters<typeof acceptAiEdits>[1]);
+    case 'reject_ai_edits':
+      return await rejectAiEdits(sessions, args as Parameters<typeof rejectAiEdits>[1]);
     case 'has_tracked_changes':
       return await hasTrackedChanges_tool(sessions, args as Parameters<typeof hasTrackedChanges_tool>[1]);
     case 'get_file_status':
@@ -201,28 +209,27 @@ export async function dispatchToolCall(
       return await getComments(sessions, args as Parameters<typeof getComments>[1]);
     case 'delete_comment':
       return await deleteComment(sessions, args as Parameters<typeof deleteComment>[1]);
-    case 'compare_documents':
-      // compare_documents resolves its inputs via original_file_path / revised_file_path
-      // (not file_path), so the shared resolver's .odt chokepoint can't see them. Route here:
-      //  - two `.odt` inputs → the stateless ODF handler directly (it loads both files itself; it
-      //    CANNOT go through dispatchOdf, whose resolveOdfSessionForTool requires a file_path);
-      //  - a `.odt` session file_path → UNSUPPORTED_FOR_ODF (session-mode compare is a later slice);
-      //  - otherwise the DOCX tool.
-      if (hasOdfInputPath(args, ['original_file_path', 'revised_file_path'])) {
-        const { odfCompareDocuments } = await import('./tools/odf/compare_documents.js');
-        return await odfCompareDocuments(sessions, args as Parameters<typeof odfCompareDocuments>[1]);
+    case 'compare_documents': {
+      // compare_documents has two modes. Two-file mode (original_file_path + revised_file_path)
+      // takes precedence for ALL providers — mirroring the DOCX tool's own twoFileMode precedence —
+      // so a stray file_path cannot preempt a two-file request (e.g. two `.docx` inputs plus a
+      // `.odt` file_path must run the DOCX comparison, not open an ODF session). Within two-file
+      // mode, `.odt` inputs route to the stateless ODF handler directly (it loads both files
+      // itself; it CANNOT go through dispatchOdf, whose resolveOdfSessionForTool requires a
+      // file_path). Session mode (file_path only) routes a `.odt` through the standard ODF session
+      // lane; otherwise the DOCX tool.
+      const hasOriginal = typeof args.original_file_path === 'string' && args.original_file_path.trim().length > 0;
+      const hasRevised = typeof args.revised_file_path === 'string' && args.revised_file_path.trim().length > 0;
+      if (hasOriginal && hasRevised) {
+        if (hasOdfInputPath(args, ['original_file_path', 'revised_file_path'])) {
+          const { odfCompareDocuments } = await import('./tools/odf/compare_documents.js');
+          return await odfCompareDocuments(sessions, args as Parameters<typeof odfCompareDocuments>[1]);
+        }
+        return await compareDocuments_tool(sessions, args as Parameters<typeof compareDocuments_tool>[1]);
       }
-      if (isOdfRequest(args)) {
-        return {
-          success: false,
-          error: {
-            code: 'UNSUPPORTED_FOR_ODF',
-            message: 'Session-mode compare_documents is not yet supported for ODF (.odt) files.',
-            hint: 'Provide original_file_path and revised_file_path to compare two .odt files.',
-          },
-        };
-      }
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'compare_documents');
       return await compareDocuments_tool(sessions, args as Parameters<typeof compareDocuments_tool>[1]);
+    }
     case 'get_footnotes':
       return await getFootnotes(sessions, args as Parameters<typeof getFootnotes>[1]);
     case 'add_footnote':

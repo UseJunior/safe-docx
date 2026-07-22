@@ -1,318 +1,70 @@
-# Edit Word documents (.docx) with coding agents via MCP
+# Safe Docx
+
+Edit Word and OpenDocument files with coding agents.
 
 <!-- SYNC:badges BEGIN -->
 [![CI](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml/badge.svg)](https://github.com/usejunior/safe-docx/actions/workflows/ci.yml)
 [![codecov](https://img.shields.io/codecov/c/github/usejunior/safe-docx/main)](https://app.codecov.io/gh/usejunior/safe-docx)
 [![npm version](https://img.shields.io/npm/v/@usejunior/safe-docx)](https://www.npmjs.com/package/@usejunior/safe-docx)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](https://github.com/UseJunior/safe-docx/blob/main/LICENSE)
 [![GitHub last commit](https://img.shields.io/github/last-commit/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/commits/main)
 [![GitHub issues closed](https://img.shields.io/github/issues-closed/UseJunior/safe-docx)](https://github.com/UseJunior/safe-docx/issues?q=is%3Aissue+is%3Aclosed)
 <!-- SYNC:badges END -->
 
 <!-- SYNC:lang-nav BEGIN -->
-[English](./README.md) | [Español](./README.es.md) | [简体中文](./README.zh.md) | [Português (Brasil)](./README.pt-br.md) | [Deutsch](./README.de.md)
+[English](./README.md) · [Español](./README.es.md) · [简体中文](./README.zh.md) · [Português](./README.pt-br.md) · [Deutsch](./README.de.md)
 <!-- SYNC:lang-nav END -->
 
-<!-- SYNC:architecture-diagram BEGIN -->
-```mermaid
-%%{init: {"flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 30, "rankSpacing": 50}, "themeVariables": {"fontSize": "14px"}} }%%
-flowchart LR
-    DocInLeft["<b>Existing .docx</b><br/>on disk"]
+Safe Docx is a local MCP server and CLI for reading, searching, editing, comparing, converting, and saving document files. It preserves DOCX structure and can produce clean or tracked-changes output.
 
-    subgraph Server["@usejunior/safe-docx — local MCP server"]
-        direction LR
+## Example
 
-        subgraph ReadParse["<b>1. Read</b>"]
-            direction TB
-            RPTool["<code>read_file(file_path,<br/>&nbsp;&nbsp;format)</code>"]
-        end
+Ask your coding agent:
 
-        subgraph Locate["<b>2. Locate</b>"]
-            direction TB
-            LocTool["<code>grep(file_path,<br/>&nbsp;&nbsp;pattern)</code>"]
-        end
-
-        subgraph Edit["<b>3. Edit</b>"]
-            direction TB
-            EditTool["<code>replace_text(<br/>&nbsp;&nbsp;target_paragraph_id,<br/>&nbsp;&nbsp;old_string, new_string,<br/>&nbsp;&nbsp;instruction)</code>"]
-        end
-
-        subgraph Save["<b>4. Save</b>"]
-            direction TB
-            SaveTool["<code>save(save_to_local_path,<br/>&nbsp;&nbsp;save_format)</code>"]
-        end
-
-        ReadParse --> Locate
-        Locate --> Edit
-        Edit --> Save
-    end
-
-    DocInRight["<b>Saved .docx output</b><br/>on disk"]
-
-    subgraph Client [" "]
-        direction TB
-        Prompt["<b>Prompt</b><br/>'Change NDA governing law to Delaware'"]
-        Agent["<b>Coding agent / MCP client</b><br/>Claude Code · Cursor · Gemini CLI"]
-        Prompt --> Agent
-    end
-
-    DocInLeft --> RPTool
-    SaveTool --> DocInRight
-    Agent <-->|tool call / tool result| Server
-
-    classDef io fill:#f5f5f5,stroke:#888,color:#222
-    classDef server fill:#eff6ff,stroke:#3b82f6,color:#1e3a8a
-    classDef stage fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
-    classDef tools fill:#ecfdf5,stroke:#10b981,color:#064e3b
-    classDef ext fill:#ddd6fe,stroke:#7c3aed,color:#3b0764
-    classDef hidden fill:none,stroke:none
-    class DocInLeft,DocInRight io
-    class Server server
-    class ReadParse,Locate,Edit,Save stage
-    class RPTool,LocTool,EditTool,SaveTool tools
-    class Prompt,Agent ext
-    class Client hidden
+```text
+Edit NDA.docx. Change the governing law from New York to Delaware.
+Save a clean copy and a tracked-changes copy. Do not change anything else.
 ```
-<!-- SYNC:architecture-diagram END -->
 
-Safe Docx is an open-source TypeScript stack for surgical editing of existing Microsoft Word `.docx` files. It is built for workflows where an agent proposes changes and a human still needs reliable, formatting-preserving document edits.
+Safe Docx finds the clause, applies the targeted edit, and writes both files for review. The rest of the document stays outside the requested edit.
 
-If you review contracts with AI, the slowest step is often applying accepted recommendations in Word. Safe Docx turns that into deterministic tool calls.
+Follow the complete [editing walkthrough](docs/tutorial.md).
 
-## Why This Exists
+## Comparisons
 
-AI coding CLIs are great with code and text files but weak on brownfield `.docx` editing. Business and legal workflows still run on Word documents, so we built a native TypeScript path for:
+- [SuperDoc](docs/comparisons.md#superdoc)
+- [Claude's built-in DOCX editing](docs/comparisons.md#claudes-built-in-docx-editing)
+- [python-docx](docs/comparisons.md#python-docx)
+- [DOCX compatibility matrix](docs/comparisons.md#compatibility-matrix)
 
-- reading and searching existing documents in token-efficient formats
-- making surgical edits without destroying formatting
-- producing clean/tracked outputs and revision extraction artifacts
+## Install
 
-Mission: enable coding agents to do paperwork too. Safe Docx focuses on deterministic edits to existing Word files where formatting and review semantics must survive automation.
+```bash
+npm install --global @usejunior/safe-docx
+```
 
-## How Safe Docx is Different from other Docx Editors
+Then configure your MCP client with the installed executable's absolute path. For Claude Code:
 
-Safe Docx is optimized for agent workflows that need deterministic, local-first edits on existing `.docx` files:
+```bash
+claude mcp add safe-docx -- /absolute/path/to/safe-docx
+```
 
-- typed MCP tools for edit, compare, revision extraction, comments, footnotes, and layout
-- auditable behavior with test evidence and traceability artifacts
-- TypeScript runtime distribution without requiring Python or LibreOffice for supported usage
+See [Installation and verification](docs/installation.md) for locating the executable, pinning a version, and configuring clients.
 
-Safe Docx is not intended to replace generation-first `.docx` libraries.
+## Documentation
+
+- [Installation and verification](docs/installation.md)
+- [Tool reference](packages/docx-mcp/docs/tool-reference.generated.md)
+- [TypeScript library](packages/docx-core/README.md)
+- [Architecture](docs/architecture.md)
+- [Testing and evidence](docs/testing-and-evidence.md)
+- [Trust and conformance](docs/trust-and-conformance.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Standards Conformance
 
-<!-- AUTO-GENERATED:conformance-summary START — generated by scripts/generate_conformance_doc.mjs; do not edit by hand -->
-safe-docx targets a defined subset of **ECMA-376 5th edition**. The full surface
-(targeted sections, Non-Goals, and verification status) lives at
-[spec-compliance/CONFORMANCE.md](spec-compliance/CONFORMANCE.md).
-
-- **3** sections claimed
-- **5** sections explicitly out-of-scope (Non-Goals)
-- **0** known gaps under `@conformance-gap`
-- Vendored normative schemas: `spec-compliance/ecma-376/schemas/`
-<!-- AUTO-GENERATED:conformance-summary END -->
-
-## Trusted By
-
-- **Am Law top-10 firm** — multistep contract translation pipeline
-- **150-lawyer regional firm** — 22M+ tokens of contract markup processed
-- **Gemini CLI** — compatible Word editing MCP extension
-
-## Start Here
-
-```bash
-npx -y @usejunior/safe-docx
-```
-
-For detailed setup and tool reference, see `packages/docx-mcp/README.md`.
-
-### Example: Agent Editing a Contract
-
-When you prompt a coding agent (Claude Code, Cursor, Gemini CLI) with Safe Docx installed, the agent makes MCP tool calls like these:
-
-```text
-User: Edit the NDA at ~/docs/NDA.docx — change the governing law
-      from "State of New York" to "State of Delaware" and save both
-      a clean copy and a tracked-changes copy.
-
-Agent calls:
-
-  1. read_file(file_path="~/docs/NDA.docx", format="toon")
-     → Returns paragraphs with stable IDs:
-       _bk_a3f29c10b8e4, _bk_7d2e8f1a4c5b, ...
-       (12-char hex hashes derived from intrinsic w14:paraId
-        or normalized text — byte-identical across reopens
-        for identical stored DOCX bytes)
-
-  2. grep(file_path="~/docs/NDA.docx", pattern="State of New York")
-     → Match in paragraph _bk_e4c8a91f2d36
-
-  3. replace_text(
-       file_path="~/docs/NDA.docx",
-       target_paragraph_id="_bk_e4c8a91f2d36",
-       old_string="State of New York",
-       new_string="State of Delaware",
-       instruction="Change governing law to Delaware"
-     )
-
-  4. save(
-       file_path="~/docs/NDA.docx",
-       save_to_local_path="~/docs/NDA-clean.docx",
-       tracked_save_to_local_path="~/docs/NDA-tracked.docx",
-       save_format="both"
-     )
-```
-
-The agent handles the tool calls automatically. You get a clean file and a tracked-changes file for human review.
-
-## MCP Quickstart
-
-### Claude Code
-
-```bash
-claude mcp add safe-docx -- npx -y @usejunior/safe-docx
-```
-
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
-```json
-{
-  "mcpServers": {
-    "safe-docx": {
-      "command": "npx",
-      "args": ["-y", "@usejunior/safe-docx"]
-    }
-  }
-}
-```
-
-### Gemini CLI
-
-```json
-{
-  "mcpServers": {
-    "safe-docx": {
-      "command": "npx",
-      "args": ["-y", "@usejunior/safe-docx"]
-    }
-  }
-}
-```
-
-### Any MCP Client
-
-- **Command:** `npx`
-- **Args:** `["-y", "@usejunior/safe-docx"]`
-- **Transport:** stdio
-
-## What Safe Docx Is Optimized For
-
-- Brownfield editing of existing `.docx` files
-- Formatting-preserving text replacement and paragraph insertion
-- Comment and footnote workflows
-- Tracked-changes outputs for review (`download`, `compare_documents`)
-- Revision extraction as structured JSON (`extract_revisions`)
+See the generated [ECMA-376 conformance report](spec-compliance/CONFORMANCE.md) for targeted sections, explicit non-goals, and verification references.
 
 ## What Safe Docx Is Not Optimized For
 
-Safe Docx is not a from-scratch document generation toolkit.
-
-If your primary need is generating new `.docx` files from templates/programmatic layout, use packages such as [`docx`](https://www.npmjs.com/package/docx).
-
-The local Safe Docx runtime also intentionally rejects Word template files (`.dotx`) for now. Convert the template to a normal `.docx` document before opening it here.
-
-## Document Families
-
-### Automated fixture coverage in this repo
-
-- Common Paper style mutual NDA fixtures
-- Bonterms mutual NDA fixture
-- Letter of Intent fixture
-- ILPA limited partnership agreement redline fixtures
-
-### Designed for complex legal and business `.docx` classes
-
-- NVCA financing forms
-- YC SAFEs
-- Offering memoranda
-- Order forms and services agreements
-- Limited partnership agreements
-
-## Packages
-
-- `@usejunior/docx-core`: primitives + comparison engine for existing `.docx` documents
-- `@usejunior/docx-mcp`: MCP server implementation and tool surface
-- `@usejunior/safe-docx`: canonical end-user install name (`npx -y @usejunior/safe-docx`)
-- `@usejunior/safedocx-mcpb`: private MCP bundle wrapper
-
-## Reliability and Trust Surface
-
-- Tool schemas are generated from `packages/docx-mcp/src/tool_catalog.ts`.
-- For the contract surface of AI-attributable edits, see [SUPPORT.md](packages/docx-core/SUPPORT.md).
-- OpenSpec traceability matrix: `packages/docx-mcp/src/testing/SAFE_DOCX_OPENSPEC_TRACEABILITY.md`
-- Assumption matrix: `packages/docx-mcp/assumptions.md`
-- Conformance guide: `docs/safe-docx/sprint-3-conformance.md`
-
-## FAQ
-
-### What is Safe Docx?
-
-A TypeScript-first DOCX editing stack for coding-agent workflows that need deterministic, formatting-preserving edits on existing Word documents.
-
-### Does this preserve formatting during edits?
-
-That is a core design goal. The tool surface is built around surgical operations (`replace_text`, `insert_paragraph`, layout controls) that preserve document structure and formatting semantics as much as possible.
-
-### Does this require .NET, Python, or LibreOffice in normal runtime usage?
-
-No. Supported runtime usage is JavaScript/TypeScript with `jszip` + `@xmldom/xmldom`.
-
-### Can this generate contracts from scratch?
-
-Not the primary focus. For from-scratch generation, use packages such as [`docx`](https://www.npmjs.com/package/docx).
-
-### What document types has this been tested on in-repo fixtures?
-
-Mutual NDAs (including Common Paper/Bonterms-style fixtures), Letter of Intent, and ILPA limited partnership agreement redline fixtures.
-
-### Is this only for lawyers?
-
-No. The same brownfield `.docx` editing problems appear in HR, procurement, finance, sales ops, and other paperwork-heavy workflows.
-
-### Where should I start as an MCP user?
-
-Use `@usejunior/safe-docx` via `npx`, then follow setup examples in `packages/docx-mcp/README.md`.
-
-### Where can I inspect the tool schemas?
-
-See the generated reference at `packages/docx-mcp/docs/tool-reference.generated.md`.
-
-## Development
-
-```bash
-npm ci
-npm run build
-npm run lint --workspaces --if-present
-npm run test:run
-npm run check:spec-coverage
-npm run test:coverage:packages
-npm run coverage:packages:check
-npm run coverage:matrix
-```
-
-## See Also
-
-- [Open Agreements](https://github.com/open-agreements/open-agreements) — fill standard legal templates with coding agents (NDAs, SAFEs, NVCA)
-
-## Privacy
-
-Safe Docx runs entirely on your local machine. No document content is sent to external servers. See our [Privacy Policy](https://usejunior.com/privacy_policy?utm_source=github&utm_medium=readme&utm_campaign=safe-docx) for details.
-
-## Governance
-
-- [Contributing Guide](CONTRIBUTING.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
-- [Security Policy](SECURITY.md)
-- [Changelog](CHANGELOG.md)
+Safe Docx is not a visual editor or layout engine. It does not provide browser rendering, real-time collaboration, or pixel-level pagination guarantees. `.dotx` templates must be converted to `.docx` before use.

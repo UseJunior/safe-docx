@@ -43,10 +43,14 @@ async function saveCleanAndReadXml(
   inputPath: string,
   outputPath: string,
 ): Promise<{ result: Awaited<ReturnType<typeof save>>; xml: string; doc: Document }> {
+  // #126: write-time tracked markup is in the tracked (redline) artifact; the
+  // clean artifact accepts the AI edits. Read the tracked output here. For an
+  // untracked session (no AI author) the tracked artifact carries no markup, so
+  // the "no tracked markup" case still holds.
   const result = await save(mgr, {
     file_path: inputPath,
     save_to_local_path: outputPath,
-    save_format: 'clean',
+    save_format: 'tracked',
   });
   assertSuccess(result, 'save');
 

@@ -70,6 +70,8 @@ export const W = {
   abstractNumId: 'abstractNumId',
   lvlOverride: 'lvlOverride',
   startOverride: 'startOverride',
+  lvlJc: 'lvlJc',
+  multiLevelType: 'multiLevelType',
 
   // Tables + layout
   tbl: 'tbl',
@@ -79,14 +81,61 @@ export const W = {
   tcPr: 'tcPr',
   trHeight: 'trHeight',
   tcMar: 'tcMar',
+  tblPr: 'tblPr',
+  tblGrid: 'tblGrid',
+  gridCol: 'gridCol',
+  tblW: 'tblW',
+  tblLayout: 'tblLayout',
+  tblBorders: 'tblBorders',
+  tcBorders: 'tcBorders',
+  tcW: 'tcW',
+  gridSpan: 'gridSpan',
+  vMerge: 'vMerge',
+  vAlign: 'vAlign',
+  shd: 'shd',
+  tblHeader: 'tblHeader',
+  insideH: 'insideH',
+  insideV: 'insideV',
   top: 'top',
   bottom: 'bottom',
   left: 'left',
   right: 'right',
+  end: 'end',
   val: 'val',
   hRule: 'hRule',
   w: 'w',
   type: 'type',
+
+  // Sections + page setup (generation emitters)
+  sectPr: 'sectPr',
+  pgSz: 'pgSz',
+  pgMar: 'pgMar',
+  pgNumType: 'pgNumType',
+  headerReference: 'headerReference',
+  footerReference: 'footerReference',
+  titlePg: 'titlePg',
+  hdr: 'hdr',
+  ftr: 'ftr',
+  settings: 'settings',
+  evenAndOddHeaders: 'evenAndOddHeaders',
+  clrSchemeMapping: 'clrSchemeMapping',
+  compat: 'compat',
+  compatSetting: 'compatSetting',
+
+  // Styles part + paragraph/run formatting (generation emitters)
+  docDefaults: 'docDefaults',
+  pPrDefault: 'pPrDefault',
+  rPrDefault: 'rPrDefault',
+  next: 'next',
+  qFormat: 'qFormat',
+  bCs: 'bCs',
+  iCs: 'iCs',
+  caps: 'caps',
+  smallCaps: 'smallCaps',
+  keepNext: 'keepNext',
+  keepLines: 'keepLines',
+  pageBreakBefore: 'pageBreakBefore',
+  tabs: 'tabs',
 
   // Fields + special runs
   fldChar: 'fldChar',
@@ -114,4 +163,22 @@ export const W = {
   footnoteRef: 'footnoteRef',
   separator: 'separator',
   continuationSeparator: 'continuationSeparator',
+
+  // Endnotes
+  endnoteReference: 'endnoteReference',
+
+  // Embedded visual content (run-level children)
+  drawing: 'drawing',
+  pict: 'pict',
+  object: 'object',
+
+  // Revision wrappers
+  del: 'del',
+  moveFrom: 'moveFrom',
+
+  // Font table (word/fontTable.xml)
+  font: 'font',
+  charset: 'charset',
+  family: 'family',
+  pitch: 'pitch',
 } as const;

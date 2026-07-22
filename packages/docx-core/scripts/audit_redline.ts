@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { auditXmlNamespaces } from '../src/debug/xmlNamespaceAudit.js';
-import { auditSectPr } from '../src/debug/sectPrAudit.js';
+import { auditSectPr } from '../src/primitives/sectPrAudit.js';
 
 async function main(): Promise<void> {
   const docxPath = process.argv[2];

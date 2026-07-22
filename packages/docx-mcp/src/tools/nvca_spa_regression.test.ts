@@ -13,10 +13,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getParagraphRuns } from '@usejunior/docx-core';
+import { getParagraphRuns, parseXml } from '@usejunior/docx-core';
 
 import { SessionManager } from '../session/manager.js';
 import { openDocument } from './open_document.js';
+import { getFootnotes } from './get_footnotes.js';
 import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
 import { insertParagraph } from './insert_paragraph.js';
@@ -34,8 +35,14 @@ const BONTERMS_NDA_SOURCE = path.resolve(__dirname, '../../../../tests/test_docu
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-function createMgr(): SessionManager {
-  return new SessionManager({ ttlMs: 60 * 60 * 1000 });
+function concatWordText(documentXml: string): string {
+  const dom = parseXml(documentXml);
+  const runs = Array.from(dom.getElementsByTagNameNS(W_NS, 't')) as Element[];
+  return runs.map((run) => run.textContent ?? '').join('');
+}
+
+function createMgr(defaultAiAuthor: string | null = null): SessionManager {
+  return new SessionManager({ ttlMs: 60 * 60 * 1000, defaultAiAuthor });
 }
 
 const tempDirs: string[] = [];
@@ -52,16 +59,21 @@ async function makeTempDir(prefix = 'nvca-spa-'): Promise<string> {
   return dir;
 }
 
-async function openFixture(source: string): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
-  const mgr = createMgr();
+async function openFixture(
+  source: string,
+  defaultAiAuthor: string | null = null,
+): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
+  const mgr = createMgr(defaultAiAuthor);
   const openRes = await openDocument(mgr, { file_path: source });
   expect(openRes.success).toBe(true);
   const filePath = (openRes.file_path as string) ?? source;
   return { mgr, sid: filePath, filePath };
 }
 
-async function openSPA(): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
-  return openFixture(SOURCE);
+async function openSPA(
+  defaultAiAuthor: string | null = null,
+): Promise<{ mgr: SessionManager; sid: string; filePath: string }> {
+  return openFixture(SOURCE, defaultAiAuthor);
 }
 
 function assertSuccess(result: { success: boolean }, label: string): void {
@@ -419,7 +431,9 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
     let saveRes: Awaited<ReturnType<typeof save>>;
 
     await given('the NVCA SPA source document is open and the Code definition has been expanded', async () => {
-      ({ mgr, sid, filePath } = await openSPA());
+      // A tracked session emits write-time redline markup on edit (#126); the
+      // author matches tracked_changes_author below.
+      ({ mgr, sid, filePath } = await openSPA('NVCA Test'));
       const tmpDir = await makeTempDir();
       const result = await replaceText(mgr, {
         file_path: filePath,
@@ -444,12 +458,16 @@ describe('NVCA SPA regression: batch edit + save round-trip', { timeout: 30_000 
     await then('the save succeeds', () => {
       assertSuccess(saveRes, 'save tracked');
     });
-    await and('the tracked file contains w:ins and w:del revision markup with the inserted text', async () => {
+    await and('the tracked file contains w:ins revision markup with the inserted clause', async () => {
       const { readDocumentXmlFromPath } = await import('../testing/docx_test_utils.js');
       const trackedXml = await readDocumentXmlFromPath(trackedPath);
+      // The Code definition was expanded by inserting a clause before the final
+      // period, so the write-time redline is a pure insertion (no deletion).
+      // Deletion markup is covered by the replace-with-different-text cases in
+      // the parity and open-agreements E2E suites.
       expect(trackedXml).toContain('w:ins');
-      expect(trackedXml).toContain('w:del');
-      expect(trackedXml).toContain('Treasury');
+      const insertedText = concatWordText(trackedXml);
+      expect(insertedText).toContain('Treasury regulations promulgated thereunder');
     });
   });
 });
@@ -575,6 +593,60 @@ describe('NVCA SPA regression: heading detection (#179)', () => {
 
     await and('every paragraph in the window has a null header style', async () => {
       expect(parsed.every((node) => node.list_metadata.header_style === null)).toBe(true);
+    });
+  });
+});
+
+describe('NVCA SPA regression: footnote anchor surfacing (#185)', () => {
+  test('every anchored NVCA SPA footnote is reachable through the document view', async ({ given, when, then, and }: AllureBddContext) => {
+    let mgr: ReturnType<typeof createMgr>;
+    let filePath: string;
+    let eligible: Array<{ id: number; display_number: number; anchored_paragraph_id: string }>;
+    let nodes: Array<{ id: string; text: string }>;
+
+    await given('the NVCA SPA source document is open and its 109 footnotes are listed', async () => {
+      ({ mgr, filePath } = await openSPA());
+      const notes = await getFootnotes(mgr, { file_path: filePath });
+      assertSuccess(notes, 'get_footnotes');
+      const all = notes.footnotes as Array<{ id: number; display_number: number; text: string; anchored_paragraph_id: string | null }>;
+      expect(all).toHaveLength(109);
+      eligible = all.filter(
+        (n): n is typeof n & { anchored_paragraph_id: string } =>
+          n.display_number > 0 && n.text.trim().length > 0 && n.anchored_paragraph_id !== null,
+      );
+      expect(eligible).toHaveLength(108);
+    });
+
+    await when('read_file renders the full document view as JSON', async () => {
+      const res = await readFile(mgr, { file_path: filePath, format: 'json', offset: 1, limit: 100000 });
+      assertSuccess(res, 'read_file full json walk');
+      nodes = JSON.parse(res.content as string);
+    });
+
+    await then('every eligible footnote anchor paragraph is present in the view', async () => {
+      const viewIds = new Set(nodes.map((n) => n.id));
+      const unsurfaced = eligible.filter((n) => !viewIds.has(n.anchored_paragraph_id));
+      expect(unsurfaced, `footnotes whose anchor paragraph is missing from the view: ${JSON.stringify(unsurfaced.map((n) => ({ id: n.id, display: n.display_number })))}`).toHaveLength(0);
+    });
+
+    await and('the footnote-only paragraph anchoring note 47 renders its [^46] marker', async () => {
+      // Footnote id=47 (display 46) anchors to a paragraph whose only content
+      // is the footnote-reference run; before the #185 fix the view dropped it.
+      const probe = await readFile(mgr, { file_path: filePath, format: 'json', node_ids: ['_bk_6d177a97f7e6'] });
+      assertSuccess(probe, 'read_file node_ids probe');
+      const probed = JSON.parse(probe.content as string) as Array<{ id: string; text: string }>;
+      expect(probed).toHaveLength(1);
+      // Pure-marker node; exactly one [^46] — the view-level injection used to
+      // be doubled by a read_file suffix pass. @see #382
+      expect(probed[0]!.text).toBe('[^46]');
+    });
+
+    await and('no footnote marker anywhere in the walk is doubled', async () => {
+      // Adjacent same-number markers ([^45][^45], with or without intervening
+      // whitespace) are the #382 signature; distinct adjacent references
+      // ([^1][^2]) remain legal.
+      const doubled = nodes.filter((n) => /\[\^(\d+)\]\s*\[\^\1\]/.test(n.text));
+      expect(doubled.map((n) => n.id)).toEqual([]);
     });
   });
 });

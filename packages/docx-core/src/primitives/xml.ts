@@ -2,6 +2,12 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 
 export type XmlDoc = Document;
 
+/**
+ * Standard XML declaration for serialized OOXML parts. xmldom's serializer
+ * omits the declaration, so every emitted part prepends this manually.
+ */
+export const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+
 export function parseXml(xml: string): XmlDoc {
   // application/xml ensures XML parsing rules (vs HTML-ish parsing).
   // xmldom 0.9.x returns its own module-scoped Document type; cast to global

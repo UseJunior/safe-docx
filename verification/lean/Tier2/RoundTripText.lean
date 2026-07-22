@@ -37,7 +37,13 @@ the toolchain; the only `String` touchpoint is reading an atom's payload via
 `String.toList` in `atomText`.
 
 The machine-checked content here is what `Spec.lean` composes with the single
-named residual axiom to close `inv_rt_001`:
+named residual axiom to close `inv_rt_001`. As of #347 that law is stated
+projection-to-projection: accept-all of `combined` recovers accept-all of the
+revised input, and reject-all of `combined` recovers reject-all of the original
+input (NOT the inputs' raw extracted text, which on a pre-tracked input counts
+both `w:t` and `w:delText` and is neither projection). The lemmas below are
+therefore applied on BOTH `combined` and the inputs; they are unchanged by the
+restatement:
 
   * `text_rename_invariant` — `reject`'s global `delText → text` /
     `delInstrText → instrText` rename pass does not change extracted text, since

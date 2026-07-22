@@ -14,9 +14,62 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '../index.js';
-import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js';
+import { compareDocuments } from '@usejunior/docx-compare';
+import { buildSyntheticDocx, buildDocxFromParts, getResultParts } from './synthetic-docx-fixture.js';
+import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { parseXml } from '../primitives/xml.js';
+import type JSZip from 'jszip';
+
+/**
+ * Re-zip a DOCX buffer after mutating its parts. Used to splice in Word
+ * extension parts (e.g. commentsIds.xml) the synthetic fixture does not emit.
+ */
+async function spliceZip(buffer: Buffer, mutate: (zip: JSZip) => Promise<void>): Promise<Buffer> {
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(buffer);
+  await mutate(zip);
+  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+}
+
+/**
+ * Splice a Word commentsIds.xml part (with its content-type override and
+ * relationship) into a DOCX buffer, carrying one <w16cid:commentId> durable-ID
+ * row per [paraId, durableId] pair. [MS-DOCX] keys these rows by the comment
+ * paragraph's w16cid:paraId.
+ */
+async function addCommentsIdsPart(
+  buffer: Buffer,
+  rows: Array<{ paraId: string; durableId: string }>,
+): Promise<Buffer> {
+  return spliceZip(buffer, async (zip) => {
+    const entries = rows
+      .map((r) => `<w16cid:commentId w16cid:paraId="${r.paraId}" w16cid:durableId="${r.durableId}"/>`)
+      .join('');
+    zip.file(
+      'word/commentsIds.xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w16cid:commentsIds xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid">` +
+        entries +
+        `</w16cid:commentsIds>`
+    );
+    const contentTypes = await zip.file('[Content_Types].xml')!.async('string');
+    zip.file(
+      '[Content_Types].xml',
+      contentTypes.replace(
+        '</Types>',
+        `<Override PartName="/word/commentsIds.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml"/></Types>`
+      )
+    );
+    const rels = await zip.file('word/_rels/document.xml.rels')!.async('string');
+    zip.file(
+      'word/_rels/document.xml.rels',
+      rels.replace(
+        '</Relationships>',
+        `<Relationship Id="rId900" Type="http://schemas.microsoft.com/office/2016/09/relationships/commentsIds" Target="commentsIds.xml"/></Relationships>`
+      )
+    );
+  });
+}
 
 /**
  * Find every element with the given local name and report its immediate-parent
@@ -217,6 +270,206 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
         expect(parts.relsXml!).toContain(
           'http://schemas.microsoft.com/office/2011/relationships/people'
         );
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #471: merge-source commentsIds.xml durable-ID rows dropped
+  //
+  // commentsIds.xml ([MS-DOCX]) keys each <w16cid:commentId> durable-ID row by
+  // the comment paragraph's w16cid:paraId. Before the fix, neither
+  // reconstruction mode merged these rows, so merged-in comments lost their
+  // Word durable IDs (cosmetic — Word regenerates them — but the source's
+  // durable-ID metadata was silently dropped).
+  // ---------------------------------------------------------------------------
+  describe('Comment with commentsIds.xml added on revised side (issue #471)', () => {
+    test('rebuild bootstraps commentsIds.xml with the merge-source durable ID', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has no comments and revised adds one with a commentsIds durable ID', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+        });
+        const revisedBase = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Has durable id',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+        revised = await addCommentsIdsPart(revisedBase, [
+          { paraId: '00000001', durableId: '11111111' },
+        ]);
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('rebuild creates commentsIds.xml carrying the durable ID with OPC metadata', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        expect(parts.commentsIdsXml).not.toBeNull();
+        expect(parts.commentsIdsXml!).toContain('w16cid:paraId="00000001"');
+        expect(parts.commentsIdsXml!).toContain('w16cid:durableId="11111111"');
+
+        expect(parts.contentTypesXml!).toContain('commentsIds.xml');
+        expect(parts.contentTypesXml!).toContain(
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml'
+        );
+        expect(parts.relsXml!).toContain('commentsIds.xml');
+        expect(parts.relsXml!).toContain(
+          'http://schemas.microsoft.com/office/2016/09/relationships/commentsIds'
+        );
+      });
+    });
+
+    test('rebuild appends the reply durable ID into an existing commentsIds.xml', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has a root durable ID; revised adds a reply with its own durable ID', async () => {
+        const originalBase = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Root question',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+        original = await addCommentsIdsPart(originalBase, [
+          { paraId: '00000001', durableId: '11111111' },
+        ]);
+        const revisedBase = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Root question',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+          replyText: 'Reply text',
+          replyAuthor: 'Bob',
+        });
+        revised = await addCommentsIdsPart(revisedBase, [
+          { paraId: '00000001', durableId: '11111111' },
+          { paraId: '00000002', durableId: '22222222' },
+        ]);
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('both root and reply durable IDs survive in commentsIds.xml', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        expect(parts.commentsIdsXml).not.toBeNull();
+        expect(parts.commentsIdsXml!).toContain('w16cid:paraId="00000001"');
+        expect(parts.commentsIdsXml!).toContain('w16cid:durableId="11111111"');
+        expect(parts.commentsIdsXml!).toContain('w16cid:paraId="00000002"');
+        expect(parts.commentsIdsXml!).toContain('w16cid:durableId="22222222"');
+
+        // Count-guard: appending the reply durable-ID row must not duplicate
+        // the pre-existing root row. Each paraId keys EXACTLY ONE
+        // <w16cid:commentId> durable-ID row.
+        const idRowsForPara = (paraId: string) =>
+          (parts.commentsIdsXml!.match(new RegExp(`w16cid:paraId="${paraId}"`, 'g')) ?? []).length;
+        expect(idRowsForPara('00000001')).toBe(1);
+        expect(idRowsForPara('00000002')).toBe(1);
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #470: commentsExtended row dropped for a MULTI-PARAGRAPH comment
+  //
+  // Word keys each <w15:commentEx> threading row by the comment's LAST content
+  // paragraph's w14:paraId (Word extension-part behavior, [MS-DOCX] w15) — not
+  // the first. The comment-merge post-pass previously keyed its lookups by the
+  // FIRST <w:p> paraId, so a multi-paragraph comment's commentEx row never
+  // matched and was silently dropped from rebuild output, breaking the
+  // paraIdParent thread graph. Single-paragraph comments (first === last) are
+  // unaffected.
+  // ---------------------------------------------------------------------------
+  describe('Multi-paragraph comment threading row keyed by last content paraId (issue #470)', () => {
+    test('rebuild preserves the commentEx row keyed by the LAST content paragraph', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('revised carries a two-paragraph comment whose commentEx row is keyed by the last paragraph', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+        });
+
+        // Start from a single-paragraph comment fixture, then splice a SECOND
+        // content <w:p> (paraId 00000009) into comment id=1 so it becomes a
+        // multi-paragraph comment, and re-key its w15:commentEx row by that
+        // LAST paragraph's paraId — matching what Word writes. We mutate the
+        // archive directly (rather than extend the fixture DSL) because
+        // last-para keying is an issue-#470 regression check, not a recurring
+        // fixture need.
+        const baseRevised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'First line of the comment',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(baseRevised);
+
+        // Append a second content paragraph inside comment id=1's body.
+        const commentsXml = await zip.file('word/comments.xml')!.async('string');
+        zip.file(
+          'word/comments.xml',
+          commentsXml.replace(
+            '</w:comment>',
+            `<w:p w14:paraId="00000009"><w:r><w:t>Second line of the comment</w:t></w:r></w:p></w:comment>`
+          )
+        );
+
+        // Re-key the commentEx row from the first paraId (00000001) to the
+        // last content paragraph's paraId (00000009), as Word does.
+        const exXml = await zip.file('word/commentsExtended.xml')!.async('string');
+        zip.file(
+          'word/commentsExtended.xml',
+          exXml.replace('w15:paraId="00000001"', 'w15:paraId="00000009"')
+        );
+
+        revised = (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the last-paragraph-keyed commentEx row survives the merge', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        // Both comment paragraphs made it into comments.xml.
+        expect(parts.commentsXml).not.toBeNull();
+        expect(parts.commentsXml!).toContain('First line of the comment');
+        expect(parts.commentsXml!).toContain('Second line of the comment');
+
+        // Regression: the w15:commentEx row keyed by the LAST paragraph's
+        // paraId (00000009) must be present. Before the fix the merge looked
+        // it up under the FIRST paraId (00000001) and dropped it, leaving no
+        // commentEx row for this comment at all.
+        expect(parts.commentsExtendedXml).not.toBeNull();
+        expect(parts.commentsExtendedXml!).toContain('w15:paraId="00000009"');
       });
     });
   });
@@ -577,6 +830,389 @@ describe('Paragraph-level marker reconstruction on rebuild (issue #106)', () => 
         // inplace output must contain the comment anchor; the full span survives
         // because the markers are already present in the revised archive.
         expect(parts.documentXml).toContain('w:commentReference');
+      });
+    });
+  });
+});
+
+describe('Multi-paragraph sibling comment ranges on rebuild (issue #103)', () => {
+  describe('Body-level comment range wrapping whole paragraphs', () => {
+    test('rebuild preserves matched sibling-level commentRangeStart/End markers', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('both sides have a comment range whose markers sit outside any <w:p>, wrapping the first two paragraphs', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph', 'Third paragraph'],
+          siblingCommentRange: { startBeforeParagraph: 0, endAfterParagraph: 1 },
+          commentText: 'Spanning comment',
+          commentAuthor: 'Reviewer',
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph revised', 'Third paragraph'],
+          siblingCommentRange: { startBeforeParagraph: 0, endAfterParagraph: 1 },
+          commentText: 'Spanning comment',
+          commentAuthor: 'Reviewer',
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('both range markers survive at body level with matching ids and the anchor is intact', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        const starts = inspectElements(parts.documentXml, 'w:commentRangeStart');
+        const ends = inspectElements(parts.documentXml, 'w:commentRangeEnd');
+        expect(starts.length).toBe(1);
+        expect(ends.length).toBe(1);
+        expect(starts[0]!.idAttr).toBe(ends[0]!.idAttr);
+
+        // The markers wrap whole paragraphs, so they must stay siblings of
+        // <w:p>, not get pulled inside a reconstructed paragraph.
+        for (const m of [...starts, ...ends]) {
+          expect(m.ancestors).not.toContain('w:p');
+          expect(m.parent).toBe('w:body');
+        }
+
+        // The comment anchor and definition must still be present.
+        expect(parts.documentXml).toContain('w:commentReference');
+        expect(parts.commentsXml).toContain('Spanning comment');
+      });
+    });
+  });
+
+  describe('Orphaned body-level comment range remnant', () => {
+    test('a sibling commentRangeStart with no matching end is still stripped', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('both sides carry an unmatched body-level commentRangeStart between two paragraphs', async () => {
+        const bodyXml = (textA: string) =>
+          `<w:p><w:r><w:t>${textA}</w:t></w:r></w:p>` +
+          `<w:commentRangeStart w:id="7"/>` +
+          `<w:p><w:r><w:t>Para B</w:t></w:r></w:p>`;
+        original = await buildDocxFromBodyXml(bodyXml('Para A'));
+        revised = await buildDocxFromBodyXml(bodyXml('Para A revised'));
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the orphaned marker does not survive into the rebuilt document', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        expect(parts.documentXml).not.toContain('w:commentRangeStart');
+      });
+    });
+  });
+});
+
+describe('Move-range marker reconstruction on rebuild (issue #110)', () => {
+  /**
+   * No-doubling invariant for one move-range kind: every start id is unique
+   * (a doubled emission repeats the id), every start has a matching end, and
+   * no marker sits inside a <w:r>. Pass expectedPairs when the scenario pins
+   * the exact number of ranges.
+   */
+  function expectUndoubledRanges(xml: string, kind: 'moveFromRange' | 'moveToRange', expectedPairs?: number) {
+    const starts = inspectElements(xml, `w:${kind}Start`);
+    const ends = inspectElements(xml, `w:${kind}End`);
+    const startIds = starts.map((s) => s.idAttr);
+    expect(new Set(startIds).size).toBe(startIds.length);
+    expect(ends.length).toBe(starts.length);
+    expect(new Set(startIds)).toEqual(new Set(ends.map((e) => e.idAttr)));
+    if (expectedPairs !== undefined) {
+      expect(starts.length).toBe(expectedPairs);
+    }
+    for (const m of [...starts, ...ends]) {
+      expect(m.ancestors).not.toContain('w:r');
+    }
+    return { starts, ends };
+  }
+
+  describe('Explicit in-paragraph markers on the revised side', () => {
+    test('rebuild emits each move-range marker exactly once — no synthetic doubling', async ({ given, when, then, and }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original is plain and revised carries a tracked move with explicit range markers', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['The quick brown fox jumps over the dog', 'Middle paragraph stays put'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: [
+            'The quick brown fox jumps over the dog',
+            'Middle paragraph stays put',
+            'The quick brown fox jumps over the dog',
+          ],
+          trackedMove: { from: 0, to: 2, name: 'userMove1' },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('every range id is emitted exactly once per kind — nothing is doubled', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        // Move detection may additionally re-detect the move and synthesize
+        // its own "move1" pair; the invariant is that no pair (explicit or
+        // synthetic) is ever emitted twice.
+        expectUndoubledRanges(parts.documentXml, 'moveFromRange');
+        expectUndoubledRanges(parts.documentXml, 'moveToRange');
+      });
+
+      await and('the explicit markers survive exactly once each, name intact', async () => {
+        const parts = await getResultParts(result.document);
+        const fromStarts = inspectElements(parts.documentXml, 'w:moveFromRangeStart');
+        const toStarts = inspectElements(parts.documentXml, 'w:moveToRangeStart');
+        expect(fromStarts.filter((m) => m.idAttr === '300').length).toBe(1);
+        expect(toStarts.filter((m) => m.idAttr === '302').length).toBe(1);
+        // One w:name on the explicit moveFromRangeStart + one on the explicit
+        // moveToRangeStart. Before issue #110 these markers were dropped from
+        // rebuilt paragraphs entirely (not atomized), so this count was 0.
+        expect(parts.documentXml.match(/w:name="userMove1"/g)?.length).toBe(2);
+      });
+    });
+
+    test('inplace mode preserves explicit move-range markers without duplication', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original is plain and revised carries a tracked move with explicit range markers', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['The quick brown fox jumps over the dog', 'Middle paragraph stays put'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: [
+            'The quick brown fox jumps over the dog',
+            'Middle paragraph stays put',
+            'The quick brown fox jumps over the dog',
+          ],
+          trackedMove: { from: 0, to: 2, name: 'userMove1' },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in inplace mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+      });
+
+      await then('whichever mode is used, the explicit markers survive exactly once each', async () => {
+        const parts = await getResultParts(result.document);
+        // Only the explicit markers are asserted here: inplace's own synthetic
+        // emission duplicates range pairs per moved run (one identical-id pair
+        // per wrapped <w:r>) — a pre-existing engine bug independent of the
+        // explicit-marker reconstruction this suite covers.
+        // See https://github.com/UseJunior/safe-docx/issues/446
+        const fromStarts = inspectElements(parts.documentXml, 'w:moveFromRangeStart');
+        const fromEnds = inspectElements(parts.documentXml, 'w:moveFromRangeEnd');
+        const toStarts = inspectElements(parts.documentXml, 'w:moveToRangeStart');
+        const toEnds = inspectElements(parts.documentXml, 'w:moveToRangeEnd');
+        expect(fromStarts.filter((m) => m.idAttr === '300').length).toBe(1);
+        expect(fromEnds.filter((m) => m.idAttr === '300').length).toBe(1);
+        expect(toStarts.filter((m) => m.idAttr === '302').length).toBe(1);
+        expect(toEnds.filter((m) => m.idAttr === '302').length).toBe(1);
+      });
+    });
+  });
+
+  describe('Synthetic emission path (no explicit markers)', () => {
+    test('a detected move still synthesizes exactly one range pair per side', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('revised moves a whole paragraph with no pre-existing markers', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: [
+            'The quick brown fox jumps over the lazy dog today',
+            'Middle paragraph stays put',
+            'Final paragraph also stays',
+          ],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: [
+            'Middle paragraph stays put',
+            'Final paragraph also stays',
+            'The quick brown fox jumps over the lazy dog today',
+          ],
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('synthetic moveFromRange/moveToRange pairs are emitted once each with a shared name', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        expectUndoubledRanges(parts.documentXml, 'moveFromRange', 1);
+        expectUndoubledRanges(parts.documentXml, 'moveToRange', 1);
+        const names = [...parts.documentXml.matchAll(/<w:move(?:From|To)RangeStart [^>]*w:name="([^"]+)"/g)].map((m) => m[1]);
+        expect(names.length).toBe(2);
+        expect(names[0]).toBe(names[1]);
+      });
+    });
+  });
+
+  describe('Body-level move-range scaffold remnants', () => {
+    test('sibling-of-paragraph move-range markers are stripped on rebuild', async ({ given, when, then }: AllureBddContext) => {
+      const bodyLevelMarkers =
+        `<w:moveFromRangeStart w:id="900" w:name="orphanMove" w:author="Mover" w:date="2025-01-01T00:00:00Z"/>` +
+        `<w:moveFromRangeEnd w:id="900"/>`;
+      const makeBody = (firstParaText: string) =>
+        `<w:p><w:r><w:t>${firstParaText}</w:t></w:r></w:p>` +
+        bodyLevelMarkers +
+        `<w:p><w:r><w:t>Second paragraph</w:t></w:r></w:p>`;
+
+      let original: Buffer, revised: Buffer;
+      await given('both sides have a body-level move-range pair between two paragraphs', async () => {
+        original = await buildDocxFromParts({ bodyXml: makeBody('First paragraph') });
+        revised = await buildDocxFromParts({ bodyXml: makeBody('First paragraph revised') });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the body-level markers do not survive as scaffold remnants', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+        expect(inspectElements(parts.documentXml, 'w:moveFromRangeStart').length).toBe(0);
+        expect(inspectElements(parts.documentXml, 'w:moveFromRangeEnd').length).toBe(0);
+      });
+    });
+  });
+});
+
+describe('Range-permission marker reconstruction on rebuild (issue #111)', () => {
+  describe('Cross-paragraph permission span', () => {
+    test('rebuild keeps permStart and permEnd in their respective paragraphs', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has two plain paragraphs and revised adds a permission range spanning both', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+          permSpanParagraphs: { start: 0, end: 1 },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('start and end markers survive rebuild at paragraph level with matching ids', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        // Perm markers are paragraph-level; rebuild must NOT wrap them in <w:r>
+        expect(parts.documentXml).not.toMatch(/<w:r\b[^>]*>\s*<w:permStart\b/);
+        expect(parts.documentXml).not.toMatch(/<w:r\b[^>]*>\s*<w:permEnd\b/);
+
+        const starts = inspectElements(parts.documentXml, 'w:permStart');
+        const ends = inspectElements(parts.documentXml, 'w:permEnd');
+        expect(starts.length).toBe(1);
+        expect(ends.length).toBe(1);
+        expect(starts[0]!.idAttr).toBe(ends[0]!.idAttr);
+
+        const validParents = new Set(['w:p', 'w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
+        for (const m of [...starts, ...ends]) {
+          expect(m.ancestors).not.toContain('w:r');
+          expect(validParents.has(m.parent)).toBe(true);
+        }
+      });
+    });
+  });
+
+  describe('Sibling-style scaffold perm markers', () => {
+    test('body-level perm markers are stripped on rebuild and do not leak into reconstructed paragraphs', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('both sides have a sibling-style perm range between two paragraphs', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['Para A', 'Para B'],
+          siblingPermBefore: { index: 1, id: 999 },
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['Para A revised', 'Para B'],
+          siblingPermBefore: { index: 1, id: 999 },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the body-level perm markers are stripped from the rebuilt body', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+        const parts = await getResultParts(result.document);
+
+        // Scaffold-strip removes body-level perm markers entirely — unlike
+        // bookmarks, nothing re-synthesizes perm recovery markers afterwards.
+        const starts = inspectElements(parts.documentXml, 'w:permStart').filter(
+          (m) => m.idAttr === '999'
+        );
+        const ends = inspectElements(parts.documentXml, 'w:permEnd').filter(
+          (m) => m.idAttr === '999'
+        );
+        expect(starts.length).toBe(0);
+        expect(ends.length).toBe(0);
+      });
+    });
+  });
+
+  describe('Inplace regression — permission span', () => {
+    test('inplace mode succeeds with a cross-paragraph permission span on the revised side', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has plain paragraphs and revised adds a spanning permission range', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+        });
+        revised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Second paragraph'],
+          permSpanParagraphs: { start: 0, end: 1 },
+        });
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in inplace mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'inplace',
+        });
+      });
+
+      await then('inplace mode is used (no fallback) and output is loadable', async () => {
+        expect(result.reconstructionModeUsed).toBe('inplace');
+        const parts = await getResultParts(result.document);
+        expect(parts.documentXml).toContain('<w:body');
       });
     });
   });

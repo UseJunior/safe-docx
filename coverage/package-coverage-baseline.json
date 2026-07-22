@@ -1,11 +1,23 @@
 {
-  "generated_at": "2026-06-04T03:45:08.882Z",
+  "generated_at": "2026-07-07T17:20:00.000Z",
   "packages": {
     "docx-core": {
-      "lines": 88.25,
-      "branches": 73.99,
-      "functions": 88.5,
-      "statements": 86.34,
+      "lines": 87.64,
+      "branches": 71.76,
+      "functions": 89.2,
+      "statements": 85.66,
+      "deltas": {
+        "lines": null,
+        "branches": null,
+        "functions": null,
+        "statements": null
+      }
+    },
+    "docx-compare": {
+      "lines": 62.71,
+      "branches": 52.35,
+      "functions": 68.39,
+      "statements": 61.22,
       "deltas": {
         "lines": null,
         "branches": null,
@@ -27,9 +39,9 @@
     }
   },
   "aggregate": {
-    "lines_mean": 85.95,
-    "branches_mean": 74.14,
-    "functions_mean": 89.01,
-    "statements_mean": 83.8
+    "lines_mean": 78.65,
+    "branches_mean": 66.38,
+    "functions_mean": 82.7,
+    "statements_mean": 76.69
   }
 }

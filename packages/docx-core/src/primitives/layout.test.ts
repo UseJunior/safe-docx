@@ -6,6 +6,7 @@ import { setParagraphSpacing, setTableCellPadding, setTableRowHeight } from './l
 import { OOXML, W } from './namespaces.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { parseXml } from './xml.js';
+import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Layout Primitives' });
 
@@ -52,7 +53,51 @@ function revisionId(element: Element): number {
 }
 
 describe('layout tracked-change emission', () => {
-  test('setParagraphSpacing emits pPrChange with the prior paragraph properties snapshot', async ({ given, when, then }: AllureBddContext) => {
+  test('setParagraphSpacing inserts spacing at the CT_PPr sequence position', () => {
+    for (const suffix of [
+      '<w:ind/><w:jc w:val="left"/>',
+      '<w:jc w:val="left"/>',
+      '<w:rPr/><w:sectPr/>',
+      '<w:pPrChange w:id="1" w:author="a" w:date="2026-01-01T00:00:00Z"><w:pPr/></w:pPrChange>',
+    ]) {
+      const indexed = createIndexedDocument(`<w:p><w:pPr>${suffix}</w:pPr><w:r><w:t>x</w:t></w:r></w:p>`);
+      setParagraphSpacing(indexed.doc, { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 });
+      const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+      const names = Array.from(firstDirectChild(paragraph, W.pPr).children).map((child) => child.localName);
+      expect(names.indexOf(W.spacing)).toBeGreaterThanOrEqual(0);
+      for (const successor of [W.ind, W.jc, W.rPr, W.sectPr, 'pPrChange']) {
+        if (names.includes(successor)) expect(names.indexOf(W.spacing)).toBeLessThan(names.indexOf(successor));
+      }
+    }
+  });
+
+  test('setParagraphSpacing replaces duplicate misplaced spacing while preserving unrelated content', () => {
+    const indexed = createIndexedDocument(
+      '<w:p><w:pPr><w:jc w:val="left"/><w:spacing w:before="60"/><x:custom xmlns:x="urn:custom" keep="yes"/><w:spacing w:after="90"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>',
+    );
+    setParagraphSpacing(indexed.doc, { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 });
+
+    const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+    const pPr = firstDirectChild(paragraph, W.pPr);
+    const spacings = getDirectChildrenByName(pPr, W.spacing);
+    expect(spacings).toHaveLength(1);
+    expect(wordAttr(spacings[0]!, 'before')).toBe('120');
+    expect(wordAttr(spacings[0]!, 'after')).toBeNull();
+    expect(Array.from(pPr.children).map((child) => child.localName)).toEqual(['spacing', 'jc', 'custom']);
+    expect(pPr.getElementsByTagNameNS('urn:custom', 'custom').item(0)?.getAttribute('keep')).toBe('yes');
+    expect(pPr.toString()).toContain('w:spacing w:before="120"');
+  });
+
+  test('setParagraphSpacing rejects values outside its OOXML simple types', () => {
+    const indexed = createIndexedDocument('<w:p><w:r><w:t>x</w:t></w:r></w:p>');
+    const paragraphIds = [indexed.paragraphIds[0]!];
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, beforeTwips: -1 })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, afterTwips: 1.5 })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, lineTwips: Number.NaN })).toThrow(RangeError);
+    expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, lineRule: 'loose' as never })).toThrow(RangeError);
+  });
+
+  test('[ADV-PPR-EMISSION-01] setParagraphSpacing emits pPrChange with the prior paragraph properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let paragraphId: string;
     let paragraph: Element;
@@ -97,9 +142,65 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousSpacing, 'before')).toBeNull();
       expect(wordAttr(previousSpacing, 'after')).toBe('120');
     });
+    await revisionEvidence('ADV-PPR-EMISSION-01', revisionEvidenceCases({
+      elements: ['pPrChange'], operations: ['emit'], story: 'main',
+      buildFixture: () => ({ tracked: true, priorAfter: 120 }),
+      run: (fixture) => {
+        const indexed = createIndexedDocument(`<w:p><w:pPr><w:spacing w:after="${fixture.priorAfter}"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>`);
+        setParagraphSpacing(
+          indexed.doc,
+          { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 240 },
+          fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+        );
+        return indexed.doc;
+      },
+      observe: (output) => {
+        const change = output.getElementsByTagNameNS(W_NS, 'pPrChange').item(0) as Element | null;
+        const oldSpacing = change?.getElementsByTagNameNS(W_NS, W.spacing).item(0) as Element | null;
+        return change !== null && oldSpacing !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldSpacing, 'after') === '120';
+      },
+      mutations: () => [
+        { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+        { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorAfter: 999 }, context }) },
+      ],
+    }));
   });
 
-  test('setTableRowHeight emits trPrChange with the prior row properties snapshot', async ({ given, when, then }: AllureBddContext) => {
+  test('tracked spacing normalizes live and prior snapshots with alternate prefixes', () => {
+    const indexed = createIndexedDocument(
+      '<w:p xmlns:q="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:pPr><w:jc w:val="left"/><q:spacing q:before="60"/><x:custom xmlns:x="urn:custom" keep="yes"/><w:spacing w:after="90"/></w:pPr><w:r><w:t>x</w:t></w:r></w:p>',
+    );
+    setParagraphSpacing(
+      indexed.doc,
+      { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 120 },
+      createRevisionContext({
+        author: 'SafeDocX AI',
+        date: '2026-05-03T14:15:16Z',
+        idState: createRevisionIdState(),
+      }),
+    );
+
+    const paragraph = indexed.doc.getElementsByTagNameNS(W_NS, W.p).item(0) as Element;
+    const pPr = firstDirectChild(paragraph, W.pPr);
+    const pPrChange = firstDirectChild(pPr, 'pPrChange');
+    const previousPPr = firstDirectChild(pPrChange, W.pPr);
+    const liveNames = Array.from(pPr.children).map((child) => child.localName);
+    const priorNames = Array.from(previousPPr.children).map((child) => child.localName);
+
+    expect(getDirectChildrenByName(pPr, W.spacing)).toHaveLength(1);
+    expect(getDirectChildrenByName(previousPPr, W.spacing)).toHaveLength(1);
+    expect(liveNames).toEqual(['spacing', 'jc', 'custom', 'pPrChange']);
+    expect(priorNames).toEqual(['spacing', 'jc', 'custom']);
+    expect(wordAttr(firstDirectChild(pPr, W.spacing), 'before')).toBe('120');
+    expect(wordAttr(firstDirectChild(previousPPr, W.spacing), 'before')).toBe('60');
+    expect(wordAttr(firstDirectChild(previousPPr, W.spacing), 'after')).toBeNull();
+    expect(pPr.getElementsByTagNameNS('urn:custom', 'custom').length).toBe(2);
+    expect(
+      previousPPr.getElementsByTagNameNS('urn:custom', 'custom').item(0)?.getAttribute('keep'),
+    ).toBe('yes');
+  });
+
+  test('[ADV-TRPR-EMISSION-01] setTableRowHeight emits trPrChange with the prior row properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let trPr: Element;
     let trHeight: Element;
@@ -141,58 +242,141 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousTrHeight, 'val')).toBe('360');
       expect(wordAttr(previousTrHeight, 'hRule')).toBe('atLeast');
     });
+    await revisionEvidence('ADV-TRPR-EMISSION-01', revisionEvidenceCases({
+      elements: ['trPrChange'], operations: ['emit'], story: 'main',
+      buildFixture: () => ({ tracked: true, priorHeight: 360 }),
+      run: (fixture) => {
+        const input = makeDocument(`<w:tbl><w:tr><w:trPr><w:trHeight w:val="${fixture.priorHeight}" w:hRule="atLeast"/></w:trPr><w:tc><w:p/></w:tc></w:tr></w:tbl>`);
+        setTableRowHeight(
+          input,
+          { tableIndexes: [0], valueTwips: 480, rule: 'exact' },
+          fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+        );
+        return input;
+      },
+      observe: (output) => {
+        const change = output.getElementsByTagNameNS(W_NS, 'trPrChange').item(0) as Element | null;
+        const oldHeight = change?.getElementsByTagNameNS(W_NS, W.trHeight).item(0) as Element | null;
+        return change !== null && oldHeight !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldHeight, 'val') === '360';
+      },
+      mutations: () => [
+        { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+        { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorHeight: 999 }, context }) },
+      ],
+    }));
   });
 
-  test('setTableCellPadding emits tcPrChange with the prior cell properties snapshot', async ({ given, when, then }: AllureBddContext) => {
-    let doc: Document;
-    let tcMar: Element;
-    let left: Element;
-    let tcPrChange: Element;
-    let previousTcMar: Element;
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.68' })(
+      '[ADV-TCPR-EMISSION-01] setTableCellPadding emits tcPrChange with the prior cell properties snapshot',
+      async ({ given, when, then }: AllureBddContext) => {
+        let doc: Document;
+        let tcMar: Element;
+        let left: Element;
+        let tcPrChange: Element;
+        let previousTcMar: Element;
 
-    await given('a table cell that already has top padding', () => {
-      doc = makeDocument(
-        `<w:tbl><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
-      );
-    });
+        await given('a table cell that already has top padding', () => {
+          doc = makeDocument(
+            `<w:tbl><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
+          );
+        });
 
-    await when('tracked left padding is added', () => {
-      const result = setTableCellPadding(
-        doc,
-        { tableIndexes: [0], leftDxa: 240 },
-        createRevisionContext({
-          author: 'SafeDocX AI',
-          date: '2026-05-03T14:15:16Z',
-          idState: createRevisionIdState(),
-        }),
-      );
-      expect(result).toEqual({
-        affectedCells: 1,
-        missingTableIndexes: [],
-        missingRowIndexes: [],
-        missingCellIndexes: [],
-      });
+        await when('tracked left padding is added', () => {
+          const result = setTableCellPadding(
+            doc,
+            { tableIndexes: [0], leftDxa: 240 },
+            createRevisionContext({
+              author: 'SafeDocX AI',
+              date: '2026-05-03T14:15:16Z',
+              idState: createRevisionIdState(),
+            }),
+          );
+          expect(result).toEqual({
+            affectedCells: 1,
+            missingTableIndexes: [],
+            missingRowIndexes: [],
+            missingCellIndexes: [],
+          });
 
-      const table = doc.getElementsByTagNameNS(W_NS, W.tbl).item(0) as Element;
-      const row = firstDirectChild(table, W.tr);
-      const cell = firstDirectChild(row, W.tc);
-      const tcPr = firstDirectChild(cell, W.tcPr);
-      tcMar = firstDirectChild(tcPr, W.tcMar);
-      left = firstDirectChild(tcMar, W.left);
-      tcPrChange = firstDirectChild(tcPr, 'tcPrChange');
-      previousTcMar = firstDirectChild(firstDirectChild(tcPrChange, W.tcPr), W.tcMar);
-    });
+          const table = doc.getElementsByTagNameNS(W_NS, W.tbl).item(0) as Element;
+          const row = firstDirectChild(table, W.tr);
+          const cell = firstDirectChild(row, W.tc);
+          const tcPr = firstDirectChild(cell, W.tcPr);
+          tcMar = firstDirectChild(tcPr, W.tcMar);
+          left = firstDirectChild(tcMar, W.left);
+          tcPrChange = firstDirectChild(tcPr, 'tcPrChange');
+          previousTcMar = firstDirectChild(firstDirectChild(tcPrChange, W.tcPr), W.tcMar);
+        });
 
-    await then('the outer cell properties are updated while the inner tcPr snapshot preserves the old padding', () => {
-      expect(wordAttr(tcPrChange, 'author')).toBe('SafeDocX AI');
-      expect(wordAttr(tcPrChange, 'date')).toBe('2026-05-03T14:15:16Z');
-      expect(revisionId(tcPrChange)).toBe(1);
-      expect(wordAttr(left, 'w')).toBe('240');
-      expect(wordAttr(left, 'type')).toBe('dxa');
-      expect(getDirectChildrenByName(previousTcMar, W.left)).toHaveLength(0);
-      expect(firstDirectChild(previousTcMar, W.top)).toBeDefined();
-    });
-  });
+        await then('the outer cell properties are updated while the inner tcPr snapshot preserves the old padding', () => {
+          expect(wordAttr(tcPrChange, 'author')).toBe('SafeDocX AI');
+          expect(wordAttr(tcPrChange, 'date')).toBe('2026-05-03T14:15:16Z');
+          expect(revisionId(tcPrChange)).toBe(1);
+          expect(Array.from(tcMar.children).map((child) => child.localName)).toEqual([W.top, W.left]);
+          expect(wordAttr(left, 'w')).toBe('240');
+          expect(wordAttr(left, 'type')).toBe('dxa');
+          expect(getDirectChildrenByName(previousTcMar, W.left)).toHaveLength(0);
+          expect(firstDirectChild(previousTcMar, W.top)).toBeDefined();
+        });
+        await revisionEvidence('ADV-TCPR-EMISSION-01', revisionEvidenceCases({
+          elements: ['tcPrChange'], operations: ['emit'], story: 'main',
+          buildFixture: () => ({ tracked: true, priorTop: 100 }),
+          run: (fixture) => {
+            const input = makeDocument(`<w:tbl><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="${fixture.priorTop}" w:type="dxa"/></w:tcMar></w:tcPr><w:p/></w:tc></w:tr></w:tbl>`);
+            setTableCellPadding(
+              input,
+              { tableIndexes: [0], leftDxa: 240 },
+              fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+            );
+            return input;
+          },
+          observe: (output) => {
+            const change = output.getElementsByTagNameNS(W_NS, 'tcPrChange').item(0) as Element | null;
+            const oldTop = change?.getElementsByTagNameNS(W_NS, W.top).item(0) as Element | null;
+            return change !== null && oldTop !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldTop, 'w') === '100';
+          },
+          mutations: () => [
+            { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+            { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorTop: 999 }, context }) },
+          ],
+        }));
+      },
+    );
+
+  test
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.68' })(
+      'setTableCellPadding keeps logical start/end margins in the CT_TcMar sequence',
+      async ({ given, when, then }: AllureBddContext) => {
+        let doc: Document;
+        let tcMar: Element;
+
+        await given('a table cell whose margins use logical start/end directions', () => {
+          doc = makeDocument(
+            `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="100" w:type="dxa"/><w:start w:w="80" w:type="dxa"/><w:end w:w="80" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`,
+          );
+        });
+
+        await when('left and bottom padding are added', () => {
+          const result = setTableCellPadding(doc, { tableIndexes: [0], leftDxa: 240, bottomDxa: 60 });
+          expect(result.affectedCells).toBe(1);
+
+          const table = doc.getElementsByTagNameNS(W_NS, W.tbl).item(0) as Element;
+          const cell = firstDirectChild(firstDirectChild(table, W.tr), W.tc);
+          tcMar = firstDirectChild(firstDirectChild(cell, W.tcPr), W.tcMar);
+        });
+
+        await then('the pre-existing start/end margins stay interleaved per the schema sequence', () => {
+          expect(Array.from(tcMar.children).map((child) => child.localName)).toEqual([
+            W.top,
+            W.start,
+            W.left,
+            W.bottom,
+            W.end,
+          ]);
+        });
+      },
+    );
 
   test('layout primitives preserve legacy mutation behavior when revision context is omitted', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;

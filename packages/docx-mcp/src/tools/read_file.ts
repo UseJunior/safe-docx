@@ -10,6 +10,7 @@ import {
   formatToonDataLine,
   formatToonCommentLines,
   formatToonCommentsEndnotesBlock,
+  formatToonFootnotesEndnotesBlock,
   collectInlineCommentMarkers,
   collectTableMarkerInfo,
   formatTableMarker,
@@ -19,6 +20,8 @@ import {
   type Comment,
   type DocumentViewComment,
   type DocumentViewNode,
+  type Footnote,
+  type ToonFootnoteEndnote,
 } from '@usejunior/docx-core';
 import { READ_SIMPLE_PREVIEW_CHARS, previewText } from './preview.js';
 import { mergeSessionResolutionMetadata, resolveSessionForTool } from './session_resolution.js';
@@ -28,22 +31,10 @@ function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
 }
 
-function collectFootnoteMarkerSuffix(
-  paragraphEl: Element,
-  displayNumberById: Map<number, number>,
-): string {
-  const markers: string[] = [];
-  const refs = paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.footnoteReference);
-  for (let i = 0; i < refs.length; i++) {
-    const ref = refs.item(i) as Element;
-    const rawId = getWAttr(ref, 'id');
-    if (!rawId) continue;
-    const numericId = Number.parseInt(rawId, 10);
-    if (Number.isNaN(numericId)) continue;
-    const display = displayNumberById.get(numericId) ?? numericId;
-    markers.push(`[^${display}]`);
-  }
-  return markers.join('');
+enum FieldState {
+  OUTSIDE_FIELD = 0,
+  IN_FIELD_CODE = 1,
+  IN_FIELD_RESULT = 2,
 }
 
 function escapeCommentSuffixText(text: string): string {
@@ -65,12 +56,6 @@ function getCommentAnchorParagraphId(comment: Comment): string | null {
 }
 
 function getParagraphRunVisibleLengths(paragraphEl: Element): number[] {
-  enum FieldState {
-    OUTSIDE_FIELD = 0,
-    IN_FIELD_CODE = 1,
-    IN_FIELD_RESULT = 2,
-  }
-
   const runLengths: number[] = [];
   const runElements = Array.from(paragraphEl.getElementsByTagNameNS(OOXML.W_NS, W.r));
   let fieldState = FieldState.OUTSIDE_FIELD;
@@ -252,6 +237,75 @@ function attachParagraphComments(
   });
 }
 
+type InlineFootnote = { id: number; display_number: number; text: string };
+
+function attachParagraphFootnotes(
+  nodes: readonly Record<string, unknown>[],
+  footnotes: readonly Footnote[],
+): Record<string, unknown>[] {
+  const footnotesByParagraph = new Map<string, InlineFootnote[]>();
+  for (const footnote of footnotes) {
+    // Eligibility (#158): bootstrap scaffolding (display_number 0 / empty
+    // body) and orphaned notes (no anchored paragraph) never attach inline.
+    // get_footnotes stays the authoritative whole-document enumeration that
+    // still returns them.
+    if (footnote.displayNumber <= 0 || footnote.text.trim().length === 0) continue;
+    if (!footnote.anchoredParagraphId) continue;
+    const anchored = footnotesByParagraph.get(footnote.anchoredParagraphId) ?? [];
+    anchored.push({ id: footnote.id, display_number: footnote.displayNumber, text: footnote.text });
+    footnotesByParagraph.set(footnote.anchoredParagraphId, anchored);
+  }
+
+  return nodes.map((node) => {
+    const nodeFootnotes = footnotesByParagraph.get(String(node.id));
+    return nodeFootnotes && nodeFootnotes.length > 0
+      ? { ...node, footnotes: nodeFootnotes }
+      : node;
+  });
+}
+
+/**
+ * The top-level `footnotes` field for JSON output (#207). Unlike the per-node
+ * inline attachment (#158), this is document-wide (never windowed) and carries
+ * the full-fidelity shape: `ref_paragraph_ids` (an ARRAY — a malformed DOCX can
+ * reuse one footnote id from several paragraphs) and multi-paragraph
+ * `paragraphs[]` with run-formatting-preserving `tagged_text`. Reserved
+ * scaffolding notes (display_number 0 / empty body) are omitted so the array
+ * matches the visible `[^N]` markers in the body.
+ */
+type TopLevelFootnote = {
+  id: string;
+  display_number: number;
+  ref_paragraph_ids: string[];
+  paragraphs: { text: string; tagged_text: string; style: string | null }[];
+};
+
+function isRenderableFootnote(footnote: Footnote): boolean {
+  return footnote.displayNumber > 0 && footnote.text.trim().length > 0;
+}
+
+function buildTopLevelFootnotes(footnotes: readonly Footnote[]): TopLevelFootnote[] {
+  return footnotes.filter(isRenderableFootnote).map((footnote) => ({
+    id: String(footnote.id),
+    display_number: footnote.displayNumber,
+    ref_paragraph_ids: [...footnote.refParagraphIds],
+    paragraphs: footnote.paragraphs.map((p) => ({
+      text: p.text,
+      tagged_text: p.tagged_text,
+      style: p.style,
+    })),
+  }));
+}
+
+function buildToonFootnotes(footnotes: readonly Footnote[]): ToonFootnoteEndnote[] {
+  return footnotes.filter(isRenderableFootnote).map((footnote) => ({
+    id: String(footnote.id),
+    displayNumber: footnote.displayNumber,
+    refParagraphIds: footnote.refParagraphIds,
+    paragraphs: footnote.paragraphs.map((p) => ({ text: p.text })),
+  }));
+}
+
 function collectSimpleCommentSuffixes(
   comments: readonly DocumentViewComment[],
   parentId?: number,
@@ -286,6 +340,8 @@ export async function readFile(
     show_formatting?: boolean;
     comment_rendering?: string;
     include_fingerprint?: boolean;
+    include_fingerprint_ordinal?: boolean;
+    include_footnotes?: boolean;
   },
 ): Promise<ToolResponse> {
   try {
@@ -340,8 +396,8 @@ export async function readFile(
     }
 
     // Build a single paragraph-element index up front. All downstream enrichment
-    // passes (footnote markers, comment inline markers, content_fingerprint) consult
-    // this map instead of calling getParagraphElementById() per node, which would be
+    // passes (comment inline markers, content_fingerprint) consult this map
+    // instead of calling getParagraphElementById() per node, which would be
     // a linear scan and turn the read into O(N^2) on large documents.
     const paragraphElementsById = (() => {
       const map = new Map<string, Element>();
@@ -352,30 +408,23 @@ export async function readFile(
       return map;
     })();
 
-    let enriched = filtered;
-    try {
-      const footnotes = await session.doc.getFootnotes();
-      if (footnotes.length > 0) {
-        const displayById = new Map<number, number>();
-        for (const note of footnotes) {
-          displayById.set(note.id, note.displayNumber > 0 ? note.displayNumber : note.id);
-        }
-        enriched = filtered.map((node) => {
-          const paragraphEl = paragraphElementsById.get(node.id);
-          if (!paragraphEl) return node;
-          const markerSuffix = collectFootnoteMarkerSuffix(paragraphEl, displayById);
-          if (!markerSuffix) return node;
-          return {
-            ...node,
-            clean_text: `${node.clean_text}${markerSuffix}`,
-            tagged_text: `${node.tagged_text}${markerSuffix}`,
-            text: `${node.text}${markerSuffix}`,
-          };
-        });
-      }
-    } catch {
-      enriched = filtered;
-    }
+    // Footnote [^N] markers: the document view already injects them into
+    // tagged_text/text at the reference's visible offset AND exposes the same
+    // derivation as node.footnote_refs — one fldChar walk, one numbering
+    // authority, so the fields cannot disagree about which footnotes exist
+    // (#382's failure shape). @see #393. Only clean_text is enriched here —
+    // the view deliberately keeps it marker-free for core consumers (edit
+    // matching, signature-cluster detection), so the suffix is a read_file
+    // output concern. Appending to all three fields doubled every marker.
+    // @see #382
+    let enriched = filtered.map((node) => {
+      if (!node.footnote_refs || node.footnote_refs.length === 0) return node;
+      const markerSuffix = node.footnote_refs.map(({ display }) => `[^${display}]`).join('');
+      return {
+        ...node,
+        clean_text: `${node.clean_text}${markerSuffix}`,
+      };
+    });
 
     // When comment loading fails after add_comment ran (e.g., a third-party docx ships a
     // comments.xml lacking xmlns:w14 and our writer wrote w14:paraId into it — see #154),
@@ -404,13 +453,104 @@ export async function readFile(
     // which has list labels stripped and footnote markers appended above.
     let jsonNodes: readonly Record<string, unknown>[] = enriched;
     if (params.include_fingerprint && format === 'json') {
+      // Opt-in duplicate-disambiguation metadata (#205). When
+      // include_fingerprint_ordinal is also set, compute document-order ordinals
+      // and counts per fingerprint over the FULL document (not the returned
+      // slice) so a paginated / node_ids-filtered read still reports stable,
+      // document-wide ordinals and counts. The ordinal is a read-only
+      // disambiguator, never an edit anchor.
+      const ordinalByNodeId = new Map<string, { ordinal: number; count: number }>();
+      // Cache fingerprints computed during the ordinal pass so the per-node
+      // enrichment below reuses them instead of recomputing the same
+      // computeContentFingerprint(getParagraphText(...)) for every windowed
+      // node. Both sites key off the same paragraph element, so the value is
+      // identical — this only avoids the double compute (#205).
+      const fingerprintByNodeId = new Map<string, string>();
+      if (params.include_fingerprint_ordinal) {
+        const groupCounts = new Map<string, number>();
+        for (const node of nodes) {
+          const paragraphEl = paragraphElementsById.get(node.id);
+          if (!paragraphEl) continue;
+          const fp = computeContentFingerprint(getParagraphText(paragraphEl));
+          fingerprintByNodeId.set(node.id, fp);
+          groupCounts.set(fp, (groupCounts.get(fp) ?? 0) + 1);
+        }
+        const runningOrdinal = new Map<string, number>();
+        for (const node of nodes) {
+          const fp = fingerprintByNodeId.get(node.id);
+          if (fp == null) continue;
+          const ordinal = (runningOrdinal.get(fp) ?? 0) + 1;
+          runningOrdinal.set(fp, ordinal);
+          ordinalByNodeId.set(node.id, { ordinal, count: groupCounts.get(fp)! });
+        }
+      }
+
       jsonNodes = enriched.map((node) => {
         const paragraphEl = paragraphElementsById.get(node.id);
         if (!paragraphEl) return node;
-        const fingerprint = computeContentFingerprint(getParagraphText(paragraphEl));
-        return { ...node, content_fingerprint: fingerprint };
+        const fingerprint =
+          fingerprintByNodeId.get(node.id) ??
+          computeContentFingerprint(getParagraphText(paragraphEl));
+        const withFingerprint: Record<string, unknown> = {
+          ...node,
+          content_fingerprint: fingerprint,
+        };
+        const ordinalInfo = ordinalByNodeId.get(node.id);
+        if (ordinalInfo) {
+          withFingerprint.content_fingerprint_ordinal = ordinalInfo.ordinal;
+          withFingerprint.content_fingerprint_count_in_document = ordinalInfo.count;
+          withFingerprint.portable_paragraph_ref = `${fingerprint}#${ordinalInfo.ordinal}`;
+        }
+        return withFingerprint;
       });
     }
+
+    // Opt-in footnote retrieval (#158 inline bodies, #207 single-call full-
+    // fidelity). When include_footnotes is set we load footnotes ONCE and use
+    // them three ways:
+    //   1. JSON: attach inline `footnotes:[{id,display_number,text}]` per node
+    //      (#158). Runs on the already-windowed slice, so pagination comes for
+    //      free and the payload counts toward the same token budget.
+    //   2. JSON: a TOP-LEVEL `footnotes` array (#207) with ref_paragraph_ids[]
+    //      and multi-paragraph `paragraphs[]` — the full-fidelity ingest. Kept
+    //      OUT of content[] to preserve the 1:1 content[] index invariant that
+    //      edit tooling relies on. Document-wide (never windowed).
+    //   3. TOON: a trailing `#FOOTNOTES` sidecar (#207), symmetric with
+    //      `#COMMENTS`.
+    // Mirrors the comment_load_error contract: a footnote part that fails to
+    // parse degrades to metadata, never fails the read.
+    let footnoteLoadError: string | null = null;
+    let topLevelFootnotes: TopLevelFootnote[] | null = null;
+    let toonFootnotes: ToonFootnoteEndnote[] | null = null;
+    if (params.include_footnotes) {
+      try {
+        // ODT and Google Doc sessions have no footnote primitive; the flag
+        // no-ops there (same contract as include_fingerprint) instead of
+        // reporting a missing-method as a load error.
+        if (typeof session.doc.getFootnotes === 'function') {
+          const footnotes = await session.doc.getFootnotes();
+          if (format === 'json') {
+            jsonNodes = attachParagraphFootnotes(jsonNodes, footnotes);
+            const built = buildTopLevelFootnotes(footnotes);
+            // Omit the field entirely when there are no renderable footnotes, so
+            // a footnote-free document's output stays clean (and byte-identical
+            // to the default path save for the absent field).
+            topLevelFootnotes = built.length > 0 ? built : null;
+          } else if (format === 'toon') {
+            toonFootnotes = buildToonFootnotes(footnotes);
+          }
+        }
+      } catch (e: unknown) {
+        footnoteLoadError = errorMessage(e);
+      }
+    }
+
+    // The trailing #FOOTNOTES sidecar for TOON output. Empty (null) unless
+    // include_footnotes produced footnotes for a toon read.
+    const toonFootnotesSuffix =
+      toonFootnotes && toonFootnotes.length > 0
+        ? '\n' + formatToonFootnotesEndnotesBlock(toonFootnotes).join('\n')
+        : '';
 
     let content: string;
     let paragraphsReturned: number;
@@ -422,9 +562,9 @@ export async function readFile(
       } else if (format === 'simple') {
         content = renderSimpleWithTableMarkers(enriched);
       } else {
-        content = commentRendering === 'endnotes'
+        content = (commentRendering === 'endnotes'
           ? renderToonWithCommentEndnotes(enriched)
-          : renderToon(enriched);
+          : renderToon(enriched)) + toonFootnotesSuffix;
       }
       paragraphsReturned = enriched.length;
     } else {
@@ -434,7 +574,9 @@ export async function readFile(
         format === 'json'
           ? renderJsonWithBudget(jsonNodes, budget)
           : renderWithBudget(enriched, format, budget, commentRendering);
-      content = result.content;
+      // The #FOOTNOTES sidecar is document-wide and appended after budgeting —
+      // like the top-level JSON `footnotes`, it is not subject to windowing.
+      content = format === 'toon' ? result.content + toonFootnotesSuffix : result.content;
       paragraphsReturned = result.count;
 
       const paginationMeta = buildPaginationMeta(totalParagraphs, paragraphsReturned, startIdx);
@@ -446,7 +588,9 @@ export async function readFile(
         paragraphs_returned: paragraphsReturned,
         ...(result.warnings ? { warnings: result.warnings } : {}),
         ...paginationMeta,
+        ...(topLevelFootnotes != null ? { footnotes: topLevelFootnotes } : {}),
         ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
+        ...(footnoteLoadError != null ? { footnote_load_error: footnoteLoadError } : {}),
       }, metadata));
     }
 
@@ -458,7 +602,9 @@ export async function readFile(
       total_paragraphs: totalParagraphs,
       paragraphs_returned: paragraphsReturned,
       ...paginationMeta,
+      ...(topLevelFootnotes != null ? { footnotes: topLevelFootnotes } : {}),
       ...(commentLoadError != null ? { comment_load_error: commentLoadError } : {}),
+      ...(footnoteLoadError != null ? { footnote_load_error: footnoteLoadError } : {}),
     }, metadata));
   } catch (e: unknown) {
     const msg = errorMessage(e);

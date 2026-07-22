@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "standard": "ECMA-376",
+  "sourcePage": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+  "downloadedOn": "2026-07-11",
+  "copyrightNotice": "spec-compliance/ecma-376/COPYRIGHT.txt",
+  "artifacts": [
+    {
+      "edition": 5,
+      "part": 1,
+      "title": "Fundamentals and Markup Language Reference",
+      "publicationDate": "2016-12",
+      "path": "spec-compliance/ecma-376/source-artifacts/ECMA-376-1_5th_edition_december_2016.zip",
+      "sha256": "9d0bcad9cf06054785b03762fcfadbf6bab7e54a5f9d69434e34b7fd464d4129",
+      "sourceUrl": "https://ecma-international.org/wp-content/uploads/ECMA-376-1_5th_edition_december_2016.zip",
+      "copyrightStatus": "Unmodified official artifact; notice and disclaimer preserved adjacent to the artifact directory."
+    },
+    {
+      "edition": 5,
+      "part": 2,
+      "title": "Open Packaging Conventions",
+      "publicationDate": "2021-12",
+      "path": "spec-compliance/ecma-376/source-artifacts/ECMA-376-2_5th_edition_december_2021.zip",
+      "sha256": "1d489dc491168ea1f9e9a59063acc8dd5f02b4ad1d21aa7ec19ba9a58d020c70",
+      "sourceUrl": "https://ecma-international.org/wp-content/uploads/ECMA-376-2_5th_edition_december_2021.zip",
+      "copyrightStatus": "Unmodified official artifact; notice and disclaimer preserved adjacent to the artifact directory."
+    },
+    {
+      "edition": 5,
+      "part": 3,
+      "title": "Markup Compatibility and Extensibility",
+      "publicationDate": "2015-12",
+      "path": "spec-compliance/ecma-376/source-artifacts/ECMA-376-3_5th_edition_december_2015.zip",
+      "sha256": "42294159fbbbe9393ccadac95b859d7729cc68d908898bcbe31034dda059daa8",
+      "sourceUrl": "https://ecma-international.org/wp-content/uploads/ECMA-376-3_5th_edition_december_2015.zip",
+      "copyrightStatus": "Unmodified official artifact; notice and disclaimer preserved adjacent to the artifact directory."
+    },
+    {
+      "edition": 5,
+      "part": 4,
+      "title": "Transitional Migration Features",
+      "publicationDate": "2016-12",
+      "path": "spec-compliance/ecma-376/source-artifacts/ECMA-376-4_5th_edition_december_2016.zip",
+      "sha256": "bd25da1109f73762356596918bf5ff8b74a1331642dba5f1c1d1dfc6bed34ecd",
+      "sourceUrl": "https://ecma-international.org/wp-content/uploads/ECMA-376-4_5th_edition_december_2016.zip",
+      "copyrightStatus": "Unmodified official artifact; notice and disclaimer preserved adjacent to the artifact directory."
+    }
+  ]
+}

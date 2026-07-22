@@ -150,10 +150,28 @@ theorem inv_field_001 :
 /-- **Residual obligation (text round-trip).** For this repo's inplace atomizer
     output `combined`, the normalized *revised-side* projection of `combined`
     (`Tier2.RoundTripText.revisedText` — the per-paragraph text of `acceptBlocks`)
-    equals the normalized text of the revised input `b`, and the normalized
-    *original-side* projection (`Tier2.RoundTripText.originalText` — the
-    per-paragraph text of `rejectBlocks`) equals the normalized text of the
-    original input `a`.
+    equals the normalized revised-side projection of the revised input `b`, and
+    the normalized *original-side* projection (`Tier2.RoundTripText.originalText`
+    — the per-paragraph text of `rejectBlocks`) equals the normalized
+    original-side projection of the original input `a`.
+
+    **Projection-to-projection, NOT projection-to-raw (#347).** A previous
+    statement compared `combined`'s projections against the *raw* extracted text
+    of the inputs (`extractTextWithParagraphs a` / `b`). That raw surface counts
+    both `w:t` and `w:delText`, so on an input that already carries its own
+    tracked changes (pre-tracked `w:ins` / `w:del`, comment anchors, multi-author
+    stacks) it is neither the accept- nor the reject-projection — the law was
+    falsified by construction on legitimate pre-tracked inputs, and the TS safety
+    check encoding it (`pipeline.ts`, `evaluateSafetyChecks` baselines) forced
+    spurious inplace→rebuild fallbacks (#339). The corrected law projects each
+    input through the SAME side it is compared under. For a clean input the
+    projections equal the raw extraction, so the common case is unchanged.
+
+    Accept-all / reject-all are GLOBAL across all authors (what
+    `Tier2.AcceptReject.accept` / `.reject` and the TS helpers do), so the law is
+    self-consistent however many authors stack on a paragraph. It is deliberately
+    a *text* round-trip law: it does not constrain the raw mixed-revision markup
+    surface or author provenance of `combined`.
 
     This is the second named, load-bearing residual axiom of the spike (alongside
     `compareDocumentXml_output_preservation_friendly`). Like that one it is
@@ -161,30 +179,41 @@ theorem inv_field_001 :
     NOT empirically grounded across the full ECMA-376 surface; Tier 3 discharges it
     by modeling `compareDocumentXml` definitionally.
 
-    Crucially it is stated over text *projections of `combined` alone*
-    (`revisedText` / `originalText`), with NO reference to the document-level
-    `accept` / `reject`. The machine-checked lemmas
+    Crucially it is stated over text *projections* (`revisedText` /
+    `originalText`), with NO reference to the document-level `accept` / `reject`.
+    The machine-checked lemmas
     `Tier2.RoundTripText.extractText_accept_normalized` and
     `Tier2.RoundTripText.extractText_reject` carry the connection from those
-    projections to `acceptAllChanges` / `rejectAllChanges`, so this axiom is not a
-    restatement of `inv_rt_001`.
+    projections to `acceptAllChanges` / `rejectAllChanges` — applied to `combined`
+    AND to the inputs — so this axiom is not a restatement of `inv_rt_001`.
 
-    Evidence: the round-trip bridge fixture in
+    Evidence: the round-trip bridge property in
     `packages/docx-core/src/integration/lean-spec-bridge.test.ts` checks the
-    TS analogue (normalized revised-side and original-side text of a live
-    comparison output vs. the revised/original inputs), which is what the engine
-    emits today. -/
+    TS analogue (normalized accept/reject projections of a live comparison
+    output vs. the accept/reject projections of the revised/original inputs),
+    which is what the engine emits today. -/
 axiom compareDocumentXml_output_text_roundtrip :
   ∀ a b combined, compareDocumentXml a b = some combined →
     normalizeText (Tier2.RoundTripText.revisedText combined)
-        = normalizeText (extractTextWithParagraphs b) ∧
+        = normalizeText (Tier2.RoundTripText.revisedText b) ∧
     normalizeText (Tier2.RoundTripText.originalText combined)
-        = normalizeText (extractTextWithParagraphs a)
+        = normalizeText (Tier2.RoundTripText.originalText a)
 
 /-- INV-RT-001: paired round-trip text equality under normalization, with
-    accept-all recovering `b` and reject-all recovering `a`. Scoped to the
-    successful inplace-mode comparison output `compareDocumentXml a b = some combined`.
+    accept-all of `combined` recovering accept-all of `b` and reject-all of
+    `combined` recovering reject-all of `a`. Scoped to the successful
+    inplace-mode comparison output `compareDocumentXml a b = some combined`.
     Doc pairs where inplace fails (`none`) are out of scope.
+
+    **Apples-to-apples projection equality (#347).** Each input is projected
+    through the SAME accept/reject operation `combined` is checked under. For a
+    clean input (no pre-existing tracked changes) the projection equals the raw
+    extracted text, so on the common case this coincides with the previous
+    raw-baseline statement; on a pre-tracked input the raw surface (which counts
+    both `w:t` and `w:delText`) is neither projection, and the previous statement
+    was falsified by construction. Accept/reject are global across all authors,
+    and the law constrains only the *text* projections — not the raw
+    mixed-revision markup or author provenance of `combined`.
 
     This mirrors the gold-standard round-trip tests in
     `packages/docx-core/src/integration/round-trip-inplace.test.ts:56-63`
@@ -193,11 +222,16 @@ axiom compareDocumentXml_output_text_roundtrip :
     (reject-all → original), plus the second paired fixture at
     `packages/docx-core/src/integration/nvca-coi-regression.test.ts:77-103`,
     together with the text helpers at
-    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-711`.
+    `packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts:660-711`,
+    and the corrected TS safety-check baselines in
+    `packages/docx-core/src/baselines/atomizer/pipeline.ts` (the
+    `originalTextForRoundTrip` / `revisedTextForRoundTrip` projections feeding
+    `evaluateRoundTripSafety`).
 
     **Closed** by composing the named residual axiom
     `compareDocumentXml_output_text_roundtrip` with the machine-checked round-trip
-    lemmas `Tier2.RoundTripText.extractText_accept_normalized` (accept side:
+    lemmas — applied on BOTH `combined` and the inputs —
+    `Tier2.RoundTripText.extractText_accept_normalized` (accept side:
     `normalizeText ∘ extractText ∘ accept = normalizeText ∘ revisedText`; `accept`
     keeps every paragraph and the blank text entry of an empty-collapsing paragraph
     is absorbed by `normalizeText` on both aligned sides) and
@@ -208,15 +242,19 @@ theorem inv_rt_001 :
   ∀ (a b combined : OoxmlDoc),
     compareDocumentXml a b = some combined →
     normalizeText (extractTextWithParagraphs (acceptAllChanges combined)) =
-      normalizeText (extractTextWithParagraphs b) ∧
+      normalizeText (extractTextWithParagraphs (acceptAllChanges b)) ∧
     normalizeText (extractTextWithParagraphs (rejectAllChanges combined)) =
-      normalizeText (extractTextWithParagraphs a) := by
+      normalizeText (extractTextWithParagraphs (rejectAllChanges a)) := by
   intro a b combined hcomp
   obtain ⟨hrev, horig⟩ := compareDocumentXml_output_text_roundtrip a b combined hcomp
   simp only [normalizeText, extractTextWithParagraphs, acceptAllChanges,
     rejectAllChanges] at hrev horig ⊢
   refine ⟨?_, ?_⟩
-  · rw [Tier2.RoundTripText.extractText_accept_normalized]; exact hrev
-  · rw [Tier2.RoundTripText.extractText_reject]; exact horig
+  · rw [Tier2.RoundTripText.extractText_accept_normalized,
+      Tier2.RoundTripText.extractText_accept_normalized]
+    exact hrev
+  · rw [Tier2.RoundTripText.extractText_reject,
+      Tier2.RoundTripText.extractText_reject]
+    exact horig
 
 end LeanSpike

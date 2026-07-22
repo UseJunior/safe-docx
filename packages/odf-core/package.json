@@ -1,8 +1,7 @@
 {
   "name": "@usejunior/odf-core",
-  "version": "0.9.1",
-  "private": true,
-  "description": "OpenDocument Format (.odt) core library: archive packaging, document view, and surgical text replacement",
+  "version": "0.17.0",
+  "description": "OpenDocument Format (.odt) core library: archive packaging, document view, surgical text replacement, and tracked-changes comparison",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,7 +14,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@usejunior/docx-core": "^0.9.1",
+    "@usejunior/docx-core": "^0.17.0",
     "@xmldom/xmldom": "^0.9.10",
     "jszip": "^3.10.1"
   },
@@ -35,15 +34,22 @@
   "bugs": {
     "url": "https://github.com/UseJunior/safe-docx/issues"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "keywords": [
     "odf",
     "opendocument",
     "odt",
+    "libreoffice",
+    "track-changes",
+    "comparison",
     "document-editing",
     "mcp"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

@@ -2,6 +2,13 @@ import { SessionManager, getRevisionContextForSession } from '../session/manager
 import { errorCode, errorMessage } from "../error_utils.js";
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
 import { ok, err, type ToolResponse } from './types.js';
+import { DocxDocument, type RevisionContext } from '@usejunior/docx-core';
+import { preflightAiRevisionMutation } from './ai_revision_guard.js';
+
+const FOOTNOTE_TOUCHED_CONTEXT = {
+  relationshipParts: ['word/_rels/document.xml.rels'],
+  sideParts: ['word/footnotes.xml'],
+};
 
 export async function deleteFootnote(
   manager: SessionManager,
@@ -20,7 +27,13 @@ export async function deleteFootnote(
   }
 
   try {
-    await session.doc.deleteFootnote({ noteId: params.note_id }, ctx);
+    const mutate = (doc: DocxDocument, activeCtx: RevisionContext | undefined) =>
+      doc.deleteFootnote({ noteId: params.note_id! }, activeCtx);
+
+    const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, FOOTNOTE_TOUCHED_CONTEXT);
+    if (revisionPreflight) return revisionPreflight;
+
+    await mutate(session.doc, ctx);
 
     manager.markEdited(session);
     return ok(mergeSessionResolutionMetadata({

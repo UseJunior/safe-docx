@@ -17,7 +17,37 @@
 
 import JSZip from 'jszip';
 
-import { ODF_PATHS, ODT_MIMETYPE } from './namespaces.js';
+import { ODF_NS, ODF_PATHS, ODT_MIMETYPE } from './namespaces.js';
+
+/** Parts accepted by {@link OdfArchive.create}. `content.xml` is the only required one. */
+export interface OdfArchiveCreateParts {
+  contentXml: string;
+  stylesXml?: string;
+  metaXml?: string;
+}
+
+const PART_MEDIA_TYPES: Record<string, string> = {
+  [ODF_PATHS.CONTENT]: 'text/xml',
+  [ODF_PATHS.STYLES]: 'text/xml',
+  [ODF_PATHS.META]: 'text/xml',
+};
+
+function buildManifestXml(partPaths: string[]): string {
+  const entries = [
+    `  <manifest:file-entry manifest:full-path="/" manifest:version="1.3" manifest:media-type="${ODT_MIMETYPE}"/>`,
+    ...partPaths.map(
+      (p) =>
+        `  <manifest:file-entry manifest:full-path="${p}" manifest:media-type="${PART_MEDIA_TYPES[p] ?? 'text/xml'}"/>`,
+    ),
+  ];
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<manifest:manifest xmlns:manifest="${ODF_NS.MANIFEST}" manifest:version="1.3">`,
+    ...entries,
+    '</manifest:manifest>',
+    '',
+  ].join('\n');
+}
 
 export class OdfArchive {
   private zip: JSZip;
@@ -40,6 +70,36 @@ export class OdfArchive {
       throw new Error('Invalid ODF: missing META-INF/manifest.xml');
     }
     return new OdfArchive(zip);
+  }
+
+  /**
+   * Create a fresh ODT package from XML parts.
+   *
+   * `META-INF/manifest.xml` is generated from the provided parts, and the
+   * mimetype-first + STORE discipline is `save()`'s responsibility (the fresh
+   * JSZip here is rebuilt on save like any loaded archive). The result satisfies
+   * `load()`'s content/manifest requirements, so `create(...)` → `save()` →
+   * `load(...)` round-trips.
+   */
+  static create(parts: OdfArchiveCreateParts): OdfArchive {
+    const zip = new JSZip();
+    zip.file(ODF_PATHS.MIMETYPE, ODT_MIMETYPE, { compression: 'STORE' });
+    const partPaths: string[] = [ODF_PATHS.CONTENT];
+    zip.file(ODF_PATHS.CONTENT, parts.contentXml);
+    if (parts.stylesXml !== undefined) {
+      zip.file(ODF_PATHS.STYLES, parts.stylesXml);
+      partPaths.push(ODF_PATHS.STYLES);
+    }
+    if (parts.metaXml !== undefined) {
+      zip.file(ODF_PATHS.META, parts.metaXml);
+      partPaths.push(ODF_PATHS.META);
+    }
+    zip.file(ODF_PATHS.MANIFEST, buildManifestXml(partPaths));
+    const archive = new OdfArchive(zip);
+    for (const p of [ODF_PATHS.MIMETYPE, ODF_PATHS.MANIFEST, ...partPaths]) {
+      archive.modified.add(p);
+    }
+    return archive;
   }
 
   /** Get `content.xml` as a string. */

@@ -1,5 +1,6 @@
 import { DocxZip } from './zip.js';
 import { parseXml, serializeXml } from './xml.js';
+import { maybeCaptureEmittedDocumentXml } from './schema-corpus-capture.js';
 import { OOXML, W } from './namespaces.js';
 import { createWmlElement, isW, getDirectChildrenByName } from './dom-helpers.js';
 import {
@@ -15,11 +16,13 @@ import {
   createRevisionContainer,
   type RevisionContext,
 } from './track-changes-emitter.js';
-import { buildNodesForDocumentView, type DocumentStyles, type DocumentViewNode, type TableContext } from './document_view.js';
+import { buildNodesForDocumentView, collectViewParagraphs, type DocumentStyles, type DocumentViewNode } from './document_view.js';
 import { serializeToMarkdown, type SerializeMarkdownOptions } from './serialize_markdown.js';
 import { serializeToHtml, type SerializeHtmlOptions } from './serialize_html.js';
 import { serializeToPlainText, type SerializePlainTextOptions } from './serialize_plaintext.js';
 import type { FormattingMode } from './formatting_tags.js';
+import { parseStylesXml, type StylesModel } from './styles.js';
+import { parseNumberingXml, type NumberingModel } from './numbering.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
 import {
@@ -39,11 +42,32 @@ import {
   type ExtractTablesResult,
 } from './tables.js';
 import { mergeRuns, type MergeRunsOptions, type MergeRunsResult } from './merge_runs.js';
+import { restoreUntouchedBlocks } from './minimal_save.js';
 import { simplifyRedlines } from './simplify_redlines.js';
 import { preventDoubleElevation } from './prevent_double_elevation.js';
 import { validateDocument, type ValidateDocumentResult } from './validate_document.js';
+import {
+  validateAiRevisions as validateAiRevisionsImpl,
+  type AiRevisionValidationTouchedContext,
+  type ValidateAiRevisionsResult,
+} from './validate_ai_revisions.js';
+import {
+  enumerateRevisionStoryPartPaths,
+  REVISION_STORY_PART_PATHS,
+} from './revision-parts.js';
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
+import {
+  collectRevisionElements,
+  resolveSelectedIds,
+  detectAmbiguousOverlaps,
+  selectedIdFilter,
+  AmbiguousRevisionOverlapError,
+  type AiEditSelector,
+  type AiRevisionOverlap,
+} from './accept_ai_edits.js';
+import { revisionElementId } from './accept_changes.js';
+import { TRACKED_CHANGE_ELEMENT_NAME_SET } from './revision-vocabulary.js';
 import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
@@ -72,12 +96,6 @@ export type NormalizationResult = {
   wrappersConsolidated: number;
   doubleElevationsFixed: number;
 };
-
-const REVISION_STORY_PART_PATHS = [
-  'word/footnotes.xml',
-  'word/endnotes.xml',
-  'word/comments.xml',
-] as const;
 
 function emptyAcceptChangesResult(): AcceptChangesResult {
   return { insertionsAccepted: 0, deletionsAccepted: 0, movesResolved: 0, propertyChangesResolved: 0 };
@@ -141,7 +159,26 @@ function collectLiveFootnoteRefIds(doc: Document): Set<number> {
 // The corresponding <w:footnote w:id=N> in footnotes.xml is then unreachable —
 // remove it so the side part matches the post-sweep body. Reserved separator /
 // continuationSeparator entries are preserved unconditionally.
-function pruneOrphanedFootnotes(footnotesDoc: Document, liveRefIds: Set<number>): number {
+/**
+ * True iff a footnote entry contains a tracked-change element whose id is not in
+ * `selectedIds` — a foreign revision that a selective sweep must not delete.
+ */
+function footnoteHasForeignRevision(fn: Element, selectedIds: Set<string>): boolean {
+  const els = fn.getElementsByTagNameNS(OOXML.W_NS, '*');
+  for (let i = 0; i < els.length; i++) {
+    const el = els.item(i) as Element;
+    if (!TRACKED_CHANGE_ELEMENT_NAME_SET.has(el.localName)) continue;
+    const id = revisionElementId(el);
+    if (id == null || !selectedIds.has(id)) return true;
+  }
+  return false;
+}
+
+function pruneOrphanedFootnotes(
+  footnotesDoc: Document,
+  liveRefIds: Set<number>,
+  protectForeign?: Set<string>,
+): number {
   const entries = Array.from(footnotesDoc.getElementsByTagNameNS(OOXML.W_NS, W.footnote));
   let pruned = 0;
   for (const fn of entries) {
@@ -150,6 +187,10 @@ function pruneOrphanedFootnotes(footnotesDoc: Document, liveRefIds: Set<number>)
     const id = parseWId(fn);
     if (id === null) continue;
     if (liveRefIds.has(id)) continue;
+    // Selective mode: never delete a note that still carries a foreign revision
+    // (the mixed-author byte-identical invariant, #123/#125). Leaving an
+    // unreferenced note is package hygiene at worst, not data loss.
+    if (protectForeign && footnoteHasForeignRevision(fn, protectForeign)) continue;
     fn.parentNode?.removeChild(fn);
     pruned++;
   }
@@ -179,204 +220,6 @@ function nextElementSibling(node: Node | null): Element | null {
   return null;
 }
 
-// ── Table context derivation for document view ───────────────────────
-
-type TableMeta = {
-  tableIndex: number;
-  tableId: string;
-  rows: Element[];
-  headers: string[];
-  totalCols: number;
-};
-
-/**
- * Collect all w:tr descendants of a table element, descending through
- * w:ins/w:del/w:sdt wrappers but not into nested w:tbl elements.
- */
-function collectTableRows(tbl: Element): Element[] {
-  const rows: Element[] = [];
-  function walk(parent: Element) {
-    for (let i = 0; i < parent.childNodes.length; i++) {
-      const child = parent.childNodes[i]!;
-      if (child.nodeType !== 1) continue;
-      const el = child as Element;
-      if (isW(el, W.tr)) {
-        rows.push(el);
-      } else if (!isW(el, W.tbl)) {
-        walk(el);
-      }
-    }
-  }
-  walk(tbl);
-  return rows;
-}
-
-/**
- * Collect all w:tc descendants of a row element, descending through
- * w:ins/w:del/w:sdt wrappers but not into nested w:tr or w:tbl elements.
- */
-function collectRowCells(tr: Element): Element[] {
-  const cells: Element[] = [];
-  function walk(parent: Element) {
-    for (let i = 0; i < parent.childNodes.length; i++) {
-      const child = parent.childNodes[i]!;
-      if (child.nodeType !== 1) continue;
-      const el = child as Element;
-      if (isW(el, W.tc)) {
-        cells.push(el);
-      } else if (!isW(el, W.tr) && !isW(el, W.tbl)) {
-        walk(el);
-      }
-    }
-  }
-  walk(tr);
-  return cells;
-}
-
-/** Get the gridSpan value for a table cell (default 1). */
-function getCellGridSpan(tc: Element): number {
-  const tcPrList = getDirectChildrenByName(tc, W.tcPr);
-  if (tcPrList.length === 0) return 1;
-  const gridSpanEls = getDirectChildrenByName(tcPrList[0]!, 'gridSpan');
-  if (gridSpanEls.length === 0) return 1;
-  const val =
-    gridSpanEls[0]!.getAttributeNS(OOXML.W_NS, W.val) ??
-    gridSpanEls[0]!.getAttribute('w:val') ??
-    gridSpanEls[0]!.getAttribute(W.val);
-  if (!val) return 1;
-  const n = parseInt(val, 10);
-  return n > 0 ? n : 1;
-}
-
-/** Get visible text from a cell's direct paragraphs (excludes nested tables). */
-function getCellHeaderText(tc: Element): string {
-  const parts: string[] = [];
-  for (let i = 0; i < tc.childNodes.length; i++) {
-    const child = tc.childNodes[i]!;
-    if (child.nodeType === 1 && isW(child as Element, W.p)) {
-      parts.push(getParagraphText(child as Element).trim());
-    }
-  }
-  return parts.join(' ').trim();
-}
-
-/**
- * Build metadata map for body-level tables.
- * Only indexes direct w:tbl children of w:body (consistent with extractTables).
- */
-function buildTableMetaMap(body: Element): Map<Element, TableMeta> {
-  const map = new Map<Element, TableMeta>();
-  const tables = getDirectChildrenByName(body, W.tbl);
-
-  for (let tableIndex = 0; tableIndex < tables.length; tableIndex++) {
-    const tbl = tables[tableIndex]!;
-    const rows = collectTableRows(tbl);
-    if (rows.length === 0) continue;
-
-    // Compute max grid columns across all rows
-    let maxGridCols = 0;
-    for (const row of rows) {
-      const cells = collectRowCells(row);
-      let gridCols = 0;
-      for (const cell of cells) {
-        gridCols += getCellGridSpan(cell);
-      }
-      if (gridCols > maxGridCols) maxGridCols = gridCols;
-    }
-
-    // Extract headers from row 0
-    const headerRow = rows[0]!;
-    const headerCells = collectRowCells(headerRow);
-    const headers: string[] = [];
-    for (const cell of headerCells) {
-      const span = getCellGridSpan(cell);
-      const text = getCellHeaderText(cell);
-      headers.push(text);
-      for (let s = 1; s < span; s++) headers.push('');
-    }
-    while (headers.length < maxGridCols) headers.push('');
-    if (headers.length > maxGridCols) headers.length = maxGridCols;
-
-    map.set(tbl, {
-      tableIndex,
-      tableId: `_tbl_${tableIndex}`,
-      rows,
-      headers,
-      totalCols: maxGridCols,
-    });
-  }
-
-  return map;
-}
-
-/**
- * Derive table context for a paragraph by walking up the DOM.
- * Returns undefined if the paragraph is not inside a body-level table.
- */
-function deriveTableContext(p: Element, tableMetaMap: Map<Element, TableMeta>): TableContext | undefined {
-  let tc: Element | null = null;
-  let tr: Element | null = null;
-  let tbl: Element | null = null;
-
-  let current: Node | null = p.parentNode;
-  while (current && current.nodeType === 1) {
-    const el = current as Element;
-    if (isW(el, W.body)) break;
-
-    if (isW(el, W.tc)) tc = el;
-    if (isW(el, W.tr)) tr = el;
-    if (isW(el, W.tbl)) {
-      if (tableMetaMap.has(el)) {
-        tbl = el;
-        break;
-      }
-      // Nested table: reset tc/tr, keep walking to find body-level table
-      tc = null;
-      tr = null;
-    }
-
-    current = el.parentNode;
-  }
-
-  if (!tbl || !tr || !tc) return undefined;
-
-  const meta = tableMetaMap.get(tbl)!;
-
-  // Compute row_index
-  const rowIndex = meta.rows.indexOf(tr);
-  if (rowIndex < 0) return undefined;
-
-  // Compute grid-aware col_index by summing gridSpan for preceding cells
-  const rowCells = collectRowCells(tr);
-  let gridCol = 0;
-  let cellFound = false;
-  for (const cell of rowCells) {
-    if (cell === tc) {
-      cellFound = true;
-      break;
-    }
-    gridCol += getCellGridSpan(cell);
-  }
-  if (!cellFound) return undefined;
-
-  // Compute para_in_cell and cell_para_count
-  const allCellPs = Array.from(tc.getElementsByTagNameNS(OOXML.W_NS, W.p));
-  const paraInCell = allCellPs.indexOf(p);
-
-  return {
-    table_id: meta.tableId,
-    table_index: meta.tableIndex,
-    row_index: rowIndex,
-    col_index: gridCol,
-    col_header: meta.headers[gridCol] ?? '',
-    total_rows: meta.rows.length,
-    total_cols: meta.totalCols,
-    is_header_row: rowIndex === 0,
-    para_in_cell: paraInCell >= 0 ? paraInCell : 0,
-    cell_para_count: allCellPs.length,
-  };
-}
-
 export class DocxDocument {
   private zip: DocxZip;
   private documentXml: Document;
@@ -386,8 +229,14 @@ export class DocxDocument {
   private relsMap: RelsMap;
   private dirty: boolean;
   private documentViewCache: { includeSemanticTags: boolean; showFormatting: boolean; formattingMode: FormattingMode; nodes: DocumentViewNode[]; styles: DocumentStyles } | null;
+  /**
+   * Raw document.xml text as loaded, before normalize()/edits mutate the DOM.
+   * Reference for minimal re-serialization in toBuffer(); null for instances
+   * not created via load().
+   */
+  private originalDocumentXmlText: string | null;
 
-  private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap) {
+  private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap, originalDocumentXmlText: string | null = null) {
     this.zip = zip;
     this.documentXml = documentXml;
     this.stylesXml = stylesXml;
@@ -396,6 +245,7 @@ export class DocxDocument {
     this.relsMap = relsMap;
     this.dirty = false;
     this.documentViewCache = null;
+    this.originalDocumentXmlText = originalDocumentXmlText;
   }
 
   static async load(buffer: Buffer): Promise<DocxDocument> {
@@ -417,7 +267,7 @@ export class DocxDocument {
     const relsText = await zip.readTextOrNull('word/_rels/document.xml.rels');
     const relsMap = relsText ? parseDocumentRels(parseXml(relsText)) : new Map<string, string>();
 
-    return new DocxDocument(zip, doc, stylesXml, numberingXml, footnotesXml, relsMap);
+    return new DocxDocument(zip, doc, stylesXml, numberingXml, footnotesXml, relsMap, xml);
   }
 
   getParagraphs(): Element[] {
@@ -480,9 +330,29 @@ export class DocxDocument {
     return validateDocument(this.documentXml);
   }
 
+  async validateAiRevisions(
+    aiAuthor: string,
+    touched?: AiRevisionValidationTouchedContext,
+  ): Promise<ValidateAiRevisionsResult> {
+    const stories = [{ part: 'word/document.xml', doc: this.documentXml }];
+    for (const partPath of enumerateRevisionStoryPartPaths(this.zip)) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (!xml) continue;
+      stories.push({ part: partPath, doc: parseXml(xml) });
+    }
+
+    return validateAiRevisionsImpl({
+      aiAuthor,
+      stories,
+      packageZip: this.zip,
+      touched,
+    });
+  }
+
   /**
    * Accept all tracked changes in document.xml plus supported revisionable
-   * side-story parts, producing clean XML with no revision markup.
+   * side-story parts, resolving the supported revision subset. Unsupported
+   * advanced records remain classified gaps or preservation-only markup.
    */
   async acceptChanges(): Promise<AcceptChangesResult> {
     const total = emptyAcceptChangesResult();
@@ -568,6 +438,112 @@ export class DocxDocument {
     return total;
   }
 
+  /**
+   * Read all revisionable stories (document.xml + supported side parts) as parsed
+   * Documents, resolve the selector's target revision-id set across every story
+   * (a revision id is package-wide), and hard-error on any ambiguous overlap
+   * unless the selector opts into `normalizeFirst`.
+   */
+  private async prepareSelectiveStories(
+    selector: AiEditSelector,
+  ): Promise<{ stories: Array<{ path: string | null; doc: Document }>; selectedIds: Set<string> }> {
+    const stories: Array<{ path: string | null; doc: Document }> = [
+      { path: null, doc: this.documentXml },
+    ];
+    for (const partPath of REVISION_STORY_PART_PATHS) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (xml) stories.push({ path: partPath, doc: parseXml(xml) });
+    }
+
+    const allRevisionElements = stories.flatMap((s) => collectRevisionElements(s.doc));
+    const selectedIds = resolveSelectedIds(allRevisionElements, selector);
+
+    if (!selector.normalizeFirst) {
+      const overlaps: AiRevisionOverlap[] = stories.flatMap((s) =>
+        detectAmbiguousOverlaps(s.doc, selectedIds),
+      );
+      if (overlaps.length > 0) throw new AmbiguousRevisionOverlapError(overlaps);
+    }
+    return { stories, selectedIds };
+  }
+
+  /**
+   * Accept only the revisions named by `selector` (by id or author) across
+   * document.xml and supported side-story parts, leaving every other revision
+   * byte-untouched (#123). Hard-errors on an ambiguous overlap unless
+   * `normalizeFirst` is set.
+   */
+  async acceptAIEdits(selector: AiEditSelector): Promise<{ result: AcceptChangesResult; selectedIds: string[] }> {
+    const { stories, selectedIds } = await this.prepareSelectiveStories(selector);
+    const filter = selectedIdFilter(selectedIds);
+    const total = emptyAcceptChangesResult();
+
+    const bodyResult = acceptChangesImpl(this.documentXml, { filter });
+    addAcceptChangesResult(total, bodyResult);
+    const liveFootnoteRefIds = bodyResult.deletionsAccepted > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
+    for (const story of stories) {
+      if (story.path == null) continue; // document.xml already swept above
+      const partResult = acceptChangesImpl(story.doc, { filter });
+      addAcceptChangesResult(total, partResult);
+
+      let footnotesPruned = 0;
+      if (story.path === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds, selectedIds);
+      }
+      if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
+        this.zip.writeText(story.path, serializeXml(story.doc));
+        if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
+      }
+    }
+
+    if (hasAcceptedChanges(total)) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return { result: total, selectedIds: [...selectedIds] };
+  }
+
+  /**
+   * Reject only the revisions named by `selector` across document.xml and
+   * supported side-story parts, leaving every other revision byte-untouched.
+   * Symmetric to {@link DocxDocument.acceptAIEdits}.
+   */
+  async rejectAIEdits(selector: AiEditSelector): Promise<{ result: RejectChangesResult; selectedIds: string[] }> {
+    const { stories, selectedIds } = await this.prepareSelectiveStories(selector);
+    const filter = selectedIdFilter(selectedIds);
+    const total = emptyRejectChangesResult();
+
+    const bodyResult = rejectChangesImpl(this.documentXml, { filter });
+    addRejectChangesResult(total, bodyResult);
+    const liveFootnoteRefIds = bodyResult.insertionsRemoved > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
+    for (const story of stories) {
+      if (story.path == null) continue;
+      const partResult = rejectChangesImpl(story.doc, { filter });
+      addRejectChangesResult(total, partResult);
+
+      let footnotesPruned = 0;
+      if (story.path === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds, selectedIds);
+      }
+      if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
+        this.zip.writeText(story.path, serializeXml(story.doc));
+        if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
+      }
+    }
+
+    if (hasRejectedChanges(total)) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return { result: total, selectedIds: [...selectedIds] };
+  }
+
   removeJuniorBookmarks(): number {
     const removed = cleanupInternalBookmarks(this.documentXml);
     if (removed > 0) this.dirty = true;
@@ -606,6 +582,25 @@ export class DocxDocument {
     return { paragraphs: all.slice(startIdx, endIdx), totalParagraphs: total };
   }
 
+  /**
+   * Parsed `word/numbering.xml` model (abstract numberings + instances), or null when the
+   * document has no numbering part. The document view's `numbering` field only carries
+   * `num_id`/`ilvl`; semantic converters (DOCX → ODT) need `numFmt`/`lvlText`/`start` to
+   * synthesize target-format list styles, so the full model is exposed here.
+   */
+  getNumberingModel(): NumberingModel | null {
+    return this.numberingXml ? parseNumberingXml(this.numberingXml) : null;
+  }
+
+  /**
+   * Parsed named-style model of the loaded document (empty when the package has no
+   * `word/styles.xml`). Semantic converters (DOCX → ODT) resolve heading/body style chains
+   * through it to seed their own style templates from the source's definitions.
+   */
+  getStylesModel(): StylesModel {
+    return parseStylesXml(this.stylesXml);
+  }
+
   buildDocumentView(opts?: { includeSemanticTags?: boolean; showFormatting?: boolean; formattingMode?: FormattingMode }): { nodes: DocumentViewNode[]; styles: DocumentStyles } {
     const includeSemanticTags = opts?.includeSemanticTags ?? true;
     const showFormatting = opts?.showFormatting ?? false;
@@ -615,18 +610,9 @@ export class DocxDocument {
       return { nodes: cached.nodes, styles: cached.styles };
     }
 
-    // Pre-pass: build metadata for body-level tables
-    const body = this.documentXml.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0);
-    const tableMetaMap = body ? buildTableMetaMap(body as Element) : new Map<Element, TableMeta>();
-
-    const paragraphs = this.getParagraphs()
-      .map((p): { id: string; p: Element; tableContext?: TableContext } | null => {
-        const id = getParagraphBookmarkId(p);
-        if (!id) return null;
-        const tableContext = deriveTableContext(p, tableMetaMap);
-        return tableContext ? { id, p, tableContext } : { id, p };
-      })
-      .filter((x): x is { id: string; p: Element; tableContext?: TableContext } => x !== null);
+    // Shared paragraph-collection core (also used by the free buildDocumentView):
+    // attaches each bookmarked paragraph's table context.
+    const paragraphs = collectViewParagraphs(this.documentXml);
 
     const { nodes, styles } = buildNodesForDocumentView({
       paragraphs,
@@ -1057,7 +1043,7 @@ export class DocxDocument {
   }
 
   async getFootnotes(): Promise<Footnote[]> {
-    return getFootnotesImpl(this.zip, this.documentXml);
+    return getFootnotesImpl(this.zip, this.documentXml, this.getStylesModel());
   }
 
   /**
@@ -1105,7 +1091,7 @@ export class DocxDocument {
   }
 
   async getFootnote(noteId: number): Promise<Footnote | null> {
-    return getFootnoteImpl(this.zip, this.documentXml, noteId);
+    return getFootnoteImpl(this.zip, this.documentXml, noteId, this.getStylesModel());
   }
 
   /**
@@ -1174,25 +1160,78 @@ export class DocxDocument {
     return parseXml(commentsText);
   }
 
-  async toBuffer(opts?: { cleanBookmarks?: boolean }): Promise<{ buffer: Buffer; bookmarksRemoved: number }> {
+  /**
+   * Serialize the document to a .docx buffer.
+   *
+   * With `minimalReserialization` (requires `cleanBookmarks`), top-level body
+   * blocks that no edit touched are restored element-for-element from the
+   * original document.xml instead of carrying the open-time normalization
+   * (proofErr stripping, run merging) to disk — so output diffs reflect the
+   * actual edit blast radius. Edited/inserted blocks are emitted as-is.
+   * Falls back to full re-serialization (blocksRestored: 0) when no original
+   * text was captured or reconciliation fails.
+   *
+   * @see https://github.com/UseJunior/safe-docx/issues/408
+   */
+  async toBuffer(opts?: { cleanBookmarks?: boolean; minimalReserialization?: boolean }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
     // Always write the latest document.xml when saving.
     // Important: when cleanBookmarks=true (download), we must NOT mutate session state.
     const xmlWithBookmarks = serializeXml(this.documentXml);
+    maybeCaptureEmittedDocumentXml(xmlWithBookmarks);
     this.zip.writeText('word/document.xml', xmlWithBookmarks);
 
     if (opts?.cleanBookmarks) {
       const cloned = parseXml(xmlWithBookmarks);
       const bookmarksRemoved = cleanupInternalBookmarks(cloned);
+      let blocksRestored = 0;
+      if (opts.minimalReserialization && this.originalDocumentXmlText !== null) {
+        try {
+          blocksRestored = restoreUntouchedBlocks(cloned, this.originalDocumentXmlText);
+        } catch {
+          // Reconciliation is best-effort; the fully re-serialized DOM is
+          // always a correct (if non-minimal) save.
+          blocksRestored = 0;
+        }
+      }
       const cleanedXml = serializeXml(cloned);
 
       // Temporarily swap document.xml in the zip for output, then restore.
+      maybeCaptureEmittedDocumentXml(cleanedXml);
       this.zip.writeText('word/document.xml', cleanedXml);
       const buffer = await this.zip.toBuffer();
       this.zip.writeText('word/document.xml', xmlWithBookmarks);
-      return { buffer, bookmarksRemoved };
+      return { buffer, bookmarksRemoved, blocksRestored };
     }
 
     const buffer = await this.zip.toBuffer();
-    return { buffer, bookmarksRemoved: 0 };
+    return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
+  }
+
+  /**
+   * Produce the CLEAN artifact for a write-time editing session (#126): accept
+   * the AI actor's tracked edits on an *isolated copy* of this document — this
+   * instance is left unmutated, so a paired tracked artifact can still be
+   * serialized from it — then serialize with minimal reserialization against
+   * THIS document's original on-disk document.xml.
+   *
+   * The isolation matters for the #408 guarantee. Loading the isolated copy
+   * from a re-serialized buffer would reset its minimal-reserialization
+   * baseline to the already-normalized text, so body blocks the AI never
+   * touched would come back merely semantically equal (proofErr stripped, runs
+   * merged) rather than byte-identical to the source. Carrying THIS document's
+   * true baseline forward keeps untouched blocks pristine while accepted blocks
+   * emit as their final text.
+   *
+   * @see https://github.com/UseJunior/safe-docx/issues/408
+   */
+  async toAcceptedBuffer(
+    selector: AiEditSelector,
+    opts?: { cleanBookmarks?: boolean },
+  ): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
+    const cleanBookmarks = opts?.cleanBookmarks ?? true;
+    const isolated = await DocxDocument.load((await this.toBuffer({ cleanBookmarks: false })).buffer);
+    isolated.originalDocumentXmlText = this.originalDocumentXmlText;
+    await isolated.acceptAIEdits(selector);
+    return isolated.toBuffer({ cleanBookmarks, minimalReserialization: cleanBookmarks });
   }
 }

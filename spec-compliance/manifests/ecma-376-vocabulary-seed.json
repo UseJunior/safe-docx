@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "artifactPart": 4,
+  "nestedSchemaArchive": "OfficeOpenXML-XMLSchema-Transitional.zip",
+  "schemaPath": "wml.xsd",
+  "namespaceUri": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+  "preferredPrefix": "w",
+  "entries": [
+    { "constant": "FLD_CHAR", "localName": "fldChar", "kind": "element" },
+    { "constant": "INSTR_TEXT", "localName": "instrText", "kind": "element" },
+    { "constant": "DEL_INSTR_TEXT", "localName": "delInstrText", "kind": "element" },
+    { "constant": "INS", "localName": "ins", "kind": "element" },
+    { "constant": "DEL", "localName": "del", "kind": "element" },
+    { "constant": "FLD_CHAR_TYPE", "localName": "fldCharType", "kind": "attribute" },
+    { "constant": "ID", "localName": "id", "kind": "attribute" },
+    { "constant": "AUTHOR", "localName": "author", "kind": "attribute" },
+    { "constant": "DATE", "localName": "date", "kind": "attribute" }
+  ]
+}

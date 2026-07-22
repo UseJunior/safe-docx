@@ -1,0 +1,13 @@
+xml.xsd is an unmodified copy of the W3C schema for the XML namespace
+(http://www.w3.org/XML/1998/namespace), retrieved 2026-06-11 from:
+
+    https://www.w3.org/2001/xml.xsd
+
+It is reproduced under the W3C Software and Document License:
+
+    https://www.w3.org/copyright/software-license/
+
+It is vendored because the ECMA-376 XSDs import the XML namespace without a
+schemaLocation, and the validation entry schema in the parent directory must
+resolve that import locally (xmllint runs with --nonet; no network fetches).
+Do not modify this file; refresh it only by re-downloading from the URL above.

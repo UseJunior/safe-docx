@@ -321,6 +321,48 @@ For moved destination (content moved TO):
 - **THEN** `w:moveFromRangeStart` and `w:moveFromRangeEnd` share the same `w:id`
 - **AND** `w:moveToRangeStart` and `w:moveToRangeEnd` share the same `w:id`
 
+### Requirement: Tracked move ranges are structurally certified
+
+The system SHALL emit exactly one source range and one destination range per
+logical tracked move. The compiled fixed-story checker SHALL require unique
+schema-valid `ST_DecimalNumber` range ids canonicalized as integers, non-empty
+move names, balanced non-crossing same-direction start/end markers, one range
+per direction and `w:name`, and a one-to-one match between source and
+destination move names. Both Strict and Transitional use the same integer type
+for these ids. The non-empty name rule deliberately strengthens the required
+`ST_String` schema attribute, whose lexical space includes the empty string.
+The checker does not associate individual `w:moveFrom` or
+`w:moveTo` wrapper revision IDs with those ranges. The public document-integrity
+certificate SHALL expose the bounded result `Tracked move range markers are
+structurally paired by range ID and move name.` and SHALL list wrapper-to-range
+revision-ID association as an exclusion.
+The move-range check SHALL be an optional additive field in the public v1
+certificate so certificates produced before this check remain valid v1 values;
+consumers SHALL treat absence as unavailable evidence, not as a passing result.
+
+#### Scenario: [MOVE-RANGE-PAIR-01] Inplace emission produces one range pair per logical move
+
+- **GIVEN** one detected move whose source is split across multiple runs or paragraphs
+- **WHEN** inplace reconstruction emits tracked move markup
+- **THEN** the output contains exactly one `w:moveFromRangeStart` / `w:moveFromRangeEnd` pair
+- **AND** the output contains exactly one `w:moveToRangeStart` / `w:moveToRangeEnd` pair
+- **AND** each end reuses its start id and both directions use the same move name
+
+#### Scenario: [LEAN-MOVE-RANGE-01] Compiled checker certifies structurally valid move ranges
+
+- **GIVEN** a compared fixed story with one uniquely identified, balanced move source range and one move destination range using the same name
+- **WHEN** the compiled Lean checker evaluates the DOCX triple
+- **THEN** the move-range checker conjunct passes
+- **AND** the public certificate says `Tracked move range markers are structurally paired by range ID and move name.`
+- **AND** the certificate excludes association of individual move-wrapper revision IDs with move ranges
+
+#### Scenario: [LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks
+
+- **GIVEN** a valid moved-text DOCX triple whose accept and reject text projections match
+- **WHEN** the compared story is mutated with a duplicate marker, missing marker, crossed range, mismatched source/destination name, malformed decimal id, numeric-id alias collision, or empty move name
+- **THEN** the move-range checker conjunct fails for every mutation
+- **AND** the accept and reject text checks continue to pass
+
 ### Requirement: Format Change Info Interface
 
 The system SHALL provide a `FormatChangeInfo` interface with:
@@ -539,13 +581,17 @@ The system SHALL provide friendly names for common run properties:
 - **THEN** the local name (`emboss`) is used as the property name
 
 ### Requirement: Inplace Reconstruction Cross-Run Recovery
-The atomizer comparison pipeline SHALL evaluate cross-run inplace reconstruction passes before using rebuild fallback when `reconstructionMode` is `inplace`.
+The atomizer comparison pipeline SHALL evaluate cross-run inplace reconstruction passes before using rebuild fallback when `reconstructionMode` is `inplace`, and SHALL report which inplace pass produced the output.
 
-#### Scenario: Cross-run pass rescues inplace output
-- **GIVEN** a run-fragmented document pair where no-cross-run inplace passes fail round-trip safety
-- **WHEN** cross-run inplace passes are evaluated
-- **THEN** the pipeline SHALL keep `reconstructionModeUsed` as `inplace` if any cross-run pass satisfies all safety checks
-- **AND** tracked output SHALL avoid rebuild fallback-driven structure loss
+The pipeline evaluates inplace passes in a fixed order — `inplace_word_split`, `inplace_run_level`, `inplace_word_split_cross_run`, `inplace_run_level_cross_run` — selecting the first whose reconstruction satisfies every round-trip safety check. The cross-run passes are a safety net for run-fragmented documents that the no-cross-run passes cannot reconstruct safely.
+
+As of this requirement's last revision that safety net is not reachable by any known input: `inplace_run_level` deletes and re-inserts whole runs, which preserves normalized text by construction, so it satisfies the round-trip text checks on every case that `inplace_word_split` fails — the cross-run passes are therefore never the selected rescuer. A prior "Cross-run pass rescues inplace output" scenario asserted that unreachable branch and could not be honestly mapped to a test; it is reclassified as a documented residual rather than a routinely-exercised path. The general recovery guarantee is preserved by the "Rebuild fallback only after all inplace passes fail" scenario, which requires the cross-run passes to be evaluated before any rebuild fallback. Reachability of the cross-run passes (candidate dead code superseded by `inplace_word_split` / premerge improvements) is tracked as an engine follow-up. See #469.
+
+#### Scenario: Inplace reconstruction reports the pass that produced the output
+- **GIVEN** a run-fragmented document pair compared with `reconstructionMode: inplace` whose first inplace pass fails a round-trip safety check
+- **WHEN** a later inplace pass satisfies every safety check and is selected
+- **THEN** the result SHALL report `inplaceSuccessDiagnostics.passUsed` naming the selected pass
+- **AND** `inplaceSuccessDiagnostics.precedingFailedAttempts` SHALL list every earlier pass that failed a safety check, in evaluation order
 
 #### Scenario: Rebuild fallback only after all inplace passes fail
 - **GIVEN** all inplace passes (no-cross-run and cross-run) fail at least one safety check
@@ -644,4 +690,3 @@ This requirement strengthens empirical falsifiability only; it introduces no Lea
 
 - **WHEN** a reader inspects the header comment blocks of `packages/docx-core/src/integration/lean-spec-bridge.test.ts`
 - **THEN** the "Coverage surfaces" block lists the field-bearing arbitrary and its operation families, the "Fallback semantics" block scopes the "field-free ⇒ no `ContainerResolutionError`" claim to the two original generators and documents the field-bearing arbitrary's narrower inplace-safe operation set, and the "Coverage limitations" note no longer implies all field-bearing input families live only in `collapsed-field-inplace.test.ts`
-

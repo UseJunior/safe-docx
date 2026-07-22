@@ -8,7 +8,9 @@
 //
 // Updates: root + all workspace package.json files, mcpb manifest.json,
 // cross-workspace dep ranges, and package-lock.json.
-// After running, commit the changes and merge before tagging.
+// After running, commit the changes and merge to main. The Auto-tag release
+// workflow (.github/workflows/auto-tag-release.yml) then pushes the v<version>
+// tag, and the tag push triggers the release workflow.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
@@ -22,7 +24,9 @@ const PACKAGE_JSONS = [
   'package.json',
   'packages/allure-test-factory/package.json',
   'packages/docx-core/package.json',
+  'packages/docx-compare/package.json',
   'packages/docx-mcp/package.json',
+  'packages/odf-core/package.json',
   'packages/google-docs-core/package.json',
   'packages/safe-docx-mcpb/package.json',
   'packages/safe-docx/package.json',
@@ -35,6 +39,8 @@ const SMITHERY_MANIFEST_JSON = 'packages/safe-docx/.smithery/shttp/manifest.json
 // Cross-workspace dependencies (package name → dep specifier pattern)
 const WORKSPACE_DEPS = [
   '@usejunior/docx-core',
+  '@usejunior/docx-compare',
+  '@usejunior/odf-core',
   '@usejunior/docx-mcp',
   '@usejunior/google-docs-core',
   '@usejunior/safe-docx',
@@ -80,6 +86,18 @@ function checkVersionSync() {
   versions.set('packages/safe-docx/server.json', serverJson.version);
   if (serverJson.packages?.[0]?.version !== serverJson.version) {
     console.error('  server.json packages[0].version mismatch');
+    ok = false;
+  }
+  // The official MCP registry rejects publishes whose description exceeds
+  // 100 chars (422 at publish time, after npm has already shipped). Gate it
+  // here: --check runs at bump time and in the auto-tag workflow, before the
+  // release tag exists.
+  const REGISTRY_DESCRIPTION_MAX = 100;
+  if ((serverJson.description ?? '').length > REGISTRY_DESCRIPTION_MAX) {
+    console.error(
+      `  server.json description is ${serverJson.description.length} chars; ` +
+        `the MCP registry caps it at ${REGISTRY_DESCRIPTION_MAX}`,
+    );
     ok = false;
   }
 
@@ -193,7 +211,8 @@ function bumpVersion(newVersion) {
     console.log('\nNext steps:');
     console.log(`  1. git add -A && git commit -m "chore(release): bump workspace versions to ${newVersion}"`);
     console.log('  2. Open PR, merge to main');
-    console.log(`  3. git tag v${newVersion} && git push origin v${newVersion}`);
+    console.log(`  3. On merge, auto-tag-release.yml pushes v${newVersion}, which triggers release.yml.`);
+    console.log(`     Manual fallback: git tag v${newVersion} && git push origin v${newVersion}`);
   } else {
     console.error('\nVersion sync check failed after bump — investigate manually.');
     process.exit(1);

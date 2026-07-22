@@ -1,6 +1,6 @@
 {
   "name": "@usejunior/google-docs-core",
-  "version": "0.9.1",
+  "version": "0.17.0",
   "description": "Google Docs core library: read, write, and anchor management via Google Docs API",
   "type": "module",
   "main": "dist/index.js",
@@ -37,7 +37,8 @@
     "access": "public"
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "keywords": [
     "google-docs",
@@ -46,5 +47,5 @@
     "mcp",
     "anchor-management"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

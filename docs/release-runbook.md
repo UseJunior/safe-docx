@@ -40,12 +40,29 @@ This script is the source of truth for which files are managed (package manifest
 
 Commit: `chore(release): bump workspace versions to X.Y.Z`
 
-### 2. Tag and push
+### 2. Tag (automated)
+
+Merging the bump PR is the release trigger. The `Auto-tag release` workflow
+(`.github/workflows/auto-tag-release.yml`) runs on every push to `main`; when the
+push changed the root `package.json` version and no `v<version>` tag exists yet,
+it pushes the tag with the release-bot App token, and the tag push triggers the
+release workflow below.
+
+Manual fallback (auto-tag failed, or releasing a commit other than the current
+`main` tip):
 
 ```bash
-git tag vX.Y.Z
-git push origin main --tags
+git tag vX.Y.Z <commit-sha>
+git push origin vX.Y.Z
 ```
+
+Two constraints to preserve when touching this machinery:
+
+- The tag must be pushed with a GitHub App or PAT credential. Tags created with
+  the workflow-scoped `GITHUB_TOKEN` do not trigger `release.yml`.
+- npm trusted publishing (OIDC) is pinned to the `release.yml` workflow filename.
+  Never move `npm publish` or `mcp-publisher publish` into another workflow file —
+  the trusted-publisher claim match would fail and the publish would be rejected.
 
 ### 3. Monitor the release workflow
 
