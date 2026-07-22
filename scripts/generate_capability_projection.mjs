@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
+import ts from 'typescript';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const checkOnly = process.argv.includes('--check');
@@ -24,6 +27,7 @@ const paths = {
 };
 
 const POSITIVE_STATUSES = new Set(['supported', 'partial', 'preservation-only']);
+const execFileAsync = promisify(execFile);
 const REQUIRED_PINNED_FILES = new Set([
   paths.capabilities,
   paths.capabilitiesSchema,
@@ -87,12 +91,166 @@ function expectedStories(packageParts) {
   const stories = [];
   if (packageParts.some((part) => part === 'word/document.xml' || part.includes('numbering.xml') || part.includes('styles.xml'))) stories.push('main');
   if (packageParts.some((part) => part.includes('comments.xml'))) stories.push('comments');
+  if (packageParts.some((part) => part.includes('footnotes.xml'))) stories.push('footnotes');
+  if (packageParts.some((part) => part.includes('endnotes.xml'))) stories.push('endnotes');
   if (packageParts.some((part) => part.includes('header'))) stories.push('headers');
   if (packageParts.some((part) => part.includes('footer'))) stories.push('footers');
   return stories.length > 0 ? stories : ['main'];
 }
 
-function validateNeutralResult(claim, summary, mappings) {
+function setsEqual(left, right) {
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}
+
+function validateSummary(capabilityById, mappings, summary) {
+  const mappingKeys = new Set();
+  const knownScenarioIds = new Set();
+  for (const mapping of mappings.mappings) {
+    const capability = capabilityById.get(mapping.capabilityId);
+    assert(capability, `mapping references unknown capability ${mapping.capabilityId}`);
+    assert(capability.applicableAxes.includes(mapping.axis), `${mapping.capabilityId}: mapping axis ${mapping.axis} is not applicable`);
+    const key = `${mapping.scenarioId}\u0000${mapping.capabilityId}\u0000${mapping.axis}`;
+    assert(!mappingKeys.has(key), `duplicate scenario mapping ${mapping.scenarioId}/${mapping.capabilityId}/${mapping.axis}`);
+    mappingKeys.add(key);
+    knownScenarioIds.add(mapping.scenarioId);
+  }
+
+  const unmeasured = new Set(summary.unmeasuredScenarioIds);
+  assert(unmeasured.size === summary.unmeasuredScenarioIds.length, 'summary contains duplicate unmeasured scenario IDs');
+  for (const scenarioId of unmeasured) {
+    assert(knownScenarioIds.has(scenarioId), `summary references unknown unmeasured scenario ${scenarioId}`);
+  }
+  const measured = new Set([...knownScenarioIds].filter((scenarioId) => !unmeasured.has(scenarioId)));
+  assert(summary.sourceResults.scenarioCount === measured.size, 'summary scenarioCount disagrees with measured scenario inventory');
+
+  const implementationNames = summary.sourceResults.implementations.map((item) => item.adapterName);
+  assert(new Set(implementationNames).size === implementationNames.length, 'summary contains duplicate implementation adapters');
+  const knownImplementations = new Set(implementationNames);
+  const rowKeys = new Set();
+  for (const row of summary.capabilities) {
+    const capability = capabilityById.get(row.capabilityId);
+    assert(capability, `summary references unknown capability ${row.capabilityId}`);
+    assert(row.axis === 'crossPlatform' || capability.applicableAxes.includes(row.axis), `${row.capabilityId}: summary axis ${row.axis} is not applicable`);
+    const key = pairKey(row.capabilityId, row.axis);
+    assert(!rowKeys.has(key), `duplicate summary row ${row.capabilityId}/${row.axis}`);
+    rowKeys.add(key);
+
+    const scenarioIds = new Set(row.scenarioIds);
+    assert(scenarioIds.size === row.scenarioIds.length, `${row.capabilityId}/${row.axis}: duplicate result scenario ID`);
+    for (const scenarioId of scenarioIds) {
+      assert(knownScenarioIds.has(scenarioId), `${row.capabilityId}/${row.axis}: unknown result scenario ${scenarioId}`);
+      assert(measured.has(scenarioId), `${row.capabilityId}/${row.axis}: result includes unmeasured scenario ${scenarioId}`);
+    }
+    const expectedScenarioIds = new Set(mappings.mappings
+      .filter((mapping) => mapping.capabilityId === row.capabilityId
+        && (row.axis === 'crossPlatform' || mapping.axis === row.axis)
+        && measured.has(mapping.scenarioId))
+      .map((mapping) => mapping.scenarioId));
+    assert(expectedScenarioIds.size > 0, `${row.capabilityId}/${row.axis}: summary row has no mapped measured scenarios`);
+    assert(setsEqual(scenarioIds, expectedScenarioIds), `${row.capabilityId}/${row.axis}: result scenarios do not exactly match mapped measured scenarios`);
+
+    for (const [adapterName, outcome] of Object.entries(row.outcomes)) {
+      assert(knownImplementations.has(adapterName), `${row.capabilityId}/${row.axis}: outcome references unknown adapter ${adapterName}`);
+      assert(Number.isInteger(outcome.denominator) && outcome.denominator >= 0, `${row.capabilityId}/${row.axis}/${adapterName}: denominator must be a nonnegative integer`);
+      assert(Number.isInteger(outcome.passLike) && outcome.passLike >= 0, `${row.capabilityId}/${row.axis}/${adapterName}: passLike must be a nonnegative integer`);
+      const countValues = Object.values(outcome.counts);
+      assert(countValues.every((count) => Number.isInteger(count) && count >= 0), `${row.capabilityId}/${row.axis}/${adapterName}: counts must be nonnegative integers`);
+      assert(countValues.reduce((total, count) => total + count, 0) === outcome.denominator, `${row.capabilityId}/${row.axis}/${adapterName}: counts do not sum to denominator`);
+      assert(outcome.denominator === scenarioIds.size, `${row.capabilityId}/${row.axis}/${adapterName}: denominator does not cover every row scenario`);
+      assert(outcome.passLike <= outcome.denominator, `${row.capabilityId}/${row.axis}/${adapterName}: passLike exceeds denominator`);
+    }
+  }
+}
+
+async function git(repositoryRoot, args, label) {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', repositoryRoot, ...args], { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+    return stdout.trimEnd();
+  } catch {
+    throw new Error(label);
+  }
+}
+
+async function resolveCommit(repositoryRoot, revision, label) {
+  const commit = await git(repositoryRoot, ['rev-parse', '--verify', `${revision}^{commit}`], label);
+  assert(/^[a-f0-9]{40}$/.test(commit), label);
+  return commit;
+}
+
+async function readAtCommit(repositoryRoot, commit, relativePath, label) {
+  return git(repositoryRoot, ['show', `${commit}:${relativePath}`], label);
+}
+
+function packageManifestPath(testPath) {
+  const match = /^packages\/([^/]+)\//.exec(testPath);
+  assert(match, `local evidence must belong to a workspace package: ${testPath}`);
+  return `packages/${match[1]}/package.json`;
+}
+
+function rootCallIdentifier(expression) {
+  if (ts.isIdentifier(expression)) return expression.text;
+  if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) return rootCallIdentifier(expression.expression);
+  if (ts.isCallExpression(expression)) return rootCallIdentifier(expression.expression);
+  return undefined;
+}
+
+function callChainHasProperty(expression, propertyName) {
+  if (ts.isPropertyAccessExpression(expression)) {
+    return expression.name.text === propertyName || callChainHasProperty(expression.expression, propertyName);
+  }
+  if (ts.isElementAccessExpression(expression) || ts.isCallExpression(expression)) return callChainHasProperty(expression.expression, propertyName);
+  return false;
+}
+
+export function findTestTitle(source, fileName, selector) {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  let match;
+  function visit(node) {
+    if (ts.isCallExpression(node)
+      && (rootCallIdentifier(node.expression) === 'test' || rootCallIdentifier(node.expression) === 'it')
+      && node.arguments.length > 0
+      && ts.isStringLiteral(node.arguments[0])
+      && node.arguments[0].text === selector) {
+      match = { hasConformanceMetadata: callChainHasProperty(node.expression, 'conformance') };
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  return match;
+}
+
+async function validateLocalEvidence(claim, evidence, repositoryRoot) {
+  const fullCommit = await resolveCommit(
+    repositoryRoot,
+    evidence.lastVerifiedCommit,
+    `${claim.capabilityId}/${claim.axis}: local evidence commit does not exist`
+  );
+  assert(fullCommit === evidence.lastVerifiedCommit, `${claim.capabilityId}/${claim.axis}: local evidence commit must be full and exact`);
+  const source = await readAtCommit(
+    repositoryRoot,
+    fullCommit,
+    evidence.path,
+    `${claim.capabilityId}/${claim.axis}: test path is absent at claimed commit: ${evidence.path}`
+  );
+  const manifestPath = packageManifestPath(evidence.path);
+  const manifestSource = await readAtCommit(
+    repositoryRoot,
+    fullCommit,
+    manifestPath,
+    `${claim.capabilityId}/${claim.axis}: package manifest is absent at claimed commit: ${manifestPath}`
+  );
+  const packageVersion = JSON.parse(manifestSource).version;
+  assert(evidence.implementationVersion === packageVersion, `${claim.capabilityId}/${claim.axis}: local evidence version disagrees with package version at claimed commit`);
+  assert(evidence.implementationVersion === claim.implementationVersion, `${claim.capabilityId}/${claim.axis}: local evidence version disagrees with claim`);
+  assert(evidence.lastVerifiedCommit === claim.lastVerifiedCommit, `${claim.capabilityId}/${claim.axis}: local evidence commit disagrees with claim`);
+  const testTitle = findTestTitle(source, evidence.path, evidence.selector);
+  assert(testTitle, `${claim.capabilityId}/${claim.axis}: exact test title not found at claimed commit: ${evidence.selector}`);
+  if (evidence.evidenceClass === 'normative-behavioral-scenario') {
+    assert(testTitle.hasConformanceMetadata, `${claim.capabilityId}/${claim.axis}: normative evidence lacks structured conformance metadata`);
+  }
+}
+
+function validateNeutralResult(claim, summary) {
   const row = summary.capabilities.find(
     (candidate) => candidate.capabilityId === claim.capabilityId && candidate.axis === claim.axis
   );
@@ -103,23 +261,15 @@ function validateNeutralResult(claim, summary, mappings) {
     safeDocx.passLike === safeDocx.denominator,
     `${claim.capabilityId}/${claim.axis}: neutral SafeDocX result is not fully pass-like`
   );
-  for (const scenarioId of row.scenarioIds) {
-    const mapped = mappings.mappings.some((mapping) =>
-      mapping.scenarioId === scenarioId
-      && mapping.capabilityId === claim.capabilityId
-      && (claim.axis === 'crossPlatform' || mapping.axis === claim.axis)
-    );
-    assert(mapped, `${claim.capabilityId}/${claim.axis}: result scenario is absent from pinned mappings: ${scenarioId}`);
-  }
   if (claim.axis === 'crossPlatform') {
-    const passingAdapters = Object.values(row.outcomes).filter(
-      (outcome) => outcome.denominator > 0 && outcome.passLike === outcome.denominator
+    const secondAdapter = Object.entries(row.outcomes).find(
+      ([adapterName, outcome]) => adapterName !== 'safe-docx' && outcome.denominator === row.scenarioIds.length && outcome.passLike === outcome.denominator
     );
-    assert(passingAdapters.length >= 2, `${claim.capabilityId}/crossPlatform: fewer than two passing adapters`);
+    assert(secondAdapter, `${claim.capabilityId}/crossPlatform: no second adapter passes every row scenario`);
   }
 }
 
-async function validateEvidence(claim, summary, mappings, leanCoverage, repositoryRoot) {
+async function validateEvidence(claim, summary, repositoryRoot) {
   if (!POSITIVE_STATUSES.has(claim.status)) {
     assert(claim.evidence.length === 0, `${claim.capabilityId}/${claim.axis}: non-positive status must not carry evidence`);
     return;
@@ -134,34 +284,20 @@ async function validateEvidence(claim, summary, mappings, leanCoverage, reposito
     );
     await access(absolute);
     if (evidence.kind === 'local-test') {
-      assert(evidence.implementationVersion === claim.implementationVersion, `${claim.capabilityId}/${claim.axis}: local evidence version disagrees with claim`);
-      assert(evidence.lastVerifiedCommit === claim.lastVerifiedCommit, `${claim.capabilityId}/${claim.axis}: local evidence commit disagrees with claim`);
-      const source = await readFile(absolute, 'utf8');
-      assert(source.includes(evidence.selector), `${claim.capabilityId}/${claim.axis}: test selector not found: ${evidence.selector}`);
+      await validateLocalEvidence(claim, evidence, repositoryRoot);
       executable = true;
     } else if (evidence.kind === 'neutral-result') {
       const adapterVersion = summary.sourceResults.implementations.find((item) => item.adapterName === 'safe-docx')?.adapterVersion;
       const match = /^(\d+\.\d+\.\d+)\+git\.([a-f0-9]{7,40})$/.exec(adapterVersion ?? '');
       assert(match, `${claim.capabilityId}/${claim.axis}: pinned neutral result lacks SafeDocX version provenance`);
+      const fullCommit = await resolveCommit(repositoryRoot, match[2], `${claim.capabilityId}/${claim.axis}: pinned neutral SafeDocX commit does not resolve uniquely`);
       assert(evidence.implementationVersion === match[1], `${claim.capabilityId}/${claim.axis}: neutral evidence version disagrees with result`);
-      assert(evidence.lastVerifiedCommit.startsWith(match[2]), `${claim.capabilityId}/${claim.axis}: neutral evidence commit disagrees with result`);
+      assert(evidence.lastVerifiedCommit === fullCommit, `${claim.capabilityId}/${claim.axis}: neutral evidence commit disagrees with resolved result commit`);
+      const packageSource = await readAtCommit(repositoryRoot, fullCommit, 'packages/docx-core/package.json', `${claim.capabilityId}/${claim.axis}: neutral adapter package is absent at resolved commit`);
+      assert(JSON.parse(packageSource).version === match[1], `${claim.capabilityId}/${claim.axis}: neutral adapter version disagrees with package version at resolved commit`);
       const expectedClass = claim.axis === 'crossPlatform' ? 'cross-implementation-differential' : 'normative-behavioral-scenario';
       assert(evidence.evidenceClass === expectedClass, `${claim.capabilityId}/${claim.axis}: neutral evidence class must be ${expectedClass}`);
-      validateNeutralResult(claim, summary, mappings);
-      executable = true;
-    } else if (evidence.kind === 'lean-checker') {
-      assert(
-        claim.capabilityId === 'word.revisions.content' && claim.axis === 'acceptReject',
-        `${claim.capabilityId}/${claim.axis}: Lean checker does not cover this capability axis`
-      );
-      const coveredModes = new Set(leanCoverage.scope.reconstructionModes.covered);
-      for (const mode of evidence.reconstructionModes) {
-        assert(coveredModes.has(mode), `${claim.capabilityId}/${claim.axis}: Lean does not cover ${mode} mode`);
-      }
-      const coveredStories = new Set(['main', 'footnotes', 'endnotes']);
-      for (const story of evidence.stories) {
-        assert(coveredStories.has(story), `${claim.capabilityId}/${claim.axis}: Lean does not cover ${story}`);
-      }
+      validateNeutralResult(claim, summary);
       executable = true;
     }
   }
@@ -182,7 +318,7 @@ async function validateEvidence(claim, summary, mappings, leanCoverage, reposito
 }
 
 export async function validateProjection(inputs, repositoryRoot = root) {
-  const { pin, capabilities, profiles, mappings, summary, projection, leanCoverage } = inputs;
+  const { pin, capabilities, profiles, mappings, summary, projection } = inputs;
   assert(capabilities.schemaVersion === pin.registrySchemaVersion, 'capabilities schemaVersion disagrees with pin');
   assert(capabilities.registryVersion === pin.registryVersion, 'capabilities registryVersion disagrees with pin');
   assert(profiles.schemaVersion === pin.registrySchemaVersion, 'profiles schemaVersion disagrees with pin');
@@ -193,6 +329,7 @@ export async function validateProjection(inputs, repositoryRoot = root) {
 
   const capabilityById = new Map(capabilities.capabilities.map((capability) => [capability.id, capability]));
   assert(capabilityById.size === capabilities.capabilities.length, 'neutral capabilities contain duplicate IDs');
+  validateSummary(capabilityById, mappings, summary);
   const profile = profiles.profiles.find((candidate) => candidate.id === pin.profileId);
   assert(profile, `unknown pinned profile ${pin.profileId}`);
 
@@ -212,12 +349,9 @@ export async function validateProjection(inputs, repositoryRoot = root) {
     assert(profile.capabilityIds.includes(claim.capabilityId), `projection capability is outside profile: ${claim.capabilityId}`);
     assert(profile.axes.includes(claim.axis), `${claim.capabilityId}: axis ${claim.axis} is outside profile`);
     assert(capability.applicableAxes.includes(claim.axis), `${claim.capabilityId}: axis ${claim.axis} is not applicable`);
+    assert(claim.scope.packageParts.every((part) => capability.packageParts.includes(part)), `${claim.capabilityId}/${claim.axis}: package-part scope is not a subset of the neutral capability`);
     assert(
-      JSON.stringify(claim.scope.packageParts) === JSON.stringify(capability.packageParts),
-      `${claim.capabilityId}/${claim.axis}: package-part scope disagrees with neutral capability`
-    );
-    assert(
-      JSON.stringify(claim.scope.stories) === JSON.stringify(expectedStories(capability.packageParts)),
+      JSON.stringify(claim.scope.stories) === JSON.stringify(expectedStories(claim.scope.packageParts)),
       `${claim.capabilityId}/${claim.axis}: story scope disagrees with package parts`
     );
     const modesRelevant = claim.axis === 'compare' || claim.axis === 'preserve';
@@ -232,7 +366,7 @@ export async function validateProjection(inputs, repositoryRoot = root) {
     const key = pairKey(claim.capabilityId, claim.axis);
     assert(!actual.has(key), `duplicate projection pair ${claim.capabilityId}/${claim.axis}`);
     actual.add(key);
-    await validateEvidence(claim, summary, mappings, leanCoverage, repositoryRoot);
+    await validateEvidence(claim, summary, repositoryRoot);
   }
   const missing = [...expected].filter((key) => !actual.has(key)).map((key) => key.replace('\u0000', '/'));
   const extra = [...actual].filter((key) => !expected.has(key)).map((key) => key.replace('\u0000', '/'));
@@ -241,7 +375,25 @@ export async function validateProjection(inputs, repositoryRoot = root) {
   return { profile, capabilityById, denominator: expected.size };
 }
 
-function generateReport(pin, profile, capabilityById, mappings, summary, projection) {
+function formalAssuranceBoundary(leanCoverage) {
+  return {
+    establishesCapabilityClaims: false,
+    checkerRegistry: paths.leanCoverage,
+    reconstructionModes: {
+      covered: [...leanCoverage.scope.reconstructionModes.covered],
+      excluded: [...leanCoverage.scope.reconstructionModes.outOfScope],
+    },
+    stories: ['main', 'footnotes', 'endnotes'],
+    projections: ['text', 'field markers'],
+    documentSurfaces: {
+      covered: [...leanCoverage.scope.documentSurfaces.covered],
+      excluded: [...leanCoverage.scope.documentSurfaces.outOfScope],
+    },
+    knownUncheckedAreas: [...leanCoverage.knownUncheckedAreas],
+  };
+}
+
+function generateReport(pin, profile, capabilityById, mappings, summary, projection, leanCoverage) {
   const claims = [...projection.claims]
     .sort((a, b) => a.capabilityId.localeCompare(b.capabilityId) || a.axis.localeCompare(b.axis))
     .map((claim) => ({
@@ -281,6 +433,7 @@ function generateReport(pin, profile, capabilityById, mappings, summary, project
       pinnedUnmeasuredScenarios: summary.unmeasuredScenarioIds.length,
     },
     statusCounts: byStatus,
+    formalAssuranceBoundary: formalAssuranceBoundary(leanCoverage),
     claims,
   };
 }
@@ -294,6 +447,20 @@ function markdown(report) {
     `Profile: \`${report.generatedFrom.profileId}\` (registry version ${report.generatedFrom.registryVersion})`,
     '',
     'This report preserves the upstream profile denominator. It does not claim full ECMA-376 coverage, and a positive row applies only to the listed evidence and scope.',
+    '',
+    '## Formal Assurance Boundary',
+    '',
+    `The registry \`${report.formalAssuranceBoundary.checkerRegistry}\` is scope metadata only and establishes **no capability row** in this projection.`,
+    '',
+    `Covered reconstruction mode: ${report.formalAssuranceBoundary.reconstructionModes.covered.join(', ')}. Excluded mode: ${report.formalAssuranceBoundary.reconstructionModes.excluded.join(', ')}.`,
+    '',
+    `Covered stories: ${report.formalAssuranceBoundary.stories.join(', ')}. Projections: ${report.formalAssuranceBoundary.projections.join(' and ')} only.`,
+    '',
+    `Exact covered surfaces: ${report.formalAssuranceBoundary.documentSurfaces.covered.join('; ')}.`,
+    '',
+    `Exact excluded surfaces: ${report.formalAssuranceBoundary.documentSurfaces.excluded.join('; ')}.`,
+    '',
+    `Exact known unchecked areas: ${report.formalAssuranceBoundary.knownUncheckedAreas.join('; ')}.`,
     '',
     '## Denominator',
     '',
@@ -355,7 +522,7 @@ async function main() {
   compileSchema(mappingsSchema, 'scenario mappings schema')(mappings);
   compileSchema(projectionSchema, 'SafeDocX projection schema')(projection);
   const validated = await validateProjection({ pin, capabilities, profiles, mappings, summary, projection, leanCoverage });
-  const report = generateReport(pin, validated.profile, validated.capabilityById, mappings, summary, projection);
+  const report = generateReport(pin, validated.profile, validated.capabilityById, mappings, summary, projection, leanCoverage);
   const outputs = new Map([
     [paths.jsonOutput, stableJson(report)],
     [paths.markdownOutput, markdown(report)],

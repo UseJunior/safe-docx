@@ -25,10 +25,16 @@ being copied into a new truth source.
 - Use statuses `supported`, `partial`, `preservation-only`, `gap`, `non-goal`,
   and `untested`. The first three are positive and require exact executable
   evidence. `preservation-only` is valid only for the `preserve` axis.
-- Reference existing evidence by exact path and optional record/scenario ID.
-  The projection does not duplicate conformance or Lean claims.
-- Require Lean evidence to reference the existing checker coverage registry
-  and limit it to axes and capabilities that registry actually checks.
+- Resolve local evidence commits through Git, read test and package metadata
+  from those commit objects, and recognize only exact string-literal test
+  titles. A local normative evidence class additionally requires structured
+  conformance metadata on that test call.
+- Treat claim package parts as a nonempty subset of the neutral capability
+  parts, with stories derived from the claimed subset. This keeps each row no
+  broader than the executable evidence it cites.
+- Expose the existing Lean checker coverage registry as a formal-assurance
+  boundary, not executable capability evidence. Until a pinned checker result
+  is added, the registry establishes no positive capability row.
 
 ## Risks / Trade-offs
 

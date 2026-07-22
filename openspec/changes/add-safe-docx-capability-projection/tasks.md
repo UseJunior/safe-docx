@@ -15,3 +15,11 @@
 - [x] 3.2 Add npm commands and preflight wiring.
 - [x] 3.3 Document ownership, update, and interpretation rules.
 - [x] 3.4 Run strict OpenSpec validation and repository pre-submit checks.
+
+## 4. Independent-review repairs
+
+- [x] 4.1 Bind local and neutral evidence to uniquely resolved repository commits and package versions.
+- [x] 4.2 Require exact AST-recognized test titles and conservative evidence classes and scopes.
+- [x] 4.3 Enforce complete mapped scenario sets and count-conserving adapter outcomes.
+- [x] 4.4 Remove manifest-only Lean claims and report the exact non-claim formal boundary.
+- [x] 4.5 Add mutation coverage, deepen only the capability-check CI checkout, regenerate reports, and rerun all gates.

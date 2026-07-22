@@ -33,7 +33,7 @@
           "kind": "local-test",
           "path": "packages/docx-core/src/primitives/comments.test.ts",
           "selector": "defaults to full paragraph when start and end are omitted",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -106,7 +106,7 @@
           "kind": "local-test",
           "path": "packages/docx-core/src/primitives/comments.test.ts",
           "selector": "uses custom initials when provided",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -155,7 +155,7 @@
           "kind": "local-test",
           "path": "packages/docx-core/test-primitives/delete_comment.test.ts",
           "selector": "Scenario: delete root comment with no replies",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -502,7 +502,7 @@
           "kind": "local-test",
           "path": "packages/docx-core/src/generation/generation-skeleton.test.ts",
           "selector": "Scenario: a minimal spec compiles to a loadable document",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -531,7 +531,7 @@
           "kind": "local-test",
           "path": "packages/docx-mcp/src/tools/insert_paragraph.branch.test.ts",
           "selector": "defaults to AFTER when position is omitted",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -559,7 +559,7 @@
         {
           "kind": "local-test",
           "path": "packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts",
-          "selector": "accept/reject invariant corpus",
+          "selector": "exercises ins + del + property-change resolution in one mixed-author document",
           "evidenceClass": "mutation-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
@@ -665,7 +665,7 @@
           "kind": "local-test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts",
           "selector": "[ADV-MOVE-RESOLUTION-01] resolves move content while removing range markers without claiming pair semantics",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -770,7 +770,7 @@
           "kind": "local-test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts",
           "selector": "[ADV-PROPERTY-RESOLUTION-01] accepts and rejects all six supported property-change record shapes with namespace aliases",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -925,8 +925,7 @@
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
         "packageParts": [
-          "word/document.xml",
-          "word/styles.xml"
+          "word/document.xml"
         ],
         "stories": [
           "main"
@@ -945,7 +944,7 @@
           "kind": "local-test",
           "path": "packages/docx-core/src/primitives/comments.test.ts",
           "selector": "preserves run formatting (rPr) on both halves of a split",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -955,8 +954,7 @@
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
         "packageParts": [
-          "word/document.xml",
-          "word/styles.xml"
+          "word/document.xml"
         ],
         "stories": [
           "main"
@@ -975,7 +973,7 @@
           "kind": "local-test",
           "path": "packages/docx-core/src/integration/advanced-revision-classification.test.ts",
           "selector": "[ADV-PROPERTY-RESOLUTION-01] accepts and rejects all six supported property-change record shapes with namespace aliases",
-          "evidenceClass": "normative-behavioral-scenario",
+          "evidenceClass": "behavioral-regression-test",
           "implementationVersion": "0.16.0",
           "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3"
         }
@@ -985,8 +983,7 @@
       "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
       "scope": {
         "packageParts": [
-          "word/document.xml",
-          "word/styles.xml"
+          "word/document.xml"
         ],
         "stories": [
           "main"

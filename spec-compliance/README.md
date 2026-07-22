@@ -55,6 +55,13 @@ land as siblings of `registry/ecma-376.md` without restructuring this tree.
   only that its listed executable evidence passed within the stated scope; it
   is not a general DOCX or ECMA-376 conformance claim.
 
+Local evidence is read from the exact claimed Git commit, including the owning
+workspace package version, and selectors must be exact string-literal titles on
+recognized `test` or `it` calls. The Lean XML checker coverage registry is
+reported separately as scope metadata: it covers in-place main, footnote, and
+endnote text and field-marker projections with the registry's exact exclusions,
+but it does not establish any capability row without a pinned executable result.
+
 The generated report names two different inventories. The profile denominator
 is the intersection of every profile axis with every capability's applicable
 axes, including explicit gaps and untested rows. The evidence inventory starts

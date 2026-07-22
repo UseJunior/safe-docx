@@ -17,9 +17,10 @@ registry version, and SHA-256 digests so projection checks require no network.
 The repository SHALL record exactly one explicit SafeDocX status for every
 capability and applicable axis selected by the pinned profile, and SHALL reject
 unknown capability IDs, undeclared axes, duplicate pairs, and missing pairs.
-Every claim SHALL identify package-part and story scope, reconstruction mode
-where applicable, evidence class, implementation version, and the exact commit
-at which its evidence was last verified.
+Every claim SHALL identify a nonempty subset of package-part scope, matching
+story scope, reconstruction mode where applicable, evidence class,
+implementation version, and the exact commit at which its evidence was last
+verified.
 Every positive claim SHALL include at least one executable evidence item with
 the same implementation version and verified commit; historical neutral results
 SHALL NOT be promoted to a newer SafeDocX version.
@@ -36,6 +37,12 @@ SHALL NOT be promoted to a newer SafeDocX version.
 - **WHEN** the capability projection check runs
 - **THEN** the check SHALL fail before publishing the report
 
+#### Scenario: Local evidence self-attests provenance
+
+- **GIVEN** a local evidence item names a nonexistent commit, a version other than its package version at that commit, or text that is not an exact test title
+- **WHEN** the capability projection check runs
+- **THEN** the check SHALL fail before publishing the report
+
 ### Requirement: Positive claims require executable evidence
 
 Every `supported`, `partial`, or `preservation-only` status SHALL reference an
@@ -48,11 +55,26 @@ manifests SHALL NOT independently establish a positive status.
 - **WHEN** the capability projection check runs
 - **THEN** the check SHALL fail
 
-#### Scenario: Lean claim exceeds checker scope
+#### Scenario: Lean scope metadata is offered as evidence
 
-- **GIVEN** a projection cites Lean evidence for a capability, axis, story, or reconstruction mode outside the existing Lean coverage registry
+- **GIVEN** a projection cites the Lean checker coverage manifest as evidence for a positive capability row
 - **WHEN** the capability projection check runs
-- **THEN** the check SHALL fail as an overclaim
+- **THEN** the check SHALL fail because scope metadata is not an executable checker result
+
+### Requirement: Pinned result rows are complete and internally consistent
+
+Every pinned summary row SHALL be unique, SHALL contain each applicable
+measured mapped scenario exactly once, and SHALL contain only known scenario
+identifiers. Every adapter outcome SHALL use nonnegative integer counts that
+sum to the row denominator. A positive neutral SafeDocX result SHALL cover and
+pass every row scenario; a cross-platform result SHALL also require a second
+adapter that covers and passes every row scenario.
+
+#### Scenario: Sparse adapter outcome is presented as complete
+
+- **GIVEN** a pinned row omits a mapped measured scenario or an adapter outcome uses a smaller denominator or inconsistent count sum
+- **WHEN** the capability projection check runs
+- **THEN** the check SHALL fail before the row can establish a claim
 
 ### Requirement: Deterministic capability reports
 
@@ -62,6 +84,10 @@ limitations without collapsing support into one boolean or percentage.
 The reports SHALL distinguish the profile capability/axis denominator from
 authored scenario-mapping rows, complete-run derived rows, and rows measured in
 the pinned result snapshot.
+The reports SHALL expose the current Lean boundary as in-place checking of the
+main, footnote, and endnote text and field-marker projections, SHALL retain its
+exact exclusions, and SHALL state that this scope metadata establishes no
+capability row.
 
 #### Scenario: Generated projection report is stale
 

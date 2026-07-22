@@ -24,7 +24,7 @@
           "required": ["kind", "evidenceClass", "path", "selector", "implementationVersion", "lastVerifiedCommit"],
           "properties": {
             "kind": { "const": "local-test" },
-            "evidenceClass": { "enum": ["normative-behavioral-scenario", "mutation-test", "real-document-corpus"] },
+            "evidenceClass": { "enum": ["normative-behavioral-scenario", "behavioral-regression-test", "mutation-test", "real-document-corpus"] },
             "path": { "type": "string", "pattern": "\\.test\\.ts$" },
             "selector": { "type": "string", "minLength": 1 },
             "implementationVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
@@ -41,30 +41,6 @@
             "path": { "const": "spec-compliance/capabilities/upstream/capability-summary.json" },
             "implementationVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
             "lastVerifiedCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "evidenceClass", "path", "stories", "reconstructionModes", "implementationVersion", "lastVerifiedCommit"],
-          "properties": {
-            "kind": { "const": "lean-checker" },
-            "evidenceClass": { "const": "lean-per-document-checker" },
-            "path": { "const": "verification/registry/lean-xml-checker-coverage.json" },
-            "implementationVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
-            "lastVerifiedCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
-            "stories": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": { "enum": ["main", "footnotes", "endnotes"] }
-            },
-            "reconstructionModes": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": { "enum": ["inplace", "rebuild"] }
-            }
           }
         }
       ]
