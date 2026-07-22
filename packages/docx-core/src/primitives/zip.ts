@@ -88,8 +88,12 @@ export async function createZipBuffer(
   for (const [name, value] of Object.entries(files)) {
     // JSZip stamps each entry with the current time by default, which makes
     // otherwise-identical archives differ byte-for-byte across runs; callers
-    // needing deterministic output pass a fixed fileDate.
-    zip.file(name, value, opts?.fileDate ? { date: opts.fileDate } : undefined);
+    // needing deterministic output pass a fixed fileDate. Directory entries
+    // are unnecessary in OPC packages and otherwise retain wall-clock dates.
+    zip.file(name, value, {
+      createFolders: false,
+      ...(opts?.fileDate ? { date: opts.fileDate } : {}),
+    });
   }
   const out = await zip.generateAsync({
     type: 'nodebuffer',

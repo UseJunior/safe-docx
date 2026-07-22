@@ -8,7 +8,7 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
-import { createHash } from 'crypto';
+import { IdentityInterner } from '../../atomizer.js';
 import {
   computeGroupLcs,
   type ComparisonUnitGroup,
@@ -16,17 +16,17 @@ import {
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Hierarchical LCS' });
 
-function sha1(text: string): string {
-  return createHash('sha1').update(text).digest('hex');
-}
+// One interner per group set, mirroring the production path where both sides of
+// a compare share a group interner so equal text gets equal integer ids.
+const groupInterner = new IdentityInterner();
 
 /** Build a minimal ComparisonUnitGroup from text content. */
 function makeGroup(text: string, paragraphIndex: number): ComparisonUnitGroup {
   return {
     paragraphIndex,
     atoms: [], // atoms not needed for group-level matching
-    textHash: sha1(text),
-    normalizedTextHash: sha1(text.toLowerCase().replace(/\s+/g, ' ').trim()),
+    textHash: groupInterner.intern(text),
+    normalizedTextHash: groupInterner.intern('nz\u0000' + text.toLowerCase().replace(/\s+/g, ' ').trim()),
     textContent: text,
   };
 }

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://safe-docx.dev/spec-compliance/capabilities/safe-docx-projection.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "profileId", "claims"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "profileId": { "type": "string", "minLength": 1 },
+    "claims": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/claim" }
+    }
+  },
+  "$defs": {
+    "axis": {
+      "enum": ["detect", "preserve", "parse", "validate", "generate", "edit", "compare", "acceptReject", "wordRoundtrip", "crossPlatform"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "evidenceClass", "path", "implementationVersion", "lastVerifiedCommit"],
+      "properties": {
+        "kind": { "const": "neutral-result" },
+        "evidenceClass": { "enum": ["normative-behavioral-scenario", "cross-implementation-differential"] },
+        "path": { "const": "spec-compliance/capabilities/upstream/capability-summary.json" },
+        "implementationVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "lastVerifiedCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilityId", "axis", "status", "implementationVersion", "lastVerifiedCommit", "evidence", "rationale", "scope"],
+      "properties": {
+        "capabilityId": { "type": "string", "pattern": "^word(?:\\.[a-z][a-z0-9-]*){2,}$" },
+        "axis": { "$ref": "#/$defs/axis" },
+        "status": { "enum": ["supported", "partial", "preservation-only", "gap", "non-goal", "untested"] },
+        "implementationVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "lastVerifiedCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "rationale": { "type": "string", "minLength": 1 },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["packageParts", "stories", "reconstructionModes"],
+          "properties": {
+            "packageParts": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+            "stories": { "type": "array", "minItems": 1, "items": { "enum": ["main", "footnotes", "endnotes", "comments", "headers", "footers"] }, "uniqueItems": true },
+            "reconstructionModes": { "type": "array", "minItems": 1, "items": { "enum": ["inplace", "rebuild", "not-applicable"] }, "uniqueItems": true }
+          }
+        }
+      }
+    }
+  }
+}

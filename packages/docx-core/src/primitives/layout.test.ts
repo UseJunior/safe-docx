@@ -6,6 +6,7 @@ import { setParagraphSpacing, setTableCellPadding, setTableRowHeight } from './l
 import { OOXML, W } from './namespaces.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { parseXml } from './xml.js';
+import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Layout Primitives' });
 
@@ -96,7 +97,7 @@ describe('layout tracked-change emission', () => {
     expect(() => setParagraphSpacing(indexed.doc, { paragraphIds, lineRule: 'loose' as never })).toThrow(RangeError);
   });
 
-  test('setParagraphSpacing emits pPrChange with the prior paragraph properties snapshot', async ({ given, when, then }: AllureBddContext) => {
+  test('[ADV-PPR-EMISSION-01] setParagraphSpacing emits pPrChange with the prior paragraph properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let paragraphId: string;
     let paragraph: Element;
@@ -141,6 +142,28 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousSpacing, 'before')).toBeNull();
       expect(wordAttr(previousSpacing, 'after')).toBe('120');
     });
+    await revisionEvidence('ADV-PPR-EMISSION-01', revisionEvidenceCases({
+      elements: ['pPrChange'], operations: ['emit'], story: 'main',
+      buildFixture: () => ({ tracked: true, priorAfter: 120 }),
+      run: (fixture) => {
+        const indexed = createIndexedDocument(`<w:p><w:pPr><w:spacing w:after="${fixture.priorAfter}"/></w:pPr><w:r><w:t>Alpha</w:t></w:r></w:p>`);
+        setParagraphSpacing(
+          indexed.doc,
+          { paragraphIds: [indexed.paragraphIds[0]!], beforeTwips: 240 },
+          fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+        );
+        return indexed.doc;
+      },
+      observe: (output) => {
+        const change = output.getElementsByTagNameNS(W_NS, 'pPrChange').item(0) as Element | null;
+        const oldSpacing = change?.getElementsByTagNameNS(W_NS, W.spacing).item(0) as Element | null;
+        return change !== null && oldSpacing !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldSpacing, 'after') === '120';
+      },
+      mutations: () => [
+        { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+        { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorAfter: 999 }, context }) },
+      ],
+    }));
   });
 
   test('tracked spacing normalizes live and prior snapshots with alternate prefixes', () => {
@@ -177,7 +200,7 @@ describe('layout tracked-change emission', () => {
     ).toBe('yes');
   });
 
-  test('setTableRowHeight emits trPrChange with the prior row properties snapshot', async ({ given, when, then }: AllureBddContext) => {
+  test('[ADV-TRPR-EMISSION-01] setTableRowHeight emits trPrChange with the prior row properties snapshot', async ({ given, when, then }: AllureBddContext) => {
     let doc: Document;
     let trPr: Element;
     let trHeight: Element;
@@ -219,11 +242,33 @@ describe('layout tracked-change emission', () => {
       expect(wordAttr(previousTrHeight, 'val')).toBe('360');
       expect(wordAttr(previousTrHeight, 'hRule')).toBe('atLeast');
     });
+    await revisionEvidence('ADV-TRPR-EMISSION-01', revisionEvidenceCases({
+      elements: ['trPrChange'], operations: ['emit'], story: 'main',
+      buildFixture: () => ({ tracked: true, priorHeight: 360 }),
+      run: (fixture) => {
+        const input = makeDocument(`<w:tbl><w:tr><w:trPr><w:trHeight w:val="${fixture.priorHeight}" w:hRule="atLeast"/></w:trPr><w:tc><w:p/></w:tc></w:tr></w:tbl>`);
+        setTableRowHeight(
+          input,
+          { tableIndexes: [0], valueTwips: 480, rule: 'exact' },
+          fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+        );
+        return input;
+      },
+      observe: (output) => {
+        const change = output.getElementsByTagNameNS(W_NS, 'trPrChange').item(0) as Element | null;
+        const oldHeight = change?.getElementsByTagNameNS(W_NS, W.trHeight).item(0) as Element | null;
+        return change !== null && oldHeight !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldHeight, 'val') === '360';
+      },
+      mutations: () => [
+        { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+        { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorHeight: 999 }, context }) },
+      ],
+    }));
   });
 
   test
     .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.68' })(
-      'setTableCellPadding emits tcPrChange with the prior cell properties snapshot',
+      '[ADV-TCPR-EMISSION-01] setTableCellPadding emits tcPrChange with the prior cell properties snapshot',
       async ({ given, when, then }: AllureBddContext) => {
         let doc: Document;
         let tcMar: Element;
@@ -274,6 +319,28 @@ describe('layout tracked-change emission', () => {
           expect(getDirectChildrenByName(previousTcMar, W.left)).toHaveLength(0);
           expect(firstDirectChild(previousTcMar, W.top)).toBeDefined();
         });
+        await revisionEvidence('ADV-TCPR-EMISSION-01', revisionEvidenceCases({
+          elements: ['tcPrChange'], operations: ['emit'], story: 'main',
+          buildFixture: () => ({ tracked: true, priorTop: 100 }),
+          run: (fixture) => {
+            const input = makeDocument(`<w:tbl><w:tr><w:tc><w:tcPr><w:tcMar><w:top w:w="${fixture.priorTop}" w:type="dxa"/></w:tcMar></w:tcPr><w:p/></w:tc></w:tr></w:tbl>`);
+            setTableCellPadding(
+              input,
+              { tableIndexes: [0], leftDxa: 240 },
+              fixture.tracked ? createRevisionContext({ author: 'SafeDocX AI', date: '2026-05-03T14:15:16Z', idState: createRevisionIdState() }) : undefined,
+            );
+            return input;
+          },
+          observe: (output) => {
+            const change = output.getElementsByTagNameNS(W_NS, 'tcPrChange').item(0) as Element | null;
+            const oldTop = change?.getElementsByTagNameNS(W_NS, W.top).item(0) as Element | null;
+            return change !== null && oldTop !== null && wordAttr(change, 'author') === 'SafeDocX AI' && wordAttr(oldTop, 'w') === '100';
+          },
+          mutations: () => [
+            { name: 'remove-target', apply: (fixture, context) => ({ fixture: { ...fixture, tracked: false }, context }) },
+            { name: 'corrupt-target', apply: (fixture, context) => ({ fixture: { ...fixture, priorTop: 999 }, context }) },
+          ],
+        }));
       },
     );
 

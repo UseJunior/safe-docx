@@ -292,6 +292,85 @@ export function mergeWhitespaceBridgedTrackChanges(root: Element): void {
 }
 
 // =============================================================================
+// Bug: Coalesce duplicate move-range markers to one pair per move group (issue #446)
+// =============================================================================
+
+/**
+ * The paired range-marker tags for each move direction. A move side is
+ * bracketed by a single Start...End pair sharing the same `w:name` and `w:id`.
+ */
+const MOVE_RANGE_MARKER_TAGS = [
+  { start: 'w:moveFromRangeStart', end: 'w:moveFromRangeEnd' },
+  { start: 'w:moveToRangeStart', end: 'w:moveToRangeEnd' },
+] as const;
+
+/**
+ * Collapse duplicate move-range markers so each move group is bracketed by
+ * exactly ONE range Start and ONE range End per logical move side.
+ *
+ * The in-place moveFrom path clones one `<w:moveFrom>` wrapper per source atom
+ * (word-level atomization fragments a moved paragraph into many atoms), and
+ * each clone re-emits its own `<w:moveFromRangeStart>`/`<w:moveFromRangeEnd>`
+ * reusing the cached range id. A moved paragraph that fragments into N runs
+ * therefore emits N identical-id range pairs, where Word (and the rebuild
+ * reconstructor, which coalesces moved run-groups via shouldStartNewRunGroup)
+ * emits exactly one: a single Start before the first wrapper and a single End
+ * after the last, with per-run `<w:moveFrom>` wrappers in between.
+ *
+ * For each generated range id and move `w:name`, this keeps the FIRST range
+ * Start and the LAST range End in document order and removes every intermediate
+ * duplicate, even when a logical move spans multiple paragraphs. Only marker
+ * nodes recorded by the current comparison pass are eligible, so pre-existing
+ * tracked moves remain untouched even if their IDs collide with generated IDs.
+ * Groups with inconsistent names for one id are left untouched so the Lean
+ * checker can reject the malformed identity instead of this repair pass hiding it.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.24
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.27
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.28
+ * @see https://github.com/UseJunior/safe-docx/issues/446
+ */
+export function coalesceMoveRangeMarkers(
+  root: Element,
+  generatedMarkers: ReadonlySet<Element>,
+): void {
+  for (const { start: startTag, end: endTag } of MOVE_RANGE_MARKER_TAGS) {
+    const startsById = new Map<string, Element[]>();
+    const namesById = new Map<string, Set<string>>();
+    const endsById = new Map<string, Element[]>();
+
+    function collect(node: Element): void {
+      for (const child of childElements(node)) {
+        if (!generatedMarkers.has(child)) {
+          collect(child);
+          continue;
+        }
+        const id = child.getAttribute('w:id');
+        if (child.tagName === startTag && id) {
+          const name = child.getAttribute('w:name');
+          if (name) {
+            (startsById.get(id) ?? startsById.set(id, []).get(id)!).push(child);
+            (namesById.get(id) ?? namesById.set(id, new Set()).get(id)!).add(name);
+          }
+        } else if (child.tagName === endTag && id) {
+          (endsById.get(id) ?? endsById.set(id, []).get(id)!).push(child);
+        }
+        collect(child);
+      }
+    }
+
+    collect(root);
+    for (const [id, starts] of startsById) {
+      if (namesById.get(id)?.size !== 1) continue;
+      const ends = endsById.get(id) ?? [];
+      for (let i = 1; i < starts.length; i++) starts[i]!.parentNode?.removeChild(starts[i]!);
+      for (let i = 0; i < ends.length - 1; i++) ends[i]!.parentNode?.removeChild(ends[i]!);
+    }
+  }
+}
+
+// =============================================================================
 // Bug 2b: Coalesce del/ins pair chains across whitespace (issue #42)
 // =============================================================================
 

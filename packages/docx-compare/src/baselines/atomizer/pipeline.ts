@@ -41,7 +41,13 @@ import {
   DEFAULT_FORMAT_DETECTION_SETTINGS,
   CorrelationStatus,
 } from '@usejunior/docx-core';
-import { atomizeTree, assignParagraphIndices, applyHyperlinkDestinationSalt } from '../../atomizer.js';
+import {
+  atomizeTree,
+  assignParagraphIndices,
+  applyHyperlinkDestinationSalt,
+  assignIdentityIds,
+  IdentityInterner,
+} from '../../atomizer.js';
 import {
   parseHyperlinkRelTargets,
   parseHyperlinkRelEntries,
@@ -49,12 +55,13 @@ import {
   type HyperlinkRelEntry,
 } from '@usejunior/docx-core';
 import { OOXML } from '@usejunior/docx-core';
-import { detectMovesInAtomList } from '../../move-detection.js';
+import { collectPreservedMoveNames, detectMovesInAtomList } from '../../move-detection.js';
 import { detectFormatChangesInAtomList } from '../../format-detection.js';
 import {
   parseDocumentXml,
   findBody,
   backfillParentReferences,
+  canonicalizeWordprocessingPrefixes,
 } from './xmlToWmlElement.js';
 import { findAllByTagName, getLeafText } from '@usejunior/docx-core';
 import {
@@ -618,8 +625,8 @@ export async function compareDocumentsAtomizer(
   await restampCollidingCommentParaIds(originalArchive, revisedArchive);
 
   // Step 2: Extract document.xml
-  const originalXml = await originalArchive.getDocumentXml();
-  const revisedXml = await revisedArchive.getDocumentXml();
+  const originalXml = canonicalizeWordprocessingPrefixes(await originalArchive.getDocumentXml());
+  const revisedXml = canonicalizeWordprocessingPrefixes(await revisedArchive.getDocumentXml());
 
   // Extract numbering.xml if available
   const originalNumberingXml = await originalArchive.getNumberingXml() ?? undefined;
@@ -725,6 +732,13 @@ export async function compareDocumentsAtomizer(
     applyHyperlinkDestinationSalt(originalAtoms, originalHyperlinkTargets);
     applyHyperlinkDestinationSalt(revisedAtoms, revisedHyperlinkTargets);
 
+    // Step 5c: Intern each atom's now-finalized identity into a shared integer id.
+    // One interner per comparison pass covers both documents, so equal identities
+    // get equal ids across sides; the LCS then compares ids instead of hash strings.
+    const identityInterner = new IdentityInterner();
+    assignIdentityIds(originalAtoms, identityInterner);
+    assignIdentityIds(revisedAtoms, identityInterner);
+
     // Step 6: Run hierarchical LCS (paragraph-level first, then atom-level within)
     const lcsResult = hierarchicalCompare(originalAtoms, revisedAtoms);
 
@@ -737,7 +751,8 @@ export async function compareDocumentsAtomizer(
       // Move detection looks at the revised atoms with Inserted status
       // and original atoms with Deleted status
       const allAtoms = [...originalAtoms, ...revisedAtoms];
-      detectMovesInAtomList(allAtoms, moveSettings);
+      const preservedMoveNames = collectPreservedMoveNames([originalTree, revisedTree]);
+      detectMovesInAtomList(allAtoms, moveSettings, preservedMoveNames);
     }
 
     // Step 9: Run format detection
@@ -762,7 +777,7 @@ export async function compareDocumentsAtomizer(
         originalAtoms,
         revisedAtoms,
         mergedAtoms,
-        { author, date }
+        { author, date, preservedRoots: [originalTree] }
       );
     } else {
       // Rebuild mode: reconstruct from atoms using original as the structural base.
@@ -1368,8 +1383,13 @@ async function mergeCommentAncillaryParts(
 
   const sourceDoc = parseXml(sourceCommentsXml);
 
-  // Build full source comment maps. Canonical paraId is the first <w:p>
-  // child's w14:paraId, matching getCommentElParaId() in primitives/comments.ts.
+  // Build full source comment maps. The threading key is the comment's LAST
+  // content paragraph's w14:paraId — Word keys its w15:commentEx and
+  // w16cid:commentId rows by that paragraph, not the first one, for
+  // multi-paragraph comments (Word extension-part behavior, [MS-DOCX]).
+  // getCommentAncillaryParaId() falls back to the first <w:p> when the last
+  // carries no paraId, so single-paragraph comments (first == last, the common
+  // case) are unaffected.
   const commentById = new Map<string, Element>();
   const paraIdByCommentId = new Map<string, string>();
   const commentIdByParaId = new Map<string, string>();
@@ -1382,8 +1402,7 @@ async function mergeCommentAncillaryParts(
     commentById.set(id, el);
     const author = el.getAttribute('w:author');
     if (author) authorByCommentId.set(id, author);
-    const firstP = el.getElementsByTagName('w:p')[0] as Element | undefined;
-    const paraId = firstP?.getAttribute('w14:paraId');
+    const paraId = getCommentAncillaryParaId(el);
     if (paraId) {
       paraIdByCommentId.set(id, paraId);
       commentIdByParaId.set(paraId, id);
@@ -1448,6 +1467,36 @@ async function mergeCommentAncillaryParts(
   await mergeCommentsExtended(sourceArchive, resultArchive, includedParaIds);
   await mergeCommentsIds(sourceArchive, resultArchive, includedParaIds);
   await mergePeople(sourceArchive, resultArchive, includedAuthors);
+}
+
+/**
+ * Return the w14:paraId Word uses to key a comment's ancillary threading rows
+ * (w15:commentEx in commentsExtended.xml, w16cid:commentId in commentsIds.xml).
+ *
+ * Word keys those rows by the comment's LAST content paragraph's paraId, not
+ * the first — so for a multi-paragraph comment the first-paragraph paraId used
+ * elsewhere (e.g. getCommentElParaId() in primitives/comments.ts) would miss
+ * the row and drop reply/thread metadata on merge (issue #470). This is a Word
+ * extension-part convention ([MS-DOCX] w15/w16cid), outside the base OOXML
+ * wordprocessingml schema.
+ *
+ * Falls back to the first <w:p> paraId when the last paragraph carries none, so
+ * single-paragraph comments (first === last, the common case) resolve exactly
+ * as before.
+ */
+function getCommentAncillaryParaId(commentEl: Element): string | null {
+  const paras = commentEl.getElementsByTagName('w:p');
+  let firstParaId: string | null = null;
+  for (let i = 0; i < paras.length; i++) {
+    const pid = (paras[i] as Element).getAttribute('w14:paraId');
+    if (pid && firstParaId === null) firstParaId = pid;
+  }
+  // Walk backwards for the last paragraph that carries a paraId.
+  for (let i = paras.length - 1; i >= 0; i--) {
+    const pid = (paras[i] as Element).getAttribute('w14:paraId');
+    if (pid) return pid;
+  }
+  return firstParaId;
 }
 
 /**

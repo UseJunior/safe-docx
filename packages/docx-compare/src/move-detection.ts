@@ -300,7 +300,8 @@ export function markAsMove(
  */
 export function detectMovesInAtomList(
   atoms: ComparisonUnitAtom[],
-  settings: MoveDetectionSettings = DEFAULT_MOVE_DETECTION_SETTINGS
+  settings: MoveDetectionSettings = DEFAULT_MOVE_DETECTION_SETTINGS,
+  reservedMoveNames: ReadonlySet<string> = new Set(),
 ): void {
   if (!settings.detectMoves) {
     return;
@@ -330,6 +331,7 @@ export function detectMovesInAtomList(
 
     if (bestMatch) {
       // 4. Convert to moves
+      while (reservedMoveNames.has(`move${moveGroupId}`)) moveGroupId++;
       const moveName = `move${moveGroupId}`;
       markAsMove(
         deleted.atoms,
@@ -346,6 +348,30 @@ export function detectMovesInAtomList(
       moveGroupId++;
     }
   }
+}
+
+/**
+ * Collect identities from move-start markup that can be preserved in output.
+ * Required-but-empty names are reserved too; the certificate checker applies
+ * its separate stronger non-empty identity rule.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.23
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.27
+ * @see https://github.com/UseJunior/safe-docx/issues/446
+ */
+export function collectPreservedMoveNames(roots: readonly Element[]): Set<string> {
+  const names = new Set<string>();
+  const visit = (element: Element): void => {
+    if (element.tagName === 'w:moveFromRangeStart' || element.tagName === 'w:moveToRangeStart') {
+      const name = element.getAttribute('w:name');
+      if (name !== null) names.add(name);
+    }
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1) visit(child as Element);
+    }
+  };
+  for (const root of roots) visit(root);
+  return names;
 }
 
 // =============================================================================

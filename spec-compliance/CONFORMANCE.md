@@ -15,6 +15,10 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | --- | --- | --- | --- | --- | --- | --- |
 | `ECMA-PART1-17-16-13` | w:delInstrText containment in tracked deletions | 5 | 1 | 17.16.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText` | packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/integration/lean-spec-bridge.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json |
 | `ECMA-PART1-17-13-5` | Paragraph-level OOXML markers | 5 | 1 | 17.13.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-compare/src/atomizer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts |
+| `ECMA-PART1-17-13-6-1` | Bookmark end | 5 | 1 | 17.13.6.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-6-2` | Bookmark start | 5 | 1 | 17.13.6.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-7-1` | Permission range end | 5 | 1 | 17.13.7.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-7-2` | Permission range start | 5 | 1 | 17.13.7.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | — |
 | `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts |
 | `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | — |
@@ -33,6 +37,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-10-6` | w:titlePg first-page header/footer switch | 5 | 1 | 17.10.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:titlePg` | — |
 | `ECMA-PART1-17-10-4` | w:hdr header part emission | 5 | 1 | 17.10.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hdr` | — |
 | `ECMA-PART1-17-10-3` | w:ftr footer part emission | 5 | 1 | 17.10.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr` | — |
+| `ECMA-PART1-11-3-3` | Document Settings part | 5 | 1 | 11.3.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
+| `ECMA-PART1-17-15-3-4` | w:compatSetting custom compatibility setting | 5 | 1 | 17.15.3.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-10-1` | w:evenAndOddHeaders setting | 5 | 1 | 17.10.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders` | — |
 | `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json |
 | `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts |
@@ -78,6 +84,29 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-4-5` | w:commentReference comment reference mark | 5 | 1 | 17.13.4.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-5-15` | Deleted paragraph mark (w:del under w:pPr/w:rPr) | 5 | 1 | 17.13.5.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts |
 | `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts |
+| `ECMA-PART1-17-13-5-4` | Custom XML deletion range end | 5 | 1 | 17.13.5.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-5` | Custom XML deletion range start | 5 | 1 | 17.13.5.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-6` | Custom XML insertion range end | 5 | 1 | 17.13.5.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-7` | Custom XML insertion range start | 5 | 1 | 17.13.5.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-8` | Custom XML move-source range end | 5 | 1 | 17.13.5.8 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-9` | Custom XML move-source range start | 5 | 1 | 17.13.5.9 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-10` | Custom XML move-destination range end | 5 | 1 | 17.13.5.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-11` | Custom XML move-destination range start | 5 | 1 | 17.13.5.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-21` | Move source paragraph (w:moveFrom) | 5 | 1 | 17.13.5.21 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-22` | Move source run content (w:moveFrom) | 5 | 1 | 17.13.5.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-23` | Move source range end | 5 | 1 | 17.13.5.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-13-5-24` | Move source range start | 5 | 1 | 17.13.5.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-13-5-25` | Move destination run content (w:moveTo) | 5 | 1 | 17.13.5.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-26` | Move destination paragraph (w:moveTo) | 5 | 1 | 17.13.5.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-27` | Move destination range end | 5 | 1 | 17.13.5.27 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-13-5-28` | Move destination range start | 5 | 1 | 17.13.5.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-13-5-29` | Paragraph-property revisions (w:pPrChange) | 5 | 1 | 17.13.5.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-30` | Paragraph-mark run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-31` | Run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-32` | Section-property revisions (w:sectPrChange) | 5 | 1 | 17.13.5.32 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-34` | Table-property revisions (w:tblPrChange) | 5 | 1 | 17.13.5.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 
 ### ECMA-PART1-17-16-13 — w:delInstrText containment in tracked deletions
 
@@ -111,6 +140,51 @@ wrappers like `<w:ins>` / `<w:del>` / `<w:moveFrom>` / `<w:moveTo>`) but
 never inside `<w:r>`. safe-docx's rebuild reconstructor emits them as
 siblings of `<w:r>`, not as leaves wrapped in a synthetic run. The
 authoritative list lives in `packages/docx-compare/src/atomizer.ts`.
+
+### ECMA-PART1-17-13-6-1 — Bookmark end
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.6.1
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+`w:bookmarkEnd` closes a bookmark range. safe-docx's advanced-record matrix
+claims only bounded preservation around accept/reject and comparison, not
+bookmark identity or consumer semantics.
+
+### ECMA-PART1-17-13-6-2 — Bookmark start
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.6.2
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkStart`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+`w:bookmarkStart` opens a bookmark range. The matrix records sampled
+preservation only; range identity and bookmark semantics are separate gaps.
+
+### ECMA-PART1-17-13-7-1 — Permission range end
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.7.1
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permEnd`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+`w:permEnd` closes an editing-permission range. Preservation does not imply
+permission enforcement or validation of range identity.
+
+### ECMA-PART1-17-13-7-2 — Permission range start
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.7.2
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permStart`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+`w:permStart` opens an editing-permission range. safe-docx makes no claim that
+it enforces the permission represented by this marker.
 
 ### ECMA-PART1-17-13-8-1 — Proofing error anchors
 
@@ -390,6 +464,33 @@ Footer parts mirror header parts as `w:ftr` documents (word/footerN.xml);
 "Page X of Y" footers carry complete five-part PAGE/NUMPAGES fields with
 cached results.
 
+### ECMA-PART1-11-3-3 — Document Settings part
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 11.3.3
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings`
+- **Verified by:** packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts
+
+Generated packages carry one Document Settings part, registered through the
+main document relationship and package content types. The part contains the
+baseline compatibility structure plus conditional even/odd-header and color
+scheme settings. This entry covers part presence and package wiring, not the
+Microsoft-specific meaning of compatibility mode value 15.
+
+### ECMA-PART1-17-15-3-4 — w:compatSetting custom compatibility setting
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.15.3.4
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting`
+- **Verified by:** packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts
+
+Generation emits one custom compatibility setting under `w:compat`, carrying
+the required name, URI, and value attributes in the settings sequence. ECMA-376
+defines this extensibility structure; MS-DOCX §2.3.5, not ECMA-376, defines
+the Microsoft `compatibilityMode` values and assigns the semantics of value 15.
+
 ### ECMA-PART1-17-10-1 — w:evenAndOddHeaders setting
 
 - **Edition:** ECMA-376 5
@@ -398,9 +499,9 @@ cached results.
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders`
 
 Even-page headers/footers are only honored when `w:evenAndOddHeaders` is
-set in word/settings.xml. Generation emits the settings part exactly when
-some section declares an `even` slot, so the declared content and the
-document-level switch can never drift apart.
+set in word/settings.xml. Generation always emits the baseline settings part
+and conditionally adds this switch exactly when some section declares an
+`even` slot, so the declared content and document-level switch cannot drift.
 
 ### ECMA-PART1-17-16-18 — w:fldChar five-part complex-field emission
 
@@ -927,6 +1028,278 @@ paths implement this merge in
 `packages/docx-core/src/primitives/reject_changes.ts` and
 `packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
 
+### ECMA-PART1-17-13-5-4 — Custom XML deletion range end
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.4
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+`w:customXmlDelRangeEnd` is retained by ordinary accept/reject and sampled
+in-place reconstruction. Rebuild retention and custom-XML semantics are gaps.
+
+### ECMA-PART1-17-13-5-5 — Custom XML deletion range start
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.5
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+`w:customXmlDelRangeStart` has the same preservation-only boundary as its end
+marker; balanced IDs are validated without interpreting deletion semantics.
+
+### ECMA-PART1-17-13-5-6 — Custom XML insertion range end
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.6
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+This entry records bounded preservation and pairing validation for
+`w:customXmlInsRangeEnd`, not custom-XML revision semantics.
+
+### ECMA-PART1-17-13-5-7 — Custom XML insertion range start
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.7
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeStart`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+This entry records bounded preservation and pairing validation for
+`w:customXmlInsRangeStart`, not custom-XML revision semantics.
+
+### ECMA-PART1-17-13-5-8 — Custom XML move-source range end
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.8
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeEnd`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+safe-docx validates balanced IDs and preserves the sampled marker outside
+rebuild mode; it does not interpret custom-XML move identity.
+
+### ECMA-PART1-17-13-5-9 — Custom XML move-source range start
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.9
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveFromRangeStart`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+This start marker has the same bounded validation and preservation posture as
+its §17.13.5.8 end marker.
+
+### ECMA-PART1-17-13-5-10 — Custom XML move-destination range end
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.10
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeEnd`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+safe-docx validates balanced IDs and preserves the sampled marker outside
+rebuild mode; it does not interpret custom-XML move identity.
+
+### ECMA-PART1-17-13-5-11 — Custom XML move-destination range start
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.11
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+This start marker has the same bounded validation and preservation posture as
+its §17.13.5.10 end marker.
+
+### ECMA-PART1-17-13-5-21 — Move source paragraph (w:moveFrom)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.21
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom`
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+This subsection defines paragraph-level `w:moveFrom`. safe-docx consumes and
+authors bounded move markup, while complete wrapper/range identity remains a
+gap. Lean checks only the resulting text and field-marker projection.
+
+### ECMA-PART1-17-13-5-22 — Move source run content (w:moveFrom)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.22
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+Run-level move-source content is emitted and resolved in the bounded comparison
+surface. Pair identity and arbitrary nested move semantics are not claimed.
+
+### ECMA-PART1-17-13-5-23 — Move source range end
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.23
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+
+The engine coalesces generated source markers to one pair per logical move.
+The compiled fixed-story checker requires each end to close the currently open
+source range with the same unique id. Individual `w:moveFrom` revision ids are
+not associated with range ids.
+
+### ECMA-PART1-17-13-5-24 — Move source range start
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.24
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+
+The engine emits one source start per logical move. In both the Strict and
+Transitional schemas, `w:id` is an `ST_DecimalNumber` and the required `w:name`
+is an `ST_String`, which permits the empty string. The compiled fixed-story
+checker applies a stronger SafeDocX verifier policy: names must be non-empty,
+source ids and names must be unique, and a destination identity with the same
+name must exist. Non-empty `w:name` is not attributed to ECMA-376.
+
+### ECMA-PART1-17-13-5-25 — Move destination run content (w:moveTo)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.25
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+Run-level move-destination content is emitted and resolved in the bounded
+comparison surface. Complete pair semantics are not claimed.
+
+### ECMA-PART1-17-13-5-26 — Move destination paragraph (w:moveTo)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.26
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+Paragraph-level move-destination content has the same bounded support and
+pairing caveat as run-level content.
+
+### ECMA-PART1-17-13-5-27 — Move destination range end
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.27
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+
+The engine coalesces generated destination markers to one pair per logical move.
+The compiled fixed-story checker requires each end to close the currently open
+destination range with the same unique id. Individual `w:moveTo` revision ids
+are not associated with range ids.
+
+### ECMA-PART1-17-13-5-28 — Move destination range start
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.28
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart`
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+
+The engine emits one destination start per logical move. In both the Strict and
+Transitional schemas, `w:id` is an `ST_DecimalNumber` and the required `w:name`
+is an `ST_String`, which permits the empty string. The compiled fixed-story
+checker applies a stronger SafeDocX verifier policy: names must be non-empty,
+destination ids and names must be unique, and a source identity with the same
+name must exist. Non-empty `w:name` is not attributed to ECMA-376.
+
+### ECMA-PART1-17-13-5-29 — Paragraph-property revisions (w:pPrChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.29
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange`
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+safe-docx emits bounded `w:pPrChange` snapshots for supported paragraph-layout
+mutations and consumes existing records through accept/reject. This does not
+claim complete paragraph formatting or computed style semantics.
+
+### ECMA-PART1-17-13-5-30 — Paragraph-mark run-property revisions (w:rPrChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.30
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange`
+- **Verified by:** packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+safe-docx accepts/rejects `w:rPrChange` records under paragraph-mark run
+properties. Emission is bounded to the supported formatting surfaces; Lean does
+not inspect or prove the prior-property snapshot.
+
+### ECMA-PART1-17-13-5-31 — Run-property revisions (w:rPrChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.31
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange`
+- **Verified by:** packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+safe-docx emits bounded run-formatting snapshots and consumes existing
+`w:rPrChange` records. It does not claim complete run-property semantics.
+
+### ECMA-PART1-17-13-5-32 — Section-property revisions (w:sectPrChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.32
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange`
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+safe-docx consumes existing `w:sectPrChange` records: accept removes the prior
+snapshot and reject restores it. No current primitive authors these records;
+headers, footers, relationship semantics, pagination, and Lean are outside the
+claim.
+
+### ECMA-PART1-17-13-5-34 — Table-property revisions (w:tblPrChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.34
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange`
+- **Verified by:** packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+safe-docx accepts/rejects existing `w:tblPrChange` records but does not emit
+them. Table layout/rendering and Lean verification are outside this claim.
+
+### ECMA-PART1-17-13-5-36 — Table-cell-property revisions (w:tcPrChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.36
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange`
+- **Verified by:** packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+The supported cell-padding mutation emits `w:tcPrChange`; accept/reject also
+consume existing records. Cell-topology records inside the snapshot remain
+preservation-only, and Lean does not inspect the snapshot.
+
+### ECMA-PART1-17-13-5-37 — Table-row-property revisions (w:trPrChange)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.37
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange`
+- **Verified by:** packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+
+The supported row-height mutation emits `w:trPrChange`; accept/reject also
+consume existing records. Complete row-property semantics and Lean verification
+are outside this claim.
+
 ## Non-Goals
 
 Sections explicitly **out of scope** for safe-docx. Each entry below carries the
@@ -987,70 +1360,74 @@ A source `@conformance` JSDoc tag that points at one of these Non-Goal IDs fails
 the citation lint. For a deliberate divergence *inside a targeted section*, use
 `@conformance-gap` with a reason instead.
 
-### ECMA-PART1-17-13-5-2 — Cell-topology revisions (w:cellIns / w:cellDel / w:cellMerge)
+### ECMA-PART1-17-13-5-1 — Table cell deletion (w:cellDel)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.1
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellDel`
+
+safe-docx validates placement and preserves sampled `w:cellDel` records, but
+does not apply table-topology deletion semantics.
+
+### ECMA-PART1-17-13-5-2 — Table cell insertion (w:cellIns)
 
 - **Edition:** ECMA-376 5
 - **Part / Section:** Part 1 § 17.13.5.2
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellIns`
 
-ECMA-376 Part 1 §17.13.5.1–§17.13.5.3 define tracked changes to table-cell
-topology: `w:cellDel` (cell deletion), `w:cellIns` (cell insertion), and
-`w:cellMerge` (vertical merge/split). safe-docx surfaces no cell-topology
-mutation today — it neither authors these revision elements nor offers an
-accept/reject path dedicated to them — so it makes no conformance claim over
-this section.
+safe-docx validates placement and preserves sampled `w:cellIns` records, but
+does not apply table-topology insertion semantics.
 
-### ECMA-PART1-17-13-5-21 — Tracked move revisions (w:moveFrom / w:moveTo)
+### ECMA-PART1-17-13-5-3 — Vertically merged or split table cells (w:cellMerge)
 
 - **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.13.5.21
+- **Part / Section:** Part 1 § 17.13.5.3
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
-- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom`
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellMerge`
 
-ECMA-376 Part 1 §17.13.5.21 onward define tracked *moves*: the `w:moveFrom` and
-`w:moveTo` content wrappers plus the paired `w:moveFromRangeStart` /
-`w:moveFromRangeEnd` and `w:moveToRangeStart` / `w:moveToRangeEnd` range markers.
-safe-docx surfaces no move primitive today; relocating content is expressed as a
-deletion plus an insertion, not as a first-class move pair. No conformance claim
-is made over the move-revision section.
+safe-docx validates placement and preserves sampled `w:cellMerge` records,
+but does not interpret vertical merge/split topology.
 
-### ECMA-PART1-17-13-5-30 — Numbering-property revisions (w:numberingChange)
+### ECMA-PART1-17-13-5-33 — Table-grid revisions (w:tblGridChange)
 
 - **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.13.5.30
+- **Part / Section:** Part 1 § 17.13.5.33
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
-- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numberingChange`
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblGridChange`
 
-ECMA-376 Part 1 §17.13.5.30 defines `w:numberingChange`, the revision record for
-a paragraph's previous numbering properties. safe-docx surfaces no numbering
-mutation today and does not author this revision element, so it makes no
-conformance claim over this section.
+safe-docx recognizes `w:tblGridChange` metadata and placement but does not emit,
+accept, or reject its grid semantics.
 
-### ECMA-PART1-17-13-5-34 — Section-property revisions (w:sectPrChange)
+### ECMA-PART1-17-13-5-35 — Table-property-exception revisions (w:tblPrExChange)
 
 - **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.13.5.34
+- **Part / Section:** Part 1 § 17.13.5.35
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
-- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange`
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrExChange`
 
-ECMA-376 Part 1 §17.13.5.34 defines `w:sectPrChange`, the revision record for a
-prior set of section properties (page layout, columns, headers/footers binding).
-safe-docx surfaces no section-layout mutation today and does not author this
-revision element, so it makes no conformance claim over this section.
+safe-docx recognizes `w:tblPrExChange` metadata but does not emit, accept, or
+reject table-level property-exception semantics.
 
-### ECMA-PART1-17-13-5-36 — Table-property and grid revisions (w:tblPrChange / w:tblPrExChange / w:tblGridChange)
-
-- **Edition:** ECMA-376 5
-- **Part / Section:** Part 1 § 17.13.5.36
-- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
-- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange`
-
-ECMA-376 Part 1 §17.13.5.35–§17.13.5.37 define tracked changes to table-wide
-structure: `w:tblGridChange` (grid-column definitions), `w:tblPrChange`
-(table properties), and `w:tblPrExChange` (table-level property exceptions).
-safe-docx surfaces no table-wide property or grid mutation today and does not
-author these revision elements, so it makes no conformance claim over this
-section.
+Across the targeted Part 1 §17.4, §17.7, and §17.9 generation subset,
+safe-docx validates its documented API-supported enum and safe-integer subset,
+duplicate declarations, table-grid arithmetic, and style/numbering references
+before emission, then preserves the authored parts through package load/save.
+The XML Schema integer domains can exceed JavaScript's exact-number range;
+numeric claims therefore stop at `Number.MIN_SAFE_INTEGER` and
+`Number.MAX_SAFE_INTEGER`. For every table, numbering, and style enum validated
+by this surface, the full lexical domain is pinned to the vendored transitional
+XSD. Schema-valid values outside the API subset, such as `ST_Border=thick`,
+`ST_VerticalJc=both`, `ST_NumberFormat=ordinal`, wave underlining, `auto` run
+color, and table/numbering style types, are reported as unsupported API
+features rather than schema-invalid XML. Values absent from the applicable XSD
+domain are reported as invalid. These
+claims do not cover Word's
+table layout algorithm or pagination, numbering rendering or complete
+override/counter behavior, style cascade or latent-style semantics,
+theme/font resolution, rendering, or tracked table-topology and
+property-revision records. Preservation does not imply semantic
+interpretation of unknown third-party markup.
 
 _Sources: `spec-compliance/registry/ecma-376.md`._
