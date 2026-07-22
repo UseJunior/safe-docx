@@ -79,3 +79,5 @@
       inspect revision and compatibility output.
 - [x] 8.4 Regenerate fixtures twice and rerun the exact pinned DPT suite,
       structural/schema checks, and repository pre-submit gates.
+- [x] 8.5 Make the live DPT expected-status oracle independent of production
+      support declarations and prove simulated production narrowing is caught.

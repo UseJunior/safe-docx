@@ -27,11 +27,10 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect } from 'vitest';
-import {
-  classifyConformanceSupport,
-  type ConformanceSupportDecision,
-  type OperationDescriptor,
-} from '../cli/conformance-adapter.js';
+import { classifyConformanceSupport } from '../cli/conformance-adapter.js';
+import { OOXML, W } from '../primitives/namespaces.js';
+import { parseXml } from '../primitives/xml.js';
+import { readZipText } from '../primitives/zip.js';
 import { buildDocxFromBodyXml, paragraphWithText } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
@@ -90,13 +89,30 @@ interface SuiteResults {
 interface ScenarioManifest {
   scenarioId: string;
   inputDocumentPath: string;
-  operationDescriptor: OperationDescriptor;
+  operationDescriptor: TestOperationDescriptor;
 }
 
 const COMPATIBILITY_MODE_SCENARIO_ID = 'composeCompatibilityMode15WritesCompatSetting';
+const EXPECTED_SUPPORTED_OPERATIONS: ReadonlySet<string> = new Set([
+  'acceptAllTrackedChanges',
+  'composeDocumentWithCompatibilityMode',
+  'rejectAllTrackedChanges',
+  'replaceFirstTextOccurrence',
+]);
+
+interface TestOperationDescriptor {
+  operationName: string;
+  bodyText?: unknown;
+  compatibilityMode?: unknown;
+}
+
+interface ExpectedSupportDecision {
+  supported: boolean;
+  reason?: string;
+}
 
 interface ScenarioDefinition {
-  operation: OperationDescriptor;
+  operation: TestOperationDescriptor;
   inputPath: string;
 }
 
@@ -123,20 +139,81 @@ function loadScenarioDefinitions(suiteDir: string): Map<string, ScenarioDefiniti
   );
 }
 
-async function classifyScenarioDefinitions(
+async function inputHasTableRowRevision(inputPath: string, markerName: 'del' | 'ins'): Promise<boolean> {
+  const documentXml = await readZipText(readFileSync(inputPath), 'word/document.xml');
+  expect(documentXml, `${inputPath} has no word/document.xml`).not.toBeNull();
+  const document = parseXml(documentXml!);
+  return Array.from(document.getElementsByTagNameNS(OOXML.W_NS, W.tr)).some((row) =>
+    Array.from(row.children).some(
+      (child) =>
+        child.namespaceURI === OOXML.W_NS &&
+        child.localName === W.trPr &&
+        Array.from(child.children).some(
+          (property) => property.namespaceURI === OOXML.W_NS && property.localName === markerName,
+        ),
+    ),
+  );
+}
+
+async function expectedScenarioSupport(
+  definition: ScenarioDefinition,
+): Promise<ExpectedSupportDecision> {
+  const { operation } = definition;
+  if (!EXPECTED_SUPPORTED_OPERATIONS.has(operation.operationName)) {
+    return { supported: false, reason: 'operation is outside the test contract' };
+  }
+  if (operation.operationName === 'composeDocumentWithCompatibilityMode') {
+    const validDescriptor =
+      typeof operation.compatibilityMode === 'number' &&
+      Number.isInteger(operation.compatibilityMode) &&
+      operation.compatibilityMode === 15 &&
+      typeof operation.bodyText === 'string';
+    return validDescriptor
+      ? { supported: true }
+      : { supported: false, reason: 'compatibility descriptor is not supported mode-15 input' };
+  }
+  if (
+    operation.operationName === 'acceptAllTrackedChanges' &&
+    await inputHasTableRowRevision(definition.inputPath, 'del')
+  ) {
+    return { supported: false, reason: 'deleted table-row acceptance is outside the test contract' };
+  }
+  if (
+    operation.operationName === 'rejectAllTrackedChanges' &&
+    await inputHasTableRowRevision(definition.inputPath, 'ins')
+  ) {
+    return { supported: false, reason: 'inserted table-row rejection is outside the test contract' };
+  }
+  return { supported: true };
+}
+
+async function expectedScenarioDecisions(
   definitions: Map<string, ScenarioDefinition>,
-): Promise<Map<string, ConformanceSupportDecision>> {
+): Promise<Map<string, ExpectedSupportDecision>> {
   return new Map(
     await Promise.all(
       [...definitions].map(async ([scenarioId, definition]) => [
         scenarioId,
-        await classifyConformanceSupport(
-          definition.operation,
-          readFileSync(definition.inputPath),
-        ),
+        await expectedScenarioSupport(definition),
       ] as const),
     ),
   );
+}
+
+function outcomeMismatches(
+  results: SuiteResults,
+  definitions: Map<string, ScenarioDefinition>,
+  decisions: Map<string, ExpectedSupportDecision>,
+) {
+  return results.results
+    .map((scenario) => {
+      const definition = definitions.get(scenario.scenarioId);
+      const support = decisions.get(scenario.scenarioId);
+      const outcome = scenario.outcomes['safe-docx'];
+      const expectedStatus = support?.supported ? 'pass' : 'unsupported';
+      return { scenario, operationName: definition?.operation.operationName, outcome, expectedStatus };
+    })
+    .filter(({ outcome, expectedStatus }) => outcome?.status !== expectedStatus);
 }
 
 const { available: suiteAvailable, runnerTsx: RUNNER_TSX, skipWarning } =
@@ -176,12 +253,12 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
         const resultsPath = join(workDir, 'results.json');
         let results: SuiteResults = { results: [] };
         let scenarioDefinitions = new Map<string, ScenarioDefinition>();
-        let supportDecisions = new Map<string, ConformanceSupportDecision>();
+        let supportDecisions = new Map<string, ExpectedSupportDecision>();
 
         await given('a temp registry pointing the suite runner at the safe-docx adapter', async () => {
           warnOnPinMismatch();
           scenarioDefinitions = loadScenarioDefinitions(SUITE_DIR);
-          supportDecisions = await classifyScenarioDefinitions(scenarioDefinitions);
+          supportDecisions = await expectedScenarioDecisions(scenarioDefinitions);
           writeFileSync(
             registryPath,
             JSON.stringify({
@@ -207,15 +284,7 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
         await then('supported scenarios pass and unsupported operations remain explicit', async () => {
           expect(results.results.length).toBeGreaterThan(0);
           expect(results.results).toHaveLength(scenarioDefinitions.size);
-          const mismatches = results.results
-            .map((scenario) => {
-              const definition = scenarioDefinitions.get(scenario.scenarioId);
-              const support = supportDecisions.get(scenario.scenarioId);
-              const outcome = scenario.outcomes['safe-docx'];
-              const expectedStatus = support?.supported ? 'pass' : 'unsupported';
-              return { scenario, operationName: definition?.operation.operationName, outcome, expectedStatus };
-            })
-            .filter(({ outcome, expectedStatus }) => outcome?.status !== expectedStatus);
+          const mismatches = outcomeMismatches(results, scenarioDefinitions, supportDecisions);
           const detail = mismatches
             .map(
               ({ scenario, operationName, outcome, expectedStatus }) =>
@@ -282,6 +351,35 @@ describe('Conformance adapter support classification', () => {
         await expect(
           classifyConformanceSupport({ operationName: 'acceptAllTrackedChanges' }, insertedRow),
         ).resolves.toEqual({ supported: true });
+      });
+    },
+  );
+
+  test.openspec('[XIMPL-08] Supported and unsupported suite outcomes remain honest')(
+    'the independent oracle catches a simulated production support regression',
+    async ({ given, then }: AllureBddContext) => {
+      let definitions!: Map<string, ScenarioDefinition>;
+      let decisions!: Map<string, ExpectedSupportDecision>;
+
+      await given('an ordinary replace scenario that the test contract independently supports', async () => {
+        definitions = new Map([
+          ['renamedEquivalentReplace', {
+            operation: { operationName: 'replaceFirstTextOccurrence' },
+            inputPath: 'unused-for-replace-operation.docx',
+          }],
+        ]);
+        decisions = await expectedScenarioDecisions(definitions);
+      });
+
+      await then('a simulated production unsupported outcome is reported as a mismatch', async () => {
+        const results: SuiteResults = {
+          results: [{
+            scenarioId: 'renamedEquivalentReplace',
+            outcomes: { 'safe-docx': { status: 'unsupported', reason: 'simulated narrowing' } },
+          }],
+        };
+        expect(decisions.get('renamedEquivalentReplace')).toEqual({ supported: true });
+        expect(outcomeMismatches(results, definitions, decisions)).toHaveLength(1);
       });
     },
   );
