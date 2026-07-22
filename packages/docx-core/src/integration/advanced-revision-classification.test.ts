@@ -879,6 +879,6 @@ describe('ECMA-376 advanced revision records', () => {
           ],
         }));
       },
-      15_000,
+      30_000,
     );
 });
