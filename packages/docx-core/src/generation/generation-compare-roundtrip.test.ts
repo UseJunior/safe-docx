@@ -18,15 +18,15 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { generateDocx } from './compile.js';
-import { compareDocuments } from '../index.js';
-import type { CompareResult, ReconstructionMode } from '../compare-types.js';
+import { compareDocuments } from '@usejunior/docx-compare';
+import type { CompareResult, ReconstructionMode } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
   compareTexts,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 import type { BlockSpec, BorderSpec, DocumentSpec, HeaderFooterSpec, TableSpec } from './types.js';
 
 /** Plain two-column label/value table (no agreement-domain recipe). */

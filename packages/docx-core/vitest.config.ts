@@ -39,6 +39,12 @@ if (!hasAllure) {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@usejunior/docx-core': resolve(__dirname, 'src/index.ts'),
+      '@usejunior/docx-compare': resolve(__dirname, '../docx-compare/src/index.ts'),
+    },
+  },
   test: {
     globals: true,
     environment: 'node',

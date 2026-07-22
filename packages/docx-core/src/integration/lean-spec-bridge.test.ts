@@ -89,8 +89,8 @@
 import fc from 'fast-check';
 import { DOMParser } from '@xmldom/xmldom';
 import { describe } from 'vitest';
-import { compareDocuments, type ReconstructionMode } from '../index.js';
-import { validateFieldStructure } from '../baselines/atomizer/pipeline.js';
+import { compareDocuments, type ReconstructionMode } from '@usejunior/docx-compare';
+import { validateFieldStructure } from '@usejunior/docx-compare';
 import {
   COMPLETE_PAGE_FIELD,
   COMPLETE_PAGEREF_FIELD,
@@ -108,7 +108,7 @@ import {
   rejectAllChanges,
   extractTextWithParagraphs,
   normalizeText,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { DocxDocument } from '../primitives/document.js';
 import { getParagraphBookmarkId } from '../primitives/bookmarks.js';
@@ -132,7 +132,7 @@ const TEST_FEATURE = 'Lean Spec Bridge (fast-check)';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: TEST_FEATURE })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 4, section: '17.16.5' });
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
 
 const TRACKED_REVISION_AUTHOR = 'Lean Bridge';
 const TRACKED_REVISION_DATE = '2026-05-11T00:00:00Z';
@@ -356,27 +356,22 @@ const trackedFootnoteAnchorScenarioArb: fc.Arbitrary<FootnoteAnchorScenario> = p
 // inserts included. The relaxation did its discovery job: it surfaced two
 // genuine engine bug classes, pinned per the bounded-remediation discipline
 // (narrow, named, issue-linked exclusions + the characterization test
-// 'INV-RT-001 pinned engine bugs …' below) rather than fixed here:
-//   - Issue #358: inline run-level pre-tracked `w:ins` ORIGINALS stay excluded
-//     — the engine flattens the original's inline insertion provenance
-//     unconditionally, so reject(combined) keeps text reject(original) drops
-//     for EVERY revised counterpart (probed: matched, deleted, identical,
-//     unrelated). Paragraph-insert ORIGINALS are excluded for the same
-//     flattening: when the comparison deletes the pre-tracked inserted
-//     paragraph, its content is emitted as bare w:del (the original-author
-//     w:ins wrapper is lost), so reject(combined) restores text that
-//     reject(original) discards. The paragraph MARKS themselves thread
-//     correctly (stacked PPR-DEL(Comparison) + PPR-INS(input-author)), and
-//     while paragraph-mark resolution dropped the whole paragraph the content
-//     flattening was unobservable — the #431 merge rule (a mark revision
-//     resolves by merging, never by discarding content) made it visible, so
-//     the exclusion now covers both pre-tracked-insertion shapes. Pinned in
-//     the characterization test below.
+// 'INV-RT-001 pinned engine bugs …' below) rather than fixed inline:
+//   - Issue #358 (FIXED): inline run-level and paragraph-insert pre-tracked
+//     `w:ins` ORIGINALS are back in scope. The engine now threads the
+//     original's insertion provenance through both reconstruction paths —
+//     matched content keeps its original-author `w:ins` wrapper and
+//     comparison-deleted content nests `w:del(Comparison)` INSIDE the
+//     restored `w:ins(original-author)` — so reject(combined) drops exactly
+//     what reject(original) drops. Dedicated regression coverage lives in
+//     pretracked-ins-provenance.test.ts.
 //   - Issue #359: pairs whose pre-tracked-insertion text collides with the
 //     other side's plain text are excluded via `hasInsProvenanceCollision` on
-//     the pair arbitrary below.
+//     the pair arbitrary below, and stay pinned in the characterization test.
 const trackedOriginalScenarioArb: fc.Arbitrary<TrackedScenario> = fc.oneof(
+  trackedInsertionScenarioArb,
   trackedDeletionScenarioArb,
+  trackedParagraphInsertScenarioArb,
   trackedParagraphPropertyScenarioArb,
   trackedCommentAnchorScenarioArb,
   trackedFootnoteAnchorScenarioArb,
@@ -438,12 +433,16 @@ function textsCollide(claimed: string, otherRawParagraphs: string[]): boolean {
   );
 }
 
-// Issue #359: pre-tracked-insertion content that textually collides with the
-// other input's plain text loses provenance through the comparison (the
-// combined output keeps exactly one lineage's claim), so the global reject
-// projection diverges and the engine falls back — with a law-violating rebuild
-// output in the paragraph-insert shapes. Until #359 lands, exclude exactly the
-// colliding pairs; the characterization test below pins today's behavior.
+// Issue #359: REVISED-side pre-tracked-insertion content that textually
+// collides with the original's plain text keeps the revised lineage's claim
+// (the physical `w:ins` wrapper survives around content whose original lineage
+// was plain), so the inplace candidate's reject projection diverges and the
+// engine permanently falls back to rebuild. The #358 fix resolved the
+// original-side half of this filter's old scope; the filter stays pair-level
+// (both directions) because the property asserts inplace mode and the
+// revised-side fallback is unconditional on collision. Until #359 lands,
+// exclude exactly the colliding pairs; the characterization test below pins
+// today's behavior.
 function hasInsProvenanceCollision(pair: TrackedScenarioPair): boolean {
   const originalRaw = scenarioRawParagraphTexts(pair.originalScenario);
   const revisedRaw = scenarioRawParagraphTexts(pair.revisedScenario);
@@ -1451,48 +1450,36 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
   );
 
   test(
-    'INV-RT-001 pinned engine bugs: pre-tracked insertion provenance is lost across comparison (#358, #359)',
+    'INV-RT-001 pinned engine bug: revised-side pre-tracked insertion provenance is lost on collision (#359)',
     async ({ given, when, then }: AllureBddContext) => {
-      // Characterization of TODAY's behavior for the two engine bug classes the
-      // #347 arbitrary relaxation surfaced (pin + file, fix in their own PRs —
+      // Characterization of TODAY's behavior for the remaining engine bug class
+      // the #347 arbitrary relaxation surfaced (pin + file, fix in its own PR —
       // mirroring how [LEAN-HELP-08] pinned G5 before its fix). Each case
-      // asserts the CURRENT divergence precisely so the eventual fixes flip
+      // asserts the CURRENT divergence precisely so the eventual fix flips
       // this test deliberately rather than silently:
-      //   - #358: the original's inline run-level `w:ins` provenance is
-      //     flattened, so reject(combined) keeps text reject(original) drops —
-      //     on BOTH reconstruction paths (the rebuild fallback output violates
-      //     the projection law too, unchecked per #226).
-      //   - #359: pre-tracked-insertion text colliding with the other side's
-      //     plain text keeps exactly one lineage's provenance. The inline shape
-      //     (the #339 flake) is rescued by the rebuild fallback; the
-      //     paragraph-insert shapes ship law-violating output.
+      //   - #359: REVISED-side pre-tracked-insertion text colliding with the
+      //     original's plain text keeps exactly one lineage's provenance — the
+      //     revised document's physical `w:ins` wrapper survives around content
+      //     whose original lineage was plain, so the inplace candidate's reject
+      //     projection drops text reject(original) keeps and the engine
+      //     permanently falls back to rebuild. The rebuild output happens to
+      //     satisfy the projection law for these shapes (the inline shape is
+      //     the #339 flake, rescued; the paragraph-insert shape holds via the
+      //     #431 mark-merge rule), so the residual harm is the lost provenance
+      //     and the unconditional fallback, not a law violation.
+      //   - #358 (original-side provenance flattening, both inline and
+      //     paragraph-insert shapes) is FIXED: those pairs now stay inplace and
+      //     are covered by trackedOriginalScenarioArb above plus the dedicated
+      //     regression suite in pretracked-ins-provenance.test.ts.
       interface PinnedProvenanceCase {
         name: string;
         build: () => Promise<{ original: Buffer; revised: Buffer }>;
         // Normalized reject projections asserted VERBATIM as they are today.
-        // When they differ, the shipped output violates the projection law.
         expectedRejectCombined: string;
         expectedRejectOriginal: string;
       }
 
       const cases: PinnedProvenanceCase[] = [
-        {
-          name: '#358 inline-ins original vs clean revised equal to accept(original)',
-          build: async () => ({
-            original: (
-              await materializeTrackedScenario({
-                family: 'w:ins',
-                paragraphs: ['Alpha'],
-                paragraphIndex: 0,
-                offset: 'Alpha'.length,
-                insertedText: ' beta',
-              })
-            ).document,
-            revised: await buildSyntheticDocx({ paragraphs: ['Alpha beta'] }),
-          }),
-          expectedRejectCombined: 'Alpha beta',
-          expectedRejectOriginal: 'Alpha',
-        },
         {
           name: '#359 inline-ins revised colliding with a plain original word (#339 shape, rebuild rescues)',
           build: async () => ({
@@ -1532,59 +1519,17 @@ describe('Lean Spec Bridge - Inplace Reconstruction', { timeout: 60_000 }, () =>
           expectedRejectCombined: 'Alpha text.\nAdded para.',
           expectedRejectOriginal: 'Alpha text.\nAdded para.',
         },
-        {
-          name: '#359 paragraph-insert original appearing plain in the revised',
-          build: async () => ({
-            original: (
-              await materializeTrackedScenario({
-                family: 'paragraph-insert',
-                paragraphs: ['Alpha text.'],
-                anchorIndex: 0,
-                relativePosition: 'AFTER',
-                newParagraphText: 'Added para.',
-              })
-            ).document,
-            revised: await buildSyntheticDocx({ paragraphs: ['Alpha text.', 'Added para.'] }),
-          }),
-          expectedRejectCombined: 'Alpha text.\nAdded para.',
-          expectedRejectOriginal: 'Alpha text.',
-        },
-        {
-          // The non-colliding mirror: the comparison deletes the pre-tracked
-          // inserted paragraph and emits its content as bare w:del(Comparison)
-          // under correctly stacked PPR-DEL(Comparison) + PPR-INS(original)
-          // marks — the original-author content w:ins wrapper is lost (#358
-          // class). While paragraph-mark resolution DROPPED the marked
-          // paragraph this was unobservable; the #431 mark-merge rule restores
-          // the flattened content on reject, so reject(combined) keeps text
-          // reject(original) discards and the engine permanently falls back.
-          name: '#358 paragraph-insert original deleted by the comparison (made observable by the #431 mark-merge rule)',
-          build: async () => ({
-            original: (
-              await materializeTrackedScenario({
-                family: 'paragraph-insert',
-                paragraphs: ['Alpha text.'],
-                anchorIndex: 0,
-                relativePosition: 'AFTER',
-                newParagraphText: 'Added para.',
-              })
-            ).document,
-            revised: await buildSyntheticDocx({ paragraphs: ['Alpha text.'] }),
-          }),
-          expectedRejectCombined: 'Alpha text.\nAdded para.',
-          expectedRejectOriginal: 'Alpha text.',
-        },
       ];
 
       await given(
-        'minimal repro pairs for the #358 and #359 pre-tracked insertion provenance bug classes',
+        'minimal repro pairs for the #359 revised-side pre-tracked insertion provenance bug class',
         async () => {},
       );
 
       await when('each pair runs through the live inplace-requested comparison', async () => {});
 
       await then(
-        'every case falls back on rejectText today, accept projections hold, and the reject divergences match the filed issues verbatim',
+        'every case falls back on rejectText today, accept projections hold, and the reject divergences match the filed issue verbatim',
         async () => {
           for (const pinned of cases) {
             const { original, revised } = await pinned.build();

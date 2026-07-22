@@ -72,6 +72,9 @@
           },
           "uniqueItems": true
         },
+        "crossImplementation": {
+          "$ref": "#/$defs/CrossImplementation"
+        },
         "narrative": {
           "type": "object",
           "additionalProperties": false,
@@ -158,6 +161,25 @@
           "items": {
             "$ref": "#/$defs/ConformanceClaim"
           }
+        }
+      }
+    },
+    "CrossImplementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "suiteScenarioIds"
+      ],
+      "properties": {
+        "suiteScenarioIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "minItems": 1,
+          "uniqueItems": true
         }
       }
     },

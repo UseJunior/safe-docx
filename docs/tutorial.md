@@ -1,0 +1,144 @@
+# Tutorial
+
+This walkthrough changes one clause in an existing contract and saves both a clean document and a tracked-changes document.
+
+## What We Are Going To Do
+
+```text
+NDA.docx
+    |
+    v
+read and find the clause
+    |
+    v
+replace one exact phrase
+    |
+    v
+NDA-clean.docx + NDA-tracked.docx
+```
+
+The agent handles the tool calls. You describe the result and review the output in your normal document editor.
+
+## Step 1: Install Safe Docx
+
+You need Node.js 18 or later and an existing `.docx` file. Follow [Installation](installation.md) to inspect and install the npm package.
+
+Safe Docx works through MCP and through direct CLI commands. For Claude Code:
+
+```bash
+claude mcp add safe-docx -- /absolute/path/to/safe-docx
+```
+
+Use `command -v safe-docx` on macOS or Linux, or `where safe-docx` on Windows, to find the installed executable. Desktop applications often do not inherit the same `PATH` as an interactive terminal.
+
+## Step 2: Ask For The Edit
+
+```text
+Edit ~/docs/NDA.docx. Change the governing law from "State of New York"
+to "State of Delaware". Save a clean copy to ~/docs/NDA-clean.docx and a
+tracked-changes copy to ~/docs/NDA-tracked.docx. Do not change anything else.
+```
+
+The exact old text, intended replacement, and output paths make the request easy to verify.
+
+## Step 3: Read The Document
+
+The agent can inspect the document with `read_file`:
+
+```text
+read_file(file_path="~/docs/NDA.docx", format="toon")
+```
+
+| Key | Meaning |
+|---|---|
+| `file_path` | The existing document to read. It also identifies the session used by later calls. |
+| `format` | The response representation. `toon` is compact and preserves paragraph IDs for agent use. |
+
+The result includes paragraph IDs such as `_bk_e4c8a91f2d36`. Those IDs let later operations target one paragraph without rewriting the whole document.
+
+## Step 4: Find The Clause
+
+The agent searches for the existing language:
+
+```text
+grep(file_path="~/docs/NDA.docx", pattern="State of New York")
+```
+
+| Key | Meaning |
+|---|---|
+| `file_path` | The document to search. An existing session for this path is reused. |
+| `pattern` | A regular expression matched against the document's visible text. |
+
+If the search returns no match or several ambiguous matches, the agent should read more context before editing.
+
+## Step 5: Apply The Edit
+
+```text
+replace_text(
+  file_path="~/docs/NDA.docx",
+  target_paragraph_id="_bk_e4c8a91f2d36",
+  old_string="State of New York",
+  new_string="State of Delaware",
+  instruction="Change governing law to Delaware"
+)
+```
+
+| Key | Meaning |
+|---|---|
+| `file_path` | The document session to edit. |
+| `target_paragraph_id` | The paragraph ID returned by `read_file` or `grep`. |
+| `old_string` | The exact text expected in that paragraph. The edit fails if it is absent or ambiguous. |
+| `new_string` | The replacement text. Supported inline formatting tags can also be used here. |
+| `instruction` | A required legacy compatibility field. The current DOCX replacement implementation does not use it to decide or delegate the edit; describe the change briefly until the field is removed or made optional. |
+
+The change is applied to the live document session. Untouched paragraphs remain outside the edit operation.
+
+## Step 6: Save Reviewable Outputs
+
+```text
+save(
+  file_path="~/docs/NDA.docx",
+  save_to_local_path="~/docs/NDA-clean.docx",
+  tracked_save_to_local_path="~/docs/NDA-tracked.docx",
+  save_format="both"
+)
+```
+
+| Key | Meaning |
+|---|---|
+| `file_path` | The edited document session to save. |
+| `save_to_local_path` | Destination for the clean document. |
+| `tracked_save_to_local_path` | Destination for the document containing tracked changes. |
+| `save_format` | `clean`, `tracked`, or `both`. This walkthrough requests both variants. |
+
+The clean file contains the accepted edit. The tracked file records the insertion and deletion for human review.
+
+## Step 7: Review The Result
+
+Open both files in Word or LibreOffice and verify:
+
+1. The governing-law text changed once.
+2. The tracked file attributes the insertion and deletion correctly.
+3. Surrounding formatting, numbering, headers, and tables remain intact.
+4. No unrelated revisions appear.
+
+Visual review remains appropriate for material documents because Safe Docx is not a rendering engine.
+
+## Other Workflows
+
+| Workflow | Primary tools |
+|---|---|
+| Read a document | `read_file` |
+| Search a document | `grep` |
+| Comments | `add_comment`, `get_comments`, `delete_comment` |
+| Footnotes | `get_footnotes`, `add_footnote`, `update_footnote`, `delete_footnote` |
+| Compare two documents | `compare_documents` |
+| Inspect or accept revisions | `has_tracked_changes`, `extract_revisions`, `accept_changes` |
+| Insert a paragraph | `insert_paragraph` |
+| Apply several edits together | `batch_edit` |
+| Convert DOCX to ODT | `convert_to_odt` |
+| Convert DOCX to Markdown | `export` with `format="markdown"` |
+| Convert DOCX to HTML | `export` with `format="html"` |
+| Save an editing session | `save` |
+
+Use the [tool reference](../packages/docx-mcp/docs/tool-reference.generated.md) for complete arguments and response schemas. Use the [golden prompts](../packages/docx-mcp/docs/golden-prompts.md) for more agent instructions.

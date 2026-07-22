@@ -179,6 +179,38 @@ export function formatToonCommentsEndnotesBlock(
     : [];
 }
 
+/**
+ * One footnote as rendered into the trailing `#FOOTNOTES` toon sidecar. Mirrors
+ * the `#COMMENTS` endnote model: id, the referencing paragraph id(s), and the
+ * body text. Multi-paragraph bodies are `\n`-joined (escaped) into one line.
+ */
+export type ToonFootnoteEndnote = {
+  id: string;
+  displayNumber: number;
+  refParagraphIds: readonly string[];
+  paragraphs: readonly { text: string }[];
+};
+
+function formatToonFootnoteEndnoteLine(footnote: ToonFootnoteEndnote): string {
+  const anchor = footnote.refParagraphIds.length > 0 ? footnote.refParagraphIds.join(',') : '-';
+  const body = escapeToonCommentField(footnote.paragraphs.map((p) => p.text).join('\n'));
+  return `[^${footnote.displayNumber}] f${footnote.id} @ ${anchor} | ${body}`;
+}
+
+/**
+ * Build the trailing `#FOOTNOTES` sidecar block (empty when there are no
+ * footnotes). Symmetric with {@link formatToonCommentsEndnotesBlock}: a header
+ * marker line followed by one line per footnote, appended at the END of the
+ * toon document. No new invariant — it is a read-only sidecar, like #COMMENTS.
+ */
+export function formatToonFootnotesEndnotesBlock(
+  footnotes: readonly ToonFootnoteEndnote[],
+): string[] {
+  return footnotes.length > 0
+    ? ['#FOOTNOTES', ...footnotes.map(formatToonFootnoteEndnoteLine)]
+    : [];
+}
+
 export function renderToon(nodes: DocumentViewNode[], options: { compact?: boolean } = {}): string {
   const lines: string[] = ['#SCHEMA id | list_label | header | style | text'];
   const commentMarkers = collectInlineCommentMarkers(nodes);

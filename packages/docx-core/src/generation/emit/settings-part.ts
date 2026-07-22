@@ -1,11 +1,20 @@
 /**
  * word/settings.xml emitter.
  *
- * Only emitted when the document actually needs a setting: `w:evenAndOddHeaders`
- * for any section declaring an even-page header or footer, or
+ * Emitted on every package. ECMA-376 defines the Document Settings part and the
+ * custom `w:compatSetting` container; MS-DOCX §2.3.5 separately assigns the
+ * Microsoft-specific `compatibilityMode=15` semantics used here. Conditional
+ * settings are folded in when the document needs them: `w:evenAndOddHeaders`
+ * for any section declaring an even-page header or footer, and
  * `w:clrSchemeMapping` when theme-relative authoring or a custom theme is used.
  *
+ * The `w:compat` block is static (no clock/random), preserving the compiler's
+ * byte-for-byte determinism guarantee.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 11.3.3
+ * @conformance ECMA-376 edition 5, Part 1 § 17.15.3.4
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.1
+ * @see MS-DOCX §2.3.5 compatibilityMode
  */
 
 import { createWmlElement } from '../../primitives/dom-helpers.js';
@@ -17,16 +26,29 @@ import type { BlockSpec, DocumentSpec, InlineSpec, TableCellSpec } from '../type
 const SETTINGS_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml';
 const SETTINGS_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings';
 
-export function emitSettingsPartIfNeeded(spec: DocumentSpec, ctx: CompileContext): void {
+/** MS-DOCX §2.3.5 mode 15; clears Word's legacy "Compatibility Mode" banner. */
+const COMPATIBILITY_MODE_15 = '15';
+const COMPAT_SETTING_URI = 'http://schemas.microsoft.com/office/word';
+
+export function emitSettingsPart(spec: DocumentSpec, ctx: CompileContext): void {
   const needsEvenOdd = spec.sections.some((s) => s.headers?.even || s.footers?.even);
   const needsColorSchemeMapping = spec.theme !== undefined || usesThemeRelativeAuthoring(spec);
-  if (!needsEvenOdd && !needsColorSchemeMapping) return;
 
   ctx.registerPart('word/settings.xml', SETTINGS_CONTENT_TYPE, SETTINGS_REL_TYPE);
   const doc = parseXml(`<w:settings xmlns:w="${OOXML.W_NS}"/>`);
+  // CT_Settings sequence: evenAndOddHeaders precedes compat, which precedes clrSchemeMapping.
   if (needsEvenOdd) {
     doc.documentElement!.appendChild(createWmlElement(doc, W.evenAndOddHeaders));
   }
+  const compat = createWmlElement(doc, W.compat);
+  compat.appendChild(
+    createWmlElement(doc, W.compatSetting, {
+      'w:name': 'compatibilityMode',
+      'w:uri': COMPAT_SETTING_URI,
+      'w:val': COMPATIBILITY_MODE_15,
+    }),
+  );
+  doc.documentElement!.appendChild(compat);
   if (needsColorSchemeMapping) {
     doc.documentElement!.appendChild(
       createWmlElement(doc, W.clrSchemeMapping, {

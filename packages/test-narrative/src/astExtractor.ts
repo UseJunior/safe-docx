@@ -3,7 +3,13 @@ import fs from "node:fs";
 import { parse } from "@typescript-eslint/parser";
 import type { TSESTree } from "@typescript-eslint/types";
 
-import { rejectedAliases, tagDefinitions, type NarrativeVisibility, type TagName } from "./tagSchema.js";
+import {
+  rejectedAliases,
+  SUITE_SCENARIO_IDS_TAG,
+  tagDefinitions,
+  type NarrativeVisibility,
+  type TagName
+} from "./tagSchema.js";
 
 const KNOWN_NARRATIVE_KEYS = new Set<string>([
   ...Object.keys(tagDefinitions),
@@ -51,6 +57,7 @@ export type ScenarioEvidence = {
   sourceRef: SourceRef;
   visibility?: NarrativeVisibility;
   narrative: Partial<Record<TagName, string>>;
+  suiteScenarioIds?: string[];
   bddSteps: BddStepEvidence[];
   fixtures: FixtureEvidence[];
   expectArgs: ExpectArgEvidence[];
@@ -204,38 +211,69 @@ function evidenceForExpression(
   };
 }
 
-function extractNarrative(commentValue: string | undefined): Partial<Record<TagName, string>> {
-  const narrative: Record<string, string> = {};
-  if (!commentValue) return narrative;
+type JsDocTag = { tag: string; lines: string[] };
 
-  let currentTag: string | undefined;
-  let currentLines: string[] = [];
-  const flush = () => {
-    if (!currentTag) return;
-    // Only emit tags that the schema cares about. Unknown JSDoc tags
-    // (@see, @example, @deprecated, etc.) are part of normal TS convention
-    // and must not poison validation. Known-but-rejected aliases stay so the
-    // downstream validator can produce an explicit "this alias is forbidden"
-    // error rather than silently dropping it.
-    if (KNOWN_NARRATIVE_KEYS.has(currentTag)) {
-      narrative[currentTag] = currentLines.join(" ").replace(/\s+/g, " ").trim();
-    }
-  };
+/**
+ * Canonical JSDoc-tag parser shared by every narrative derivation.
+ *
+ * Splits a block comment into an ordered list of `{ tag, lines }` entries:
+ * the opening line's post-tag text plus any continuation lines up to the next
+ * tag. Repeated tags yield repeated entries (callers decide whether to
+ * accumulate or last-win). Lines before the first tag are ignored. Keeping
+ * this loop in one place means `extractNarrative` and `extractSuiteScenarioIds`
+ * cannot drift in how they recognize tags or strip the leading `* ` gutter.
+ */
+function parseJsDocTags(commentValue: string | undefined): JsDocTag[] {
+  const tags: JsDocTag[] = [];
+  if (!commentValue) return tags;
 
+  let current: JsDocTag | undefined;
   for (const rawLine of commentValue.split("\n")) {
     const line = rawLine.replace(/^\s*\* ?/, "").trimEnd();
     const tagMatch = line.match(/^@([A-Za-z][\w-]*)\s*(.*)$/);
     if (tagMatch) {
-      flush();
-      currentTag = tagMatch[1];
-      currentLines = [tagMatch[2] ?? ""];
+      current = { tag: tagMatch[1] ?? "", lines: [tagMatch[2] ?? ""] };
+      tags.push(current);
       continue;
     }
-    if (currentTag) currentLines.push(line.trim());
+    if (current) current.lines.push(line.trim());
   }
-  flush();
+
+  return tags;
+}
+
+function extractNarrative(commentValue: string | undefined): Partial<Record<TagName, string>> {
+  const narrative: Record<string, string> = {};
+  for (const { tag, lines } of parseJsDocTags(commentValue)) {
+    // Only emit tags that the schema cares about. Unknown JSDoc tags
+    // (@see, @example, @deprecated, etc.) are part of normal TS convention
+    // and must not poison validation. Known-but-rejected aliases stay so the
+    // downstream validator can produce an explicit "this alias is forbidden"
+    // error rather than silently dropping it. A repeated tag last-wins.
+    if (KNOWN_NARRATIVE_KEYS.has(tag)) {
+      narrative[tag] = lines.join(" ").replace(/\s+/g, " ").trim();
+    }
+  }
 
   return narrative;
+}
+
+function extractSuiteScenarioIds(commentValue: string | undefined): string[] | undefined {
+  let seen = false;
+  const parts: string[] = [];
+  for (const { tag, lines } of parseJsDocTags(commentValue)) {
+    if (tag !== SUITE_SCENARIO_IDS_TAG) continue;
+    seen = true;
+    parts.push(...lines);
+  }
+  if (!seen) return undefined;
+
+  const ids = parts
+    .join(" ")
+    .split(/[\s,]+/)
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return ids.length > 0 ? ids : undefined;
 }
 
 function findLeadingJsDoc(
@@ -426,11 +464,13 @@ export function extractScenarios(filePath: string): ScenarioEvidence[] {
     const comment = findLeadingJsDoc(ast, source, node);
     const body = collectScenarioBody(node);
     const evidence = extractBodyEvidence(body, filePath, source);
+    const suiteScenarioIds = extractSuiteScenarioIds(comment?.value);
     scenarios.push({
       scenarioName: extractScenarioName(node, source),
       sourceRef: sourceRefFor(filePath, node),
       visibility: visibilityForScenarioCall(node, openspecCall, fileBindings),
       narrative: extractNarrative(comment?.value),
+      ...(suiteScenarioIds ? { suiteScenarioIds } : {}),
       ...evidence
     });
   });

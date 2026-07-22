@@ -14,10 +14,62 @@
 
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { buildSyntheticDocx, buildDocxFromParts, getResultParts } from './synthetic-docx-fixture.js';
 import { buildDocxFromBodyXml } from '../testing/ooxml-fixtures.js';
 import { parseXml } from '../primitives/xml.js';
+import type JSZip from 'jszip';
+
+/**
+ * Re-zip a DOCX buffer after mutating its parts. Used to splice in Word
+ * extension parts (e.g. commentsIds.xml) the synthetic fixture does not emit.
+ */
+async function spliceZip(buffer: Buffer, mutate: (zip: JSZip) => Promise<void>): Promise<Buffer> {
+  const JSZip = (await import('jszip')).default;
+  const zip = await JSZip.loadAsync(buffer);
+  await mutate(zip);
+  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+}
+
+/**
+ * Splice a Word commentsIds.xml part (with its content-type override and
+ * relationship) into a DOCX buffer, carrying one <w16cid:commentId> durable-ID
+ * row per [paraId, durableId] pair. [MS-DOCX] keys these rows by the comment
+ * paragraph's w16cid:paraId.
+ */
+async function addCommentsIdsPart(
+  buffer: Buffer,
+  rows: Array<{ paraId: string; durableId: string }>,
+): Promise<Buffer> {
+  return spliceZip(buffer, async (zip) => {
+    const entries = rows
+      .map((r) => `<w16cid:commentId w16cid:paraId="${r.paraId}" w16cid:durableId="${r.durableId}"/>`)
+      .join('');
+    zip.file(
+      'word/commentsIds.xml',
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w16cid:commentsIds xmlns:w16cid="http://schemas.microsoft.com/office/word/2016/wordml/cid">` +
+        entries +
+        `</w16cid:commentsIds>`
+    );
+    const contentTypes = await zip.file('[Content_Types].xml')!.async('string');
+    zip.file(
+      '[Content_Types].xml',
+      contentTypes.replace(
+        '</Types>',
+        `<Override PartName="/word/commentsIds.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml"/></Types>`
+      )
+    );
+    const rels = await zip.file('word/_rels/document.xml.rels')!.async('string');
+    zip.file(
+      'word/_rels/document.xml.rels',
+      rels.replace(
+        '</Relationships>',
+        `<Relationship Id="rId900" Type="http://schemas.microsoft.com/office/2016/09/relationships/commentsIds" Target="commentsIds.xml"/></Relationships>`
+      )
+    );
+  });
+}
 
 /**
  * Find every element with the given local name and report its immediate-parent
@@ -218,6 +270,206 @@ describe('Rebuild Auxiliary Part Merging (issue #94)', () => {
         expect(parts.relsXml!).toContain(
           'http://schemas.microsoft.com/office/2011/relationships/people'
         );
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #471: merge-source commentsIds.xml durable-ID rows dropped
+  //
+  // commentsIds.xml ([MS-DOCX]) keys each <w16cid:commentId> durable-ID row by
+  // the comment paragraph's w16cid:paraId. Before the fix, neither
+  // reconstruction mode merged these rows, so merged-in comments lost their
+  // Word durable IDs (cosmetic — Word regenerates them — but the source's
+  // durable-ID metadata was silently dropped).
+  // ---------------------------------------------------------------------------
+  describe('Comment with commentsIds.xml added on revised side (issue #471)', () => {
+    test('rebuild bootstraps commentsIds.xml with the merge-source durable ID', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has no comments and revised adds one with a commentsIds durable ID', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+        });
+        const revisedBase = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Has durable id',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+        revised = await addCommentsIdsPart(revisedBase, [
+          { paraId: '00000001', durableId: '11111111' },
+        ]);
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('rebuild creates commentsIds.xml carrying the durable ID with OPC metadata', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        expect(parts.commentsIdsXml).not.toBeNull();
+        expect(parts.commentsIdsXml!).toContain('w16cid:paraId="00000001"');
+        expect(parts.commentsIdsXml!).toContain('w16cid:durableId="11111111"');
+
+        expect(parts.contentTypesXml!).toContain('commentsIds.xml');
+        expect(parts.contentTypesXml!).toContain(
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml'
+        );
+        expect(parts.relsXml!).toContain('commentsIds.xml');
+        expect(parts.relsXml!).toContain(
+          'http://schemas.microsoft.com/office/2016/09/relationships/commentsIds'
+        );
+      });
+    });
+
+    test('rebuild appends the reply durable ID into an existing commentsIds.xml', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('original has a root durable ID; revised adds a reply with its own durable ID', async () => {
+        const originalBase = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Root question',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+        original = await addCommentsIdsPart(originalBase, [
+          { paraId: '00000001', durableId: '11111111' },
+        ]);
+        const revisedBase = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'Root question',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+          replyText: 'Reply text',
+          replyAuthor: 'Bob',
+        });
+        revised = await addCommentsIdsPart(revisedBase, [
+          { paraId: '00000001', durableId: '11111111' },
+          { paraId: '00000002', durableId: '22222222' },
+        ]);
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('both root and reply durable IDs survive in commentsIds.xml', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        expect(parts.commentsIdsXml).not.toBeNull();
+        expect(parts.commentsIdsXml!).toContain('w16cid:paraId="00000001"');
+        expect(parts.commentsIdsXml!).toContain('w16cid:durableId="11111111"');
+        expect(parts.commentsIdsXml!).toContain('w16cid:paraId="00000002"');
+        expect(parts.commentsIdsXml!).toContain('w16cid:durableId="22222222"');
+
+        // Count-guard: appending the reply durable-ID row must not duplicate
+        // the pre-existing root row. Each paraId keys EXACTLY ONE
+        // <w16cid:commentId> durable-ID row.
+        const idRowsForPara = (paraId: string) =>
+          (parts.commentsIdsXml!.match(new RegExp(`w16cid:paraId="${paraId}"`, 'g')) ?? []).length;
+        expect(idRowsForPara('00000001')).toBe(1);
+        expect(idRowsForPara('00000002')).toBe(1);
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #470: commentsExtended row dropped for a MULTI-PARAGRAPH comment
+  //
+  // Word keys each <w15:commentEx> threading row by the comment's LAST content
+  // paragraph's w14:paraId (Word extension-part behavior, [MS-DOCX] w15) — not
+  // the first. The comment-merge post-pass previously keyed its lookups by the
+  // FIRST <w:p> paraId, so a multi-paragraph comment's commentEx row never
+  // matched and was silently dropped from rebuild output, breaking the
+  // paraIdParent thread graph. Single-paragraph comments (first === last) are
+  // unaffected.
+  // ---------------------------------------------------------------------------
+  describe('Multi-paragraph comment threading row keyed by last content paraId (issue #470)', () => {
+    test('rebuild preserves the commentEx row keyed by the LAST content paragraph', async ({ given, when, then }: AllureBddContext) => {
+      let original: Buffer, revised: Buffer;
+      await given('revised carries a two-paragraph comment whose commentEx row is keyed by the last paragraph', async () => {
+        original = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+        });
+
+        // Start from a single-paragraph comment fixture, then splice a SECOND
+        // content <w:p> (paraId 00000009) into comment id=1 so it becomes a
+        // multi-paragraph comment, and re-key its w15:commentEx row by that
+        // LAST paragraph's paraId — matching what Word writes. We mutate the
+        // archive directly (rather than extend the fixture DSL) because
+        // last-para keying is an issue-#470 regression check, not a recurring
+        // fixture need.
+        const baseRevised = await buildSyntheticDocx({
+          paragraphs: ['First paragraph', 'Commented paragraph', 'Third paragraph'],
+          commentOnParagraph: 1,
+          commentText: 'First line of the comment',
+          commentAuthor: 'Alice',
+          commentAncillaryParts: true,
+        });
+
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(baseRevised);
+
+        // Append a second content paragraph inside comment id=1's body.
+        const commentsXml = await zip.file('word/comments.xml')!.async('string');
+        zip.file(
+          'word/comments.xml',
+          commentsXml.replace(
+            '</w:comment>',
+            `<w:p w14:paraId="00000009"><w:r><w:t>Second line of the comment</w:t></w:r></w:p></w:comment>`
+          )
+        );
+
+        // Re-key the commentEx row from the first paraId (00000001) to the
+        // last content paragraph's paraId (00000009), as Word does.
+        const exXml = await zip.file('word/commentsExtended.xml')!.async('string');
+        zip.file(
+          'word/commentsExtended.xml',
+          exXml.replace('w15:paraId="00000001"', 'w15:paraId="00000009"')
+        );
+
+        revised = (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+      });
+
+      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      await when('documents are compared in rebuild mode', async () => {
+        result = await compareDocuments(original, revised, {
+          engine: 'atomizer',
+          reconstructionMode: 'rebuild',
+        });
+      });
+
+      await then('the last-paragraph-keyed commentEx row survives the merge', async () => {
+        expect(result.reconstructionModeUsed).toBe('rebuild');
+
+        const parts = await getResultParts(result.document);
+
+        // Both comment paragraphs made it into comments.xml.
+        expect(parts.commentsXml).not.toBeNull();
+        expect(parts.commentsXml!).toContain('First line of the comment');
+        expect(parts.commentsXml!).toContain('Second line of the comment');
+
+        // Regression: the w15:commentEx row keyed by the LAST paragraph's
+        // paraId (00000009) must be present. Before the fix the merge looked
+        // it up under the FIRST paraId (00000001) and dropped it, leaving no
+        // commentEx row for this comment at all.
+        expect(parts.commentsExtendedXml).not.toBeNull();
+        expect(parts.commentsExtendedXml!).toContain('w15:paraId="00000009"');
       });
     });
   });

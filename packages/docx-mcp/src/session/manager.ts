@@ -12,12 +12,14 @@ import {
   parseXml,
   type NormalizationResult,
   type ParagraphRevision,
-  type ReconstructionMode,
-  type ReconstructionFallbackReason,
-  type ReconstructionFallbackDiagnostics,
   type RevisionContext,
   type RevisionIdState,
 } from '@usejunior/docx-core';
+import type {
+  ReconstructionMode,
+  ReconstructionFallbackReason,
+  ReconstructionFallbackDiagnostics,
+} from '@usejunior/docx-compare';
 // NOTE: @usejunior/odf-core is an OPTIONAL provider (private/unpublished, like
 // @usejunior/google-docs-core) and is intentionally NOT imported here. A static
 // import in this always-loaded module would make a production install of the
@@ -39,18 +41,12 @@ export type SaveCacheEntry = {
   revision: number;
   format: SaveFormat;
   cleanBookmarks: boolean;
-  trackedEngine: 'auto' | 'atomizer';
   trackedAuthor: string;
   revisedBuffer: Buffer;
   trackedBuffer: Buffer | null;
   trackedStats: TrackedChangesStats | null;
-  trackedReconstructionMode?: ReconstructionMode;
-  trackedFallbackReason?: ReconstructionFallbackReason;
-  trackedFallbackDiagnostics?: ReconstructionFallbackDiagnostics;
   bookmarksRemoved: number;
   blocksRestored: number;
-  trackedBlocksRestored: number;
-  trackedRestoreError?: string;
   exportedAtUtc: string;
   cachedAtIso: string;
 };
@@ -58,6 +54,30 @@ export type SaveCacheEntry = {
 export type ExtractionCacheEntry = {
   revision: number;
   changes: ParagraphRevision[];
+};
+
+/**
+ * A package-level (non-revision) mutation recorded during a session.
+ *
+ * Per #122, AI-attributed writes in the *revisionable* surface must land as
+ * native OOXML tracked-change markup. Writes in the *package-mutation* surface
+ * (side-story parts, relationships, content types — things OOXML has no native
+ * revision wrapper for) cannot be tracked, so instead of being emitted silently
+ * they are recorded here and surfaced in the save report. This keeps the
+ * "every AI mutation is accounted for" invariant honest even where the mutation
+ * is not, and cannot be, a tracked change.
+ *
+ * @see packages/docx-core/SUPPORT.md (Table B) for the ratified classification.
+ */
+export type NonRevisionChange = {
+  /** MCP tool that produced the change (e.g. `add_comment`). */
+  tool: string;
+  /** Session edit revision at which the change was recorded. */
+  editRevision: number;
+  /** Package parts mutated without tracked-change markup. */
+  parts: string[];
+  /** Human-readable summary of what was mutated and why it is untracked. */
+  description: string;
 };
 
 export type DocxSession = {
@@ -86,6 +106,12 @@ export type DocxSession = {
   editRevision: number;
   saveCache: Map<string, SaveCacheEntry>;
   extractionCache: ExtractionCacheEntry | null;
+  /**
+   * Non-revision (package-mutation) changes recorded this session, in order.
+   * Surfaced in the save report so package-level mutations that have no native
+   * OOXML revision wrapper are still accounted for (#122).
+   */
+  nonRevisionManifest: NonRevisionChange[];
   createdAt: Date;
   lastAccessedAt: Date;
   expiresAt: Date;
@@ -335,6 +361,7 @@ export class SessionManager {
       editRevision: 0,
       saveCache: new Map<string, SaveCacheEntry>(),
       extractionCache: null,
+      nonRevisionManifest: [],
       createdAt: now,
       lastAccessedAt: now,
       expiresAt,
@@ -523,6 +550,19 @@ export class SessionManager {
       session.saveCache.clear();
       session.extractionCache = null;
     }
+  }
+
+  /**
+   * Record a package-level (non-revision) mutation for later surfacing in the
+   * save report (#122). Call this after a successful mutation whose effect is
+   * not, and cannot be, captured by OOXML tracked-change markup — e.g. creating
+   * `word/comments.xml`, rewriting relationships, or editing side-story parts.
+   */
+  recordNonRevisionChange(
+    session: DocxSession,
+    change: Omit<NonRevisionChange, 'editRevision'>,
+  ): void {
+    session.nonRevisionManifest.push({ ...change, editRevision: session.editRevision });
   }
 
   getSaveCache(session: DocxSession, cacheKey: string): SaveCacheEntry | null {

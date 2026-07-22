@@ -58,6 +58,17 @@ import {
 import { acceptChanges as acceptChangesImpl, type AcceptChangesResult } from './accept_changes.js';
 import { rejectChanges as rejectChangesImpl, type RejectChangesResult } from './reject_changes.js';
 import {
+  collectRevisionElements,
+  resolveSelectedIds,
+  detectAmbiguousOverlaps,
+  selectedIdFilter,
+  AmbiguousRevisionOverlapError,
+  type AiEditSelector,
+  type AiRevisionOverlap,
+} from './accept_ai_edits.js';
+import { revisionElementId } from './accept_changes.js';
+import { TRACKED_CHANGE_ELEMENT_NAME_SET } from './revision-vocabulary.js';
+import {
   bootstrapCommentParts,
   addComment as addCommentImpl,
   addCommentReply as addCommentReplyImpl,
@@ -148,7 +159,26 @@ function collectLiveFootnoteRefIds(doc: Document): Set<number> {
 // The corresponding <w:footnote w:id=N> in footnotes.xml is then unreachable —
 // remove it so the side part matches the post-sweep body. Reserved separator /
 // continuationSeparator entries are preserved unconditionally.
-function pruneOrphanedFootnotes(footnotesDoc: Document, liveRefIds: Set<number>): number {
+/**
+ * True iff a footnote entry contains a tracked-change element whose id is not in
+ * `selectedIds` — a foreign revision that a selective sweep must not delete.
+ */
+function footnoteHasForeignRevision(fn: Element, selectedIds: Set<string>): boolean {
+  const els = fn.getElementsByTagNameNS(OOXML.W_NS, '*');
+  for (let i = 0; i < els.length; i++) {
+    const el = els.item(i) as Element;
+    if (!TRACKED_CHANGE_ELEMENT_NAME_SET.has(el.localName)) continue;
+    const id = revisionElementId(el);
+    if (id == null || !selectedIds.has(id)) return true;
+  }
+  return false;
+}
+
+function pruneOrphanedFootnotes(
+  footnotesDoc: Document,
+  liveRefIds: Set<number>,
+  protectForeign?: Set<string>,
+): number {
   const entries = Array.from(footnotesDoc.getElementsByTagNameNS(OOXML.W_NS, W.footnote));
   let pruned = 0;
   for (const fn of entries) {
@@ -157,6 +187,10 @@ function pruneOrphanedFootnotes(footnotesDoc: Document, liveRefIds: Set<number>)
     const id = parseWId(fn);
     if (id === null) continue;
     if (liveRefIds.has(id)) continue;
+    // Selective mode: never delete a note that still carries a foreign revision
+    // (the mixed-author byte-identical invariant, #123/#125). Leaving an
+    // unreferenced note is package hygiene at worst, not data loss.
+    if (protectForeign && footnoteHasForeignRevision(fn, protectForeign)) continue;
     fn.parentNode?.removeChild(fn);
     pruned++;
   }
@@ -317,7 +351,8 @@ export class DocxDocument {
 
   /**
    * Accept all tracked changes in document.xml plus supported revisionable
-   * side-story parts, producing clean XML with no revision markup.
+   * side-story parts, resolving the supported revision subset. Unsupported
+   * advanced records remain classified gaps or preservation-only markup.
    */
   async acceptChanges(): Promise<AcceptChangesResult> {
     const total = emptyAcceptChangesResult();
@@ -401,6 +436,112 @@ export class DocxDocument {
       this.documentViewCache = null;
     }
     return total;
+  }
+
+  /**
+   * Read all revisionable stories (document.xml + supported side parts) as parsed
+   * Documents, resolve the selector's target revision-id set across every story
+   * (a revision id is package-wide), and hard-error on any ambiguous overlap
+   * unless the selector opts into `normalizeFirst`.
+   */
+  private async prepareSelectiveStories(
+    selector: AiEditSelector,
+  ): Promise<{ stories: Array<{ path: string | null; doc: Document }>; selectedIds: Set<string> }> {
+    const stories: Array<{ path: string | null; doc: Document }> = [
+      { path: null, doc: this.documentXml },
+    ];
+    for (const partPath of REVISION_STORY_PART_PATHS) {
+      const xml = await this.zip.readTextOrNull(partPath);
+      if (xml) stories.push({ path: partPath, doc: parseXml(xml) });
+    }
+
+    const allRevisionElements = stories.flatMap((s) => collectRevisionElements(s.doc));
+    const selectedIds = resolveSelectedIds(allRevisionElements, selector);
+
+    if (!selector.normalizeFirst) {
+      const overlaps: AiRevisionOverlap[] = stories.flatMap((s) =>
+        detectAmbiguousOverlaps(s.doc, selectedIds),
+      );
+      if (overlaps.length > 0) throw new AmbiguousRevisionOverlapError(overlaps);
+    }
+    return { stories, selectedIds };
+  }
+
+  /**
+   * Accept only the revisions named by `selector` (by id or author) across
+   * document.xml and supported side-story parts, leaving every other revision
+   * byte-untouched (#123). Hard-errors on an ambiguous overlap unless
+   * `normalizeFirst` is set.
+   */
+  async acceptAIEdits(selector: AiEditSelector): Promise<{ result: AcceptChangesResult; selectedIds: string[] }> {
+    const { stories, selectedIds } = await this.prepareSelectiveStories(selector);
+    const filter = selectedIdFilter(selectedIds);
+    const total = emptyAcceptChangesResult();
+
+    const bodyResult = acceptChangesImpl(this.documentXml, { filter });
+    addAcceptChangesResult(total, bodyResult);
+    const liveFootnoteRefIds = bodyResult.deletionsAccepted > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
+    for (const story of stories) {
+      if (story.path == null) continue; // document.xml already swept above
+      const partResult = acceptChangesImpl(story.doc, { filter });
+      addAcceptChangesResult(total, partResult);
+
+      let footnotesPruned = 0;
+      if (story.path === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds, selectedIds);
+      }
+      if (hasAcceptedChanges(partResult) || footnotesPruned > 0) {
+        this.zip.writeText(story.path, serializeXml(story.doc));
+        if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
+      }
+    }
+
+    if (hasAcceptedChanges(total)) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return { result: total, selectedIds: [...selectedIds] };
+  }
+
+  /**
+   * Reject only the revisions named by `selector` across document.xml and
+   * supported side-story parts, leaving every other revision byte-untouched.
+   * Symmetric to {@link DocxDocument.acceptAIEdits}.
+   */
+  async rejectAIEdits(selector: AiEditSelector): Promise<{ result: RejectChangesResult; selectedIds: string[] }> {
+    const { stories, selectedIds } = await this.prepareSelectiveStories(selector);
+    const filter = selectedIdFilter(selectedIds);
+    const total = emptyRejectChangesResult();
+
+    const bodyResult = rejectChangesImpl(this.documentXml, { filter });
+    addRejectChangesResult(total, bodyResult);
+    const liveFootnoteRefIds = bodyResult.insertionsRemoved > 0
+      ? collectLiveFootnoteRefIds(this.documentXml)
+      : null;
+
+    for (const story of stories) {
+      if (story.path == null) continue;
+      const partResult = rejectChangesImpl(story.doc, { filter });
+      addRejectChangesResult(total, partResult);
+
+      let footnotesPruned = 0;
+      if (story.path === 'word/footnotes.xml' && liveFootnoteRefIds) {
+        footnotesPruned = pruneOrphanedFootnotes(story.doc, liveFootnoteRefIds, selectedIds);
+      }
+      if (hasRejectedChanges(partResult) || footnotesPruned > 0) {
+        this.zip.writeText(story.path, serializeXml(story.doc));
+        if (story.path === 'word/footnotes.xml') this.footnotesXml = story.doc;
+      }
+    }
+
+    if (hasRejectedChanges(total)) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return { result: total, selectedIds: [...selectedIds] };
   }
 
   removeJuniorBookmarks(): number {
@@ -902,7 +1043,7 @@ export class DocxDocument {
   }
 
   async getFootnotes(): Promise<Footnote[]> {
-    return getFootnotesImpl(this.zip, this.documentXml);
+    return getFootnotesImpl(this.zip, this.documentXml, this.getStylesModel());
   }
 
   /**
@@ -950,7 +1091,7 @@ export class DocxDocument {
   }
 
   async getFootnote(noteId: number): Promise<Footnote | null> {
-    return getFootnoteImpl(this.zip, this.documentXml, noteId);
+    return getFootnoteImpl(this.zip, this.documentXml, noteId, this.getStylesModel());
   }
 
   /**
@@ -1064,5 +1205,33 @@ export class DocxDocument {
 
     const buffer = await this.zip.toBuffer();
     return { buffer, bookmarksRemoved: 0, blocksRestored: 0 };
+  }
+
+  /**
+   * Produce the CLEAN artifact for a write-time editing session (#126): accept
+   * the AI actor's tracked edits on an *isolated copy* of this document — this
+   * instance is left unmutated, so a paired tracked artifact can still be
+   * serialized from it — then serialize with minimal reserialization against
+   * THIS document's original on-disk document.xml.
+   *
+   * The isolation matters for the #408 guarantee. Loading the isolated copy
+   * from a re-serialized buffer would reset its minimal-reserialization
+   * baseline to the already-normalized text, so body blocks the AI never
+   * touched would come back merely semantically equal (proofErr stripped, runs
+   * merged) rather than byte-identical to the source. Carrying THIS document's
+   * true baseline forward keeps untouched blocks pristine while accepted blocks
+   * emit as their final text.
+   *
+   * @see https://github.com/UseJunior/safe-docx/issues/408
+   */
+  async toAcceptedBuffer(
+    selector: AiEditSelector,
+    opts?: { cleanBookmarks?: boolean },
+  ): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
+    const cleanBookmarks = opts?.cleanBookmarks ?? true;
+    const isolated = await DocxDocument.load((await this.toBuffer({ cleanBookmarks: false })).buffer);
+    isolated.originalDocumentXmlText = this.originalDocumentXmlText;
+    await isolated.acceptAIEdits(selector);
+    return isolated.toBuffer({ cleanBookmarks, minimalReserialization: cleanBookmarks });
   }
 }

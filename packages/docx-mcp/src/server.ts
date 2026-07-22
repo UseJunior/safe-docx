@@ -7,6 +7,7 @@ import { SessionManager, type GDocsSession, type OdfSession } from './session/ma
 import { SAFE_DOCX_MCP_TOOLS } from './tool_catalog.js';
 import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
+import { getDocumentOutline } from './tools/get_document_outline.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
 import { batchEdit } from './tools/batch_edit.js';
@@ -18,6 +19,8 @@ import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
 import { closeFile } from './tools/close_file.js';
 import { formatLayout } from './tools/format_layout.js';
 import { acceptChanges } from './tools/accept_changes.js';
+import { acceptAiEdits } from './tools/accept_ai_edits.js';
+import { rejectAiEdits } from './tools/reject_ai_edits.js';
 import { addComment } from './tools/add_comment.js';
 import { getComments } from './tools/get_comments.js';
 import { deleteComment } from './tools/delete_comment.js';
@@ -159,6 +162,8 @@ export async function dispatchToolCall(
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'grep');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'grep');
       return await grep(sessions, args as Parameters<typeof grep>[1]);
+    case 'get_document_outline':
+      return await getDocumentOutline(sessions, args as Parameters<typeof getDocumentOutline>[1]);
     case 'batch_edit':
       return await batchEdit(sessions, args as Parameters<typeof batchEdit>[1]);
     case 'replace_text':
@@ -182,6 +187,10 @@ export async function dispatchToolCall(
       return await formatLayout(sessions, args as Parameters<typeof formatLayout>[1]);
     case 'accept_changes':
       return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
+    case 'accept_ai_edits':
+      return await acceptAiEdits(sessions, args as Parameters<typeof acceptAiEdits>[1]);
+    case 'reject_ai_edits':
+      return await rejectAiEdits(sessions, args as Parameters<typeof rejectAiEdits>[1]);
     case 'has_tracked_changes':
       return await hasTrackedChanges_tool(sessions, args as Parameters<typeof hasTrackedChanges_tool>[1]);
     case 'get_file_status':

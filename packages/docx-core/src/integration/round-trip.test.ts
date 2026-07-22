@@ -15,7 +15,7 @@ import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Round-Trip Correctness' });
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 // Use AST-based implementation for better reliability with nested structures
 import {
@@ -23,7 +23,7 @@ import {
   rejectAllChanges,
   extractTextWithParagraphs,
   compareTexts,
-} from '../baselines/atomizer/trackChangesAcceptorAst.js';
+} from '@usejunior/docx-compare';
 import {
   FIXTURE_STABLE_DATE,
   getIntegrationOutputModeLabel,

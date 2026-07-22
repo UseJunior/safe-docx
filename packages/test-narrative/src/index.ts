@@ -1,9 +1,12 @@
 export {
   CANONICAL_SECTION_ORDER,
   rejectedAliases,
+  SUITE_SCENARIO_IDS_TAG,
+  suiteScenarioIdsSchema,
   tagDefinitions,
   tagSchema,
   validateTags,
+  type SuiteScenarioIds,
   type TagName,
   type NarrativeTags,
   type NarrativeVisibility,

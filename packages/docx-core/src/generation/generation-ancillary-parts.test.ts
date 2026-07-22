@@ -14,7 +14,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import { generateDocx } from './compile.js';
 import { checkGeneratedPackage } from './structural-checks.js';

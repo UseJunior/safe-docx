@@ -1,7 +1,7 @@
 {
   "name": "@usejunior/docx-core",
-  "version": "0.15.0",
-  "description": "OOXML (.docx) core library: primitives, comparison, and track changes",
+  "version": "0.17.0",
+  "description": "OOXML (.docx) core library: primitives, document generation, and track changes",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,9 +18,7 @@
     "check:spec-coverage:primitives": "node scripts/validate_primitives_openspec_coverage.mjs",
     "check:spec-coverage:tag-density": "node scripts/validate_openspec_tag_density.mjs",
     "check:spec-coverage-generation": "node scripts/validate_generation_openspec_coverage.mjs",
-    "lint": "tsc --noEmit",
-    "benchmark": "tsx src/benchmark/runner.ts",
-    "cli": "node dist/cli/index.js"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.10",
@@ -29,6 +27,7 @@
   "devDependencies": {
     "@types/diff-match-patch": "^1.0.36",
     "@types/node": "^22.10.0",
+    "@usejunior/docx-compare": "^0.17.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@vitest/runner": "^4.1.8",
     "allure-vitest": "^3.9.0",
@@ -57,7 +56,6 @@
     "docx",
     "ooxml",
     "word",
-    "comparison",
     "track-changes",
     "document-editing",
     "serverless",
@@ -67,8 +65,6 @@
   ],
   "license": "Apache-2.0",
   "bin": {
-    "docx-comparison": "dist/cli/index.js",
-    "safe-docx-compare": "dist/cli/index.js",
     "safe-docx-conformance-adapter": "dist/cli/conformance-adapter.js"
   }
 }

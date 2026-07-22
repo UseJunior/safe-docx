@@ -10,6 +10,32 @@ const COMMENT_TOUCHED_CONTEXT = {
   sideParts: ['word/comments.xml', 'word/commentsExtended.xml', 'word/people.xml'],
 };
 
+// Non-revision parts a *root* comment can mutate without a tracked-change
+// wrapper. Unlike the body-story w:commentReference run (which is wrapped in
+// w:ins, Table A), the w:commentRangeStart/End milestones are written to
+// word/document.xml as structural markers and are NOT revision-wrapped (Word's
+// own behavior; see SUPPORT.md Table A note), so document.xml belongs here. The
+// content-types and relationship parts are touched only when comment
+// infrastructure is bootstrapped; they are declared conservatively so the
+// manifest never under-reports a package mutation.
+const ROOT_COMMENT_NON_REVISION_PARTS = [
+  'word/document.xml',
+  'word/comments.xml',
+  'word/commentsExtended.xml',
+  'word/people.xml',
+  '[Content_Types].xml',
+  'word/_rels/document.xml.rels',
+];
+
+// A threaded reply has no body anchor at all: the entire write is side-part
+// metadata (comments.xml text + commentsExtended.xml graph + people.xml), so no
+// tracked-change marker is emitted and document.xml is untouched.
+const REPLY_COMMENT_NON_REVISION_PARTS = [
+  'word/comments.xml',
+  'word/commentsExtended.xml',
+  'word/people.xml',
+];
+
 export async function addComment(
   manager: SessionManager,
   params: {
@@ -48,6 +74,13 @@ export async function addComment(
 
       const result = await mutate(session.doc, ctx);
       manager.markEdited(session);
+      // Replies have no body anchor, so the whole write is package-mutation
+      // side-part metadata (#122): record it in the non-revision manifest.
+      manager.recordNonRevisionChange(session, {
+        tool: 'add_comment',
+        parts: REPLY_COMMENT_NON_REVISION_PARTS,
+        description: `Threaded reply to comment ${parentCommentId} written to comment side-story parts (comments.xml, commentsExtended.xml, people.xml). Reply mode is package-mutation only: it has no body anchor, so no tracked-change marker is emitted and word/document.xml is untouched.`,
+      });
       return ok(mergeSessionResolutionMetadata({
         comment_id: result.commentId,
         parent_comment_id: result.parentCommentId,
@@ -126,6 +159,15 @@ export async function addComment(
     const result = await mutate(session.doc, ctx);
 
     manager.markEdited(session);
+    // The body-story w:commentReference run is wrapped in w:ins (Table A), but
+    // the comment body text, author metadata, and any comment-infrastructure
+    // bootstrap are package-mutation side-part writes with no revision wrapper
+    // (#122): record them in the non-revision manifest.
+    manager.recordNonRevisionChange(session, {
+      tool: 'add_comment',
+      parts: ROOT_COMMENT_NON_REVISION_PARTS,
+      description: `Comment ${result.commentId}: body text and author metadata written to comment side parts (comments.xml, people.xml), and w:commentRangeStart/End milestones written to word/document.xml as structural markers (not revision-wrapped). Comment infrastructure and its content-type/relationship registration are created when the package lacked them. The body-story w:commentReference run is tracked separately as a w:ins revision.`,
+    });
     return ok(mergeSessionResolutionMetadata({
       comment_id: result.commentId,
       anchor_paragraph_id: pid,

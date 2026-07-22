@@ -26,6 +26,9 @@ import { buildInlineRuns } from './run.js';
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.4
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.3
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.comments.range-start
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.comments.range-end
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.comments.reference
  */
 export function buildParagraph(doc: Document, paragraph: ParagraphSpec, ctx?: BlockEmitContext): Element {
   const p = createWmlElement(doc, W.p);

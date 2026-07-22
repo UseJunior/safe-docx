@@ -96,6 +96,7 @@ export function buildTestsCorpusSchema() {
             items: { $ref: '#/$defs/SectionIdentifier' },
             uniqueItems: true,
           },
+          crossImplementation: { $ref: '#/$defs/CrossImplementation' },
           narrative: {
             type: 'object',
             additionalProperties: false,
@@ -127,6 +128,23 @@ export function buildTestsCorpusSchema() {
           conformanceClaims: {
             type: 'array',
             items: { $ref: '#/$defs/ConformanceClaim' },
+          },
+        },
+      },
+      CrossImplementation: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['suiteScenarioIds'],
+        properties: {
+          suiteScenarioIds: {
+            type: 'array',
+            items: {
+              type: 'string',
+              minLength: 1,
+              maxLength: 200,
+            },
+            minItems: 1,
+            uniqueItems: true,
           },
         },
       },

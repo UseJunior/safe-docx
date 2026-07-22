@@ -9,7 +9,7 @@ import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readFile } from 'fs/promises';
 import { join, dirname } from 'path';
-import { compareDocuments } from '../index.js';
+import { compareDocuments } from '@usejunior/docx-compare';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Reconstruction Metadata' });
 
@@ -96,14 +96,14 @@ describe('Reconstruction metadata', () => {
   test('keeps reconstruction metadata undefined for diffmatch engine (direct import)', async ({ given, when, then }: AllureBddContext) => {
     let original: Buffer;
     let revised: Buffer;
-    let result: Awaited<ReturnType<typeof import('../baselines/diffmatch/pipeline.js').compareDocumentsBaselineB>>;
+    let result: Awaited<ReturnType<typeof import('@usejunior/docx-compare').compareDocumentsBaselineB>>;
 
     await given('simple-word-change fixture documents are loaded', async () => {
       ({ original, revised } = await loadFixturePair('simple-word-change'));
     });
 
     await when('documents are compared using the diffmatch baseline B engine', async () => {
-      const { compareDocumentsBaselineB } = await import('../baselines/diffmatch/pipeline.js');
+      const { compareDocumentsBaselineB } = await import('@usejunior/docx-compare');
       result = await compareDocumentsBaselineB(original, revised);
     });
 

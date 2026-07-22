@@ -32,7 +32,7 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | `update_footnote` | `packages/docx-mcp/src/tools/update_footnote.ts` | `w:ins`, `w:del` | Note text replacement belongs inside the revisionable surface. **Verified by [120.8] (#143) regression test.** |
 | `delete_footnote` | `packages/docx-mcp/src/tools/delete_footnote.ts` | `w:del` | Footnote deletion removes both reference and note text. **Verified by [120.8] (#143) regression test.** |
 | `compare_documents` | `packages/docx-mcp/src/tools/compare_documents.ts` | `w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, `w:moveFromRangeStart`/`End`, `w:moveToRangeStart`/`End`, `w:pPrChange`, `w:rPrChange` | Opt-in whole-document redlining tool. The atomizer engine runs move detection and format detection, so the actual emission set is broader than `w:ins`/`w:del`. Comparison-time emission, not write-time. `#118` removes it from the default finalization path for supported AI edits but leaves it available as a legacy redlining tier. |
-| `save` (tracked branch) | `packages/docx-mcp/src/tools/save.ts` | `w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, `w:moveFromRangeStart`/`End`, `w:moveToRangeStart`/`End`, `w:pPrChange`, `w:rPrChange` | Only the tracked-output branch belongs here, because it delegates to `compareDocuments(...)`. Comparison-time emission, not write-time. Clean-only save is just serialization. |
+| `save` (tracked branch) | `packages/docx-mcp/src/tools/save.ts` | Existing session-authored `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange`, and other write-time revision markup emitted by revisionable edit primitives | Only the tracked-output branch belongs here. It serializes the session's write-time revision markup directly and reports `tracked_changes_source: "write-time"`; it no longer derives default tracked output by delegating to `compareDocuments(...)`. Clean-only save serializes the accepted document state. |
 
 ## Table B: Package-level (non-revisionable) mutations
 
@@ -50,6 +50,69 @@ Use the alternate contract below whenever a primitive/tool mutates relationships
 
 No current file under `packages/docx-core/src/primitives/*.ts` or `packages/docx-mcp/src/tools/*.ts` directly exposes theme replacement, header/footer part creation, image-part insertion, or `core.xml` / `app.xml` metadata editing. If those surfaces are added later, they belong in Table B unless OOXML supplies a first-class revision wrapper for that exact mutation.
 
+### Non-revision change manifest (implemented in [#122](https://github.com/UseJunior/safe-docx/issues/122))
+
+Table B mutations are recorded in a per-session **non-revision change manifest**
+(`DocxSession.nonRevisionManifest`, populated via `SessionManager.recordNonRevisionChange`).
+Each entry is `{ tool, editRevision, parts, description }`, where `parts` names the
+package parts mutated without a tracked-change wrapper. The `save` report surfaces
+the manifest as `non_revision_changes` (omitted when empty), so package-level
+mutations are accounted for alongside the tracked revisions list rather than
+landing silently. The dual-surface tools that record entries are `add_comment`,
+`delete_comment`, and `add_footnote`; the write surface of every tool is
+classified programmatically in `packages/docx-mcp/src/tool_catalog.ts`
+(`surface`: `revisionable` | `package-mutation` | `internal`, plus
+`emitsNonRevisionChanges`).
+
+### Accept/reject invariant coverage (implemented in [#124](https://github.com/UseJunior/safe-docx/issues/124))
+
+Selective accept/reject ([#123](https://github.com/UseJunior/safe-docx/issues/123)) is exercised by a
+mixed-author invariant corpus at
+`packages/docx-core/src/integration/accept_reject_invariant_corpus.test.ts`. Each fixture carries an
+AI-authored revision, a foreign (reviewer) revision, and one document feature; after `acceptAIEdits`
+/ `rejectAIEdits` targeting the AI author the corpus asserts, per fixture, that **every** AI revision
+was resolved (0 remain), that the foreign revisions are **byte-identical** — their serialized
+subtrees, by author, are exactly equal (same set and count) before and after — that the feature is
+preserved, that field structure stays balanced, and that the body passes structural lint.
+
+| Feature / revision preserved | Accept | Reject |
+| --- | --- | --- |
+| `w:ins` / `w:del` (body) | ✅ | ✅ |
+| `w:rPrChange` (foreign property change) | ✅ | ✅ |
+| `w:sectPrChange` (foreign section-properties change) | ✅ | ✅ |
+| `w:tcPrChange` (foreign table-cell-properties change) | ✅ | ✅ |
+| Comment range markers (`w:commentRangeStart`/`End`) | ✅ | ✅ |
+| Bookmarks (`_bk_*` internal + user) | ✅ | ✅ |
+| Content controls (`w:sdt`) | ✅ | ✅ |
+| Field codes (`w:fldChar` / `w:instrText`) | ✅ | ✅ |
+| Numbering reference (`w:numPr`) | ✅ | ✅ |
+| Paragraph / table styles (`w:pStyle`, table structure) | ✅ | ✅ |
+| Footnotes — reviewer revision inside a note (side part) | ✅ | ✅ |
+| Endnotes — reviewer revision inside a note (side part) | ✅ | ✅ |
+
+`validateDocument` is **body-level structural lint** (bookmark pairing, tracked-change wrapper
+attributes, `w:fldChar` begin/end balance) — it is the CI assertion that the sweep did not corrupt the
+body, **not** a guarantee that Word/LibreOffice will open the file without recovery. Representative
+accepted fixtures (bookmarks, field codes) were additionally opened in **LibreOffice 25.8 headless**
+locally (`soffice --convert-to pdf`, no recovery prompt); Word round-trip is manual/pending.
+
+**Scope.** accept/reject resolves `w:ins`, `w:del`, `w:moveFrom`/`w:moveTo`, and the property changes
+`w:rPrChange`/`w:pPrChange`/`w:sectPrChange`/`w:tblPrChange`/`w:trPrChange`/`w:tcPrChange`. Move range
+markers are removed, but wrapper-to-range identity semantics are not proven. Cell-topology,
+table-grid/exception, and numbering revisions (`w:cellIns`/`w:cellDel`/`w:cellMerge`/
+`w:tblGridChange`/`w:tblPrExChange`/`w:numberingChange`) are **not** resolved by the engine; custom XML
+revision ranges are preserved but not interpreted. The package sweep reads `document.xml`,
+`footnotes.xml`, `endnotes.xml`, `comments.xml`, and `glossary/document.xml`. Parts it never sweeps —
+`styles.xml`, `numbering.xml`, headers/footers, relationships, and content types — are preservation-only.
+Comparison authors ordinary insertion/deletion and detected move wrappers in both in-place and rebuild
+modes. Equal pre-existing advanced records have a separate reconstruction posture: sampled wrappers and
+markers survive in-place, while rebuild resolves existing content wrappers and drops custom-XML and
+proofing/extension markers. Namespace-equivalent WordprocessingML prefixes are canonicalized at the
+comparison boundary; this does not amount to general XML canonicalization.
+The machine-readable operation matrix and drift gate live at
+`spec-compliance/manifests/ecma-376-advanced-revisions.json` and
+`npm run check:advanced-revision-classification`.
+
 ## Internal / non-contract utilities
 
 These files are intentionally outside the revisionable-surface contract. Some perform XML mutations (e.g., bookmark scaffolding, run normalization, style elevation) but those mutations are internal/non-AI-attributable rather than user-directed edits. Others consume or normalize existing tracked changes instead of creating them. Either way, none are part of the promised AI-authored revision contract.
@@ -57,6 +120,7 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 ### `docx-core` primitive files
 
 - `accept_changes.ts` — tracked-change consumer that accepts existing `w:ins` / `w:del` / property-change markup in `document.xml` and supported side-story parts (`footnotes.xml`, `endnotes.xml`, `comments.xml`) instead of creating new AI-authored revisions.
+- `accept_ai_edits.ts` — tracked-change consumer that selectively accepts/rejects existing revisions by id or author ([#123](https://github.com/UseJunior/safe-docx/issues/123)) and detects ambiguous overlaps; it resolves existing markup rather than originating AI-authored revisions, so it is not a write-time emission surface.
 - `bookmarks.ts` — internal paragraph-bookmark scaffolding for stable selectors and anchor lookup, not user-visible AI content authorship.
 - `document.ts` — `DocxDocument` facade that routes to lower-level primitives; the contract is defined at the delegated primitive level, not this wrapper.
 - `document_view.ts` — read-only projection layer for toon/json/simple views, style discovery, and footnote marker display.
@@ -84,6 +148,8 @@ These files are intentionally outside the revisionable-surface contract. Some pe
 ### `docx-mcp` read-only, orchestration, and session files
 
 - `accept_changes.ts` — MCP wrapper that consumes existing tracked changes by accepting them.
+- `accept_ai_edits.ts` — MCP wrapper that selectively accepts existing tracked changes by revision id or author ([#123](https://github.com/UseJunior/safe-docx/issues/123)); a consumer, not a write-time revision emitter.
+- `reject_ai_edits.ts` — MCP wrapper that selectively rejects existing tracked changes by revision id or author; symmetric consumer to `accept_ai_edits.ts`.
 - `close_file.ts` — session lifecycle control only.
 - `comparison_defaults.ts` — comparison configuration constant, not an MCP mutation surface by itself.
 - `docx_archive_guard.ts` — archive safety validator that checks zip bomb and entry-size limits before load.
@@ -128,6 +194,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 ### `packages/docx-core/src/primitives`
 
 - `accept_changes.ts` — Internal / non-contract utilities
+- `accept_ai_edits.ts` — Internal / non-contract utilities
 - `bookmarks.ts` — Internal / non-contract utilities
 - `comments.ts` — Table A and Table B
 - `document.ts` — Internal / non-contract utilities
@@ -159,6 +226,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 ### `packages/docx-mcp/src/tools`
 
 - `accept_changes.ts` — Internal / non-contract utilities
+- `accept_ai_edits.ts` — Internal / non-contract utilities
 - `add_comment.ts` — Table A and Table B
 - `add_footnote.ts` — Table A and Table B
 - `batch_edit.ts` — Table A
@@ -184,6 +252,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `preview.ts` — Internal / non-contract utilities
 - `provider_guard.ts` — Internal / non-contract utilities
 - `read_file.ts` — Internal / non-contract utilities
+- `reject_ai_edits.ts` — Internal / non-contract utilities
 - `replace_text.ts` — Table A
 - `save.ts` — Table A
 - `session_resolution.ts` — Internal / non-contract utilities
@@ -201,4 +270,4 @@ These ECMA-376 elements stay in the canonical vocabulary even though the current
 - `w:cellIns`, `w:cellDel`, and `w:cellMerge` — no dedicated cell-topology mutation file is surfaced today.
 - `w:numberingChange` — no dedicated numbering mutation file is surfaced today.
 - `w:rPrChange` and `w:pPrChange` already apply to accept/reject flow as well as live AI formatting/property edits.
-- `compare_documents.ts` and `save.ts` still rely on comparison-time reconstruction today, which is why `#120` remains the next required implementation step.
+- `compare_documents.ts` remains the opt-in comparison-time reconstruction surface. The default `save` tracked-output path serializes write-time revision markup directly, so supported AI edits no longer rely on comparison-time reconstruction during finalization.

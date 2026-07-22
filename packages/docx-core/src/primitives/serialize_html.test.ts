@@ -76,7 +76,14 @@ function tableCell(
 }
 
 function footnote(displayNumber: number, text: string): Footnote {
-  return { id: displayNumber, displayNumber, text, anchoredParagraphId: null };
+  return {
+    id: displayNumber,
+    displayNumber,
+    text,
+    anchoredParagraphId: null,
+    refParagraphIds: [],
+    paragraphs: [{ text, tagged_text: text, style: 'FootnoteText' }],
+  };
 }
 
 /** Render the body only (no doc wrapper) to keep assertions focused on block structure. */
