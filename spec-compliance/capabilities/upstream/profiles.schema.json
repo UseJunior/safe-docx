@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-agreements.github.io/docx-platform-tests/registry/profiles.schema.json",
+  "title": "DOCX capability profiles",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "registryVersion", "profiles"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "registryVersion": { "type": "integer", "minimum": 1 },
+    "profiles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/profile" }
+    }
+  },
+  "$defs": {
+    "axis": {
+      "enum": [
+        "detect",
+        "preserve",
+        "parse",
+        "validate",
+        "generate",
+        "edit",
+        "compare",
+        "acceptReject",
+        "wordRoundtrip",
+        "crossPlatform"
+      ]
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "description", "capabilityIds", "axes"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "capabilityIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^word(?:\\.[a-z][a-z0-9-]*){2,}$" },
+          "uniqueItems": true
+        },
+        "axes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/axis" },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

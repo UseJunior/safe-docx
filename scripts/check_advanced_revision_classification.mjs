@@ -208,8 +208,11 @@ export async function validateAdvancedRevisionClassification(manifest, vocabular
     for (const requiredPath of REQUIRED_MODE_PATHS) {
       if (!operationStatuses.has(requiredPath)) throw new Error(`${record.id}: missing explicit ${requiredPath} classification`);
     }
-    if (operationStatuses.get('lean.advancedRecordSemantics') !== 'non-goal') {
-      throw new Error(`${record.id}: Lean does not verify advanced-record semantics`);
+    const leanAdvancedSemantics = operationStatuses.get('lean.advancedRecordSemantics');
+    const moveRangeSemanticsImplemented =
+      record.id === 'advanced-revision.moves-ranges' && leanAdvancedSemantics === 'implemented';
+    if (leanAdvancedSemantics !== 'non-goal' && !moveRangeSemanticsImplemented) {
+      throw new Error(`${record.id}: Lean does not verify these advanced-record semantics`);
     }
     const leanProjection = operationStatuses.get('lean.textFieldProjection');
     if (!ALLOWED_STATUSES.has(leanProjection)) throw new Error(`${record.id}: missing Lean text/field projection status`);
