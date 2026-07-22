@@ -4,8 +4,8 @@
  * Drives the REAL suite runner (open-agreements/docx-platform-tests) against
  * the safe-docx conformance adapter (`src/cli/conformance-adapter.ts`) via a
  * temporary adapter registry. Every scenario using an implemented operation
- * must report `pass`; operations outside the adapter's supported set must
- * report `unsupported`. A supported-operation disagreement fails this test —
+ * and supported input shape must report `pass`; operations and shapes outside
+ * that set must report `unsupported`. A supported-shape disagreement fails this test —
  * the suite's assertions derive from cited standards clauses, so a failure is
  * a conformance finding, not a flake.
  *
@@ -27,16 +27,23 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect } from 'vitest';
-import { SUPPORTED_CONFORMANCE_OPERATIONS } from '../cli/conformance-adapter.js';
+import {
+  classifyConformanceSupport,
+  type ConformanceSupportDecision,
+  type OperationDescriptor,
+} from '../cli/conformance-adapter.js';
+import { buildDocxFromBodyXml, paragraphWithText } from '../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
 // Named const (not an inline literal) so `scripts/validate_allure_test_labels.mjs`
 // can map the `.openspec([XIMPL-*])` tags deterministically to a feature.
 const TEST_FEATURE = 'Cross-Implementation Conformance Suite';
-const test = testAllure
-  .epic('Document Comparison')
-  .withLabels({ feature: TEST_FEATURE })
-  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5' });
+const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_FEATURE });
+const liveSuiteTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '11.3.3' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.15.3.4' },
+);
 
 const INTEGRATION_DIR = dirname(import.meta.url.replace('file://', ''));
 const PROJECT_ROOT = join(INTEGRATION_DIR, '../../../..');
@@ -82,28 +89,16 @@ interface SuiteResults {
 
 interface ScenarioManifest {
   scenarioId: string;
-  operationDescriptor: { operationName: string };
+  inputDocumentPath: string;
+  operationDescriptor: OperationDescriptor;
 }
 
-const PRIOR_REQUIRED_SCENARIO_IDS = new Set([
-  'acceptDeletedParagraphMarkMergesParagraphs',
-  'acceptDeletionsRemovesDelContent',
-  'acceptFormattingChangeKeepsNewRunProperties',
-  'acceptInsertionsUnwrapsInsWrappers',
-  'acceptNestedDeletionInsideInsertion',
-  'rejectDeletionsRestoresDelContent',
-  'rejectFormattingChangeRestoresPriorRunProperties',
-  'rejectInsertedParagraphMarkMergesParagraphs',
-  'rejectInsertionsRemovesInsContent',
-  'rejectNestedDeletionInsideInsertion',
-  'replaceFirstOccurrencePreservesOffsets',
-  'replaceTextAcrossRunBoundary',
-]);
 const COMPATIBILITY_MODE_SCENARIO_ID = 'composeCompatibilityMode15WritesCompatSetting';
-const EXPECTED_UNSUPPORTED_SCENARIO_IDS = new Set([
-  'acceptDeletedTableRowRemovesEntireRow',
-  'rejectInsertedTableRowRemovesEntireRow',
-]);
+
+interface ScenarioDefinition {
+  operation: OperationDescriptor;
+  inputPath: string;
+}
 
 function scenarioManifestPaths(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -113,12 +108,34 @@ function scenarioManifestPaths(directory: string): string[] {
   });
 }
 
-function loadScenarioOperations(suiteDir: string): Map<string, string> {
+function loadScenarioDefinitions(suiteDir: string): Map<string, ScenarioDefinition> {
   return new Map(
     scenarioManifestPaths(join(suiteDir, 'scenarios')).map((path) => {
       const manifest = JSON.parse(readFileSync(path, 'utf8')) as ScenarioManifest;
-      return [manifest.scenarioId, manifest.operationDescriptor.operationName];
+      return [
+        manifest.scenarioId,
+        {
+          operation: manifest.operationDescriptor,
+          inputPath: join(dirname(path), manifest.inputDocumentPath),
+        },
+      ];
     }),
+  );
+}
+
+async function classifyScenarioDefinitions(
+  definitions: Map<string, ScenarioDefinition>,
+): Promise<Map<string, ConformanceSupportDecision>> {
+  return new Map(
+    await Promise.all(
+      [...definitions].map(async ([scenarioId, definition]) => [
+        scenarioId,
+        await classifyConformanceSupport(
+          definition.operation,
+          readFileSync(definition.inputPath),
+        ),
+      ] as const),
+    ),
   );
 }
 
@@ -145,8 +162,8 @@ function warnOnPinMismatch(): void {
 }
 
 describeMaybe('Cross-implementation conformance suite self-check', () => {
-  // coverage-rationale: one real runner invocation jointly proves checkout, prior adapter, compatibility-mode, and honest-outcome policy.
-  test
+  // coverage-rationale: one real runner invocation jointly proves checkout, revision behavior, compatibility mode, and honest outcome policy.
+  liveSuiteTest
     .openspec('[XIMPL-01] Suite checkout present and safe-docx agrees')
     .openspec('[XIMPL-04] acceptAllTrackedChanges round-trip through the adapter')
     .openspec('[XIMPL-07] Compatibility mode generation validates and declines honestly')
@@ -158,11 +175,13 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
         const registryPath = join(workDir, 'adapters.json');
         const resultsPath = join(workDir, 'results.json');
         let results: SuiteResults = { results: [] };
-        let scenarioOperations = new Map<string, string>();
+        let scenarioDefinitions = new Map<string, ScenarioDefinition>();
+        let supportDecisions = new Map<string, ConformanceSupportDecision>();
 
         await given('a temp registry pointing the suite runner at the safe-docx adapter', async () => {
           warnOnPinMismatch();
-          scenarioOperations = loadScenarioOperations(SUITE_DIR);
+          scenarioDefinitions = loadScenarioDefinitions(SUITE_DIR);
+          supportDecisions = await classifyScenarioDefinitions(scenarioDefinitions);
           writeFileSync(
             registryPath,
             JSON.stringify({
@@ -187,18 +206,14 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
 
         await then('supported scenarios pass and unsupported operations remain explicit', async () => {
           expect(results.results.length).toBeGreaterThan(0);
-          expect(results.results).toHaveLength(scenarioOperations.size);
+          expect(results.results).toHaveLength(scenarioDefinitions.size);
           const mismatches = results.results
             .map((scenario) => {
-              const operationName = scenarioOperations.get(scenario.scenarioId);
+              const definition = scenarioDefinitions.get(scenario.scenarioId);
+              const support = supportDecisions.get(scenario.scenarioId);
               const outcome = scenario.outcomes['safe-docx'];
-              const expectedStatus =
-                operationName &&
-                SUPPORTED_CONFORMANCE_OPERATIONS.has(operationName) &&
-                !EXPECTED_UNSUPPORTED_SCENARIO_IDS.has(scenario.scenarioId)
-                  ? 'pass'
-                  : 'unsupported';
-              return { scenario, operationName, outcome, expectedStatus };
+              const expectedStatus = support?.supported ? 'pass' : 'unsupported';
+              return { scenario, operationName: definition?.operation.operationName, outcome, expectedStatus };
             })
             .filter(({ outcome, expectedStatus }) => outcome?.status !== expectedStatus);
           const detail = mismatches
@@ -216,19 +231,59 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
           expect(mismatches.length, detail).toBe(0);
         });
 
-        await then('all prior required scenarios and compatibility mode 15 explicitly pass', async () => {
+        await then('the compatibility mode 15 scenario explicitly passes', async () => {
           const outcomes = new Map(
             results.results.map((scenario) => [scenario.scenarioId, scenario.outcomes['safe-docx']]),
           );
-          const required = [...PRIOR_REQUIRED_SCENARIO_IDS, COMPATIBILITY_MODE_SCENARIO_ID];
-          const failures = required.filter((scenarioId) => outcomes.get(scenarioId)?.status !== 'pass');
-          expect(failures, `required scenarios did not pass: ${failures.join(', ')}`).toEqual([]);
+          expect(outcomes.get(COMPATIBILITY_MODE_SCENARIO_ID)?.status).toBe('pass');
         });
       } finally {
         rmSync(workDir, { recursive: true, force: true });
       }
     },
     180_000,
+  );
+});
+
+describe('Conformance adapter support classification', () => {
+  test.openspec('[XIMPL-08] Supported and unsupported suite outcomes remain honest')(
+    'renamed-equivalent table-row shapes stay unsupported while ordinary revisions stay supported',
+    async ({ given, then }: AllureBddContext) => {
+      let deletedRow!: Buffer;
+      let insertedRow!: Buffer;
+      let ordinary!: Buffer;
+
+      await given('input packages classified only by their OOXML shape', async () => {
+        const row = (marker: 'del' | 'ins') =>
+          `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1440"/></w:tblGrid>` +
+          `<w:tr><w:trPr><w:${marker} w:id="7" w:author="Reviewer"/></w:trPr>` +
+          `<w:tc><w:tcPr/><w:p><w:r><w:t>Renamed equivalent</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`;
+        deletedRow = await buildDocxFromBodyXml(row('del'));
+        insertedRow = await buildDocxFromBodyXml(row('ins'));
+        ordinary = await buildDocxFromBodyXml(paragraphWithText('Ordinary revision input'));
+      });
+
+      await then('support follows operation plus row-property markers, never a scenario ID', async () => {
+        await expect(
+          classifyConformanceSupport({ operationName: 'acceptAllTrackedChanges' }, deletedRow),
+        ).resolves.toMatchObject({ supported: false });
+        await expect(
+          classifyConformanceSupport({ operationName: 'rejectAllTrackedChanges' }, insertedRow),
+        ).resolves.toMatchObject({ supported: false });
+        await expect(
+          classifyConformanceSupport({ operationName: 'acceptAllTrackedChanges' }, ordinary),
+        ).resolves.toEqual({ supported: true });
+        await expect(
+          classifyConformanceSupport({ operationName: 'rejectAllTrackedChanges' }, ordinary),
+        ).resolves.toEqual({ supported: true });
+        await expect(
+          classifyConformanceSupport({ operationName: 'rejectAllTrackedChanges' }, deletedRow),
+        ).resolves.toEqual({ supported: true });
+        await expect(
+          classifyConformanceSupport({ operationName: 'acceptAllTrackedChanges' }, insertedRow),
+        ).resolves.toEqual({ supported: true });
+      });
+    },
   );
 });
 

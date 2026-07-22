@@ -36,10 +36,19 @@ export function emitSettingsPart(spec: DocumentSpec, ctx: CompileContext): void 
 
   ctx.registerPart('word/settings.xml', SETTINGS_CONTENT_TYPE, SETTINGS_REL_TYPE);
   const doc = parseXml(`<w:settings xmlns:w="${OOXML.W_NS}"/>`);
-  // CT_Settings sequence: evenAndOddHeaders and clrSchemeMapping precede compat.
+  // CT_Settings sequence: evenAndOddHeaders precedes compat, which precedes clrSchemeMapping.
   if (needsEvenOdd) {
     doc.documentElement!.appendChild(createWmlElement(doc, W.evenAndOddHeaders));
   }
+  const compat = createWmlElement(doc, W.compat);
+  compat.appendChild(
+    createWmlElement(doc, W.compatSetting, {
+      'w:name': 'compatibilityMode',
+      'w:uri': COMPAT_SETTING_URI,
+      'w:val': COMPATIBILITY_MODE_15,
+    }),
+  );
+  doc.documentElement!.appendChild(compat);
   if (needsColorSchemeMapping) {
     doc.documentElement!.appendChild(
       createWmlElement(doc, W.clrSchemeMapping, {
@@ -58,15 +67,6 @@ export function emitSettingsPart(spec: DocumentSpec, ctx: CompileContext): void 
       }),
     );
   }
-  const compat = createWmlElement(doc, W.compat);
-  compat.appendChild(
-    createWmlElement(doc, W.compatSetting, {
-      'w:name': 'compatibilityMode',
-      'w:uri': COMPAT_SETTING_URI,
-      'w:val': COMPATIBILITY_MODE_15,
-    }),
-  );
-  doc.documentElement!.appendChild(compat);
   ctx.setFileContent('word/settings.xml', XML_DECL + serializeXml(doc));
 }
 

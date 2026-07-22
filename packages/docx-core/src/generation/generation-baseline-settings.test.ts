@@ -14,6 +14,7 @@
 
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
+import { childElements } from '../primitives/dom-helpers.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';
@@ -50,6 +51,14 @@ function evenHeaderSpec(): DocumentSpec {
         headers: { even: { blocks: [{ kind: 'paragraph', runs: [{ kind: 'text', text: 'Even header' }] }] } },
       },
     ],
+  };
+}
+
+/** A custom-theme spec that forces every currently authored settings child. */
+function themedEvenHeaderSpec(): DocumentSpec {
+  return {
+    ...evenHeaderSpec(),
+    theme: { colors: { accent1: '117086' } },
   };
 }
 
@@ -130,6 +139,25 @@ describe('Baseline settings part', () => {
           (el) => el.getAttribute('w:name') === 'compatibilityMode',
         );
         expect(compatMode!.getAttribute('w:val')).toBe('15');
+      });
+    },
+  );
+
+  test.openspec('[SDX-GEN-094] the baseline settings part is emitted with compatibilityMode=15')(
+    'Scenario: custom-theme settings follow the CT_Settings child sequence',
+    async ({ given, then }: AllureBddContext) => {
+      let settings!: Document;
+      await given('a custom-theme package with an even-page header', async () => {
+        const buffer = await generateDocx(themedEvenHeaderSpec());
+        settings = parseXml((await readZipText(buffer, 'word/settings.xml'))!);
+      });
+
+      await then('the direct settings children are evenAndOddHeaders, compat, then clrSchemeMapping', async () => {
+        expect(childElements(settings.documentElement!).map((child) => child.localName)).toEqual([
+          'evenAndOddHeaders',
+          'compat',
+          'clrSchemeMapping',
+        ]);
       });
     },
   );

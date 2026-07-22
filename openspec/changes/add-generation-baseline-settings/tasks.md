@@ -9,7 +9,8 @@
 - [x] 2.2 Generalize `emitSettingsPartIfNeeded` → `emitSettingsPart` in
       `emit/settings-part.ts`: always emit `word/settings.xml`, always append a
       `w:compat` → `compatibilityMode=15` compatSetting, fold the existing
-      `evenAndOddHeaders` / `clrSchemeMapping` logic in (still conditional).
+      `evenAndOddHeaders` / `clrSchemeMapping` logic in (still conditional),
+      and preserve their `CT_Settings` order around `w:compat`.
 - [x] 2.3 Update the call site in `compile.ts`.
 - [x] 2.4 Add ECMA-376 Part 1 §§11.3.3 and 17.15.3.4 traceability while
       attributing mode-15 semantics separately to MS-DOCX §2.3.5.
@@ -24,6 +25,8 @@
       content-type Override and a resolving relationship, contains the
       `compatibilityMode=15` compatSetting, is registered exactly once, and that
       even/odd headers still emit alongside the compat block.
+- [x] 3.4 Force both conditional settings with an independent custom-theme test
+      and assert the exact direct-child sequence around `w:compat`.
 - [x] 3.3 Label the settings behavior with structured ECMA-376 conformance
       metadata in the Allure test factory.
 
@@ -35,9 +38,10 @@
 - [x] 4.2 Pin the suite to merged DPT commit
       `19f051ed645cbc8613a5967e02d7f87ef7824454` and require supported-operation
       scenarios plus `composeCompatibilityMode15WritesCompatSetting` to pass.
-- [x] 4.3 Preserve prior required scenario IDs and require unsupported
-      operations and table-row revision shapes to remain explicit
-      `unsupported` outcomes.
+- [x] 4.3 Derive support dynamically from operation descriptors and input
+      package shape; require unsupported operations and table-row revision
+      shapes to remain explicit `unsupported` outcomes without scenario-ID
+      whitelists.
 
 ## 5. Capability projection
 
@@ -64,3 +68,14 @@
       `npm run check:spec-coverage`, `npm run check:conformance-citations`,
       `npm run check:conformance-doc`, and `npm run check:capability-projection`
       (incl. `check:spec-coverage-generation` for this feature) pass.
+
+## 8. Reviewer reconciliation
+
+- [x] 8.1 Correct conditional settings to the vendored `CT_Settings` child
+      sequence and add direct-child-order coverage using a custom theme.
+- [x] 8.2 Replace scenario-ID support lists with operation/input-shape
+      classification and cover equivalent renamed row shapes.
+- [x] 8.3 Restrict external conformance labels to the live assertions that
+      inspect revision and compatibility output.
+- [x] 8.4 Regenerate fixtures twice and rerun the exact pinned DPT suite,
+      structural/schema checks, and repository pre-submit gates.

@@ -27,12 +27,17 @@ export const SUPPORTED_CONFORMANCE_OPERATIONS: ReadonlySet<string> = new Set([
   'replaceFirstTextOccurrence',
 ]);
 
-interface OperationDescriptor {
+export interface OperationDescriptor {
   operationName: string;
   bodyText?: unknown;
   compatibilityMode?: unknown;
   findText?: string;
   replaceText?: string;
+}
+
+export interface ConformanceSupportDecision {
+  supported: boolean;
+  reason?: string;
 }
 
 function argValue(argv: string[], flag: string): string | undefined {
@@ -57,6 +62,49 @@ async function hasTableRowRevision(buffer: Buffer, markerName: 'del' | 'ins'): P
   );
 }
 
+/** Classifies adapter support from the requested operation and input package shape. */
+export async function classifyConformanceSupport(
+  operation: OperationDescriptor,
+  input?: Buffer,
+): Promise<ConformanceSupportDecision> {
+  if (!SUPPORTED_CONFORMANCE_OPERATIONS.has(operation.operationName)) {
+    return {
+      supported: false,
+      reason: `safe-docx adapter does not implement operation '${operation.operationName}'`,
+    };
+  }
+  if (operation.operationName === 'composeDocumentWithCompatibilityMode') {
+    return operation.compatibilityMode === 15
+      ? { supported: true }
+      : {
+          supported: false,
+          reason: `safe-docx adapter only implements compatibilityMode 15, got ${String(operation.compatibilityMode)}`,
+        };
+  }
+  if (!input) {
+    throw new Error(`operation '${operation.operationName}' requires an input package for support classification`);
+  }
+  if (
+    operation.operationName === 'acceptAllTrackedChanges' &&
+    await hasTableRowRevision(input, 'del')
+  ) {
+    return {
+      supported: false,
+      reason: 'safe-docx adapter does not implement accepting deleted table-row revisions',
+    };
+  }
+  if (
+    operation.operationName === 'rejectAllTrackedChanges' &&
+    await hasTableRowRevision(input, 'ins')
+  ) {
+    return {
+      supported: false,
+      reason: 'safe-docx adapter does not implement rejecting inserted table-row revisions',
+    };
+  }
+  return { supported: true };
+}
+
 export async function runConformanceAdapter(argv: string[]): Promise<number> {
   const protocolVersion = argValue(argv, '--protocol-version');
   const operationPath = argValue(argv, '--operation');
@@ -79,10 +127,10 @@ export async function runConformanceAdapter(argv: string[]): Promise<number> {
     console.error('operation descriptor requires a string operationName');
     return 1;
   }
-  // Decline before touching the input: unsupported must not depend on the
-  // document being readable.
+  // Unknown operations are classified without touching the input package.
   if (!SUPPORTED_CONFORMANCE_OPERATIONS.has(operation.operationName)) {
-    console.log(`safe-docx adapter does not implement operation '${operation.operationName}'`);
+    const operationDecision = await classifyConformanceSupport(operation);
+    console.log(operationDecision.reason);
     return 2;
   }
 
@@ -96,10 +144,9 @@ export async function runConformanceAdapter(argv: string[]): Promise<number> {
       console.error('composeDocumentWithCompatibilityMode requires a string bodyText');
       return 1;
     }
-    if (compatibilityMode !== 15) {
-      console.log(
-        `safe-docx adapter only implements compatibilityMode 15, got ${compatibilityMode}`,
-      );
+    const operationDecision = await classifyConformanceSupport(operation);
+    if (!operationDecision.supported) {
+      console.log(operationDecision.reason);
       return 2;
     }
 
@@ -115,18 +162,9 @@ export async function runConformanceAdapter(argv: string[]): Promise<number> {
   }
 
   const input = readFileSync(inputPath);
-  if (
-    operation.operationName === 'acceptAllTrackedChanges' &&
-    await hasTableRowRevision(input, 'del')
-  ) {
-    console.log('safe-docx adapter does not implement accepting deleted table-row revisions');
-    return 2;
-  }
-  if (
-    operation.operationName === 'rejectAllTrackedChanges' &&
-    await hasTableRowRevision(input, 'ins')
-  ) {
-    console.log('safe-docx adapter does not implement rejecting inserted table-row revisions');
+  const documentDecision = await classifyConformanceSupport(operation, input);
+  if (!documentDecision.supported) {
+    console.log(documentDecision.reason);
     return 2;
   }
 

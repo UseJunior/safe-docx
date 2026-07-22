@@ -26,6 +26,6 @@ measured pinned neutral result.
 - **WHEN** every neutral scenario runs through the SafeDocX adapter
 - **THEN** every scenario within the adapter's supported operation and document shape set SHALL pass
 - **AND** every scenario using any other operation or a known unsupported table-row revision shape SHALL report `unsupported`
-- **AND** every scenario required by the prior pin SHALL remain required to pass
+- **AND** support SHALL be derived from the operation descriptor and input package shape rather than scenario identifiers
 - **AND** `composeCompatibilityMode15WritesCompatSetting` SHALL explicitly pass
 - **AND** the compatibility-mode projection rows SHALL remain `untested` while that scenario is unmeasured in the pinned neutral summary

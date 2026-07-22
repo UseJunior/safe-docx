@@ -13,7 +13,8 @@ document in the current format rather than legacy "Compatibility Mode".
 Conditional settings — `w:evenAndOddHeaders` when a section declares an
 even-page header or footer, and `w:clrSchemeMapping` when theme-relative
 authoring or a custom theme is used — SHALL be folded into the same part when
-needed, ordered before the `w:compat` block. The part SHALL be static so the
+needed, in the `CT_Settings` sequence: `w:evenAndOddHeaders`, then `w:compat`,
+then `w:clrSchemeMapping`. The part SHALL be static so the
 determinism guarantee continues to hold, and SHALL be registered exactly once
 even though it is now emitted unconditionally.
 
@@ -25,3 +26,4 @@ even though it is now emitted unconditionally.
 - **AND** `word/settings.xml` SHALL contain a `w:compat` element holding a `w:compatSetting` with `w:name="compatibilityMode"`, `w:uri="http://schemas.microsoft.com/office/word"`, and `w:val="15"`
 - **AND** the package SHALL pass the structural checks (closed relationship graph) and compile byte-identically across two runs
 - **AND** when a section declares an even-page header the settings part SHALL still emit `w:evenAndOddHeaders` alongside the compat block
+- **AND** when conditional settings are present, direct children SHALL follow the `CT_Settings` order with `w:evenAndOddHeaders` before `w:compat` and `w:clrSchemeMapping` after `w:compat`

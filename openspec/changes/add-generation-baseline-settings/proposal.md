@@ -21,7 +21,8 @@ documented follow-up to the ancillary-parts work.
   compiler's determinism guarantee.
 - Generalize `emitSettingsPartIfNeeded` → `emitSettingsPart`: the
   `evenAndOddHeaders` and `clrSchemeMapping` logic is folded in (still
-  conditional) and the compat block is always present. The part is registered
+  conditional) around the always-present compat block in `CT_Settings` order:
+  `evenAndOddHeaders`, `compat`, then `clrSchemeMapping`. The part is registered
   through the existing idempotent part registry, so always-emitting does not
   double-register the content-type Override or relationship.
 - Add a `Baseline settings part` requirement to `docx-generation` with scenario
