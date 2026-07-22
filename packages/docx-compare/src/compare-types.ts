@@ -257,6 +257,12 @@ export interface DocumentIntegrityStoryCertificate {
     acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     comparedStoryHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+    /**
+     * Additive v1 field. When present, decimal range IDs are schema-valid and
+     * canonicalized for endpoint pairing; source/destination names pair once.
+     * Absence means the producer did not evaluate this check.
+     */
+    trackedMoveRangesAreCorrectlyPaired?: DocumentIntegrityCheckCertificate;
   };
   parsedTokenCounts: { original: number; revised: number; compared: number };
   presence: { original: boolean; revised: boolean; compared: boolean };
@@ -286,11 +292,16 @@ export interface DocumentIntegrityCertificate {
     acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
     comparedDocumentHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+    /**
+     * Additive v1 field with the same scope as the story check. It does not
+     * associate individual move-wrapper revision IDs with a range.
+     */
+    trackedMoveRangesAreCorrectlyPaired?: DocumentIntegrityCheckCertificate;
   };
   /** Stable v1 main-story token counts. */
   parsedTokenCounts?: { original: number; revised: number; compared: number };
   /** Internal executable protocol used for package-level verification. */
-  checkerProtocolVersion?: 2;
+  checkerProtocolVersion?: 3;
   fixedStoryScope?: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
   inputPackageSha256?: { originalDocx: string; revisedDocx: string; comparedDocx: string };
   stories?: DocumentIntegrityStoryCertificate[];

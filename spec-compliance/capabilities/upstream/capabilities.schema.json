@@ -40,6 +40,16 @@
         "section": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+)*$" }
       }
     },
+    "microsoftExtensionCitation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["standard", "section", "clauseTitle"],
+      "properties": {
+        "standard": { "const": "MS-DOCX" },
+        "section": { "type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+)*$" },
+        "clauseTitle": { "type": "string", "minLength": 1 }
+      }
+    },
     "capability": {
       "type": "object",
       "additionalProperties": false,
@@ -65,7 +75,7 @@
         },
         "microsoftExtensions": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": { "$ref": "#/$defs/microsoftExtensionCitation" },
           "default": []
         },
         "dependencies": {

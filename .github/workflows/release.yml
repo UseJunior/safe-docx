@@ -148,6 +148,18 @@ jobs:
             echo "::warning::Resuming a partial release: $published/$total packages already published at $VERSION."
           fi
 
+      # Schema-backed workspace tests shell out to xmllint against the vendored
+      # ECMA-376 XSDs, so it must exist before tests run. ci.yml already does
+      # this ("Install XML schema validator"); release.yml did not, so those
+      # tests failed here with spawnSync status null while passing in CI — a
+      # preflight-only failure that blocks EVERY release. Keep the two in step.
+      - name: Install XML schema validator
+        run: |
+          if ! command -v xmllint >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends libxml2-utils
+          fi
+
       - name: Test workspaces
         run: npm run test
 

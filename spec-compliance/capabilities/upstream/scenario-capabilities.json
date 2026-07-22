@@ -99,6 +99,12 @@
       "oracleClasses": ["normative-prose"]
     },
     {
+      "scenarioId": "composeCompatibilityMode15WritesCompatSetting",
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "generate",
+      "oracleClasses": ["normative-prose", "normative-microsoft-extension", "metamorphic-invariant"]
+    },
+    {
       "scenarioId": "directFormattingDoesNotBakeIntoStyleDefinition",
       "capabilityId": "word.runs.formatting",
       "axis": "edit",
