@@ -323,6 +323,8 @@ export function insertMoveFromRun(
   const rangeEnd = createEl('w:moveFromRangeEnd', {
     'w:id': String(ids.sourceRangeId),
   });
+  state.generatedMoveRangeMarkers.add(rangeStart);
+  state.generatedMoveRangeMarkers.add(rangeEnd);
 
   // Add cloned run(s) as children of moveFrom
   for (const clonedRun of clonedRuns) {

@@ -6,6 +6,7 @@ import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { buildSyntheticDocx } from '@usejunior/docx-core';
 import { compareDocuments } from '../../index.js';
+import type { DocumentIntegrityCertificate } from '../../compare-types.js';
 import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
   acceptAllChanges,
@@ -60,7 +61,7 @@ describeWithLean('Lean XML triple verifier certificate', () => {
         expect(result.documentIntegrity?.status).toBe('passed');
         expect(result.documentIntegrity?.protocolVersion).toBe(1);
         expect(result.documentIntegrity?.scope).toBe('word/document.xml');
-        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(2);
+        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(3);
         expect(result.documentIntegrity?.fixedStoryScope).toEqual([
           'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
         ]);
@@ -171,6 +172,25 @@ const endnotes = (userBody: string) =>
   `<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>` +
   `<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>` +
   `<w:endnote w:id="1"><w:p>${userBody}</w:p></w:endnote></w:endnotes>`;
+
+const originalMoveBody =
+  paragraphWithText('Moved text') +
+  paragraphWithText('Anchor text');
+const revisedMoveBody =
+  paragraphWithText('Anchor text') +
+  paragraphWithText('Moved text');
+const validMoveBody =
+  '<w:p>' +
+  '<w:moveFromRangeStart w:id="10" w:name="move1" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+  '<w:moveFrom w:id="11" w:author="Comparison"><w:r><w:delText>Moved text</w:delText></w:r></w:moveFrom>' +
+  '<w:moveFromRangeEnd w:id="10"/>' +
+  '</w:p>' +
+  paragraphWithText('Anchor text') +
+  '<w:p>' +
+  '<w:moveToRangeStart w:id="12" w:name="move1" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+  '<w:moveTo w:id="13" w:author="Comparison"><w:r><w:t>Moved text</w:t></w:r></w:moveTo>' +
+  '<w:moveToRangeEnd w:id="12"/>' +
+  '</w:p>';
 
 describeWithLean('Lean fixed-story package protocol', () => {
   const run = (originalDocx: Buffer, revisedDocx: Buffer, comparedDocx: Buffer) =>
@@ -309,6 +329,102 @@ describeWithLean('Lean fixed-story package protocol', () => {
     expect((await run(malformed, malformed, malformed)).status).toBe('not_run');
   });
 
+  test('rejects illegal literal characters, invalid QNames, and content outside the root', async () => {
+    const base = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const xml = await readPart(base, 'word/document.xml');
+    const malformedInputs = {
+      controlInText: xml.replace('Body', 'B\u0001ody'),
+      controlInAttribute: xml.replace('xmlns:w=', '_bad="\u000B" xmlns:w='),
+      noncharacterFffe: xml.replace('Body', 'B\uFFFEody'),
+      noncharacterFfff: xml.replace('Body', 'B\uFFFFody'),
+      multipleElementColons: xml.replace('<w:p>', '<w:x:p>'),
+      emptyElementPrefix: xml.replace('<w:p>', '<:p>'),
+      emptyElementLocalName: xml.replace('<w:p>', '<w:>'),
+      invalidElementStart: xml.replace('<w:p>', '<w:1p>'),
+      multipleAttributeColons: xml.replace('xmlns:w=', 'xmlns:w:x='),
+      emptyAttributePrefix: xml.replace('xmlns:w=', ':bad="x" xmlns:w='),
+      emptyAttributeLocalName: xml.replace('xmlns:w=', 'w:="x" xmlns:w='),
+      invalidAttributeStart: xml.replace('xmlns:w=', '1bad="x" xmlns:w='),
+      reboundXmlPrefix: xml.replace('xmlns:w=', 'xmlns:xml="urn:not-xml" xmlns:w='),
+      reboundXmlnsPrefix: xml.replace('xmlns:w=', 'xmlns:xmlns="urn:not-xmlns" xmlns:w='),
+      aliasedXmlNamespace: xml.replace(
+        'xmlns:w=',
+        `xmlns:x="http://www.w3.org/XML/1998/namespace" xmlns:w=`,
+      ),
+      duplicateForeignExpandedName: xml.replace(
+        'xmlns:w=',
+        'xmlns:a="urn:duplicate" xmlns:b="urn:duplicate" a:value="1" b:value="2" xmlns:w=',
+      ),
+      duplicateNamespacePrefix: xml.replace(
+        'xmlns:w=',
+        'xmlns:a="urn:first" xmlns:a="urn:second" xmlns:w=',
+      ),
+      normalizedNamespaceAliasCollision: xml.replace(
+        'xmlns:w=',
+        'xmlns:a="urn:normalized\tvalue" xmlns:b="urn:normalized value" ' +
+        'a:value="1" b:value="2" xmlns:w=',
+      ),
+      invalidClosingQName: xml.replace('</w:p>', '</w:x:p>'),
+      contentBeforeRoot: `garbage${xml}`,
+      contentAfterRoot: `${xml}garbage`,
+      contentAfterDeclaration: xml.replace('?>', '?>garbage'),
+      secondRoot: `${xml}<w:document xmlns:w="${W_NS}"/>`,
+      leadingWhitespaceBeforeDeclaration: ` \n${xml}`,
+      unsupportedComment: xml.replace('?>', '?><!-- comment -->'),
+      unsupportedProcessingInstruction: xml.replace('?>', '?><?work value?>'),
+      unsupportedDoctype: xml.replace('?>', '?><!DOCTYPE w:document>'),
+      unsupportedCdata: xml.replace('<w:body>', '<w:body><![CDATA[text]]>'),
+      malformedDeclaration: xml.replace('version="1.0"', 'version="1.1"'),
+      incompatibleEncoding: xml.replace('encoding="UTF-8"', 'encoding="UTF-16"'),
+      incompatibleUtf8Alias: xml.replace('encoding="UTF-8"', 'encoding="UTF8"'),
+      unknownReferenceInForeignText: xml.replace(
+        '<w:body>',
+        '<w:body><x:foreign xmlns:x="urn:foreign">bad&unknown;</x:foreign>',
+      ),
+      malformedReferenceInForeignText: xml.replace(
+        '<w:body>',
+        '<w:body><x:foreign xmlns:x="urn:foreign">bad&#xZZ;</x:foreign>',
+      ),
+    } as const;
+
+    for (const [mutation, malformedXml] of Object.entries(malformedInputs)) {
+      const malformedDocx = await replacePart(base, 'word/document.xml', malformedXml);
+      expect((await run(malformedDocx, malformedDocx, malformedDocx)).status, mutation).toBe('not_run');
+    }
+  });
+
+  test('accepts legal XML character, QName, declaration, and root-whitespace boundaries', async () => {
+    const legalText = `legal\t\n\r \u00B7\uD7FF\uE000\uFFFD\u{10000}`;
+    const base = await buildDocxFromBodyXml(
+      `<w:p>` +
+      `<w:_extension xmlns="urn:default" xmlns:a="urn:default" xmlns:b="urn:other" ` +
+      `_meta="${legalText}" local="none" a:local="default" b:local="other"/>` +
+      `<x:foreign xmlns:x="urn:foreign">legal&amp;&#x20;&#128512;</x:foreign>` +
+      `<w:r><w:t>${legalText}</w:t></w:r></w:p>`,
+    );
+    const xml = await readPart(base, 'word/document.xml');
+    const legalInputs = {
+      emittedDeclaration: xml,
+      minimalDeclaration: xml.replace(/^<\?xml[^?]*\?>/, "<?xml version='1.0'?>"),
+      standaloneDeclaration: xml.replace(
+        /^<\?xml[^?]*\?>/,
+        '<?xml version="1.0" standalone="no"?>',
+      ),
+      mixedCaseUtf8Encoding: xml.replace('encoding="UTF-8"', 'encoding="uTf-8"'),
+      leadingUtf8Bom: `\uFEFF${xml}`,
+      referencedWmlNamespace: xml.replace(
+        W_NS,
+        W_NS.replace('wordprocessingml', 'word&#112;rocessingml'),
+      ),
+      noDeclarationWithWhitespace: ` \t\n${xml.replace(/^<\?xml[^?]*\?>/, '')}\r\n`,
+    } as const;
+
+    for (const [control, legalXml] of Object.entries(legalInputs)) {
+      const legalDocx = await replacePart(base, 'word/document.xml', legalXml);
+      expect((await run(legalDocx, legalDocx, legalDocx)).status, control).toBe('passed');
+    }
+  });
+
   test('rejects balanced malformed end-before-begin and repeated-separate fields per story', async () => {
     const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
     const endThenBegin =
@@ -357,10 +473,180 @@ describeWithLean('Lean fixed-story package protocol', () => {
     );
     expect((await run(original, revised, combined)).status).toBe('passed');
   });
+
+  test.openspec('[LEAN-MOVE-RANGE-01] Compiled checker certifies structurally valid move ranges')(
+    'certifies unique, balanced, non-crossing move ranges with matching source and destination identities', async () => {
+      const original = await buildDocxFromBodyXml(originalMoveBody);
+      const revised = await buildDocxFromBodyXml(revisedMoveBody);
+      const combined = await buildDocxFromBodyXml(validMoveBody);
+
+      const certificate = await run(original, revised, combined);
+      expect(certificate.status).toBe('passed');
+      expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired).toEqual({
+        status: 'passed',
+        claim: 'Tracked move range markers are structurally paired by range ID and move name.',
+      });
+      expect(certificate.stories?.[0]?.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('passed');
+      expect(certificate.exclusions).toContain(
+        'association of individual moveFrom or moveTo wrapper revision IDs with move ranges',
+      );
+    });
+
+  test('accepts quoted move names with spaces and entities plus canonical endpoint aliases', async () => {
+    const original = await buildDocxFromBodyXml(originalMoveBody);
+    const revised = await buildDocxFromBodyXml(revisedMoveBody);
+    const body = validMoveBody
+      .replaceAll('w:name="move1"', "w:name = 'move one &amp; two > three'")
+      .replace('w:id="10"/>', 'w:id=" 010 "/>')
+      .replace('w:id="12"/>', 'w:id="+12"/>');
+    const combined = await buildDocxFromBodyXml(body);
+
+    const certificate = await run(original, revised, combined);
+    expect(certificate.status).toBe('passed');
+    expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('passed');
+  });
+
+  test('pairs semantically equal move names across literal, entity, decimal, hex, and supplementary forms', async () => {
+    const original = await buildDocxFromBodyXml(originalMoveBody);
+    const revised = await buildDocxFromBodyXml(revisedMoveBody);
+    const equivalentNames = [
+      ['move one', 'move&#32;one'],
+      ['move\tone', 'move one'],
+      ['move\none', 'move one'],
+      ['move\rone', 'move one'],
+      ['move\r\none', 'move one'],
+      ['move&#9;one', 'move&#x9;one'],
+      ['move&#10;one', 'move&#xA;one'],
+      ['move&#13;one', 'move&#xD;one'],
+      ['move>one', 'move&gt;one'],
+      ['move&#32;one', 'move&#x20;one'],
+      ['move&amp;one', 'move&#38;one'],
+      ['move😀one', 'move&#x1F600;one'],
+      ['move&#128512;one', 'move&#x1F600;one'],
+    ] as const;
+
+    for (const [sourceName, destinationName] of equivalentNames) {
+      const body = validMoveBody
+        .replace('w:name="move1"', `w:name="${sourceName}"`)
+        .replace('w:name="move1"', `w:name="${destinationName}"`);
+      const combined = await buildDocxFromBodyXml(body);
+      const certificate = await run(original, revised, combined);
+      expect(certificate.status, `${sourceName} = ${destinationName}`).toBe('passed');
+      expect(
+        certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status,
+        `${sourceName} = ${destinationName}`,
+      ).toBe('passed');
+    }
+  });
+
+  test('distinguishes normalized literal attribute whitespace from referenced whitespace', async () => {
+    const original = await buildDocxFromBodyXml(originalMoveBody);
+    const revised = await buildDocxFromBodyXml(revisedMoveBody);
+    const distinctions = [
+      ['move\tone', 'move&#9;one'],
+      ['move\none', 'move&#10;one'],
+      ['move\rone', 'move&#13;one'],
+      ['move\r\none', 'move  one'],
+    ] as const;
+
+    for (const [sourceName, destinationName] of distinctions) {
+      const body = validMoveBody
+        .replace('w:name="move1"', `w:name="${sourceName}"`)
+        .replace('w:name="move1"', `w:name="${destinationName}"`);
+      const combined = await buildDocxFromBodyXml(body);
+      const certificate = await run(original, revised, combined);
+      expect(certificate.status, `${sourceName} != ${destinationName}`).toBe('failed');
+      expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status).toBe('failed');
+    }
+  });
+
+  test('fails closed on malformed or ambiguous XML attributes and character references', async () => {
+    const original = await buildDocxFromBodyXml(originalMoveBody);
+    const revised = await buildDocxFromBodyXml(revisedMoveBody);
+    const malformedInputs = {
+      adjacentAttributes: validMoveBody.replace('w:id="10" w:name=', 'w:id="10"w:name='),
+      duplicateId: validMoveBody.replace('w:id="10"', 'w:id="10" w:id="10"'),
+      duplicateName: validMoveBody.replace('w:name="move1"', 'w:name="move1" w:name="move1"'),
+      duplicateExpandedId: validMoveBody.replace(
+        '<w:moveFromRangeStart w:id="10"',
+        `<w:moveFromRangeStart xmlns:x="${W_NS}" w:id="10" x:id="10"`,
+      ),
+      missingEquals: validMoveBody.replace('w:id="10"', 'w:id "10"'),
+      unquotedValue: validMoveBody.replace('w:id="10"', 'w:id=10'),
+      literalLessThan: validMoveBody.replace('w:name="move1"', 'w:name="move<one"'),
+      emptyDecimalReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#;"'),
+      emptyHexReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#x;"'),
+      malformedDecimalReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#12x;"'),
+      malformedHexReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#xGG;"'),
+      unterminatedReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#32"'),
+      unknownEntity: validMoveBody.replace('w:name="move1"', 'w:name="move&unknown;"'),
+      nulReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#0;"'),
+      controlReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#1;"'),
+      surrogateReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#xD800;"'),
+      outOfRangeReference: validMoveBody.replace('w:name="move1"', 'w:name="move&#x110000;"'),
+    } as const;
+
+    for (const [mutation, body] of Object.entries(malformedInputs)) {
+      const combined = await buildDocxFromBodyXml(body);
+      expect((await run(original, revised, combined)).status, mutation).toBe('not_run');
+    }
+  });
+
+  test.openspec('[LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks')(
+    'mutation-checks duplicate, missing, crossed, mismatched, malformed, aliased, and empty identities', async () => {
+      const original = await buildDocxFromBodyXml(originalMoveBody);
+      const revised = await buildDocxFromBodyXml(revisedMoveBody);
+      const mutations = {
+        duplicate: validMoveBody.replace(
+          '<w:moveFromRangeStart w:id="10"',
+          '<w:moveFromRangeStart w:id="10" w:name="move1" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+          '<w:moveFromRangeStart w:id="10"',
+        ),
+        missing: validMoveBody.replace('<w:moveFromRangeEnd w:id="10"/>', ''),
+        crossed: validMoveBody.replace(
+          '<w:moveFromRangeStart w:id="10" w:name="move1"',
+          '<w:moveFromRangeStart w:id="20" w:name="move2" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+          '<w:moveFromRangeStart w:id="10" w:name="move1"',
+        ).replace(
+          '<w:moveFromRangeEnd w:id="10"/>',
+          '<w:moveFromRangeEnd w:id="20"/><w:moveFromRangeEnd w:id="10"/>' +
+          '<w:moveToRangeStart w:id="22" w:name="move2" w:author="Comparison" w:date="2026-07-21T00:00:00Z"/>' +
+          '<w:moveToRangeEnd w:id="22"/>',
+        ),
+        mismatched: validMoveBody.replace(
+          '<w:moveToRangeStart w:id="12" w:name="move1"',
+          '<w:moveToRangeStart w:id="12" w:name="move2"',
+        ),
+        malformedDecimal: validMoveBody.replaceAll('w:id="10"', 'w:id="abc"'),
+        numericAlias: validMoveBody
+          .replace(
+            '<w:moveFromRangeStart w:id="10"',
+            '<w:moveFromRangeStart w:id="010" w:name="move2"/>' +
+            '<w:moveFromRangeEnd w:id="010"/>' +
+            '<w:moveFromRangeStart w:id="10"',
+          )
+          .replace(
+            '<w:moveToRangeStart w:id="12"',
+            '<w:moveToRangeStart w:id="22" w:name="move2"/>' +
+            '<w:moveToRangeEnd w:id="22"/>' +
+            '<w:moveToRangeStart w:id="12"',
+          ),
+        emptyName: validMoveBody.replaceAll('w:name="move1"', 'w:name=""'),
+      } as const;
+
+      for (const [mutation, body] of Object.entries(mutations)) {
+        const combined = await buildDocxFromBodyXml(body);
+        const certificate = await run(original, revised, combined);
+        expect(certificate.status, `${mutation}: ${certificate.reason}`).toBe('failed');
+        expect(certificate.checks.trackedMoveRangesAreCorrectlyPaired?.status, mutation).toBe('failed');
+        expect(certificate.checks.acceptingAllTrackedChangesMatchesRevisedText.status, mutation).toBe('passed');
+        expect(certificate.checks.rejectingAllTrackedChangesMatchesOriginalText.status, mutation).toBe('passed');
+      }
+    });
 });
 
 const validProtocolReport = {
-  protocolVersion: 2,
+  protocolVersion: 3,
   checker: 'safe-docx-lean-fixed-story-checker',
   passed: true,
   stories: [{
@@ -375,6 +661,7 @@ const validProtocolReport = {
         acceptTextMatchesRevised: true,
         rejectTextMatchesOriginal: true,
         combinedHasNoFldCharInsideDel: true,
+        combinedHasValidMoveRanges: true,
       },
     },
   }],
@@ -426,16 +713,61 @@ describe('Lean fixed-story protocol and security hardening', () => {
       });
       expect(result.status).toBe('passed');
       expect(result.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
-      expect(result.checkerProtocolVersion).toBe(2);
+      expect(result.checkerProtocolVersion).toBe(3);
     } finally {
       await rm(fake.dir, { recursive: true, force: true });
     }
     });
 
+  test('keeps the additive v1 move-range check compatible with legacy producers and decoders', () => {
+    const unavailable = { status: 'not_evaluated', claim: 'Legacy producer did not evaluate this check.' } as const;
+    const legacyProducer: DocumentIntegrityCertificate = {
+      status: 'not_run',
+      reason: 'legacy producer fixture',
+      protocolVersion: 1,
+      verifier: 'Lean XML triple checker',
+      scope: 'word/document.xml',
+      reconstructionMode: 'inplace',
+      checks: {
+        acceptingAllTrackedChangesMatchesRevisedText: unavailable,
+        rejectingAllTrackedChangesMatchesOriginalText: unavailable,
+        acceptingAllTrackedChangesKeepsValidFieldStructure: unavailable,
+        rejectingAllTrackedChangesKeepsValidFieldStructure: unavailable,
+        comparedDocumentHasNoFieldMarkersInsideDeletions: unavailable,
+      },
+      inputSha256: {
+        originalDocumentXml: '0'.repeat(64),
+        revisedDocumentXml: '0'.repeat(64),
+        comparedDocumentXml: '0'.repeat(64),
+      },
+      exclusions: [],
+    };
+    expect(legacyProducer.checks.trackedMoveRangesAreCorrectlyPaired).toBeUndefined();
+
+    const decodeLegacyV1 = (value: DocumentIntegrityCertificate) => ({
+      protocolVersion: value.protocolVersion,
+      verifier: value.verifier,
+      scope: value.scope,
+      status: value.status,
+      acceptText: value.checks.acceptingAllTrackedChangesMatchesRevisedText,
+    });
+    expect(decodeLegacyV1({
+      ...legacyProducer,
+      checks: { ...legacyProducer.checks, trackedMoveRangesAreCorrectlyPaired: unavailable },
+    })).toEqual({
+      protocolVersion: 1,
+      verifier: 'Lean XML triple checker',
+      scope: 'word/document.xml',
+      status: 'not_run',
+      acceptText: unavailable,
+    });
+  });
+
   test.openspec('[LEAN-STORY-09] Inconsistent executable protocol is rejected')(
     'rejects duplicate, negative-count, inconsistent, and extra-field protocol reports', async () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
     const variants = [
+      { ...validProtocolReport, protocolVersion: 2 },
       { ...validProtocolReport, stories: [...validProtocolReport.stories, validProtocolReport.stories[0]] },
       { ...validProtocolReport, stories: [{
         ...validProtocolReport.stories[0],

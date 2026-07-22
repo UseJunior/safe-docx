@@ -41,10 +41,12 @@ export {
   formatToonCommentEndnoteLines,
   formatToonCommentLines,
   formatToonCommentsEndnotesBlock,
+  formatToonFootnotesEndnotesBlock,
   formatToonDataLine,
   renderToon,
   renderToonWithCommentEndnotes,
 } from './document_view-toon.js';
+export type { ToonFootnoteEndnote } from './document_view-toon.js';
 
 function getWAttr(el: Element, localName: string): string | null {
   return getAttributeSafe(el, OOXML.W_NS, localName, 'w');

@@ -60,6 +60,7 @@ import {
 } from './inPlaceModifier-presplit.js';
 import {
   coalesceDelInsPairChains,
+  coalesceMoveRangeMarkers,
   groupDeletionsBeforeInsertions,
   mergeAdjacentTrackChangeSiblings,
   mergeWhitespaceBridgedTrackChanges,
@@ -71,6 +72,8 @@ export interface InPlaceModifierOptions {
   author: string;
   /** Timestamp for track changes */
   date: Date;
+  /** Other input trees whose markup can be cloned into the inplace output. */
+  preservedRoots?: readonly Element[];
 }
 
 export function modifyRevisedDocument(
@@ -82,7 +85,7 @@ export function modifyRevisedDocument(
 ): string {
   const { author, date } = options;
   const dateStr = formatDate(date);
-  const state = createRevisionIdState();
+  const state = createRevisionIdState([revisedRoot, ...(options.preservedRoots ?? [])]);
 
   // In-place mode needs concrete AST node pointers for run/paragraph edits.
   // Populate these once up-front so handlers don't have to rescan ancestor chains.
@@ -124,6 +127,11 @@ export function modifyRevisedDocument(
   // Merge whitespace-bridged track change siblings (issue #42, Bug 2).
   // Runs AFTER coalesce — handles ins+ws+ins and moveTo+ws+moveTo bridging.
   mergeWhitespaceBridgedTrackChanges(ctx.body);
+
+  // Coalesce duplicate move-range markers to one Start/End pair per move group
+  // across the document (issue #446). The moveFrom clone path emits a range pair per
+  // fragmented source atom; Word (and the rebuild path) emit exactly one.
+  coalesceMoveRangeMarkers(ctx.body, state.generatedMoveRangeMarkers);
 
   // Apply strict post-render consumer compatibility pass
   enforceConsumerCompatibility(revisedRoot, () => allocateRevisionId(state));
@@ -999,6 +1007,7 @@ export {
 } from './inPlaceModifier-presplit.js';
 export {
   coalesceDelInsPairChains,
+  coalesceMoveRangeMarkers,
   groupDeletionsBeforeInsertions,
   isNoOpPair,
   mergeWhitespaceBridgedTrackChanges,
