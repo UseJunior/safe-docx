@@ -54,6 +54,13 @@ reconstruction. After correlation, every emitted opaque atom must still be an
 equal revised-side atom in one reconstructed paragraph; otherwise preflight
 fails before whole-paragraph insertion/deletion branches can flatten it.
 
+Coarse LCS resolves each paragraph's opaque identity through a comparison-run-
+local `WeakMap`. Groups and atoms are treated as immutable during one LCS call,
+as their existing text identities already require, while discarding the cache
+afterward prevents stale ownership if a caller mutates a group between calls.
+Ordinary paragraphs are scanned once per run and all DP/backtracking lookups are
+constant-time cache hits.
+
 ### One owner emits; all other owned atoms are suppressed
 
 The first merged atom for a validated occurrence emits the cloned boundary.

@@ -36,3 +36,9 @@
 - [x] 6.3 Make emitted-schema MCE preprocessing scope-aware and validate CI-captured positive output.
 - [x] 6.4 Constrain DPT pass statuses by normative versus metamorphic oracle class.
 - [x] 6.5 Re-run focused/full verification, DPT, schema, and LibreOffice checks and commit the follow-up.
+
+## 7. Performance review follow-up
+
+- [x] 7.1 Memoize opaque paragraph identity for one LCS run without retaining stale cross-run state.
+- [x] 7.2 Instrument identity computation counts and cover ordinary, multiple-control, and between-run mutation cases.
+- [x] 7.3 Re-run focused/full comparison verification and commit the performance fix.
