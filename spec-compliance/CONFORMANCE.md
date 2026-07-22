@@ -94,12 +94,12 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-11` | Custom XML move-destination range start | 5 | 1 | 17.13.5.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlMoveToRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-21` | Move source paragraph (w:moveFrom) | 5 | 1 | 17.13.5.21 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-22` | Move source run content (w:moveFrom) | 5 | 1 | 17.13.5.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFrom` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-23` | Move source range end | 5 | 1 | 17.13.5.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-24` | Move source range start | 5 | 1 | 17.13.5.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-23` | Move source range end | 5 | 1 | 17.13.5.23 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-13-5-24` | Move source range start | 5 | 1 | 17.13.5.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
 | `ECMA-PART1-17-13-5-25` | Move destination run content (w:moveTo) | 5 | 1 | 17.13.5.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-26` | Move destination paragraph (w:moveTo) | 5 | 1 | 17.13.5.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveTo` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-27` | Move destination range end | 5 | 1 | 17.13.5.27 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-28` | Move destination range start | 5 | 1 | 17.13.5.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+| `ECMA-PART1-17-13-5-27` | Move destination range end | 5 | 1 | 17.13.5.27 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-13-5-28` | Move destination range start | 5 | 1 | 17.13.5.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
 | `ECMA-PART1-17-13-5-29` | Paragraph-property revisions (w:pPrChange) | 5 | 1 | 17.13.5.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-30` | Paragraph-mark run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-31` | Run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
@@ -1145,10 +1145,12 @@ surface. Pair identity and arbitrary nested move semantics are not claimed.
 - **Part / Section:** Part 1 § 17.13.5.23
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeEnd`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 
-The engine emits, removes, and balances this marker but does not prove its
-identity relationship to every move wrapper.
+The engine coalesces generated source markers to one pair per logical move.
+The compiled fixed-story checker requires each end to close the currently open
+source range with the same unique id. Individual `w:moveFrom` revision ids are
+not associated with range ids.
 
 ### ECMA-PART1-17-13-5-24 — Move source range start
 
@@ -1156,10 +1158,14 @@ identity relationship to every move wrapper.
 - **Part / Section:** Part 1 § 17.13.5.24
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveFromRangeStart`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 
-The engine emits, removes, and balances this marker but does not prove its
-identity relationship to every move wrapper.
+The engine emits one source start per logical move. In both the Strict and
+Transitional schemas, `w:id` is an `ST_DecimalNumber` and the required `w:name`
+is an `ST_String`, which permits the empty string. The compiled fixed-story
+checker applies a stronger SafeDocX verifier policy: names must be non-empty,
+source ids and names must be unique, and a destination identity with the same
+name must exist. Non-empty `w:name` is not attributed to ECMA-376.
 
 ### ECMA-PART1-17-13-5-25 — Move destination run content (w:moveTo)
 
@@ -1189,10 +1195,12 @@ pairing caveat as run-level content.
 - **Part / Section:** Part 1 § 17.13.5.27
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeEnd`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 
-The engine emits, removes, and balances this marker without claiming complete
-wrapper-to-range identity.
+The engine coalesces generated destination markers to one pair per logical move.
+The compiled fixed-story checker requires each end to close the currently open
+destination range with the same unique id. Individual `w:moveTo` revision ids
+are not associated with range ids.
 
 ### ECMA-PART1-17-13-5-28 — Move destination range start
 
@@ -1200,10 +1208,14 @@ wrapper-to-range identity.
 - **Part / Section:** Part 1 § 17.13.5.28
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:moveToRangeStart`
-- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts
+- **Verified by:** packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 
-The engine emits, removes, and balances this marker without claiming complete
-wrapper-to-range identity.
+The engine emits one destination start per logical move. In both the Strict and
+Transitional schemas, `w:id` is an `ST_DecimalNumber` and the required `w:name`
+is an `ST_String`, which permits the empty string. The compiled fixed-story
+checker applies a stronger SafeDocX verifier policy: names must be non-empty,
+destination ids and names must be unique, and a source identity with the same
+name must exist. Non-empty `w:name` is not attributed to ECMA-376.
 
 ### ECMA-PART1-17-13-5-29 — Paragraph-property revisions (w:pPrChange)
 
