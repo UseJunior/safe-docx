@@ -82,6 +82,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0 # Capability evidence is verified against historical local commits.
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 20
@@ -101,6 +103,10 @@ jobs:
           exit 1
       - name: Validate OpenSpec traceability coverage
         run: npm run check:spec-coverage
+      - name: Verify ECMA-376 source artifacts and generated coverage
+        run: npm run check:ecma-376-coverage
+      - name: Verify SafeDocX capability evidence projection
+        run: npm run check:capability-projection
 
   site-check:
     runs-on: ubuntu-latest
@@ -288,6 +294,14 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+      # Schema-backed workspace tests invoke the same vendored-XSD validator as
+      # the emitted-document gate below, so xmllint must exist before tests run.
+      - name: Install XML schema validator
+        run: |
+          if ! command -v xmllint >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends libxml2-utils
+          fi
       - name: Install dependencies (npm ci with retry)
         run: |
           for attempt in 1 2 3; do
@@ -349,10 +363,6 @@ jobs:
         run: npm run test
       - name: Validate emitted document.xml corpus against ECMA-376 schema
         run: |
-          if ! command -v xmllint >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends libxml2-utils
-          fi
           node scripts/check_emitted_document_schema.mjs --self-test \
             --known-failures coverage/emitted-schema-known-failures.json \
             "$RUNNER_TEMP/schema-corpus"

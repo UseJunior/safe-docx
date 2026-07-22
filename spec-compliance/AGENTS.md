@@ -12,7 +12,7 @@ against a vendored normative artifact without ambiguity.
    section. Internal GitHub issue references are not co-equal authorities
    and must move to `@see` or to a separate sentence.
 2. **Edition is part of the citation.** "ECMA-376" without an edition is
-   ambiguous — Part 4 § 17.16.5 exists in both the 4th and 5th editions
+   ambiguous — Part 1 § 17.16.13 exists in multiple editions
    and may differ. Tags MUST be of the form
    `@conformance ECMA-376 edition <N>, Part <N> § <section>`.
 3. **Annotate intentional divergence with `@conformance-gap`.** Code that
@@ -30,7 +30,7 @@ against a vendored normative artifact without ambiguity.
  * Per the field-state-machine rule: w:fldChar runs stay at sibling level
  * while w:delInstrText payload runs are wrapped in <w:del>.
  *
- * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
  * @see https://github.com/UseJunior/safe-docx/issues/217
  */
 ```
@@ -39,7 +39,7 @@ The grammar enforced by the lint:
 
 - `@conformance <SPEC> edition <N>, Part <N> § <SECTION>`
 - `<SPEC>` is one token, no spaces (e.g. `ECMA-376`).
-- `<SECTION>` is a dot-separated number sequence (e.g. `17.16.5`).
+- `<SECTION>` is a dot-separated number sequence (e.g. `17.16.13`).
 - The whole value MUST resolve to a registry scenario ID. Unknown sections
   fail CI.
 - The value MUST NOT contain `#NNN` — issue references belong on a `@see`
@@ -52,7 +52,7 @@ The grammar enforced by the lint:
  * Word emits a non-conformant field structure on Mac builds (see #217);
  * the engine tolerates this for legacy fixtures.
  *
- * @conformance-gap ECMA-376 edition 5, Part 4 § 17.16.5 — legacy Word output deviates here
+ * @conformance-gap ECMA-376 edition 5, Part 1 § 17.16.13 — legacy Word output deviates here
  */
 ```
 

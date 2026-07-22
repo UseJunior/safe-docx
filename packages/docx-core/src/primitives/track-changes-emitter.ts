@@ -13,7 +13,6 @@ const EXCLUDED_TRPR_CHANGE_CHILDREN = new Set(['w:trPrChange', 'w:ins', 'w:del']
 // change-of-a-change marker w:tcPrChange itself is excluded. See:
 // https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.previoustablecellproperties
 const EXCLUDED_TCPR_CHANGE_CHILDREN = new Set(['w:tcPrChange']);
-const EXCLUDED_RPR_CHANGE_CHILDREN = new Set(['w:rPrChange']);
 
 /**
  * State for allocating monotonically increasing revision IDs.
@@ -181,6 +180,8 @@ export function buildPPrChangeElement(oldPPr: Element | null, ctx: RevisionConte
  * Build a `<w:trPrChange>` wrapper containing the previous row properties.
  *
  * The nested snapshot excludes children that are not valid in `CT_TrPrBase`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.37
  */
 export function buildTrPrChangeElement(oldTrPr: Element | null, ctx: RevisionContext): Element {
   const trPrChange = createWmlElement(
@@ -206,6 +207,8 @@ export function buildTrPrChangeElement(oldTrPr: Element | null, ctx: RevisionCon
  * Build a `<w:tcPrChange>` wrapper containing the previous cell properties.
  *
  * The nested snapshot excludes children that are not valid in `CT_TcPrBase`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.36
  */
 export function buildTcPrChangeElement(oldTcPr: Element | null, ctx: RevisionContext): Element {
   const tcPrChange = createWmlElement(
@@ -248,7 +251,7 @@ export function buildRPrChangeElement(oldRPr: Element | null, ctx: RevisionConte
 
   if (oldRPr) {
     for (const child of childElements(oldRPr)) {
-      if (!EXCLUDED_RPR_CHANGE_CHILDREN.has(child.tagName)) {
+      if (!(child.namespaceURI === OOXML.W_NS && child.localName === 'rPrChange')) {
         previousRPr.appendChild(child.cloneNode(true));
       }
     }

@@ -6,7 +6,52 @@
  */
 
 import { XMLSerializer } from '@xmldom/xmldom';
-import { parseXml } from '@usejunior/docx-core';
+import { OOXML, parseXml } from '@usejunior/docx-core';
+
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+
+function cloneWithCanonicalWordPrefix(node: Node, target: Document): Node {
+  if (node.nodeType !== 1) return node.cloneNode(false);
+
+  const source = node as Element;
+  const qualifiedName = source.namespaceURI === OOXML.W_NS
+    ? `w:${source.localName}`
+    : source.tagName;
+  const copy = target.createElementNS(source.namespaceURI, qualifiedName);
+
+  for (let index = 0; index < source.attributes.length; index++) {
+    const attribute = source.attributes.item(index)!;
+    if (attribute.namespaceURI === XMLNS_NS && attribute.localName === 'w') continue;
+    const attributeName = attribute.namespaceURI === OOXML.W_NS
+      ? `w:${attribute.localName}`
+      : attribute.name;
+    copy.setAttributeNS(attribute.namespaceURI, attributeName, attribute.value);
+  }
+  for (let child = source.firstChild; child; child = child.nextSibling) {
+    copy.appendChild(cloneWithCanonicalWordPrefix(child, target));
+  }
+  return copy;
+}
+
+/**
+ * Normalize namespace-equivalent WordprocessingML prefixes before the legacy
+ * atomizer and reconstructors consume their preferred `w:` lexical spelling.
+ */
+export function canonicalizeWordprocessingPrefixes(xml: string): string {
+  const doc = parseXml(xml);
+  const wordElements = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, '*')) as Element[];
+  const needsCanonicalPrefix = wordElements.some((element) =>
+    element.prefix !== 'w' || Array.from(element.attributes).some(
+      (attribute) => attribute.namespaceURI === OOXML.W_NS && attribute.prefix !== 'w',
+    ),
+  );
+  if (!needsCanonicalPrefix) return xml;
+
+  const replacement = cloneWithCanonicalWordPrefix(doc.documentElement, doc) as Element;
+  replacement.setAttributeNS(XMLNS_NS, 'xmlns:w', OOXML.W_NS);
+  doc.replaceChild(replacement, doc.documentElement);
+  return new XMLSerializer().serializeToString(doc);
+}
 
 /**
  * Parse document.xml string into a DOM Element tree.
@@ -15,7 +60,7 @@ import { parseXml } from '@usejunior/docx-core';
  * @returns Root element (the Document's documentElement)
  */
 export function parseDocumentXml(xml: string): Element {
-  const doc = parseXml(xml);
+  const doc = parseXml(canonicalizeWordprocessingPrefixes(xml));
   return doc.documentElement;
 }
 

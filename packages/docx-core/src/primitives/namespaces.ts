@@ -119,6 +119,8 @@ export const W = {
   settings: 'settings',
   evenAndOddHeaders: 'evenAndOddHeaders',
   clrSchemeMapping: 'clrSchemeMapping',
+  compat: 'compat',
+  compatSetting: 'compatSetting',
 
   // Styles part + paragraph/run formatting (generation emitters)
   docDefaults: 'docDefaults',

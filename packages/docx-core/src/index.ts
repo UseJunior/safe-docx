@@ -1,5 +1,6 @@
 // Re-export shared utilities
 export * from './shared/ooxml/namespaces.js';
+export * from './generated/ecma-376-vocabulary.js';
 export * from './shared/ooxml/types.js';
 export * from './shared/docx/DocxArchive.js';
 export * from './shared/field-structure.js';

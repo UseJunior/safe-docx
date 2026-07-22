@@ -1,21 +1,31 @@
-ECMA-376 Office Open XML File Formats — vendored XML schemas
-============================================================
+ECMA-376 Office Open XML File Formats — vendored source publications
+=====================================================================
 
-The files under `schemas/` are unmodified copies of the normative (XSD) and
-informative (RELAX NG) schemas distributed by Ecma International as part of
-the ECMA-376, 5th Edition Office Open XML standard:
+The four ZIP files under `source-artifacts/`, and every standard publication
+and supporting file contained in those unchanged ZIPs, are unmodified copies
+distributed by Ecma International as part of the ECMA-376, 5th Edition Office
+Open XML standard:
 
     Part 1 (Fundamentals and Markup Language Reference), December 2016
     Part 2 (Open Packaging Conventions),                December 2021
+    Part 3 (Markup Compatibility and Extensibility),    December 2015
     Part 4 (Transitional Migration Features),           December 2016
 
 The canonical downloads live at:
 
     https://ecma-international.org/publications-and-standards/standards/ecma-376/
 
-These files are reproduced here verbatim and have not been modified. This
-COPYRIGHT.txt is preserved alongside them per Ecma International's text
-copyright policy. The authentic copies remain those published by Ecma.
+Those ZIPs are reproduced verbatim and have not been edited or recompressed.
+Their SHA-256 identities are recorded in `source-artifacts/SHA256SUMS` and the
+artifact manifest. This COPYRIGHT.txt is preserved alongside them per Ecma
+International's text copyright policy. The authentic copies remain those
+published by Ecma.
+
+The files under `schemas/` are separately stored, unmodified derived copies of
+the normative XSD and informative RELAX NG files extracted from the Part 1,
+Part 2, and Part 4 source ZIPs. The coverage check verifies the XSD copies byte
+for byte against their owning nested archives. Part 3 contains prose and has no
+schema-copy directory in this repository.
 
 
 Copyright notice and license

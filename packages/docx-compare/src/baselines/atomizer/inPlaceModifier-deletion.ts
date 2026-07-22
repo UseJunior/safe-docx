@@ -6,7 +6,7 @@
  */
 
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
-import { childElements, findChildByTagName, insertAfterElement } from '@usejunior/docx-core';
+import { childElements, findChildByTagName, insertAfterElement, WML } from '@usejunior/docx-core';
 import {
   allocateRevisionId,
   convertToDelText,
@@ -177,11 +177,11 @@ export function insertDeletedRun(
  * Returns the last sibling element inserted, which the caller uses as the
  * next insertion anchor (preserving the contract of `insertDeletedRun`).
  *
- * @conformance ECMA-376 edition 5, Part 4 § 17.16.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  *
  * Rule: `w:delInstrText` MUST appear inside `<w:del>`;
- * by extension and by issue #217's deep-research conclusion, `w:fldChar` runs
- * stay at sibling level.
+ * the Part 1 complex-field syntax keeps `w:fldChar` runs at sibling level.
  */
 export function insertFragmentedDeletedField(
   deletedAtom: ComparisonUnitAtom,
@@ -323,6 +323,8 @@ export function insertMoveFromRun(
   const rangeEnd = createEl('w:moveFromRangeEnd', {
     'w:id': String(ids.sourceRangeId),
   });
+  state.generatedMoveRangeMarkers.add(rangeStart);
+  state.generatedMoveRangeMarkers.add(rangeEnd);
 
   // Add cloned run(s) as children of moveFrom
   for (const clonedRun of clonedRuns) {
@@ -405,7 +407,16 @@ export function insertDeletedParagraph(
   return clonedParagraph;
 }
 
-// Field-character tag names that should not be split.
+/**
+ * Field-code marker and payload elements that require field-aware splitting.
+ * The semantic subset is maintained here; its raw QNames are schema-generated.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @ooxmlSpec ooxml.ecma376.5ed.part1.fields.deleted-field-code
+ */
 export const FIELD_CHAR_TAG_NAMES: ReadonlySet<string> = new Set([
-  'w:fldChar', 'w:instrText', 'w:delInstrText',
+  WML.FLD_CHAR.qname,
+  WML.INSTR_TEXT.qname,
+  WML.DEL_INSTR_TEXT.qname,
 ]);

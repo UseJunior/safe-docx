@@ -59,15 +59,17 @@ export function sha1(content: string): string {
 const IGNORED_HASH_ATTRIBUTES = new Set(['xml:space']);
 
 /**
- * Calculate SHA1 hash for a WmlElement.
+ * Build the pre-hash identity string for a WmlElement.
  *
- * Includes tag name, attributes, and text content for uniqueness.
- * Excludes presentation-only attributes like xml:space that don't affect content.
+ * This is the exact string {@link hashElement} feeds to SHA1: tag name, sorted
+ * attributes (excluding presentation-only ones like `xml:space`), and the leaf
+ * text. Exposed so the interner can key on element identity directly, avoiding a
+ * crypto round-trip where only an equality token is needed.
  *
- * @param element - The element to hash
- * @returns Hexadecimal SHA1 hash string
+ * @param element - The element to identify
+ * @returns The deterministic pre-hash identity string
  */
-export function hashElement(element: WmlElement): string {
+export function elementIdentityString(element: WmlElement): string {
   const parts: string[] = [element.tagName];
 
   // Sort attributes for deterministic hashing, excluding presentation-only attributes
@@ -88,7 +90,233 @@ export function hashElement(element: WmlElement): string {
     parts.push(leafText);
   }
 
-  return sha1(parts.join('|'));
+  return parts.join('|');
+}
+
+/**
+ * Calculate SHA1 hash for a WmlElement.
+ *
+ * Includes tag name, attributes, and text content for uniqueness.
+ * Excludes presentation-only attributes like xml:space that don't affect content.
+ *
+ * @param element - The element to hash
+ * @returns Hexadecimal SHA1 hash string
+ */
+export function hashElement(element: WmlElement): string {
+  return sha1(elementIdentityString(element));
+}
+
+// =============================================================================
+// Atom identity: lazy SHA1 + interner key
+// =============================================================================
+
+/**
+ * Backing slots for an atom's lazily-computed SHA1 and its interner key.
+ *
+ * `sha1Hash` is exposed as an enumerable accessor (see {@link LAZY_SHA1_DESCRIPTOR})
+ * so that:
+ * - reads that genuinely need the digest (empty-paragraph context signatures,
+ *   the numbering/hyperlink salts, tests asserting 40-char hex) materialize it
+ *   on first access and cache it, and
+ * - the overwhelmingly common case — a `w:t` leaf compared only by its interned
+ *   identity id in the LCS loops — never triggers `createHash('sha1')` at all.
+ *
+ * The backing slots are non-enumerable so `{...atom}` spreads (documentReconstructor)
+ * copy only a materialized `sha1Hash` string, not the compute closure.
+ */
+const SHA1_CACHE = Symbol('atom.sha1Cache');
+const SHA1_COMPUTE = Symbol('atom.sha1Compute');
+
+/**
+ * Interner key: the finalized `atomsEqual` triple as a single string, of shape
+ * `identityCore \u0000 textContent \u0000 tagName`. Kept in sync with `sha1Hash`
+ * by the salt sites and by {@link refreshAtomIdentityAfterTextMutation}.
+ */
+const IDENTITY_KEY = Symbol('atom.identityKey');
+
+/**
+ * Interned integer identity, assigned by {@link assignIdentityIds} once all
+ * identity mutations (numbering + hyperlink salts, run merges) are finalized,
+ * immediately before LCS. Module-private (not exported, and stored as a
+ * non-enumerable property) so the public `ComparisonUnit` shape is unchanged,
+ * `JSON.stringify` never emits it, and `{...atom}` spreads never carry it.
+ */
+const IDENTITY_ID = Symbol('atom.identityId');
+
+/** Separator between the three identity components; `\u0000` is the file's established sentinel. */
+const IDENTITY_SEP = '\u0000';
+
+const LAZY_SHA1_DESCRIPTOR: PropertyDescriptor = {
+  enumerable: true,
+  configurable: true,
+  get(this: Record<symbol, unknown>): string {
+    let cached = this[SHA1_CACHE] as string | undefined;
+    if (cached === undefined) {
+      cached = (this[SHA1_COMPUTE] as (self: unknown) => string)(this);
+      this[SHA1_CACHE] = cached;
+    }
+    return cached;
+  },
+  set(this: Record<symbol, unknown>, value: string): void {
+    // Salt sites assign the extended (colon-form) hash verbatim; store as-is so
+    // subsequent reads return byte-identical strings.
+    this[SHA1_CACHE] = value;
+  },
+};
+
+/** Build the interner key from an atom's finalized identity components. */
+function buildIdentityKey(identityCore: string, textContent: string, tagName: string): string {
+  return identityCore + IDENTITY_SEP + textContent + IDENTITY_SEP + tagName;
+}
+
+/**
+ * Install lazy `sha1Hash` and the interner key on a freshly-built atom literal.
+ *
+ * @param atom - The atom literal, omitting `sha1Hash` (installed here as an accessor)
+ * @param computeHash - Produces the SHA1 hex on first read of `sha1Hash`
+ * @param identityCore - The pre-hash identity string the hash derives from
+ *   (`elementIdentityString(el)` for element leaves, or the raw `hashContent`
+ *   string for empty-paragraph atoms)
+ * @param textContent - Recursive text content, folded into the key so the
+ *   interned relation matches `atomsEqual`'s `textContent` recheck exactly
+ * @param tagName - The content element's tag name
+ */
+function withAtomIdentity(
+  atom: Omit<ComparisonUnitAtom, 'sha1Hash'>,
+  computeHash: (self: ComparisonUnitAtom) => string,
+  identityCore: string,
+  textContent: string,
+  tagName: string
+): ComparisonUnitAtom {
+  Object.defineProperty(atom, SHA1_COMPUTE, {
+    value: computeHash,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(atom, SHA1_CACHE, {
+    value: undefined,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(atom, IDENTITY_KEY, {
+    value: buildIdentityKey(identityCore, textContent, tagName),
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(atom, 'sha1Hash', LAZY_SHA1_DESCRIPTOR);
+  return atom as ComparisonUnitAtom;
+}
+
+/** Read an atom's interner key (undefined for atoms not built via {@link withAtomIdentity}). */
+function getIdentityKey(atom: ComparisonUnitAtom): string | undefined {
+  return (atom as unknown as Record<symbol, unknown>)[IDENTITY_KEY] as string | undefined;
+}
+
+/**
+ * Drop any interned id so a subsequent identity change can't be consumed as a
+ * stale token. Any mutation of an atom's identity (salt or text merge) must call
+ * this; the id is re-derived by the next {@link assignIdentityIds} pass. In the
+ * production pipeline these mutations run before interning (so this is a no-op),
+ * but the helpers are exported, so we invalidate defensively.
+ */
+function invalidateIdentityId(atom: ComparisonUnitAtom): void {
+  delete (atom as unknown as Record<symbol, unknown>)[IDENTITY_ID];
+}
+
+/** Append a structured salt suffix to both `sha1Hash` and the interner key, keeping them in sync. */
+export function appendIdentitySalt(atom: ComparisonUnitAtom, suffix: string): void {
+  atom.sha1Hash = `${atom.sha1Hash}${suffix}`;
+  const key = getIdentityKey(atom);
+  if (key !== undefined) {
+    (atom as unknown as Record<symbol, unknown>)[IDENTITY_KEY] = key + suffix;
+  }
+  invalidateIdentityId(atom);
+}
+
+/**
+ * After an in-place text mutation of `contentElement` (run merge), drop the
+ * cached hash so it recomputes from the mutated element, and rebuild the
+ * interner key from the new text.
+ */
+function refreshAtomIdentityAfterTextMutation(atom: ComparisonUnitAtom): void {
+  const el = atom.contentElement;
+  const record = atom as unknown as Record<symbol, unknown>;
+  record[SHA1_CACHE] = undefined;
+  if (record[IDENTITY_KEY] !== undefined) {
+    record[IDENTITY_KEY] = buildIdentityKey(
+      elementIdentityString(el),
+      el.textContent ?? '',
+      el.tagName
+    );
+  }
+  invalidateIdentityId(atom);
+}
+
+/**
+ * Assign interned integer identities to a batch of atoms via a shared interner.
+ * Must run after every identity mutation and before LCS. Two atoms receive the
+ * same id exactly when they satisfy the `atomsEqual` relation.
+ */
+export function assignIdentityIds(atoms: ComparisonUnitAtom[], interner: IdentityInterner): void {
+  for (let i = 0; i < atoms.length; i++) {
+    const atom = atoms[i]!;
+    let key = getIdentityKey(atom);
+    if (key === undefined) {
+      // A construction site bypassed withAtomIdentity: surface the wiring gap
+      // loudly outside production, and in production fall back to a key that still
+      // encodes the FULL atomsEqual relation (hash + recursive text + tag) — not
+      // sha1Hash alone — so equality stays sound even on the fallback path.
+      if (process.env.NODE_ENV !== 'production') {
+        throw new Error(
+          'assignIdentityIds: atom is missing its interner key — a ComparisonUnitAtom ' +
+            'was constructed without withAtomIdentity()'
+        );
+      }
+      key = buildIdentityKey(
+        atom.sha1Hash,
+        atom.contentElement.textContent ?? '',
+        atom.contentElement.tagName
+      );
+    }
+    // Non-enumerable so the id never leaks through `{...atom}` spreads or JSON.
+    Object.defineProperty(atom, IDENTITY_ID, {
+      value: interner.intern(key),
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+  }
+}
+
+/** Read an atom's interned identity id, or undefined if it was never interned. */
+export function getIdentityId(atom: ComparisonUnitAtom): number | undefined {
+  return (atom as unknown as Record<symbol, unknown>)[IDENTITY_ID] as number | undefined;
+}
+
+/**
+ * String interner: maps each distinct identity string to a small integer, shared
+ * across both documents in one compare so equal identities get equal integers.
+ * One instance per `compareDocuments` invocation — never a process-global.
+ */
+export class IdentityInterner {
+  private readonly map = new Map<string, number>();
+  private next = 0;
+
+  intern(key: string): number {
+    let id = this.map.get(key);
+    if (id === undefined) {
+      id = this.next++;
+      this.map.set(key, id);
+    }
+    return id;
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
 }
 
 // =============================================================================
@@ -370,23 +598,28 @@ export function createComparisonUnitAtom(
   // Extract Unids from ancestors
   const ancestorUnids = extractAncestorUnids(ancestors);
 
-  // Calculate SHA1 hash for the atom
-  const sha1Hash = hashElement(contentElement);
+  // Pre-hash identity string; the SHA1 digest is computed lazily on first read.
+  const identityCore = elementIdentityString(contentElement);
 
   // Extract and clone run properties for first-class rPr access
   const rPrElement = getRunProperties({ ancestorElements: ancestors } as ComparisonUnitAtom);
   const rPr = rPrElement ? (rPrElement.cloneNode(true) as Element) : null;
 
-  return {
-    contentElement,
-    ancestorElements: [...ancestors], // Copy to avoid mutation
-    ancestorUnids,
-    part,
-    revTrackElement,
-    sha1Hash,
-    correlationStatus,
-    rPr,
-  };
+  return withAtomIdentity(
+    {
+      contentElement,
+      ancestorElements: [...ancestors], // Copy to avoid mutation
+      ancestorUnids,
+      part,
+      revTrackElement,
+      correlationStatus,
+      rPr,
+    },
+    (self) => hashElement(self.contentElement),
+    identityCore,
+    contentElement.textContent ?? '',
+    contentElement.tagName
+  );
 }
 
 // =============================================================================
@@ -454,17 +687,23 @@ function createEmptyParagraphAtomWithContext(
   const contextHash = state.lastContentHash || 'document-start';
   const hashContent = `empty-paragraph:${contextHash}:${state.consecutiveEmptyIndex}:${pPrHash}`;
 
-  return {
-    contentElement: virtualElement,
-    ancestorElements: [...ancestors, paragraphElement],
-    ancestorUnids: extractAncestorUnids(ancestors),
-    part,
-    revTrackElement,
-    sha1Hash: sha1(hashContent),
-    correlationStatus,
-    isEmptyParagraph: true, // Mark this as an empty paragraph atom
-    rPr: null, // Empty paragraphs have no run formatting
-  };
+  // Empty-paragraph identity is the context signature, not the (empty) element.
+  return withAtomIdentity(
+    {
+      contentElement: virtualElement,
+      ancestorElements: [...ancestors, paragraphElement],
+      ancestorUnids: extractAncestorUnids(ancestors),
+      part,
+      revTrackElement,
+      correlationStatus,
+      isEmptyParagraph: true, // Mark this as an empty paragraph atom
+      rPr: null, // Empty paragraphs have no run formatting
+    },
+    () => sha1(hashContent),
+    hashContent,
+    '',
+    virtualElement.tagName
+  );
 }
 
 /**
@@ -828,19 +1067,24 @@ export function collapseFieldSequences(
         virtualElement.setAttributeNS('http://www.w3.org/XML/1998/namespace', 'xml:space', 'preserve');
       }
 
-      const collapsedAtom: ComparisonUnitAtom = {
-        contentElement: virtualElement,
-        ancestorElements: [...firstAtom.ancestorElements],
-        ancestorUnids: firstAtom.ancestorUnids,
-        part: firstAtom.part,
-        revTrackElement: firstAtom.revTrackElement,
-        sha1Hash: hashElement(virtualElement),
-        correlationStatus: firstAtom.correlationStatus,
-        // Store original atoms for document reconstruction
-        collapsedFieldAtoms: fieldAtoms,
-        // Inherit rPr from first atom in the field sequence
-        rPr: firstAtom.rPr,
-      };
+      const collapsedAtom: ComparisonUnitAtom = withAtomIdentity(
+        {
+          contentElement: virtualElement,
+          ancestorElements: [...firstAtom.ancestorElements],
+          ancestorUnids: firstAtom.ancestorUnids,
+          part: firstAtom.part,
+          revTrackElement: firstAtom.revTrackElement,
+          correlationStatus: firstAtom.correlationStatus,
+          // Store original atoms for document reconstruction
+          collapsedFieldAtoms: fieldAtoms,
+          // Inherit rPr from first atom in the field sequence
+          rPr: firstAtom.rPr,
+        },
+        (self) => hashElement(self.contentElement),
+        elementIdentityString(virtualElement),
+        virtualElement.textContent ?? '',
+        virtualElement.tagName
+      );
 
       result.push(collapsedAtom);
     } else {
@@ -912,20 +1156,25 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
     }
 
     // Create atom for this word
-    const wordAtom: ComparisonUnitAtom = {
-      contentElement: wordElement,
-      ancestorElements: atom.ancestorElements,
-      ancestorUnids: atom.ancestorUnids,
-      part: atom.part,
-      revTrackElement: atom.revTrackElement,
-      sha1Hash: hashElement(wordElement),
-      correlationStatus: atom.correlationStatus,
-      paragraphIndex: atom.paragraphIndex,
-      // Track that this came from a split atom for potential later merge
-      splitFromAtom: atom,
-      // Share rPr reference (read-only after atomization)
-      rPr: atom.rPr,
-    };
+    const wordAtom: ComparisonUnitAtom = withAtomIdentity(
+      {
+        contentElement: wordElement,
+        ancestorElements: atom.ancestorElements,
+        ancestorUnids: atom.ancestorUnids,
+        part: atom.part,
+        revTrackElement: atom.revTrackElement,
+        correlationStatus: atom.correlationStatus,
+        paragraphIndex: atom.paragraphIndex,
+        // Track that this came from a split atom for potential later merge
+        splitFromAtom: atom,
+        // Share rPr reference (read-only after atomization)
+        rPr: atom.rPr,
+      },
+      (self) => hashElement(self.contentElement),
+      elementIdentityString(wordElement),
+      wordElement.textContent ?? '',
+      wordElement.tagName
+    );
 
     result.push(wordAtom);
   }
@@ -1080,7 +1329,7 @@ export function applyHyperlinkDestinationSalt(
     if (!link) continue;
     const salt = hyperlinkDestinationSalt(link, relsMap);
     if (salt !== null) {
-      atom.sha1Hash = `${atom.sha1Hash}:hlink:${salt}`;
+      appendIdentitySalt(atom, `:hlink:${salt}`);
     }
   }
 }
@@ -1157,8 +1406,9 @@ function mergeIntoAtom(target: ComparisonUnitAtom, source: ComparisonUnitAtom): 
     (getLeafText(source.contentElement) ?? '');
   setLeafText(target.contentElement, newText);
 
-  // Recompute hash
-  target.sha1Hash = hashElement(target.contentElement);
+  // Invalidate the cached hash (recomputed lazily from the mutated element) and
+  // rebuild the interner key so identity tracks the merged text.
+  refreshAtomIdentityAfterTextMutation(target);
 }
 
 /**

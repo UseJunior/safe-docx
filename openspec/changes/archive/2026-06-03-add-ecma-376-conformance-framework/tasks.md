@@ -8,7 +8,7 @@
 
 ## 2. Registry
 - [x] Author `spec-compliance/registry/ecma-376.md` with three seed entries:
-  - [x] `[ECMA-PART4-17-16-5]` — `wml.xsd#element:delInstrText` verified at line 1750.
+  - [x] `[ECMA-PART1-17-16-13]` — `wml.xsd#element:delInstrText` verified at line 1750.
   - [x] `[ECMA-PART1-17-13-5]` — `wml.xsd#element:pPrChange` verified at line 1093.
   - [x] `[ECMA-PART1-17-11]` — `wml.xsd#element:footnoteReference` verified at line 1772.
 - [x] Add `## Non-Goals` heading section (empty body for phase 1; framework
@@ -87,7 +87,7 @@
 
 ## 9. Annotate seeds
 - [x] `packages/docx-core/src/baselines/atomizer/pipeline.ts:418` — add
-      `@conformance ECMA-376 edition 5, Part 4 § 17.16.5`.
+      `@conformance ECMA-376 edition 5, Part 1 § 17.16.13`.
 - [x] `packages/docx-core/src/atomizer.ts:219` — add
       `@conformance ECMA-376 edition 5, Part 1 § 17.13.5`.
 - [x] `packages/docx-core/src/footnotes.ts:6` (file-leading JSDoc) — add

@@ -76,7 +76,14 @@ function tableCell(
 }
 
 function footnote(displayNumber: number, text: string): Footnote {
-  return { id: displayNumber, displayNumber, text, anchoredParagraphId: null };
+  return {
+    id: displayNumber,
+    displayNumber,
+    text,
+    anchoredParagraphId: null,
+    refParagraphIds: [],
+    paragraphs: [{ text, tagged_text: text, style: 'FootnoteText' }],
+  };
 }
 
 describe('OpenSpec traceability: add-markdown-export (Markdown serializer)', () => {

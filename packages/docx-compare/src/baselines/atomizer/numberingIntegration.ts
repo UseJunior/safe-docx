@@ -18,6 +18,7 @@ import {
 } from '@usejunior/docx-core';
 import { findElement, parseDocumentXml } from './xmlToWmlElement.js';
 import { childElements } from '@usejunior/docx-core';
+import { appendIdentitySalt } from '../../atomizer.js';
 
 /**
  * Options for numbering integration.
@@ -253,10 +254,9 @@ export function virtualizeNumberingLabels(
             // This affects comparison by making atoms with different labels
             // have different hashes even if the text is the same
             if (label) {
-              // Modify the atom's hash to include the numbering label
-              // This is a simple approach - append label to hash input
-              const originalHash = atom.sha1Hash;
-              atom.sha1Hash = `${originalHash}:${numId}:${ilvl}:${label}`;
+              // Modify the atom's identity to include the numbering label so
+              // atoms with different labels differ even when their text matches.
+              appendIdentitySalt(atom, `:${numId}:${ilvl}:${label}`);
             }
           }
         }
