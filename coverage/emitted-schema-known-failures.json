@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "id": "rebuild-orphan-bookmark-start-placement",
+    "issue": "#226",
+    "match": "element bookmarkStart: Schemas validity error : Element '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}bookmarkStart': This element is not expected.",
+    "reason": "Forced rebuild of the real ILPA corpus exposes the existing orphan-bookmark synthesis placement defect; it is unrelated to inline SDT passthrough."
+  }
+]

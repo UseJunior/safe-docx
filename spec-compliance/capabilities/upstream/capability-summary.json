@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "registryVersion": 1,
   "sourceResults": {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "runTimestamp": "2026-07-06T11:04:32.667Z",
     "scenarioCount": 12,
     "implementations": [
@@ -40,6 +40,7 @@
     "acceptDeletedTableRowRemovesEntireRow",
     "acceptMoveRemovesSourceAndUnwrapsDestination",
     "addCommentBracketsRangeWithMatchingIds",
+    "appendParagraphAddsTrailingParagraph",
     "appendParagraphPreservesExistingContent",
     "appendTableRowExtendsRowCountKeepingGrid",
     "applyNamedParagraphStyleSetsPStyleReference",
@@ -61,13 +62,17 @@
     "rejectParagraphPropertiesChangeRestoresPrior",
     "removeAllCommentsStripsAnchorsKeepsText",
     "replaceTextInsideTableCellPreservesStructure",
+    "replaceTextInsideTableCellUpdatesTargetText",
     "setDefaultFooterTextAddsFooterReference",
-    "setTableCellTextReplacesCellContentOnly"
+    "setTableCellTextReplacesCellContentOnly",
+    "unrelatedTextEditPreservesInlineContentControlStructure",
+    "unrelatedTextEditPreservesOpaqueInlineContentControl"
   ],
   "capabilities": [
     {
       "capabilityId": "word.revisions.content",
       "axis": "acceptReject",
+      "oracleKind": "ecma-conformance",
       "scenarioIds": [
         "acceptDeletionsRemovesDelContent",
         "acceptInsertionsUnwrapsInsWrappers",
@@ -133,6 +138,7 @@
     {
       "capabilityId": "word.revisions.content",
       "axis": "crossPlatform",
+      "oracleKind": "ecma-conformance",
       "scenarioIds": [
         "acceptDeletionsRemovesDelContent",
         "acceptInsertionsUnwrapsInsWrappers",
@@ -198,6 +204,7 @@
     {
       "capabilityId": "word.revisions.paragraph-mark",
       "axis": "acceptReject",
+      "oracleKind": "ecma-conformance",
       "scenarioIds": [
         "acceptDeletedParagraphMarkMergesParagraphs",
         "rejectInsertedParagraphMarkMergesParagraphs"
@@ -257,6 +264,7 @@
     {
       "capabilityId": "word.revisions.paragraph-mark",
       "axis": "crossPlatform",
+      "oracleKind": "ecma-conformance",
       "scenarioIds": [
         "acceptDeletedParagraphMarkMergesParagraphs",
         "rejectInsertedParagraphMarkMergesParagraphs"
@@ -316,6 +324,7 @@
     {
       "capabilityId": "word.revisions.run-properties",
       "axis": "acceptReject",
+      "oracleKind": "ecma-conformance",
       "scenarioIds": [
         "acceptFormattingChangeKeepsNewRunProperties",
         "rejectFormattingChangeRestoresPriorRunProperties"
@@ -375,6 +384,7 @@
     {
       "capabilityId": "word.revisions.run-properties",
       "axis": "crossPlatform",
+      "oracleKind": "ecma-conformance",
       "scenarioIds": [
         "acceptFormattingChangeKeepsNewRunProperties",
         "rejectFormattingChangeRestoresPriorRunProperties"
@@ -434,6 +444,7 @@
     {
       "capabilityId": "word.text.find-replace",
       "axis": "crossPlatform",
+      "oracleKind": "ecma-conformance",
       "scenarioIds": [
         "replaceFirstOccurrencePreservesOffsets",
         "replaceTextAcrossRunBoundary"
@@ -495,6 +506,7 @@
     {
       "capabilityId": "word.text.find-replace",
       "axis": "edit",
+      "oracleKind": "ecma-conformance",
       "scenarioIds": [
         "replaceFirstOccurrencePreservesOffsets",
         "replaceTextAcrossRunBoundary"

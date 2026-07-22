@@ -182,6 +182,52 @@ lives in `packages/docx-core/src/atomizer.ts`
 `packages/docx-core/src/baselines/atomizer/documentReconstructor.ts`
 (hyperlink wrapper re-emission).
 
+## [ECMA-PART1-17-5-2-31] w:sdt inline-level structured document tag
+
+```yaml
+edition: 5
+part: 1
+section: "17.5.2.31"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+```
+
+An inline `w:sdt` is a run-level structured document tag whose ordered children
+are its properties, optional end properties, and content. The issue #582 pilot
+preserves an unchanged inline SDT as one opaque semantic boundary during rebuild;
+it does not author or edit controls and makes no claim about block, row, or cell
+SDTs.
+
+## [ECMA-PART1-17-5-2-36] w:sdtContent inline-level structured document tag content
+
+```yaml
+edition: 5
+part: 1
+section: "17.5.2.36"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentRun
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+```
+
+The pilot retains the inline control's run-level `w:sdtContent` subtree and its
+controlled text when that subtree is unchanged between comparison inputs.
+
+## [ECMA-PART1-17-5-2-38] w:sdtPr structured document tag properties
+
+```yaml
+edition: 5
+part: 1
+section: "17.5.2.38"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+```
+
+The pilot retains known and ignorable-extension children under `w:sdtPr` in
+their source order. Retention of unknown extension payload is a metamorphic
+SafeDocX invariant, not an ECMA-376 requirement.
+
 ## [ECMA-PART1-17-6-17] w:sectPr document-final section properties
 
 ```yaml

@@ -3,6 +3,23 @@
   "registryVersion": 1,
   "capabilities": [
     {
+      "id": "word.content-controls.inline",
+      "title": "Inline structured document tags",
+      "family": "content-controls",
+      "description": "Run-level structured document tags retain their properties and content during unrelated paragraph edits. Preservation of declared ignorable foreign-extension sentinels is a metamorphic invariant, not an ECMA-376 normative requirement.",
+      "standards": [
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.5.2.31" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.5.2.36" },
+        { "standard": "ECMA-376", "edition": 5, "part": 1, "section": "17.5.2.38" },
+        { "standard": "ECMA-376", "edition": 5, "part": 3, "section": "7.2" },
+        { "standard": "ECMA-376", "edition": 5, "part": 3, "section": "9.2" },
+        { "standard": "ECMA-376", "edition": 5, "part": 3, "section": "9.4" }
+      ],
+      "dependencies": ["word.paragraphs.structure"],
+      "applicableAxes": ["detect", "preserve", "parse", "validate", "generate", "edit", "crossPlatform"],
+      "packageParts": ["word/document.xml"]
+    },
+    {
       "id": "word.comments.anchors",
       "title": "Comment range anchors",
       "family": "comments",

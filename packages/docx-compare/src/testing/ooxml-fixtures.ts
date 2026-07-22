@@ -167,16 +167,29 @@ export interface HyperlinkRelFixture {
   external?: boolean;
 }
 
+export interface MinimalDocumentNamespaceOptions {
+  /** Additional root prefix bindings, keyed without `xmlns:`. */
+  namespaces?: Readonly<Record<string, string>>;
+  /** Additional prefixes appended to the root `mc:Ignorable` token list. */
+  ignorablePrefixes?: readonly string[];
+}
+
 export async function buildDocxFromBodyXml(
   bodyXml: string,
   hyperlinkRels: HyperlinkRelFixture[] = [],
+  namespaceOptions: MinimalDocumentNamespaceOptions = {},
 ): Promise<Buffer> {
+  const extraNamespaces = Object.entries(namespaceOptions.namespaces ?? {})
+    .map(([prefix, uri]) => ` xmlns:${prefix}="${escapeXmlText(uri)}"`)
+    .join('');
+  const ignorable = ['w14', ...(namespaceOptions.ignorablePrefixes ?? [])].join(' ');
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
     ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
     ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
-    ` mc:Ignorable="w14">` +
+    extraNamespaces +
+    ` mc:Ignorable="${ignorable}">` +
     `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
 
   const contentTypesXml =

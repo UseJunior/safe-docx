@@ -77,6 +77,10 @@ import {
   type HyperlinkRelResolver,
   computeReconstructionStats,
 } from './documentReconstructor.js';
+import {
+  bindOpaquePassthroughCounterparts,
+  validateOpaquePassthroughCorrelation,
+} from './opaquePassthrough.js';
 import { modifyRevisedDocument, ContainerResolutionError } from './inPlaceModifier.js';
 import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
@@ -713,12 +717,18 @@ export async function compareDocumentsAtomizer(
       premergeAdjacentRuns(revisedBody);
     }
 
-    const { atoms: originalAtoms } = atomizeTree(originalBody, [], originalPart, atomizeOptions);
-    const { atoms: revisedAtoms } = atomizeTree(revisedBody, [], revisedPart, atomizeOptions);
+    const effectiveAtomizeOptions = outputMode === 'rebuild'
+      ? { ...atomizeOptions, captureInlineSdtPassthrough: true }
+      : atomizeOptions;
+    const { atoms: originalAtoms } = atomizeTree(originalBody, [], originalPart, effectiveAtomizeOptions);
+    const { atoms: revisedAtoms } = atomizeTree(revisedBody, [], revisedPart, effectiveAtomizeOptions);
 
     // Assign paragraph indices for proper grouping during reconstruction
     assignParagraphIndices(originalAtoms);
     assignParagraphIndices(revisedAtoms);
+    if (outputMode === 'rebuild') {
+      bindOpaquePassthroughCounterparts(originalAtoms, revisedAtoms);
+    }
 
     // Step 5: Apply numbering virtualization (optional)
     if (numberingSettings.enabled) {
@@ -766,6 +776,9 @@ export async function compareDocumentsAtomizer(
 
     // Step 10b: Assign unified paragraph indices to handle atoms from different trees
     assignUnifiedParagraphIndices(originalAtoms, revisedAtoms, mergedAtoms, lcsResult);
+    if (outputMode === 'rebuild') {
+      validateOpaquePassthroughCorrelation(mergedAtoms);
+    }
 
     // Step 11: Reconstruct document with track changes
     let newDocumentXml: string;

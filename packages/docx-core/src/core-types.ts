@@ -105,6 +105,30 @@ export interface FormatChangeInfo {
 }
 
 /**
+ * Process-local payload for a comparison atom owned by an opaque XML boundary.
+ *
+ * The comparison model is already DOM-backed; this descriptor intentionally
+ * retains a cloned element rather than exposing a serialized public contract.
+ * `documentOrdinal` identifies the boundary among other captured boundaries in
+ * source order. The reconstructor validates original/revised counterparts before
+ * assigning `emissionElement` from the original side.
+ */
+export interface OpaquePassthroughNode {
+  namespaceUri: string;
+  localName: string;
+  documentOrdinal: number;
+  /** Source-order paragraph identity; movement is outside the pilot and fails closed. */
+  paragraphOrdinal: number;
+  /** Structural parent path (body or table/cell position) owning the paragraph. */
+  containerIdentity: string;
+  semanticFingerprint: string;
+  sourceElement: WmlElement;
+  effectiveNamespaces: Readonly<Record<string, string>>;
+  effectiveMceDeclarations: Readonly<Record<string, string>>;
+  emissionElement?: WmlElement;
+}
+
+/**
  * Atomic leaf-node unit used in LCS comparison.
  *
  * Represents the smallest comparable unit of content. Created by atomizing
@@ -163,6 +187,9 @@ export interface ComparisonUnitAtom extends ComparisonUnit {
   // Run formatting snapshot
   /** Cloned run properties (w:rPr) captured at atomization time, or null if no formatting */
   rPr?: Element | null;
+
+  /** Opaque XML boundary that owns this atom, when bounded passthrough is enabled. */
+  opaquePassthrough?: OpaquePassthroughNode;
 }
 
 // =============================================================================

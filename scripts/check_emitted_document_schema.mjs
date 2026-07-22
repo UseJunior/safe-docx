@@ -132,7 +132,7 @@ const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
  * Markup Compatibility and Extensibility (ECMA-376 Part 3) preprocessing.
  *
  * Word-emitted documents carry extension markup (w14:paraId, wp14 anchor
- * attributes, ...) in namespaces the root declares via mc:Ignorable. A
+ * attributes, ...) in namespaces declared via effective mc:Ignorable scope. A
  * conformant consumer removes ignorable markup before structural validation;
  * the WML XSD alone cannot express this, so we preprocess here:
  *   - resolve each mc:Ignorable prefix to its namespace URI
@@ -144,7 +144,7 @@ const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
  * documents are validated byte-for-byte as emitted. The decision is made on
  * the parsed DOM (namespace-aware), never on substring probing.
  */
-function applyMcePreprocessing(xml) {
+export function applyMcePreprocessing(xml) {
   let doc;
   try {
     doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -156,17 +156,19 @@ function applyMcePreprocessing(xml) {
   const root = doc.documentElement;
   if (!root) return { xml };
 
-  const ignorableNs = new Set();
-  const ignorable = root.getAttributeNS(MC_NS, 'Ignorable');
-  if (ignorable) {
-    for (const prefix of ignorable.trim().split(/\s+/)) {
-      const ns = root.lookupNamespaceURI(prefix);
-      if (ns) ignorableNs.add(ns);
-    }
-  }
-
   let changed = false;
-  const visit = (element) => {
+  const visit = (element, inheritedIgnorableNs) => {
+    const ignorableNs = new Set(inheritedIgnorableNs);
+    const ignorable = element.getAttributeNS(MC_NS, 'Ignorable');
+    if (ignorable) {
+      for (const prefix of ignorable.trim().split(/\s+/).filter(Boolean)) {
+        const namespaceUri = element.lookupNamespaceURI(prefix);
+        if (!namespaceUri) {
+          throw new Error(`mc:Ignorable names unbound prefix '${prefix}' on ${element.tagName}`);
+        }
+        ignorableNs.add(namespaceUri);
+      }
+    }
     if (element.namespaceURI === MC_NS && element.localName === 'AlternateContent') {
       const fallback = Array.from(element.childNodes).find(
         (n) => n.namespaceURI === MC_NS && n.localName === 'Fallback'
@@ -175,7 +177,7 @@ function applyMcePreprocessing(xml) {
       if (fallback) {
         for (const child of Array.from(fallback.childNodes)) {
           parent.insertBefore(child, element);
-          if (child.nodeType === 1) visit(child);
+          if (child.nodeType === 1) visit(child, ignorableNs);
         }
       }
       parent.removeChild(element);
@@ -194,10 +196,14 @@ function applyMcePreprocessing(xml) {
       }
     }
     for (const child of Array.from(element.childNodes)) {
-      if (child.nodeType === 1) visit(child);
+      if (child.nodeType === 1) visit(child, ignorableNs);
     }
   };
-  visit(root);
+  try {
+    visit(root, new Set());
+  } catch (error) {
+    return { parseError: String(error?.message ?? error).split('\n')[0] };
+  }
   if (!changed) return { xml };
   return { xml: new XMLSerializer().serializeToString(doc) };
 }
@@ -334,4 +340,6 @@ async function main() {
   }
 }
 
-await main();
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}
