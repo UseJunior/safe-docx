@@ -191,6 +191,24 @@
       "falsifier": "packages/docx-core/src/integration/lean-spec-bridge.test.ts"
     },
     {
+      "id": "INV-MOVE-RANGE-001",
+      "statement": "For every fixed WordprocessingML story accepted by the compiled checker, tracked move ranges have unique typed decimal ids, non-empty names, balanced non-crossing endpoints, exactly one range per direction and move name, and matching source/destination move names.",
+      "tier": "proven",
+      "leanTheorem": "Tier2.XmlTripleChecker.checker_sound",
+      "leanFile": "verification/lean/Tier2/XmlTripleChecker.lean",
+      "productionSurface": "packages/docx-compare/src/baselines/atomizer/inPlaceModifier-postprocess.ts; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts",
+      "residualAxioms": [],
+      "caveats": [
+        "MoveRangesWellFormed is witnessed by an inductive trace whose starts require fresh Int ids and fresh non-empty directional names, whose ends pop the exact same-direction id, and whose final state has an empty stack and matching source/destination name membership.",
+        "Both Strict and Transitional schemas type move range ids as ST_DecimalNumber restricted from xsd:integer. Numeric aliases canonicalize to Int and malformed ids reject. Required ST_String names can be empty at schema level; the checker deliberately imposes a stronger non-empty identity rule.",
+        "The executable strictly decodes package parts as UTF-8, accepts one leading UTF-8 BOM, and permits only absent or case-insensitive UTF-8 declaration encoding. The parser accepts one namespace-qualified XML root and whitespace outside it, validates XML 1.0 characters/references in every element namespace, applies XML attribute-value normalization before resolving references, rejects duplicate ordinary attributes by expanded name, validates QNames, and rejects comments, other processing instructions, DTDs, and CDATA rather than treating them as checked content.",
+        "This is a per-document checker guarantee over the fixed main, footnote, and endnote stories, not a universal proof of every safe-docx emission path.",
+        "The checker pairs source and destination range identities by w:name but does not associate individual w:moveFrom or w:moveTo revision ids with a range id.",
+        "The public certificate remains limited to inplace reconstruction output."
+      ],
+      "falsifier": "lean-build: lake build and axiom audit; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts"
+    },
+    {
       "id": "INV-LO-ORACLE-001",
       "statement": "A local LibreOffice oracle agrees with the TypeScript accept/reject engine on the characterized paragraph-structure projection.",
       "tier": "empirically-validated",
