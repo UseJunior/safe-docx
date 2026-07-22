@@ -273,23 +273,40 @@ def resolveQName (bindings : NamespaceBindings) (name : String) : Except String 
   | some uri => return (uri, localName)
   | none => throw s!"unbound namespace prefix: {pre}"
 
-def canonicalizeWmlAttributes (attributes : XmlAttributes)
-    (bindings : NamespaceBindings) : Except String XmlAttributes :=
-  attributes.foldlM (fun canonical (key, value) => do
-    if key == "xmlns" || key.startsWith "xmlns:" then return canonical
-    else
-    let (pre, attrLocal) ← parseQName key
-    if !pre.isEmpty && namespaceLookupD bindings pre "" == wmlNamespace then
-      return canonical ++ [("w:" ++ attrLocal, value)]
-    return canonical ++ [(key, value)]) []
+def resolveAttributeQName (bindings : NamespaceBindings) (name : String) :
+    Except String (String × String) := do
+  let (pre, localName) ← parseQName name
+  if pre.isEmpty then return ("", localName)
+  match namespaceLookup bindings pre with
+  | some uri => return (uri, localName)
+  | none => throw s!"unbound namespace prefix on attribute: {pre}"
 
-def validateAttributeNamespaces (attributes : XmlAttributes)
-    (bindings : NamespaceBindings) : Except String Unit := do
-  for (key, _) in attributes do
-    if key == "xmlns" || key.startsWith "xmlns:" then continue
-    let (pre, _) ← parseQName key
-    if !pre.isEmpty && (namespaceLookup bindings pre).isNone then
-      throw s!"unbound namespace prefix on attribute: {pre}"
+structure ExpandedXmlAttribute where
+  uri : String
+  localName : String
+  value : String
+  deriving BEq, Repr
+
+def expandOrdinaryAttributes (attributes : XmlAttributes)
+    (bindings : NamespaceBindings) : Except String (List ExpandedXmlAttribute) :=
+  attributes.foldlM (fun expanded (key, value) => do
+    if key == "xmlns" || key.startsWith "xmlns:" then return expanded
+    let (uri, localName) ← resolveAttributeQName bindings key
+    return expanded ++ [{ uri, localName, value }]) []
+
+def validateUniqueExpandedAttributes (attributes : List ExpandedXmlAttribute) :
+    Except String Unit := do
+  let _ ← attributes.foldlM (fun expandedNames attr => do
+    let expandedName := (attr.uri, attr.localName)
+    if expandedNames.contains expandedName then
+      throw "duplicate XML attribute expanded name"
+    return expandedName :: expandedNames) []
+
+def canonicalizeAttributes (attributes : List ExpandedXmlAttribute) : XmlAttributes :=
+  attributes.map fun attr =>
+    if attr.uri == wmlNamespace then ("w:" ++ attr.localName, attr.value)
+    else if attr.uri.isEmpty then (attr.localName, attr.value)
+    else ("{" ++ attr.uri ++ "}" ++ attr.localName, attr.value)
 
 def tagAttribute (attributes : XmlAttributes) (key : String) : String :=
   match attributes.find? (fun binding => binding.1 == key) with
@@ -380,14 +397,11 @@ def currentNamespaces (state : XmlParseState) : NamespaceBindings :=
 def dropLastString (value : String) : String :=
   String.ofList value.toList.dropLast
 
-def isValidEncodingName (value : String) : Bool :=
-  match value.toList with
-  | [] => false
-  | first :: rest =>
-    (('A' ≤ first && first ≤ 'Z') || ('a' ≤ first && first ≤ 'z')) &&
-      rest.all fun c =>
-        ('A' ≤ c && c ≤ 'Z') || ('a' ≤ c && c ≤ 'z') ||
-        ('0' ≤ c && c ≤ '9') || c == '.' || c == '_' || c == '-'
+def asciiLowerChar (c : Char) : Char :=
+  if 'A' ≤ c && c ≤ 'Z' then Char.ofNat (c.toNat + ('a'.toNat - 'A'.toNat)) else c
+
+def isUtf8Encoding (value : String) : Bool :=
+  String.ofList (value.toList.map asciiLowerChar) == "utf-8"
 
 def parseXmlDeclaration (trimmed : String) : Except String Unit := do
   if !trimmed.endsWith "?" then throw "malformed XML declaration"
@@ -398,12 +412,12 @@ def parseXmlDeclaration (trimmed : String) : Except String Unit := do
   match attributes with
   | [("version", "1.0")] => pure ()
   | [("version", "1.0"), ("encoding", encoding)] =>
-    if isValidEncodingName encoding then pure () else throw "invalid XML declaration encoding"
+    if isUtf8Encoding encoding then pure () else throw "XML declaration encoding must be UTF-8"
   | [("version", "1.0"), ("standalone", standalone)] =>
     if standalone == "yes" || standalone == "no" then pure ()
     else throw "invalid XML standalone value"
   | [("version", "1.0"), ("encoding", encoding), ("standalone", standalone)] =>
-    if !isValidEncodingName encoding then throw "invalid XML declaration encoding"
+    if !isUtf8Encoding encoding then throw "XML declaration encoding must be UTF-8"
     if standalone != "yes" && standalone != "no" then throw "invalid XML standalone value"
     pure ()
   | _ => throw "unsupported or malformed XML declaration"
@@ -412,6 +426,11 @@ def finishXmlSegment (state : XmlParseState) (payload : String) : Except String 
   if state.stack.isEmpty && !payload.toList.all isXmlSpace then
     throw "non-whitespace content outside the XML root"
   return state
+
+def stripLeadingUtf8Bom (xml : String) : String :=
+  match xml.toList with
+  | first :: rest => if first.toNat == 0xFEFF then String.ofList rest else xml
+  | [] => xml
 
 def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : String) :
     Except String XmlParseState := do
@@ -435,7 +454,9 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
     let (uri, localName) ← resolveQName top.namespaces rawName
     if uri != top.uri || localName != top.localName then
       throw s!"mismatched closing tag: {rawName}"
-    let emitted ← if uri == wmlNamespace then tagToken true localName [] payload else pure []
+    let decodedPayload ← decodeXmlText payload
+    let emitted := if uri == wmlNamespace then
+      tagTokenDecoded true localName [] decodedPayload else []
     let next := { state with
       stack := state.stack.drop 1
       tokens := state.tokens ++ emitted
@@ -450,17 +471,16 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
   let attributes ← decodeXmlAttributes rawAttributes
   let declarations ← namespaceDeclarations attributes
   let bindings := extendNamespaces (currentNamespaces state) declarations
-  validateAttributeNamespaces attributes bindings
+  let expandedAttributes ← expandOrdinaryAttributes attributes bindings
+  validateUniqueExpandedAttributes expandedAttributes
   let (uri, localName) ← resolveQName bindings rawName
   if !state.rootSeen then
     if uri != wmlNamespace || localName != expectedRoot then
       throw s!"unexpected root namespace={uri} local={localName}; expected namespace={wmlNamespace} local={expectedRoot}"
-  let canonicalAttributes ← canonicalizeWmlAttributes attributes bindings
-  if canonicalAttributes.any (fun attr =>
-      (canonicalAttributes.filter fun other => other.1 == attr.1).length > 1) then
-    throw "duplicate XML attribute expanded name"
-  let emitted ← if uri == wmlNamespace then
-    tagToken false localName canonicalAttributes payload else pure []
+  let canonicalAttributes := canonicalizeAttributes expandedAttributes
+  let decodedPayload ← decodeXmlText payload
+  let emitted := if uri == wmlNamespace then
+    tagTokenDecoded false localName canonicalAttributes decodedPayload else []
   let next := { state with
     tokens := state.tokens ++ emitted
     rootSeen := true
@@ -471,7 +491,8 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
 def parseXmlTokensForRoot (xml expectedRoot : String) : Except String (List XmlTok) := do
   if !xml.toList.all (fun c => isLegalXmlChar c.toNat) then
     throw "XML contains a disallowed literal character"
-  let pieces := xml.splitOn "<"
+  let normalizedXml := stripLeadingUtf8Bom xml
+  let pieces := normalizedXml.splitOn "<"
   let leadingText := List.getD pieces 0 ""
   if !leadingText.toList.all isXmlSpace then throw "non-whitespace content before the XML root"
   let segments := pieces.drop 1

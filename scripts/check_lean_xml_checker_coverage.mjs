@@ -59,6 +59,9 @@ if (!numericReferences.includes('hexadecimal') || !lean.includes('malformed hexa
 for (const required of ['isLegalXmlChar', 'duplicate XML attribute name',
   'duplicate XML attribute expanded name', '.afterValue =>', 'parseQName',
   'isValidNcName', 'validateNamespaceDeclaration', 'parseXmlDeclaration',
+  'ExpandedXmlAttribute', 'expandOrdinaryAttributes', 'canonicalizeAttributes',
+  'resolveAttributeQName', 'validateUniqueExpandedAttributes', 'isUtf8Encoding',
+  'stripLeadingUtf8Bom', 'let decodedPayload ← decodeXmlText payload',
   'non-whitespace content outside the XML root',
   'processing instructions are outside the accepted XML subset']) {
   if (!lean.includes(required)) {
@@ -75,6 +78,9 @@ if (!ledger.scope?.reconstructionModes?.outOfScope?.includes('rebuild')) {
 
 if (ledger.protocolVersion !== 3 || !executable.includes('protocolVersion != 3')) {
   errors.push('ledger and Lean executable must agree on protocol version 3');
+}
+if (!executable.includes('String.fromUTF8?')) {
+  errors.push('accepted XML subset requires strict UTF-8 package-part decoding');
 }
 
 for (const part of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']) {

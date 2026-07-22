@@ -351,6 +351,14 @@ describeWithLean('Lean fixed-story package protocol', () => {
         'xmlns:w=',
         `xmlns:x="http://www.w3.org/XML/1998/namespace" xmlns:w=`,
       ),
+      duplicateForeignExpandedName: xml.replace(
+        'xmlns:w=',
+        'xmlns:a="urn:duplicate" xmlns:b="urn:duplicate" a:value="1" b:value="2" xmlns:w=',
+      ),
+      duplicateNamespacePrefix: xml.replace(
+        'xmlns:w=',
+        'xmlns:a="urn:first" xmlns:a="urn:second" xmlns:w=',
+      ),
       invalidClosingQName: xml.replace('</w:p>', '</w:x:p>'),
       contentBeforeRoot: `garbage${xml}`,
       contentAfterRoot: `${xml}garbage`,
@@ -362,6 +370,16 @@ describeWithLean('Lean fixed-story package protocol', () => {
       unsupportedDoctype: xml.replace('?>', '?><!DOCTYPE w:document>'),
       unsupportedCdata: xml.replace('<w:body>', '<w:body><![CDATA[text]]>'),
       malformedDeclaration: xml.replace('version="1.0"', 'version="1.1"'),
+      incompatibleEncoding: xml.replace('encoding="UTF-8"', 'encoding="UTF-16"'),
+      incompatibleUtf8Alias: xml.replace('encoding="UTF-8"', 'encoding="UTF8"'),
+      unknownReferenceInForeignText: xml.replace(
+        '<w:body>',
+        '<w:body><x:foreign xmlns:x="urn:foreign">bad&unknown;</x:foreign>',
+      ),
+      malformedReferenceInForeignText: xml.replace(
+        '<w:body>',
+        '<w:body><x:foreign xmlns:x="urn:foreign">bad&#xZZ;</x:foreign>',
+      ),
     } as const;
 
     for (const [mutation, malformedXml] of Object.entries(malformedInputs)) {
@@ -373,7 +391,11 @@ describeWithLean('Lean fixed-story package protocol', () => {
   test('accepts legal XML character, QName, declaration, and root-whitespace boundaries', async () => {
     const legalText = `legal\t\n\r \u00B7\uD7FF\uE000\uFFFD\u{10000}`;
     const base = await buildDocxFromBodyXml(
-      `<w:p><w:_extension _meta="${legalText}"/><w:r><w:t>${legalText}</w:t></w:r></w:p>`,
+      `<w:p>` +
+      `<w:_extension xmlns="urn:default" xmlns:a="urn:default" xmlns:b="urn:other" ` +
+      `_meta="${legalText}" local="none" a:local="default" b:local="other"/>` +
+      `<x:foreign xmlns:x="urn:foreign">legal&amp;&#x20;&#128512;</x:foreign>` +
+      `<w:r><w:t>${legalText}</w:t></w:r></w:p>`,
     );
     const xml = await readPart(base, 'word/document.xml');
     const legalInputs = {
@@ -383,6 +405,8 @@ describeWithLean('Lean fixed-story package protocol', () => {
         /^<\?xml[^?]*\?>/,
         '<?xml version="1.0" standalone="no"?>',
       ),
+      mixedCaseUtf8Encoding: xml.replace('encoding="UTF-8"', 'encoding="uTf-8"'),
+      leadingUtf8Bom: `\uFEFF${xml}`,
       noDeclarationWithWhitespace: ` \t\n${xml.replace(/^<\?xml[^?]*\?>/, '')}\r\n`,
     } as const;
 

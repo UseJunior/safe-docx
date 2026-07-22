@@ -77,10 +77,13 @@
       "rejects malformed attribute transitions and character references",
       "rejects literal and referenced characters outside the XML 1.0 character range",
       "requires syntactically valid element and attribute QNames before namespace expansion",
-      "rejects empty prefixed namespace bindings and illegal xml or xmlns namespace rebinding"
+      "rejects empty prefixed namespace bindings and illegal xml or xmlns namespace rebinding",
+      "rejects duplicate ordinary attributes by expanded namespace URI and local name across every namespace; unprefixed attributes remain in no namespace",
+      "validates and decodes character data references in every element namespace before semantic token filtering"
     ],
     "acceptedXmlSubset": [
-      "an optional leading XML 1.0 declaration with optional encoding and standalone declarations",
+      "package-part bytes must decode as UTF-8; one leading UTF-8 BOM is accepted and stripped",
+      "an optional leading XML 1.0 declaration with absent encoding or case-insensitive UTF-8 encoding and an optional standalone declaration",
       "exactly one namespace-qualified root with matched element boundaries",
       "XML whitespace only before and after the root",
       "comments, processing instructions, DTDs, and CDATA are rejected rather than ignored"
