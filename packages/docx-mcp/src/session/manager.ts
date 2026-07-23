@@ -56,6 +56,13 @@ export type ExtractionCacheEntry = {
   changes: ParagraphRevision[];
 };
 
+export type SelectiveRevisionAction = {
+  tool: 'accept_ai_edits' | 'reject_ai_edits';
+  selector: 'revision_ids' | 'author';
+  selectedRevisionIds: string[];
+  editRevision: number;
+};
+
 /**
  * A package-level (non-revision) mutation recorded during a session.
  *
@@ -112,6 +119,12 @@ export type DocxSession = {
    * OOXML revision wrapper are still accounted for (#122).
    */
   nonRevisionManifest: NonRevisionChange[];
+  /**
+   * Most recent selective revision disposition in this in-memory session.
+   * A later clean save uses this marker to prevent automatically accepting
+   * remaining revisions that the caller deliberately left unresolved.
+   */
+  selectiveRevisionAction: SelectiveRevisionAction | null;
   createdAt: Date;
   lastAccessedAt: Date;
   expiresAt: Date;
@@ -362,6 +375,7 @@ export class SessionManager {
       saveCache: new Map<string, SaveCacheEntry>(),
       extractionCache: null,
       nonRevisionManifest: [],
+      selectiveRevisionAction: null,
       createdAt: now,
       lastAccessedAt: now,
       expiresAt,
@@ -563,6 +577,16 @@ export class SessionManager {
     change: Omit<NonRevisionChange, 'editRevision'>,
   ): void {
     session.nonRevisionManifest.push({ ...change, editRevision: session.editRevision });
+  }
+
+  recordSelectiveRevisionAction(
+    session: DocxSession,
+    action: Omit<SelectiveRevisionAction, 'editRevision'>,
+  ): void {
+    session.selectiveRevisionAction = {
+      ...action,
+      editRevision: session.editRevision,
+    };
   }
 
   getSaveCache(session: DocxSession, cacheKey: string): SaveCacheEntry | null {

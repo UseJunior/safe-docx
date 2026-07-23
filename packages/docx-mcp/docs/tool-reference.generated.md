@@ -18,7 +18,7 @@ Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k 
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `offset` | `number` | no | 1-based paragraph offset for pagination. Negative values count from end. |
 | `limit` | `number` | no | Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination. |
-| `node_ids` | `array<string>` | no |  |
+| `node_ids` | `array<string>` | no | Paragraph selectors. Each accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application's own stable paragraph bookmark — whose w:id-paired range covers exactly one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. Returned rows always report the paragraph's canonical `_bk_*` id, even when selected by another bookmark name; results are de-duplicated and returned in document order. |
 | `format` | `enum("toon", "json", "simple")` | no |  |
 | `comment_rendering` | `enum("none", "paragraph_notes", "endnotes", "inline_markers")` | no | How to render comments in read_file output. Use "paragraph_notes" (default) for paragraph-local comment threads, "inline_markers" to add `[cm-start:N]`/`[cm-end:N]` milestones in TOON output (combined with the thread blocks), "endnotes" to collect threaded comments into a trailing #COMMENTS block in TOON output, or "none" for the legacy output with no comment rendering. |
 | `show_formatting` | `boolean` | no | When true (default), shows inline formatting tags (<b>, <i>, <u>, <highlighting>, <a>). When false, emits plain text with no inline tags. |
@@ -110,7 +110,7 @@ Insert a paragraph before/after an anchor paragraph by paragraph id. Supports DO
 
 ## `save`
 
-Save document. For DOCX: saves clean and/or tracked changes output. For ODT: saves an .odt package. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX. Surface: revisionable — the save report lists both the AI revisions applied and a non-revision change manifest of any package-level mutations (comment/footnote side parts, relationships) that have no tracked-change wrapper.
+Persist the current in-memory document session. For DOCX: saves clean and/or tracked changes output. For ODT: saves an .odt package. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX. Surface: revisionable — the save report lists both the AI revisions applied and a non-revision change manifest of any package-level mutations (comment/footnote side parts, relationships) that have no tracked-change wrapper.
 
 - readOnly: `false`
 - destructive: `true`
@@ -120,9 +120,10 @@ Save document. For DOCX: saves clean and/or tracked changes output. For ODT: sav
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `save_to_local_path` | `string` | yes |  |
-| `clean_bookmarks` | `boolean` | no |  |
+| `clean_bookmarks` | `boolean` | no | Controls removal of internal bookmarks from DOCX output. Behavior is intentionally three-way: OMIT (recommended for tracked/persistence saves) preserves the document's own bookmarks — only safe-docx paragraph anchors (`_bk_*`) are removed. Explicit `true` ALSO strips harness edit-span bookmarks (`edit-*`) to produce a clean deliverable; do NOT pass it when the tracked output feeds a redline pipeline, because that reproduces the pre-#609 loss of `edit-*` anchors. `false` keeps all bookmarks. Omitting is NOT equivalent to passing `true` — they differ precisely in whether original `edit-*` bookmarks survive. |
 | `save_format` | `enum("clean", "tracked", "both")` | no |  |
 | `allow_overwrite` | `boolean` | no |  |
+| `allow_discard_preserved_revisions` | `boolean` | no | Explicitly allow a clean artifact to auto-accept remaining revisions by the session AI author after accept_ai_edits/reject_ai_edits selectively left revisions unresolved. Default: false. |
 | `tracked_save_to_local_path` | `string` | no |  |
 | `tracked_changes_author` | `string` | no |  |
 | `tracked_changes_engine` | `enum("auto", "atomizer")` | no | Deprecated and ignored (#126). The redline is now the session's write-time tracked markup, serialized directly — there is no comparison engine to select. Use the compare_documents tool for comparison-based redlines. |
@@ -185,7 +186,7 @@ Accept all tracked changes in the document body, producing a clean document with
 
 ## `accept_ai_edits`
 
-Selectively accept tracked changes by revision id or author, leaving all other (e.g. third-party reviewer) revisions byte-untouched. Provide revision_ids (array of w:id values) to target specific revisions, or author to accept every revision by one actor. Sweeps document.xml and supported side-story parts (footnotes, endnotes, comments). An ambiguous overlap — a targeted revision structurally containing, or contained by, a non-targeted revision (nested ins/del/move) — hard-errors with code AMBIGUOUS_REVISION_OVERLAP and a structured `overlaps` list unless normalize_first is set (best-effort, no byte-identical promise).
+Selectively accept tracked changes by revision id or author in the in-memory session, leaving all other (e.g. third-party reviewer) revisions byte-untouched. This does not write file_path; call save to persist the mutation. Provide revision_ids (array of w:id values) to target specific revisions, or author to accept every revision by one actor. Sweeps document.xml and supported side-story parts (footnotes, endnotes, comments). An ambiguous overlap — a targeted revision structurally containing, or contained by, a non-targeted revision (nested ins/del/move) — hard-errors with code AMBIGUOUS_REVISION_OVERLAP and a structured `overlaps` list unless normalize_first is set (best-effort, no byte-identical promise).
 
 - readOnly: `false`
 - destructive: `true`
@@ -199,7 +200,7 @@ Selectively accept tracked changes by revision id or author, leaving all other (
 
 ## `reject_ai_edits`
 
-Selectively reject tracked changes by revision id or author (restoring their pre-edit state), leaving all other revisions byte-untouched. Symmetric to accept_ai_edits: provide revision_ids or author, sweeps document.xml and supported side-story parts, and hard-errors on an ambiguous overlap (code AMBIGUOUS_REVISION_OVERLAP with a structured `overlaps` list) unless normalize_first is set.
+Selectively reject tracked changes by revision id or author in the in-memory session (restoring their pre-edit state), leaving all other revisions byte-untouched. This does not write file_path; call save to persist the mutation. Symmetric to accept_ai_edits: provide revision_ids or author, sweeps document.xml and supported side-story parts, and hard-errors on an ambiguous overlap (code AMBIGUOUS_REVISION_OVERLAP with a structured `overlaps` list) unless normalize_first is set.
 
 - readOnly: `false`
 - destructive: `true`

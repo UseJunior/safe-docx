@@ -129,6 +129,7 @@ export async function save(
     track_changes?: boolean;
     author?: string;
     allow_overwrite?: boolean;
+    allow_discard_preserved_revisions?: boolean;
     tracked_save_to_local_path?: string;
     tracked_changes_author?: string;
     // Deprecated (#126): comparison-based redlines moved to the compare_documents
@@ -175,15 +176,40 @@ export async function save(
     const format: SaveFormat = formatRaw;
 
     const clean = params.clean_bookmarks ?? true;
+    const preserveOriginalBookmarksInTracked = params.clean_bookmarks === undefined;
     // Display author for the tracked-changes report. The actual markup author is
     // whatever the write-time emitter recorded on session.doc (#120/#126); no
     // comparison re-authoring happens here.
     const author = params.tracked_changes_author ?? params.author ?? session.aiAuthor ?? 'SafeDocX';
     const allowOverwrite = params.allow_overwrite ?? false;
+
+    let cleanArtifactDiscardedRevisions: SaveRevisionSummary | undefined;
+    if (
+      (format === 'clean' || format === 'both')
+      && session.selectiveRevisionAction
+      && session.aiAuthor
+    ) {
+      const current = await session.doc.toBuffer({ cleanBookmarks: false });
+      const remaining = await collectAiRevisionSummary(current.buffer, session.aiAuthor);
+      if (remaining && !params.allow_discard_preserved_revisions) {
+        return {
+          ...err(
+            'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED',
+            `Clean output would auto-accept ${remaining.count} remaining revision(s) by ${session.aiAuthor} after a selective revision operation.`,
+            "Use save_format='tracked', finish accepting/rejecting the remaining revisions, or explicitly set allow_discard_preserved_revisions=true.",
+          ),
+          selective_revision_action: session.selectiveRevisionAction,
+          preserved_revisions: remaining,
+        };
+      }
+      cleanArtifactDiscardedRevisions = remaining;
+    }
+
     const cacheKey = JSON.stringify({
       revision: session.editRevision,
       format,
       clean_bookmarks: clean,
+      preserve_original_bookmarks_in_tracked: preserveOriginalBookmarksInTracked,
       tracked_author: author,
     });
 
@@ -280,9 +306,15 @@ export async function save(
       // pre-existing reviewer revisions preserved). Comparison-based redlining is
       // available only via the compare_documents tool.
       if (format === 'tracked' || format === 'both') {
-        const tracked = await session.doc.toBuffer({ cleanBookmarks: clean });
+        const tracked = await session.doc.toBuffer({
+          cleanBookmarks: clean,
+          preserveOriginalBookmarks: preserveOriginalBookmarksInTracked,
+        });
         trackedBuffer = tracked.buffer;
         trackedStats = await collectTrackedStats(trackedBuffer, session.aiAuthor);
+        if (format === 'tracked') {
+          bookmarksRemoved = tracked.bookmarksRemoved;
+        }
       }
 
       manager.setSaveCache(session, {
@@ -388,6 +420,12 @@ export async function save(
       cache_hit: cacheHit,
       format_source: formatSource,
       parameter_warning: parameterWarning,
+      selective_revision_disposition: cleanArtifactDiscardedRevisions
+        ? {
+            acknowledged: true,
+            clean_artifact_accepted_remaining_author_revisions: cleanArtifactDiscardedRevisions,
+          }
+        : undefined,
       validation: validation.warnings.length > 0 || (aiRevisionValidation?.warnings.length ?? 0) > 0
         ? {
             warnings: [
