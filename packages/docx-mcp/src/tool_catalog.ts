@@ -215,7 +215,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
       save_to_local_path: z.string(),
-      clean_bookmarks: z.boolean().optional(),
+      clean_bookmarks: z
+        .boolean()
+        .optional()
+        .describe(
+          "Controls removal of internal bookmarks from DOCX output. Behavior is intentionally three-way: OMIT (recommended for tracked/persistence saves) preserves the document's own bookmarks — only safe-docx paragraph anchors (`_bk_*`) are removed. Explicit `true` ALSO strips harness edit-span bookmarks (`edit-*`) to produce a clean deliverable; do NOT pass it when the tracked output feeds a redline pipeline, because that reproduces the pre-#609 loss of `edit-*` anchors. `false` keeps all bookmarks. Omitting is NOT equivalent to passing `true` — they differ precisely in whether original `edit-*` bookmarks survive.",
+        ),
       save_format: z.enum(['clean', 'tracked', 'both']).optional(),
       allow_overwrite: z.boolean().optional(),
       tracked_save_to_local_path: z.string().optional(),

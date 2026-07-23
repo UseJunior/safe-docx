@@ -175,6 +175,7 @@ export async function save(
     const format: SaveFormat = formatRaw;
 
     const clean = params.clean_bookmarks ?? true;
+    const preserveOriginalBookmarksInTracked = params.clean_bookmarks === undefined;
     // Display author for the tracked-changes report. The actual markup author is
     // whatever the write-time emitter recorded on session.doc (#120/#126); no
     // comparison re-authoring happens here.
@@ -184,6 +185,7 @@ export async function save(
       revision: session.editRevision,
       format,
       clean_bookmarks: clean,
+      preserve_original_bookmarks_in_tracked: preserveOriginalBookmarksInTracked,
       tracked_author: author,
     });
 
@@ -280,9 +282,15 @@ export async function save(
       // pre-existing reviewer revisions preserved). Comparison-based redlining is
       // available only via the compare_documents tool.
       if (format === 'tracked' || format === 'both') {
-        const tracked = await session.doc.toBuffer({ cleanBookmarks: clean });
+        const tracked = await session.doc.toBuffer({
+          cleanBookmarks: clean,
+          preserveOriginalBookmarks: preserveOriginalBookmarksInTracked,
+        });
         trackedBuffer = tracked.buffer;
         trackedStats = await collectTrackedStats(trackedBuffer, session.aiAuthor);
+        if (format === 'tracked') {
+          bookmarksRemoved = tracked.bookmarksRemoved;
+        }
       }
 
       manager.setSaveCache(session, {

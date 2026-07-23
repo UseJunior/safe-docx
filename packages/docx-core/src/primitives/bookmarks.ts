@@ -270,7 +270,18 @@ export function getParagraphBookmarkId(p: Element): string | null {
   return null;
 }
 
-export function cleanupInternalBookmarks(doc: Document): number {
+/**
+ * Remove Safe-DOCX paragraph anchors and edit-harness ranges, except for any
+ * bookmark ids the caller knows came from the source document.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @see #609
+ */
+export function cleanupInternalBookmarks(
+  doc: Document,
+  opts?: { preserveBookmarkIds?: ReadonlySet<string> },
+): number {
   // Remove paragraph bookmarks (_bk_*) and edit span bookmarks (edit-*).
   const starts = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart));
   const ends = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkEnd));
@@ -280,6 +291,7 @@ export function cleanupInternalBookmarks(doc: Document): number {
     const name = getAttr(s, 'name') ?? '';
     if (name.startsWith('_bk_') || name.startsWith('edit-')) {
       const id = getAttr(s, 'id') ?? '';
+      if (id && opts?.preserveBookmarkIds?.has(id)) continue;
       if (id) idsToRemove.add(id);
       s.parentNode?.removeChild(s);
     }
