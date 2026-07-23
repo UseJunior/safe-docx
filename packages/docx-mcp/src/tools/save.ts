@@ -129,6 +129,7 @@ export async function save(
     track_changes?: boolean;
     author?: string;
     allow_overwrite?: boolean;
+    allow_discard_preserved_revisions?: boolean;
     tracked_save_to_local_path?: string;
     tracked_changes_author?: string;
     // Deprecated (#126): comparison-based redlines moved to the compare_documents
@@ -180,6 +181,29 @@ export async function save(
     // comparison re-authoring happens here.
     const author = params.tracked_changes_author ?? params.author ?? session.aiAuthor ?? 'SafeDocX';
     const allowOverwrite = params.allow_overwrite ?? false;
+
+    let cleanArtifactDiscardedRevisions: SaveRevisionSummary | undefined;
+    if (
+      (format === 'clean' || format === 'both')
+      && session.selectiveRevisionAction
+      && session.aiAuthor
+    ) {
+      const current = await session.doc.toBuffer({ cleanBookmarks: false });
+      const remaining = await collectAiRevisionSummary(current.buffer, session.aiAuthor);
+      if (remaining && !params.allow_discard_preserved_revisions) {
+        return {
+          ...err(
+            'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED',
+            `Clean output would auto-accept ${remaining.count} remaining revision(s) by ${session.aiAuthor} after a selective revision operation.`,
+            "Use save_format='tracked', finish accepting/rejecting the remaining revisions, or explicitly set allow_discard_preserved_revisions=true.",
+          ),
+          selective_revision_action: session.selectiveRevisionAction,
+          preserved_revisions: remaining,
+        };
+      }
+      cleanArtifactDiscardedRevisions = remaining;
+    }
+
     const cacheKey = JSON.stringify({
       revision: session.editRevision,
       format,
@@ -388,6 +412,12 @@ export async function save(
       cache_hit: cacheHit,
       format_source: formatSource,
       parameter_warning: parameterWarning,
+      selective_revision_disposition: cleanArtifactDiscardedRevisions
+        ? {
+            acknowledged: true,
+            clean_artifact_accepted_remaining_author_revisions: cleanArtifactDiscardedRevisions,
+          }
+        : undefined,
       validation: validation.warnings.length > 0 || (aiRevisionValidation?.warnings.length ?? 0) > 0
         ? {
             warnings: [
