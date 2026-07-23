@@ -14,9 +14,11 @@ import {
   createTrackedTempDir,
 } from '../testing/session-test-utils.js';
 import { makeDocxWithDocumentXml } from '../testing/docx_test_utils.js';
-import { DocxZip, parseXml } from '@usejunior/docx-core';
+import { buildDocxFromParts, DocxZip, parseXml } from '@usejunior/docx-core';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+
+const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -120,6 +122,87 @@ describe('save', () => {
     }
     assertSuccess(result, 'tracked save');
   });
+
+  /**
+   * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+   * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+   * @see #609
+   */
+  test
+    .openspec('namespaced XML preserved through round-trip')
+    .conformance(
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.1' },
+      { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.2' },
+    )(
+      'tracked save preserves run-spanning and paragraph-anchor bookmark pairs by default',
+      async () => {
+        const mgr = createTestSessionManager();
+        const tmpDir = await createTrackedTempDir('save-bookmark-round-trip-');
+        const inputPath = path.join(tmpDir, 'bookmark-source.docx');
+        const outputPath = path.join(tmpDir, 'bookmark-output.docx');
+        const buf = await buildDocxFromParts({
+          bodyXml:
+            `<w:p w14:paraId="11111111">` +
+            `<w:bookmarkStart w:id="41" w:name="edit-contract-term"/>` +
+            `<w:r><w:t>Existing </w:t></w:r>` +
+            `<w:ins w:id="77" w:author="Reviewer" w:date="2026-07-23T12:00:00Z">` +
+            `<w:r><w:t>tracked </w:t></w:r>` +
+            `</w:ins>` +
+            `<w:r><w:t>text</w:t></w:r>` +
+            `<w:bookmarkEnd w:id="41"/>` +
+            `<w:bookmarkStart w:id="42" w:name="jr_para_11111111"/>` +
+            `<w:bookmarkEnd w:id="42"/>` +
+            `</w:p>`,
+        });
+        await fs.writeFile(inputPath, new Uint8Array(buf));
+
+        const opened = await openDocument(mgr, { file_path: inputPath });
+        assertSuccess(opened, 'open');
+        const saved = await save(mgr, {
+          file_path: inputPath,
+          save_to_local_path: outputPath,
+          save_format: 'tracked',
+        });
+        assertSuccess(saved, 'tracked save');
+
+        const output = parseXml(await documentXmlFromDocx(outputPath));
+        const starts = Array.from(
+          output.getElementsByTagNameNS(WORDPROCESSING_ML_NS, 'bookmarkStart'),
+        );
+        const ends = Array.from(
+          output.getElementsByTagNameNS(WORDPROCESSING_ML_NS, 'bookmarkEnd'),
+        );
+        const startNamesById = new Map(
+          starts.map((start) => [
+            start.getAttributeNS(WORDPROCESSING_ML_NS, 'id'),
+            start.getAttributeNS(WORDPROCESSING_ML_NS, 'name'),
+          ]),
+        );
+        const endIds = new Set(
+          ends.map((end) => end.getAttributeNS(WORDPROCESSING_ML_NS, 'id')),
+        );
+
+        expect(startNamesById.get('41')).toBe('edit-contract-term');
+        expect(endIds.has('41')).toBe(true);
+        expect(startNamesById.get('42')).toBe('jr_para_11111111');
+        expect(endIds.has('42')).toBe(true);
+        expect(starts).toHaveLength(2);
+        expect(ends).toHaveLength(2);
+        expect(output.getElementsByTagNameNS(WORDPROCESSING_ML_NS, 'ins')).toHaveLength(1);
+
+        const cleanedOutputPath = path.join(tmpDir, 'bookmark-cleaned-output.docx');
+        const cleaned = await save(mgr, {
+          file_path: inputPath,
+          save_to_local_path: cleanedOutputPath,
+          save_format: 'tracked',
+          clean_bookmarks: true,
+        });
+        assertSuccess(cleaned, 'explicit bookmark-cleaning tracked save');
+        const cleanedXml = await documentXmlFromDocx(cleanedOutputPath);
+        expect(cleanedXml).not.toContain('edit-contract-term');
+        expect(cleanedXml).toContain('jr_para_11111111');
+      },
+    );
 
   test('tracked save emits write-time markup and preserves untouched blocks + rels (#126)', async () => {
     const mgr = new SessionManager({ defaultAiAuthor: 'Test Author' });
