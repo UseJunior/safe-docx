@@ -17,11 +17,17 @@ import {
   extractTextWithParagraphs,
   rejectAllChanges,
 } from './trackChangesAcceptorAst.js';
+import { OpaqueRelationshipClosureResolver } from './opaquePassthrough.js';
+
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const IMAGE_REL = `${R_NS}/image`;
+const CUSTOM_XML_REL = `${R_NS}/customXml`;
+const TEST_FEATURE = 'Document Reconstructor Block SDT';
 
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'Document Reconstructor Block SDT',
+    feature: TEST_FEATURE,
     story: 'Opaque Direct Body Block Content Control Preservation',
     severity: 'critical',
   })
@@ -60,6 +66,53 @@ async function rebuild(originalBody: string, revisedBody: string): Promise<strin
   );
   expect(result.reconstructionModeUsed).toBe('rebuild');
   return (await DocxArchive.load(result.document)).getDocumentXml();
+}
+
+interface RelationshipFixture {
+  id: string;
+  type: string;
+  target: string;
+  mode?: 'Internal' | 'External';
+}
+
+function relationshipsXml(relationships: RelationshipFixture[]): string {
+  const escape = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    relationships.map((relationship) =>
+      `<Relationship Id="${escape(relationship.id)}" Type="${escape(relationship.type)}"` +
+      ` Target="${escape(relationship.target)}"` +
+      (relationship.mode ? ` TargetMode="${relationship.mode}"` : '') + '/>',
+    ).join('') + '</Relationships>';
+}
+
+async function packageWithRelationships(
+  body: string,
+  relationships: RelationshipFixture[],
+  files: Readonly<Record<string, string | Buffer>> = {},
+  namespaces: Readonly<Record<string, string>> = { r: R_NS },
+): Promise<Buffer> {
+  const archive = await DocxArchive.load(await buildDocxFromBodyXml(body, [], { namespaces }));
+  archive.setFile('word/_rels/document.xml.rels', relationshipsXml(relationships));
+  for (const [path, content] of Object.entries(files)) archive.setFile(path, content);
+  return archive.save();
+}
+
+async function rebuildPackages(original: Buffer, revised: Buffer): Promise<Buffer> {
+  const result = await compareDocumentsAtomizer(original, revised, {
+    author: 'Issue 582 Relationship Test',
+    date: new Date('2026-07-22T00:00:00Z'),
+    reconstructionMode: 'rebuild',
+  });
+  expect(result.reconstructionModeUsed).toBe('rebuild');
+  return result.document;
+}
+
+function drawingBlock(relationshipId = 'rIdImage', prefix = 'r'): string {
+  return blockSdt(
+    `<w:p w14:paraId="00000031" w14:textId="77777777">` +
+    `<w:r><w:drawing><a:graphic xmlns:a="urn:test:drawing" ${prefix}:embed="${relationshipId}"/>` +
+    `</w:drawing></w:r></w:p>`,
+  );
 }
 
 function directBodyControls(xml: string): Element[] {
@@ -154,6 +207,190 @@ describe('unsupported body block ownership fails closed', () => {
           await expect(rebuild(original, revised), name).rejects.toThrow(/Opaque passthrough:/);
         }
       });
+    },
+  );
+});
+
+describe('opaque body block relationship closure', () => {
+  const tailOriginal = paragraph('Outside old', '00000032');
+  const tailRevised = paragraph('Outside new', '00000032');
+  const imageRelationship: RelationshipFixture = {
+    id: 'rIdImage',
+    type: IMAGE_REL,
+    target: 'media/logo.png',
+  };
+
+  test.openspec('[SDX-SDT-BLOCK-01] Outside edits retain a complete block control')(
+    'preserves an unchanged direct image binding and media payload',
+    async () => {
+      const bodyOriginal = drawingBlock() + tailOriginal;
+      const bodyRevised = drawingBlock() + tailRevised;
+      const media = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+      const original = await packageWithRelationships(bodyOriginal, [imageRelationship], {
+        'word/media/logo.png': media,
+      });
+      const revised = await packageWithRelationships(bodyRevised, [imageRelationship], {
+        'word/media/logo.png': media,
+      });
+
+      const output = await rebuildPackages(original, revised);
+      const outputArchive = await DocxArchive.load(output);
+      expect(await outputArchive.getFile('word/_rels/document.xml.rels')).toBe(relationshipsXml([imageRelationship]));
+      expect(await outputArchive.getFileBuffer('word/media/logo.png')).toEqual(media);
+    },
+  );
+
+  test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
+    'rejects direct image retargets, byte changes, type or mode changes, missing media, and changed embed Ids',
+    async () => {
+      const media = Buffer.from('original-image');
+      const original = await packageWithRelationships(drawingBlock() + tailOriginal, [imageRelationship], {
+        'word/media/logo.png': media,
+      });
+      const cases: Array<[string, Promise<Buffer>]> = [
+        ['retarget', packageWithRelationships(drawingBlock() + tailRevised, [
+          { ...imageRelationship, target: 'media/other.png' },
+        ], { 'word/media/other.png': media })],
+        ['changed bytes', packageWithRelationships(drawingBlock() + tailRevised, [imageRelationship], {
+          'word/media/logo.png': Buffer.from('revised-image'),
+        })],
+        ['changed type', packageWithRelationships(drawingBlock() + tailRevised, [
+          { ...imageRelationship, type: `${R_NS}/oleObject` },
+        ], { 'word/media/logo.png': media })],
+        ['changed mode', packageWithRelationships(drawingBlock() + tailRevised, [
+          { ...imageRelationship, target: 'https://example.test/logo.png', mode: 'External' },
+        ])],
+        ['missing media', packageWithRelationships(drawingBlock() + tailRevised, [imageRelationship])],
+        ['changed embed', packageWithRelationships(drawingBlock('rIdOther') + tailRevised, [
+          imageRelationship,
+          { ...imageRelationship, id: 'rIdOther' },
+        ], { 'word/media/logo.png': media })],
+      ];
+
+      for (const [name, revised] of cases) {
+        await expect(rebuildPackages(original, await revised), name).rejects.toThrow(/Opaque passthrough:/);
+      }
+    },
+  );
+
+  test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
+    'handles namespace aliases and compares external targets without fetching',
+    async () => {
+      const external = {
+        id: 'rIdImage',
+        type: IMAGE_REL,
+        target: 'https://example.test/assets/logo.png',
+        mode: 'External' as const,
+      };
+      const original = await packageWithRelationships(
+        drawingBlock('rIdImage', 'rel') + tailOriginal,
+        [external],
+        {},
+        { rel: R_NS },
+      );
+      const unchanged = await packageWithRelationships(
+        drawingBlock('rIdImage', 'rel') + tailRevised,
+        [external],
+        {},
+        { rel: R_NS },
+      );
+      await expect(rebuildPackages(original, unchanged)).resolves.toBeInstanceOf(Buffer);
+
+      const changed = await packageWithRelationships(
+        drawingBlock('rIdImage', 'rel') + tailRevised,
+        [{ ...external, target: 'https://example.test/assets/changed.png' }],
+        {},
+        { rel: R_NS },
+      );
+      await expect(rebuildPackages(original, changed)).rejects.toThrow(/Opaque passthrough:/);
+    },
+  );
+
+  test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
+    'recursively fingerprints relationship-bearing XML target parts',
+    async () => {
+      const control = blockSdt(
+        `<w:p w14:paraId="00000033"><w:r><w:drawing r:id="rIdCustom"/></w:r></w:p>`,
+      );
+      const rootRelationship: RelationshipFixture = {
+        id: 'rIdCustom', type: CUSTOM_XML_REL, target: 'custom/item.xml',
+      };
+      const nestedRelationship: RelationshipFixture = {
+        id: 'rIdNested', type: IMAGE_REL, target: '../media/nested.png',
+      };
+      const customXml = `<x:root xmlns:x="urn:test:custom" xmlns:r="${R_NS}" r:id="rIdNested"/>`;
+      const files = (media: Buffer): Record<string, string | Buffer> => ({
+        'word/custom/item.xml': customXml,
+        'word/custom/_rels/item.xml.rels': relationshipsXml([nestedRelationship]),
+        'word/media/nested.png': media,
+      });
+      const original = await packageWithRelationships(control + tailOriginal, [rootRelationship], files(Buffer.from('one')));
+      const unchanged = await packageWithRelationships(control + tailRevised, [rootRelationship], files(Buffer.from('one')));
+      await expect(rebuildPackages(original, unchanged)).resolves.toBeInstanceOf(Buffer);
+      const changed = await packageWithRelationships(control + tailRevised, [rootRelationship], files(Buffer.from('two')));
+      await expect(rebuildPackages(original, changed)).rejects.toThrow(/Opaque passthrough:/);
+    },
+  );
+
+  test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
+    'rejects dangling, unsafe, cyclic, and unsupported relationship-bearing targets',
+    async () => {
+      const control = drawingBlock() + tailOriginal;
+      const cases: Array<[string, Promise<Buffer>]> = [
+        ['dangling relationship', packageWithRelationships(control, [])],
+        ['unsafe target', packageWithRelationships(control, [{ ...imageRelationship, target: '../../../escape.png' }])],
+        ['unsupported relationship-bearing target', packageWithRelationships(control, [imageRelationship], {
+          'word/media/logo.png': Buffer.from('image'),
+          'word/media/_rels/logo.png.rels': relationshipsXml([]),
+        })],
+      ];
+      for (const [name, input] of cases) {
+        await expect(rebuildPackages(await input, await input), name).rejects.toThrow(/Opaque passthrough:/);
+      }
+
+      const cyclicControl = blockSdt(`<w:p w14:paraId="00000034"><w:r><w:drawing r:id="rIdA"/></w:r></w:p>`);
+      const cyclic = await packageWithRelationships(cyclicControl + tailOriginal, [
+        { id: 'rIdA', type: CUSTOM_XML_REL, target: 'custom/a.xml' },
+      ], {
+        'word/custom/a.xml': `<x:a xmlns:x="urn:test" xmlns:r="${R_NS}" r:id="rIdB"/>`,
+        'word/custom/_rels/a.xml.rels': relationshipsXml([
+          { id: 'rIdB', type: CUSTOM_XML_REL, target: 'b.xml' },
+        ]),
+        'word/custom/b.xml': `<x:b xmlns:x="urn:test" xmlns:r="${R_NS}" r:id="rIdA"/>`,
+        'word/custom/_rels/b.xml.rels': relationshipsXml([
+          { id: 'rIdA', type: CUSTOM_XML_REL, target: 'a.xml' },
+        ]),
+      });
+      await expect(rebuildPackages(cyclic, cyclic)).rejects.toThrow(/cyclic relationship closure/);
+    },
+  );
+
+  test.openspec('[SDX-SDT-BLOCK-04] Block identity work remains linear in group count')(
+    'keeps relationship-free boundaries on the no-read path and memoizes media hashing',
+    async () => {
+      const plainArchive = await DocxArchive.load(await packageFor(blockSdt(paragraph('Plain', '00000035'))));
+      const plainResolver = new OpaqueRelationshipClosureResolver(plainArchive);
+      const plainBoundary = directBodyControls(await plainArchive.getDocumentXml())[0]!;
+      expect(await plainResolver.fingerprintBoundary(plainBoundary, 'word/document.xml')).toBe('');
+      expect(plainResolver.instrumentation.relationshipPartReads).toBe(0);
+      expect(plainResolver.instrumentation.partHashComputations).toBe(0);
+
+      const mediaArchive = await DocxArchive.load(await packageWithRelationships(
+        drawingBlock() + tailOriginal,
+        [imageRelationship],
+        { 'word/media/logo.png': Buffer.from('shared') },
+      ));
+      const mediaResolver = new OpaqueRelationshipClosureResolver(mediaArchive);
+      const boundary = parseXml(
+        `<w:sdt xmlns:w="${OOXML.W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
+        ` xmlns:r="${R_NS}"><w:sdtPr/><w:sdtContent><w:p><w:r><w:drawing r:embed="rIdImage"/>` +
+        `</w:r></w:p></w:sdtContent></w:sdt>`,
+      ).documentElement;
+      const first = await mediaResolver.fingerprintBoundary(boundary, 'word/document.xml');
+      const second = await mediaResolver.fingerprintBoundary(boundary, 'word/document.xml');
+      expect(second).toBe(first);
+      expect(mediaResolver.instrumentation.partHashComputations).toBe(1);
+      expect(mediaResolver.instrumentation.relationshipPartReads).toBe(2);
     },
   );
 });

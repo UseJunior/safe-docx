@@ -105,4 +105,21 @@ describe('opaque paragraph identity caching', () => {
     expect(instrumentation.opaqueIdentityComputations).toBe(76);
     expect(instrumentation.opaqueAtomScans).toBe(76);
   });
+
+  test('includes block relationship closure in opaque group identity', () => {
+    const originalOwner = {
+      ...descriptor(0, 'block'),
+      placementKind: 'body-block' as const,
+      bodyChildOrdinal: 0,
+      ownedParagraphCount: 1,
+      relationshipClosureFingerprint: 'original-media',
+    };
+    const revisedOwner = { ...originalOwner, relationshipClosureFingerprint: 'revised-media' };
+
+    expect(computeGroupLcs(
+      [group(0, [atom(originalOwner, 0)], 10)],
+      [group(0, [atom(revisedOwner, 0)], 10)],
+      2,
+    ).matchedGroups).toEqual([]);
+  });
 });

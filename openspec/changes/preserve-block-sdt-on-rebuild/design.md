@@ -55,10 +55,14 @@ tracked-change path.
 ### Namespace and relationship semantics reuse the opaque substrate
 
 Fingerprinting, effective namespace/MCE validation, and source subtree capture
-are shared between placements. Because rebuild clones the original package,
-preserving the original block subtree also preserves every drawing `r:id`; tests
-resolve each retained ID through the unchanged original relationship part and
-compare the target.
+are shared between placements. Block counterpart identity additionally resolves
+every relationship-namespace attribute through the owning part. It includes the
+relationship Id, type, target mode, normalized target, and internal target part
+path and byte hash. Referenced XML parts recursively contribute their referenced
+relationship closure. Relationship tables, part hashes, and closure nodes are
+memoized per package; blocks without relationship attributes avoid all archive
+reads. Dangling, unsafe, cyclic, and unsupported relationship-bearing targets
+fail closed before correlation.
 
 ### Claims remain bounded
 

@@ -131,6 +131,8 @@ export interface OpaquePassthroughNode {
   sourceElement: WmlElement;
   effectiveNamespaces: Readonly<Record<string, string>>;
   effectiveMceDeclarations: Readonly<Record<string, string>>;
+  /** Package relationship closure rooted at relationship attributes in a block subtree. */
+  relationshipClosureFingerprint?: string;
   /** Revised-side canonical owner for an equal original empty-paragraph atom. */
   correlatedNode?: OpaquePassthroughNode;
   emissionElement?: WmlElement;

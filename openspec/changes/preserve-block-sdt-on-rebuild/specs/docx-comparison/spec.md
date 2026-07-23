@@ -14,7 +14,7 @@ a bounded SafeDocX metamorphic invariant, not an ECMA-376 requirement.
 - **GIVEN** a direct body-level block control owning a contiguous paragraph interval
 - **WHEN** unrelated body paragraphs are edited through forced rebuild
 - **THEN** the validated original block subtree SHALL remain semantically identical
-- **AND** drawing relationship references SHALL resolve to the same targets
+- **AND** every relationship-namespace attribute SHALL resolve to an identical relationship and dependent-part closure on both sides
 - **AND** accepting and rejecting changes SHALL retain the block while projecting the outside edit correctly
 
 #### Scenario: [SDX-SDT-BLOCK-02] Multiple identical controls pair locally and deterministically
@@ -37,3 +37,11 @@ a bounded SafeDocX metamorphic invariant, not an ECMA-376 requirement.
 - **WHEN** hierarchical correlation computes opaque group identity
 - **THEN** identity SHALL be precomputed or memoized once per group per comparison run
 - **AND** deterministic instrumentation counts SHALL prove that bound without timing assertions
+
+#### Scenario: [SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction
+
+- **GIVEN** a block control referencing internal or external package relationships
+- **WHEN** an Id binding, type, target mode, normalized target, referenced part bytes, or recursively referenced XML-part closure differs
+- **THEN** forced rebuild SHALL fail before reconstruction
+- **AND** dangling, unsafe, cyclic, or unsupported relationship-bearing targets SHALL fail closed
+- **AND** external targets SHALL be compared without network access

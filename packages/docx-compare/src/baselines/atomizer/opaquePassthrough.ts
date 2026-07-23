@@ -1,15 +1,207 @@
 import { createHash } from 'node:crypto';
-import type { ComparisonUnitAtom, OpaquePassthroughNode } from '@usejunior/docx-core';
-import { CorrelationStatus, OOXML } from '@usejunior/docx-core';
+import { posix } from 'node:path';
+import type { ComparisonUnitAtom, DocxArchive, OpaquePassthroughNode } from '@usejunior/docx-core';
+import { CorrelationStatus, OOXML, parseXml } from '@usejunior/docx-core';
 
 const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+const OFFICE_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PACKAGE_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
 export class OpaquePassthroughError extends Error {
   constructor(message: string) {
     super(`Opaque passthrough: ${message}`);
     this.name = 'OpaquePassthroughError';
+  }
+}
+
+interface PackageRelationship {
+  id: string;
+  type: string;
+  target: string;
+  mode: 'Internal' | 'External';
+}
+
+export interface OpaqueRelationshipInstrumentation {
+  boundaryScans: number;
+  relationshipPartReads: number;
+  partHashComputations: number;
+}
+
+function relationshipPartPath(partPath: string): string {
+  const directory = posix.dirname(partPath);
+  return `${directory === '.' ? '' : `${directory}/`}_rels/${posix.basename(partPath)}.rels`;
+}
+
+function collectRelationshipIds(root: Element): string[] {
+  const ids = new Set<string>();
+  const visit = (element: Element): void => {
+    for (let i = 0; i < element.attributes.length; i++) {
+      const attribute = element.attributes.item(i)!;
+      if (attribute.namespaceURI === OFFICE_REL_NS) {
+        if (!attribute.value) throw new OpaquePassthroughError('empty relationship-namespace attribute');
+        ids.add(attribute.value);
+      }
+    }
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1) visit(child as Element);
+    }
+  };
+  visit(root);
+  return [...ids].sort();
+}
+
+function normalizeInternalTarget(ownerPart: string, target: string): string {
+  if (!target || target.includes('\\') || target.includes('\0') || /[?#]/.test(target) || /^[a-z][a-z0-9+.-]*:/i.test(target)) {
+    throw new OpaquePassthroughError(`unsafe internal relationship target '${target}'`);
+  }
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(target);
+  } catch {
+    throw new OpaquePassthroughError(`invalid encoded relationship target '${target}'`);
+  }
+  if (decoded.includes('\\') || decoded.includes('\0') || /[?#]/.test(decoded)) {
+    throw new OpaquePassthroughError(`unsafe internal relationship target '${target}'`);
+  }
+  const segments = target.startsWith('/') ? [] : posix.dirname(ownerPart).split('/').filter(Boolean);
+  for (const segment of decoded.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (segments.length === 0) {
+        throw new OpaquePassthroughError(`relationship target escapes the package root: '${target}'`);
+      }
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+  if (segments.length === 0) throw new OpaquePassthroughError(`empty resolved relationship target '${target}'`);
+  return segments.join('/');
+}
+
+function normalizeExternalTarget(target: string): string {
+  try {
+    return new URL(target).href;
+  } catch {
+    throw new OpaquePassthroughError(`unsafe external relationship target '${target}'`);
+  }
+}
+
+/** Memoized package-scoped relationship closure used only for opaque body blocks. */
+export class OpaqueRelationshipClosureResolver {
+  readonly instrumentation: OpaqueRelationshipInstrumentation = {
+    boundaryScans: 0,
+    relationshipPartReads: 0,
+    partHashComputations: 0,
+  };
+  private readonly relationshipsByPart = new Map<string, Promise<Map<string, PackageRelationship> | null>>();
+  private readonly partHashes = new Map<string, Promise<string>>();
+  private readonly closures = new Map<string, Promise<string>>();
+
+  constructor(private readonly archive: DocxArchive) {}
+
+  async fingerprintBoundary(boundary: Element, ownerPart: string): Promise<string> {
+    this.instrumentation.boundaryScans++;
+    const ids = collectRelationshipIds(boundary);
+    if (ids.length === 0) return '';
+    const identities = await Promise.all(ids.map((id) => this.relationshipIdentity(ownerPart, id, new Set())));
+    return createHash('sha256').update(JSON.stringify(identities), 'utf8').digest('hex');
+  }
+
+  private relationshipIdentity(ownerPart: string, id: string, active: Set<string>): Promise<string> {
+    const key = `${ownerPart}\u0000${id}`;
+    if (active.has(key)) {
+      throw new OpaquePassthroughError(`cyclic relationship closure at ${ownerPart}#${id}`);
+    }
+    const cached = this.closures.get(key);
+    if (cached) return cached;
+    const nextActive = new Set(active).add(key);
+    const pending = this.buildRelationshipIdentity(ownerPart, id, nextActive);
+    this.closures.set(key, pending);
+    return pending;
+  }
+
+  private async buildRelationshipIdentity(ownerPart: string, id: string, active: Set<string>): Promise<string> {
+    const relationships = await this.relationshipsForPart(ownerPart);
+    const relationship = relationships?.get(id);
+    if (!relationship) throw new OpaquePassthroughError(`dangling relationship ${ownerPart}#${id}`);
+    if (relationship.mode === 'External') {
+      return JSON.stringify({
+        id,
+        type: relationship.type,
+        mode: relationship.mode,
+        target: normalizeExternalTarget(relationship.target),
+      });
+    }
+
+    const targetPart = normalizeInternalTarget(ownerPart, relationship.target);
+    const hash = await this.hashPart(targetPart);
+    const dependentRelationships = await this.relationshipsForPart(targetPart);
+    let dependencies: string[] = [];
+    if (dependentRelationships) {
+      if (!/\.(?:xml|vml)$/i.test(targetPart)) {
+        throw new OpaquePassthroughError(`unsupported relationship-bearing target part '${targetPart}'`);
+      }
+      const targetBytes = await this.archive.getFileBuffer(targetPart);
+      if (!targetBytes) throw new OpaquePassthroughError(`missing relationship target part '${targetPart}'`);
+      const targetDocument = parseXml(targetBytes.toString('utf8'));
+      const targetRoot = targetDocument.documentElement;
+      if (!targetRoot) throw new OpaquePassthroughError(`relationship target is not XML '${targetPart}'`);
+      const dependentIds = collectRelationshipIds(targetRoot);
+      dependencies = await Promise.all(
+        dependentIds.map((dependentId) => this.relationshipIdentity(targetPart, dependentId, active)),
+      );
+    }
+    return JSON.stringify({
+      id,
+      type: relationship.type,
+      mode: relationship.mode,
+      resolvedTarget: targetPart,
+      referencedPart: { path: targetPart, sha256: hash },
+      dependencies,
+    });
+  }
+
+  private relationshipsForPart(partPath: string): Promise<Map<string, PackageRelationship> | null> {
+    const cached = this.relationshipsByPart.get(partPath);
+    if (cached) return cached;
+    const pending = (async () => {
+      this.instrumentation.relationshipPartReads++;
+      const xml = await this.archive.getFile(relationshipPartPath(partPath));
+      if (xml === null) return null;
+      const document = parseXml(xml);
+      const elements = Array.from(document.getElementsByTagNameNS(PACKAGE_REL_NS, 'Relationship'));
+      const relationships = new Map<string, PackageRelationship>();
+      for (const element of elements) {
+        const id = element.getAttribute('Id');
+        const type = element.getAttribute('Type');
+        const target = element.getAttribute('Target');
+        const rawMode = element.getAttribute('TargetMode') || 'Internal';
+        if (!id || !type || !target || (rawMode !== 'Internal' && rawMode !== 'External')) {
+          throw new OpaquePassthroughError(`invalid relationship entry in '${relationshipPartPath(partPath)}'`);
+        }
+        if (relationships.has(id)) throw new OpaquePassthroughError(`duplicate relationship Id ${partPath}#${id}`);
+        relationships.set(id, { id, type, target, mode: rawMode });
+      }
+      return relationships;
+    })();
+    this.relationshipsByPart.set(partPath, pending);
+    return pending;
+  }
+
+  private hashPart(partPath: string): Promise<string> {
+    const cached = this.partHashes.get(partPath);
+    if (cached) return cached;
+    const pending = (async () => {
+      this.instrumentation.partHashComputations++;
+      const bytes = await this.archive.getFileBuffer(partPath);
+      if (!bytes) throw new OpaquePassthroughError(`missing relationship target part '${partPath}'`);
+      return createHash('sha256').update(bytes).digest('hex');
+    })();
+    this.partHashes.set(partPath, pending);
+    return pending;
   }
 }
 
@@ -484,10 +676,13 @@ function uniqueDescriptors(atoms: ComparisonUnitAtom[]): OpaquePassthroughNode[]
 }
 
 /** Validate and bind original/revised opaque occurrences before LCS reconstruction. */
-export function bindOpaquePassthroughCounterparts(
+export async function bindOpaquePassthroughCounterparts(
   originalAtoms: ComparisonUnitAtom[],
   revisedAtoms: ComparisonUnitAtom[],
-): void {
+  originalRelationships: OpaqueRelationshipClosureResolver,
+  revisedRelationships: OpaqueRelationshipClosureResolver,
+  ownerPart: string,
+): Promise<void> {
   const original = uniqueDescriptors(originalAtoms);
   const revised = uniqueDescriptors(revisedAtoms);
   if (original.length !== revised.length) {
@@ -500,6 +695,20 @@ export function bindOpaquePassthroughCounterparts(
         `${descriptor.paragraphOrdinal}\u0000${descriptor.ownedParagraphCount}`;
   original.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
   revised.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
+  await Promise.all([
+    ...original.filter((descriptor) => descriptor.placementKind === 'body-block').map(async (descriptor) => {
+      descriptor.relationshipClosureFingerprint = await originalRelationships.fingerprintBoundary(
+        descriptor.sourceElement,
+        ownerPart,
+      );
+    }),
+    ...revised.filter((descriptor) => descriptor.placementKind === 'body-block').map(async (descriptor) => {
+      descriptor.relationshipClosureFingerprint = await revisedRelationships.fingerprintBoundary(
+        descriptor.sourceElement,
+        ownerPart,
+      );
+    }),
+  ]);
   for (let i = 0; i < original.length; i++) {
     const before = original[i]!;
     const after = revised[i]!;
@@ -512,7 +721,8 @@ export function bindOpaquePassthroughCounterparts(
       before.localName !== after.localName ||
       before.bodyChildOrdinal !== after.bodyChildOrdinal ||
       before.ownedParagraphCount !== after.ownedParagraphCount ||
-      before.semanticFingerprint !== after.semanticFingerprint
+      before.semanticFingerprint !== after.semanticFingerprint ||
+      before.relationshipClosureFingerprint !== after.relationshipClosureFingerprint
     ) {
       throw new OpaquePassthroughError(`boundary ${i} changed paragraph ownership, moved, or mutated`);
     }

@@ -11,7 +11,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { XMLSerializer } from '@xmldom/xmldom';
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
@@ -26,7 +26,7 @@ import {
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { compareDocumentsAtomizer } from './pipeline.js';
-import { renderOpaqueAtomSequence } from './opaquePassthrough.js';
+import { OpaqueRelationshipClosureResolver, renderOpaqueAtomSequence } from './opaquePassthrough.js';
 import {
   acceptAllChanges,
   extractTextWithParagraphs,
@@ -501,6 +501,8 @@ describe('Real block content-control corpus preservation', () => {
         identityAttributes: number;
         drawingRelationshipId: string;
         drawingTarget: string;
+        relationshipClosure: string;
+        mediaBytes: number;
         changedParts: string[];
       }> = [];
 
@@ -511,17 +513,21 @@ describe('Real block content-control corpus preservation', () => {
           const marker = ` [outside rebuild edit: ${relativePaths.indexOf(path) + 1}]`;
           const revised = await reviseOutsideFirstBodySdt(input, marker);
           const outputDocument = await forcedRebuildDocument(input, revised);
-          const [beforeArchive, outputArchive] = await Promise.all([
+          const [beforeArchive, revisedArchive, outputArchive] = await Promise.all([
             DocxArchive.load(input),
+            DocxArchive.load(revised),
             DocxArchive.load(outputDocument),
           ]);
-          const [beforeXml, outputXml, beforeRels, outputRels] = await Promise.all([
+          const [beforeXml, revisedXml, outputXml, beforeRels, revisedRels, outputRels] = await Promise.all([
             beforeArchive.getDocumentXml(),
+            revisedArchive.getDocumentXml(),
             outputArchive.getDocumentXml(),
             beforeArchive.getFile('word/_rels/document.xml.rels'),
+            revisedArchive.getFile('word/_rels/document.xml.rels'),
             outputArchive.getFile('word/_rels/document.xml.rels'),
           ]);
           const beforeControl = firstDirectBodySdt(beforeXml);
+          const revisedControl = firstDirectBodySdt(revisedXml);
           const outputControl = firstDirectBodySdt(outputXml);
           const identityAttributes = Array.from(beforeControl.getElementsByTagName('*'))
             .flatMap((element) => Array.from(element.attributes))
@@ -539,10 +545,33 @@ describe('Real block content-control corpus preservation', () => {
             expect(outputControl.lookupNamespaceURI(prefix), prefix).toBe(beforeControl.lookupNamespaceURI(prefix));
           }
           expect(beforeRels).not.toBeNull();
+          expect(revisedRels).not.toBeNull();
           expect(outputRels).not.toBeNull();
           const drawingTarget = relationshipTarget(beforeRels!, drawingRelationshipId!);
           expect(drawingTarget).not.toBeNull();
+          expect(relationshipTarget(revisedRels!, drawingRelationshipId!)).toBe(drawingTarget);
           expect(relationshipTarget(outputRels!, drawingRelationshipId!)).toBe(drawingTarget);
+          const relationshipClosures = await Promise.all([
+            new OpaqueRelationshipClosureResolver(beforeArchive)
+              .fingerprintBoundary(beforeControl, 'word/document.xml'),
+            new OpaqueRelationshipClosureResolver(revisedArchive)
+              .fingerprintBoundary(revisedControl, 'word/document.xml'),
+            new OpaqueRelationshipClosureResolver(outputArchive)
+              .fingerprintBoundary(outputControl, 'word/document.xml'),
+          ]);
+          expect(relationshipClosures[1]).toBe(relationshipClosures[0]);
+          expect(relationshipClosures[2]).toBe(relationshipClosures[0]);
+          const mediaPath = drawingTarget!.startsWith('/')
+            ? drawingTarget!.slice(1)
+            : posix.normalize(posix.join('word', drawingTarget!));
+          const media = await Promise.all([
+            beforeArchive.getFileBuffer(mediaPath),
+            revisedArchive.getFileBuffer(mediaPath),
+            outputArchive.getFileBuffer(mediaPath),
+          ]);
+          expect(media[0]).not.toBeNull();
+          expect(media[1]).toEqual(media[0]);
+          expect(media[2]).toEqual(media[0]);
           expect(extractTextWithParagraphs(acceptAllChanges(outputXml))).toContain(marker);
           expect(extractTextWithParagraphs(rejectAllChanges(outputXml))).not.toContain(marker);
           const changedParts = await changedPackageParts(input, outputDocument);
@@ -553,6 +582,8 @@ describe('Real block content-control corpus preservation', () => {
             identityAttributes: identityAttributes.length,
             drawingRelationshipId: drawingRelationshipId!,
             drawingTarget: drawingTarget!,
+            relationshipClosure: relationshipClosures[0],
+            mediaBytes: media[0]!.length,
             changedParts,
           });
         }
@@ -563,6 +594,8 @@ describe('Real block content-control corpus preservation', () => {
         for (const measurement of measurements) {
           expect(measurement.controlledParagraphs).toBe(38);
           expect(measurement.identityAttributes).toBe(152);
+          expect(measurement.relationshipClosure).toMatch(/^[a-f0-9]{64}$/);
+          expect(measurement.mediaBytes).toBeGreaterThan(0);
           expect(measurement.changedParts).toEqual(['word/document.xml']);
         }
       });

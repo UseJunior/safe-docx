@@ -126,13 +126,20 @@ export class DocxArchive {
     return file.async('string');
   }
 
+  /** Get an arbitrary archive entry without decoding binary payloads as text. */
+  async getFileBuffer(path: string): Promise<Buffer | null> {
+    const file = this.zip.file(path);
+    if (!file) return null;
+    return file.async('nodebuffer');
+  }
+
   /**
    * Set an arbitrary file in the archive.
    *
    * @param path - Path within the archive
    * @param content - File contents
    */
-  setFile(path: string, content: string): void {
+  setFile(path: string, content: string | Buffer): void {
     this.zip.file(path, content);
     this.modified.add(path);
   }

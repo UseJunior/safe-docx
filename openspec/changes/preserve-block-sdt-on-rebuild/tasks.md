@@ -28,3 +28,11 @@
 - [x] 5.1 Run focused/full tests, build/lint, mandatory pre-submit, emitted-schema MCE/XSD, DPT, and archive checks.
 - [x] 5.2 Run LibreOffice open-save and PDF smoke checks for both ILPA outputs.
 - [x] 5.3 Review scope and commit conventionally with WHY and `Ref: #582`.
+
+## 6. Relationship-closure review fix
+
+- [x] 6.1 Add memoized package relationship-closure identity for opaque body blocks.
+- [x] 6.2 Fail closed on changed, missing, unsafe, cyclic, or unsupported relationship targets and dependent parts.
+- [x] 6.3 Add adversarial direct-image, external-target, recursive XML, alias, and fast-path tests.
+- [x] 6.4 Compare original, revised, and output ILPA relationship closures and media bytes.
+- [x] 6.5 Re-run all required gates and commit the review fix.
