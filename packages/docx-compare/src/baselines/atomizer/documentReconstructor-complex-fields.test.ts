@@ -32,10 +32,11 @@ import {
 } from './trackChangesAcceptorAst.js';
 
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+const TEST_FEATURE = 'Document Reconstructor Complex Fields';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'Document Reconstructor Complex Fields',
+    feature: TEST_FEATURE,
     story: 'Ordered Complex Field Preservation In Rebuild',
     severity: 'critical',
   })
