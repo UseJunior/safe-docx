@@ -378,25 +378,42 @@ describe('Author->compare round-trip guarantee', () => {
           malformed = await archive.save();
         });
 
-        let result!: CompareResult;
+        let result: CompareResult | undefined;
+        let rejectionMessage: string | undefined;
         await when(`the original is compared against the malformed revision in '${mode}' mode`, async () => {
-          result = await compareDocuments(original, malformed, { engine: 'atomizer', reconstructionMode: mode });
-          await attachPrettyJson('guard-diagnostics', {
-            used: result.reconstructionModeUsed,
-            fallbackReason: result.fallbackReason ?? null,
-            fallbackAttempts: result.fallbackDiagnostics?.attempts?.map((a) => a.failedChecks) ?? null,
-            rebuild: result.rebuildSafetyDiagnostics?.failedChecks ?? null,
-          });
+          try {
+            result = await compareDocuments(original, malformed, { engine: 'atomizer', reconstructionMode: mode });
+          } catch (error) {
+            rejectionMessage = error instanceof Error ? error.message : String(error);
+          }
+          await attachPrettyJson(
+            'guard-diagnostics',
+            result
+              ? {
+                  used: result.reconstructionModeUsed,
+                  fallbackReason: result.fallbackReason ?? null,
+                  fallbackAttempts: result.fallbackDiagnostics?.attempts?.map((a) => a.failedChecks) ?? null,
+                  rebuild: result.rebuildSafetyDiagnostics?.failedChecks ?? null,
+                }
+              : { rejectionMessage },
+          );
         });
 
         await then('the reconstruction guard reports a fieldStructure failure rather than passing silently', async () => {
-          expect(result.rebuildSafetyDiagnostics?.failedChecks ?? []).toContain('fieldStructure');
-          if (mode === 'inplace') {
-            expect(result.fallbackReason).toBe('round_trip_safety_check_failed');
-            const attempts = result.fallbackDiagnostics?.attempts ?? [];
-            expect(attempts.length).toBeGreaterThan(0);
-            expect(attempts.every((a) => a.failedChecks.includes('fieldStructure'))).toBe(true);
+          if (mode === 'rebuild') {
+            expect(result).toBeUndefined();
+            expect(rejectionMessage).toMatch(
+              /Opaque passthrough: complex field has unmatched begin marker/,
+            );
+            return;
           }
+
+          expect(result).toBeDefined();
+          expect(result?.rebuildSafetyDiagnostics?.failedChecks ?? []).toContain('fieldStructure');
+          expect(result?.fallbackReason).toBe('round_trip_safety_check_failed');
+          const attempts = result?.fallbackDiagnostics?.attempts ?? [];
+          expect(attempts.length).toBeGreaterThan(0);
+          expect(attempts.every((a) => a.failedChecks.includes('fieldStructure'))).toBe(true);
         });
 
         await then('a well-formed revision in the same mode surfaces no safety failures (control)', async () => {
