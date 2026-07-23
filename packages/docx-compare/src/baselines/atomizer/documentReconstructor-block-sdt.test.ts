@@ -20,6 +20,9 @@ import {
 import { OpaqueRelationshipClosureResolver } from './opaquePassthrough.js';
 
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+const PIC_NS = 'http://schemas.openxmlformats.org/drawingml/2006/picture';
+const WP_NS = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
 const IMAGE_REL = `${R_NS}/image`;
 const CUSTOM_XML_REL = `${R_NS}/customXml`;
 const TEST_FEATURE = 'Document Reconstructor Block SDT';
@@ -107,11 +110,34 @@ async function rebuildPackages(original: Buffer, revised: Buffer): Promise<Buffe
   return result.document;
 }
 
-function drawingBlock(relationshipId = 'rIdImage', prefix = 'r'): string {
+function drawingBlock(
+  relationshipId = 'rIdImage',
+  prefix = 'r',
+  relationshipAttribute: 'embed' | 'link' = 'embed',
+): string {
   return blockSdt(
     `<w:p w14:paraId="00000031" w14:textId="77777777">` +
-    `<w:r><w:drawing><a:graphic xmlns:a="urn:test:drawing" ${prefix}:embed="${relationshipId}"/>` +
-    `</w:drawing></w:r></w:p>`,
+    `<w:r><w:drawing><wp:inline xmlns:wp="${WP_NS}">` +
+    `<wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Relationship fixture"/>` +
+    `<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="${A_NS}" noChangeAspect="1"/>` +
+    `</wp:cNvGraphicFramePr><a:graphic xmlns:a="${A_NS}"><a:graphicData uri="${PIC_NS}">` +
+    `<pic:pic xmlns:pic="${PIC_NS}"><pic:nvPicPr><pic:cNvPr id="1" name="fixture.png"/>` +
+    `<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill>` +
+    `<a:blip ${prefix}:${relationshipAttribute}="${relationshipId}"/>` +
+    `<a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr>` +
+    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>` +
+    `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`,
+  );
+}
+
+function hyperlinkRelationshipBlock(relationshipIds: readonly string[], paragraphId: string): string {
+  return blockSdt(
+    `<w:p w14:paraId="${paragraphId}">` +
+    relationshipIds.map((id, index) =>
+      `<w:hyperlink r:id="${id}"><w:r><w:t>Dependency ${index + 1}</w:t></w:r></w:hyperlink>`,
+    ).join('') +
+    `</w:p>`,
   );
 }
 
@@ -283,13 +309,13 @@ describe('opaque body block relationship closure', () => {
         mode: 'External' as const,
       };
       const original = await packageWithRelationships(
-        drawingBlock('rIdImage', 'rel') + tailOriginal,
+        drawingBlock('rIdImage', 'rel', 'link') + tailOriginal,
         [external],
         {},
         { rel: R_NS },
       );
       const unchanged = await packageWithRelationships(
-        drawingBlock('rIdImage', 'rel') + tailRevised,
+        drawingBlock('rIdImage', 'rel', 'link') + tailRevised,
         [external],
         {},
         { rel: R_NS },
@@ -297,7 +323,7 @@ describe('opaque body block relationship closure', () => {
       await expect(rebuildPackages(original, unchanged)).resolves.toBeInstanceOf(Buffer);
 
       const changed = await packageWithRelationships(
-        drawingBlock('rIdImage', 'rel') + tailRevised,
+        drawingBlock('rIdImage', 'rel', 'link') + tailRevised,
         [{ ...external, target: 'https://example.test/assets/changed.png' }],
         {},
         { rel: R_NS },
@@ -309,9 +335,7 @@ describe('opaque body block relationship closure', () => {
   test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
     'recursively fingerprints relationship-bearing XML target parts',
     async () => {
-      const control = blockSdt(
-        `<w:p w14:paraId="00000033"><w:r><w:drawing r:id="rIdCustom"/></w:r></w:p>`,
-      );
+      const control = hyperlinkRelationshipBlock(['rIdCustom'], '00000033');
       const rootRelationship: RelationshipFixture = {
         id: 'rIdCustom', type: CUSTOM_XML_REL, target: 'custom/item.xml',
       };
@@ -368,7 +392,7 @@ describe('opaque body block relationship closure', () => {
         await expect(rebuildPackages(await input, await input), name).rejects.toThrow(/Opaque passthrough:/);
       }
 
-      const cyclicControl = blockSdt(`<w:p w14:paraId="00000034"><w:r><w:drawing r:id="rIdA"/></w:r></w:p>`);
+      const cyclicControl = hyperlinkRelationshipBlock(['rIdA'], '00000034');
       const cyclic = await packageWithRelationships(cyclicControl + tailOriginal, [
         { id: 'rIdA', type: CUSTOM_XML_REL, target: 'custom/a.xml' },
       ], {
@@ -409,10 +433,7 @@ describe('opaque body block relationship closure', () => {
   test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
     'rejects two roots entering opposite sides of the same dependency cycle',
     async () => {
-      const control = blockSdt(
-        `<w:p w14:paraId="00000036"><w:r><w:drawing r:id="rIdRootA" r:embed="rIdRootB"/>` +
-        `</w:r></w:p>`,
-      );
+      const control = hyperlinkRelationshipBlock(['rIdRootA', 'rIdRootB'], '00000036');
       const cyclic = await packageWithRelationships(control + tailOriginal, [
         { id: 'rIdRootA', type: CUSTOM_XML_REL, target: 'custom/a.xml' },
         { id: 'rIdRootB', type: CUSTOM_XML_REL, target: 'custom/b.xml' },
@@ -434,10 +455,7 @@ describe('opaque body block relationship closure', () => {
   test.openspec('[SDX-SDT-BLOCK-04] Block identity work remains linear in group count')(
     'computes a shared acyclic dependency once across concurrent boundary requests',
     async () => {
-      const control = blockSdt(
-        `<w:p w14:paraId="00000037"><w:r><w:drawing r:id="rIdRootA" r:embed="rIdRootB"/>` +
-        `</w:r></w:p>`,
-      );
+      const control = hyperlinkRelationshipBlock(['rIdRootA', 'rIdRootB'], '00000037');
       const archive = await DocxArchive.load(await packageWithRelationships(control + tailOriginal, [
         { id: 'rIdRootA', type: CUSTOM_XML_REL, target: 'custom/shared.xml' },
         { id: 'rIdRootB', type: CUSTOM_XML_REL, target: 'custom/shared.xml' },
@@ -481,11 +499,7 @@ describe('opaque body block relationship closure', () => {
         { 'word/media/logo.png': Buffer.from('shared') },
       ));
       const mediaResolver = new OpaqueRelationshipClosureResolver(mediaArchive);
-      const boundary = parseXml(
-        `<w:sdt xmlns:w="${OOXML.W_NS}" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
-        ` xmlns:r="${R_NS}"><w:sdtPr/><w:sdtContent><w:p><w:r><w:drawing r:embed="rIdImage"/>` +
-        `</w:r></w:p></w:sdtContent></w:sdt>`,
-      ).documentElement;
+      const boundary = directBodyControls(await mediaArchive.getDocumentXml())[0]!;
       const first = await mediaResolver.fingerprintBoundary(boundary, 'word/document.xml');
       const second = await mediaResolver.fingerprintBoundary(boundary, 'word/document.xml');
       expect(second).toBe(first);
