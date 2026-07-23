@@ -111,11 +111,11 @@ export interface FormatChangeInfo {
  * retains a cloned element rather than exposing a serialized public contract.
  * `documentOrdinal` identifies the boundary among other captured boundaries in
  * source order. The reconstructor validates original/revised counterparts before
- * assigning `emissionElement` from the original side.
+ * assigning `emissionElements` from the original side.
  */
 export interface OpaquePassthroughNode {
   /** Determines whether paragraph-run emission or the body scaffold owns output. */
-  placementKind: 'inline-run' | 'body-block';
+  placementKind: 'inline-run' | 'inline-range' | 'body-block';
   namespaceUri: string;
   localName: string;
   documentOrdinal: number;
@@ -125,10 +125,18 @@ export interface OpaquePassthroughNode {
   containerIdentity: string;
   /** Direct body-child position for a scaffold-owned block boundary. */
   bodyChildOrdinal?: number;
+  /** Inclusive direct paragraph-child range for an ordered inline payload. */
+  inlineChildStartOrdinal?: number;
+  inlineChildEndOrdinal?: number;
+  /** Stable sequence position among captured field ranges in this paragraph. */
+  inlineRangeOrdinal?: number;
   /** Number of contiguous source-order paragraph slots owned by a block boundary. */
   ownedParagraphCount?: number;
   semanticFingerprint: string;
+  /** First retained XML element; kept for source compatibility with single-node owners. */
   sourceElement: WmlElement;
+  /** Ordered XML payload retained by this boundary. */
+  sourceElements?: WmlElement[];
   effectiveNamespaces: Readonly<Record<string, string>>;
   effectiveMceDeclarations: Readonly<Record<string, string>>;
   /** Package relationship closure rooted at relationship attributes in a block subtree. */
@@ -136,6 +144,7 @@ export interface OpaquePassthroughNode {
   /** Revised-side canonical owner for an equal original empty-paragraph atom. */
   correlatedNode?: OpaquePassthroughNode;
   emissionElement?: WmlElement;
+  emissionElements?: WmlElement[];
 }
 
 /**

@@ -592,7 +592,7 @@ part: 1
 section: "17.16.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 ```
 
 Every generated field is a complete five-run sequence — `fldChar begin`,
@@ -612,7 +612,7 @@ part: 1
 section: "17.16.5.44"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
 ```
 
 The PAGE instruction is emitted with canonical surrounding spaces
@@ -627,12 +627,47 @@ part: 1
 section: "17.16.5.42"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
 ```
 
 The NUMPAGES instruction follows the same emission discipline as PAGE
 (` NUMPAGES `, preserved spacing, cached result required), giving
 "Page X of Y" footers structurally correct field pairs.
+
+## [ECMA-PART1-17-16-5-45] PAGEREF field instruction classification and preservation
+
+```yaml
+edition: 5
+part: 1
+section: "17.16.5.45"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
+```
+
+Forced main-document rebuild classifies a self-contained PAGEREF instruction
+with one bookmark argument and a bounded switch vocabulary. When the complete
+field range is unchanged, comparison preserves its ordered XML topology as a
+SafeDocX metamorphic invariant. This entry does not claim bookmark resolution,
+pagination, cached-result correctness, or field evaluation.
+
+## [ECMA-PART1-17-16-5-51] REF field instruction classification and preservation
+
+```yaml
+edition: 5
+part: 1
+section: "17.16.5.51"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
+```
+
+Forced main-document rebuild classifies a self-contained REF instruction with
+one bookmark argument and a bounded switch vocabulary; the `\d` switch requires
+and consumes one separator argument. When the complete field range is unchanged,
+comparison preserves its ordered XML topology as a SafeDocX metamorphic
+invariant. This entry does not claim bookmark resolution, cached-result
+correctness, or field evaluation.
 
 ## [ECMA-PART1-17-4-37] w:tbl table emission
 
@@ -1632,9 +1667,19 @@ section; they are described under
 in the root README.
 
 Within Part 1 §17.16, safe-docx targets structural emission of complex fields
-and the PAGE and NUMPAGES instructions listed above. Other field instructions,
-field-code parsing and evaluation, cached-result correctness, pagination, and
-equivalence to a Word application's field engine are out of scope.
+and the PAGE and NUMPAGES instructions listed above. Forced rebuild additionally
+classifies unchanged, self-contained main-document PAGE, NUMPAGES, REF, and
+PAGEREF fields for exact ordered-range passthrough. Unrelated direct-child edits
+may shift a field's paragraph-child positions; pairing instead uses stable
+paragraph ownership and field-range sequence. Non-revision wrappers such as
+`w:hyperlink` are preserved, while tracked-revision-owned, changed, reordered,
+cross-paragraph, or nested field rebuild is outside this bounded claim. Other
+field instructions retain the existing rebuild safety-diagnostics behavior and
+are not newly rejected merely for malformed structure. General field-code
+parsing and evaluation, ancillary-story topology preservation, cached-result
+correctness, pagination, and equivalence to a Word application's field engine
+are out of scope. The Lean XML verifier remains inapplicable to rebuild output
+and does not prove this topology-preservation invariant.
 
 Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
 display numbering for Word-conventional packages plus generated

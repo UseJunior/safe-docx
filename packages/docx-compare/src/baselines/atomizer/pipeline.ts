@@ -721,7 +721,11 @@ export async function compareDocumentsAtomizer(
     }
 
     const effectiveAtomizeOptions = outputMode === 'rebuild'
-      ? { ...atomizeOptions, captureInlineSdtPassthrough: true }
+      ? {
+          ...atomizeOptions,
+          captureInlineSdtPassthrough: true,
+          captureComplexFieldPassthrough: reconstructionMode === 'rebuild',
+        }
       : atomizeOptions;
     const { atoms: originalAtoms } = atomizeTree(originalBody, [], originalPart, effectiveAtomizeOptions);
     const { atoms: revisedAtoms } = atomizeTree(revisedBody, [], revisedPart, effectiveAtomizeOptions);

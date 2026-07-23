@@ -1,8 +1,11 @@
 import { describe, expect } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { DocxZip } from '@usejunior/docx-core';
 import { SessionManager, type DocxSession } from '../session/manager.js';
 import { acceptAiEdits } from './accept_ai_edits.js';
 import { rejectAiEdits } from './reject_ai_edits.js';
+import { save } from './save.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { assertFailure, assertSuccess, openSession, registerCleanup } from '../testing/session-test-utils.js';
 
@@ -10,6 +13,7 @@ const TEST_FEATURE = 'add-selective-ai-accept-reject';
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const AI = 'SafeDocX AI';
 const HUMAN = 'Reviewer';
+const DATE = '2026-07-23T12:00:00Z';
 
 const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
 
@@ -28,17 +32,17 @@ function documentXml(bodyInner: string): string {
 // (w:id="1"...) that normalization backfills on open.
 const MIXED_AUTHOR_BODY =
   `<w:p><w:r><w:t xml:space="preserve">base </w:t></w:r>` +
-  `<w:ins w:id="101" w:author="${AI}"><w:r><w:t xml:space="preserve">ai-add </w:t></w:r></w:ins>` +
-  `<w:ins w:id="102" w:author="${HUMAN}"><w:r><w:t xml:space="preserve">human-add </w:t></w:r></w:ins>` +
-  `<w:del w:id="103" w:author="${AI}"><w:r><w:delText xml:space="preserve">ai-del </w:delText></w:r></w:del>` +
-  `<w:del w:id="104" w:author="${HUMAN}"><w:r><w:delText xml:space="preserve">human-del</w:delText></w:r></w:del></w:p>`;
+  `<w:ins w:id="101" w:author="${AI}" w:date="${DATE}"><w:r><w:t xml:space="preserve">ai-add </w:t></w:r></w:ins>` +
+  `<w:ins w:id="102" w:author="${HUMAN}" w:date="${DATE}"><w:r><w:t xml:space="preserve">human-add </w:t></w:r></w:ins>` +
+  `<w:del w:id="103" w:author="${AI}" w:date="${DATE}"><w:r><w:delText xml:space="preserve">ai-del </w:delText></w:r></w:del>` +
+  `<w:del w:id="104" w:author="${HUMAN}" w:date="${DATE}"><w:r><w:delText xml:space="preserve">human-del</w:delText></w:r></w:del></w:p>`;
 
 // A visible anchor paragraph so the session read finds a paragraph id, followed
 // by the overlap paragraph (AI ins structurally containing a reviewer del).
 const OVERLAP_BODY =
   `<w:p><w:r><w:t xml:space="preserve">anchor</w:t></w:r></w:p>` +
-  `<w:p><w:ins w:id="107" w:author="${AI}">` +
-  `<w:del w:id="108" w:author="${HUMAN}"><w:r><w:delText>x</w:delText></w:r></w:del></w:ins></w:p>`;
+  `<w:p><w:ins w:id="107" w:author="${AI}" w:date="${DATE}">` +
+  `<w:del w:id="108" w:author="${HUMAN}" w:date="${DATE}"><w:r><w:delText>x</w:delText></w:r></w:del></w:ins></w:p>`;
 
 async function docxSession(mgr: SessionManager, filePath: string): Promise<DocxSession> {
   const session = await mgr.getSessionByFilePath(filePath);
@@ -125,6 +129,92 @@ describe('Selective accept/reject AI edits (#123)', () => {
       });
     },
   );
+
+  test('requires explicit acknowledgement before a clean save discards selectively preserved AI revisions', async () => {
+    const opened = await openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) });
+    const cleanPath = path.join(opened.tmpDir, 'selective-clean.docx');
+
+    const accepted = await acceptAiEdits(opened.mgr, {
+      file_path: opened.filePath,
+      revision_ids: [101],
+    });
+    assertSuccess(accepted, 'accept_ai_edits');
+    expect(accepted.persistence_required).toBe(true);
+
+    const blocked = await save(opened.mgr, {
+      file_path: opened.filePath,
+      save_to_local_path: cleanPath,
+      save_format: 'clean',
+    });
+    assertFailure(blocked, 'SELECTIVE_REVISIONS_WOULD_BE_DISCARDED');
+    expect(blocked.preserved_revisions).toMatchObject({
+      count: 1,
+      author: AI,
+      ids: [103],
+    });
+    await expect(fs.access(cleanPath)).rejects.toThrow();
+
+    const acknowledged = await save(opened.mgr, {
+      file_path: opened.filePath,
+      save_to_local_path: cleanPath,
+      save_format: 'clean',
+      allow_discard_preserved_revisions: true,
+    });
+    assertSuccess(acknowledged, 'acknowledged clean save');
+    expect(acknowledged.selective_revision_disposition).toMatchObject({
+      acknowledged: true,
+      clean_artifact_accepted_remaining_author_revisions: {
+        count: 1,
+        author: AI,
+        ids: [103],
+      },
+    });
+  });
+
+  test('tracked save persists a selective revision operation without an acknowledgement', async () => {
+    const opened = await openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) });
+    const trackedPath = path.join(opened.tmpDir, 'selective-tracked.docx');
+
+    const accepted = await acceptAiEdits(opened.mgr, {
+      file_path: opened.filePath,
+      revision_ids: [101],
+    });
+    assertSuccess(accepted, 'accept_ai_edits');
+
+    const saved = await save(opened.mgr, {
+      file_path: opened.filePath,
+      save_to_local_path: trackedPath,
+      save_format: 'tracked',
+    });
+    assertSuccess(saved, 'tracked save');
+    const zip = await DocxZip.load(await fs.readFile(trackedPath));
+    const xml = await zip.readText('word/document.xml');
+    expect(xml).not.toContain('w:id="101"');
+    expect(xml).toContain('w:id="103"');
+    expect(xml).toContain('w:id="102"');
+    expect(xml).toContain('w:id="104"');
+  });
+
+  test('a selector with no matches does not arm the clean-save safeguard', async () => {
+    const opened = await openSession([], { mgr: manager(), xml: documentXml(MIXED_AUTHOR_BODY) });
+    const cleanPath = path.join(opened.tmpDir, 'no-op-selective-clean.docx');
+
+    const accepted = await acceptAiEdits(opened.mgr, {
+      file_path: opened.filePath,
+      author: 'Unknown reviewer',
+    });
+    assertSuccess(accepted, 'accept_ai_edits');
+    expect(accepted.selected_revision_ids).toEqual([]);
+    expect(accepted.persistence_required).toBe(false);
+
+    const saved = await save(opened.mgr, {
+      file_path: opened.filePath,
+      save_to_local_path: cleanPath,
+      save_format: 'clean',
+    });
+    assertSuccess(saved, 'clean save after no-op selection');
+    await expect(fs.access(cleanPath)).resolves.toBeUndefined();
+  });
 
   test.openspec('missing selector is rejected')(
     'Scenario: missing selector is rejected',

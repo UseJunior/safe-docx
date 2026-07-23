@@ -23,6 +23,7 @@ import {
 } from '@usejunior/docx-core';
 import { OOXML } from '@usejunior/docx-core';
 import {
+  captureComplexFieldPassthrough,
   captureSdtPassthrough,
   sameOpaqueOwner,
   validateSdtNamespaceOwnership,
@@ -534,6 +535,8 @@ export interface AtomizeTreeOptions {
   atomizeParagraphLevelMarkers?: boolean;
   /** Capture unchanged supported SDT placements as bounded opaque rebuild nodes. */
   captureInlineSdtPassthrough?: boolean;
+  /** Capture unchanged supported complex fields as ordered opaque rebuild ranges. */
+  captureComplexFieldPassthrough?: boolean;
 }
 
 /**
@@ -830,6 +833,7 @@ export function atomizeTree(
     splitTextIntoWords: options.splitTextIntoWords ?? true,
     atomizeParagraphLevelMarkers: options.atomizeParagraphLevelMarkers ?? false,
     captureInlineSdtPassthrough: options.captureInlineSdtPassthrough ?? false,
+    captureComplexFieldPassthrough: options.captureComplexFieldPassthrough ?? false,
   };
 
   const state: AtomizationState = {
@@ -840,6 +844,9 @@ export function atomizeTree(
   if (normalizedOptions.captureInlineSdtPassthrough) validateSdtNamespaceOwnership(node);
   const rawAtoms = atomizeTreeInternal(node, ancestors, part, state, normalizedOptions);
   if (normalizedOptions.captureInlineSdtPassthrough) captureSdtPassthrough(node, rawAtoms);
+  if (normalizedOptions.captureComplexFieldPassthrough) {
+    captureComplexFieldPassthrough(node, rawAtoms);
+  }
 
   // Step 1: Collapse field sequences into single atoms based on visible text
   // This allows matching between hardcoded text and field references

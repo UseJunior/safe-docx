@@ -679,6 +679,375 @@ export function captureSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]
   }
 }
 
+type SupportedComplexField = 'PAGE' | 'NUMPAGES' | 'REF' | 'PAGEREF';
+
+function fieldCharType(atom: ComparisonUnitAtom): string | null {
+  const element = atom.contentElement;
+  if (element.namespaceURI !== OOXML.W_NS || element.localName !== 'fldChar') return null;
+  return element.getAttributeNS(OOXML.W_NS, 'fldCharType') ||
+    element.getAttribute('w:fldCharType') ||
+    element.getAttribute('fldCharType');
+}
+
+function paragraphAndDirectChild(
+  atom: ComparisonUnitAtom,
+): { paragraph: Element; child: Element } | null {
+  const paragraphIndex = atom.ancestorElements.findIndex(
+    (ancestor) => ancestor.namespaceURI === OOXML.W_NS && ancestor.localName === 'p',
+  );
+  if (paragraphIndex < 0) return null;
+  const paragraph = atom.ancestorElements[paragraphIndex]!;
+  const child = atom.ancestorElements[paragraphIndex + 1] ?? atom.contentElement;
+  return child.parentNode === paragraph ? { paragraph, child } : null;
+}
+
+function hasTrackedParagraphOwnership(atom: ComparisonUnitAtom, paragraph: Element): boolean {
+  for (const ancestor of atom.ancestorElements) {
+    if (ancestor === paragraph) return false;
+    if (
+      ancestor.namespaceURI === OOXML.W_NS &&
+      (ancestor.localName === 'ins' || ancestor.localName === 'del' ||
+        ancestor.localName === 'moveFrom' || ancestor.localName === 'moveTo')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function tokenizeFieldInstruction(instruction: string): string[] | null {
+  const tokens: string[] = [];
+  let index = 0;
+  while (index < instruction.length) {
+    while (index < instruction.length && /\s/.test(instruction[index]!)) index++;
+    if (index >= instruction.length) break;
+    if (instruction[index] === '"') {
+      index++;
+      let value = '';
+      let closed = false;
+      while (index < instruction.length) {
+        const character = instruction[index++]!;
+        if (character === '"') {
+          closed = true;
+          break;
+        }
+        if (character === '\r' || character === '\n') return null;
+        value += character;
+      }
+      if (!closed || (index < instruction.length && !/\s/.test(instruction[index]!))) return null;
+      tokens.push(value);
+      continue;
+    }
+    const start = index;
+    while (index < instruction.length && !/\s/.test(instruction[index]!)) {
+      if (instruction[index] === '"') return null;
+      index++;
+    }
+    tokens.push(instruction.slice(start, index));
+  }
+  return tokens;
+}
+
+function validFieldSwitches(
+  tokens: readonly string[],
+  allowed: ReadonlySet<string>,
+  argumentSwitches: ReadonlySet<string> = new Set(['*', '#', '@']),
+): boolean {
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    if (!token.startsWith('\\') || token.length !== 2) return false;
+    const name = token[1]!.toLowerCase();
+    if (!allowed.has(name)) return false;
+    if (argumentSwitches.has(name)) {
+      const argument = tokens[++index];
+      if (!argument || argument.startsWith('\\')) return false;
+    }
+  }
+  return true;
+}
+
+function supportedFieldKeyword(instruction: string): SupportedComplexField | null {
+  const match = /^\s*([A-Za-z]+)/.exec(instruction);
+  if (!match) return null;
+  const keyword = match[1]!.toUpperCase();
+  return keyword === 'PAGE' || keyword === 'NUMPAGES' ||
+    keyword === 'REF' || keyword === 'PAGEREF'
+    ? keyword
+    : null;
+}
+
+function classifyFieldInstruction(instruction: string): SupportedComplexField | null {
+  const tokens = tokenizeFieldInstruction(instruction);
+  if (!tokens || tokens.length === 0) return null;
+  const keyword = tokens[0]!.toUpperCase();
+  if (keyword === 'PAGE') {
+    return validFieldSwitches(tokens.slice(1), new Set(['*', '#'])) ? 'PAGE' : null;
+  }
+  if (keyword === 'NUMPAGES') {
+    return validFieldSwitches(tokens.slice(1), new Set(['*', '#'])) ? 'NUMPAGES' : null;
+  }
+  if (keyword !== 'REF' && keyword !== 'PAGEREF') return null;
+  const bookmark = tokens[1];
+  if (!bookmark || bookmark.startsWith('\\')) return null;
+  const allowed = keyword === 'REF'
+    ? new Set(['d', 'f', 'h', 'n', 'p', 'r', 't', 'w', '*'])
+    : new Set(['h', 'p', '*']);
+  const argumentSwitches = keyword === 'REF'
+    ? new Set(['*', 'd'])
+    : new Set(['*']);
+  return validFieldSwitches(tokens.slice(2), allowed, argumentSwitches) ? keyword : null;
+}
+
+function materializeOrderedRange(elements: readonly Element[]): {
+  sourceElements: Element[];
+  fingerprint: string;
+  namespaces: Readonly<Record<string, string>>;
+  mce: Readonly<Record<string, string>>;
+} {
+  const sourceElements: Element[] = [];
+  const fingerprints: string[] = [];
+  let firstNamespaces: Readonly<Record<string, string>> = {};
+  let firstMce: Readonly<Record<string, string>> = {};
+  for (const [index, element] of elements.entries()) {
+    const bindings = effectiveNamespaces(element);
+    const declarations = effectiveMceDeclarations(element);
+    validateNamespaceOwnership(element, bindings);
+    validateIgnorableTokens(declarations.values, bindings);
+    if (index === 0) {
+      firstNamespaces = bindings;
+      firstMce = declarations.values;
+    }
+    sourceElements.push(materializeNamespaces(
+      element,
+      bindings,
+      declarations.values,
+      declarations.qualifiedNames,
+    ));
+    fingerprints.push(semanticFingerprint(element, bindings, declarations.values));
+  }
+  return {
+    sourceElements,
+    fingerprint: createHash('sha256').update(JSON.stringify(fingerprints), 'utf8').digest('hex'),
+    namespaces: firstNamespaces,
+    mce: firstMce,
+  };
+}
+
+/**
+ * Capture unchanged supported complex fields as ordered direct paragraph-child
+ * ranges before the atomizer collapses them to visible-result atoms.
+ *
+ * Ordered topology preservation is a SafeDocX metamorphic invariant.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.42
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.44
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.45
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ * @see https://github.com/UseJunior/safe-docx/issues/582
+ */
+export function captureComplexFieldPassthrough(
+  root: Element,
+  atoms: ComparisonUnitAtom[],
+): void {
+  const paragraphOrdinals = new Map(
+    Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p'))
+      .map((paragraph, ordinal) => [paragraph, ordinal] as const),
+  );
+  let nextOrdinal = uniqueDescriptors(atoms).length;
+  const nextFieldRangeOrdinal = new Map<Element, number>();
+  let fieldStart = -1;
+  let separator = -1;
+  let ignoredDepth = 0;
+
+  const capture = (start: number, end: number, separate: number): void => {
+    const fieldAtoms = atoms.slice(start, end + 1);
+    const instructionEnd = separate >= 0 ? separate - start : fieldAtoms.length - 1;
+    const beforeSeparator = fieldAtoms.slice(1, instructionEnd);
+    if (
+      beforeSeparator.length === 0 ||
+      beforeSeparator.some((atom) =>
+        atom.contentElement.namespaceURI !== OOXML.W_NS ||
+        atom.contentElement.localName !== 'instrText')
+    ) {
+      return;
+    }
+    const instruction = beforeSeparator.map((atom) => atom.contentElement.textContent ?? '').join('');
+    const supportedKeyword = supportedFieldKeyword(instruction);
+    if (!supportedKeyword) return;
+    const fieldKind = classifyFieldInstruction(instruction);
+    if (!fieldKind) {
+      throw new OpaquePassthroughError(`unsupported ${supportedKeyword} field instruction shape`);
+    }
+    if (separate < 0) throw new OpaquePassthroughError('complex field has no separator');
+
+    const firstLocation = paragraphAndDirectChild(fieldAtoms[0]!);
+    const lastLocation = paragraphAndDirectChild(fieldAtoms[fieldAtoms.length - 1]!);
+    if (!firstLocation || !lastLocation || firstLocation.paragraph !== lastLocation.paragraph) {
+      throw new OpaquePassthroughError('complex field spans paragraphs or has unsupported placement');
+    }
+    const paragraph = firstLocation.paragraph;
+    if (
+      fieldAtoms.some((atom) => {
+        const location = paragraphAndDirectChild(atom);
+        return !location || location.paragraph !== paragraph;
+      })
+    ) {
+      throw new OpaquePassthroughError('complex field spans paragraphs or containers');
+    }
+
+    const existingOwners = new Set(
+      fieldAtoms.map((atom) => atom.opaquePassthrough).filter(
+        (owner): owner is OpaquePassthroughNode => owner !== undefined,
+      ),
+    );
+    if (existingOwners.size === 1) {
+      const [owner] = existingOwners;
+      if (
+        owner!.placementKind === 'inline-run' &&
+        fieldAtoms.every((atom) => atom.opaquePassthrough === owner)
+      ) {
+        return;
+      }
+    }
+    if (existingOwners.size > 0) {
+      throw new OpaquePassthroughError('complex field overlaps another opaque boundary');
+    }
+    if (fieldAtoms.some((atom) => hasTrackedParagraphOwnership(atom, paragraph))) {
+      throw new OpaquePassthroughError('complex field paragraph is owned by a tracked-change wrapper');
+    }
+
+    const paragraphChildren = Array.from(paragraph.childNodes)
+      .filter((child): child is Element => child.nodeType === 1);
+    const startOrdinal = paragraphChildren.indexOf(firstLocation.child);
+    const endOrdinal = paragraphChildren.indexOf(lastLocation.child);
+    if (startOrdinal < 0 || endOrdinal < startOrdinal) {
+      throw new OpaquePassthroughError('complex field direct-child range is malformed');
+    }
+    const rangeElements = paragraphChildren.slice(startOrdinal, endOrdinal + 1);
+    const fieldAtomSet = new Set(fieldAtoms);
+    for (const atom of atoms) {
+      const location = paragraphAndDirectChild(atom);
+      if (
+        location?.paragraph === paragraph &&
+        rangeElements.includes(location.child) &&
+        !fieldAtomSet.has(atom)
+      ) {
+        throw new OpaquePassthroughError(
+          'complex field range contains unrelated or shared-endpoint content',
+        );
+      }
+    }
+
+    const paragraphOrdinal = paragraphOrdinals.get(paragraph);
+    if (paragraphOrdinal === undefined) {
+      throw new OpaquePassthroughError('complex field paragraph has no source-order identity');
+    }
+    const fieldRangeOrdinal = nextFieldRangeOrdinal.get(paragraph) ?? 0;
+    nextFieldRangeOrdinal.set(paragraph, fieldRangeOrdinal + 1);
+    const materialized = materializeOrderedRange(rangeElements);
+    const descriptor: OpaquePassthroughNode = {
+      placementKind: 'inline-range',
+      namespaceUri: OOXML.W_NS,
+      localName: `complexField:${fieldKind}`,
+      documentOrdinal: nextOrdinal++,
+      paragraphOrdinal,
+      containerIdentity: structuralContainerIdentity(paragraph),
+      inlineChildStartOrdinal: startOrdinal,
+      inlineChildEndOrdinal: endOrdinal,
+      inlineRangeOrdinal: fieldRangeOrdinal,
+      semanticFingerprint: materialized.fingerprint,
+      sourceElement: materialized.sourceElements[0]!,
+      sourceElements: materialized.sourceElements,
+      effectiveNamespaces: materialized.namespaces,
+      effectiveMceDeclarations: materialized.mce,
+    };
+    for (const atom of fieldAtoms) atom.opaquePassthrough = descriptor;
+  };
+
+  for (let index = 0; index < atoms.length; index++) {
+    const atom = atoms[index]!;
+    const kind = fieldCharType(atom);
+    if (ignoredDepth > 0) {
+      if (kind === 'begin') ignoredDepth++;
+      else if (kind === 'end') ignoredDepth--;
+      continue;
+    }
+    if (atom.opaquePassthrough) {
+      if (fieldStart >= 0) {
+        const instructionEnd = separator >= 0 ? separator : index;
+        const instruction = atoms.slice(fieldStart + 1, instructionEnd)
+          .map((candidate) => candidate.contentElement.textContent ?? '')
+          .join('');
+        if (supportedFieldKeyword(instruction)) {
+          throw new OpaquePassthroughError('complex field crosses another opaque boundary');
+        }
+        fieldStart = -1;
+        separator = -1;
+      }
+      continue;
+    }
+    if (kind === 'begin') {
+      if (fieldStart >= 0) {
+        const instructionEnd = separator >= 0 ? separator : index;
+        const instructionAtoms = atoms.slice(fieldStart + 1, instructionEnd);
+        const supportedOuter = instructionAtoms.length > 0 &&
+          instructionAtoms.every((candidate) =>
+            candidate.contentElement.namespaceURI === OOXML.W_NS &&
+            candidate.contentElement.localName === 'instrText') &&
+          supportedFieldKeyword(
+            instructionAtoms.map((candidate) => candidate.contentElement.textContent ?? '').join(''),
+          );
+        if (supportedOuter) {
+          throw new OpaquePassthroughError('nested or overlapping complex fields are unsupported');
+        }
+        fieldStart = -1;
+        separator = -1;
+        ignoredDepth = 2;
+        continue;
+      }
+      fieldStart = index;
+      separator = -1;
+    } else if (kind === 'separate' && fieldStart >= 0) {
+      if (separator >= 0) {
+        const instruction = atoms.slice(fieldStart + 1, separator)
+          .map((candidate) => candidate.contentElement.textContent ?? '')
+          .join('');
+        if (supportedFieldKeyword(instruction)) {
+          throw new OpaquePassthroughError('complex field has multiple separators');
+        }
+        continue;
+      }
+      separator = index;
+    } else if (kind === 'end') {
+      if (fieldStart < 0) continue;
+      capture(fieldStart, index, separator);
+      fieldStart = -1;
+      separator = -1;
+    }
+  }
+  if (fieldStart >= 0) {
+    const instructionEnd = separator >= 0 ? separator : atoms.length;
+    const instruction = atoms.slice(fieldStart + 1, instructionEnd)
+      .map((candidate) => candidate.contentElement.textContent ?? '')
+      .join('');
+    if (supportedFieldKeyword(instruction)) {
+      throw new OpaquePassthroughError('complex field has unmatched begin marker');
+    }
+  }
+
+  // SDTs are captured first and fields second. Renumber all owners by first atom
+  // occurrence so mixed owner kinds retain one monotonic document order.
+  const orderedDescriptors = new Set<OpaquePassthroughNode>();
+  for (const atom of atoms) {
+    const descriptor = atom.opaquePassthrough;
+    if (descriptor) orderedDescriptors.add(descriptor);
+  }
+  Array.from(orderedDescriptors).forEach((descriptor, ordinal) => {
+    descriptor.documentOrdinal = ordinal;
+  });
+}
+
 function uniqueDescriptors(atoms: ComparisonUnitAtom[]): OpaquePassthroughNode[] {
   const seen = new Set<OpaquePassthroughNode>();
   const result: OpaquePassthroughNode[] = [];
@@ -705,10 +1074,14 @@ export async function bindOpaquePassthroughCounterparts(
     throw new OpaquePassthroughError(`boundary count changed (${original.length} original, ${revised.length} revised)`);
   }
   const placementKey = (descriptor: OpaquePassthroughNode) =>
-    descriptor.placementKind === 'inline-run'
-      ? `inline\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000${descriptor.documentOrdinal}`
-      : `block\u0000${descriptor.containerIdentity}\u0000${descriptor.bodyChildOrdinal}\u0000` +
-        `${descriptor.paragraphOrdinal}\u0000${descriptor.ownedParagraphCount}`;
+    descriptor.placementKind === 'body-block'
+      ? `block\u0000${descriptor.containerIdentity}\u0000${descriptor.bodyChildOrdinal}\u0000` +
+        `${descriptor.paragraphOrdinal}\u0000${descriptor.ownedParagraphCount}`
+      : descriptor.placementKind === 'inline-range'
+        ? `field\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
+          `${descriptor.inlineRangeOrdinal}\u0000${descriptor.localName}`
+        : `inline\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
+          `${descriptor.documentOrdinal}\u0000${descriptor.localName}`;
   original.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
   revised.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
   await Promise.all([
@@ -736,6 +1109,7 @@ export async function bindOpaquePassthroughCounterparts(
       before.namespaceUri !== after.namespaceUri ||
       before.localName !== after.localName ||
       before.bodyChildOrdinal !== after.bodyChildOrdinal ||
+      before.inlineRangeOrdinal !== after.inlineRangeOrdinal ||
       before.ownedParagraphCount !== after.ownedParagraphCount ||
       before.semanticFingerprint !== after.semanticFingerprint ||
       before.relationshipClosureFingerprint !== after.relationshipClosureFingerprint
@@ -744,6 +1118,7 @@ export async function bindOpaquePassthroughCounterparts(
     }
     before.correlatedNode = after;
     after.emissionElement = before.sourceElement;
+    after.emissionElements = before.sourceElements ?? [before.sourceElement];
   }
 }
 
@@ -767,7 +1142,7 @@ export function validateOpaquePassthroughCorrelation(atoms: ComparisonUnitAtom[]
       descriptor = descriptor.correlatedNode;
       atom.opaquePassthrough = descriptor;
     }
-    if (!descriptor.emissionElement ||
+    if ((!descriptor.emissionElements && !descriptor.emissionElement) ||
       (atom.sourceDocument !== 'revised' && atom.contentElement.tagName !== '__emptyParagraph__')) {
       throw new OpaquePassthroughError(
         `boundary ${descriptor.documentOrdinal} has no validated revised-side owner`,
@@ -841,7 +1216,7 @@ export function renderOpaqueAtomSequence(
         pendingAtoms.push(atom);
         continue;
       }
-      if (descriptor.placementKind !== 'inline-run') {
+      if (descriptor.placementKind === 'body-block') {
         throw new OpaquePassthroughError('body-block boundary reached paragraph-run emission');
       }
       if (descriptor !== active) {
@@ -860,11 +1235,13 @@ export function renderOpaqueAtomSequence(
       if (atom.correlationStatus !== CorrelationStatus.Equal) {
         throw new OpaquePassthroughError(`boundary ${descriptor.documentOrdinal} contains a non-equal atom`);
       }
-      if (!descriptor.emissionElement) {
+      if (!descriptor.emissionElements && !descriptor.emissionElement) {
         throw new OpaquePassthroughError(`boundary ${descriptor.documentOrdinal} has no validated original owner`);
       }
       if (!emitted.has(descriptor)) {
-        output.push(serialize(descriptor.emissionElement));
+        output.push(
+          (descriptor.emissionElements ?? [descriptor.emissionElement!]).map(serialize).join(''),
+        );
         emitted.add(descriptor);
       }
     }
