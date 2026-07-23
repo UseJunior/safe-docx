@@ -384,8 +384,23 @@ export async function readFile(
     let filtered = nodes;
     let startIdx = 0;
     if (hasNodeIds) {
-      const set = new Set(params.node_ids!);
-      filtered = nodes.filter((n) => set.has(n.id));
+      const requestedIds = new Set(params.node_ids!);
+      const selectedCanonicalIds = new Set(
+        nodes.filter((node) => requestedIds.has(node.id)).map((node) => node.id),
+      );
+
+      for (const requestedId of requestedIds) {
+        if (selectedCanonicalIds.has(requestedId)) continue;
+        // A `_bk_*` selector that didn't already match a node's canonical id can
+        // never resolve via the foreign-bookmark path (findParagraphByBookmarkId
+        // returns null for an unmatched `_bk_*` name), so skip the linear scan.
+        if (requestedId.startsWith('_bk_')) continue;
+        const paragraph = session.doc.getParagraphElementById(requestedId);
+        const canonicalId = paragraph ? getParagraphBookmarkId(paragraph) : null;
+        if (canonicalId) selectedCanonicalIds.add(canonicalId);
+      }
+
+      filtered = nodes.filter((node) => selectedCanonicalIds.has(node.id));
     } else {
       if (hasExplicitOffset) {
         if (params.offset! > 0) startIdx = Math.max(0, params.offset! - 1);
