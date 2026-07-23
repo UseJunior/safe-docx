@@ -190,6 +190,28 @@ describe('save', () => {
         expect(ends).toHaveLength(2);
         expect(output.getElementsByTagNameNS(WORDPROCESSING_ML_NS, 'ins')).toHaveLength(1);
 
+        // Parse balanced start/end pairs by name — string absence alone would
+        // miss an orphaned bookmarkEnd left behind by a half-removed range.
+        const bookmarkNames = async (docxPath: string): Promise<string[]> => {
+          const doc = parseXml(await documentXmlFromDocx(docxPath));
+          const s = Array.from(doc.getElementsByTagNameNS(WORDPROCESSING_ML_NS, 'bookmarkStart'));
+          const e = Array.from(doc.getElementsByTagNameNS(WORDPROCESSING_ML_NS, 'bookmarkEnd'));
+          const namesById = new Map(
+            s.map((el) => [
+              el.getAttributeNS(WORDPROCESSING_ML_NS, 'id'),
+              el.getAttributeNS(WORDPROCESSING_ML_NS, 'name'),
+            ]),
+          );
+          for (const end of e) {
+            // no orphaned bookmarkEnd
+            expect(namesById.has(end.getAttributeNS(WORDPROCESSING_ML_NS, 'id'))).toBe(true);
+          }
+          expect(s).toHaveLength(e.length);
+          return [...namesById.values()].filter((n): n is string => n !== null);
+        };
+
+        // Explicit clean_bookmarks:true strips edit-* (and safe-docx _bk_*) while
+        // keeping jr_para_*, with no orphaned bookmarkEnd.
         const cleanedOutputPath = path.join(tmpDir, 'bookmark-cleaned-output.docx');
         const cleaned = await save(mgr, {
           file_path: inputPath,
@@ -198,9 +220,28 @@ describe('save', () => {
           clean_bookmarks: true,
         });
         assertSuccess(cleaned, 'explicit bookmark-cleaning tracked save');
-        const cleanedXml = await documentXmlFromDocx(cleanedOutputPath);
-        expect(cleanedXml).not.toContain('edit-contract-term');
-        expect(cleanedXml).toContain('jr_para_11111111');
+        const cleanedNames = await bookmarkNames(cleanedOutputPath);
+        expect(cleanedNames).not.toContain('edit-contract-term');
+        expect(cleanedNames).toContain('jr_para_11111111');
+
+        // save_format:'both' is the harness default: the tracked variant must
+        // still preserve edit-* (persistence), while the clean deliverable
+        // strips it (#609).
+        const bothCleanPath = path.join(tmpDir, 'both-clean.docx');
+        const bothTrackedPath = path.join(tmpDir, 'both-tracked.docx');
+        const both = await save(mgr, {
+          file_path: inputPath,
+          save_to_local_path: bothCleanPath,
+          tracked_save_to_local_path: bothTrackedPath,
+          save_format: 'both',
+        });
+        assertSuccess(both, 'both-mode save');
+        const bothTrackedNames = await bookmarkNames(bothTrackedPath);
+        expect(bothTrackedNames).toContain('edit-contract-term');
+        expect(bothTrackedNames).toContain('jr_para_11111111');
+        const bothCleanNames = await bookmarkNames(bothCleanPath);
+        expect(bothCleanNames).not.toContain('edit-contract-term');
+        expect(bothCleanNames).toContain('jr_para_11111111');
       },
     );
 
