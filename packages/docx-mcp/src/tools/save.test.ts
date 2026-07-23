@@ -18,7 +18,6 @@ import { buildDocxFromParts, DocxZip, parseXml } from '@usejunior/docx-core';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const TEST_FEATURE = 'docx-primitives';
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -60,7 +59,7 @@ function paragraphXml(documentXml: string, index: number): string {
 describe('save', () => {
   registerCleanup();
 
-  const test = testAllure.epic('Document Editing').withLabels({ feature: TEST_FEATURE });
+  const test = testAllure.epic('Document Editing').withLabels({ feature: 'Save' });
 
   async function openTestDoc(texts: string[] = ['Hello World']) {
     const mgr = createTestSessionManager();
@@ -130,7 +129,6 @@ describe('save', () => {
    * @see #609
    */
   test
-    .openspec('namespaced XML preserved through round-trip')
     .conformance(
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.1' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.2' },
