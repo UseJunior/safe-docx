@@ -333,6 +333,26 @@ describe('opaque body block relationship closure', () => {
   );
 
   test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
+    'accepts package-root and ordinary relative internal targets',
+    async () => {
+      const rootRelativeRelationship = { ...imageRelationship, target: '/word/media/root-logo.png' };
+      const rootRelative = await packageWithRelationships(
+        drawingBlock() + tailOriginal,
+        [rootRelativeRelationship],
+        { 'word/media/root-logo.png': Buffer.from('root-relative-image') },
+      );
+      await expect(rebuildPackages(rootRelative, rootRelative)).resolves.toBeInstanceOf(Buffer);
+
+      const relative = await packageWithRelationships(
+        drawingBlock() + tailOriginal,
+        [imageRelationship],
+        { 'word/media/logo.png': Buffer.from('relative-image') },
+      );
+      await expect(rebuildPackages(relative, relative)).resolves.toBeInstanceOf(Buffer);
+    },
+  );
+
+  test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
     'rejects dangling, unsafe, cyclic, and unsupported relationship-bearing targets',
     async () => {
       const control = drawingBlock() + tailOriginal;
@@ -365,6 +385,85 @@ describe('opaque body block relationship closure', () => {
     },
   );
 
+  test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
+    'rejects authority, encoded authority, malformed, backslash, and URI-form internal targets',
+    async () => {
+      const invalidTargets = [
+        '//authority.example/logo.png',
+        '%2F%2Fauthority.example%2Flogo.png',
+        '%ZZ',
+        'media\\logo.png',
+        'media%5Clogo.png',
+        'https://example.test/logo.png',
+        '%68%74%74%70%3A%2F%2Fexample.test%2Flogo.png',
+      ];
+      for (const target of invalidTargets) {
+        const input = await packageWithRelationships(drawingBlock() + tailOriginal, [
+          { ...imageRelationship, target },
+        ]);
+        await expect(rebuildPackages(input, input), target).rejects.toThrow(/relationship target/);
+      }
+    },
+  );
+
+  test.openspec('[SDX-SDT-BLOCK-05] Relationship closure changes fail before reconstruction')(
+    'rejects two roots entering opposite sides of the same dependency cycle',
+    async () => {
+      const control = blockSdt(
+        `<w:p w14:paraId="00000036"><w:r><w:drawing r:id="rIdRootA" r:embed="rIdRootB"/>` +
+        `</w:r></w:p>`,
+      );
+      const cyclic = await packageWithRelationships(control + tailOriginal, [
+        { id: 'rIdRootA', type: CUSTOM_XML_REL, target: 'custom/a.xml' },
+        { id: 'rIdRootB', type: CUSTOM_XML_REL, target: 'custom/b.xml' },
+      ], {
+        'word/custom/a.xml': `<x:a xmlns:x="urn:test" xmlns:r="${R_NS}" r:id="rIdToB"/>`,
+        'word/custom/_rels/a.xml.rels': relationshipsXml([
+          { id: 'rIdToB', type: CUSTOM_XML_REL, target: 'b.xml' },
+        ]),
+        'word/custom/b.xml': `<x:b xmlns:x="urn:test" xmlns:r="${R_NS}" r:id="rIdToA"/>`,
+        'word/custom/_rels/b.xml.rels': relationshipsXml([
+          { id: 'rIdToA', type: CUSTOM_XML_REL, target: 'a.xml' },
+        ]),
+      });
+
+      await expect(rebuildPackages(cyclic, cyclic)).rejects.toThrow(/cyclic relationship closure/);
+    },
+  );
+
+  test.openspec('[SDX-SDT-BLOCK-04] Block identity work remains linear in group count')(
+    'computes a shared acyclic dependency once across concurrent boundary requests',
+    async () => {
+      const control = blockSdt(
+        `<w:p w14:paraId="00000037"><w:r><w:drawing r:id="rIdRootA" r:embed="rIdRootB"/>` +
+        `</w:r></w:p>`,
+      );
+      const archive = await DocxArchive.load(await packageWithRelationships(control + tailOriginal, [
+        { id: 'rIdRootA', type: CUSTOM_XML_REL, target: 'custom/shared.xml' },
+        { id: 'rIdRootB', type: CUSTOM_XML_REL, target: 'custom/shared.xml' },
+      ], {
+        'word/custom/shared.xml': `<x:shared xmlns:x="urn:test" xmlns:r="${R_NS}" r:id="rIdNested"/>`,
+        'word/custom/_rels/shared.xml.rels': relationshipsXml([
+          { id: 'rIdNested', type: IMAGE_REL, target: '../media/shared.png' },
+        ]),
+        'word/media/shared.png': Buffer.from('shared-image'),
+      }));
+      const resolver = new OpaqueRelationshipClosureResolver(archive);
+      const boundary = directBodyControls(await archive.getDocumentXml())[0]!;
+
+      const [first, second] = await Promise.all([
+        resolver.fingerprintBoundary(boundary, 'word/document.xml'),
+        resolver.fingerprintBoundary(boundary, 'word/document.xml'),
+      ]);
+
+      expect(second).toBe(first);
+      expect(resolver.instrumentation.boundaryScans).toBe(2);
+      expect(resolver.instrumentation.relationshipIdentityComputations).toBe(3);
+      expect(resolver.instrumentation.partHashComputations).toBe(2);
+      expect(resolver.instrumentation.relationshipPartReads).toBe(3);
+    },
+  );
+
   test.openspec('[SDX-SDT-BLOCK-04] Block identity work remains linear in group count')(
     'keeps relationship-free boundaries on the no-read path and memoizes media hashing',
     async () => {
@@ -372,6 +471,7 @@ describe('opaque body block relationship closure', () => {
       const plainResolver = new OpaqueRelationshipClosureResolver(plainArchive);
       const plainBoundary = directBodyControls(await plainArchive.getDocumentXml())[0]!;
       expect(await plainResolver.fingerprintBoundary(plainBoundary, 'word/document.xml')).toBe('');
+      expect(plainResolver.instrumentation.relationshipIdentityComputations).toBe(0);
       expect(plainResolver.instrumentation.relationshipPartReads).toBe(0);
       expect(plainResolver.instrumentation.partHashComputations).toBe(0);
 
@@ -389,6 +489,7 @@ describe('opaque body block relationship closure', () => {
       const first = await mediaResolver.fingerprintBoundary(boundary, 'word/document.xml');
       const second = await mediaResolver.fingerprintBoundary(boundary, 'word/document.xml');
       expect(second).toBe(first);
+      expect(mediaResolver.instrumentation.relationshipIdentityComputations).toBe(1);
       expect(mediaResolver.instrumentation.partHashComputations).toBe(1);
       expect(mediaResolver.instrumentation.relationshipPartReads).toBe(2);
     },

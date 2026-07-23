@@ -25,6 +25,7 @@ interface PackageRelationship {
 
 export interface OpaqueRelationshipInstrumentation {
   boundaryScans: number;
+  relationshipIdentityComputations: number;
   relationshipPartReads: number;
   partHashComputations: number;
 }
@@ -53,7 +54,7 @@ function collectRelationshipIds(root: Element): string[] {
 }
 
 function normalizeInternalTarget(ownerPart: string, target: string): string {
-  if (!target || target.includes('\\') || target.includes('\0') || /[?#]/.test(target) || /^[a-z][a-z0-9+.-]*:/i.test(target)) {
+  if (!target || target.includes('\\') || /[\u0000-\u001f\u007f?#]/.test(target)) {
     throw new OpaquePassthroughError(`unsafe internal relationship target '${target}'`);
   }
   let decoded: string;
@@ -62,10 +63,15 @@ function normalizeInternalTarget(ownerPart: string, target: string): string {
   } catch {
     throw new OpaquePassthroughError(`invalid encoded relationship target '${target}'`);
   }
-  if (decoded.includes('\\') || decoded.includes('\0') || /[?#]/.test(decoded)) {
+  if (
+    decoded.includes('\\') ||
+    /[\u0000-\u001f\u007f?#]/.test(decoded) ||
+    decoded.startsWith('//') ||
+    decoded.includes(':')
+  ) {
     throw new OpaquePassthroughError(`unsafe internal relationship target '${target}'`);
   }
-  const segments = target.startsWith('/') ? [] : posix.dirname(ownerPart).split('/').filter(Boolean);
+  const segments = decoded.startsWith('/') ? [] : posix.dirname(ownerPart).split('/').filter(Boolean);
   for (const segment of decoded.split('/')) {
     if (!segment || segment === '.') continue;
     if (segment === '..') {
@@ -93,34 +99,44 @@ function normalizeExternalTarget(target: string): string {
 export class OpaqueRelationshipClosureResolver {
   readonly instrumentation: OpaqueRelationshipInstrumentation = {
     boundaryScans: 0,
+    relationshipIdentityComputations: 0,
     relationshipPartReads: 0,
     partHashComputations: 0,
   };
   private readonly relationshipsByPart = new Map<string, Promise<Map<string, PackageRelationship> | null>>();
   private readonly partHashes = new Map<string, Promise<string>>();
-  private readonly closures = new Map<string, Promise<string>>();
+  private readonly closures = new Map<string, string>();
+  private workQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly archive: DocxArchive) {}
 
-  async fingerprintBoundary(boundary: Element, ownerPart: string): Promise<string> {
+  fingerprintBoundary(boundary: Element, ownerPart: string): Promise<string> {
+    const task = this.workQueue.then(() => this.fingerprintBoundaryNow(boundary, ownerPart));
+    this.workQueue = task.then(() => undefined, () => undefined);
+    return task;
+  }
+
+  private async fingerprintBoundaryNow(boundary: Element, ownerPart: string): Promise<string> {
     this.instrumentation.boundaryScans++;
     const ids = collectRelationshipIds(boundary);
     if (ids.length === 0) return '';
-    const identities = await Promise.all(ids.map((id) => this.relationshipIdentity(ownerPart, id, new Set())));
+    const identities: string[] = [];
+    for (const id of ids) identities.push(await this.relationshipIdentity(ownerPart, id, new Set()));
     return createHash('sha256').update(JSON.stringify(identities), 'utf8').digest('hex');
   }
 
-  private relationshipIdentity(ownerPart: string, id: string, active: Set<string>): Promise<string> {
+  private async relationshipIdentity(ownerPart: string, id: string, active: Set<string>): Promise<string> {
     const key = `${ownerPart}\u0000${id}`;
     if (active.has(key)) {
       throw new OpaquePassthroughError(`cyclic relationship closure at ${ownerPart}#${id}`);
     }
     const cached = this.closures.get(key);
     if (cached) return cached;
+    this.instrumentation.relationshipIdentityComputations++;
     const nextActive = new Set(active).add(key);
-    const pending = this.buildRelationshipIdentity(ownerPart, id, nextActive);
-    this.closures.set(key, pending);
-    return pending;
+    const identity = await this.buildRelationshipIdentity(ownerPart, id, nextActive);
+    this.closures.set(key, identity);
+    return identity;
   }
 
   private async buildRelationshipIdentity(ownerPart: string, id: string, active: Set<string>): Promise<string> {
@@ -150,9 +166,9 @@ export class OpaqueRelationshipClosureResolver {
       const targetRoot = targetDocument.documentElement;
       if (!targetRoot) throw new OpaquePassthroughError(`relationship target is not XML '${targetPart}'`);
       const dependentIds = collectRelationshipIds(targetRoot);
-      dependencies = await Promise.all(
-        dependentIds.map((dependentId) => this.relationshipIdentity(targetPart, dependentId, active)),
-      );
+      for (const dependentId of dependentIds) {
+        dependencies.push(await this.relationshipIdentity(targetPart, dependentId, active));
+      }
     }
     return JSON.stringify({
       id,

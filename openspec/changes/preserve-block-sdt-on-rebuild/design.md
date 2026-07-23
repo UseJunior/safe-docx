@@ -60,9 +60,14 @@ every relationship-namespace attribute through the owning part. It includes the
 relationship Id, type, target mode, normalized target, and internal target part
 path and byte hash. Referenced XML parts recursively contribute their referenced
 relationship closure. Relationship tables, part hashes, and closure nodes are
-memoized per package; blocks without relationship attributes avoid all archive
-reads. Dangling, unsafe, cyclic, and unsupported relationship-bearing targets
-fail closed before correlation.
+memoized per package. Recursive closure identities are cached only after they
+complete, and root traversals are serialized so independent roots cannot await
+each other's unresolved cycle. Blocks without relationship attributes avoid all
+archive reads. Internal targets accept only package-root or package-relative URI
+paths after safe decoding; authority references, URI schemes, malformed escapes,
+backslashes, control characters, and package-root escapes fail closed before
+normalization. Dangling, cyclic, and unsupported relationship-bearing targets
+also fail closed before correlation.
 
 ### Claims remain bounded
 

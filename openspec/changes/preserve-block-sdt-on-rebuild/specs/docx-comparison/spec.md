@@ -43,5 +43,7 @@ a bounded SafeDocX metamorphic invariant, not an ECMA-376 requirement.
 - **GIVEN** a block control referencing internal or external package relationships
 - **WHEN** an Id binding, type, target mode, normalized target, referenced part bytes, or recursively referenced XML-part closure differs
 - **THEN** forced rebuild SHALL fail before reconstruction
-- **AND** dangling, unsafe, cyclic, or unsupported relationship-bearing targets SHALL fail closed
+- **AND** single-root and multi-root dependency cycles SHALL reject deterministically without unresolved traversal waits
+- **AND** package-root and ordinary relative internal targets SHALL remain valid
+- **AND** decoded authority references, malformed escapes, backslashes, URI schemes, dangling targets, and unsupported relationship-bearing targets SHALL fail closed before package normalization
 - **AND** external targets SHALL be compared without network access

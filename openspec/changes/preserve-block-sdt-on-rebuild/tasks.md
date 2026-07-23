@@ -36,3 +36,11 @@
 - [x] 6.3 Add adversarial direct-image, external-target, recursive XML, alias, and fast-path tests.
 - [x] 6.4 Compare original, revised, and output ILPA relationship closures and media bytes.
 - [x] 6.5 Re-run all required gates and commit the review fix.
+
+## 7. Cycle and internal-target review fix
+
+- [x] 7.1 Serialize independent closure roots and cache only completed recursive identities.
+- [x] 7.2 Reject decoded authority, malformed, backslash, scheme, and other unsafe internal target forms before package normalization.
+- [x] 7.3 Add timeout-free multi-root cycle, shared dependency, and positive/negative target controls.
+- [x] 7.4 Re-run focused/full tests, preflight/gates, DPT, schema, and LibreOffice checks.
+- [x] 7.5 Commit the final review fix conventionally without pushing.
