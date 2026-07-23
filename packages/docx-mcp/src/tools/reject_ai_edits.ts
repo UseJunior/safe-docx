@@ -38,10 +38,21 @@ export async function rejectAiEdits(
       normalizeFirst: params.normalize_first,
     });
     manager.markEdited(session);
+    if (selectedIds.length > 0) {
+      manager.recordSelectiveRevisionAction(session, {
+        tool: 'reject_ai_edits',
+        selector: hasIds ? 'revision_ids' : 'author',
+        selectedRevisionIds: selectedIds,
+      });
+    }
     return ok(mergeSessionResolutionMetadata({
       ...result,
       selected_revision_ids: selectedIds,
       file_path: manager.normalizePath(session.originalPath),
+      persistence_required: selectedIds.length > 0,
+      ...(selectedIds.length > 0
+        ? { next_step: "Call save with save_format='tracked' or 'both' to persist this session-scoped mutation." }
+        : {}),
     }, metadata));
   } catch (e: unknown) {
     if (e instanceof AmbiguousRevisionOverlapError) {

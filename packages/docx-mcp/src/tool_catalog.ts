@@ -210,7 +210,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'save',
     surface: 'revisionable',
     description:
-      'Save document. For DOCX: saves clean and/or tracked changes output. For ODT: saves an .odt package. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX. Surface: revisionable — the save report lists both the AI revisions applied and a non-revision change manifest of any package-level mutations (comment/footnote side parts, relationships) that have no tracked-change wrapper.',
+      'Persist the current in-memory document session. For DOCX: saves clean and/or tracked changes output. For ODT: saves an .odt package. For Google Docs: checkpoint (default) returns revisionId, or snapshot exports as DOCX. Surface: revisionable — the save report lists both the AI revisions applied and a non-revision change manifest of any package-level mutations (comment/footnote side parts, relationships) that have no tracked-change wrapper.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -223,6 +223,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         ),
       save_format: z.enum(['clean', 'tracked', 'both']).optional(),
       allow_overwrite: z.boolean().optional(),
+      allow_discard_preserved_revisions: z
+        .boolean()
+        .optional()
+        .describe(
+          'Explicitly allow a clean artifact to auto-accept remaining revisions by the session AI author after accept_ai_edits/reject_ai_edits selectively left revisions unresolved. Default: false.',
+        ),
       tracked_save_to_local_path: z.string().optional(),
       tracked_changes_author: z.string().optional(),
       tracked_changes_engine: z
@@ -336,7 +342,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'accept_ai_edits',
     surface: 'internal',
     description:
-      'Selectively accept tracked changes by revision id or author, leaving all other (e.g. third-party reviewer) revisions byte-untouched. Provide revision_ids (array of w:id values) to target specific revisions, or author to accept every revision by one actor. Sweeps document.xml and supported side-story parts (footnotes, endnotes, comments). An ambiguous overlap — a targeted revision structurally containing, or contained by, a non-targeted revision (nested ins/del/move) — hard-errors with code AMBIGUOUS_REVISION_OVERLAP and a structured `overlaps` list unless normalize_first is set (best-effort, no byte-identical promise).',
+      'Selectively accept tracked changes by revision id or author in the in-memory session, leaving all other (e.g. third-party reviewer) revisions byte-untouched. This does not write file_path; call save to persist the mutation. Provide revision_ids (array of w:id values) to target specific revisions, or author to accept every revision by one actor. Sweeps document.xml and supported side-story parts (footnotes, endnotes, comments). An ambiguous overlap — a targeted revision structurally containing, or contained by, a non-targeted revision (nested ins/del/move) — hard-errors with code AMBIGUOUS_REVISION_OVERLAP and a structured `overlaps` list unless normalize_first is set (best-effort, no byte-identical promise).',
     input: z.object({
       ...FILE_FIELD,
       revision_ids: z
@@ -358,7 +364,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'reject_ai_edits',
     surface: 'internal',
     description:
-      'Selectively reject tracked changes by revision id or author (restoring their pre-edit state), leaving all other revisions byte-untouched. Symmetric to accept_ai_edits: provide revision_ids or author, sweeps document.xml and supported side-story parts, and hard-errors on an ambiguous overlap (code AMBIGUOUS_REVISION_OVERLAP with a structured `overlaps` list) unless normalize_first is set.',
+      'Selectively reject tracked changes by revision id or author in the in-memory session (restoring their pre-edit state), leaving all other revisions byte-untouched. This does not write file_path; call save to persist the mutation. Symmetric to accept_ai_edits: provide revision_ids or author, sweeps document.xml and supported side-story parts, and hard-errors on an ambiguous overlap (code AMBIGUOUS_REVISION_OVERLAP with a structured `overlaps` list) unless normalize_first is set.',
     input: z.object({
       ...FILE_FIELD,
       revision_ids: z
