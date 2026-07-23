@@ -69,7 +69,12 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       ...GOOGLE_DOC_ID_FIELD,
       offset: z.number().optional().describe('1-based paragraph offset for pagination. Negative values count from end.'),
       limit: z.number().optional().describe('Max paragraphs to return. When omitted, output is token-limited to ~14k tokens with pagination.'),
-      node_ids: z.array(z.string()).optional(),
+      node_ids: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Paragraph selectors. Each accepts a safe-docx `_bk_*` id, or (DOCX only) any other bookmark name — e.g. a host application\'s own stable paragraph bookmark — whose w:id-paired range covers exactly one paragraph. Exact name match; a point bookmark or a multi-paragraph range is refused. Returned rows always report the paragraph\'s canonical `_bk_*` id, even when selected by another bookmark name; results are de-duplicated and returned in document order.',
+        ),
       format: z.enum(['toon', 'json', 'simple']).optional(),
       comment_rendering: z
         .enum(['none', 'paragraph_notes', 'endnotes', 'inline_markers'])
