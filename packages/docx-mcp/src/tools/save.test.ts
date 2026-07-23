@@ -19,7 +19,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const WORDPROCESSING_ML_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-const TEST_FEATURE = 'Save';
+const TEST_FEATURE = 'update-safe-docx-save-defaults-and-stable-node-ids';
 
 const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
