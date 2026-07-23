@@ -143,6 +143,20 @@ function nearestInlineBoundary(atom: ComparisonUnitAtom): Element | null {
     : null;
 }
 
+function nearestBodyBlockBoundary(atom: ComparisonUnitAtom): Element | null {
+  for (let i = atom.ancestorElements.length - 1; i >= 0; i--) {
+    const ancestor = atom.ancestorElements[i]!;
+    if (ancestor.namespaceURI !== OOXML.W_NS || ancestor.localName !== 'sdt') continue;
+    const parent = ancestor.parentNode;
+    return parent?.nodeType === 1 &&
+      (parent as Element).namespaceURI === OOXML.W_NS &&
+      (parent as Element).localName === 'body'
+      ? ancestor
+      : null;
+  }
+  return null;
+}
+
 function nearestAncestor(element: Element, namespaceUri: string, localName: string): Element | null {
   let current: Node | null = element.parentNode;
   while (current?.nodeType === 1) {
@@ -164,6 +178,16 @@ function siblingOrdinal(element: Element): number {
     ) {
       ordinal++;
     }
+    sibling = sibling.previousSibling;
+  }
+  return ordinal;
+}
+
+function elementChildOrdinal(element: Element): number {
+  let ordinal = 0;
+  let sibling = element.previousSibling;
+  while (sibling) {
+    if (sibling.nodeType === 1) ordinal++;
     sibling = sibling.previousSibling;
   }
   return ordinal;
@@ -264,16 +288,55 @@ function validateInlineSdtKnownStructure(boundary: Element): void {
   }
 }
 
-/** Validate inline-SDT namespace scope before atomization clones leaf nodes. */
-export function validateInlineSdtNamespaceOwnership(root: Element): void {
+function validateBlockSdtKnownStructure(boundary: Element): Element[] {
+  const directChildren = Array.from(boundary.childNodes)
+    .filter((child): child is Element => child.nodeType === 1);
+  const names = directChildren.map((child) =>
+    child.namespaceURI === OOXML.W_NS ? child.localName : `{${child.namespaceURI}}${child.localName}`,
+  );
+  const expected = names[1] === 'sdtEndPr'
+    ? ['sdtPr', 'sdtEndPr', 'sdtContent']
+    : ['sdtPr', 'sdtContent'];
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
+    throw new OpaquePassthroughError(
+      'body-block w:sdt must contain ordered w:sdtPr, optional w:sdtEndPr, and w:sdtContent',
+    );
+  }
+  const content = directChildren[directChildren.length - 1]!;
+  if (content.getElementsByTagNameNS(OOXML.W_NS, 'tbl').length > 0) {
+    throw new OpaquePassthroughError('tables inside a body-block w:sdt are outside the bounded placement');
+  }
+  const paragraphs = Array.from(content.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+  if (paragraphs.length === 0) {
+    throw new OpaquePassthroughError('body-block w:sdt has no controlled paragraphs');
+  }
+  if (paragraphs.some((paragraph) => paragraph.parentNode !== content)) {
+    throw new OpaquePassthroughError('body-block w:sdt paragraphs must be direct children of w:sdtContent');
+  }
+  return paragraphs;
+}
+
+/** Validate supported SDT namespace scope before atomization clones leaf nodes. */
+export function validateSdtNamespaceOwnership(root: Element): void {
   for (const boundary of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'sdt'))) {
     const paragraph = nearestAncestor(boundary, OOXML.W_NS, 'p');
-    if (!paragraph || boundary.parentNode !== paragraph) continue;
+    const parent = boundary.parentNode;
+    const isInline = paragraph && parent === paragraph;
+    const isBodyBlock = parent?.nodeType === 1 &&
+      (parent as Element).namespaceURI === OOXML.W_NS &&
+      (parent as Element).localName === 'body';
+    if (!isInline && !isBodyBlock) {
+      throw new OpaquePassthroughError('w:sdt placement is outside inline-run and direct body-block support');
+    }
     const bindings = effectiveNamespaces(boundary);
     if (bindings.w !== OOXML.W_NS) {
       throw new OpaquePassthroughError("inline w:sdt has conflicting 'w' namespace ownership");
     }
-    validateInlineSdtKnownStructure(boundary);
+    if (nearestAncestor(boundary, OOXML.W_NS, 'sdt')) {
+      throw new OpaquePassthroughError('nested w:sdt boundaries are outside the bounded passthrough contract');
+    }
+    if (isInline) validateInlineSdtKnownStructure(boundary);
+    else validateBlockSdtKnownStructure(boundary);
     validateNamespaceOwnership(boundary, bindings);
   }
 }
@@ -303,15 +366,17 @@ function materializeNamespaces(
 }
 
 /**
- * Capture the pilot's inline structured-document-tag boundary without modeling
- * its property or extension vocabulary.
+ * Capture supported structured-document-tag boundaries without modeling their
+ * property or extension vocabulary.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.34
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.31
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.36
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
  * @see https://github.com/UseJunior/safe-docx/issues/582
  */
-export function captureInlineSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]): void {
+export function captureSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]): void {
   const descriptorByElement = new Map<Element, OpaquePassthroughNode>();
   const paragraphOrdinals = new Map(
     Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p'))
@@ -320,31 +385,47 @@ export function captureInlineSdtPassthrough(root: Element, atoms: ComparisonUnit
   let nextOrdinal = 0;
   for (const boundary of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'sdt'))) {
     const paragraph = nearestAncestor(boundary, OOXML.W_NS, 'p');
-    if (!paragraph) continue; // Block/cell/row SDTs remain scaffold-owned and out of pilot scope.
     if (nearestAncestor(boundary, OOXML.W_NS, 'sdt')) {
-      throw new OpaquePassthroughError('nested inline w:sdt boundaries are outside the pilot');
+      throw new OpaquePassthroughError('nested w:sdt boundaries are outside the bounded passthrough contract');
     }
-    if (boundary.parentNode !== paragraph) {
-      throw new OpaquePassthroughError('inline w:sdt must be a direct child of w:p in the pilot');
+    const parent = boundary.parentNode;
+    const isInline = paragraph && parent === paragraph;
+    const isBodyBlock = parent?.nodeType === 1 &&
+      (parent as Element).namespaceURI === OOXML.W_NS &&
+      (parent as Element).localName === 'body';
+    if (!isInline && !isBodyBlock) {
+      throw new OpaquePassthroughError('w:sdt placement is outside inline-run and direct body-block support');
     }
     const bindings = effectiveNamespaces(boundary);
     const mceDeclarations = effectiveMceDeclarations(boundary);
     if (bindings.w !== OOXML.W_NS) {
       throw new OpaquePassthroughError("inline w:sdt has conflicting 'w' namespace ownership");
     }
-    validateInlineSdtKnownStructure(boundary);
+    const blockParagraphs = isBodyBlock ? validateBlockSdtKnownStructure(boundary) : undefined;
+    if (isInline) validateInlineSdtKnownStructure(boundary);
     validateNamespaceOwnership(boundary, bindings);
     validateIgnorableTokens(mceDeclarations.values, bindings);
-    const paragraphOrdinal = paragraphOrdinals.get(paragraph);
+    const ownedParagraph = isInline ? paragraph! : blockParagraphs![0]!;
+    const paragraphOrdinal = paragraphOrdinals.get(ownedParagraph);
     if (paragraphOrdinal === undefined) {
-      throw new OpaquePassthroughError('inline w:sdt paragraph has no source-order identity');
+      throw new OpaquePassthroughError('w:sdt paragraph has no source-order identity');
+    }
+    if (blockParagraphs) {
+      for (let relative = 0; relative < blockParagraphs.length; relative++) {
+        if (paragraphOrdinals.get(blockParagraphs[relative]!) !== paragraphOrdinal + relative) {
+          throw new OpaquePassthroughError('body-block w:sdt paragraph ownership is non-contiguous');
+        }
+      }
     }
     descriptorByElement.set(boundary, {
+      placementKind: isInline ? 'inline-run' : 'body-block',
       namespaceUri: OOXML.W_NS,
       localName: 'sdt',
       documentOrdinal: nextOrdinal++,
       paragraphOrdinal,
-      containerIdentity: structuralContainerIdentity(paragraph),
+      containerIdentity: structuralContainerIdentity(ownedParagraph),
+      bodyChildOrdinal: isBodyBlock ? elementChildOrdinal(boundary) : undefined,
+      ownedParagraphCount: blockParagraphs?.length,
       semanticFingerprint: semanticFingerprint(boundary, bindings, mceDeclarations.values),
       sourceElement: materializeNamespaces(
         boundary,
@@ -359,13 +440,28 @@ export function captureInlineSdtPassthrough(root: Element, atoms: ComparisonUnit
 
   const ownedCounts = new Map<OpaquePassthroughNode, number>();
   for (const atom of atoms) {
-    const boundary = nearestInlineBoundary(atom);
+    const boundary = nearestInlineBoundary(atom) ?? nearestBodyBlockBoundary(atom);
     if (!boundary) continue;
     const descriptor = descriptorByElement.get(boundary);
     if (!descriptor) {
       throw new OpaquePassthroughError('atom is owned by an unsupported inline w:sdt placement');
     }
     atom.opaquePassthrough = descriptor;
+    if (descriptor.placementKind === 'body-block') {
+      let atomParagraph: Element | undefined;
+      for (let i = atom.ancestorElements.length - 1; i >= 0; i--) {
+        const ancestor = atom.ancestorElements[i]!;
+        if (ancestor.namespaceURI === OOXML.W_NS && ancestor.localName === 'p') {
+          atomParagraph = ancestor;
+          break;
+        }
+      }
+      const atomParagraphOrdinal = atomParagraph ? paragraphOrdinals.get(atomParagraph) : undefined;
+      if (atomParagraphOrdinal === undefined) {
+        throw new OpaquePassthroughError('body-block atom has no controlled paragraph identity');
+      }
+      atom.opaquePassthroughRelativeParagraphOrdinal = atomParagraphOrdinal - descriptor.paragraphOrdinal;
+    }
     ownedCounts.set(descriptor, (ownedCounts.get(descriptor) ?? 0) + 1);
   }
   for (const descriptor of descriptorByElement.values()) {
@@ -397,19 +493,30 @@ export function bindOpaquePassthroughCounterparts(
   if (original.length !== revised.length) {
     throw new OpaquePassthroughError(`boundary count changed (${original.length} original, ${revised.length} revised)`);
   }
+  const placementKey = (descriptor: OpaquePassthroughNode) =>
+    descriptor.placementKind === 'inline-run'
+      ? `inline\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000${descriptor.documentOrdinal}`
+      : `block\u0000${descriptor.containerIdentity}\u0000${descriptor.bodyChildOrdinal}\u0000` +
+        `${descriptor.paragraphOrdinal}\u0000${descriptor.ownedParagraphCount}`;
+  original.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
+  revised.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
   for (let i = 0; i < original.length; i++) {
     const before = original[i]!;
     const after = revised[i]!;
     if (
-      before.documentOrdinal !== after.documentOrdinal ||
+      placementKey(before) !== placementKey(after) ||
+      before.placementKind !== after.placementKind ||
       before.paragraphOrdinal !== after.paragraphOrdinal ||
       before.containerIdentity !== after.containerIdentity ||
       before.namespaceUri !== after.namespaceUri ||
       before.localName !== after.localName ||
+      before.bodyChildOrdinal !== after.bodyChildOrdinal ||
+      before.ownedParagraphCount !== after.ownedParagraphCount ||
       before.semanticFingerprint !== after.semanticFingerprint
     ) {
       throw new OpaquePassthroughError(`boundary ${i} changed paragraph ownership, moved, or mutated`);
     }
+    before.correlatedNode = after;
     after.emissionElement = before.sourceElement;
   }
 }
@@ -417,24 +524,55 @@ export function bindOpaquePassthroughCounterparts(
 /** Reject opaque correlation loss before any whole-paragraph branch can emit. */
 export function validateOpaquePassthroughCorrelation(atoms: ComparisonUnitAtom[]): void {
   const paragraphByDescriptor = new Map<OpaquePassthroughNode, number | undefined>();
+  const relativeParagraphsByDescriptor = new Map<OpaquePassthroughNode, Set<number>>();
   for (const atom of atoms) {
-    const descriptor = atom.opaquePassthrough;
+    let descriptor = atom.opaquePassthrough;
     if (!descriptor) continue;
     if (atom.correlationStatus !== CorrelationStatus.Equal) {
       throw new OpaquePassthroughError(
         `boundary ${descriptor.documentOrdinal} lost equal correlation (${atom.correlationStatus})`,
       );
     }
-    if (!descriptor.emissionElement || atom.sourceDocument !== 'revised') {
+    if (
+      atom.sourceDocument === 'original' &&
+      atom.contentElement.tagName === '__emptyParagraph__' &&
+      descriptor.correlatedNode
+    ) {
+      descriptor = descriptor.correlatedNode;
+      atom.opaquePassthrough = descriptor;
+    }
+    if (!descriptor.emissionElement ||
+      (atom.sourceDocument !== 'revised' && atom.contentElement.tagName !== '__emptyParagraph__')) {
       throw new OpaquePassthroughError(
         `boundary ${descriptor.documentOrdinal} has no validated revised-side owner`,
       );
     }
-    if (!paragraphByDescriptor.has(descriptor)) {
+    if (descriptor.placementKind === 'body-block') {
+      const relative = atom.opaquePassthroughRelativeParagraphOrdinal;
+      if (
+        relative === undefined ||
+        relative < 0 ||
+        relative >= (descriptor.ownedParagraphCount ?? 0)
+      ) {
+        throw new OpaquePassthroughError(
+          `boundary ${descriptor.documentOrdinal} has changed relative paragraph ownership`,
+        );
+      }
+      const seen = relativeParagraphsByDescriptor.get(descriptor) ?? new Set<number>();
+      seen.add(relative);
+      relativeParagraphsByDescriptor.set(descriptor, seen);
+    } else if (!paragraphByDescriptor.has(descriptor)) {
       paragraphByDescriptor.set(descriptor, atom.paragraphIndex);
     } else if (paragraphByDescriptor.get(descriptor) !== atom.paragraphIndex) {
       throw new OpaquePassthroughError(
         `boundary ${descriptor.documentOrdinal} crossed reconstructed paragraph ownership`,
+      );
+    }
+  }
+  for (const [descriptor, seen] of relativeParagraphsByDescriptor) {
+    if (seen.size !== descriptor.ownedParagraphCount) {
+      throw new OpaquePassthroughError(
+        `boundary ${descriptor.documentOrdinal} lost controlled paragraph correlation`,
       );
     }
   }
@@ -476,6 +614,9 @@ export function renderOpaqueAtomSequence(
         }
         pendingAtoms.push(atom);
         continue;
+      }
+      if (descriptor.placementKind !== 'inline-run') {
+        throw new OpaquePassthroughError('body-block boundary reached paragraph-run emission');
       }
       if (descriptor !== active) {
         if (active) closed.add(active);

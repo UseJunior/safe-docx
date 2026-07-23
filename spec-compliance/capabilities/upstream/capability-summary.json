@@ -65,7 +65,9 @@
     "replaceTextInsideTableCellUpdatesTargetText",
     "setDefaultFooterTextAddsFooterReference",
     "setTableCellTextReplacesCellContentOnly",
+    "unrelatedTextEditPreservesBlockContentControlStructure",
     "unrelatedTextEditPreservesInlineContentControlStructure",
+    "unrelatedTextEditPreservesOpaqueBlockContentControl",
     "unrelatedTextEditPreservesOpaqueInlineContentControl"
   ],
   "capabilities": [

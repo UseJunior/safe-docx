@@ -51,6 +51,7 @@ describe('Atomizer Pipeline Parity Test', () => {
       author: 'AtomizerTest',
       date: FIXTURE_STABLE_DATE,
       engine: 'atomizer',
+      reconstructionMode: 'inplace',
     });
 
     // Run diffmatch comparison for comparison (direct import, dev-only)
@@ -174,6 +175,7 @@ describe('Atomizer Track Changes Validation', () => {
     const result = await compareDocuments(originalBuffer, revisedBuffer, {
       author: 'ValidationTest',
       engine: 'atomizer',
+      reconstructionMode: 'inplace',
     });
 
     resultDocument = result.document;

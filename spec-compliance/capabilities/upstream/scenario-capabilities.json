@@ -3,6 +3,24 @@
   "registryVersion": 1,
   "mappings": [
     {
+      "scenarioId": "unrelatedTextEditPreservesOpaqueBlockContentControl",
+      "capabilityId": "word.content-controls.block",
+      "axis": "preserve",
+      "oracleClasses": ["metamorphic-invariant"]
+    },
+    {
+      "scenarioId": "unrelatedTextEditPreservesBlockContentControlStructure",
+      "capabilityId": "word.content-controls.block",
+      "axis": "preserve",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
+      "scenarioId": "unrelatedTextEditPreservesBlockContentControlStructure",
+      "capabilityId": "word.text.find-replace",
+      "axis": "edit",
+      "oracleClasses": ["normative-prose"]
+    },
+    {
       "scenarioId": "unrelatedTextEditPreservesOpaqueInlineContentControl",
       "capabilityId": "word.content-controls.inline",
       "axis": "preserve",

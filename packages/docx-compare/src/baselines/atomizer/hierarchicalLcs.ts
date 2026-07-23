@@ -99,6 +99,7 @@ export interface GroupLcsResult {
 /** Deterministic complexity counters for focused LCS regression tests. */
 export interface GroupLcsInstrumentation {
   opaqueIdentityComputations: number;
+  opaqueAtomScans: number;
 }
 
 /**
@@ -415,7 +416,9 @@ function createOpaqueGroupIdentityResolver(instrumentation?: GroupLcsInstrumenta
 
     let descriptors: NonNullable<ComparisonUnitAtom['opaquePassthrough']>[] | undefined;
     let seen: Set<NonNullable<ComparisonUnitAtom['opaquePassthrough']>> | undefined;
+    let relativeByDescriptor: Map<NonNullable<ComparisonUnitAtom['opaquePassthrough']>, number | undefined> | undefined;
     for (const atom of group.atoms) {
+      if (instrumentation) instrumentation.opaqueAtomScans++;
       const descriptor = atom.opaquePassthrough;
       if (!descriptor) continue;
       descriptors ??= [];
@@ -423,6 +426,8 @@ function createOpaqueGroupIdentityResolver(instrumentation?: GroupLcsInstrumenta
       if (!seen.has(descriptor)) {
         seen.add(descriptor);
         descriptors.push(descriptor);
+        relativeByDescriptor ??= new Map();
+        relativeByDescriptor.set(descriptor, atom.opaquePassthroughRelativeParagraphOrdinal);
       }
     }
     if (!descriptors) {
@@ -432,7 +437,9 @@ function createOpaqueGroupIdentityResolver(instrumentation?: GroupLcsInstrumenta
     descriptors.sort((left, right) => left.documentOrdinal - right.documentOrdinal);
     const identity = descriptors
       .map((descriptor) =>
-        `${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
+        `${descriptor.placementKind}\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
+        `${descriptor.bodyChildOrdinal ?? ''}\u0000${descriptor.ownedParagraphCount ?? ''}\u0000` +
+        `${relativeByDescriptor?.get(descriptor) ?? ''}\u0000` +
         `${descriptor.documentOrdinal}\u0000${descriptor.semanticFingerprint}`,
       )
       .join('\u0001');

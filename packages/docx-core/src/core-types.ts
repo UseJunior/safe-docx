@@ -114,17 +114,25 @@ export interface FormatChangeInfo {
  * assigning `emissionElement` from the original side.
  */
 export interface OpaquePassthroughNode {
+  /** Determines whether paragraph-run emission or the body scaffold owns output. */
+  placementKind: 'inline-run' | 'body-block';
   namespaceUri: string;
   localName: string;
   documentOrdinal: number;
-  /** Source-order paragraph identity; movement is outside the pilot and fails closed. */
+  /** Source-order paragraph identity; movement is outside the bounded contract and fails closed. */
   paragraphOrdinal: number;
   /** Structural parent path (body or table/cell position) owning the paragraph. */
   containerIdentity: string;
+  /** Direct body-child position for a scaffold-owned block boundary. */
+  bodyChildOrdinal?: number;
+  /** Number of contiguous source-order paragraph slots owned by a block boundary. */
+  ownedParagraphCount?: number;
   semanticFingerprint: string;
   sourceElement: WmlElement;
   effectiveNamespaces: Readonly<Record<string, string>>;
   effectiveMceDeclarations: Readonly<Record<string, string>>;
+  /** Revised-side canonical owner for an equal original empty-paragraph atom. */
+  correlatedNode?: OpaquePassthroughNode;
   emissionElement?: WmlElement;
 }
 
@@ -190,6 +198,8 @@ export interface ComparisonUnitAtom extends ComparisonUnit {
 
   /** Opaque XML boundary that owns this atom, when bounded passthrough is enabled. */
   opaquePassthrough?: OpaquePassthroughNode;
+  /** Zero-based paragraph position inside a scaffold-owned opaque block. */
+  opaquePassthroughRelativeParagraphOrdinal?: number;
 }
 
 // =============================================================================

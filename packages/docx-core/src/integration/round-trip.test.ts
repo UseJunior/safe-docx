@@ -188,6 +188,7 @@ describe('Round-Trip Tests - Accept All Changes', () => {
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
         engine: 'atomizer',
         date: FIXTURE_STABLE_DATE,
+        reconstructionMode: 'inplace',
       });
     }, 120000);
 
@@ -372,6 +373,7 @@ describe('Round-Trip Tests - Reject All Changes', () => {
       comparisonResult = await compareDocuments(originalBuffer, revisedBuffer, {
         engine: 'atomizer',
         date: FIXTURE_STABLE_DATE,
+        reconstructionMode: 'inplace',
       });
     }, 120000);
 

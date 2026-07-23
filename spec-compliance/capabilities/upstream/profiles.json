@@ -7,6 +7,7 @@
       "title": "Current neutral scenario surface",
       "description": "All capabilities represented by committed neutral scenarios; this profile carries no product-specific weighting.",
       "capabilityIds": [
+        "word.content-controls.block",
         "word.content-controls.inline",
         "word.comments.anchors",
         "word.comments.content",

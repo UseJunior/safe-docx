@@ -1,6 +1,6 @@
 # SafeDocX Capability Projection
 
-Pinned neutral registry: `open-agreements/docx-platform-tests@fe0ee99602e6f982255ecaa2b45d4936a7f46150`
+Pinned neutral registry: `open-agreements/docx-platform-tests@ba9936af06cc18249e892dc594ed9bcefaf98463`
 
 Profile: `current-neutral-surface` (registry version 1)
 
@@ -22,15 +22,15 @@ Exact known unchecked areas: full ECMA-376 schema validation; rendering equivale
 
 ## Denominator
 
-Profile capability/axis pairs: **87**
+Profile capability/axis pairs: **91**
 
 | Axis | Pairs |
 |---|---:|
-| preserve | 22 |
-| generate | 15 |
-| edit | 17 |
+| preserve | 23 |
+| generate | 16 |
+| edit | 18 |
 | acceptReject | 10 |
-| crossPlatform | 23 |
+| crossPlatform | 24 |
 
 ## Evidence Inventory
 
@@ -38,12 +38,12 @@ These counts are not interchangeable denominators. The profile cross-product inc
 
 | Count | Value | Meaning |
 |---|---:|---|
-| Profile capability/axis pairs | 87 | Every applicable pair selected by the pinned profile |
-| Authored mapping pairs | 28 | Distinct capability/axis pairs with neutral scenarios |
-| Complete-run derived cross-platform pairs | 23 | One potential cross-platform row per mapped capability |
-| Expected complete summary rows | 51 | 28 authored plus 23 derived rows |
+| Profile capability/axis pairs | 91 | Every applicable pair selected by the pinned profile |
+| Authored mapping pairs | 29 | Distinct capability/axis pairs with neutral scenarios |
+| Complete-run derived cross-platform pairs | 24 | One potential cross-platform row per mapped capability |
+| Expected complete summary rows | 53 | 29 authored plus 24 derived rows |
 | Pinned measured summary rows | 8 | Rows actually backed by the pinned result snapshot |
-| Pinned measured / unmeasured scenarios | 12 / 30 | Result-snapshot state at the pinned commit |
+| Pinned measured / unmeasured scenarios | 12 / 32 | Result-snapshot state at the pinned commit |
 
 ## Status Counts
 
@@ -54,7 +54,7 @@ These counts are not interchangeable denominators. The profile cross-product inc
 | preservation-only | 0 |
 | gap | 3 |
 | non-goal | 0 |
-| untested | 76 |
+| untested | 80 |
 
 ## Evidence Projection
 
@@ -70,6 +70,10 @@ These counts are not interchangeable denominators. The profile cross-product inc
 | `word.comments.content` | preserve | untested | `word/comments.xml`<br>stories: comments<br>mode: inplace, rebuild | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | No pinned neutral result or mapped local executable evidence is asserted for this preserve pair. |
 | `word.comments.removal` | crossPlatform | untested | `word/document.xml`, `word/comments.xml`<br>stories: main, comments<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | The pinned neutral result set has no measured cross-platform row for this pair. |
 | `word.comments.removal` | edit | untested | `word/document.xml`, `word/comments.xml`<br>stories: main, comments<br>mode: not-applicable | 0.16.0 / `4ea2a263dc199cb81132a6580a5d22785fcda7e3` | none | Local tests lack structured capability-and-axis metadata, so this pair is untested in this projection. |
+| `word.content-controls.block` | crossPlatform | untested | `word/document.xml`<br>stories: main<br>mode: not-applicable | 0.17.0 / `ba9936af06cc18249e892dc594ed9bcefaf98463` | none | No pinned neutral result or mapped local executable evidence is asserted for this pair. |
+| `word.content-controls.block` | edit | untested | `word/document.xml`<br>stories: main<br>mode: not-applicable | 0.17.0 / `ba9936af06cc18249e892dc594ed9bcefaf98463` | none | No pinned neutral result or mapped local executable evidence is asserted for this pair. |
+| `word.content-controls.block` | generate | untested | `word/document.xml`<br>stories: main<br>mode: not-applicable | 0.17.0 / `ba9936af06cc18249e892dc594ed9bcefaf98463` | none | No pinned neutral result or mapped local executable evidence is asserted for this pair. |
+| `word.content-controls.block` | preserve | untested | `word/document.xml`<br>stories: main<br>mode: inplace, rebuild | 0.17.0 / `ba9936af06cc18249e892dc594ed9bcefaf98463` | none | The pinned neutral scenarios are executed in the gated DPT self-check, while this projection has no committed neutral result row and does not encode repo-local forced-rebuild evidence. |
 | `word.content-controls.inline` | crossPlatform | untested | `word/document.xml`<br>stories: main<br>mode: not-applicable | 0.17.0 / `fe0ee99602e6f982255ecaa2b45d4936a7f46150` | none | No pinned neutral result or mapped local executable evidence is asserted for this pair. |
 | `word.content-controls.inline` | edit | untested | `word/document.xml`<br>stories: main<br>mode: not-applicable | 0.17.0 / `fe0ee99602e6f982255ecaa2b45d4936a7f46150` | none | No pinned neutral result or mapped local executable evidence is asserted for this pair. |
 | `word.content-controls.inline` | generate | untested | `word/document.xml`<br>stories: main<br>mode: not-applicable | 0.17.0 / `fe0ee99602e6f982255ecaa2b45d4936a7f46150` | none | No pinned neutral result or mapped local executable evidence is asserted for this pair. |

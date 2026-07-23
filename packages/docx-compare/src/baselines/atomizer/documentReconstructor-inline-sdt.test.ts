@@ -1,9 +1,8 @@
 /**
  * Forced-rebuild evidence for the bounded inline-SDT opaque-passthrough pilot.
  *
- * The focused fixtures are synthetic because the checked-in real documents
- * contain block-level cover-page SDTs, not inline controls. The final test keeps
- * that real corpus measurement separate and does not relabel it as inline proof.
+ * The focused inline fixtures are synthetic. The final suite separately uses
+ * the checked-in block-level ILPA controls as real forced-rebuild evidence.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.31
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.36
@@ -13,6 +12,8 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { XMLSerializer } from '@xmldom/xmldom';
+import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
 import {
   CorrelationStatus,
@@ -45,6 +46,18 @@ const test = testAllure
   .conformance(
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.31' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.36' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.38' },
+  );
+const blockTest = testAllure
+  .epic('Document Comparison')
+  .withLabels({
+    feature: 'Document Reconstructor Block SDT',
+    story: 'Real Opaque Block Content Control Preservation In Rebuild',
+    severity: 'critical',
+  })
+  .conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.29' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.34' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.38' },
   );
 
@@ -104,6 +117,16 @@ async function forcedRebuild(original: Buffer, revised: Buffer): Promise<string>
   return (await DocxArchive.load(result.document)).getDocumentXml();
 }
 
+async function forcedRebuildDocument(original: Buffer, revised: Buffer): Promise<Buffer> {
+  const result = await compareDocumentsAtomizer(original, revised, {
+    author: 'Issue 582 Test',
+    date: new Date('2026-07-22T00:00:00Z'),
+    reconstructionMode: 'rebuild',
+  });
+  expect(result.reconstructionModeUsed).toBe('rebuild');
+  return result.document;
+}
+
 function elementsByName(xml: string, namespaceUri: string, localName: string): Element[] {
   return Array.from(parseXml(xml).getElementsByTagNameNS(namespaceUri, localName));
 }
@@ -112,6 +135,83 @@ function directElementNames(element: Element): string[] {
   return Array.from(element.childNodes)
     .filter((node): node is Element => node.nodeType === 1)
     .map((node) => `{${node.namespaceURI}}${node.localName}`);
+}
+
+function canonicalSubtree(node: Node): string {
+  if (node.nodeType === 1) {
+    const element = node as Element;
+    const attributes = Array.from(element.attributes)
+      .filter((attribute) => attribute.namespaceURI !== 'http://www.w3.org/2000/xmlns/')
+      .map((attribute) =>
+        `{${attribute.namespaceURI ?? ''}}${attribute.localName ?? attribute.name}=${JSON.stringify(attribute.value)}`,
+      )
+      .sort();
+    return `E{${element.namespaceURI ?? ''}}${element.localName}[${attributes.join(',')}](` +
+      Array.from(element.childNodes).map(canonicalSubtree).join('') + ')';
+  }
+  if (node.nodeType === 3 || node.nodeType === 4) return `T${JSON.stringify(node.nodeValue ?? '')}`;
+  if (node.nodeType === 8) return `C${JSON.stringify(node.nodeValue ?? '')}`;
+  return `N${node.nodeType}:${JSON.stringify(node.nodeValue ?? '')}`;
+}
+
+function firstDirectBodySdt(xml: string): Element {
+  const body = parseXml(xml).getElementsByTagNameNS(OOXML.W_NS, 'body')[0]!;
+  const first = Array.from(body.childNodes).find((node): node is Element => node.nodeType === 1);
+  expect(first?.namespaceURI).toBe(OOXML.W_NS);
+  expect(first?.localName).toBe('sdt');
+  return first!;
+}
+
+async function reviseOutsideFirstBodySdt(input: Buffer, marker: string): Promise<Buffer> {
+  const archive = await DocxArchive.load(input);
+  const document = parseXml(await archive.getDocumentXml());
+  const body = document.getElementsByTagNameNS(OOXML.W_NS, 'body')[0]!;
+  const control = Array.from(body.childNodes).find(
+    (node): node is Element => node.nodeType === 1 &&
+      (node as Element).namespaceURI === OOXML.W_NS && (node as Element).localName === 'sdt',
+  )!;
+  const outsideText = Array.from(body.getElementsByTagNameNS(OOXML.W_NS, 't')).find((text) => {
+    let ancestor: Node | null = text;
+    while (ancestor && ancestor !== body) {
+      if (ancestor === control) return false;
+      ancestor = ancestor.parentNode;
+    }
+    return (text.textContent ?? '').trim().length > 0;
+  });
+  expect(outsideText).toBeDefined();
+  outsideText!.appendChild(document.createTextNode(marker));
+  archive.setDocumentXml(new XMLSerializer().serializeToString(document));
+  return archive.save();
+}
+
+async function changedPackageParts(before: Buffer, after: Buffer): Promise<string[]> {
+  const [beforeZip, afterZip] = await Promise.all([JSZip.loadAsync(before), JSZip.loadAsync(after)]);
+  const paths = [...new Set([...Object.keys(beforeZip.files), ...Object.keys(afterZip.files)])].sort();
+  const changed: string[] = [];
+  for (const path of paths) {
+    if (beforeZip.files[path]?.dir || afterZip.files[path]?.dir) continue;
+    const beforeFile = beforeZip.file(path);
+    const afterFile = afterZip.file(path);
+    if (!beforeFile || !afterFile) {
+      changed.push(path);
+      continue;
+    }
+    const [beforeBytes, afterBytes] = await Promise.all([
+      beforeFile.async('nodebuffer'),
+      afterFile.async('nodebuffer'),
+    ]);
+    if (!beforeBytes.equals(afterBytes)) changed.push(path);
+  }
+  return changed;
+}
+
+function relationshipTarget(relationshipsXml: string, id: string): string | null {
+  const relationships = parseXml(relationshipsXml).getElementsByTagNameNS(
+    'http://schemas.openxmlformats.org/package/2006/relationships',
+    'Relationship',
+  );
+  return Array.from(relationships).find((relationship) => relationship.getAttribute('Id') === id)
+    ?.getAttribute('Target') ?? null;
 }
 
 describe('Forced rebuild preserves unchanged inline content controls', () => {
@@ -355,6 +455,7 @@ describe('Opaque inline content controls fail closed', () => {
     'rejects an opaque owner interrupted by ordinary atoms during emission', () => {
       const document = parseXml(`<w:sdt xmlns:w="${OOXML.W_NS}"/>`);
       const descriptor: OpaquePassthroughNode = {
+        placementKind: 'inline-run',
         namespaceUri: OOXML.W_NS,
         localName: 'sdt',
         documentOrdinal: 0,
@@ -384,39 +485,85 @@ describe('Opaque inline content controls fail closed', () => {
   );
 });
 
-describe('Real content-control corpus measurement', () => {
-  test
-    .openspec('[SDX-SDT-05] Real content-control corpus measurement is labeled without overclaiming')(
-    'records block-SDT no-regression counts separately from synthetic inline evidence',
+describe('Real block content-control corpus preservation', () => {
+  blockTest
+    .openspec('[SDX-SDT-BLOCK-01] Outside edits retain a complete block control')(
+    'applies real outside edits and preserves both complete ILPA cover controls',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       const repoRoot = join(import.meta.dirname, '../../../../..');
       const relativePaths = [
         'tests/test_documents/redline/ILPA-Model-Limited-Parnership-Agreement-Deal-By-Deal_v1.docx',
         'tests/test_documents/redline/ILPA-Model-Limited-Partnership-Agreement-WOF_v2.docx',
       ];
-      const measurements: Array<{ path: string; before: number; after: number; scope: string }> = [];
+      const measurements: Array<{
+        path: string;
+        controlledParagraphs: number;
+        identityAttributes: number;
+        drawingRelationshipId: string;
+        drawingTarget: string;
+        changedParts: string[];
+      }> = [];
 
-      await given('the checked-in real ILPA documents whose controls are block-level cover-page SDTs', () => {});
-      await when('each real document is compared with itself through forced rebuild', async () => {
+      await given('both checked-in ILPA documents with first-child block cover controls', () => {});
+      await when('each document receives an unrelated outside edit through forced rebuild', async () => {
         for (const path of relativePaths) {
           const input = readFileSync(join(repoRoot, path));
-          const beforeXml = await (await DocxArchive.load(input)).getDocumentXml();
-          const output = await forcedRebuild(input, input);
+          const marker = ` [outside rebuild edit: ${relativePaths.indexOf(path) + 1}]`;
+          const revised = await reviseOutsideFirstBodySdt(input, marker);
+          const outputDocument = await forcedRebuildDocument(input, revised);
+          const [beforeArchive, outputArchive] = await Promise.all([
+            DocxArchive.load(input),
+            DocxArchive.load(outputDocument),
+          ]);
+          const [beforeXml, outputXml, beforeRels, outputRels] = await Promise.all([
+            beforeArchive.getDocumentXml(),
+            outputArchive.getDocumentXml(),
+            beforeArchive.getFile('word/_rels/document.xml.rels'),
+            outputArchive.getFile('word/_rels/document.xml.rels'),
+          ]);
+          const beforeControl = firstDirectBodySdt(beforeXml);
+          const outputControl = firstDirectBodySdt(outputXml);
+          const identityAttributes = Array.from(beforeControl.getElementsByTagName('*'))
+            .flatMap((element) => Array.from(element.attributes))
+            .filter((attribute) =>
+              attribute.localName === 'paraId' ||
+              attribute.localName === 'textId' ||
+              attribute.localName?.startsWith('rsid'),
+            );
+          const drawingRelationshipId = Array.from(beforeControl.getElementsByTagName('*'))
+            .flatMap((element) => Array.from(element.attributes))
+            .find((attribute) => attribute.localName === 'embed')?.value;
+          expect(drawingRelationshipId).toBeDefined();
+          expect(canonicalSubtree(outputControl)).toBe(canonicalSubtree(beforeControl));
+          for (const prefix of ['w', 'w14', 'r', 'wp', 'a', 'pic', 'a14']) {
+            expect(outputControl.lookupNamespaceURI(prefix), prefix).toBe(beforeControl.lookupNamespaceURI(prefix));
+          }
+          expect(beforeRels).not.toBeNull();
+          expect(outputRels).not.toBeNull();
+          const drawingTarget = relationshipTarget(beforeRels!, drawingRelationshipId!);
+          expect(drawingTarget).not.toBeNull();
+          expect(relationshipTarget(outputRels!, drawingRelationshipId!)).toBe(drawingTarget);
+          expect(extractTextWithParagraphs(acceptAllChanges(outputXml))).toContain(marker);
+          expect(extractTextWithParagraphs(rejectAllChanges(outputXml))).not.toContain(marker);
+          const changedParts = await changedPackageParts(input, outputDocument);
+          expect(changedParts).toEqual(['word/document.xml']);
           measurements.push({
             path,
-            before: elementsByName(beforeXml, OOXML.W_NS, 'sdt').length,
-            after: elementsByName(output, OOXML.W_NS, 'sdt').length,
-            scope: 'real block-SDT no-regression only; not inline preservation evidence',
+            controlledParagraphs: beforeControl.getElementsByTagNameNS(OOXML.W_NS, 'p').length,
+            identityAttributes: identityAttributes.length,
+            drawingRelationshipId: drawingRelationshipId!,
+            drawingTarget: drawingTarget!,
+            changedParts,
           });
         }
-        await attachPrettyJson('real-content-control-corpus-measurement', measurements);
+        await attachPrettyJson('real-block-content-control-corpus-evidence', measurements);
       });
-      await then('every real block-SDT count remains stable and the scope label stays explicit', () => {
+      await then('every complete control, identity attribute, drawing target, and package boundary is retained', () => {
         expect(measurements).toHaveLength(relativePaths.length);
         for (const measurement of measurements) {
-          expect(measurement.before).toBeGreaterThan(0);
-          expect(measurement.after).toBe(measurement.before);
-          expect(measurement.scope).toContain('not inline preservation evidence');
+          expect(measurement.controlledParagraphs).toBe(38);
+          expect(measurement.identityAttributes).toBe(152);
+          expect(measurement.changedParts).toEqual(['word/document.xml']);
         }
       });
     },

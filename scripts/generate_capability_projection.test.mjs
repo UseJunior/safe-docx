@@ -25,7 +25,7 @@ async function inputs() {
 
 test('the committed projection matches the exact upstream denominator', async () => {
   const result = await validateProjection(await inputs(), root);
-  assert.equal(result.denominator, 87);
+  assert.equal(result.denominator, 91);
 });
 
 test('a positive claim without executable evidence is rejected', async () => {

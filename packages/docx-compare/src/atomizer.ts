@@ -23,9 +23,9 @@ import {
 } from '@usejunior/docx-core';
 import { OOXML } from '@usejunior/docx-core';
 import {
-  captureInlineSdtPassthrough,
+  captureSdtPassthrough,
   sameOpaqueOwner,
-  validateInlineSdtNamespaceOwnership,
+  validateSdtNamespaceOwnership,
 } from './baselines/atomizer/opaquePassthrough.js';
 
 // =============================================================================
@@ -532,7 +532,7 @@ export interface AtomizeTreeOptions {
    * Default: false.
    */
   atomizeParagraphLevelMarkers?: boolean;
-  /** Capture unchanged inline SDTs as bounded opaque rebuild nodes. */
+  /** Capture unchanged supported SDT placements as bounded opaque rebuild nodes. */
   captureInlineSdtPassthrough?: boolean;
 }
 
@@ -837,9 +837,9 @@ export function atomizeTree(
     consecutiveEmptyIndex: 0,
     lastContentHash: '',
   };
-  if (normalizedOptions.captureInlineSdtPassthrough) validateInlineSdtNamespaceOwnership(node);
+  if (normalizedOptions.captureInlineSdtPassthrough) validateSdtNamespaceOwnership(node);
   const rawAtoms = atomizeTreeInternal(node, ancestors, part, state, normalizedOptions);
-  if (normalizedOptions.captureInlineSdtPassthrough) captureInlineSdtPassthrough(node, rawAtoms);
+  if (normalizedOptions.captureInlineSdtPassthrough) captureSdtPassthrough(node, rawAtoms);
 
   // Step 1: Collapse field sequences into single atoms based on visible text
   // This allows matching between hardcoded text and field references
@@ -1090,6 +1090,8 @@ export function collapseFieldSequences(
           // Inherit rPr from first atom in the field sequence
           rPr: firstAtom.rPr,
           opaquePassthrough: firstAtom.opaquePassthrough,
+          opaquePassthroughRelativeParagraphOrdinal:
+            firstAtom.opaquePassthroughRelativeParagraphOrdinal,
         },
         (self) => hashElement(self.contentElement),
         elementIdentityString(virtualElement),
@@ -1181,6 +1183,8 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
         // Share rPr reference (read-only after atomization)
         rPr: atom.rPr,
         opaquePassthrough: atom.opaquePassthrough,
+        opaquePassthroughRelativeParagraphOrdinal:
+          atom.opaquePassthroughRelativeParagraphOrdinal,
       },
       (self) => hashElement(self.contentElement),
       elementIdentityString(wordElement),
