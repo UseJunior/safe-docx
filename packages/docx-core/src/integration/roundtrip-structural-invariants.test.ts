@@ -328,7 +328,7 @@ describe('Structural Round-Trip Invariants - ILPA Pair (feature-rich)', () => {
       const revised = await readFile(ILPA_REVISED_DOC);
 
       await expect(buildRoundTripArtifacts(original, revised, 'rebuild')).rejects.toThrow(
-        /Opaque passthrough: boundary 0 changed paragraph ownership, moved, or mutated/
+        /Opaque passthrough: (?:boundary count changed|boundary 0 changed paragraph ownership, moved, or mutated)/
       );
     },
     120000
