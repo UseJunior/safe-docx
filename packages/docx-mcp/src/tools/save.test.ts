@@ -130,7 +130,6 @@ describe('save', () => {
    * @see #609
    */
   test
-    .openspec('namespaced XML preserved through round-trip')
     .conformance(
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.1' },
       { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.2' },
