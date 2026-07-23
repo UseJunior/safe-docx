@@ -327,7 +327,7 @@ function removeParagraphInsertionMarker(paragraph: Element | undefined): void {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
  * @see https://github.com/UseJunior/safe-docx/issues/359
  */
-function resolveRevisedInsCollisionOnRun(
+export function resolveRevisedInsCollisionOnRun(
   atom: ComparisonUnitAtom,
   run: Element
 ): void {
