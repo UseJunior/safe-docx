@@ -120,7 +120,7 @@ Save document. For DOCX: saves clean and/or tracked changes output. For ODT: sav
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `save_to_local_path` | `string` | yes |  |
-| `clean_bookmarks` | `boolean` | no |  |
+| `clean_bookmarks` | `boolean` | no | Controls removal of internal bookmarks from DOCX output. Behavior is intentionally three-way: OMIT (recommended for tracked/persistence saves) preserves the document's own bookmarks — only safe-docx paragraph anchors (`_bk_*`) are removed. Explicit `true` ALSO strips harness edit-span bookmarks (`edit-*`) to produce a clean deliverable; do NOT pass it when the tracked output feeds a redline pipeline, because that reproduces the pre-#609 loss of `edit-*` anchors. `false` keeps all bookmarks. Omitting is NOT equivalent to passing `true` — they differ precisely in whether original `edit-*` bookmarks survive. |
 | `save_format` | `enum("clean", "tracked", "both")` | no |  |
 | `allow_overwrite` | `boolean` | no |  |
 | `tracked_save_to_local_path` | `string` | no |  |
