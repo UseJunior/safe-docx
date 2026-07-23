@@ -1,4 +1,5 @@
 import { OOXML, W } from './namespaces.js';
+import { getFirstChild } from './xml-helpers.js';
 
 function getWAttr(el: Element, localName: string): string | null {
   return el.getAttributeNS(OOXML.W_NS, localName) ?? el.getAttribute(`w:${localName}`) ?? el.getAttribute(localName);
@@ -10,6 +11,7 @@ export type NumberingLevel = {
   numFmt: string; // decimal, lowerLetter, upperLetter, lowerRoman, upperRoman, bullet, none...
   lvlText: string; // e.g. "%1.%2."
   suff: string; // tab, space, nothing
+  pStyle: string | null;
 };
 
 export type AbstractNum = {
@@ -46,13 +48,15 @@ export function parseNumberingXml(numberingDoc: Document | null): NumberingModel
       const numFmtEl = lvl.getElementsByTagNameNS(OOXML.W_NS, W.numFmt).item(0);
       const lvlTextEl = lvl.getElementsByTagNameNS(OOXML.W_NS, W.lvlText).item(0);
       const suffEl = lvl.getElementsByTagNameNS(OOXML.W_NS, W.suff).item(0);
+      const pStyleEl = getFirstChild(lvl, OOXML.W_NS, W.pStyle);
 
       const startVal = startEl ? Number.parseInt(getWAttr(startEl, 'val') ?? '1', 10) : 1;
       const numFmt = numFmtEl ? (getWAttr(numFmtEl, 'val') ?? 'decimal') : 'decimal';
       const lvlText = lvlTextEl ? (getWAttr(lvlTextEl, 'val') ?? `%${ilvl + 1}.`) : `%${ilvl + 1}.`;
       const suff = suffEl ? (getWAttr(suffEl, 'val') ?? 'tab') : 'tab';
+      const pStyle = pStyleEl ? (getWAttr(pStyleEl, 'val') ?? null) : null;
 
-      levels.set(ilvl, { ilvl, start: startVal, numFmt, lvlText, suff });
+      levels.set(ilvl, { ilvl, start: startVal, numFmt, lvlText, suff, pStyle });
     }
     model.abstractNums.set(id, { abstractNumId: id, levels });
   }
@@ -159,7 +163,18 @@ function getStartForLevel(model: NumberingModel, numId: string, ilvl: number): n
   return lvl?.start ?? 1;
 }
 
-function getLevel(model: NumberingModel, numId: string, ilvl: number): NumberingLevel | null {
+/**
+ * Resolve the exact numbering-level definition active for a paragraph without
+ * advancing or otherwise mutating list counters.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.9.22
+ */
+export function getNumberingLevel(
+  model: NumberingModel,
+  numId: string,
+  ilvl: number,
+): Readonly<NumberingLevel> | null {
   const num = model.nums.get(numId);
   if (!num) return null;
   const abs = model.abstractNums.get(num.abstractNumId);
@@ -172,7 +187,7 @@ export function computeListLabelForParagraph(
   params: { numId: string; ilvl: number },
 ): string {
   const { numId, ilvl } = params;
-  const level = getLevel(model, numId, ilvl);
+  const level = getNumberingLevel(model, numId, ilvl);
   if (!level) return '';
 
   let arr = counters.get(numId);
@@ -205,7 +220,7 @@ export function computeListLabelForParagraph(
     const levelNum = Number.parseInt(String(nStr), 10) - 1;
     if (Number.isNaN(levelNum) || levelNum < 0) return '';
     const v = arr[levelNum] ?? 0;
-    const lvlDef = getLevel(model, numId, levelNum);
+    const lvlDef = getNumberingLevel(model, numId, levelNum);
     const fmt = lvlDef?.numFmt ?? 'decimal';
     return formatCounter(fmt, v);
   });

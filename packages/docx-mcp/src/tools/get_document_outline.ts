@@ -2,7 +2,11 @@ import { SessionManager } from '../session/manager.js';
 import { errorMessage } from '../error_utils.js';
 import { ok, err, type ToolResponse } from './types.js';
 import { resolveSessionForTool, mergeSessionResolutionMetadata } from './session_resolution.js';
-import type { DocumentViewNode, HeadingSource } from '@usejunior/docx-core';
+import {
+  isDeterministicHeadingSource,
+  type DocumentViewNode,
+  type HeadingSource,
+} from '@usejunior/docx-core';
 
 type OutlineEntry = {
   paragraph_id: string;
@@ -12,10 +16,9 @@ type OutlineEntry = {
 };
 
 /**
- * Projects the document view into outline entries. Word `HeadingN` styles carry
- * a numeric `level`; heuristic sources (title/run-in/centered-caps) have a null
- * level and are only emitted when explicitly requested, so the default outline
- * stays low-noise on documents that mix manual emphasis with real structure.
+ * Projects the document view into outline entries. Deterministic style,
+ * numbering, and outline-property sources are included by default; heuristic
+ * sources remain opt-in so the default outline stays low-noise.
  */
 export function projectOutline(
   nodes: readonly DocumentViewNode[],
@@ -25,7 +28,7 @@ export function projectOutline(
   for (const node of nodes) {
     const heading = node.heading;
     if (!heading) continue;
-    if (!includeHeuristic && heading.source !== 'word_style') continue;
+    if (!includeHeuristic && !isDeterministicHeadingSource(heading.source)) continue;
     entries.push({
       paragraph_id: node.id,
       text: heading.text,

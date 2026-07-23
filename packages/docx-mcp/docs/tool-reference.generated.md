@@ -28,7 +28,7 @@ Read document content (DOCX, ODT, or Google Doc). Output is token-limited (~14k 
 
 ## `get_document_outline`
 
-Get a compact structural map of a document's headings (DOCX only). Returns one entry per heading paragraph with its text, outline level, source, and stable `_bk_*` paragraph_id — so an agent can read the cheap outline first, then scope a targeted read_file/replace_text to the right section instead of scanning the whole body. Style-based (Word HeadingN) headings only by default; set include_heuristic_headings=true to also include heuristic titles/run-in headers. Read-only.
+Get a compact structural map of a document's headings (DOCX only). Each entry is `{paragraph_id, text, level, source}`. Deterministic sources are `word_style`, `list_metadata`, and `outline_level`, selected in that precedence order and included by default. Heuristic sources are `run_in_header`, `title_with_period`, `title_with_colon`, `title_caps_centered`, and `title_bare`; set include_heuristic_headings=true to include them. JSON preserves levels 1-9; Markdown clamps visual ATX depth to 6. Read-only.
 
 - readOnly: `true`
 - destructive: `false`
@@ -37,7 +37,7 @@ Get a compact structural map of a document's headings (DOCX only). Returns one e
 | --- | --- | --- | --- |
 | `file_path` | `string` | no | Path to the DOCX file. |
 | `format` | `enum("json", "markdown")` | no | Output format: 'json' (default, structured outline array) or 'markdown' (indented ATX outline under `content`). |
-| `include_heuristic_headings` | `boolean` | no | When true, also include heuristically-detected headings (manual title / run-in / centered-caps) alongside Word HeadingN styles. Default: false (style-based only). |
+| `include_heuristic_headings` | `boolean` | no | When true, also include heuristic title/run-in/centered-caps headings alongside deterministic word_style, list_metadata, and outline_level headings. Default: false (all deterministic sources only). |
 
 ## `grep`
 

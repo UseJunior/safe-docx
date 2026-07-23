@@ -31,6 +31,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-6-13` | w:pgSz page size emission | 5 | 1 | 17.6.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz` | — |
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | — |
 | `ECMA-PART1-17-3-1-26` | w:pPr child-element ordering | 5 | 1 | 17.3.1.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
+| `ECMA-PART1-17-3-1-20` | w:outlineLvl paragraph outline level | 5 | 1 | 17.3.1.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-3-2-28` | w:rPr direct-property uniqueness | 5 | 1 | 17.3.2.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
 | `ECMA-PART1-17-7-4-18` | w:styles style-definitions part emission | 5 | 1 | 17.7.4.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles` | — |
 | `ECMA-PART1-17-7-4-17` | w:style style-definition emission | 5 | 1 | 17.7.4.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style` | — |
@@ -75,6 +76,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-18` | w:numId numbering instance reference | 5 | 1 | 17.9.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId` | — |
 | `ECMA-PART1-17-9-3` | w:ilvl numbering level reference | 5 | 1 | 17.9.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl` | — |
 | `ECMA-PART1-17-9-6` | w:lvl numbering level definition | 5 | 1 | 17.9.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl` | — |
+| `ECMA-PART1-17-9-22` | w:pStyle numbering-level paragraph style | 5 | 1 | 17.9.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-9-17` | w:numFmt numbering format | 5 | 1 | 17.9.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt` | — |
 | `ECMA-PART1-17-9-11` | w:lvlText numbering level text | 5 | 1 | 17.9.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlText` | — |
 | `ECMA-PART1-17-9-25` | w:start numbering level starting value | 5 | 1 | 17.9.25 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:start` | — |
@@ -377,6 +379,19 @@ subset of that sequence as `PPR_ORDER` and routes every paragraph
 property through `appendInOrder`, which throws on any property name
 missing from the table so new properties force a conscious ordering
 decision.
+
+### ECMA-PART1-17-3-1-20 — w:outlineLvl paragraph outline level
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.20
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl`
+- **Verified by:** packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts
+
+`w:outlineLvl` records a paragraph's outline level. Values 0 through 8
+correspond to heading levels 1 through 9, while value 9 marks body text.
+Document-view formatting resolves the direct paragraph property before the
+paragraph style chain and ignores malformed or out-of-range values.
 
 ### ECMA-PART1-17-3-2-28 — w:rPr direct-property uniqueness
 
@@ -910,6 +925,19 @@ in the bound definition.
 Level definitions follow the CT_Lvl child sequence (start, numFmt, suff,
 lvlText, lvlJc, pPr, rPr); level indents emit through `w:pPr`/`w:ind` and
 level run properties reuse the shared rPr builder.
+
+### ECMA-PART1-17-9-22 — w:pStyle numbering-level paragraph style
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.9.22
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle`
+- **Verified by:** packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts
+
+An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
+a paragraph style. The numbering model retains the association and exposes a
+read-only active-level lookup so heading classification never consults an
+unrelated level or mutates list counters.
 
 ### ECMA-PART1-17-9-17 — w:numFmt numbering format
 

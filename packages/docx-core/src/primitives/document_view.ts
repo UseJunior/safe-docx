@@ -4,7 +4,12 @@ import { getParagraphText, getParagraphRuns } from './text.js';
 import { getParagraphBookmarkId } from './bookmarks.js';
 import { buildTableMetaMap, deriveTableContext } from './table_context.js';
 import { extractListLabel, stripListLabel, LabelType } from './list_labels.js';
-import { parseNumberingXml, type NumberingCounters, computeListLabelForParagraph } from './numbering.js';
+import {
+  parseNumberingXml,
+  type NumberingCounters,
+  computeListLabelForParagraph,
+  getNumberingLevel,
+} from './numbering.js';
 import { parseStylesXml, type StylesModel, extractParagraphFormatting, extractEffectiveRunFormatting, type RunFormatting } from './styles.js';
 import { HIGHLIGHT_TAG } from './semantic_tags.js';
 import { type AnnotatedRun, type FormattingBaseline, type FormattingMode, computeModalBaseline, computeParagraphFontBaseline, emitFormattingTags, mergeAdjacentTags } from './formatting_tags.js';
@@ -17,6 +22,7 @@ import {
   extractHeaderInfo,
   suppressSignatureClusters,
 } from './document_view-headings.js';
+import { getBuiltInHeadingLevel } from './heading_styles.js';
 import { discoverStyles, fingerprintKey } from './document_view-styles.js';
 import { findTaggedTextInsertionIndex } from './document_view-comments.js';
 import type {
@@ -30,7 +36,14 @@ import type {
 } from './document_view-types.js';
 
 export type { BuildDocumentViewOptions, DocumentViewNode, ListMetadata, TableContext } from './document_view-types.js';
-export type { HeaderFormatting, HeadingSource, HeadingValue, HeuristicHeadingSource } from './document_view-headings.js';
+export {
+  isDeterministicHeadingSource,
+  type DeterministicHeadingSource,
+  type HeaderFormatting,
+  type HeadingSource,
+  type HeadingValue,
+  type HeuristicHeadingSource,
+} from './document_view-headings.js';
 export { discoverStyles } from './document_view-styles.js';
 export type { DocumentStyleInfo, DocumentStyles, FormattingFingerprint } from './document_view-styles.js';
 export { INLINE_COMMENT_MARKER_RUNTIME, TOON_INLINE_TAG_RE, collectInlineCommentMarkers, tokenizeToonInline } from './document_view-comments.js';
@@ -481,7 +494,9 @@ export function buildNodesForDocumentView(params: {
 
       // Skip heading-style paragraphs from baseline computation.
       const styleName = (paraFmt.styleName ?? '').toLowerCase();
-      const isHeadingStyle = styleName.includes('heading') || styleName.includes('title');
+      const isHeadingStyle =
+        getBuiltInHeadingLevel(paraFmt.styleId, paraFmt.styleName) !== null ||
+        styleName.includes('title');
       if (!isHeadingStyle) {
         for (const r of runs) {
           if (r.charCount > 0) allBodyRuns.push(r);
@@ -629,7 +644,23 @@ export function buildNodesForDocumentView(params: {
       headerStyle = fallback.header_style;
     }
 
-    const heading = deriveHeading(paraFmt.styleId, cleanTextNoLabel, headerText, headerStyle, tableContext != null);
+    const numberingLevel = numId && ilvl != null
+      ? getNumberingLevel(numberingModel, numId, ilvl)
+      : null;
+    const numberingLevelStyle = numberingLevel?.pStyle
+      ? stylesModel.byId.get(numberingLevel.pStyle)
+      : undefined;
+    const heading = deriveHeading({
+      paragraphStyleId: paraFmt.styleId,
+      paragraphStyleName: paraFmt.styleName,
+      numberingLevelStyleId: numberingLevel?.pStyle ?? null,
+      numberingLevelStyleName: numberingLevelStyle?.name ?? null,
+      outlineLevel: paraFmt.outlineLevel,
+      cleanText: cleanTextNoLabel,
+      headerText,
+      headerStyle,
+      isInTableCell: tableContext != null,
+    });
 
     // ── Tag emission ──
     let tagged = cleanTextNoLabel;
