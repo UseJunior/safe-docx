@@ -44,6 +44,8 @@ const liveSuiteTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.15.3.4' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.31' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.36' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.29' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.34' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.5.2.38' },
 );
 
@@ -100,6 +102,10 @@ const COMPATIBILITY_MODE_SCENARIO_ID = 'composeCompatibilityMode15WritesCompatSe
 const CONTENT_CONTROL_SCENARIO_IDS = [
   'unrelatedTextEditPreservesInlineContentControlStructure',
   'unrelatedTextEditPreservesOpaqueInlineContentControl',
+] as const;
+const BLOCK_CONTENT_CONTROL_SCENARIO_IDS = [
+  'unrelatedTextEditPreservesBlockContentControlStructure',
+  'unrelatedTextEditPreservesOpaqueBlockContentControl',
 ] as const;
 const EXPECTED_SUPPORTED_OPERATIONS: ReadonlySet<string> = new Set([
   'acceptAllTrackedChanges',
@@ -339,6 +345,18 @@ describeMaybe('Cross-implementation conformance suite self-check', () => {
           );
           const normative = scenarios.get(CONTENT_CONTROL_SCENARIO_IDS[0]);
           const metamorphic = scenarios.get(CONTENT_CONTROL_SCENARIO_IDS[1]);
+          expect(normative?.oracleKind).toBe('ecma-conformance');
+          expect(['pass', 'pass-divergent']).toContain(normative?.outcomes['safe-docx']?.status);
+          expect(metamorphic?.oracleKind).toBe('metamorphic-invariant');
+          expect(metamorphic?.outcomes['safe-docx']?.status).toBe('invariant-pass');
+        });
+
+        await then('both block content-control scenarios report only their oracle-specific pass statuses', async () => {
+          const scenarios = new Map(
+            results.results.map((scenario) => [scenario.scenarioId, scenario]),
+          );
+          const normative = scenarios.get(BLOCK_CONTENT_CONTROL_SCENARIO_IDS[0]);
+          const metamorphic = scenarios.get(BLOCK_CONTENT_CONTROL_SCENARIO_IDS[1]);
           expect(normative?.oracleKind).toBe('ecma-conformance');
           expect(['pass', 'pass-divergent']).toContain(normative?.outcomes['safe-docx']?.status);
           expect(metamorphic?.oracleKind).toBe('metamorphic-invariant');

@@ -11,6 +11,7 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Hiera
 
 function descriptor(documentOrdinal: number, fingerprint: string): OpaquePassthroughNode {
   return {
+    placementKind: 'inline-run',
     namespaceUri: 'urn:test:w',
     localName: 'sdt',
     documentOrdinal,
@@ -20,11 +21,12 @@ function descriptor(documentOrdinal: number, fingerprint: string): OpaquePassthr
   } as OpaquePassthroughNode;
 }
 
-function atom(owner?: OpaquePassthroughNode): ComparisonUnitAtom {
+function atom(owner?: OpaquePassthroughNode, relativeParagraphOrdinal?: number): ComparisonUnitAtom {
   return {
     contentElement: { tagName: 'w:t' },
     ancestorElements: [],
     opaquePassthrough: owner,
+    opaquePassthroughRelativeParagraphOrdinal: relativeParagraphOrdinal,
   } as unknown as ComparisonUnitAtom;
 }
 
@@ -42,12 +44,13 @@ describe('opaque paragraph identity caching', () => {
   test('computes each ordinary group identity once across DP and backtracking', () => {
     const original = Array.from({ length: 70 }, (_, index) => group(index, [atom()], index + 1));
     const revised = Array.from({ length: 70 }, (_, index) => group(index, [atom()], index + 1));
-    const instrumentation: GroupLcsInstrumentation = { opaqueIdentityComputations: 0 };
+    const instrumentation: GroupLcsInstrumentation = { opaqueIdentityComputations: 0, opaqueAtomScans: 0 };
 
     const result = computeGroupLcs(original, revised, 2, undefined, instrumentation);
 
     expect(result.matchedGroups).toHaveLength(70);
     expect(instrumentation.opaqueIdentityComputations).toBe(original.length + revised.length);
+    expect(instrumentation.opaqueAtomScans).toBe(original.length + revised.length);
   });
 
   test('matches and distinguishes groups containing multiple opaque identities', () => {
@@ -81,5 +84,42 @@ describe('opaque paragraph identity caching', () => {
     mutable.atoms[0]!.opaquePassthrough = descriptor(0, 'added-between-runs');
 
     expect(computeGroupLcs([mutable], [ordinary], 2).matchedGroups).toEqual([]);
+  });
+
+  test('computes each block-owned paragraph group identity once', () => {
+    const originalOwner = {
+      ...descriptor(0, 'block'),
+      placementKind: 'body-block' as const,
+      bodyChildOrdinal: 0,
+      ownedParagraphCount: 38,
+    };
+    const revisedOwner = { ...originalOwner };
+    const original = Array.from({ length: 38 }, (_, index) =>
+      group(index, [atom(originalOwner, index)], index + 100));
+    const revised = Array.from({ length: 38 }, (_, index) =>
+      group(index, [atom(revisedOwner, index)], index + 200));
+    const instrumentation: GroupLcsInstrumentation = { opaqueIdentityComputations: 0, opaqueAtomScans: 0 };
+
+    expect(computeGroupLcs(original, revised, 2, undefined, instrumentation).matchedGroups)
+      .toHaveLength(38);
+    expect(instrumentation.opaqueIdentityComputations).toBe(76);
+    expect(instrumentation.opaqueAtomScans).toBe(76);
+  });
+
+  test('includes block relationship closure in opaque group identity', () => {
+    const originalOwner = {
+      ...descriptor(0, 'block'),
+      placementKind: 'body-block' as const,
+      bodyChildOrdinal: 0,
+      ownedParagraphCount: 1,
+      relationshipClosureFingerprint: 'original-media',
+    };
+    const revisedOwner = { ...originalOwner, relationshipClosureFingerprint: 'revised-media' };
+
+    expect(computeGroupLcs(
+      [group(0, [atom(originalOwner, 0)], 10)],
+      [group(0, [atom(revisedOwner, 0)], 10)],
+      2,
+    ).matchedGroups).toEqual([]);
   });
 });

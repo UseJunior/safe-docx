@@ -2,27 +2,27 @@
   "schemaVersion": 1,
   "generatedFrom": {
     "repository": "open-agreements/docx-platform-tests",
-    "commit": "fe0ee99602e6f982255ecaa2b45d4936a7f46150",
+    "commit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
     "registryVersion": 1,
     "profileId": "current-neutral-surface"
   },
   "profileDenominator": {
-    "capabilityAxisPairs": 87,
+    "capabilityAxisPairs": 91,
     "byAxis": {
-      "preserve": 22,
-      "generate": 15,
-      "edit": 17,
+      "preserve": 23,
+      "generate": 16,
+      "edit": 18,
       "acceptReject": 10,
-      "crossPlatform": 23
+      "crossPlatform": 24
     }
   },
   "evidenceInventory": {
-    "authoredMappingPairs": 28,
-    "crossPlatformDerivedPairsInCompleteRun": 23,
-    "expectedCompleteSummaryRows": 51,
+    "authoredMappingPairs": 29,
+    "crossPlatformDerivedPairsInCompleteRun": 24,
+    "expectedCompleteSummaryRows": 53,
     "pinnedMeasuredSummaryRows": 8,
     "pinnedMeasuredScenarios": 12,
-    "pinnedUnmeasuredScenarios": 30
+    "pinnedUnmeasuredScenarios": 32
   },
   "statusCounts": {
     "supported": 8,
@@ -30,7 +30,7 @@
     "preservation-only": 0,
     "gap": 3,
     "non-goal": 0,
-    "untested": 76
+    "untested": 80
   },
   "formalAssuranceBoundary": {
     "establishesCapabilityClaims": false,
@@ -317,6 +317,95 @@
       },
       "title": "Comment removal",
       "family": "comments"
+    },
+    {
+      "capabilityId": "word.content-controls.block",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Block structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.block",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Block structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.block",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Block structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.block",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral scenarios are executed in the gated DPT self-check, while this projection has no committed neutral result row and does not encode repo-local forced-rebuild evidence.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Block structured document tags",
+      "family": "content-controls"
     },
     {
       "capabilityId": "word.content-controls.inline",

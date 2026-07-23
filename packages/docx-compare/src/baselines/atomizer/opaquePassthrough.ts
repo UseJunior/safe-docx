@@ -1,15 +1,223 @@
 import { createHash } from 'node:crypto';
-import type { ComparisonUnitAtom, OpaquePassthroughNode } from '@usejunior/docx-core';
-import { CorrelationStatus, OOXML } from '@usejunior/docx-core';
+import { posix } from 'node:path';
+import type { ComparisonUnitAtom, DocxArchive, OpaquePassthroughNode } from '@usejunior/docx-core';
+import { CorrelationStatus, OOXML, parseXml } from '@usejunior/docx-core';
 
 const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 const XML_NS = 'http://www.w3.org/XML/1998/namespace';
 const MC_NS = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
+const OFFICE_REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PACKAGE_REL_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
 export class OpaquePassthroughError extends Error {
   constructor(message: string) {
     super(`Opaque passthrough: ${message}`);
     this.name = 'OpaquePassthroughError';
+  }
+}
+
+interface PackageRelationship {
+  id: string;
+  type: string;
+  target: string;
+  mode: 'Internal' | 'External';
+}
+
+export interface OpaqueRelationshipInstrumentation {
+  boundaryScans: number;
+  relationshipIdentityComputations: number;
+  relationshipPartReads: number;
+  partHashComputations: number;
+}
+
+function relationshipPartPath(partPath: string): string {
+  const directory = posix.dirname(partPath);
+  return `${directory === '.' ? '' : `${directory}/`}_rels/${posix.basename(partPath)}.rels`;
+}
+
+function collectRelationshipIds(root: Element): string[] {
+  const ids = new Set<string>();
+  const visit = (element: Element): void => {
+    for (let i = 0; i < element.attributes.length; i++) {
+      const attribute = element.attributes.item(i)!;
+      if (attribute.namespaceURI === OFFICE_REL_NS) {
+        if (!attribute.value) throw new OpaquePassthroughError('empty relationship-namespace attribute');
+        ids.add(attribute.value);
+      }
+    }
+    for (let child = element.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 1) visit(child as Element);
+    }
+  };
+  visit(root);
+  return [...ids].sort();
+}
+
+function normalizeInternalTarget(ownerPart: string, target: string): string {
+  if (!target || target.includes('\\') || /[\u0000-\u001f\u007f?#]/.test(target)) {
+    throw new OpaquePassthroughError(`unsafe internal relationship target '${target}'`);
+  }
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(target);
+  } catch {
+    throw new OpaquePassthroughError(`invalid encoded relationship target '${target}'`);
+  }
+  if (
+    decoded.includes('\\') ||
+    /[\u0000-\u001f\u007f?#]/.test(decoded) ||
+    decoded.startsWith('//') ||
+    decoded.includes(':')
+  ) {
+    throw new OpaquePassthroughError(`unsafe internal relationship target '${target}'`);
+  }
+  const segments = decoded.startsWith('/') ? [] : posix.dirname(ownerPart).split('/').filter(Boolean);
+  for (const segment of decoded.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (segments.length === 0) {
+        throw new OpaquePassthroughError(`relationship target escapes the package root: '${target}'`);
+      }
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+  if (segments.length === 0) throw new OpaquePassthroughError(`empty resolved relationship target '${target}'`);
+  return segments.join('/');
+}
+
+function normalizeExternalTarget(target: string): string {
+  try {
+    return new URL(target).href;
+  } catch {
+    throw new OpaquePassthroughError(`unsafe external relationship target '${target}'`);
+  }
+}
+
+/** Memoized package-scoped relationship closure used only for opaque body blocks. */
+export class OpaqueRelationshipClosureResolver {
+  readonly instrumentation: OpaqueRelationshipInstrumentation = {
+    boundaryScans: 0,
+    relationshipIdentityComputations: 0,
+    relationshipPartReads: 0,
+    partHashComputations: 0,
+  };
+  private readonly relationshipsByPart = new Map<string, Promise<Map<string, PackageRelationship> | null>>();
+  private readonly partHashes = new Map<string, Promise<string>>();
+  private readonly closures = new Map<string, string>();
+  private workQueue: Promise<void> = Promise.resolve();
+
+  constructor(private readonly archive: DocxArchive) {}
+
+  fingerprintBoundary(boundary: Element, ownerPart: string): Promise<string> {
+    const task = this.workQueue.then(() => this.fingerprintBoundaryNow(boundary, ownerPart));
+    this.workQueue = task.then(() => undefined, () => undefined);
+    return task;
+  }
+
+  private async fingerprintBoundaryNow(boundary: Element, ownerPart: string): Promise<string> {
+    this.instrumentation.boundaryScans++;
+    const ids = collectRelationshipIds(boundary);
+    if (ids.length === 0) return '';
+    const identities: string[] = [];
+    for (const id of ids) identities.push(await this.relationshipIdentity(ownerPart, id, new Set()));
+    return createHash('sha256').update(JSON.stringify(identities), 'utf8').digest('hex');
+  }
+
+  private async relationshipIdentity(ownerPart: string, id: string, active: Set<string>): Promise<string> {
+    const key = `${ownerPart}\u0000${id}`;
+    if (active.has(key)) {
+      throw new OpaquePassthroughError(`cyclic relationship closure at ${ownerPart}#${id}`);
+    }
+    const cached = this.closures.get(key);
+    if (cached) return cached;
+    this.instrumentation.relationshipIdentityComputations++;
+    const nextActive = new Set(active).add(key);
+    const identity = await this.buildRelationshipIdentity(ownerPart, id, nextActive);
+    this.closures.set(key, identity);
+    return identity;
+  }
+
+  private async buildRelationshipIdentity(ownerPart: string, id: string, active: Set<string>): Promise<string> {
+    const relationships = await this.relationshipsForPart(ownerPart);
+    const relationship = relationships?.get(id);
+    if (!relationship) throw new OpaquePassthroughError(`dangling relationship ${ownerPart}#${id}`);
+    if (relationship.mode === 'External') {
+      return JSON.stringify({
+        id,
+        type: relationship.type,
+        mode: relationship.mode,
+        target: normalizeExternalTarget(relationship.target),
+      });
+    }
+
+    const targetPart = normalizeInternalTarget(ownerPart, relationship.target);
+    const hash = await this.hashPart(targetPart);
+    const dependentRelationships = await this.relationshipsForPart(targetPart);
+    let dependencies: string[] = [];
+    if (dependentRelationships) {
+      if (!/\.(?:xml|vml)$/i.test(targetPart)) {
+        throw new OpaquePassthroughError(`unsupported relationship-bearing target part '${targetPart}'`);
+      }
+      const targetBytes = await this.archive.getFileBuffer(targetPart);
+      if (!targetBytes) throw new OpaquePassthroughError(`missing relationship target part '${targetPart}'`);
+      const targetDocument = parseXml(targetBytes.toString('utf8'));
+      const targetRoot = targetDocument.documentElement;
+      if (!targetRoot) throw new OpaquePassthroughError(`relationship target is not XML '${targetPart}'`);
+      const dependentIds = collectRelationshipIds(targetRoot);
+      for (const dependentId of dependentIds) {
+        dependencies.push(await this.relationshipIdentity(targetPart, dependentId, active));
+      }
+    }
+    return JSON.stringify({
+      id,
+      type: relationship.type,
+      mode: relationship.mode,
+      resolvedTarget: targetPart,
+      referencedPart: { path: targetPart, sha256: hash },
+      dependencies,
+    });
+  }
+
+  private relationshipsForPart(partPath: string): Promise<Map<string, PackageRelationship> | null> {
+    const cached = this.relationshipsByPart.get(partPath);
+    if (cached) return cached;
+    const pending = (async () => {
+      this.instrumentation.relationshipPartReads++;
+      const xml = await this.archive.getFile(relationshipPartPath(partPath));
+      if (xml === null) return null;
+      const document = parseXml(xml);
+      const elements = Array.from(document.getElementsByTagNameNS(PACKAGE_REL_NS, 'Relationship'));
+      const relationships = new Map<string, PackageRelationship>();
+      for (const element of elements) {
+        const id = element.getAttribute('Id');
+        const type = element.getAttribute('Type');
+        const target = element.getAttribute('Target');
+        const rawMode = element.getAttribute('TargetMode') || 'Internal';
+        if (!id || !type || !target || (rawMode !== 'Internal' && rawMode !== 'External')) {
+          throw new OpaquePassthroughError(`invalid relationship entry in '${relationshipPartPath(partPath)}'`);
+        }
+        if (relationships.has(id)) throw new OpaquePassthroughError(`duplicate relationship Id ${partPath}#${id}`);
+        relationships.set(id, { id, type, target, mode: rawMode });
+      }
+      return relationships;
+    })();
+    this.relationshipsByPart.set(partPath, pending);
+    return pending;
+  }
+
+  private hashPart(partPath: string): Promise<string> {
+    const cached = this.partHashes.get(partPath);
+    if (cached) return cached;
+    const pending = (async () => {
+      this.instrumentation.partHashComputations++;
+      const bytes = await this.archive.getFileBuffer(partPath);
+      if (!bytes) throw new OpaquePassthroughError(`missing relationship target part '${partPath}'`);
+      return createHash('sha256').update(bytes).digest('hex');
+    })();
+    this.partHashes.set(partPath, pending);
+    return pending;
   }
 }
 
@@ -143,6 +351,20 @@ function nearestInlineBoundary(atom: ComparisonUnitAtom): Element | null {
     : null;
 }
 
+function nearestBodyBlockBoundary(atom: ComparisonUnitAtom): Element | null {
+  for (let i = atom.ancestorElements.length - 1; i >= 0; i--) {
+    const ancestor = atom.ancestorElements[i]!;
+    if (ancestor.namespaceURI !== OOXML.W_NS || ancestor.localName !== 'sdt') continue;
+    const parent = ancestor.parentNode;
+    return parent?.nodeType === 1 &&
+      (parent as Element).namespaceURI === OOXML.W_NS &&
+      (parent as Element).localName === 'body'
+      ? ancestor
+      : null;
+  }
+  return null;
+}
+
 function nearestAncestor(element: Element, namespaceUri: string, localName: string): Element | null {
   let current: Node | null = element.parentNode;
   while (current?.nodeType === 1) {
@@ -164,6 +386,16 @@ function siblingOrdinal(element: Element): number {
     ) {
       ordinal++;
     }
+    sibling = sibling.previousSibling;
+  }
+  return ordinal;
+}
+
+function elementChildOrdinal(element: Element): number {
+  let ordinal = 0;
+  let sibling = element.previousSibling;
+  while (sibling) {
+    if (sibling.nodeType === 1) ordinal++;
     sibling = sibling.previousSibling;
   }
   return ordinal;
@@ -264,16 +496,55 @@ function validateInlineSdtKnownStructure(boundary: Element): void {
   }
 }
 
-/** Validate inline-SDT namespace scope before atomization clones leaf nodes. */
-export function validateInlineSdtNamespaceOwnership(root: Element): void {
+function validateBlockSdtKnownStructure(boundary: Element): Element[] {
+  const directChildren = Array.from(boundary.childNodes)
+    .filter((child): child is Element => child.nodeType === 1);
+  const names = directChildren.map((child) =>
+    child.namespaceURI === OOXML.W_NS ? child.localName : `{${child.namespaceURI}}${child.localName}`,
+  );
+  const expected = names[1] === 'sdtEndPr'
+    ? ['sdtPr', 'sdtEndPr', 'sdtContent']
+    : ['sdtPr', 'sdtContent'];
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
+    throw new OpaquePassthroughError(
+      'body-block w:sdt must contain ordered w:sdtPr, optional w:sdtEndPr, and w:sdtContent',
+    );
+  }
+  const content = directChildren[directChildren.length - 1]!;
+  if (content.getElementsByTagNameNS(OOXML.W_NS, 'tbl').length > 0) {
+    throw new OpaquePassthroughError('tables inside a body-block w:sdt are outside the bounded placement');
+  }
+  const paragraphs = Array.from(content.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+  if (paragraphs.length === 0) {
+    throw new OpaquePassthroughError('body-block w:sdt has no controlled paragraphs');
+  }
+  if (paragraphs.some((paragraph) => paragraph.parentNode !== content)) {
+    throw new OpaquePassthroughError('body-block w:sdt paragraphs must be direct children of w:sdtContent');
+  }
+  return paragraphs;
+}
+
+/** Validate supported SDT namespace scope before atomization clones leaf nodes. */
+export function validateSdtNamespaceOwnership(root: Element): void {
   for (const boundary of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'sdt'))) {
     const paragraph = nearestAncestor(boundary, OOXML.W_NS, 'p');
-    if (!paragraph || boundary.parentNode !== paragraph) continue;
+    const parent = boundary.parentNode;
+    const isInline = paragraph && parent === paragraph;
+    const isBodyBlock = parent?.nodeType === 1 &&
+      (parent as Element).namespaceURI === OOXML.W_NS &&
+      (parent as Element).localName === 'body';
+    if (!isInline && !isBodyBlock) {
+      throw new OpaquePassthroughError('w:sdt placement is outside inline-run and direct body-block support');
+    }
     const bindings = effectiveNamespaces(boundary);
     if (bindings.w !== OOXML.W_NS) {
       throw new OpaquePassthroughError("inline w:sdt has conflicting 'w' namespace ownership");
     }
-    validateInlineSdtKnownStructure(boundary);
+    if (nearestAncestor(boundary, OOXML.W_NS, 'sdt')) {
+      throw new OpaquePassthroughError('nested w:sdt boundaries are outside the bounded passthrough contract');
+    }
+    if (isInline) validateInlineSdtKnownStructure(boundary);
+    else validateBlockSdtKnownStructure(boundary);
     validateNamespaceOwnership(boundary, bindings);
   }
 }
@@ -303,15 +574,17 @@ function materializeNamespaces(
 }
 
 /**
- * Capture the pilot's inline structured-document-tag boundary without modeling
- * its property or extension vocabulary.
+ * Capture supported structured-document-tag boundaries without modeling their
+ * property or extension vocabulary.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.34
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.31
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.36
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.38
  * @see https://github.com/UseJunior/safe-docx/issues/582
  */
-export function captureInlineSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]): void {
+export function captureSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]): void {
   const descriptorByElement = new Map<Element, OpaquePassthroughNode>();
   const paragraphOrdinals = new Map(
     Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'p'))
@@ -320,31 +593,47 @@ export function captureInlineSdtPassthrough(root: Element, atoms: ComparisonUnit
   let nextOrdinal = 0;
   for (const boundary of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'sdt'))) {
     const paragraph = nearestAncestor(boundary, OOXML.W_NS, 'p');
-    if (!paragraph) continue; // Block/cell/row SDTs remain scaffold-owned and out of pilot scope.
     if (nearestAncestor(boundary, OOXML.W_NS, 'sdt')) {
-      throw new OpaquePassthroughError('nested inline w:sdt boundaries are outside the pilot');
+      throw new OpaquePassthroughError('nested w:sdt boundaries are outside the bounded passthrough contract');
     }
-    if (boundary.parentNode !== paragraph) {
-      throw new OpaquePassthroughError('inline w:sdt must be a direct child of w:p in the pilot');
+    const parent = boundary.parentNode;
+    const isInline = paragraph && parent === paragraph;
+    const isBodyBlock = parent?.nodeType === 1 &&
+      (parent as Element).namespaceURI === OOXML.W_NS &&
+      (parent as Element).localName === 'body';
+    if (!isInline && !isBodyBlock) {
+      throw new OpaquePassthroughError('w:sdt placement is outside inline-run and direct body-block support');
     }
     const bindings = effectiveNamespaces(boundary);
     const mceDeclarations = effectiveMceDeclarations(boundary);
     if (bindings.w !== OOXML.W_NS) {
       throw new OpaquePassthroughError("inline w:sdt has conflicting 'w' namespace ownership");
     }
-    validateInlineSdtKnownStructure(boundary);
+    const blockParagraphs = isBodyBlock ? validateBlockSdtKnownStructure(boundary) : undefined;
+    if (isInline) validateInlineSdtKnownStructure(boundary);
     validateNamespaceOwnership(boundary, bindings);
     validateIgnorableTokens(mceDeclarations.values, bindings);
-    const paragraphOrdinal = paragraphOrdinals.get(paragraph);
+    const ownedParagraph = isInline ? paragraph! : blockParagraphs![0]!;
+    const paragraphOrdinal = paragraphOrdinals.get(ownedParagraph);
     if (paragraphOrdinal === undefined) {
-      throw new OpaquePassthroughError('inline w:sdt paragraph has no source-order identity');
+      throw new OpaquePassthroughError('w:sdt paragraph has no source-order identity');
+    }
+    if (blockParagraphs) {
+      for (let relative = 0; relative < blockParagraphs.length; relative++) {
+        if (paragraphOrdinals.get(blockParagraphs[relative]!) !== paragraphOrdinal + relative) {
+          throw new OpaquePassthroughError('body-block w:sdt paragraph ownership is non-contiguous');
+        }
+      }
     }
     descriptorByElement.set(boundary, {
+      placementKind: isInline ? 'inline-run' : 'body-block',
       namespaceUri: OOXML.W_NS,
       localName: 'sdt',
       documentOrdinal: nextOrdinal++,
       paragraphOrdinal,
-      containerIdentity: structuralContainerIdentity(paragraph),
+      containerIdentity: structuralContainerIdentity(ownedParagraph),
+      bodyChildOrdinal: isBodyBlock ? elementChildOrdinal(boundary) : undefined,
+      ownedParagraphCount: blockParagraphs?.length,
       semanticFingerprint: semanticFingerprint(boundary, bindings, mceDeclarations.values),
       sourceElement: materializeNamespaces(
         boundary,
@@ -359,13 +648,28 @@ export function captureInlineSdtPassthrough(root: Element, atoms: ComparisonUnit
 
   const ownedCounts = new Map<OpaquePassthroughNode, number>();
   for (const atom of atoms) {
-    const boundary = nearestInlineBoundary(atom);
+    const boundary = nearestInlineBoundary(atom) ?? nearestBodyBlockBoundary(atom);
     if (!boundary) continue;
     const descriptor = descriptorByElement.get(boundary);
     if (!descriptor) {
       throw new OpaquePassthroughError('atom is owned by an unsupported inline w:sdt placement');
     }
     atom.opaquePassthrough = descriptor;
+    if (descriptor.placementKind === 'body-block') {
+      let atomParagraph: Element | undefined;
+      for (let i = atom.ancestorElements.length - 1; i >= 0; i--) {
+        const ancestor = atom.ancestorElements[i]!;
+        if (ancestor.namespaceURI === OOXML.W_NS && ancestor.localName === 'p') {
+          atomParagraph = ancestor;
+          break;
+        }
+      }
+      const atomParagraphOrdinal = atomParagraph ? paragraphOrdinals.get(atomParagraph) : undefined;
+      if (atomParagraphOrdinal === undefined) {
+        throw new OpaquePassthroughError('body-block atom has no controlled paragraph identity');
+      }
+      atom.opaquePassthroughRelativeParagraphOrdinal = atomParagraphOrdinal - descriptor.paragraphOrdinal;
+    }
     ownedCounts.set(descriptor, (ownedCounts.get(descriptor) ?? 0) + 1);
   }
   for (const descriptor of descriptorByElement.values()) {
@@ -388,28 +692,57 @@ function uniqueDescriptors(atoms: ComparisonUnitAtom[]): OpaquePassthroughNode[]
 }
 
 /** Validate and bind original/revised opaque occurrences before LCS reconstruction. */
-export function bindOpaquePassthroughCounterparts(
+export async function bindOpaquePassthroughCounterparts(
   originalAtoms: ComparisonUnitAtom[],
   revisedAtoms: ComparisonUnitAtom[],
-): void {
+  originalRelationships: OpaqueRelationshipClosureResolver,
+  revisedRelationships: OpaqueRelationshipClosureResolver,
+  ownerPart: string,
+): Promise<void> {
   const original = uniqueDescriptors(originalAtoms);
   const revised = uniqueDescriptors(revisedAtoms);
   if (original.length !== revised.length) {
     throw new OpaquePassthroughError(`boundary count changed (${original.length} original, ${revised.length} revised)`);
   }
+  const placementKey = (descriptor: OpaquePassthroughNode) =>
+    descriptor.placementKind === 'inline-run'
+      ? `inline\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000${descriptor.documentOrdinal}`
+      : `block\u0000${descriptor.containerIdentity}\u0000${descriptor.bodyChildOrdinal}\u0000` +
+        `${descriptor.paragraphOrdinal}\u0000${descriptor.ownedParagraphCount}`;
+  original.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
+  revised.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
+  await Promise.all([
+    ...original.filter((descriptor) => descriptor.placementKind === 'body-block').map(async (descriptor) => {
+      descriptor.relationshipClosureFingerprint = await originalRelationships.fingerprintBoundary(
+        descriptor.sourceElement,
+        ownerPart,
+      );
+    }),
+    ...revised.filter((descriptor) => descriptor.placementKind === 'body-block').map(async (descriptor) => {
+      descriptor.relationshipClosureFingerprint = await revisedRelationships.fingerprintBoundary(
+        descriptor.sourceElement,
+        ownerPart,
+      );
+    }),
+  ]);
   for (let i = 0; i < original.length; i++) {
     const before = original[i]!;
     const after = revised[i]!;
     if (
-      before.documentOrdinal !== after.documentOrdinal ||
+      placementKey(before) !== placementKey(after) ||
+      before.placementKind !== after.placementKind ||
       before.paragraphOrdinal !== after.paragraphOrdinal ||
       before.containerIdentity !== after.containerIdentity ||
       before.namespaceUri !== after.namespaceUri ||
       before.localName !== after.localName ||
-      before.semanticFingerprint !== after.semanticFingerprint
+      before.bodyChildOrdinal !== after.bodyChildOrdinal ||
+      before.ownedParagraphCount !== after.ownedParagraphCount ||
+      before.semanticFingerprint !== after.semanticFingerprint ||
+      before.relationshipClosureFingerprint !== after.relationshipClosureFingerprint
     ) {
       throw new OpaquePassthroughError(`boundary ${i} changed paragraph ownership, moved, or mutated`);
     }
+    before.correlatedNode = after;
     after.emissionElement = before.sourceElement;
   }
 }
@@ -417,24 +750,55 @@ export function bindOpaquePassthroughCounterparts(
 /** Reject opaque correlation loss before any whole-paragraph branch can emit. */
 export function validateOpaquePassthroughCorrelation(atoms: ComparisonUnitAtom[]): void {
   const paragraphByDescriptor = new Map<OpaquePassthroughNode, number | undefined>();
+  const relativeParagraphsByDescriptor = new Map<OpaquePassthroughNode, Set<number>>();
   for (const atom of atoms) {
-    const descriptor = atom.opaquePassthrough;
+    let descriptor = atom.opaquePassthrough;
     if (!descriptor) continue;
     if (atom.correlationStatus !== CorrelationStatus.Equal) {
       throw new OpaquePassthroughError(
         `boundary ${descriptor.documentOrdinal} lost equal correlation (${atom.correlationStatus})`,
       );
     }
-    if (!descriptor.emissionElement || atom.sourceDocument !== 'revised') {
+    if (
+      atom.sourceDocument === 'original' &&
+      atom.contentElement.tagName === '__emptyParagraph__' &&
+      descriptor.correlatedNode
+    ) {
+      descriptor = descriptor.correlatedNode;
+      atom.opaquePassthrough = descriptor;
+    }
+    if (!descriptor.emissionElement ||
+      (atom.sourceDocument !== 'revised' && atom.contentElement.tagName !== '__emptyParagraph__')) {
       throw new OpaquePassthroughError(
         `boundary ${descriptor.documentOrdinal} has no validated revised-side owner`,
       );
     }
-    if (!paragraphByDescriptor.has(descriptor)) {
+    if (descriptor.placementKind === 'body-block') {
+      const relative = atom.opaquePassthroughRelativeParagraphOrdinal;
+      if (
+        relative === undefined ||
+        relative < 0 ||
+        relative >= (descriptor.ownedParagraphCount ?? 0)
+      ) {
+        throw new OpaquePassthroughError(
+          `boundary ${descriptor.documentOrdinal} has changed relative paragraph ownership`,
+        );
+      }
+      const seen = relativeParagraphsByDescriptor.get(descriptor) ?? new Set<number>();
+      seen.add(relative);
+      relativeParagraphsByDescriptor.set(descriptor, seen);
+    } else if (!paragraphByDescriptor.has(descriptor)) {
       paragraphByDescriptor.set(descriptor, atom.paragraphIndex);
     } else if (paragraphByDescriptor.get(descriptor) !== atom.paragraphIndex) {
       throw new OpaquePassthroughError(
         `boundary ${descriptor.documentOrdinal} crossed reconstructed paragraph ownership`,
+      );
+    }
+  }
+  for (const [descriptor, seen] of relativeParagraphsByDescriptor) {
+    if (seen.size !== descriptor.ownedParagraphCount) {
+      throw new OpaquePassthroughError(
+        `boundary ${descriptor.documentOrdinal} lost controlled paragraph correlation`,
       );
     }
   }
@@ -476,6 +840,9 @@ export function renderOpaqueAtomSequence(
         }
         pendingAtoms.push(atom);
         continue;
+      }
+      if (descriptor.placementKind !== 'inline-run') {
+        throw new OpaquePassthroughError('body-block boundary reached paragraph-run emission');
       }
       if (descriptor !== active) {
         if (active) closed.add(active);
