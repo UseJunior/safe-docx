@@ -304,6 +304,8 @@ Compare two documents and produce a tracked-changes output document. Provide ori
 | `save_to_local_path` | `string` | yes | Path to save the tracked-changes output (DOCX or .odt). |
 | `author` | `string` | no | Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF). |
 | `engine` | `enum("auto", "atomizer")` | no | Comparison engine (DOCX only). Default: 'auto'. |
+| `ignore_formatting` | `boolean` | no | Ignore formatting differences (DOCX only). Default: false. |
+| `compare_moves` | `boolean` | no | Detect moved content (DOCX only). Default: true. |
 
 ## `get_footnotes`
 
