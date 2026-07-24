@@ -333,6 +333,22 @@ describe('OpenSpec traceability: add-html-export (HTML serializer)', () => {
   );
 
   test(
+    'escaped TOON font attributes are decoded once before safe HTML emission',
+    async ({ then }: AllureBddContext) => {
+      const out = inlineTagsToHtml(
+        '<font face="A&amp;B &quot;Display&quot; &lt;Fallback&gt;">x</font>',
+      );
+
+      await then('font semantics survive without double encoding or injected markup', () => {
+        expect(out).toBe(
+          `<span style="font-family:'A&amp;B Display Fallback'">x</span>`,
+        );
+        expect(out).not.toContain('&amp;amp;');
+      });
+    },
+  );
+
+  test(
     'repeated items at the same level after a jump are siblings, not nested deeper',
     async ({ then }: AllureBddContext) => {
       const html = body([
@@ -352,14 +368,22 @@ describe('OpenSpec traceability: add-html-export (HTML serializer)', () => {
   );
 
   test(
-    'an unsafe javascript: hyperlink is neutralized while a safe one is kept',
+    'unsafe or injected hyperlink markup is neutralized while safe hrefs are rebuilt',
     async ({ then }: AllureBddContext) => {
       const evil = inlineTagsToHtml('<a href="javascript:alert(1)">x</a>');
-      const safe = inlineTagsToHtml('<a href="https://example.com/p?a=1">x</a>');
-      await then('javascript: loses its href; https keeps it', async () => {
+      const numericLetter = inlineTagsToHtml('<a href="jav&#x61;script:alert(1)">x</a>');
+      const numericTab = inlineTagsToHtml('<a href="java&#x09;script:alert(1)">x</a>');
+      const injectedAttribute = inlineTagsToHtml(
+        '<a href="https://safe.example" onclick="alert(1)">x</a>',
+      );
+      const safe = inlineTagsToHtml('<a href="https://example.com/p?a=1&amp;b=2">x</a>');
+      await then('only a validated and freshly escaped href reaches the output', async () => {
         expect(evil).toBe('<a>x</a>');
         expect(evil).not.toContain('javascript:');
-        expect(safe).toBe('<a href="https://example.com/p?a=1">x</a>');
+        expect(numericLetter).toBe('<a href="jav&amp;#x61;script:alert(1)">x</a>');
+        expect(numericTab).toBe('<a href="java&amp;#x09;script:alert(1)">x</a>');
+        expect(injectedAttribute).toBe('<a href="https://safe.example">x</a>');
+        expect(safe).toBe('<a href="https://example.com/p?a=1&amp;b=2">x</a>');
       });
     },
   );

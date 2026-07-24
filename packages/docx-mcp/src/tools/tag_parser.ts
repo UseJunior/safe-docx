@@ -373,6 +373,15 @@ const TAG_NAME_TO_STATE_KEY: Record<string, keyof ParsedSegmentState | 'font'> =
   font: 'font',
 };
 
+/** Decode one named-entity layer emitted by the public formatting-tag attribute escaper. */
+function decodeFormattingAttribute(value: string | null): string | null {
+  return value
+    ?.replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&amp;', '&') ?? null;
+}
+
 function walkNode(
   node: XmlDomNode,
   state: ParsedSegmentState,
@@ -387,11 +396,13 @@ function walkNode(
       const stateKey = TAG_NAME_TO_STATE_KEY[tagName]!;
 
       if (stateKey === 'font') {
-        // Read font attributes. getAttribute returns "" for absent attrs in xmldom,
-        // so use || null to normalize empty strings.
-        const colorAttr = el.getAttribute('color') || null;
-        const sizeAttr = el.getAttribute('size') || null;
-        const faceAttr = el.getAttribute('face') || null;
+        // Attribute scanning escapes raw ampersands before XML parsing, so the
+        // DOM decode only removes that parser-safety layer. Remove exactly one
+        // additional emitter-owned entity layer here; getAttribute returns ""
+        // for absent attrs, so use || null to normalize empty strings.
+        const colorAttr = decodeFormattingAttribute(el.getAttribute('color') || null);
+        const sizeAttr = decodeFormattingAttribute(el.getAttribute('size') || null);
+        const faceAttr = decodeFormattingAttribute(el.getAttribute('face') || null);
 
         const newState: ParsedSegmentState = {
           ...state,

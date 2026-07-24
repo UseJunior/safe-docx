@@ -215,9 +215,9 @@ function tagsEqual(a: ActiveTags, b: ActiveTags): boolean {
 
 function fontTagString(tags: ActiveTags): string | null {
   const attrs: string[] = [];
-  if (tags.color !== null) attrs.push(`color="${tags.color}"`);
+  if (tags.color !== null) attrs.push(`color="${escapeHtmlAttribute(tags.color)}"`);
   if (tags.fontSize !== null) attrs.push(`size="${tags.fontSize}"`);
-  if (tags.fontName !== null) attrs.push(`face="${tags.fontName}"`);
+  if (tags.fontName !== null) attrs.push(`face="${escapeHtmlAttribute(tags.fontName)}"`);
   return attrs.length > 0 ? `<font ${attrs.join(' ')}>` : null;
 }
 

@@ -105,6 +105,24 @@ describe('tag_parser', () => {
       const result = splitTaggedText('<font face="Times New Roman">serif</font>');
       expect(result).toEqual([seg('serif', { fontName: 'Times New Roman' })]);
     });
+
+    test('emitter-escaped font attributes decode exactly once', () => {
+      const result = splitTaggedText(
+        '<font face="A&amp;B &quot;Display&quot; &lt;Fallback&gt;">serif</font>',
+      );
+      expect(result).toEqual([
+        seg('serif', { fontName: 'A&B "Display" <Fallback>' }),
+      ]);
+    });
+
+    test('nested named entities remain literal after one DOM decode', () => {
+      const result = splitTaggedText(
+        '<font face="Literal &amp;quot; entity">serif</font>',
+      );
+      expect(result).toEqual([
+        seg('serif', { fontName: 'Literal &quot; entity' }),
+      ]);
+    });
   });
 
   // ─── splitTaggedText: mixed and nested tags ────────────────────

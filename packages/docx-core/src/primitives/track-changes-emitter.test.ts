@@ -412,4 +412,31 @@ describe('track-changes-emitter', () => {
       );
     });
   });
+
+  test(
+    'wrapSerializedContentWithDel keeps a quote-bearing date in one attribute',
+    async ({ when, then }: AllureBddContext) => {
+      const date = '2026-05-03T14:15:16Z" data-injected="yes&<>';
+      let wrapper: Element | undefined;
+
+      await when('caller-supplied revision metadata is serialized', () => {
+        const wrapped = wrapSerializedContentWithDel(
+          '<w:r><w:t>gone</w:t></w:r>',
+          createRevisionContext({
+            author: 'Comparison',
+            date,
+            idState: createRevisionIdState(),
+          }),
+        );
+        wrapper = parseFragment(wrapped);
+      });
+
+      await then('the date round-trips without injecting another attribute', () => {
+        if (!wrapper) throw new Error('missing revision wrapper');
+        expect(wrapper.getAttributeNS(OOXML.W_NS, 'date')).toBe(date);
+        expect(wrapper.hasAttribute('data-injected')).toBe(false);
+        expect(wrapper.attributes).toHaveLength(3);
+      });
+    },
+  );
 });

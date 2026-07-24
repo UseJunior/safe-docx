@@ -99,10 +99,19 @@ function sanitizeFontFamily(raw: string | undefined): string | null {
   return clean ? `'${clean}'` : null;
 }
 
+/** Decode the named entities emitted by `escapeHtmlAttribute` before semantic validation. */
+function decodeHtmlAttribute(raw: string | undefined): string | undefined {
+  return raw
+    ?.replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&amp;', '&');
+}
+
 function fontTagToSpan(tag: string): string {
-  const color = sanitizeColor(/color="([^"]*)"/.exec(tag)?.[1]);
-  const size = sanitizeFontSize(/size="([^"]*)"/.exec(tag)?.[1]);
-  const face = sanitizeFontFamily(/face="([^"]*)"/.exec(tag)?.[1]);
+  const color = sanitizeColor(decodeHtmlAttribute(/color="([^"]*)"/.exec(tag)?.[1]));
+  const size = sanitizeFontSize(decodeHtmlAttribute(/size="([^"]*)"/.exec(tag)?.[1]));
+  const face = sanitizeFontFamily(decodeHtmlAttribute(/face="([^"]*)"/.exec(tag)?.[1]));
   const decls: string[] = [];
   if (color) decls.push(`color:${color}`);
   if (size) decls.push(`font-size:${size}`);
@@ -138,10 +147,13 @@ export function inlineTagsToHtml(text: string, refs?: FootnoteRefs): string {
     else if (tag.startsWith('<font ')) out += fontTagToSpan(tag);
     else if (tag === '</font>') out += '</span>';
     else if (tag.startsWith('<a ')) {
-      // Drop the href for unsafe schemes (e.g. `javascript:`); keep the anchor so `</a>` still
-      // balances and the link text survives as plain text.
-      const href = /href="([^"]*)"/.exec(tag)?.[1] ?? '';
-      out += isSafeHref(href) ? tag : '<a>';
+      // Rebuild the tag from the sole supported attribute. Literal document text can look like
+      // a TOON tag, so passing the input tag through would retain injected event attributes.
+      const rawHref = /href="([^"]*)"/.exec(tag)?.[1];
+      const href = decodeHtmlAttribute(rawHref);
+      out += href !== undefined && isSafeHref(href)
+        ? `<a href="${escapeHtmlAttribute(href)}">`
+        : '<a>';
     }
     // <b>/<i>/<u> and `</a>` and the closers are already valid HTML — pass through.
     else out += tag;
