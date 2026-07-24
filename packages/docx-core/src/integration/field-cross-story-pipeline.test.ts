@@ -12,7 +12,7 @@
 import { describe, expect } from 'vitest';
 import JSZip from 'jszip';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
-import { compareDocuments } from '@usejunior/docx-compare';
+import { AncillaryStorySafetyError, compareDocuments } from '@usejunior/docx-compare';
 
 const TEST_FEATURE = 'Cross-story Field Closure (#212)';
 const test = testAllure
@@ -129,11 +129,11 @@ const END_ONLY_FIELD_FOOTNOTE_BODY =
 
 describe('Cross-story field-closure check (issue #212) — pipeline-level', () => {
   test(
-    'inplace comparison with a malformed field inside a footnote falls back to rebuild via fieldStructure failure',
-    async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
+    'inplace comparison with a malformed field inside a footnote rejects the terminal rebuild',
+    async ({ given, when, then }: AllureBddContext) => {
       let original: Buffer = Buffer.alloc(0);
       let revised: Buffer = Buffer.alloc(0);
-      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      let rejection: Promise<Awaited<ReturnType<typeof compareDocuments>>>;
 
       await given(
         'original/revised pair whose footnotes sidecar contains a fldChar begin with no matching end',
@@ -151,42 +151,36 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
       );
 
       await when('compared in inplace mode', async () => {
-        result = await compareDocuments(original, revised, {
+        rejection = compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
-        await attachPrettyJson('comparison-metadata.json', {
-          reconstructionModeUsed: result.reconstructionModeUsed,
-          fallbackReason: result.fallbackReason,
-          fallbackDiagnostics: result.fallbackDiagnostics,
+      });
+
+      await then('the rebuilt candidate fails closed with structured ancillary diagnostics', async () => {
+        await expect(rejection).rejects.toBeInstanceOf(AncillaryStorySafetyError);
+        await expect(rejection).rejects.toMatchObject({
+          issues: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'FIELD_UNCLOSED_DEPTH',
+              locator: expect.objectContaining({
+                locatorType: 'note_entry',
+                normalizedPartPath: 'word/footnotes.xml',
+                entryId: '1',
+              }),
+            }),
+          ]),
         });
-      });
-
-      await then('every inplace attempt records fieldStructure as failed', () => {
-        const attempts = result.fallbackDiagnostics?.attempts ?? [];
-        expect(attempts.length, 'at least one inplace attempt should be diagnosed').toBeGreaterThan(0);
-        for (const attempt of attempts) {
-          const failed = attempt.failedChecks ?? [];
-          expect(
-            failed.includes('fieldStructure'),
-            `attempt ${attempt.pass} should report fieldStructure failure but failed=${JSON.stringify(failed)}`,
-          ).toBe(true);
-        }
-      });
-
-      await and('the pipeline falls back to rebuild output', () => {
-        expect(result.reconstructionModeUsed).toBe('rebuild');
-        expect(result.fallbackReason).toBe('round_trip_safety_check_failed');
       });
     },
   );
 
   test.openspec('Rebuild fallback only after all inplace passes fail')(
     'globally-balanced but per-story-unbalanced field across body and footnote is rejected',
-    async ({ given, when, then, and, attachPrettyJson }: AllureBddContext) => {
+    async ({ given, when, then }: AllureBddContext) => {
       let original: Buffer = Buffer.alloc(0);
       let revised: Buffer = Buffer.alloc(0);
-      let result: Awaited<ReturnType<typeof compareDocuments>>;
+      let rejection: Promise<Awaited<ReturnType<typeof compareDocuments>>>;
 
       await given(
         'a docx whose body opens a field that never closes and ONE archive has a footnote with a stray end',
@@ -217,32 +211,30 @@ describe('Cross-story field-closure check (issue #212) — pipeline-level', () =
       );
 
       await when('compared in inplace mode', async () => {
-        result = await compareDocuments(original, revised, {
+        rejection = compareDocuments(original, revised, {
           engine: 'atomizer',
           reconstructionMode: 'inplace',
         });
-        await attachPrettyJson('comparison-metadata.json', {
-          reconstructionModeUsed: result.reconstructionModeUsed,
-          fallbackReason: result.fallbackReason,
-          fallbackDiagnostics: result.fallbackDiagnostics,
+      });
+
+      await then('the original-based terminal rebuild rejects the malformed note entry', async () => {
+        await expect(rejection).rejects.toBeInstanceOf(AncillaryStorySafetyError);
+        await expect(rejection).rejects.toMatchObject({
+          issues: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'FIELD_STRAY_SEPARATOR',
+              locator: expect.objectContaining({
+                locatorType: 'note_entry',
+                normalizedPartPath: 'word/footnotes.xml',
+                entryId: '1',
+              }),
+            }),
+            expect.objectContaining({
+              code: 'FIELD_STRAY_END',
+              locator: expect.objectContaining({ entryId: '1' }),
+            }),
+          ]),
         });
-      });
-
-      await then('every inplace attempt records fieldStructure as failed', () => {
-        const attempts = result.fallbackDiagnostics?.attempts ?? [];
-        expect(attempts.length, 'at least one inplace attempt should be diagnosed').toBeGreaterThan(0);
-        for (const attempt of attempts) {
-          const failed = attempt.failedChecks ?? [];
-          expect(
-            failed.includes('fieldStructure'),
-            `attempt ${attempt.pass} should report fieldStructure failure but failed=${JSON.stringify(failed)}`,
-          ).toBe(true);
-        }
-      });
-
-      await and('the pipeline falls back to rebuild output', () => {
-        expect(result.reconstructionModeUsed).toBe('rebuild');
-        expect(result.fallbackReason).toBe('round_trip_safety_check_failed');
       });
     },
   );

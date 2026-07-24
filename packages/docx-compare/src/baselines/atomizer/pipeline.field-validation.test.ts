@@ -5,11 +5,20 @@ import {
   FRAGMENTED_NUMPAGES_MODIFICATION as MODIFIED_FIELD_FRAGMENTED,
 } from '../../testing/ooxml-fixtures.js';
 import { hasFldCharInsideDel, splitStories, validateFieldStructure } from './pipeline.js';
+import {
+  collectStrictFieldStructureIssues,
+  validateStrictFieldStructure,
+} from '@usejunior/docx-core';
 
+const TEST_FEATURE = 'verify-ancillary-field-stories';
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Field Structure Validation (ECMA-376)' })
+  .withLabels({ feature: TEST_FEATURE })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
+const strictTest = testAllure
+  .epic('Document Comparison')
+  .withLabels({ feature: TEST_FEATURE })
+  .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
 
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 
@@ -232,6 +241,118 @@ describe('validateFieldStructure', () => {
       });
       await then('it passes', () => {
         expect(ok).toBe(true);
+      });
+    },
+  );
+});
+
+describe('strict ancillary field structure', () => {
+  strictTest.openspec('[SDX-ANC-STRICT-01] Strict-only malformed shapes are rejected')(
+    'rejects strict-only marker defects with distinct issue codes',
+    async ({ given, when, then }: AllureBddContext) => {
+      const cases = [
+        {
+          code: 'FIELD_STRAY_SEPARATOR',
+          xml: buildDoc(`<w:p><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>`),
+          leanPinnedPasses: true,
+        },
+        {
+          code: 'FIELD_STRAY_END',
+          xml: buildDoc(
+            `<w:p>` +
+              `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+              `</w:p>`,
+          ),
+          leanPinnedPasses: true,
+        },
+        {
+          code: 'FIELD_DUPLICATE_SEPARATOR',
+          xml: buildDoc(
+            `<w:p>` +
+              `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+              `</w:p>`,
+          ),
+          leanPinnedPasses: true,
+        },
+        {
+          code: 'FIELD_UNKNOWN_CHAR_TYPE',
+          xml: buildDoc(`<w:p><w:r><w:fldChar w:fldCharType="mystery"/></w:r></w:p>`),
+          leanPinnedPasses: true,
+        },
+        {
+          code: 'FIELD_UNCLOSED_DEPTH',
+          xml: buildDoc(`<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r></w:p>`),
+          leanPinnedPasses: false,
+        },
+      ];
+      let observed: Array<{ code: string; strict: boolean; leanPinned: boolean }> = [];
+
+      await given('strict-only malformed field marker stories', () => {});
+      await when('both runtime predicates evaluate each story', () => {
+        observed = cases.map(({ code, xml }) => ({
+          code,
+          strict: validateStrictFieldStructure(xml),
+          leanPinned: validateFieldStructure(xml),
+        }));
+      });
+      await then('strict validation rejects every case with the expected code', () => {
+        for (const [index, item] of observed.entries()) {
+          expect(item.strict).toBe(false);
+          expect(collectStrictFieldStructureIssues(cases[index]!.xml).map((issue) => issue.code))
+            .toContain(item.code);
+          expect(item.leanPinned).toBe(cases[index]!.leanPinnedPasses);
+        }
+      });
+    },
+  );
+
+  strictTest.openspec('[SDX-ANC-STRICT-02] Valid optional separators and nested stacks pass')(
+    'accepts begin-end-only and properly stacked nested fields',
+    async ({ given, when, then }: AllureBddContext) => {
+      let stories: string[] = [];
+
+      await given('a begin-end-only field and a properly nested field', () => {
+        stories = [
+          buildDoc(
+            `<w:p>` +
+              `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+              `</w:p>`,
+          ),
+          buildDoc(
+            `<w:p>` +
+              `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+              `<w:r><w:instrText> REF Outer </w:instrText></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+              `<w:r><w:instrText> PAGE </w:instrText></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+              `<w:r><w:t>1</w:t></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+              `<w:r><w:t>outer</w:t></w:r>` +
+              `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+              `</w:p>`,
+          ),
+        ];
+      });
+      await when('strict validation runs', () => {});
+      await then('both valid stack shapes pass', () => {
+        for (const xml of stories) expect(validateStrictFieldStructure(xml)).toBe(true);
+      });
+    },
+  );
+
+  strictTest.openspec('[SDX-ANC-STRICT-03] Lean behavior does not change')(
+    'keeps the original predicate intentionally unchanged',
+    async ({ then }: AllureBddContext) => {
+      await then('a stray separator remains tolerated only by the Lean-pinned predicate', () => {
+        const xml = buildDoc(`<w:p><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>`);
+        expect(validateFieldStructure(xml)).toBe(true);
+        expect(validateStrictFieldStructure(xml)).toBe(false);
       });
     },
   );

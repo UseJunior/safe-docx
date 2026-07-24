@@ -89,6 +89,90 @@ export function validateFieldStructure(input: string | FieldStory[]): boolean {
     .length === 0;
 }
 
+function collectStrictStackIssuesForStory(xml: string, story: string): FieldStructureIssue[] {
+  const root = parseXml(xml).documentElement;
+  const issues: FieldStructureIssue[] = [];
+  const separators: boolean[] = [];
+
+  function push(code: string, message: string): void {
+    issues.push({ code, message, story, element: 'w:fldChar' });
+  }
+
+  function scan(node: Element): void {
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType !== 1) continue;
+      const element = child as Element;
+      if (isW(element, 'fldChar')) {
+        const type = getWAttr(element, 'fldCharType');
+        if (type === 'begin') {
+          separators.push(false);
+        } else if (type === 'separate') {
+          if (separators.length === 0) {
+            push('FIELD_STRAY_SEPARATOR', `Field separator appears outside an open field in ${story}`);
+          } else {
+            const depthIndex = separators.length - 1;
+            if (separators[depthIndex]) {
+              push(
+                'FIELD_DUPLICATE_SEPARATOR',
+                `Field at depth ${separators.length} has more than one separator in ${story}`,
+              );
+            } else {
+              separators[depthIndex] = true;
+            }
+          }
+        } else if (type === 'end') {
+          if (separators.length === 0) {
+            push('FIELD_STRAY_END', `Field end appears outside an open field in ${story}`);
+          } else {
+            separators.pop();
+          }
+        } else {
+          push(
+            'FIELD_UNKNOWN_CHAR_TYPE',
+            `w:fldChar has missing or unknown w:fldCharType '${type ?? '(missing)'}' in ${story}`,
+          );
+        }
+      }
+      scan(element);
+    }
+  }
+
+  scan(root);
+  if (separators.length > 0) {
+    push(
+      'FIELD_UNCLOSED_DEPTH',
+      `Field story ${story} ends with ${separators.length} unclosed field level(s)`,
+    );
+  }
+  return issues;
+}
+
+/**
+ * Reports strict runtime field-story violations without changing the
+ * Lean-pinned `validateFieldStructure` predicate.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ */
+export function collectStrictFieldStructureIssues(
+  input: string | FieldStory[],
+): FieldStructureIssue[] {
+  const stories = typeof input === 'string'
+    ? [{ label: 'document', xml: input }]
+    : input;
+  const issues: FieldStructureIssue[] = [];
+  for (const story of stories) {
+    issues.push(...collectFieldStructureIssuesForStory(story.xml, story.label));
+    issues.push(...collectStrictStackIssuesForStory(story.xml, story.label));
+  }
+  return issues;
+}
+
+export function validateStrictFieldStructure(input: string | FieldStory[]): boolean {
+  return collectStrictFieldStructureIssues(input)
+    .filter((issue) => !TEXT_PLACEMENT_ISSUE_CODES.has(issue.code))
+    .length === 0;
+}
+
 function collectFieldStructureIssuesForStory(documentXml: string, story: string): FieldStructureIssue[] {
   const issues: FieldStructureIssue[] = [];
   const root = parseXml(documentXml).documentElement;

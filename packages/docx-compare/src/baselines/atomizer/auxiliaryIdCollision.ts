@@ -214,8 +214,19 @@ export async function renumberCollidingAuxiliaryIds(
     // A collision needs a definition on both sides.
     if (!originalPartXml || !revisedPartXml) continue;
 
-    const originalParsed = parseEntries(originalPartXml, descriptor.entryTag);
-    const revisedParsed = parseEntries(revisedPartXml, descriptor.entryTag);
+    let originalParsed: ReturnType<typeof parseEntries>;
+    let revisedParsed: ReturnType<typeof parseEntries>;
+    try {
+      originalParsed = parseEntries(originalPartXml, descriptor.entryTag);
+      revisedParsed = parseEntries(revisedPartXml, descriptor.entryTag);
+    } catch (error) {
+      // Note XML is validated at the publication boundary after the selected
+      // assembly mode is known. Deferring malformed note parts here lets an
+      // unused opposite-side part remain irrelevant while a contributing or
+      // final malformed part still fails with typed ancillary diagnostics.
+      if (descriptor.label === 'footnote' || descriptor.label === 'endnote') continue;
+      throw error;
+    }
     originalEntryIds.set(descriptor.label, new Set(originalParsed.entries.keys()));
 
     const collidingIds: string[] = [];

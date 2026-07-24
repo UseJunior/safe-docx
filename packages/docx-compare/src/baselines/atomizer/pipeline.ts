@@ -12,6 +12,8 @@ import { DocxArchive } from '@usejunior/docx-core';
 import type {
   CompareResult,
   CompareStats,
+  AncillaryFallbackDiagnostics,
+  AncillaryFieldEvidence,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,
   ReconstructionBookmarkMismatchSummary,
@@ -114,6 +116,10 @@ import {
   type AuxiliaryPartDescriptor,
 } from './auxiliaryIdCollision.js';
 import { maybeCaptureEmittedDocumentXml } from '@usejunior/docx-core';
+import {
+  AncillaryStorySafetyError,
+  evaluateAncillaryFieldSafety,
+} from './ancillaryFieldSafety.js';
 
 /**
  * Options for the atomizer pipeline.
@@ -483,15 +489,9 @@ function evaluateSafetyChecks(
     rejectedBookmarkDiagnostics
   );
 
-  // Validate field structure per-story. Each footnote/endnote entry is its own
-  // ECMA-376 story; a complex field that crosses a story boundary breaks
-  // Word's field state machine even when global begin/end counts balance.
-  // Sidecars from BOTH archives are validated because Step 12's auxiliary-part
-  // merge picks its base and source archives by reconstruction mode (inplace
-  // base = revised; rebuild base = original) and validating only one side
-  // would miss field issues that would still ship in the merged result.
-  // `acceptAllChanges` / `rejectAllChanges` only transform document.xml, so
-  // the sidecar set is identical for both transforms.
+  // Validate field structure for the main-story round-trip projection. Final
+  // note entries are validated after mode-specific assembly, where the gate
+  // knows which base and merge-source definitions actually contributed.
   const acceptedStories = splitStories(
     acceptedXml,
     auxiliarySidecars.footnotesXmls,
@@ -652,26 +652,12 @@ export async function compareDocumentsAtomizer(
   const originalHyperlinkTargets = parseHyperlinkRelTargets(originalRelsDoc);
   const revisedHyperlinkTargets = parseHyperlinkRelTargets(revisedRelsDoc);
 
-  // Extract footnote/endnote sidecars from BOTH archives for per-story
-  // field-closure validation (issue #212). Step 12 picks the base archive by
-  // reconstruction mode (inplace = revised, rebuild = original) and merges
-  // missing referenced entries from the opposite archive. Validating both
-  // archives' sidecars covers the union of entries that could ship without
-  // having to duplicate the merge logic at safety-check time.
-  const [
-    originalFootnotesXml,
-    originalEndnotesXml,
-    revisedFootnotesXml,
-    revisedEndnotesXml,
-  ] = await Promise.all([
-    originalArchive.getFile('word/footnotes.xml'),
-    originalArchive.getFile('word/endnotes.xml'),
-    revisedArchive.getFile('word/footnotes.xml'),
-    revisedArchive.getFile('word/endnotes.xml'),
-  ]);
+  // The legacy round-trip check remains main-story-only. The publication gate
+  // validates every final note entry and inspects the opposite archive only
+  // when merge provenance proves that it contributed definitions.
   const auxiliarySidecars = {
-    footnotesXmls: [originalFootnotesXml, revisedFootnotesXml] as const,
-    endnotesXmls: [originalEndnotesXml, revisedEndnotesXml] as const,
+    footnotesXmls: [] as const,
+    endnotesXmls: [] as const,
   };
 
   const originalPart: OpcPart = {
@@ -951,11 +937,90 @@ export async function compareDocumentsAtomizer(
     );
   }
 
-  // Rebuild output gets the same safety screening as inplace attempts, whether
-  // rebuild was requested directly or reached via inplace fallback. Rebuild is
-  // the terminal strategy, so failures are surfaced in diagnostics rather than
-  // blocking the output.
-  // @see https://github.com/UseJunior/safe-docx/issues/226
+  const assembleCandidate = async (candidate: typeof comparisonResult): Promise<{
+    resultBuffer: Buffer;
+    ancillaryFieldEvidence: AncillaryFieldEvidence;
+  }> => {
+    const { newDocumentXml } = candidate;
+    // Step 12: Clone the mode-selected archive and update document.xml.
+    const baseArchive = candidate.outputMode === 'inplace' ? revisedArchive : originalArchive;
+    const mergeSourceArchive = candidate.outputMode === 'inplace' ? originalArchive : revisedArchive;
+    const baseSide = candidate.outputMode === 'inplace' ? 'revised' : 'original';
+    const mergeSourceSide = candidate.outputMode === 'inplace' ? 'original' : 'revised';
+    const resultArchive = await baseArchive.clone();
+    maybeCaptureEmittedDocumentXml(newDocumentXml);
+    resultArchive.setDocumentXml(newDocumentXml);
+
+    await appendHyperlinkRelationships(resultArchive, candidate.hyperlinkRelationships);
+
+    const noteMergeResults = new Map<'footnote' | 'endnote', AuxiliaryMergeResult>();
+    for (const descriptor of AUXILIARY_PARTS) {
+      let mergeResult: AuxiliaryMergeResult;
+      try {
+        mergeResult = await mergeAuxiliaryPartDefinitions(
+          mergeSourceArchive, resultArchive, newDocumentXml, descriptor
+        );
+      } catch (error) {
+        if (descriptor.label !== 'footnote' && descriptor.label !== 'endnote') throw error;
+        throw new AncillaryStorySafetyError([{
+          category: 'strict_field_structure',
+          code: 'NOTE_PART_XML_INVALID',
+          detail: error instanceof Error ? error.message : String(error),
+          locator: {
+            locatorType: 'package_part',
+            normalizedPartPath: descriptor.partPath,
+          },
+        }]);
+      }
+      if (descriptor.label === 'footnote' || descriptor.label === 'endnote') {
+        noteMergeResults.set(descriptor.label, mergeResult);
+      }
+    }
+
+    const rootCommentIds = await collectStoryReferenceIds(
+      resultArchive, newDocumentXml, 'w:commentReference', null
+    );
+    if (rootCommentIds.size > 0) {
+      await mergeCommentAncillaryParts(mergeSourceArchive, resultArchive, rootCommentIds);
+    }
+
+    const ancillaryFieldEvidence = await evaluateAncillaryFieldSafety({
+      resultArchive,
+      baseArchive,
+      mergeSourceArchive,
+      reconstructionMode: candidate.outputMode,
+      baseSide,
+      mergeSourceSide,
+      noteMergeResults,
+    });
+    return {
+      resultBuffer: await resultArchive.save(),
+      ancillaryFieldEvidence,
+    };
+  };
+
+  let ancillaryFallbackDiagnostics: AncillaryFallbackDiagnostics | undefined;
+  let assembled: Awaited<ReturnType<typeof assembleCandidate>>;
+  try {
+    assembled = await assembleCandidate(comparisonResult);
+  } catch (error) {
+    if (comparisonResult.outputMode !== 'inplace' || !(error instanceof AncillaryStorySafetyError)) {
+      throw error;
+    }
+    ancillaryFallbackDiagnostics = { issues: error.issues };
+    fallbackReason = 'ancillary_story_safety_check_failed';
+    fallbackDiagnostics = undefined;
+    inplaceSuccessDiagnostics = undefined;
+    comparisonResult = await runComparisonPass(
+      { atomizeParagraphLevelMarkers: true },
+      'rebuild'
+    );
+    assembled = await assembleCandidate(comparisonResult);
+  }
+
+  // Rebuild remains the terminal main-story strategy. Its established
+  // round-trip diagnostics stay caller-visible; ancillary failures have
+  // already thrown before this point.
   let rebuildSafetyDiagnostics: ReconstructionRebuildSafetyDiagnostics | undefined;
   if (comparisonResult.outputMode === 'rebuild') {
     const safety = evaluateRoundTripSafety(comparisonResult.newDocumentXml);
@@ -970,46 +1035,7 @@ export async function compareDocumentsAtomizer(
   }
 
   const { mergedAtoms, newDocumentXml } = comparisonResult;
-
-  // Step 12: Clone appropriate archive and update document.xml.
-  // Use the revised archive only for true inplace output.
-  const baseArchive = comparisonResult.outputMode === 'inplace' ? revisedArchive : originalArchive;
-  // The merge source is the *opposite* archive from the base: inplace pulls
-  // deleted-but-still-referenced definitions from the original, rebuild pulls
-  // added-but-still-referenced definitions from the revised. Without this,
-  // rebuild output ships dangling references when the original lacks an
-  // auxiliary part that the revised side introduced (issue #94).
-  const mergeSourceArchive = comparisonResult.outputMode === 'inplace' ? originalArchive : revisedArchive;
-  const resultArchive = await baseArchive.clone();
-  maybeCaptureEmittedDocumentXml(newDocumentXml);
-  resultArchive.setDocumentXml(newDocumentXml);
-
-  // Step 12a: Ship relationships for inserted/retargeted hyperlinks whose r:id
-  // the rebuild reconstructor re-mapped into the original-based package (#376).
-  await appendHyperlinkRelationships(resultArchive, comparisonResult.hyperlinkRelationships);
-
-  // Step 12b: Merge auxiliary part definitions (footnotes, endnotes, comments).
-  // Reconstruction may insert content (deleted in inplace, added in rebuild)
-  // whose definitions are missing from the base archive.
-  for (const descriptor of AUXILIARY_PARTS) {
-    await mergeAuxiliaryPartDefinitions(
-      mergeSourceArchive, resultArchive, newDocumentXml, descriptor
-    );
-  }
-  // Comment-specific post-pass: walk reply threads via commentsExtended.xml.
-  // Gated on root comment IDs in the *result* document (not on what the
-  // generic merge appended), so the pass runs even when the original already
-  // contains the root and revised only adds replies under it (issue #108).
-  // Comments anchored on footnote/endnote text count as roots too.
-  const rootCommentIds = await collectStoryReferenceIds(
-    resultArchive, newDocumentXml, 'w:commentReference', null
-  );
-  if (rootCommentIds.size > 0) {
-    await mergeCommentAncillaryParts(mergeSourceArchive, resultArchive, rootCommentIds);
-  }
-
-  // Step 13: Save result and compute stats
-  const resultBuffer = await resultArchive.save();
+  const { resultBuffer, ancillaryFieldEvidence } = assembled;
   const stats = computeAtomizerStats(mergedAtoms);
   const documentIntegrity = leanXmlVerifier?.enabled
     ? await runLeanXmlTripleVerifier({
@@ -1034,8 +1060,10 @@ export async function compareDocumentsAtomizer(
     reconstructionModeUsed: comparisonResult.outputMode,
     fallbackReason,
     fallbackDiagnostics,
+    ancillaryFallbackDiagnostics,
     rebuildSafetyDiagnostics,
     inplaceSuccessDiagnostics,
+    ancillaryFieldEvidence,
     documentIntegrity,
   };
 }
@@ -1116,18 +1144,19 @@ async function mergeAuxiliaryPartDefinitions(
   );
   if (referencedIds.size === 0) return result;
 
+  const resultPartXml = await resultArchive.getFile(descriptor.partPath);
+  const resultParsed = resultPartXml ? parseEntries(resultPartXml, descriptor.entryTag) : null;
+  const missingIds = [...referencedIds].filter((id) => !resultParsed?.entries.has(id));
+  if (missingIds.length === 0) return result;
+
   const sourcePartXml = await sourceArchive.getFile(descriptor.partPath);
   if (!sourcePartXml) return result;
-
-  const resultPartXml = await resultArchive.getFile(descriptor.partPath);
-
   const sourceParsed = parseEntries(sourcePartXml, descriptor.entryTag);
-  const resultParsed = resultPartXml ? parseEntries(resultPartXml, descriptor.entryTag) : null;
 
   // Find missing entries: referenced in document.xml but not in result
   const missingElements: Element[] = [];
-  for (const id of referencedIds) {
-    if (!(resultParsed?.entries.has(id)) && sourceParsed.entries.has(id)) {
+  for (const id of missingIds) {
+    if (sourceParsed.entries.has(id)) {
       missingElements.push(sourceParsed.entries.get(id)!);
       result.mergedIds.add(id);
     }

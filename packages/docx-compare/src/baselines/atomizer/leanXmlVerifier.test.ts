@@ -65,6 +65,13 @@ describeWithLean('Lean XML triple verifier certificate', () => {
         expect(result.documentIntegrity?.fixedStoryScope).toEqual([
           'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
         ]);
+        expect(result.documentIntegrity?.exclusions).toContain(
+          'comments, headers, and footers',
+        );
+        expect(result.ancillaryFieldEvidence).toMatchObject({
+          status: 'passed',
+          reconstructionMode: 'inplace',
+        });
         expect(result.documentIntegrity?.inputSha256.originalDocumentXml).toMatch(/^[0-9a-f]{64}$/);
         expect(result.documentIntegrity?.inputPackageSha256?.originalDocx).toMatch(/^[0-9a-f]{64}$/);
         expect(result.documentIntegrity?.stories?.map((story) => story.name)).toEqual(['main']);
@@ -695,7 +702,9 @@ describe('Lean fixed-story protocol and security hardening', () => {
     options: { executablePath, timeoutMs },
   });
 
-  test.openspec('[LEAN-STORY-08] Public certificate remains v1 compatible')(
+  test
+    .openspec('[LEAN-STORY-08] Public certificate remains v1 compatible')
+    .openspec('[SDX-ANC-BOUNDARY-03] Lean protocol and scope remain unchanged')(
     'preserves the public v1 certificate fields while adding package-story evidence', async () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
     const fake = await fakeChecker(validProtocolReport);
@@ -714,6 +723,10 @@ describe('Lean fixed-story protocol and security hardening', () => {
       expect(result.status).toBe('passed');
       expect(result.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
       expect(result.checkerProtocolVersion).toBe(3);
+      expect(result.fixedStoryScope).toEqual([
+        'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
+      ]);
+      expect(result.exclusions).toContain('comments, headers, and footers');
     } finally {
       await rm(fake.dir, { recursive: true, force: true });
     }
