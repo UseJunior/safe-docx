@@ -122,8 +122,11 @@ describe('compareDocuments options', () => {
   );
 
   test(
-    'omitted options preserve the current output bytes for a real-world DOCX fixture',
+    'omitting the options is equivalent to passing the documented defaults (same document.xml)',
     async ({ given, when, then }: AllureBddContext) => {
+      // Assert on document.xml, NOT the full .docx bytes: the ZIP container is not
+      // byte-deterministic across independent serializations (entry order / metadata),
+      // so a raw Buffer.compare of two packages is flaky even for identical content.
       const fixture = await given('the checked-in Bonterms mutual NDA fixture', () =>
         readFile(join(REAL_FIXTURES_DIR, 'bonterms-mutual-nda.docx')),
       );
@@ -143,8 +146,8 @@ describe('compareDocuments options', () => {
         }),
       );
 
-      await then('the complete DOCX output is byte-identical', () => {
-        expect(Buffer.compare(omitted.document, explicitDefaults.document)).toBe(0);
+      await then('the reconstructed document.xml is identical', async () => {
+        expect(await documentXml(omitted.document)).toBe(await documentXml(explicitDefaults.document));
       });
     },
   );
