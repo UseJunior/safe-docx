@@ -329,6 +329,126 @@ describe('renumberCollidingAuxiliaryIds', () => {
     });
   });
 
+  test('renumbers a colliding footnote definition and its reference in document.xml', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let original: DocxArchive;
+    let revised: DocxArchive;
+    let result: Awaited<ReturnType<typeof renumberCollidingAuxiliaryIds>>;
+    const separators =
+      '<w:footnote w:type="separator" w:id="-1"><w:p/></w:footnote>' +
+      '<w:footnote w:type="continuationSeparator" w:id="0"><w:p/></w:footnote>';
+
+    await given('both sides define footnote id 1 with different content', async () => {
+      original = await archiveWith({
+        'word/footnotes.xml': footnotesPart(
+          `${separators}<w:footnote w:id="1"><w:p><w:r><w:t>original fn</w:t></w:r></w:p></w:footnote>`
+        ),
+      });
+      revised = await archiveWith({
+        'word/footnotes.xml': footnotesPart(
+          `${separators}<w:footnote w:id="1"><w:p><w:r><w:t>revised fn</w:t></w:r></w:p></w:footnote>`
+        ),
+        'word/document.xml': documentPart(
+          '<w:r><w:footnoteReference w:id="1"/></w:r>'
+        ),
+      });
+    });
+
+    await when('collisions are resolved', async () => {
+      result = await renumberCollidingAuxiliaryIds(original, revised);
+    });
+
+    await then('the footnote is renumbered', () => {
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ label: 'footnote', fromId: '1' });
+    });
+
+    await and('the revised definition and its document reference both carry the new id', async () => {
+      const toId = result[0]!.toId;
+      const footnotes = (await revised.getFile('word/footnotes.xml'))!;
+      const document = (await revised.getFile('word/document.xml'))!;
+      expect(footnotes).toContain(`<w:footnote w:id="${toId}">`);
+      expect(document).toContain(`<w:footnoteReference w:id="${toId}"/>`);
+      // Separators must be preserved untouched.
+      expect(footnotes).toContain('w:id="-1"');
+      expect(footnotes).toContain('w:id="0"');
+    });
+  });
+
+  test('rewrites a colliding comment anchor that lives in a header part', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let original: DocxArchive;
+    let revised: DocxArchive;
+    let result: Awaited<ReturnType<typeof renumberCollidingAuxiliaryIds>>;
+
+    await given('the revised comment is anchored inside header1.xml', async () => {
+      original = await archiveWith({
+        'word/comments.xml': commentsPart(comment('1', 'original note')),
+      });
+      revised = await archiveWith({
+        'word/comments.xml': commentsPart(comment('1', 'revised note')),
+        'word/header1.xml': `<?xml version="1.0"?>\n<w:hdr ${NS}><w:p><w:commentRangeStart w:id="1"/><w:r><w:t>h</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p></w:hdr>`,
+      });
+    });
+
+    await when('collisions are resolved', async () => {
+      result = await renumberCollidingAuxiliaryIds(original, revised);
+    });
+
+    await then('the comment id is renumbered', () => {
+      expect(result).toHaveLength(1);
+    });
+
+    await and('the header anchors are rewritten to the fresh id', async () => {
+      const header = (await revised.getFile('word/header1.xml'))!;
+      const toId = result[0]!.toId;
+      expect(header).toContain(`<w:commentRangeStart w:id="${toId}"/>`);
+      expect(header).toContain(`<w:commentReference w:id="${toId}"/>`);
+      expect(header).not.toContain('w:commentRangeStart w:id="1"');
+    });
+  });
+
+  test('allocates a fresh id above ids that appear only on anchors, not definitions', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let original: DocxArchive;
+    let revised: DocxArchive;
+    let result: Awaited<ReturnType<typeof renumberCollidingAuxiliaryIds>>;
+
+    await given('the revised document anchors reference a high id 77 with no definition', async () => {
+      original = await archiveWith({
+        'word/comments.xml': commentsPart(comment('1', 'original note')),
+      });
+      revised = await archiveWith({
+        'word/comments.xml': commentsPart(comment('1', 'revised note')),
+        // Definitions top out at id 1, but an anchor references id 77 — the
+        // fresh id must clear the anchor space too, not just the definitions.
+        'word/document.xml': documentPart(
+          '<w:commentRangeStart w:id="1"/><w:r><w:t>x</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="77"/></w:r>'
+        ),
+      });
+    });
+
+    await when('collisions are resolved', async () => {
+      result = await renumberCollidingAuxiliaryIds(original, revised);
+    });
+
+    await then('the fresh id clears the anchor-only id 77 (>= 78)', () => {
+      expect(result).toHaveLength(1);
+      expect(Number.parseInt(result[0]!.toId, 10)).toBeGreaterThanOrEqual(78);
+    });
+  });
+
   test('rewrites a colliding comment anchored inside the footnotes story', async ({
     given,
     when,
@@ -437,7 +557,14 @@ describe('restampCollidingCommentParaIds', () => {
       });
       revised = await archiveWith({
         'word/comments.xml': commentsPart(comment('1', 'revised text', paraId)),
-        'word/commentsExtended.xml': `<?xml version="1.0"?>\n<w15:commentsEx ${NS}><w15:commentEx w15:paraId="${paraId}" w15:done="0"/></w15:commentsEx>`,
+        // Two extended rows: the colliding comment itself, plus a reply whose
+        // w15:paraIdParent points back at the colliding paraId (so both the
+        // paraId and the paraIdParent axes must be rewritten).
+        'word/commentsExtended.xml':
+          `<?xml version="1.0"?>\n<w15:commentsEx ${NS}>` +
+          `<w15:commentEx w15:paraId="${paraId}" w15:done="0"/>` +
+          `<w15:commentEx w15:paraId="EEEEEEEE" w15:paraIdParent="${paraId}" w15:done="0"/>` +
+          `</w15:commentsEx>`,
         'word/commentsIds.xml': `<?xml version="1.0"?>\n<w16cid:commentsIds ${NS}><w16cid:commentId w16cid:paraId="${paraId}" w16cid:durableId="11111111"/></w16cid:commentsIds>`,
       });
     });
@@ -462,6 +589,13 @@ describe('restampCollidingCommentParaIds', () => {
       expect(extended).toContain(`w15:paraId="${toParaId}"`);
       expect(ids).toContain(`w16cid:paraId="${toParaId}"`);
       expect(comments).not.toContain(`w14:paraId="${paraId}"`);
+    });
+
+    await and('the reply row has its w15:paraIdParent rewritten to the fresh paraId', async () => {
+      const toParaId = result[0]!.toParaId;
+      const extended = (await revised.getFile('word/commentsExtended.xml'))!;
+      expect(extended).toContain(`w15:paraIdParent="${toParaId}"`);
+      expect(extended).not.toContain(`w15:paraIdParent="${paraId}"`);
     });
   });
 
@@ -541,14 +675,18 @@ describe('restampCollidingCommentParaIds', () => {
     let result: Awaited<ReturnType<typeof restampCollidingCommentParaIds>>;
     const paraId = '0C0C0C0C';
 
-    await given('the original binds one paraId to two distinct comments', async () => {
+    await given('the original binds one paraId to two comments; revised matches one byte-for-byte', async () => {
+      // The revised comment is serializer-identical to original comment "1",
+      // so the ONLY reason to restamp is that the original owner set is
+      // ambiguous (two comments) — the single-owner content-identity fast path
+      // must not fire.
       original = await archiveWith({
         'word/comments.xml': commentsPart(
-          `${comment('1', 'first owner', paraId)}${comment('2', 'second owner', paraId)}`
+          `${comment('1', 'shared note', paraId)}${comment('2', 'other note', paraId)}`
         ),
       });
       revised = await archiveWith({
-        'word/comments.xml': commentsPart(comment('1', 'revised', paraId)),
+        'word/comments.xml': commentsPart(comment('1', 'shared note', paraId)),
       });
     });
 
@@ -556,7 +694,7 @@ describe('restampCollidingCommentParaIds', () => {
       result = await restampCollidingCommentParaIds(original, revised);
     });
 
-    await then('the shared paraId is restamped because it is not a clean single-owner match', () => {
+    await then('the shared paraId is restamped because ownership is ambiguous, not content', () => {
       expect(result).toHaveLength(1);
       expect(result[0]!.fromParaId).toBe(paraId);
     });
@@ -567,7 +705,7 @@ describe('restampCollidingCommentParaIds', () => {
     });
   });
 
-  test('deduplicates a paraId repeated across paragraphs within one comment', async ({
+  test('counts a paraId repeated across paragraphs of one comment as a single owner', async ({
     given,
     when,
     then,
@@ -576,24 +714,27 @@ describe('restampCollidingCommentParaIds', () => {
     let revised: DocxArchive;
     let result: Awaited<ReturnType<typeof restampCollidingCommentParaIds>>;
     const paraId = '0D0D0D0D';
-    // A comment whose two paragraphs both carry the same paraId — the owner
-    // must be recorded once, not twice.
+    // One comment whose two paragraphs both carry the same paraId. The owner
+    // must be recorded ONCE per comment, not once per paragraph — otherwise the
+    // single-owner content-identity fast path (length === 1 on both sides)
+    // never fires and identical content is needlessly restamped. Both sides
+    // ship the identical comment, so the correct result is a no-op.
     const twoParaComment = `<w:comment w:id="1"><w:p w14:paraId="${paraId}"><w:r><w:t>a</w:t></w:r></w:p><w:p w14:paraId="${paraId}"><w:r><w:t>b</w:t></w:r></w:p></w:comment>`;
+    const identical = commentsPart(twoParaComment);
 
-    await given('a revised comment repeats one paraId across two paragraphs', async () => {
-      original = await archiveWith({
-        'word/comments.xml': commentsPart(comment('1', 'original', paraId)),
-      });
-      revised = await archiveWith({ 'word/comments.xml': commentsPart(twoParaComment) });
+    await given('both sides ship the identical two-paragraph comment reusing one paraId', async () => {
+      original = await archiveWith({ 'word/comments.xml': identical });
+      revised = await archiveWith({ 'word/comments.xml': identical });
     });
 
     await when('paraId collisions are resolved', async () => {
       result = await restampCollidingCommentParaIds(original, revised);
     });
 
-    await then('the collision is detected once and restamped once', () => {
-      expect(result).toHaveLength(1);
-      expect(result[0]!.fromParaId).toBe(paraId);
+    await then('the repeated paraId is deduped to one owner, so identical content is left alone', () => {
+      // Without per-comment dedup, the owner list would have length 2 on each
+      // side, defeating the length === 1 fast path and forcing a false restamp.
+      expect(result).toEqual([]);
     });
   });
 
