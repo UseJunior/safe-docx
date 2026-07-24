@@ -5,9 +5,10 @@ import type { BorderSpec, ParagraphBorders, TableBorders } from '../types.js';
 type BorderEdge = readonly [string, BorderSpec | undefined];
 
 /**
- * Build a border collection with explicit size, spacing, and color attributes.
+ * Build a `w:pBdr` collection with explicit size, spacing, and color per edge,
+ * in `CT_PBdr` sequence order (top, left, bottom, right, between).
  *
- * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.26
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.24
  */
 export function buildParagraphBordersElement(doc: Document, borders: ParagraphBorders): Element {
   return buildBordersElement(doc, W.pBdr, [

@@ -19,4 +19,3 @@ import warnings in Apple Pages when used in headers.
 - Affected specs: `docx-generation`
 - Affected code: `packages/docx-core/src/generation`
 - Compatibility: additive API change; existing specs emit identical output
-

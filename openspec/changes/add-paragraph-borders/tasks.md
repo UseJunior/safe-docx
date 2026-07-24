@@ -8,4 +8,7 @@
 
 - [x] 2.1 Add a bottom-bordered paragraph generation fixture and assertions.
 - [x] 2.2 Prove package load/save and compare round-trip preservation.
-- [x] 2.3 Run focused package, schema, OpenSpec, and conformance checks.
+- [x] 2.3 Add a body-level all-edges fixture so the emitted `word/document.xml`
+      exercises `w:pBdr` through the schema-corpus gate, asserting edge order and
+      the omitted-size / `none` / omitted-color defaults.
+- [x] 2.4 Run focused package, schema, OpenSpec, and conformance checks.
