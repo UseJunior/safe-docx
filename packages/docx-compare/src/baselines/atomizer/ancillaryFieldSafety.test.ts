@@ -25,7 +25,7 @@ const PR_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
 
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Ancillary Canonical Evidence' });
+  .withLabels({ feature: TEST_FEATURE });
 
 interface ArchiveOptions {
   footer?: string;

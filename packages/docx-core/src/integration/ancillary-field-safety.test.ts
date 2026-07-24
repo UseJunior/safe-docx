@@ -29,7 +29,7 @@ const ENDNOTES_CONTENT_TYPE =
 
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Ancillary Field Story Safety' });
+  .withLabels({ feature: TEST_FEATURE });
 
 function footerXml(field: string): string {
   return `<w:ftr xmlns:w="${W_NS}"><w:p>${field}</w:p></w:ftr>`;

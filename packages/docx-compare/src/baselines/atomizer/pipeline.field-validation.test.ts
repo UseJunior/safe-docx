@@ -13,11 +13,11 @@ import {
 const TEST_FEATURE = 'verify-ancillary-field-stories';
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Field Structure Validation (ECMA-376)' })
+  .withLabels({ feature: TEST_FEATURE })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
 const strictTest = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Strict Ancillary Field Stories' })
+  .withLabels({ feature: TEST_FEATURE })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
 
 const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
