@@ -22,6 +22,11 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | — |
 | `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts |
 | `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | — |
+| `ECMA-PART1-17-5-2-29` | w:sdt block-level structured document tag | 5 | 1 | 17.5.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts |
+| `ECMA-PART1-17-5-2-31` | w:sdt inline-level structured document tag | 5 | 1 | 17.5.2.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts |
+| `ECMA-PART1-17-5-2-34` | w:sdtContent block-level structured document tag content | 5 | 1 | 17.5.2.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentBlock` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts |
+| `ECMA-PART1-17-5-2-36` | w:sdtContent inline-level structured document tag content | 5 | 1 | 17.5.2.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentRun` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts |
+| `ECMA-PART1-17-5-2-38` | w:sdtPr structured document tag properties | 5 | 1 | 17.5.2.38 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts |
 | `ECMA-PART1-17-6-17` | w:sectPr document-final section properties | 5 | 1 | 17.6.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | — |
 | `ECMA-PART1-17-6-13` | w:pgSz page size emission | 5 | 1 | 17.6.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz` | — |
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | — |
@@ -40,9 +45,11 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-11-3-3` | Document Settings part | 5 | 1 | 11.3.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-15-3-4` | w:compatSetting custom compatibility setting | 5 | 1 | 17.15.3.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-10-1` | w:evenAndOddHeaders setting | 5 | 1 | 17.10.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders` | — |
-| `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json |
-| `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts |
-| `ECMA-PART1-17-16-5-42` | NUMPAGES field instruction emission | 5 | 1 | 17.16.5.42 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts |
+| `ECMA-PART1-17-16-18` | w:fldChar five-part complex-field emission | 5 | 1 | 17.16.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json |
+| `ECMA-PART1-17-16-5-44` | PAGE field instruction emission | 5 | 1 | 17.16.5.44 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts |
+| `ECMA-PART1-17-16-5-42` | NUMPAGES field instruction emission | 5 | 1 | 17.16.5.42 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts |
+| `ECMA-PART1-17-16-5-45` | PAGEREF field instruction classification and preservation | 5 | 1 | 17.16.5.45 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts |
+| `ECMA-PART1-17-16-5-51` | REF field instruction classification and preservation | 5 | 1 | 17.16.5.51 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts |
 | `ECMA-PART1-17-4-37` | w:tbl table emission | 5 | 1 | 17.4.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tbl` | — |
 | `ECMA-PART1-17-4-59` | w:tblPr table-properties emission | 5 | 1 | 17.4.59 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPr` | — |
 | `ECMA-PART1-17-4-63` | w:tblW preferred-width consistency | 5 | 1 | 17.4.63 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblW` | — |
@@ -248,6 +255,69 @@ lives in `packages/docx-core/src/atomizer.ts`
 (`nearestHyperlinkAncestor`) and
 `packages/docx-core/src/baselines/atomizer/documentReconstructor.ts`
 (hyperlink wrapper re-emission).
+
+### ECMA-PART1-17-5-2-29 — w:sdt block-level structured document tag
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.29
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+
+A block `w:sdt` surrounds one or more block-level structures and orders its
+properties, optional end properties, and content under the CT_SdtBlock model.
+safe-docx preserves an unchanged direct `w:body/w:sdt` as one scaffold-owned
+boundary during forced rebuild. Exact subtree preservation is a bounded
+metamorphic invariant rather than a requirement imposed by ECMA-376.
+
+### ECMA-PART1-17-5-2-31 — w:sdt inline-level structured document tag
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.31
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+
+An inline `w:sdt` is a run-level structured document tag whose ordered children
+are its properties, optional end properties, and content. The issue #582 pilot
+preserves an unchanged inline SDT as one opaque semantic boundary during rebuild;
+it does not author or edit controls and makes no claim about row or cell SDTs.
+
+### ECMA-PART1-17-5-2-34 — w:sdtContent block-level structured document tag content
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.34
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentBlock`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+
+Block-level `w:sdtContent` contains the controlled block structures. The bounded
+rebuild path recognizes only a contiguous sequence of direct controlled
+paragraphs under a direct body-level control; tables and nested controls remain
+outside the supported placement.
+
+### ECMA-PART1-17-5-2-36 — w:sdtContent inline-level structured document tag content
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.36
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentRun`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+
+The pilot retains the inline control's run-level `w:sdtContent` subtree and its
+controlled text when that subtree is unchanged between comparison inputs.
+
+### ECMA-PART1-17-5-2-38 — w:sdtPr structured document tag properties
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.5.2.38
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts
+
+The pilot retains known and ignorable-extension children under `w:sdtPr` in
+their source order. Retention of unknown extension payload is a metamorphic
+SafeDocX invariant, not an ECMA-376 requirement.
 
 ### ECMA-PART1-17-6-17 — w:sectPr document-final section properties
 
@@ -509,7 +579,7 @@ and conditionally adds this switch exactly when some section declares an
 - **Part / Section:** Part 1 § 17.16.18
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar`
-- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
+- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 
 Every generated field is a complete five-run sequence — `fldChar begin`,
 preserved-space `w:instrText`, `fldChar separate`, a cached-result run,
@@ -526,7 +596,7 @@ Part 1 complex-field and deleted-field-code syntax.
 - **Part / Section:** Part 1 § 17.16.5.44
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText`
-- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
+- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
 
 The PAGE instruction is emitted with canonical surrounding spaces
 (` PAGE `) inside a preserved-space `w:instrText`, matching the shape of
@@ -538,11 +608,40 @@ the committed field fixtures used by the comparison pipeline.
 - **Part / Section:** Part 1 § 17.16.5.42
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText`
-- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
+- **Verified by:** packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
 
 The NUMPAGES instruction follows the same emission discipline as PAGE
 (` NUMPAGES `, preserved spacing, cached result required), giving
 "Page X of Y" footers structurally correct field pairs.
+
+### ECMA-PART1-17-16-5-45 — PAGEREF field instruction classification and preservation
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.16.5.45
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
+
+Forced main-document rebuild classifies a self-contained PAGEREF instruction
+with one bookmark argument and a bounded switch vocabulary. When the complete
+field range is unchanged, comparison preserves its ordered XML topology as a
+SafeDocX metamorphic invariant. This entry does not claim bookmark resolution,
+pagination, cached-result correctness, or field evaluation.
+
+### ECMA-PART1-17-16-5-51 — REF field instruction classification and preservation
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.16.5.51
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
+
+Forced main-document rebuild classifies a self-contained REF instruction with
+one bookmark argument and a bounded switch vocabulary; the `\d` switch requires
+and consumes one separator argument. When the complete field range is unchanged,
+comparison preserves its ordered XML topology as a SafeDocX metamorphic
+invariant. This entry does not claim bookmark resolution, cached-result
+correctness, or field evaluation.
 
 ### ECMA-PART1-17-4-37 — w:tbl table emission
 
@@ -1316,9 +1415,19 @@ section; they are described under
 in the root README.
 
 Within Part 1 §17.16, safe-docx targets structural emission of complex fields
-and the PAGE and NUMPAGES instructions listed above. Other field instructions,
-field-code parsing and evaluation, cached-result correctness, pagination, and
-equivalence to a Word application's field engine are out of scope.
+and the PAGE and NUMPAGES instructions listed above. Forced rebuild additionally
+classifies unchanged, self-contained main-document PAGE, NUMPAGES, REF, and
+PAGEREF fields for exact ordered-range passthrough. Unrelated direct-child edits
+may shift a field's paragraph-child positions; pairing instead uses stable
+paragraph ownership and field-range sequence. Non-revision wrappers such as
+`w:hyperlink` are preserved, while tracked-revision-owned, changed, reordered,
+cross-paragraph, or nested field rebuild is outside this bounded claim. Other
+field instructions retain the existing rebuild safety-diagnostics behavior and
+are not newly rejected merely for malformed structure. General field-code
+parsing and evaluation, ancillary-story topology preservation, cached-result
+correctness, pagination, and equivalence to a Word application's field engine
+are out of scope. The Lean XML verifier remains inapplicable to rebuild output
+and does not prove this topology-preservation invariant.
 
 Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
 display numbering for Word-conventional packages plus generated

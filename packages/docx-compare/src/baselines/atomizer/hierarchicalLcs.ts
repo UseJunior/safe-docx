@@ -96,6 +96,12 @@ export interface GroupLcsResult {
   insertedGroupIndices: number[];
 }
 
+/** Deterministic complexity counters for focused LCS regression tests. */
+export interface GroupLcsInstrumentation {
+  opaqueIdentityComputations: number;
+  opaqueAtomScans: number;
+}
+
 /**
  * Group atoms by paragraph index.
  *
@@ -399,6 +405,51 @@ function isEmptyParagraphGroup(group: ComparisonUnitGroup): boolean {
     group.atoms[0]!.contentElement.tagName === EMPTY_PARAGRAPH_TAG;
 }
 
+function createOpaqueGroupIdentityResolver(instrumentation?: GroupLcsInstrumentation) {
+  // Groups and atoms are immutable during one LCS run. Keeping the cache local
+  // avoids stale identities if a caller mutates a group between separate runs.
+  const cache = new WeakMap<ComparisonUnitGroup, string | null>();
+  return (group: ComparisonUnitGroup): string | null => {
+    const cached = cache.get(group);
+    if (cached !== undefined) return cached;
+    if (instrumentation) instrumentation.opaqueIdentityComputations++;
+
+    let descriptors: NonNullable<ComparisonUnitAtom['opaquePassthrough']>[] | undefined;
+    let seen: Set<NonNullable<ComparisonUnitAtom['opaquePassthrough']>> | undefined;
+    let relativeByDescriptor: Map<NonNullable<ComparisonUnitAtom['opaquePassthrough']>, number | undefined> | undefined;
+    for (const atom of group.atoms) {
+      if (instrumentation) instrumentation.opaqueAtomScans++;
+      const descriptor = atom.opaquePassthrough;
+      if (!descriptor) continue;
+      descriptors ??= [];
+      seen ??= new Set();
+      if (!seen.has(descriptor)) {
+        seen.add(descriptor);
+        descriptors.push(descriptor);
+        relativeByDescriptor ??= new Map();
+        relativeByDescriptor.set(descriptor, atom.opaquePassthroughRelativeParagraphOrdinal);
+      }
+    }
+    if (!descriptors) {
+      cache.set(group, null);
+      return null;
+    }
+    descriptors.sort((left, right) => left.documentOrdinal - right.documentOrdinal);
+    const identity = descriptors
+      .map((descriptor) =>
+        `${descriptor.placementKind}\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
+        `${descriptor.bodyChildOrdinal ?? ''}\u0000${descriptor.ownedParagraphCount ?? ''}\u0000` +
+        `${descriptor.inlineRangeOrdinal ?? ''}\u0000` +
+        `${relativeByDescriptor?.get(descriptor) ?? ''}\u0000` +
+        `${descriptor.documentOrdinal}\u0000${descriptor.semanticFingerprint}\u0000` +
+        `${descriptor.relationshipClosureFingerprint ?? ''}`,
+      )
+      .join('\u0001');
+    cache.set(group, identity);
+    return identity;
+  };
+}
+
 /**
  * Paragraph groups are considered coarse-equal if:
  * 1) Their raw text hash matches exactly, or
@@ -406,7 +457,16 @@ function isEmptyParagraphGroup(group: ComparisonUnitGroup): boolean {
  *
  * Empty paragraphs intentionally require strict hash equality.
  */
-function groupsCoarselyEqual(a: ComparisonUnitGroup, b: ComparisonUnitGroup): boolean {
+function groupsCoarselyEqual(
+  a: ComparisonUnitGroup,
+  b: ComparisonUnitGroup,
+  opaqueGroupIdentity: (group: ComparisonUnitGroup) => string | null,
+): boolean {
+  const aOpaqueIdentity = opaqueGroupIdentity(a);
+  const bOpaqueIdentity = opaqueGroupIdentity(b);
+  if (aOpaqueIdentity !== null || bOpaqueIdentity !== null) {
+    return aOpaqueIdentity !== null && aOpaqueIdentity === bOpaqueIdentity;
+  }
   if (a.textHash === b.textHash) {
     return true;
   }
@@ -610,10 +670,12 @@ export function computeGroupLcs(
   originalGroups: ComparisonUnitGroup[],
   revisedGroups: ComparisonUnitGroup[],
   similarityThreshold = DEFAULT_PARAGRAPH_SIMILARITY_THRESHOLD,
-  tfidfVectors?: Map<ComparisonUnitGroup, TfidfVector>
+  tfidfVectors?: Map<ComparisonUnitGroup, TfidfVector>,
+  instrumentation?: GroupLcsInstrumentation,
 ): GroupLcsResult {
   const n = originalGroups.length;
   const m = revisedGroups.length;
+  const opaqueGroupIdentity = createOpaqueGroupIdentityResolver(instrumentation);
 
   // === Pass 1: LCS with exact hash and normalized-hash matching ===
   const dp: number[][] = Array(n + 1)
@@ -622,7 +684,7 @@ export function computeGroupLcs(
 
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
-      if (groupsCoarselyEqual(originalGroups[i - 1]!, revisedGroups[j - 1]!)) {
+      if (groupsCoarselyEqual(originalGroups[i - 1]!, revisedGroups[j - 1]!, opaqueGroupIdentity)) {
         dp[i]![j] = dp[i - 1]![j - 1]! + 1;
       } else {
         dp[i]![j] = Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
@@ -636,7 +698,7 @@ export function computeGroupLcs(
   let j = m;
 
   while (i > 0 && j > 0) {
-    if (groupsCoarselyEqual(originalGroups[i - 1]!, revisedGroups[j - 1]!)) {
+    if (groupsCoarselyEqual(originalGroups[i - 1]!, revisedGroups[j - 1]!, opaqueGroupIdentity)) {
       matchedGroups.unshift({ originalIndex: i - 1, revisedIndex: j - 1 });
       i--;
       j--;

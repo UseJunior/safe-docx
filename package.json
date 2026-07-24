@@ -74,7 +74,7 @@
     "generate:invariants-doc": "node scripts/generate_invariants_doc.mjs",
     "check:invariants-doc": "node scripts/check_invariants_doc.mjs",
     "check:lean-xml-checker-coverage": "node scripts/check_lean_xml_checker_coverage.mjs",
-    "check:emitted-schema": "node scripts/check_emitted_document_schema.mjs --self-test --known-failures coverage/emitted-schema-known-failures.json",
+    "check:emitted-schema": "node --test scripts/check_emitted_document_schema.test.mjs && node scripts/check_emitted_document_schema.mjs --self-test --known-failures coverage/emitted-schema-known-failures.json",
     "generate:tests-corpus-schema": "npm run build -w @usejunior/test-narrative && node scripts/generate_tests_corpus_schema.mjs",
     "check:tests-corpus-schema": "npm run build -w @usejunior/test-narrative && node scripts/check_tests_corpus_schema.mjs",
     "build:tests-corpus": "npm run build -w @usejunior/test-narrative && node scripts/build_tests_corpus.mjs",

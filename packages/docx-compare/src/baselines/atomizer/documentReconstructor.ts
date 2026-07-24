@@ -7,7 +7,7 @@
 
 import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml } from '@usejunior/docx-core';
-import type { ComparisonUnitAtom } from '@usejunior/docx-core';
+import type { ComparisonUnitAtom, OpaquePassthroughNode } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { getLeafText, childElements, findChildByTagName } from '@usejunior/docx-core';
 import {
@@ -34,6 +34,7 @@ import {
 } from './inPlaceModifier-wrappers.js';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { debug } from './debug.js';
+import { OpaquePassthroughError, renderOpaqueAtomSequence } from './opaquePassthrough.js';
 
 const SYNTHETIC_DOC = parseXml('<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -126,6 +127,7 @@ export function reconstructDocument(
 
   // Consolidate adjacent same-status changes for better readability
   const paragraphGroups = consolidateAdjacentChanges(rawParagraphGroups);
+  validateBodyBlockGroupSequence(paragraphGroups);
 
   // Reset debug counters
   resetDebugCounters();
@@ -134,9 +136,13 @@ export function reconstructDocument(
   debug('reconstructor', `${mergedAtoms.length} atoms -> ${paragraphGroups.length} paragraphs`);
 
   // Build track changes XML for each paragraph
-  const paragraphXmls: string[] = [];
+  const paragraphXmls: Array<string | null> = [];
 
   for (const group of paragraphGroups) {
+    if (bodyBlockOwnership(group)) {
+      paragraphXmls.push(null);
+      continue;
+    }
     const paragraphXml = buildParagraphXml(
       group, author, dateStr, revState, options.hyperlinkRelResolver
     );
@@ -166,6 +172,67 @@ interface ParagraphGroup {
   pPr: Element | null;
   /** Atoms in this paragraph, grouped by run and status */
   runGroups: RunGroup[];
+}
+
+interface BodyBlockGroupOwnership {
+  descriptor: OpaquePassthroughNode;
+  relativeParagraphOrdinal: number;
+}
+
+function bodyBlockOwnership(group: ParagraphGroup): BodyBlockGroupOwnership | null {
+  const atoms = group.runGroups.flatMap((runGroup) => runGroup.atoms);
+  const blockAtoms = atoms.filter((atom) => atom.opaquePassthrough?.placementKind === 'body-block');
+  if (blockAtoms.length === 0) return null;
+  const descriptor = blockAtoms[0]!.opaquePassthrough!;
+  const relativeParagraphOrdinal = blockAtoms[0]!.opaquePassthroughRelativeParagraphOrdinal;
+  if (
+    relativeParagraphOrdinal === undefined ||
+    blockAtoms.length !== atoms.length ||
+    atoms.some((atom) =>
+      atom.opaquePassthrough !== descriptor ||
+      atom.opaquePassthroughRelativeParagraphOrdinal !== relativeParagraphOrdinal ||
+      atom.correlationStatus !== CorrelationStatus.Equal
+    )
+  ) {
+    throw new OpaquePassthroughError('body-block paragraph has mixed, changed, or incomplete ownership');
+  }
+  return { descriptor, relativeParagraphOrdinal };
+}
+
+function validateBodyBlockGroupSequence(groups: ParagraphGroup[]): void {
+  const nextRelative = new Map<OpaquePassthroughNode, number>();
+  const closed = new Set<OpaquePassthroughNode>();
+  let active: OpaquePassthroughNode | undefined;
+  for (const group of groups) {
+    const ownership = bodyBlockOwnership(group);
+    if (!ownership) {
+      if (active) {
+        closed.add(active);
+        active = undefined;
+      }
+      continue;
+    }
+    const { descriptor, relativeParagraphOrdinal } = ownership;
+    if (active !== descriptor) {
+      if (active) closed.add(active);
+      if (closed.has(descriptor)) {
+        throw new OpaquePassthroughError(`boundary ${descriptor.documentOrdinal} has non-contiguous group ownership`);
+      }
+      active = descriptor;
+    }
+    const expected = nextRelative.get(descriptor) ?? 0;
+    if (relativeParagraphOrdinal !== expected) {
+      throw new OpaquePassthroughError(
+        `boundary ${descriptor.documentOrdinal} changed controlled paragraph order`,
+      );
+    }
+    nextRelative.set(descriptor, expected + 1);
+  }
+  for (const [descriptor, count] of nextRelative) {
+    if (count !== descriptor.ownedParagraphCount) {
+      throw new OpaquePassthroughError(`boundary ${descriptor.documentOrdinal} lost paragraph-group ownership`);
+    }
+  }
 }
 
 /**
@@ -639,6 +706,16 @@ function buildParagraphXml(
   hyperlinkRelResolver?: HyperlinkRelResolver
 ): string {
   const revisionCtx = createRevisionContext({ author, date: dateStr, idState: revState });
+  const hasOpaqueAtoms = group.runGroups.some((runGroup) =>
+    runGroup.atoms.some((atom) => atom.opaquePassthrough !== undefined),
+  );
+  if (
+    hasOpaqueAtoms &&
+    (isEntireParagraphWithStatus(group, CorrelationStatus.Inserted) ||
+      isEntireParagraphWithStatus(group, CorrelationStatus.Deleted))
+  ) {
+    throw new OpaquePassthroughError('control-bearing whole paragraph lost correlation');
+  }
 
   // Track empty paragraph statuses for debugging
   if (isEmptyParagraphGroup(group)) {
@@ -783,13 +860,24 @@ function buildParagraphXml(
     parts.push(serializeToXml(group.pPr));
   }
 
-  // Add run groups with track changes, restoring w:hyperlink wrappers when
-  // the paragraph contains hyperlink atoms (issue #368). Hyperlink-free
-  // paragraphs keep the legacy per-group emission byte-identical.
+  // Add run groups with track changes, restoring validated opaque boundaries
+  // and hyperlink wrappers around the ordinary slices between them.
   const explicitMoveMarkers = collectExplicitMoveMarkers(group);
-  if (paragraphHasHyperlinkAtoms(group)) {
+  if (hasOpaqueAtoms) {
+    parts.push(renderOpaqueAtomSequence(
+      group.runGroups,
+      (ordinaryGroups) => paragraphHasHyperlinkAtoms({ ...group, runGroups: ordinaryGroups })
+        ? buildRunGroupsWithHyperlinks(
+            ordinaryGroups, author, dateStr, revState, explicitMoveMarkers, hyperlinkRelResolver,
+          )
+        : ordinaryGroups
+            .map((runGroup) => buildRunGroupXml(runGroup, author, dateStr, revState, explicitMoveMarkers))
+            .join(''),
+      serializeToXml,
+    ));
+  } else if (paragraphHasHyperlinkAtoms(group)) {
     parts.push(buildRunGroupsWithHyperlinks(
-      group.runGroups, author, dateStr, revState, explicitMoveMarkers, hyperlinkRelResolver
+      group.runGroups, author, dateStr, revState, explicitMoveMarkers, hyperlinkRelResolver,
     ));
   } else {
     for (const runGroup of group.runGroups) {
@@ -1877,7 +1965,7 @@ function isRootedGroup(group: ParagraphGroup): boolean {
  */
 function buildDocumentPreservingStructure(
   originalXml: string,
-  paragraphXmls: string[],
+  paragraphXmls: Array<string | null>,
   paragraphGroups: ParagraphGroup[],
   allocateRevisionId: () => number
 ): string {
@@ -1885,6 +1973,7 @@ function buildDocumentPreservingStructure(
 
   let slotCursor = 0;
   let lastEmittedNode: Node | null = null;
+  const preservedBlocks = new Map<Element, Element>();
 
   // Find body-level <w:sectPr> (must stay as last child of body)
   const bodyChildren = childElements(body);
@@ -1896,6 +1985,45 @@ function buildDocumentPreservingStructure(
   for (let i = 0; i < paragraphGroups.length; i++) {
     const group = paragraphGroups[i]!;
     const paraXml = paragraphXmls[i]!;
+
+    const blockOwnership = bodyBlockOwnership(group);
+    if (blockOwnership) {
+      const { descriptor, relativeParagraphOrdinal } = blockOwnership;
+      const expectedSlot = descriptor.paragraphOrdinal + relativeParagraphOrdinal;
+      if (slotCursor !== expectedSlot || slotCursor >= slots.length) {
+        throw new OpaquePassthroughError(
+          `boundary ${descriptor.documentOrdinal} does not own the expected scaffold slot`,
+        );
+      }
+      const slot = slots[slotCursor]!;
+      let boundary: Node | null = slot.element.parentNode;
+      while (boundary && boundary !== body &&
+        !((boundary as Element).namespaceURI === W_NS && (boundary as Element).localName === 'sdt')) {
+        boundary = boundary.parentNode;
+      }
+      if (!boundary || boundary === body || boundary.parentNode !== body) {
+        throw new OpaquePassthroughError('body-block scaffold owner is not a direct w:body/w:sdt');
+      }
+      const block = boundary as Element;
+      const bodyOrdinal = childElements(body).indexOf(block);
+      const controlledParagraphs = Array.from(block.getElementsByTagNameNS(W_NS, 'p'));
+      if (
+        bodyOrdinal !== descriptor.bodyChildOrdinal ||
+        controlledParagraphs.length !== descriptor.ownedParagraphCount ||
+        controlledParagraphs[relativeParagraphOrdinal] !== slot.element
+      ) {
+        throw new OpaquePassthroughError(
+          `boundary ${descriptor.documentOrdinal} changed scaffold ownership`,
+        );
+      }
+      if (!preservedBlocks.has(block)) preservedBlocks.set(block, block.cloneNode(true) as Element);
+      lastEmittedNode = block;
+      slotCursor++;
+      continue;
+    }
+    if (paraXml === null) {
+      throw new OpaquePassthroughError('non-block paragraph has no reconstructed XML');
+    }
 
     // Parse the reconstructed paragraph XML into a DOM node
     const fragDoc = parseXml(
@@ -2026,6 +2154,15 @@ function buildDocumentPreservingStructure(
   // synthesizes recovery markers for orphaned starts/ends. Mirrors the
   // post-processing applied in inplace mode (inPlaceModifier.ts).
   enforceConsumerCompatibility(body, allocateRevisionId);
+
+  // Consumer-compatibility cleanup is intentionally document-wide. Restore
+  // validated opaque blocks afterward so no cleanup can alter their subtree.
+  for (const [block, originalClone] of preservedBlocks) {
+    if (!block.parentNode) {
+      throw new OpaquePassthroughError('preserved body-block boundary was removed during scaffold cleanup');
+    }
+    block.parentNode.replaceChild(originalClone, block);
+  }
 
   // Serialize modified body and splice back into original envelope
   const serializer = new XMLSerializer();

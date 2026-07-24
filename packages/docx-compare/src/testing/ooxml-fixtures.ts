@@ -66,6 +66,7 @@ export const FIELD_INSTRUCTIONS = {
   NUMPAGES: ' NUMPAGES ',
   PAGE: ' PAGE ',
   PAGEREF: ' PAGEREF _Toc123 \\h ',
+  REF: ' REF Clause_1 \\h ',
 } as const;
 
 // A complete, self-contained simple field: begin → instrText → separate →
@@ -86,6 +87,40 @@ export const COMPLETE_NUMPAGES_FIELD = completeField(FIELD_INSTRUCTIONS.NUMPAGES
 export const COMPLETE_PAGE_FIELD = completeField(FIELD_INSTRUCTIONS.PAGE, '1');
 
 export const COMPLETE_PAGEREF_FIELD = completeField(FIELD_INSTRUCTIONS.PAGEREF, '42');
+
+export const COMPLETE_REF_FIELD = completeField(FIELD_INSTRUCTIONS.REF, 'Section 1');
+
+/**
+ * Build a topology-sensitive complex field used by forced-rebuild tests.
+ *
+ * Every field component has distinct run properties, the instruction is
+ * fragmented across two runs, and the cached result retains a pre-existing
+ * wrapper. The extension payload is intentionally opaque to the comparison
+ * engine.
+ */
+export function decoratedComplexField(
+  instruction: string,
+  result: string,
+  anchor = '_FieldResult',
+): string {
+  const split = Math.max(1, Math.floor(instruction.length / 2));
+  const firstInstruction = escapeXmlText(instruction.slice(0, split));
+  const secondInstruction = escapeXmlText(instruction.slice(split));
+  return (
+    `<w:r w:rsidR="A0000001"><w:rPr><w:b/></w:rPr>` +
+    `<w:fldChar w:fldCharType="begin" w:dirty="false"/></w:r>` +
+    `<w:r><w:rPr><w:i/></w:rPr><w:instrText xml:space="preserve">${firstInstruction}</w:instrText></w:r>` +
+    `<w:r><w:rPr><w:color w:val="336699"/></w:rPr>` +
+    `<w:instrText xml:space="preserve">${secondInstruction}</w:instrText></w:r>` +
+    `<w:r><w:rPr><w:u w:val="single"/></w:rPr>` +
+    `<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:hyperlink w:anchor="${escapeXmlText(anchor)}" w:history="1">` +
+    `<w:r><w:rPr><w:smallCaps/></w:rPr><w:t>${escapeXmlText(result)}</w:t></w:r>` +
+    `</w:hyperlink>` +
+    `<w:r><w:rPr><w:vanish/><w14:textEffect w14:val="none"/></w:rPr>` +
+    `<w:fldChar w:fldCharType="end"/></w:r>`
+  );
+}
 
 // ECMA-376 conformant field-modification pattern: a field whose instruction
 // text is changing under track changes. The fldChars remain UNWRAPPED at the
@@ -167,16 +202,29 @@ export interface HyperlinkRelFixture {
   external?: boolean;
 }
 
+export interface MinimalDocumentNamespaceOptions {
+  /** Additional root prefix bindings, keyed without `xmlns:`. */
+  namespaces?: Readonly<Record<string, string>>;
+  /** Additional prefixes appended to the root `mc:Ignorable` token list. */
+  ignorablePrefixes?: readonly string[];
+}
+
 export async function buildDocxFromBodyXml(
   bodyXml: string,
   hyperlinkRels: HyperlinkRelFixture[] = [],
+  namespaceOptions: MinimalDocumentNamespaceOptions = {},
 ): Promise<Buffer> {
+  const extraNamespaces = Object.entries(namespaceOptions.namespaces ?? {})
+    .map(([prefix, uri]) => ` xmlns:${prefix}="${escapeXmlText(uri)}"`)
+    .join('');
+  const ignorable = ['w14', ...(namespaceOptions.ignorablePrefixes ?? [])].join(' ');
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
     ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
     ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
-    ` mc:Ignorable="w14">` +
+    extraNamespaces +
+    ` mc:Ignorable="${ignorable}">` +
     `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
 
   const contentTypesXml =

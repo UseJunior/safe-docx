@@ -105,6 +105,49 @@ export interface FormatChangeInfo {
 }
 
 /**
+ * Process-local payload for a comparison atom owned by an opaque XML boundary.
+ *
+ * The comparison model is already DOM-backed; this descriptor intentionally
+ * retains a cloned element rather than exposing a serialized public contract.
+ * `documentOrdinal` identifies the boundary among other captured boundaries in
+ * source order. The reconstructor validates original/revised counterparts before
+ * assigning `emissionElements` from the original side.
+ */
+export interface OpaquePassthroughNode {
+  /** Determines whether paragraph-run emission or the body scaffold owns output. */
+  placementKind: 'inline-run' | 'inline-range' | 'body-block';
+  namespaceUri: string;
+  localName: string;
+  documentOrdinal: number;
+  /** Source-order paragraph identity; movement is outside the bounded contract and fails closed. */
+  paragraphOrdinal: number;
+  /** Structural parent path (body or table/cell position) owning the paragraph. */
+  containerIdentity: string;
+  /** Direct body-child position for a scaffold-owned block boundary. */
+  bodyChildOrdinal?: number;
+  /** Inclusive direct paragraph-child range for an ordered inline payload. */
+  inlineChildStartOrdinal?: number;
+  inlineChildEndOrdinal?: number;
+  /** Stable sequence position among captured field ranges in this paragraph. */
+  inlineRangeOrdinal?: number;
+  /** Number of contiguous source-order paragraph slots owned by a block boundary. */
+  ownedParagraphCount?: number;
+  semanticFingerprint: string;
+  /** First retained XML element; kept for source compatibility with single-node owners. */
+  sourceElement: WmlElement;
+  /** Ordered XML payload retained by this boundary. */
+  sourceElements?: WmlElement[];
+  effectiveNamespaces: Readonly<Record<string, string>>;
+  effectiveMceDeclarations: Readonly<Record<string, string>>;
+  /** Package relationship closure rooted at relationship attributes in a block subtree. */
+  relationshipClosureFingerprint?: string;
+  /** Revised-side canonical owner for an equal original empty-paragraph atom. */
+  correlatedNode?: OpaquePassthroughNode;
+  emissionElement?: WmlElement;
+  emissionElements?: WmlElement[];
+}
+
+/**
  * Atomic leaf-node unit used in LCS comparison.
  *
  * Represents the smallest comparable unit of content. Created by atomizing
@@ -163,6 +206,11 @@ export interface ComparisonUnitAtom extends ComparisonUnit {
   // Run formatting snapshot
   /** Cloned run properties (w:rPr) captured at atomization time, or null if no formatting */
   rPr?: Element | null;
+
+  /** Opaque XML boundary that owns this atom, when bounded passthrough is enabled. */
+  opaquePassthrough?: OpaquePassthroughNode;
+  /** Zero-based paragraph position inside a scaffold-owned opaque block. */
+  opaquePassthroughRelativeParagraphOrdinal?: number;
 }
 
 // =============================================================================

@@ -18,7 +18,12 @@ function getAvailableToolsSchema(): Array<{
     grep: { dedupe_by_paragraph: true },
     save: {
       save_format: 'both',
-      clean_bookmarks: true,
+      // clean_bookmarks is intentionally NOT advertised with a default value:
+      // omitting it (the default) preserves the document's own bookmarks on the
+      // tracked save, whereas explicitly passing `true` also strips `edit-*`
+      // anchors (#609). Advertising `true` would nudge clients to send the value
+      // that reproduces the bug. See the param's schema description for the
+      // three-way semantics.
       returned_variants: ['clean', 'tracked'],
     },
   };

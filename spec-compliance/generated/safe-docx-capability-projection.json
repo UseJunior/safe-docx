@@ -2,26 +2,27 @@
   "schemaVersion": 1,
   "generatedFrom": {
     "repository": "open-agreements/docx-platform-tests",
-    "commit": "19f051ed645cbc8613a5967e02d7f87ef7824454",
+    "commit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
     "registryVersion": 1,
     "profileId": "current-neutral-surface"
   },
   "profileDenominator": {
-    "capabilityAxisPairs": 62,
+    "capabilityAxisPairs": 91,
     "byAxis": {
-      "generate": 14,
-      "edit": 16,
+      "preserve": 23,
+      "generate": 16,
+      "edit": 18,
       "acceptReject": 10,
-      "crossPlatform": 22
+      "crossPlatform": 24
     }
   },
   "evidenceInventory": {
-    "authoredMappingPairs": 27,
-    "crossPlatformDerivedPairsInCompleteRun": 22,
-    "expectedCompleteSummaryRows": 49,
+    "authoredMappingPairs": 29,
+    "crossPlatformDerivedPairsInCompleteRun": 24,
+    "expectedCompleteSummaryRows": 53,
     "pinnedMeasuredSummaryRows": 8,
     "pinnedMeasuredScenarios": 12,
-    "pinnedUnmeasuredScenarios": 26
+    "pinnedUnmeasuredScenarios": 32
   },
   "statusCounts": {
     "supported": 8,
@@ -29,7 +30,7 @@
     "preservation-only": 0,
     "gap": 3,
     "non-goal": 0,
-    "untested": 51
+    "untested": 80
   },
   "formalAssuranceBoundary": {
     "establishesCapabilityClaims": false,
@@ -156,6 +157,31 @@
       "family": "comments"
     },
     {
+      "capabilityId": "word.comments.anchors",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/comments.xml"
+        ],
+        "stories": [
+          "main",
+          "comments"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Comment range anchors",
+      "family": "comments"
+    },
+    {
       "capabilityId": "word.comments.content",
       "axis": "crossPlatform",
       "status": "untested",
@@ -222,6 +248,29 @@
       "family": "comments"
     },
     {
+      "capabilityId": "word.comments.content",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/comments.xml"
+        ],
+        "stories": [
+          "comments"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Comment content",
+      "family": "comments"
+    },
+    {
       "capabilityId": "word.comments.removal",
       "axis": "crossPlatform",
       "status": "untested",
@@ -268,6 +317,184 @@
       },
       "title": "Comment removal",
       "family": "comments"
+    },
+    {
+      "capabilityId": "word.content-controls.block",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Block structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.block",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Block structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.block",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Block structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.block",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "The pinned neutral scenarios are executed in the gated DPT self-check, while this projection has no committed neutral result row and does not encode repo-local forced-rebuild evidence.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Block structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.inline",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "fe0ee99602e6f982255ecaa2b45d4936a7f46150",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Inline structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.inline",
+      "axis": "edit",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "fe0ee99602e6f982255ecaa2b45d4936a7f46150",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Inline structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.inline",
+      "axis": "generate",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "fe0ee99602e6f982255ecaa2b45d4936a7f46150",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "not-applicable"
+        ]
+      },
+      "title": "Inline structured document tags",
+      "family": "content-controls"
+    },
+    {
+      "capabilityId": "word.content-controls.inline",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.17.0",
+      "lastVerifiedCommit": "fe0ee99602e6f982255ecaa2b45d4936a7f46150",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Inline structured document tags",
+      "family": "content-controls"
     },
     {
       "capabilityId": "word.footers.default",
@@ -339,6 +566,32 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Default section footer",
+      "family": "stories"
+    },
+    {
+      "capabilityId": "word.footers.default",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/footer*.xml"
+        ],
+        "stories": [
+          "main",
+          "footers"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Default section footer",
@@ -414,6 +667,32 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Default section header",
+      "family": "stories"
+    },
+    {
+      "capabilityId": "word.headers.default",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/header*.xml"
+        ],
+        "stories": [
+          "main",
+          "headers"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Default section header",
@@ -483,6 +762,30 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "External hyperlinks",
+      "family": "hyperlinks"
+    },
+    {
+      "capabilityId": "word.hyperlinks.external",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "External hyperlinks",
@@ -555,6 +858,31 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Paragraph numbering references",
+      "family": "numbering"
+    },
+    {
+      "capabilityId": "word.numbering.paragraph",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/numbering.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Paragraph numbering references",
@@ -643,6 +971,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Paragraph structure",
+      "family": "paragraphs"
+    },
+    {
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Paragraph structure",
@@ -709,6 +1060,29 @@
       "family": "revisions"
     },
     {
+      "capabilityId": "word.revisions.content",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Inserted and deleted run content",
+      "family": "revisions"
+    },
+    {
       "capabilityId": "word.revisions.moves",
       "axis": "acceptReject",
       "status": "untested",
@@ -747,6 +1121,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Move revisions",
+      "family": "revisions"
+    },
+    {
+      "capabilityId": "word.revisions.moves",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Move revisions",
@@ -807,6 +1204,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Paragraph-mark revisions",
+      "family": "revisions"
+    },
+    {
+      "capabilityId": "word.revisions.paragraph-mark",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Paragraph-mark revisions",
@@ -851,6 +1271,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Paragraph property revisions",
+      "family": "revisions"
+    },
+    {
+      "capabilityId": "word.revisions.paragraph-properties",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Paragraph property revisions",
@@ -911,6 +1354,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Run property revisions",
+      "family": "revisions"
+    },
+    {
+      "capabilityId": "word.revisions.run-properties",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Run property revisions",
@@ -955,6 +1421,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Table row revisions",
+      "family": "revisions"
+    },
+    {
+      "capabilityId": "word.revisions.table-rows",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Table row revisions",
@@ -1050,6 +1539,30 @@
       "family": "formatting"
     },
     {
+      "capabilityId": "word.runs.formatting",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/styles.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Direct run formatting",
+      "family": "formatting"
+    },
+    {
       "capabilityId": "word.settings.compatibility-mode",
       "axis": "crossPlatform",
       "status": "untested",
@@ -1128,6 +1641,33 @@
       "family": "settings"
     },
     {
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "[Content_Types].xml",
+          "_rels/.rels",
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/settings.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Word compatibility mode setting",
+      "family": "settings"
+    },
+    {
       "capabilityId": "word.styles.paragraph",
       "axis": "crossPlatform",
       "status": "untested",
@@ -1200,6 +1740,31 @@
       "family": "styles"
     },
     {
+      "capabilityId": "word.styles.paragraph",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml",
+          "word/styles.xml",
+          "word/_rels/document.xml.rels"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Named paragraph styles",
+      "family": "styles"
+    },
+    {
       "capabilityId": "word.tables.cells",
       "axis": "crossPlatform",
       "status": "untested",
@@ -1260,6 +1825,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Table cell content",
+      "family": "tables"
+    },
+    {
+      "capabilityId": "word.tables.cells",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Table cell content",
@@ -1326,6 +1914,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Horizontally merged table cells",
+      "family": "tables"
+    },
+    {
+      "capabilityId": "word.tables.horizontal-merge",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Horizontally merged table cells",
@@ -1420,6 +2031,29 @@
       "family": "tables"
     },
     {
+      "capabilityId": "word.tables.rows",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Table rows",
+      "family": "tables"
+    },
+    {
       "capabilityId": "word.tables.structure",
       "axis": "acceptReject",
       "status": "gap",
@@ -1508,6 +2142,29 @@
       "family": "tables"
     },
     {
+      "capabilityId": "word.tables.structure",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
+        ]
+      },
+      "title": "Table structure and grid",
+      "family": "tables"
+    },
+    {
       "capabilityId": "word.text.find-replace",
       "axis": "crossPlatform",
       "status": "supported",
@@ -1562,6 +2219,29 @@
         ],
         "reconstructionModes": [
           "not-applicable"
+        ]
+      },
+      "title": "Text replacement across run boundaries",
+      "family": "text"
+    },
+    {
+      "capabilityId": "word.text.find-replace",
+      "axis": "preserve",
+      "status": "untested",
+      "evidence": [],
+      "rationale": "No pinned neutral result or mapped local executable evidence is asserted for this preserve pair.",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072daca16cf02d8406c439d81281d382f",
+      "scope": {
+        "packageParts": [
+          "word/document.xml"
+        ],
+        "stories": [
+          "main"
+        ],
+        "reconstructionModes": [
+          "inplace",
+          "rebuild"
         ]
       },
       "title": "Text replacement across run boundaries",

@@ -220,6 +220,18 @@ function nextElementSibling(node: Node | null): Element | null {
   return null;
 }
 
+function collectNamedBookmarkIds(doc: Document): Set<string> {
+  const ids = new Set<string>();
+  const starts = doc.getElementsByTagNameNS(OOXML.W_NS, W.bookmarkStart);
+  for (let i = 0; i < starts.length; i++) {
+    const start = starts.item(i);
+    const name = start?.getAttributeNS(OOXML.W_NS, 'name') ?? start?.getAttribute('w:name');
+    const id = start?.getAttributeNS(OOXML.W_NS, 'id') ?? start?.getAttribute('w:id');
+    if (name && id) ids.add(id);
+  }
+  return ids;
+}
+
 export class DocxDocument {
   private zip: DocxZip;
   private documentXml: Document;
@@ -1173,7 +1185,11 @@ export class DocxDocument {
    *
    * @see https://github.com/UseJunior/safe-docx/issues/408
    */
-  async toBuffer(opts?: { cleanBookmarks?: boolean; minimalReserialization?: boolean }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
+  async toBuffer(opts?: {
+    cleanBookmarks?: boolean;
+    minimalReserialization?: boolean;
+    preserveOriginalBookmarks?: boolean;
+  }): Promise<{ buffer: Buffer; bookmarksRemoved: number; blocksRestored: number }> {
     // Always write the latest document.xml when saving.
     // Important: when cleanBookmarks=true (download), we must NOT mutate session state.
     const xmlWithBookmarks = serializeXml(this.documentXml);
@@ -1182,7 +1198,11 @@ export class DocxDocument {
 
     if (opts?.cleanBookmarks) {
       const cloned = parseXml(xmlWithBookmarks);
-      const bookmarksRemoved = cleanupInternalBookmarks(cloned);
+      const preserveBookmarkIds =
+        opts.preserveOriginalBookmarks && this.originalDocumentXmlText !== null
+          ? collectNamedBookmarkIds(parseXml(this.originalDocumentXmlText))
+          : undefined;
+      const bookmarksRemoved = cleanupInternalBookmarks(cloned, { preserveBookmarkIds });
       let blocksRestored = 0;
       if (opts.minimalReserialization && this.originalDocumentXmlText !== null) {
         try {

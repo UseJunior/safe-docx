@@ -94,6 +94,23 @@ describe('DocxArchive', () => {
     });
   });
 
+  describe('binary package entries', () => {
+    test('returns exact bytes without text decoding', async ({ given, when, then }: AllureBddContext) => {
+      let archive: DocxArchive;
+      const payload = Buffer.from([0x00, 0xff, 0x89, 0x50, 0x4e, 0x47]);
+
+      await given('a created archive with a binary media part', async () => {
+        archive = await DocxArchive.create();
+        archive.setFile('word/media/image.bin', payload);
+      });
+      await when('the media part is read as a buffer', () => {});
+      await then('every byte is retained', async () => {
+        expect(await archive.getFileBuffer('word/media/image.bin')).toEqual(payload);
+        expect(await archive.getFileBuffer('word/media/missing.bin')).toBeNull();
+      });
+    });
+  });
+
   describe('clone', () => {
     test('creates an independent copy', async ({ given, when, then }: AllureBddContext) => {
       let original: DocxArchive;

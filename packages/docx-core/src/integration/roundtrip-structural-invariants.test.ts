@@ -42,6 +42,7 @@ interface RoundTripArtifacts {
 
 
 const MODES: ReconstructionMode[] = ['rebuild', 'inplace'];
+const ILPA_MODES: ReconstructionMode[] = ['inplace'];
 const CORE_PARTS = [
   DOCX_PATHS.DOCUMENT,
   DOCX_PATHS.NUMBERING,
@@ -315,12 +316,25 @@ describe('Structural Round-Trip Invariants - ILPA Pair (feature-rich)', () => {
     const original = await readFile(ILPA_ORIGINAL_DOC);
     const revised = await readFile(ILPA_REVISED_DOC);
 
-    for (const mode of MODES) {
+    for (const mode of ILPA_MODES) {
       artifactsByMode.set(mode, await buildRoundTripArtifacts(original, revised, mode));
     }
   }, 240000);
 
-  for (const mode of MODES) {
+  test(
+    'fails closed when rebuild would launder changed block content controls',
+    async () => {
+      const original = await readFile(ILPA_ORIGINAL_DOC);
+      const revised = await readFile(ILPA_REVISED_DOC);
+
+      await expect(buildRoundTripArtifacts(original, revised, 'rebuild')).rejects.toThrow(
+        /Opaque passthrough: (?:boundary count changed|boundary 0 changed paragraph ownership, moved, or mutated)/
+      );
+    },
+    120000
+  );
+
+  for (const mode of ILPA_MODES) {
     test(
       `enforces read_text accept/reject parity (${mode})`,
       async ({ given, then }: AllureBddContext) => {

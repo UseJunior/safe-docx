@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "repository": "open-agreements/docx-platform-tests",
-  "commit": "19f051ed645cbc8613a5967e02d7f87ef7824454",
+  "commit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
   "registrySchemaVersion": 1,
   "registryVersion": 1,
   "profileId": "current-neutral-surface",
   "files": [
-    { "path": "spec-compliance/capabilities/upstream/capabilities.json", "sha256": "2d1fa7e478718b352deb915bc3a59a1ebe7e7081ce6efc1d337be66777498463" },
+    { "path": "spec-compliance/capabilities/upstream/capabilities.json", "sha256": "9551c483c052cf415105c7c922e7d0ead18c42bf10bc957dc35419e2abfa000c" },
     { "path": "spec-compliance/capabilities/upstream/capabilities.schema.json", "sha256": "0cd004d06db895485cd977b87cd207dcc02e82ae213da27acee145f308c79db4" },
-    { "path": "spec-compliance/capabilities/upstream/profiles.json", "sha256": "8c4a54ff5fc9d06495132026bec3bb2460248798ff19de8e173d94e43e4ba1c3" },
+    { "path": "spec-compliance/capabilities/upstream/profiles.json", "sha256": "db150c5c739e760f7d92c128f2e5ee76c7dd4e7265b3a647c1197aa90070970e" },
     { "path": "spec-compliance/capabilities/upstream/profiles.schema.json", "sha256": "a61419d3cff77a658f7e9190869426e9177725dfd87c6f9131fa20c934885ef0" },
-    { "path": "spec-compliance/capabilities/upstream/scenario-capabilities.json", "sha256": "7b6d4144cf5368fcde63a3a06b1b15eef39a01988e4151efb9eb8c00f91f8938" },
+    { "path": "spec-compliance/capabilities/upstream/scenario-capabilities.json", "sha256": "ac520f57d3b1d609d96e4c6a869a46aa7b8db4208d23c1bd449e17797f92f03e" },
     { "path": "spec-compliance/capabilities/upstream/scenario-capabilities.schema.json", "sha256": "0d9850a1782174e9cc206c4b5379a3b20360e2e2cf8e33461e3d49cb4303dc6c" },
-    { "path": "spec-compliance/capabilities/upstream/capability-summary.json", "sha256": "c39334899d310621d42cdeb959f8dc6d57335677443bbc69b7a58381a53b7278" }
+    { "path": "spec-compliance/capabilities/upstream/capability-summary.json", "sha256": "d7054219e5fdee8000f36b5389cc557ac45ebf280c26b0f16716ad31b9c2f092" }
   ]
 }

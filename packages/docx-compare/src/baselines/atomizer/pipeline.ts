@@ -77,6 +77,11 @@ import {
   type HyperlinkRelResolver,
   computeReconstructionStats,
 } from './documentReconstructor.js';
+import {
+  bindOpaquePassthroughCounterparts,
+  OpaqueRelationshipClosureResolver,
+  validateOpaquePassthroughCorrelation,
+} from './opaquePassthrough.js';
 import { modifyRevisedDocument, ContainerResolutionError } from './inPlaceModifier.js';
 import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
@@ -614,6 +619,8 @@ export async function compareDocumentsAtomizer(
   // Step 1: Load DOCX archives
   const originalArchive = await DocxArchive.load(original);
   const revisedArchive = await DocxArchive.load(revised);
+  const originalOpaqueRelationships = new OpaqueRelationshipClosureResolver(originalArchive);
+  const revisedOpaqueRelationships = new OpaqueRelationshipClosureResolver(revisedArchive);
 
   // Step 1b: Resolve auxiliary ID collisions. When both sides define
   // different content under the same comment/footnote/endnote w:id or the
@@ -687,15 +694,15 @@ export async function compareDocumentsAtomizer(
   const originalBookmarkDiagnostics = collectBookmarkDiagnostics(originalXml);
   const revisedBookmarkDiagnostics = collectBookmarkDiagnostics(revisedXml);
 
-  const runComparisonPass = (
+  const runComparisonPass = async (
     atomizeOptions: Parameters<typeof atomizeTree>[3] | undefined,
     outputMode: ReconstructionMode
-  ): {
+  ): Promise<{
     mergedAtoms: ComparisonUnitAtom[];
     newDocumentXml: string;
     outputMode: ReconstructionMode;
     hyperlinkRelationships: NewHyperlinkRel[];
-  } => {
+  }> => {
     // Parse fresh trees for each pass because inplace reconstruction mutates revised AST.
     const originalTree = parseDocumentXml(originalXml);
     const revisedTree = parseDocumentXml(revisedXml);
@@ -713,12 +720,28 @@ export async function compareDocumentsAtomizer(
       premergeAdjacentRuns(revisedBody);
     }
 
-    const { atoms: originalAtoms } = atomizeTree(originalBody, [], originalPart, atomizeOptions);
-    const { atoms: revisedAtoms } = atomizeTree(revisedBody, [], revisedPart, atomizeOptions);
+    const effectiveAtomizeOptions = outputMode === 'rebuild'
+      ? {
+          ...atomizeOptions,
+          captureInlineSdtPassthrough: true,
+          captureComplexFieldPassthrough: reconstructionMode === 'rebuild',
+        }
+      : atomizeOptions;
+    const { atoms: originalAtoms } = atomizeTree(originalBody, [], originalPart, effectiveAtomizeOptions);
+    const { atoms: revisedAtoms } = atomizeTree(revisedBody, [], revisedPart, effectiveAtomizeOptions);
 
     // Assign paragraph indices for proper grouping during reconstruction
     assignParagraphIndices(originalAtoms);
     assignParagraphIndices(revisedAtoms);
+    if (outputMode === 'rebuild') {
+      await bindOpaquePassthroughCounterparts(
+        originalAtoms,
+        revisedAtoms,
+        originalOpaqueRelationships,
+        revisedOpaqueRelationships,
+        originalPart.uri,
+      );
+    }
 
     // Step 5: Apply numbering virtualization (optional)
     if (numberingSettings.enabled) {
@@ -766,6 +789,9 @@ export async function compareDocumentsAtomizer(
 
     // Step 10b: Assign unified paragraph indices to handle atoms from different trees
     assignUnifiedParagraphIndices(originalAtoms, revisedAtoms, mergedAtoms, lcsResult);
+    if (outputMode === 'rebuild') {
+      validateOpaquePassthroughCorrelation(mergedAtoms);
+    }
 
     // Step 11: Reconstruct document with track changes
     let newDocumentXml: string;
@@ -867,7 +893,7 @@ export async function compareDocumentsAtomizer(
     for (const { pass, atomizeOptions } of inplacePasses) {
       let candidate: typeof comparisonResult;
       try {
-        candidate = runComparisonPass(atomizeOptions, 'inplace');
+        candidate = await runComparisonPass(atomizeOptions, 'inplace');
       } catch (e) {
         if (e instanceof ContainerResolutionError) {
           // Container topology mismatch — treat as failed pass (issue #65)
@@ -909,7 +935,7 @@ export async function compareDocumentsAtomizer(
         precedingFailedAttempts: failedAttempts,
       };
     } else {
-      comparisonResult = runComparisonPass(
+      comparisonResult = await runComparisonPass(
         { atomizeParagraphLevelMarkers: true },
         'rebuild'
       );
@@ -919,7 +945,7 @@ export async function compareDocumentsAtomizer(
       };
     }
   } else {
-    comparisonResult = runComparisonPass(
+    comparisonResult = await runComparisonPass(
       { atomizeParagraphLevelMarkers: true },
       'rebuild'
     );
