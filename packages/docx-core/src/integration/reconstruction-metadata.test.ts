@@ -93,29 +93,6 @@ describe('Reconstruction metadata', () => {
     });
   });
 
-  test('keeps reconstruction metadata undefined for diffmatch engine (direct import)', async ({ given, when, then }: AllureBddContext) => {
-    let original: Buffer;
-    let revised: Buffer;
-    let result: Awaited<ReturnType<typeof import('@usejunior/docx-compare').compareDocumentsBaselineB>>;
-
-    await given('simple-word-change fixture documents are loaded', async () => {
-      ({ original, revised } = await loadFixturePair('simple-word-change'));
-    });
-
-    await when('documents are compared using the diffmatch baseline B engine', async () => {
-      const { compareDocumentsBaselineB } = await import('@usejunior/docx-compare');
-      result = await compareDocumentsBaselineB(original, revised);
-    });
-
-    await then('reconstruction metadata fields are all undefined', async () => {
-      expect(result.engine).toBe('diffmatch');
-      expect((result as any).reconstructionModeRequested).toBeUndefined();
-      expect((result as any).reconstructionModeUsed).toBeUndefined();
-      expect((result as any).fallbackReason).toBeUndefined();
-      expect((result as any).fallbackDiagnostics).toBeUndefined();
-    });
-  });
-
   test(
     'ILPA corpus completes in inplace mode without fallback',
     async ({ given, when, then }: AllureBddContext) => {

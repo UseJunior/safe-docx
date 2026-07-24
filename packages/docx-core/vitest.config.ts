@@ -51,7 +51,6 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'test-primitives/**/*.test.ts'],
     exclude: [
       'src/baselines/**/*.traceability.test.ts',
-      'src/baselines/diffmatch/**/*.test.ts',
     ],
     coverage: {
       provider: 'v8',

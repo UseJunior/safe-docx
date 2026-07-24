@@ -108,4 +108,3 @@ export {
 export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';
 export { AncillaryStorySafetyError } from './baselines/atomizer/ancillaryFieldSafety.js';
 export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
-export { compareDocumentsBaselineB } from './baselines/diffmatch/pipeline.js';

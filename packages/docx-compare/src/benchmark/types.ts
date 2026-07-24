@@ -4,7 +4,7 @@
  * Gate-then-score architecture: hard gates must pass before scores are computed.
  */
 
-export type BenchmarkEngine = 'atomizer' | 'diffmatch' | 'aspose';
+export type BenchmarkEngine = 'atomizer' | 'aspose';
 
 // ── Gate results ────────────────────────────────────────────────────
 
