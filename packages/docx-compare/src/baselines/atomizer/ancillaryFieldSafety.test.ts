@@ -18,6 +18,7 @@ import {
   type AncillaryNoteMergeResult,
 } from './ancillaryFieldSafety.js';
 
+const TEST_FEATURE = 'verify-ancillary-field-stories';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const PR_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';

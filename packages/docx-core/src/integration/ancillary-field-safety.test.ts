@@ -15,6 +15,7 @@ import {
 } from '../testing/ooxml-fixtures.js';
 import { testAllure } from '../testing/allure-test.js';
 
+const TEST_FEATURE = 'verify-ancillary-field-stories';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const REL_BASE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const HEADER_CONTENT_TYPE =

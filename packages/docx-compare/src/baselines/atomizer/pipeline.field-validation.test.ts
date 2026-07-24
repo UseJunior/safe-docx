@@ -10,6 +10,7 @@ import {
   validateStrictFieldStructure,
 } from '@usejunior/docx-core';
 
+const TEST_FEATURE = 'verify-ancillary-field-stories';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: 'Field Structure Validation (ECMA-376)' })

@@ -26,6 +26,7 @@ import {
 import { OOXML } from '../primitives/namespaces.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 
+const TEST_FEATURE = 'verify-ancillary-field-stories';
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: 'NVCA COI Regression' });
