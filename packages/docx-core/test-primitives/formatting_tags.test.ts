@@ -316,6 +316,43 @@ describe('formatting_tags', () => {
     });
   });
 
+  test(
+    'emitFormattingTags attribute-escapes document-derived font metadata',
+    async ({ when, then }: AllureBddContext) => {
+      let tagged: string;
+
+      await when('a run contains quote-bearing color and font values', () => {
+        const runs: AnnotatedRun[] = [
+          annotatedRun('X', {
+            colorHex: 'FF0000" onmouseover="alert(1)&<>',
+            fontName: 'A&B "Display" <Fallback>',
+          }),
+        ];
+        const baseline: FormattingBaseline = {
+          bold: false,
+          italic: false,
+          underline: false,
+          suppressed: false,
+        };
+        const fontBaseline = computeParagraphFontBaseline(runs, { formattingMode: 'full' });
+
+        tagged = emitFormattingTags({
+          runs,
+          baseline,
+          fontBaseline,
+          formattingMode: 'full',
+        });
+      });
+
+      await then('the values remain inside their original attributes', () => {
+        expect(tagged).toBe(
+          '<font color="FF0000&quot; onmouseover=&quot;alert(1)&amp;&lt;&gt;" ' +
+            'face="A&amp;B &quot;Display&quot; &lt;Fallback&gt;">X</font>',
+        );
+      });
+    },
+  );
+
   test('emitFormattingTags combines font and BIU tags', async ({ given, when, then }: AllureBddContext) => {
     let tagged: string;
 

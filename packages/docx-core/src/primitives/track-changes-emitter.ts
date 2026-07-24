@@ -370,7 +370,7 @@ function createSerializedRevisionOpenTag(
   ctx: RevisionContext,
 ): string {
   const id = allocateRevisionId(ctx.idState);
-  return `<${tagName} w:id="${id}" w:author="${escapeXmlAttr(ctx.author)}" w:date="${ctx.date}">`;
+  return `<${tagName} w:id="${id}" w:author="${escapeXmlAttr(ctx.author)}" w:date="${escapeXmlAttr(ctx.date)}">`;
 }
 
 function normalizeDeletionElement(element: Element): Element {

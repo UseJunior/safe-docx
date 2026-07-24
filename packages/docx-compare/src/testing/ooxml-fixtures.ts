@@ -51,6 +51,22 @@ function escapeXmlText(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
+function escapeXmlAttr(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+const XML_PREFIX_RE = /^[A-Za-z_][A-Za-z0-9._-]*$/u;
+
+function assertXmlPrefix(prefix: string): void {
+  if (!XML_PREFIX_RE.test(prefix) || /^xml/i.test(prefix)) {
+    throw new Error(`Invalid XML namespace prefix: ${JSON.stringify(prefix)}`);
+  }
+}
+
 export function paragraphWithText(text: string): string {
   return `<w:p>${resultText(escapeXmlText(text))}</w:p>`;
 }
@@ -114,7 +130,7 @@ export function decoratedComplexField(
     `<w:instrText xml:space="preserve">${secondInstruction}</w:instrText></w:r>` +
     `<w:r><w:rPr><w:u w:val="single"/></w:rPr>` +
     `<w:fldChar w:fldCharType="separate"/></w:r>` +
-    `<w:hyperlink w:anchor="${escapeXmlText(anchor)}" w:history="1">` +
+    `<w:hyperlink w:anchor="${escapeXmlAttr(anchor)}" w:history="1">` +
     `<w:r><w:rPr><w:smallCaps/></w:rPr><w:t>${escapeXmlText(result)}</w:t></w:r>` +
     `</w:hyperlink>` +
     `<w:r><w:rPr><w:vanish/><w14:textEffect w14:val="none"/></w:rPr>` +
@@ -214,17 +230,22 @@ export async function buildDocxFromBodyXml(
   hyperlinkRels: HyperlinkRelFixture[] = [],
   namespaceOptions: MinimalDocumentNamespaceOptions = {},
 ): Promise<Buffer> {
-  const extraNamespaces = Object.entries(namespaceOptions.namespaces ?? {})
-    .map(([prefix, uri]) => ` xmlns:${prefix}="${escapeXmlText(uri)}"`)
+  const namespaceEntries = Object.entries(namespaceOptions.namespaces ?? {});
+  for (const [prefix] of namespaceEntries) assertXmlPrefix(prefix);
+  const additionalIgnorablePrefixes = namespaceOptions.ignorablePrefixes ?? [];
+  for (const prefix of additionalIgnorablePrefixes) assertXmlPrefix(prefix);
+
+  const extraNamespaces = namespaceEntries
+    .map(([prefix, uri]) => ` xmlns:${prefix}="${escapeXmlAttr(uri)}"`)
     .join('');
-  const ignorable = ['w14', ...(namespaceOptions.ignorablePrefixes ?? [])].join(' ');
+  const ignorable = ['w14', ...additionalIgnorablePrefixes].join(' ');
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
     ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
     ` xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"` +
     extraNamespaces +
-    ` mc:Ignorable="${ignorable}">` +
+    ` mc:Ignorable="${escapeXmlAttr(ignorable)}">` +
     `<w:body>${bodyXml}<w:sectPr/></w:body></w:document>`;
 
   const contentTypesXml =
@@ -241,20 +262,14 @@ export async function buildDocxFromBodyXml(
     `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
     `</Relationships>`;
 
-  const escapeAttr = (value: string): string =>
-    value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
   const hyperlinkRelsXml = hyperlinkRels
     .map((rel) => {
       const external = rel.external ?? true;
       const mode = external ? ` TargetMode="External"` : '';
       return (
-        `<Relationship Id="${escapeAttr(rel.id)}"` +
+        `<Relationship Id="${escapeXmlAttr(rel.id)}"` +
         ` Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"` +
-        ` Target="${escapeAttr(rel.target)}"${mode}/>`
+        ` Target="${escapeXmlAttr(rel.target)}"${mode}/>`
       );
     })
     .join('');

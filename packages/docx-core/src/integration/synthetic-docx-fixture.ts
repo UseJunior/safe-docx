@@ -1,5 +1,13 @@
 import JSZip from 'jszip';
+import { escapeXmlAttr } from '../primitives/track-changes-emitter.js';
 import { DocxArchive } from '../shared/docx/DocxArchive.js';
+
+function escapeXmlText(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
 
 export interface SyntheticDocxOptions {
   paragraphs: string[];
@@ -109,10 +117,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const permSpanEnd = opts.permSpanParagraphs?.end;
 
   const paragraphParts: string[] = opts.paragraphs.map((text, idx) => {
-    const escaped = text
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+    const escaped = escapeXmlText(text);
     let extra = '';
 
     if (hasFootnote && idx === opts.footnoteOnParagraph) {
@@ -142,11 +147,12 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     }
 
     if (hasTrackedMove && idx === opts.trackedMove!.from) {
-      const name = opts.trackedMove!.name;
+      const name = escapeXmlAttr(opts.trackedMove!.name);
+      const author = escapeXmlAttr(moveAuthor);
       return (
         `<w:p>` +
-        `<w:moveFromRangeStart w:id="${moveBaseId}" w:name="${name}" w:author="${moveAuthor}" w:date="${moveDate}"/>` +
-        `<w:moveFrom w:id="${moveBaseId + 1}" w:author="${moveAuthor}" w:date="${moveDate}">` +
+        `<w:moveFromRangeStart w:id="${moveBaseId}" w:name="${name}" w:author="${author}" w:date="${moveDate}"/>` +
+        `<w:moveFrom w:id="${moveBaseId + 1}" w:author="${author}" w:date="${moveDate}">` +
         `<w:r><w:delText>${escaped}</w:delText></w:r>` +
         `</w:moveFrom>` +
         `<w:moveFromRangeEnd w:id="${moveBaseId}"/>` +
@@ -156,11 +162,12 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     }
 
     if (hasTrackedMove && idx === opts.trackedMove!.to) {
-      const name = opts.trackedMove!.name;
+      const name = escapeXmlAttr(opts.trackedMove!.name);
+      const author = escapeXmlAttr(moveAuthor);
       return (
         `<w:p>` +
-        `<w:moveToRangeStart w:id="${moveBaseId + 2}" w:name="${name}" w:author="${moveAuthor}" w:date="${moveDate}"/>` +
-        `<w:moveTo w:id="${moveBaseId + 3}" w:author="${moveAuthor}" w:date="${moveDate}">` +
+        `<w:moveToRangeStart w:id="${moveBaseId + 2}" w:name="${name}" w:author="${author}" w:date="${moveDate}"/>` +
+        `<w:moveTo w:id="${moveBaseId + 3}" w:author="${author}" w:date="${moveDate}">` +
         `<w:r><w:t>${escaped}</w:t></w:r>` +
         `</w:moveTo>` +
         `<w:moveToRangeEnd w:id="${moveBaseId + 2}"/>` +
@@ -170,7 +177,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
     }
 
     if (hasBookmark && idx === opts.bookmarkOnParagraph!.paragraph) {
-      const name = opts.bookmarkOnParagraph!.name;
+      const name = escapeXmlAttr(opts.bookmarkOnParagraph!.name);
       return (
         `<w:p>` +
         `<w:bookmarkStart w:id="${bookmarkId}" w:name="${name}"/>` +
@@ -196,8 +203,9 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   // Bookmark*Start*/End placed as sibling of <w:p> per ECMA-376 §17.13.5.
   if (hasSiblingBookmark) {
     const { index, name } = opts.siblingBookmarkBefore!;
+    const escapedName = escapeXmlAttr(name);
     const sibling =
-      `<w:bookmarkStart w:id="${siblingBookmarkId}" w:name="${name}"/>` +
+      `<w:bookmarkStart w:id="${siblingBookmarkId}" w:name="${escapedName}"/>` +
       `<w:bookmarkEnd w:id="${siblingBookmarkId}"/>`;
     paragraphParts.splice(index, 0, sibling);
   }
@@ -246,7 +254,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   const zip = new JSZip();
 
   if (hasFootnote) {
-    const fnText = opts.footnoteText ?? 'Test footnote';
+    const fnText = escapeXmlText(opts.footnoteText ?? 'Test footnote');
     const footnotesXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -265,7 +273,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   }
 
   if (hasEndnote) {
-    const enText = opts.endnoteText ?? 'Test endnote';
+    const enText = escapeXmlText(opts.endnoteText ?? 'Test endnote');
     const endnotesXml =
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -284,13 +292,15 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   }
 
   if (hasComment || hasCommentSpan || hasSiblingCommentRange) {
-    const cText = opts.commentText ?? 'Test comment';
-    const cAuthor = opts.commentAuthor ?? 'Author';
+    const cText = escapeXmlText(opts.commentText ?? 'Test comment');
+    const rawCommentAuthor = opts.commentAuthor ?? 'Author';
+    const cAuthor = escapeXmlAttr(rawCommentAuthor);
     const hasReply = opts.replyText != null;
-    const replyAuthor = opts.replyAuthor ?? 'Replier';
+    const rawReplyAuthor = opts.replyAuthor ?? 'Replier';
+    const replyAuthor = escapeXmlAttr(rawReplyAuthor);
     const replyEntry = hasReply
       ? `<w:comment w:id="2" w:author="${replyAuthor}" w:date="2025-01-02T00:00:00Z">` +
-        `<w:p w14:paraId="00000002"><w:r><w:t>${opts.replyText}</w:t></w:r></w:p>` +
+        `<w:p w14:paraId="00000002"><w:r><w:t>${escapeXmlText(opts.replyText!)}</w:t></w:r></w:p>` +
         `</w:comment>`
       : '';
     const commentsXml =
@@ -332,7 +342,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
 
       const replyPersonEntry = hasReply
         ? `<w15:person w15:author="${replyAuthor}">` +
-          `<w15:presenceInfo w15:providerId="None" w15:userId="${replyAuthor}@example.com"/>` +
+          `<w15:presenceInfo w15:providerId="None" w15:userId="${escapeXmlAttr(`${rawReplyAuthor}@example.com`)}"/>` +
           `</w15:person>`
         : '';
       const peopleXml =
@@ -340,7 +350,7 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
         `<w15:people xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"` +
         ` xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
         `<w15:person w15:author="${cAuthor}">` +
-        `<w15:presenceInfo w15:providerId="None" w15:userId="${cAuthor}@example.com"/>` +
+        `<w15:presenceInfo w15:providerId="None" w15:userId="${escapeXmlAttr(`${rawCommentAuthor}@example.com`)}"/>` +
         `</w15:person>` +
         replyPersonEntry +
         `</w15:people>`;
