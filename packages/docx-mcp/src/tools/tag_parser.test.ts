@@ -114,6 +114,15 @@ describe('tag_parser', () => {
         seg('serif', { fontName: 'A&B "Display" <Fallback>' }),
       ]);
     });
+
+    test('nested named entities remain literal after one DOM decode', () => {
+      const result = splitTaggedText(
+        '<font face="Literal &amp;quot; entity">serif</font>',
+      );
+      expect(result).toEqual([
+        seg('serif', { fontName: 'Literal &quot; entity' }),
+      ]);
+    });
   });
 
   // ─── splitTaggedText: mixed and nested tags ────────────────────
