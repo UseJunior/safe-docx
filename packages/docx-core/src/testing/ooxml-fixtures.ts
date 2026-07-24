@@ -225,6 +225,26 @@ export interface MinimalDocumentNamespaceOptions {
   ignorablePrefixes?: readonly string[];
 }
 
+export interface AncillaryPartFixture {
+  path: string;
+  contentType: string;
+  xml: string;
+}
+
+export interface DocumentRelationshipFixture {
+  id: string;
+  type: string;
+  target: string;
+  targetMode?: 'External';
+}
+
+export interface AncillaryDocxFixtureOptions {
+  bodyXml: string;
+  sectPrXml: string;
+  relationships?: readonly DocumentRelationshipFixture[];
+  parts?: readonly AncillaryPartFixture[];
+}
+
 export async function buildDocxFromBodyXml(
   bodyXml: string,
   hyperlinkRels: HyperlinkRelFixture[] = [],
@@ -285,6 +305,62 @@ export async function buildDocxFromBodyXml(
   zip.file('_rels/.rels', rootRelsXml);
   zip.file('word/document.xml', documentXml);
   zip.file('word/_rels/document.xml.rels', docRelsXml);
+
+  return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
+}
+
+/**
+ * Extend the minimal package shape with section bindings and ancillary parts.
+ *
+ * This keeps relationship-addressed header/footer and note fixtures in the
+ * shared package builder instead of re-deriving JSZip scaffolding per test.
+ */
+export async function buildDocxWithAncillaryParts(
+  options: AncillaryDocxFixtureOptions,
+): Promise<Buffer> {
+  const base = await buildDocxFromBodyXml(options.bodyXml, [], {
+    namespaces: {
+      r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+    },
+  });
+  const zip = await JSZip.loadAsync(base);
+  const documentFile = zip.file('word/document.xml');
+  const contentTypesFile = zip.file('[Content_Types].xml');
+  if (!documentFile || !contentTypesFile) {
+    throw new Error('Minimal DOCX fixture is missing required package parts');
+  }
+
+  const documentXml = await documentFile.async('string');
+  zip.file('word/document.xml', documentXml.replace('<w:sectPr/>', options.sectPrXml));
+
+  const relationships = (options.relationships ?? []).map((relationship) => {
+    const targetMode = relationship.targetMode
+      ? ` TargetMode="${relationship.targetMode}"`
+      : '';
+    return (
+      `<Relationship Id="${escapeXmlAttr(relationship.id)}"` +
+      ` Type="${escapeXmlAttr(relationship.type)}"` +
+      ` Target="${escapeXmlAttr(relationship.target)}"${targetMode}/>`
+    );
+  }).join('');
+  zip.file(
+    'word/_rels/document.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `${relationships}</Relationships>`,
+  );
+
+  let contentTypesXml = await contentTypesFile.async('string');
+  for (const part of options.parts ?? []) {
+    const normalizedPath = part.path.replace(/^\/+/, '');
+    zip.file(normalizedPath, part.xml);
+    contentTypesXml = contentTypesXml.replace(
+      '</Types>',
+      `<Override PartName="/${escapeXmlAttr(normalizedPath)}"` +
+        ` ContentType="${escapeXmlAttr(part.contentType)}"/></Types>`,
+    );
+  }
+  zip.file('[Content_Types].xml', contentTypesXml);
 
   return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
 }

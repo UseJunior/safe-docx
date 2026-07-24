@@ -75,7 +75,9 @@ export interface CompareStats {
 
 export type ReconstructionMode = 'rebuild' | 'inplace';
 
-export type ReconstructionFallbackReason = 'round_trip_safety_check_failed';
+export type ReconstructionFallbackReason =
+  | 'round_trip_safety_check_failed'
+  | 'ancillary_story_safety_check_failed';
 
 export interface LeanXmlVerifierOptions {
   /**
@@ -233,6 +235,100 @@ export interface ReconstructionRebuildSafetyDiagnostics {
   firstDiffSummary?: ReconstructionSafetyFailureSummary;
 }
 
+export type AncillaryStorySafetyCategory =
+  | 'binding_resolution'
+  | 'strict_field_structure'
+  | 'canonical_evidence';
+
+export interface AncillaryBindingLocator {
+  locatorType: 'section_binding';
+  sectionOrdinal: number;
+  kind: 'header' | 'footer';
+  role: 'default' | 'first' | 'even';
+  normalizedPartPath?: string;
+}
+
+export interface AncillaryHeaderFooterStoryLocator {
+  locatorType: 'header_footer_story';
+  normalizedPartPath: string;
+  selectingBindings: AncillaryBindingLocator[];
+}
+
+export interface AncillaryNoteStoryLocator {
+  locatorType: 'note_entry';
+  normalizedPartPath: 'word/footnotes.xml' | 'word/endnotes.xml';
+  entryId: string;
+  sourceSide?: 'original' | 'revised';
+}
+
+export interface AncillaryPackageLocator {
+  locatorType: 'package_part';
+  normalizedPartPath: string;
+}
+
+export interface AncillaryFieldLocator {
+  locatorType: 'field_range';
+  normalizedPartPath: string;
+  entryId?: string;
+  paragraphOrdinal: number;
+  eligibleFieldOrdinal: number;
+  instructionKind: AncillaryFieldInstructionKind;
+}
+
+export type AncillaryStoryLocator =
+  | AncillaryBindingLocator
+  | AncillaryHeaderFooterStoryLocator
+  | AncillaryNoteStoryLocator
+  | AncillaryPackageLocator
+  | AncillaryFieldLocator;
+
+export interface AncillaryStorySafetyIssue {
+  category: AncillaryStorySafetyCategory;
+  code: string;
+  detail: string;
+  locator: AncillaryStoryLocator;
+}
+
+export interface AncillaryFallbackDiagnostics {
+  issues: AncillaryStorySafetyIssue[];
+}
+
+export type AncillaryFieldInstructionKind = 'PAGE' | 'NUMPAGES' | 'REF' | 'PAGEREF';
+
+export interface AncillarySelectedBindingSummary {
+  sectionOrdinal: number;
+  kind: 'header' | 'footer';
+  role: 'default' | 'first' | 'even';
+  relationshipId: string;
+  normalizedPartPath: string;
+}
+
+export interface AncillaryStorySummary {
+  storyKind: 'header' | 'footer' | 'footnote' | 'endnote';
+  normalizedPartPath: string;
+  entryId?: string;
+  selectingBindings?: AncillaryBindingLocator[];
+  sourceSide?: 'original' | 'revised';
+  provenance?: 'base' | 'imported';
+  strictFieldStructure: 'passed';
+}
+
+export interface AncillaryFieldRangeEvidence {
+  locator: AncillaryFieldLocator;
+  instructionKind: AncillaryFieldInstructionKind;
+  sourceSide: 'original' | 'revised';
+  provenance: 'base' | 'imported';
+  canonicalMatch: true;
+}
+
+export interface AncillaryFieldEvidence {
+  status: 'passed';
+  reconstructionMode: ReconstructionMode;
+  selectedBindings: AncillarySelectedBindingSummary[];
+  stories: AncillaryStorySummary[];
+  ranges: AncillaryFieldRangeEvidence[];
+}
+
 export type DocumentIntegrityCertificateStatus =
   | 'passed'
   | 'failed'
@@ -342,6 +438,11 @@ export interface CompareResult {
    */
   fallbackDiagnostics?: ReconstructionFallbackDiagnostics;
   /**
+   * Ancillary issues from an inplace candidate rejected at package assembly.
+   * Present only when ancillary validation itself caused rebuild fallback.
+   */
+  ancillaryFallbackDiagnostics?: AncillaryFallbackDiagnostics;
+  /**
    * Safety-check failures observed on rebuild output — whether rebuild was
    * requested explicitly (the default mode) or reached via inplace fallback.
    * Present only when at least one check failed.
@@ -352,6 +453,11 @@ export interface CompareResult {
    * Present only when atomizer produced inplace output.
    */
   inplaceSuccessDiagnostics?: ReconstructionInplaceSuccessDiagnostics;
+  /**
+   * Successful structural and canonical evidence for the final assembled
+   * ancillary stories. Absence means unavailable evidence, not a pass.
+   */
+  ancillaryFieldEvidence?: AncillaryFieldEvidence;
   /**
    * Optional per-document integrity certificate from the separately compiled
    * Lean XML triple verifier. Present only when `leanXmlVerifier.enabled` is set.

@@ -99,6 +99,14 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
         ]));
         expect(result.ok, JSON.stringify(result.issues)).toBe(true);
         expect(result.stats.referenceCount).toBe(1);
+        expect(result.bindings).toEqual([{
+          sectionOrdinal: 0,
+          kind: 'header',
+          role: 'default',
+          rid: 'rId1',
+          targetPath: 'word/header1.xml',
+          path: 'wp:document[1]/wp:body[1]/wp:sectPr[1]/wp:headerReference[1]',
+        }]);
       });
 
       await then('prefixed package relationships are matched by namespace URI and local name', () => {
@@ -155,7 +163,21 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
             .replace('Target="header1.xml"', 'Target="https://example.test/story.xml" TargetMode="External"');
           const result = auditSectPr(referenceDocument, externalRelationships);
           expect(result.issues).toEqual(
-            expect.arrayContaining([expect.objectContaining({ type: 'sectpr_reference_wrong_relationship_type', rid: 'rId1' })]),
+            expect.arrayContaining([expect.objectContaining({ type: 'sectpr_reference_external_target', rid: 'rId1' })]),
+          );
+        }
+      });
+
+      await then('invalid TargetMode values are rejected rather than treated as internal', () => {
+        for (const mode of ['', 'internal', 'EXTERNAL']) {
+          const invalidModeRelationships = relationships.replace(
+            'Target="header1.xml"',
+            `Target="header1.xml" TargetMode="${mode}"`,
+          );
+          expect(auditSectPr(documentXml, invalidModeRelationships).issues).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ type: 'sectpr_reference_invalid_target_mode' }),
+            ]),
           );
         }
       });
@@ -177,6 +199,7 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
         expect(result.issues.filter((issue) => issue.type === 'sectpr_duplicate_relationship_id')).toEqual([
           expect.objectContaining({ rid: 'rId1' }),
         ]);
+        expect(result.bindings).toEqual([]);
 
         const reversed = duplicateRelationships.replace(
           /(<Relationship Id="rId1"[^>]+\/>)(<Relationship Id="rId1"[^>]+\/>)/,
@@ -198,6 +221,17 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
               expect.objectContaining({ type: 'sectpr_duplicate_reference_type' }),
             ]),
           );
+          const kindRelationships = relationships
+            .replace(`${r}/header`, `${r}/${kind}`)
+            .replace('header1.xml', `${kind}1.xml`);
+          expect(auditSectPr(
+            duplicateDocument,
+            kindRelationships,
+            new Map([[
+              `word/${kind}1.xml`,
+              `<wp:${kind === 'header' ? 'hdr' : 'ftr'} xmlns:wp="${w}"/>`,
+            ]]),
+          ).bindings).toHaveLength(1);
         }
       });
 
@@ -222,6 +256,46 @@ describe('Traceability: multi-section documents, headers/footers, and fields', (
         expect(result.issues).toEqual(
           expect.arrayContaining([expect.objectContaining({ type: 'sectpr_reference_invalid_target' })]),
         );
+      });
+
+      await then('ambiguous URI and encoded path forms are rejected', () => {
+        for (const target of [
+          '',
+          'header1.xml?query',
+          'header1.xml#fragment',
+          'headers\\header1.xml',
+          'https:header1.xml',
+          '//server/header1.xml',
+          '%2e%2e/header1.xml',
+          'headers%2fheader1.xml',
+        ]) {
+          const unsafeRelationships = relationships.replace('header1.xml', target);
+          expect(auditSectPr(documentXml, unsafeRelationships).issues).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ type: 'sectpr_reference_invalid_target' }),
+            ]),
+          );
+        }
+      });
+
+      await then('header and footer references nested below sectPr are rejected by placement', () => {
+        const nestedDocument = documentXml.replace(
+          '<wp:headerReference wp:type="default" rel:id="rId1"/>',
+          '<wp:extLst><wp:headerReference wp:type="default" rel:id="rId1"/></wp:extLst>',
+        );
+        const result = auditSectPr(nestedDocument, relationships);
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'sectpr_reference_invalid_placement',
+              sectionOrdinal: 0,
+              kind: 'header',
+              role: 'default',
+            }),
+          ]),
+        );
+        expect(result.bindings).toEqual([]);
+        expect(result.stats.referenceCount).toBe(1);
       });
     },
   );

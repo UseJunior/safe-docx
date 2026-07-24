@@ -465,7 +465,7 @@ section: "17.10.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:headerReference
 verifiedBy:
-  packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
+  packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Each declared header slot (first/default/even) becomes its own part bound
@@ -482,7 +482,9 @@ rejected. Relative and package-absolute targets are normalized before lookup;
 URI-fragment semantics are outside this audit's supported OPC target model.
 Relationship reuse across sections is accepted. Pagination,
 role inheritance when a reference is absent, and reader rendering are not
-evaluated.
+evaluated. Comparison uses this same audit to select only valid direct
+section bindings; target normalization and package containment are additional
+SafeDocX safety policies rather than claims made by this clause.
 
 ## [ECMA-PART1-17-10-2] w:footerReference binding
 
@@ -493,7 +495,7 @@ section: "17.10.2"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footerReference
 verifiedBy:
-  packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts
+  packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Footer references follow the same typed-binding discipline as header
@@ -528,7 +530,7 @@ part: 1
 section: "17.10.4"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hdr
-verifiedBy:
+verifiedBy: packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts
 ```
 
 Header parts are emitted as standalone `w:hdr` documents
@@ -544,7 +546,7 @@ part: 1
 section: "17.10.3"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr
-verifiedBy:
+verifiedBy: packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Footer parts mirror header parts as `w:ftr` documents (word/footerN.xml);
@@ -608,7 +610,7 @@ part: 1
 section: "17.16.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:fldChar
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/structural-checks.ts; packages/docx-core/src/shared/field-structure.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json
 ```
 
 Every generated field is a complete five-run sequence — `fldChar begin`,
@@ -619,6 +621,8 @@ unrepresentable-by-omission; the structural validator runs a begin →
 separate → end state machine over every story part. The comparison path keeps
 these field-state markers outside the `w:del` payload wrappers shown by the
 Part 1 complex-field and deleted-field-code syntax.
+The runtime ancillary predicate adds fail-closed stack diagnostics without
+changing the Lean-pinned predicate or protocol.
 
 ## [ECMA-PART1-17-16-5-44] PAGE field instruction emission
 
@@ -628,7 +632,7 @@ part: 1
 section: "17.16.5.44"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 The PAGE instruction is emitted with canonical surrounding spaces
@@ -643,7 +647,7 @@ part: 1
 section: "17.16.5.42"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/run.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts
 ```
 
 The NUMPAGES instruction follows the same emission discipline as PAGE
@@ -658,7 +662,7 @@ part: 1
 section: "17.16.5.45"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts
 ```
 
 Forced main-document rebuild classifies a self-contained PAGEREF instruction
@@ -675,7 +679,7 @@ part: 1
 section: "17.16.5.51"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:instrText
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-complex-fields.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 ```
 
 Forced main-document rebuild classifies a self-contained REF instruction with
@@ -1699,19 +1703,21 @@ section; they are described under
 in the root README.
 
 Within Part 1 §17.16, safe-docx targets structural emission of complex fields
-and the PAGE and NUMPAGES instructions listed above. Forced rebuild additionally
-classifies unchanged, self-contained main-document PAGE, NUMPAGES, REF, and
-PAGEREF fields for exact ordered-range passthrough. Unrelated direct-child edits
-may shift a field's paragraph-child positions; pairing instead uses stable
-paragraph ownership and field-range sequence. Non-revision wrappers such as
-`w:hyperlink` are preserved, while tracked-revision-owned, changed, reordered,
-cross-paragraph, or nested field rebuild is outside this bounded claim. Other
-field instructions retain the existing rebuild safety-diagnostics behavior and
-are not newly rejected merely for malformed structure. General field-code
-parsing and evaluation, ancillary-story topology preservation, cached-result
-correctness, pagination, and equivalence to a Word application's field engine
-are out of scope. The Lean XML verifier remains inapplicable to rebuild output
-and does not prove this topology-preservation invariant.
+and the PAGE and NUMPAGES instructions listed above. Forced main-story rebuild
+classifies unchanged, self-contained PAGE, NUMPAGES, REF, and PAGEREF fields
+for exact ordered-range passthrough. At the final package boundary, comparison
+also classifies eligible PAGE/NUMPAGES ranges in selected headers/footers and
+REF/PAGEREF ranges in individual note entries for source-first exact canonical
+evidence in both reconstruction modes. Exact whole-range equality, stable
+locators, source provenance, and note-entry isolation are SafeDocX
+metamorphic/evidence policies, not ECMA claims. Nested and cross-paragraph
+ranges are excluded from exact evidence but remain subject to strict story
+validation. General field-code parsing and evaluation, ancillary revision
+synthesis or text comparison, cached-result correctness, pagination, bookmark
+resolution, and equivalence to a Word application's field engine are out of
+scope. The Lean XML verifier remains protocol v3, inplace-only, and fixed to
+main/footnotes/endnotes; it does not prove this canonical-preservation
+invariant and still excludes headers/footers.
 
 Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
 display numbering for Word-conventional packages plus generated
@@ -1720,6 +1726,12 @@ assignment, complete `w:type` or `w:customMarkFollows` display semantics,
 complete note-definition/reference integrity, relationship validation,
 arbitrary cross-paragraph comment ranges, threaded-comment semantics,
 resolution-state semantics, or repair of malformed third-party comment parts.
+Comparison's integer-canonical note-ID validation, rejection of invalid or
+numeric-equivalent duplicate direct IDs, contributor-aware post-collision
+provenance mapping, and per-entry validation are SafeDocX evidence-safety
+policies and do not broaden this into a complete note integrity or relationship
+claim. Unused merge-source note parts are outside the selected assembly
+evidence boundary.
 The compiled Lean checker independently covers fixed-story text projection and
 field-marker structure in `word/footnotes.xml` and `word/endnotes.xml`; it does
 not cover any of those excluded reference, relationship, anchor, or thread
@@ -1731,9 +1743,13 @@ header/footer bindings. The package audit resolves those bindings through the
 main-document relationships and checks the target story root. It does not
 implement pagination, section inheritance or omitted-role fallback semantics,
 style inheritance, layout, rendering, or assertions about arbitrary consumer
-behavior. Comparison preserves ancillary parts according to its documented
-in-place/rebuild rules; this registry does not claim semantic comparison of
-header or footer content across document versions.
+behavior. Direct binding placement, exact target-mode handling, URI/path
+normalization, and package containment use a shared SafeDocX OPC safety policy;
+they are not additional claims attributed to these clauses. Comparison
+preserves ancillary parts according to its documented
+in-place/rebuild rules and validates selected field stories before publication;
+this registry does not claim revision synthesis, text comparison, or semantic
+comparison of header or footer content across document versions.
 
 Within Part 1 §17.3, safe-docx targets the direct-formatting properties exposed
 by `ParagraphSpec` and `RunProps`: paragraph style references, keep controls,

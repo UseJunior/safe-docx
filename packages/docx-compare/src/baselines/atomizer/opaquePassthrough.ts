@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import type { ComparisonUnitAtom, DocxArchive, OpaquePassthroughNode } from '@usejunior/docx-core';
-import { CorrelationStatus, OOXML, parseXml } from '@usejunior/docx-core';
+import {
+  CorrelationStatus,
+  OOXML,
+  normalizeOpcRelationshipTarget,
+  parseXml,
+} from '@usejunior/docx-core';
 
 const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 const XML_NS = 'http://www.w3.org/XML/1998/namespace';
@@ -51,48 +56,6 @@ function collectRelationshipIds(root: Element): string[] {
   };
   visit(root);
   return [...ids].sort();
-}
-
-function normalizeInternalTarget(ownerPart: string, target: string): string {
-  if (!target || target.includes('\\') || /[\u0000-\u001f\u007f?#]/.test(target)) {
-    throw new OpaquePassthroughError(`unsafe internal relationship target '${target}'`);
-  }
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(target);
-  } catch {
-    throw new OpaquePassthroughError(`invalid encoded relationship target '${target}'`);
-  }
-  if (
-    decoded.includes('\\') ||
-    /[\u0000-\u001f\u007f?#]/.test(decoded) ||
-    decoded.startsWith('//') ||
-    decoded.includes(':')
-  ) {
-    throw new OpaquePassthroughError(`unsafe internal relationship target '${target}'`);
-  }
-  const segments = decoded.startsWith('/') ? [] : posix.dirname(ownerPart).split('/').filter(Boolean);
-  for (const segment of decoded.split('/')) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') {
-      if (segments.length === 0) {
-        throw new OpaquePassthroughError(`relationship target escapes the package root: '${target}'`);
-      }
-      segments.pop();
-    } else {
-      segments.push(segment);
-    }
-  }
-  if (segments.length === 0) throw new OpaquePassthroughError(`empty resolved relationship target '${target}'`);
-  return segments.join('/');
-}
-
-function normalizeExternalTarget(target: string): string {
-  try {
-    return new URL(target).href;
-  } catch {
-    throw new OpaquePassthroughError(`unsafe external relationship target '${target}'`);
-  }
 }
 
 /** Memoized package-scoped relationship closure used only for opaque body blocks. */
@@ -148,11 +111,11 @@ export class OpaqueRelationshipClosureResolver {
         id,
         type: relationship.type,
         mode: relationship.mode,
-        target: normalizeExternalTarget(relationship.target),
+        target: relationship.target,
       });
     }
 
-    const targetPart = normalizeInternalTarget(ownerPart, relationship.target);
+    const targetPart = relationship.target;
     const hash = await this.hashPart(targetPart);
     const dependentRelationships = await this.relationshipsForPart(targetPart);
     let dependencies: string[] = [];
@@ -194,12 +157,33 @@ export class OpaqueRelationshipClosureResolver {
         const id = element.getAttribute('Id');
         const type = element.getAttribute('Type');
         const target = element.getAttribute('Target');
-        const rawMode = element.getAttribute('TargetMode') || 'Internal';
-        if (!id || !type || !target || (rawMode !== 'Internal' && rawMode !== 'External')) {
+        const rawMode = element.hasAttribute('TargetMode')
+          ? element.getAttribute('TargetMode')
+          : undefined;
+        if (!id || !type) {
           throw new OpaquePassthroughError(`invalid relationship entry in '${relationshipPartPath(partPath)}'`);
         }
         if (relationships.has(id)) throw new OpaquePassthroughError(`duplicate relationship Id ${partPath}#${id}`);
-        relationships.set(id, { id, type, target, mode: rawMode });
+        try {
+          const normalized = normalizeOpcRelationshipTarget({
+            ownerPart: partPath,
+            target: target ?? '',
+            targetMode: rawMode,
+            allowExternal: true,
+          });
+          relationships.set(id, {
+            id,
+            type,
+            target: normalized.target,
+            mode: normalized.mode,
+          });
+        } catch (error) {
+          throw new OpaquePassthroughError(
+            error instanceof Error
+              ? error.message
+              : `invalid relationship entry in '${relationshipPartPath(partPath)}'`,
+          );
+        }
       }
       return relationships;
     })();
@@ -294,7 +278,8 @@ function effectiveMceDeclarations(element: Element): {
   };
 }
 
-function canonicalNode(node: Node): string {
+/** Expanded-name canonical subtree form used by opaque preservation checks. */
+export function canonicalNode(node: Node): string {
   if (node.nodeType === 1) {
     const element = node as Element;
     const attributes: string[] = [];
@@ -679,7 +664,7 @@ export function captureSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]
   }
 }
 
-type SupportedComplexField = 'PAGE' | 'NUMPAGES' | 'REF' | 'PAGEREF';
+export type SupportedComplexField = 'PAGE' | 'NUMPAGES' | 'REF' | 'PAGEREF';
 
 function fieldCharType(atom: ComparisonUnitAtom): string | null {
   const element = atom.contentElement;
@@ -776,7 +761,7 @@ function supportedFieldKeyword(instruction: string): SupportedComplexField | nul
     : null;
 }
 
-function classifyFieldInstruction(instruction: string): SupportedComplexField | null {
+export function classifyFieldInstruction(instruction: string): SupportedComplexField | null {
   const tokens = tokenizeFieldInstruction(instruction);
   if (!tokens || tokens.length === 0) return null;
   const keyword = tokens[0]!.toUpperCase();

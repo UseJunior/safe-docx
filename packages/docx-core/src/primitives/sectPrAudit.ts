@@ -1,6 +1,10 @@
 import { parseXml } from './xml.js';
 import { childElements } from './dom-helpers.js';
 import { OOXML } from './namespaces.js';
+import {
+  OpcRelationshipTargetError,
+  normalizeOpcRelationshipTarget,
+} from './opc-target.js';
 
 export type SectPrIssueType =
   | 'missing_body'
@@ -10,10 +14,13 @@ export type SectPrIssueType =
   | 'sectpr_in_ppr_without_paragraph_parent'
   | 'sectpr_reference_missing_rid'
   | 'sectpr_reference_invalid_type'
+  | 'sectpr_reference_invalid_placement'
   | 'sectpr_duplicate_reference_type'
   | 'sectpr_reference_dangling_rid'
   | 'sectpr_duplicate_relationship_id'
   | 'sectpr_reference_wrong_relationship_type'
+  | 'sectpr_reference_invalid_target_mode'
+  | 'sectpr_reference_external_target'
   | 'sectpr_reference_invalid_target'
   | 'sectpr_reference_missing_target_part'
   | 'sectpr_reference_wrong_target_root';
@@ -23,11 +30,28 @@ export interface SectPrAuditIssue {
   path: string;
   message: string;
   rid?: string;
+  sectionOrdinal?: number;
+  kind?: SectPrBindingKind;
+  role?: SectPrBindingRole;
+  targetPath?: string;
+}
+
+export type SectPrBindingKind = 'header' | 'footer';
+export type SectPrBindingRole = 'default' | 'first' | 'even';
+
+export interface SectPrBinding {
+  sectionOrdinal: number;
+  kind: SectPrBindingKind;
+  role: SectPrBindingRole;
+  rid: string;
+  targetPath: string;
+  path: string;
 }
 
 export interface SectPrAuditSummary {
   ok: boolean;
   issues: SectPrAuditIssue[];
+  bindings: SectPrBinding[];
   stats: {
     bodyLevelSectPrCount: number;
     paragraphLevelSectPrCount: number;
@@ -68,7 +92,7 @@ function nodePath(node: Element): string {
 interface DocumentRelationship {
   type: string;
   target: string;
-  external: boolean;
+  targetMode?: string;
 }
 
 interface RelationshipCollection {
@@ -104,7 +128,9 @@ function collectRelationships(documentRelsXml: string | null | undefined): Relat
         relationshipsById.set(id, {
           type: rel?.getAttribute('Type') ?? '',
           target: rel?.getAttribute('Target') ?? '',
-          external: rel?.getAttribute('TargetMode') === 'External',
+          targetMode: rel?.hasAttribute('TargetMode')
+            ? rel.getAttribute('TargetMode') ?? undefined
+            : undefined,
         });
       }
     }
@@ -112,21 +138,6 @@ function collectRelationships(documentRelsXml: string | null | undefined): Relat
   } catch {
     return { relationships: new Map(), duplicateIds: [] };
   }
-}
-
-function resolveDocumentTarget(target: string): string | undefined {
-  // Part-name fragments are outside this audit's explicit OPC target model.
-  if (target.includes('#')) return undefined;
-  const parts = target.startsWith('/') ? [] : ['word'];
-  for (const segment of target.split('/')) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') {
-      if (parts.length === 0) return undefined;
-      parts.pop();
-    }
-    else parts.push(segment);
-  }
-  return parts.length > 0 ? parts.join('/') : undefined;
 }
 
 function getRid(ref: Element): string | undefined {
@@ -140,6 +151,8 @@ function getRid(ref: Element): string | undefined {
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
  * @conformance ECMA-376 edition 5, Part 1 § 17.10.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.3
  * @see https://github.com/UseJunior/safe-docx/issues/560
  */
 export function auditSectPr(
@@ -148,8 +161,10 @@ export function auditSectPr(
   packageParts?: ReadonlyMap<string, string>,
 ): SectPrAuditSummary {
   const issues: SectPrAuditIssue[] = [];
+  const bindings: SectPrBinding[] = [];
   const relationshipCollection = collectRelationships(documentRelsXml);
   const relationships = relationshipCollection.relationships;
+  const ambiguousRelationshipIds = new Set(relationshipCollection.duplicateIds);
 
   for (const id of relationshipCollection.duplicateIds) {
     issues.push({
@@ -173,6 +188,7 @@ export function auditSectPr(
           message: 'Missing w:body element',
         },
       ],
+      bindings,
       stats: {
         bodyLevelSectPrCount: 0,
         paragraphLevelSectPrCount: 0,
@@ -212,7 +228,7 @@ export function auditSectPr(
   let paragraphLevelSectPrCount = 0;
   let referenceCount = 0;
 
-  for (const sectPr of sectPrNodes) {
+  for (const [sectionOrdinal, sectPr] of sectPrNodes.entries()) {
     const seenReferenceTypes = new Set<string>();
     const parent = sectPr.parentNode;
     const parentTag = parent && parent.nodeType === 1 ? (parent as Element).tagName : '';
@@ -235,6 +251,35 @@ export function auditSectPr(
       });
     }
 
+    const descendantReferences = Array.from(
+      sectPr.getElementsByTagNameNS(OOXML.W_NS, '*'),
+    ).filter((element) => {
+      if (element.localName !== 'headerReference' && element.localName !== 'footerReference') {
+        return false;
+      }
+      let ancestor = element.parentNode;
+      while (ancestor && ancestor !== sectPr) {
+        if (ancestor.nodeType === 1 && isWmlElement(ancestor as Element, 'sectPr')) return false;
+        ancestor = ancestor.parentNode;
+      }
+      return ancestor === sectPr;
+    });
+    referenceCount += descendantReferences.length;
+    for (const reference of descendantReferences) {
+      if (reference.parentNode === sectPr) continue;
+      const referenceType = reference.getAttributeNS(OOXML.W_NS, 'type') ?? '';
+      issues.push({
+        type: 'sectpr_reference_invalid_placement',
+        path: nodePath(reference),
+        message: `${reference.tagName} must be a direct child of w:sectPr`,
+        sectionOrdinal,
+        kind: reference.localName === 'headerReference' ? 'header' : 'footer',
+        role: REFERENCE_TYPES.has(referenceType)
+          ? referenceType as SectPrBindingRole
+          : undefined,
+      });
+    }
+
     for (const child of childElements(sectPr)) {
       const isHeaderReference = isWmlElement(child, 'headerReference');
       const isFooterReference = isWmlElement(child, 'footerReference');
@@ -242,14 +287,20 @@ export function auditSectPr(
         continue;
       }
 
-      referenceCount++;
+      const kind = isHeaderReference ? 'header' : 'footer';
       const referenceType = child.getAttributeNS(OOXML.W_NS, 'type') ?? '';
+      const role = REFERENCE_TYPES.has(referenceType)
+        ? referenceType as SectPrBindingRole
+        : undefined;
       if (!REFERENCE_TYPES.has(referenceType)) {
         issues.push({
           type: 'sectpr_reference_invalid_type',
           path: nodePath(child),
           message: `${child.tagName} has missing or invalid w:type '${referenceType || '(missing)'}'; expected first, default, or even`,
+          sectionOrdinal,
+          kind,
         });
+        continue;
       } else {
         const referenceKey = `${isHeaderReference ? 'header' : 'footer'}:${referenceType}`;
         if (seenReferenceTypes.has(referenceKey)) {
@@ -257,7 +308,11 @@ export function auditSectPr(
             type: 'sectpr_duplicate_reference_type',
             path: nodePath(child),
             message: `${child.tagName} duplicates the '${referenceType}' role within this w:sectPr`,
+            sectionOrdinal,
+            kind,
+            role,
           });
+          continue;
         } else {
           seenReferenceTypes.add(referenceKey);
         }
@@ -268,9 +323,13 @@ export function auditSectPr(
           type: 'sectpr_reference_missing_rid',
           path: nodePath(child),
           message: `${child.tagName} is missing r:id`,
+          sectionOrdinal,
+          kind,
+          role,
         });
         continue;
       }
+      if (ambiguousRelationshipIds.has(rid)) continue;
 
       const relationship = relationships.get(rid);
       if (!relationship) {
@@ -279,33 +338,55 @@ export function auditSectPr(
           path: nodePath(child),
           message: `${child.tagName} references missing relationship id '${rid}'`,
           rid,
+          sectionOrdinal,
+          kind,
+          role,
         });
         continue;
       }
 
-      const kind = isHeaderReference ? 'header' : 'footer';
       const expectedType = `http://schemas.openxmlformats.org/officeDocument/2006/relationships/${kind}`;
-      if (relationship.type !== expectedType || relationship.external) {
+      if (relationship.type !== expectedType) {
         issues.push({
           type: 'sectpr_reference_wrong_relationship_type',
           path: nodePath(child),
           message: `${child.tagName} relationship '${rid}' has type '${relationship.type || '(missing)'}'`,
           rid,
+          sectionOrdinal,
+          kind,
+          role,
         });
         continue;
       }
 
+      let targetName: string;
+      try {
+        targetName = normalizeOpcRelationshipTarget({
+          ownerPart: 'word/document.xml',
+          target: relationship.target,
+          targetMode: relationship.targetMode,
+        }).target;
+      } catch (error) {
+        const targetError = error instanceof OpcRelationshipTargetError ? error : undefined;
+        const type = targetError?.issue === 'invalid_target_mode'
+          ? 'sectpr_reference_invalid_target_mode'
+          : targetError?.issue === 'external_target_not_allowed'
+            ? 'sectpr_reference_external_target'
+            : 'sectpr_reference_invalid_target';
+        issues.push({
+          type,
+          path: nodePath(child),
+          message: `${child.tagName} relationship '${rid}' has unsupported or malformed target '${relationship.target}': ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          rid,
+          sectionOrdinal,
+          kind,
+          role,
+        });
+        continue;
+      }
       if (packageParts) {
-        const targetName = resolveDocumentTarget(relationship.target);
-        if (!targetName) {
-          issues.push({
-            type: 'sectpr_reference_invalid_target',
-            path: nodePath(child),
-            message: `${child.tagName} relationship '${rid}' has unsupported or malformed target '${relationship.target}'`,
-            rid,
-          });
-          continue;
-        }
         const targetXml = packageParts.get(targetName);
         if (!targetXml) {
           issues.push({
@@ -313,6 +394,10 @@ export function auditSectPr(
             path: nodePath(child),
             message: `${child.tagName} relationship '${rid}' resolves to missing part '${targetName}'`,
             rid,
+            sectionOrdinal,
+            kind,
+            role,
+            targetPath: targetName,
           });
           continue;
         }
@@ -325,7 +410,12 @@ export function auditSectPr(
               path: nodePath(child),
               message: `${child.tagName} relationship '${rid}' targets <${actualRoot?.tagName ?? 'nothing'}>, expected WordprocessingML <${expectedRoot}>`,
               rid,
+              sectionOrdinal,
+              kind,
+              role,
+              targetPath: targetName,
             });
+            continue;
           }
         } catch {
           issues.push({
@@ -333,15 +423,29 @@ export function auditSectPr(
             path: nodePath(child),
             message: `${child.tagName} relationship '${rid}' targets malformed XML`,
             rid,
+            sectionOrdinal,
+            kind,
+            role,
+            targetPath: targetName,
           });
+          continue;
         }
       }
+      bindings.push({
+        sectionOrdinal,
+        kind,
+        role: referenceType as SectPrBindingRole,
+        rid,
+        targetPath: targetName,
+        path: nodePath(child),
+      });
     }
   }
 
   return {
     ok: issues.length === 0,
     issues,
+    bindings,
     stats: {
       bodyLevelSectPrCount: bodyLevelSectPrNodes.length,
       paragraphLevelSectPrCount,

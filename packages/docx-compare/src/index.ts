@@ -12,6 +12,20 @@ export type {
   CompareOptions,
   CompareResult,
   CompareStats,
+  AncillaryBindingLocator,
+  AncillaryFallbackDiagnostics,
+  AncillaryFieldEvidence,
+  AncillaryFieldInstructionKind,
+  AncillaryFieldLocator,
+  AncillaryFieldRangeEvidence,
+  AncillaryHeaderFooterStoryLocator,
+  AncillaryNoteStoryLocator,
+  AncillaryPackageLocator,
+  AncillarySelectedBindingSummary,
+  AncillaryStoryLocator,
+  AncillaryStorySafetyCategory,
+  AncillaryStorySafetyIssue,
+  AncillaryStorySummary,
   DocumentIntegrityCertificate,
   DocumentIntegrityCertificateStatus,
   DocumentIntegrityCheckCertificate,
@@ -92,5 +106,6 @@ export {
   compareDocumentsAtomizer,
 } from './baselines/atomizer/pipeline.js';
 export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';
+export { AncillaryStorySafetyError } from './baselines/atomizer/ancillaryFieldSafety.js';
 export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
 export { compareDocumentsBaselineB } from './baselines/diffmatch/pipeline.js';
