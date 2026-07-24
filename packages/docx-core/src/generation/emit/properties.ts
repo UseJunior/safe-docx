@@ -9,11 +9,12 @@ import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { W } from '../../primitives/namespaces.js';
 import { appendInOrder, PPR_ORDER, RPR_ORDER } from '../ordering.js';
 import type { ParagraphSpec, RunProps, StyleSpec, ThemeColorSlot } from '../types.js';
+import { buildParagraphBordersElement } from './borders.js';
 
 /** Paragraph-formatting subset shared by ParagraphSpec and StyleSpec.paragraph. */
 export type ParagraphProps = Pick<
   ParagraphSpec,
-  'alignment' | 'spacing' | 'indent' | 'tabs' | 'pageBreakBefore' | 'keepNext' | 'keepLines'
+  'alignment' | 'borders' | 'spacing' | 'indent' | 'tabs' | 'pageBreakBefore' | 'keepNext' | 'keepLines'
 > & { styleId?: string };
 
 const ALIGNMENT_TO_JC: Record<NonNullable<ParagraphProps['alignment']>, string> = {
@@ -117,6 +118,9 @@ export function buildParagraphPropsElement(
   }
   if (props.pageBreakBefore) {
     children.set(W.pageBreakBefore, createWmlElement(doc, W.pageBreakBefore));
+  }
+  if (props.borders) {
+    children.set(W.pBdr, buildParagraphBordersElement(doc, props.borders));
   }
   if (props.tabs && props.tabs.length > 0) {
     const tabs = createWmlElement(doc, W.tabs);

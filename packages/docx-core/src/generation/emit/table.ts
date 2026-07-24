@@ -15,8 +15,9 @@
 import { createWmlElement } from '../../primitives/dom-helpers.js';
 import { W } from '../../primitives/namespaces.js';
 import { appendInOrder, TBLPR_ORDER, TCPR_ORDER, TRPR_ORDER } from '../ordering.js';
-import type { BlockSpec, BorderSpec, TableBorders, TableCellSpec, TableRowSpec, TableSpec } from '../types.js';
+import type { BlockSpec, TableCellSpec, TableRowSpec, TableSpec } from '../types.js';
 import type { BlockEmitContext } from './emit-context.js';
+import { buildTableBordersElement } from './borders.js';
 import { buildParagraph } from './paragraph.js';
 
 /**
@@ -52,7 +53,7 @@ function buildTblPr(doc: Document, table: TableSpec): Element {
   const widthSum = table.columnWidthsTwips.reduce((sum, w) => sum + w, 0);
   props.set(W.tblW, createWmlElement(doc, W.tblW, { 'w:w': String(widthSum), 'w:type': 'dxa' }));
   if (table.borders) {
-    props.set(W.tblBorders, buildBordersElement(doc, W.tblBorders, table.borders));
+    props.set(W.tblBorders, buildTableBordersElement(doc, W.tblBorders, table.borders));
   }
   props.set(W.tblLayout, createWmlElement(doc, W.tblLayout, { 'w:type': table.layout ?? 'fixed' }));
   appendInOrder(tblPr, props, TBLPR_ORDER);
@@ -139,7 +140,7 @@ function buildCell(doc: Document, table: TableSpec, cell: TableCellSpec, gridOff
     );
   }
   if (cell.borders) {
-    props.set(W.tcBorders, buildBordersElement(doc, W.tcBorders, cell.borders));
+    props.set(W.tcBorders, buildTableBordersElement(doc, W.tcBorders, cell.borders));
   }
   if (cell.shadingHex !== undefined || cell.themeFill !== undefined) {
     const attrs: Record<string, string> = { 'w:val': 'clear', 'w:color': 'auto' };
@@ -177,37 +178,6 @@ function buildCell(doc: Document, table: TableSpec, cell: TableCellSpec, gridOff
 /** Dispatch a block-level spec node to its emitter (cells hold both kinds). */
 export function buildBlock(doc: Document, block: BlockSpec, ctx?: BlockEmitContext): Element {
   return block.kind === 'table' ? buildTable(doc, block, ctx) : buildParagraph(doc, block, ctx);
-}
-
-/**
- * Border collection in CT_TblBorders / CT_TcBorders schema order. Every edge
- * present in the spec is emitted with explicit size/space/color so readers
- * don't fall back to divergent defaults.
- *
- * @conformance ECMA-376 edition 5, Part 1 § 17.4.66
- */
-function buildBordersElement(doc: Document, localName: string, borders: TableBorders): Element {
-  const container = createWmlElement(doc, localName);
-  const edges: Array<[string, BorderSpec | undefined]> = [
-    [W.top, borders.top],
-    [W.left, borders.left],
-    [W.bottom, borders.bottom],
-    [W.right, borders.right],
-    [W.insideH, borders.insideH],
-    [W.insideV, borders.insideV],
-  ];
-  for (const [edge, spec] of edges) {
-    if (!spec) continue;
-    container.appendChild(
-      createWmlElement(doc, edge, {
-        'w:val': spec.style,
-        'w:sz': String(spec.style === 'none' ? 0 : (spec.sizeEighthPt ?? 4)),
-        'w:space': '0',
-        'w:color': spec.colorHex ?? 'auto',
-      }),
-    );
-  }
-  return container;
 }
 
 function buildCellMargins(

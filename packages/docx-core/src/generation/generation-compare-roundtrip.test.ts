@@ -158,7 +158,19 @@ function fieldsAndTablesSpec(effectiveDate: string): DocumentSpec {
   ];
   return {
     meta: { title: 'Round-trip fields+tables', author: 'safe-docx tests', createdIso: '2026-06-13T00:00:00Z' },
-    sections: [{ footers: { default: pageXofYFooter() }, blocks }],
+    sections: [{
+      headers: {
+        default: {
+          blocks: [{
+            kind: 'paragraph',
+            borders: { bottom: { style: 'single', sizeEighthPt: 8, colorHex: '2F75B5' } },
+            runs: [{ kind: 'text', text: 'CONFIDENTIAL' }],
+          }],
+        },
+      },
+      footers: { default: pageXofYFooter() },
+      blocks,
+    }],
   };
 }
 
@@ -339,7 +351,7 @@ describe('Author->compare round-trip guarantee', () => {
       async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
         let original!: Buffer;
         let revised!: Buffer;
-        await given('an authored document with a Page X of Y field, a cover-terms table, and a signature block', async () => {
+        await given('an authored document with a bordered header, a Page X of Y field, a cover-terms table, and a signature block', async () => {
           original = await generateDocx(fieldsAndTablesSpec('June 11, 2026'));
           revised = await generateDocx(fieldsAndTablesSpec('July 11, 2026'));
         });
@@ -353,10 +365,16 @@ describe('Author->compare round-trip guarantee', () => {
           });
         });
 
-        await then('field structure stays intact and table-cell text round-trips', async () => {
+        await then('paragraph borders, field structure, and table-cell text round-trip', async () => {
           await assertAcceptRejectParity(artifacts, `SDX-GEN-103/${mode}`);
           // A clean round-trip surfaces no safety failures (field structure included).
           expect(artifacts.result.rebuildSafetyDiagnostics?.failedChecks ?? []).not.toContain('fieldStructure');
+          for (const archive of [artifacts.resultArchive, artifacts.acceptedArchive, artifacts.rejectedArchive]) {
+            const headerXml = await archive.getFile('word/header1.xml');
+            expect(headerXml).toContain(
+              '<w:pBdr><w:bottom w:val="single" w:sz="8" w:space="0" w:color="2F75B5"/></w:pBdr>',
+            );
+          }
         });
       },
     );
