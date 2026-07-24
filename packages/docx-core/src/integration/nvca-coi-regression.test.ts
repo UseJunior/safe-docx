@@ -122,7 +122,13 @@ describe('NVCA COI Regression', () => {
       const comparison = compareTexts(originalText, rejectedText);
       expect(comparison.normalizedIdentical).toBe(true);
     });
-  }, 60_000);
+    // This drives a full inplace comparison + accept-all + reject-all round-trip on a
+    // real ~5000-atom NVCA COI document. In isolation under v8 coverage it runs ~29s
+    // (measured identical on 0.18.0 and 0.19.0 — no regression), but in the release
+    // preflight it runs concurrently with the full docx-core suite under coverage +
+    // parallel workers, where CI contention pushed it past the previous 60s cap. Give
+    // it 3 min of headroom for the loaded CI environment.
+  }, 180_000);
 });
 
 describe('NVCA COI ancillary field evidence', () => {
