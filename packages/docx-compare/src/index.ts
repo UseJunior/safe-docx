@@ -64,7 +64,16 @@ export async function compareDocuments(
   revised: Buffer,
   options: CompareOptions = {},
 ): Promise<CompareResult> {
-  const { engine = 'auto', author, date, reconstructionMode, premergeRuns, leanXmlVerifier } = options;
+  const {
+    engine = 'auto',
+    author,
+    date,
+    ignoreFormatting,
+    detectMoves,
+    reconstructionMode,
+    premergeRuns,
+    leanXmlVerifier,
+  } = options;
 
   if ((engine as string) === 'diffmatch') {
     throw new Error(
@@ -77,6 +86,14 @@ export async function compareDocuments(
     return compareDocumentsAtomizer(original, revised, {
       author,
       date,
+      formatDetection:
+        ignoreFormatting === undefined
+          ? undefined
+          : { detectFormatChanges: !ignoreFormatting },
+      moveDetection:
+        detectMoves === undefined
+          ? undefined
+          : { detectMoves },
       reconstructionMode,
       premergeRuns,
       leanXmlVerifier,

@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createZipBuffer } from '@usejunior/docx-core';
+import { createZipBuffer, DocxArchive } from '@usejunior/docx-core';
 
 import { compareDocuments_tool } from './compare_documents.js';
 import { replaceText } from './replace_text.js';
@@ -16,7 +16,7 @@ import {
   openSession,
 } from '../testing/session-test-utils.js';
 
-const FEATURE_NAME = 'compare-documents-tool';
+const FEATURE_NAME = 'Compare Documents Tool';
 
 const CONTENT_TYPES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -35,11 +35,17 @@ function xmlEscape(text: string): string {
 }
 
 async function makeCompleteDocx(paragraphs: string[]): Promise<Buffer> {
+  return makeDocxFromBodyXml(
+    paragraphs.map((t) => `<w:p><w:r><w:t>${xmlEscape(t)}</w:t></w:r></w:p>`).join(''),
+  );
+}
+
+async function makeDocxFromBodyXml(bodyXml: string): Promise<Buffer> {
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
     `<w:body>` +
-    paragraphs.map((t) => `<w:p><w:r><w:t>${xmlEscape(t)}</w:t></w:r></w:p>`).join('') +
+    bodyXml +
     `</w:body></w:document>`;
 
   return createZipBuffer({
@@ -54,6 +60,17 @@ async function writeTestDocx(dir: string, name: string, paragraphs: string[]): P
   const p = path.join(dir, name);
   await fs.writeFile(p, new Uint8Array(buf));
   return p;
+}
+
+async function writeBodyTestDocx(dir: string, name: string, bodyXml: string): Promise<string> {
+  const buf = await makeDocxFromBodyXml(bodyXml);
+  const p = path.join(dir, name);
+  await fs.writeFile(p, new Uint8Array(buf));
+  return p;
+}
+
+async function readDocumentXml(docxPath: string): Promise<string> {
+  return (await DocxArchive.load(await fs.readFile(docxPath))).getDocumentXml();
 }
 
 describe('compare_documents tool', () => {
@@ -77,6 +94,7 @@ describe('compare_documents tool', () => {
           original_file_path: originalPath,
           revised_file_path: revisedPath,
           save_to_local_path: outputPath,
+          author: 'Tool Test Author',
         }),
       );
       assertSuccess(result, 'compare_documents');
@@ -94,6 +112,89 @@ describe('compare_documents tool', () => {
         expect(result.saved_to).toBe(outputPath);
         expect(result.size_bytes).toBeGreaterThan(0);
         expect(result.engine_used).toBeDefined();
+      });
+
+      await then('the requested author is forwarded to generated revisions', async () => {
+        expect(await readDocumentXml(outputPath)).toContain('w:author="Tool Test Author"');
+      });
+    },
+  );
+
+  test(
+    'ignore_formatting suppresses formatting revisions',
+    async ({ given, when, then }: AllureBddContext) => {
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+      const originalPath = await given('an italic run', () =>
+        writeBodyTestDocx(
+          dir,
+          'format-original.docx',
+          '<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>Same text</w:t></w:r></w:p>',
+        ),
+      );
+      const revisedPath = await given('the same run made bold', () =>
+        writeBodyTestDocx(
+          dir,
+          'format-revised.docx',
+          '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Same text</w:t></w:r></w:p>',
+        ),
+      );
+      const outputPath = path.join(dir, 'format-redline.docx');
+
+      const result = await when('compare_documents ignores formatting', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: revisedPath,
+          save_to_local_path: outputPath,
+          ignore_formatting: true,
+        }),
+      );
+
+      await then('the output contains no run-property revision', async () => {
+        assertSuccess(result, 'compare_documents');
+        expect(await readDocumentXml(outputPath)).not.toContain('<w:rPrChange');
+      });
+    },
+  );
+
+  test(
+    'compare_moves disables conversion of matching changes into moves',
+    async ({ given, when, then }: AllureBddContext) => {
+      const mgr = createTestSessionManager();
+      const dir = await createTrackedTempDir();
+      const moved = 'The quick brown fox jumps over the lazy dog today';
+      const originalPath = await given('a paragraph in first position', () =>
+        writeTestDocx(dir, 'move-original.docx', [
+          moved,
+          'Middle paragraph stays put',
+          'Final paragraph also stays',
+        ]),
+      );
+      const revisedPath = await given('the same paragraph in final position', () =>
+        writeTestDocx(dir, 'move-revised.docx', [
+          'Middle paragraph stays put',
+          'Final paragraph also stays',
+          moved,
+        ]),
+      );
+      const outputPath = path.join(dir, 'move-redline.docx');
+
+      const result = await when('compare_documents disables move detection', () =>
+        compareDocuments_tool(mgr, {
+          original_file_path: originalPath,
+          revised_file_path: revisedPath,
+          save_to_local_path: outputPath,
+          compare_moves: false,
+        }),
+      );
+
+      await then('the output uses deletion and insertion revisions instead of moves', async () => {
+        assertSuccess(result, 'compare_documents');
+        const xml = await readDocumentXml(outputPath);
+        expect(xml).not.toContain('<w:moveFrom');
+        expect(xml).not.toContain('<w:moveTo');
+        expect(xml).toContain('<w:del');
+        expect(xml).toContain('<w:ins');
       });
     },
   );
@@ -293,6 +394,8 @@ describe('compare_documents tool', () => {
       expect(tool!.inputSchema.properties).toHaveProperty('revised_file_path');
       expect(tool!.inputSchema.properties).toHaveProperty('file_path');
       expect(tool!.inputSchema.properties).toHaveProperty('engine');
+      expect(tool!.inputSchema.properties).toHaveProperty('ignore_formatting');
+      expect(tool!.inputSchema.properties).toHaveProperty('compare_moves');
     },
   );
 });

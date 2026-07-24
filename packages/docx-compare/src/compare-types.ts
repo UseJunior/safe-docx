@@ -6,8 +6,10 @@ export interface CompareOptions {
    * Default: current time.
    */
   date?: Date;
-  /** Ignore formatting differences. Default: true (v1) */
+  /** Ignore formatting differences. Default: false */
   ignoreFormatting?: boolean;
+  /** Detect content moved within the document. Default: true */
+  detectMoves?: boolean;
   /**
    * Atomizer-only normalization: merge adjacent <w:r> siblings with identical formatting
    * prior to comparison. This can reduce overly-granular diffs for heavily-fragmented docs.

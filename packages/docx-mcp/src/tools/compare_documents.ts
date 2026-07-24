@@ -36,6 +36,8 @@ export async function compareDocuments_tool(
     save_to_local_path: string;
     author?: string;
     engine?: string;
+    ignore_formatting?: boolean;
+    compare_moves?: boolean;
   },
 ): Promise<ToolResponse> {
   try {
@@ -120,6 +122,8 @@ export async function compareDocuments_tool(
       compareDocuments(originalBuffer, revisedBuffer, {
         author,
         engine: compareEngine,
+        ignoreFormatting: params.ignore_formatting,
+        detectMoves: params.compare_moves,
         reconstructionMode: DEFAULT_RECONSTRUCTION_MODE,
       }),
     );
