@@ -39,9 +39,24 @@ import {
 } from './package.js';
 import { LossinessCollector, type ConvertDocxToOdtOptions, type ConvertDocxToOdtResult } from './types.js';
 
-/** A heading is structural only when Word's style said so — heuristic headings stay paragraphs. */
+/**
+ * ODF's built-in heading styles are bounded to levels 1–6 in the package we emit.
+ * Manual/legal labels take precedence over heading structure so their visible prefix is
+ * preserved as literal text rather than disappearing into a structural `text:h`.
+ */
 function isStructuralHeading(node: DocumentViewNode): boolean {
-  return node.heading?.source === 'word_style' && typeof node.heading.level === 'number';
+  const level = node.heading?.level;
+  const hasManualLabel =
+    node.list_metadata.list_level >= 0 &&
+    !node.list_metadata.is_auto_numbered &&
+    node.list_metadata.label_string.trim() !== '';
+  return (
+    node.heading?.source === 'word_style' &&
+    typeof level === 'number' &&
+    level >= 1 &&
+    level <= 6 &&
+    !hasManualLabel
+  );
 }
 
 /** True when the paragraph element sits inside a table cell (any depth up to the body). */
@@ -186,7 +201,7 @@ export async function convertDocxToOdt(
     // ── Word-styled headings ──
     if (isStructuralHeading(node)) {
       listBuilder = null;
-      const level = Math.min(6, Math.max(1, node.heading!.level as number));
+      const level = node.heading!.level as number;
       const h = doc.createElementNS(ODF_NS.TEXT, 'text:h');
       h.setAttributeNS(ODF_NS.TEXT, 'text:outline-level', String(level));
       h.setAttributeNS(ODF_NS.TEXT, 'text:style-name', paragraphStyles.styleFor(`Heading_20_${level}`, node));

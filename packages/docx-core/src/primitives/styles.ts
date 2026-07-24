@@ -69,6 +69,8 @@ export type ParagraphFormatting = {
   alignment: ParagraphAlignment;
   leftIndentPt: number;
   firstLineIndentPt: number;
+  /** Effective raw OOXML outline value: 0..8 are headings; 9 is body text. */
+  outlineLevel: number | null;
 };
 
 function twipsToPt(v: number): number {
@@ -109,6 +111,20 @@ function firstNonNull<T>(vals: Array<T | null | undefined>): T | null {
   return null;
 }
 
+/**
+ * Parse the paragraph outline level defined by WordprocessingML. Values 0..8
+ * represent heading levels 1..9; value 9 explicitly marks body text.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.3.1.20
+ */
+function parseOutlineLevel(outlineEl: Element | null): number | null {
+  if (!outlineEl) return null;
+  const raw = (getWAttr(outlineEl, 'val') ?? '').trim();
+  if (!/^\+?\d+$/u.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 && value <= 9 ? value : null;
+}
+
 export function extractParagraphFormatting(
   pPr: Element | null,
   styles: StylesModel,
@@ -122,9 +138,15 @@ export function extractParagraphFormatting(
   // Resolve alignment and indents: direct pPr overrides style chain.
   const directJc = pPr ? getFirstChild(pPr, OOXML.W_NS, W.jc) : null;
   const directInd = pPr ? getFirstChild(pPr, OOXML.W_NS, W.ind) : null;
+  const directOutline = pPr ? getFirstChild(pPr, OOXML.W_NS, W.outlineLvl) : null;
 
   const styleJc = firstNonNull(chain.map((s) => (s.pPr ? getFirstChild(s.pPr, OOXML.W_NS, W.jc) : null)));
   const styleInd = firstNonNull(chain.map((s) => (s.pPr ? getFirstChild(s.pPr, OOXML.W_NS, W.ind) : null)));
+  const styleOutlineLevel = firstNonNull(
+    chain.map((s) =>
+      parseOutlineLevel(s.pPr ? getFirstChild(s.pPr, OOXML.W_NS, W.outlineLvl) : null),
+    ),
+  );
 
   const alignment = parseAlignment(directJc ?? styleJc);
   const ind = parseIndentPt(directInd ?? styleInd);
@@ -135,6 +157,7 @@ export function extractParagraphFormatting(
     alignment,
     leftIndentPt: ind.leftIndentPt,
     firstLineIndentPt: ind.firstLineIndentPt,
+    outlineLevel: parseOutlineLevel(directOutline) ?? styleOutlineLevel,
   };
 }
 
