@@ -102,6 +102,8 @@ export type ParagraphSpec = {
   kind: 'paragraph';
   /** Must resolve to a declared style (or the implicit Normal). */
   styleId?: string;
+  /** Paragraph-level border edges emitted as w:pBdr. */
+  borders?: ParagraphBorders;
   alignment?: 'left' | 'center' | 'right' | 'justify';
   spacing?: {
     beforeTwips?: number;
@@ -214,6 +216,14 @@ export type BorderSpec = {
   style: 'single' | 'double' | 'none';
   sizeEighthPt?: number;
   colorHex?: string;
+};
+
+export type ParagraphBorders = {
+  top?: BorderSpec;
+  bottom?: BorderSpec;
+  left?: BorderSpec;
+  right?: BorderSpec;
+  between?: BorderSpec;
 };
 
 export type TableBorders = {

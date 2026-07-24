@@ -316,6 +316,24 @@ footer, gutter) because readers diverge in their defaults when
 attributes are omitted; spec values fill in unspecified members from
 the standard one-inch/half-inch defaults.
 
+## [ECMA-PART1-17-3-1-24] w:pBdr paragraph border collection
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.24"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pBdr
+verifiedBy: packages/docx-core/src/generation/emit/borders.ts; packages/docx-core/src/generation/generation-paragraph-borders.test.ts
+```
+
+Declared paragraph borders emit as a `w:pBdr` collection in the
+`CT_PBdr` sequence (`top`, `left`, `bottom`, `right`, `between`, `bar`)
+with explicit size/space/color per edge, sitting in the schema-defined
+`w:pPr` child position (see [ECMA-PART1-17-3-1-26]). The generation
+serializer shares one border builder with the table-border collections
+so every edge carries the same explicit-attribute discipline.
+
 ## [ECMA-PART1-17-3-1-26] w:pPr child-element ordering
 
 ```yaml

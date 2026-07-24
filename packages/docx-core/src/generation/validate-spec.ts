@@ -32,6 +32,7 @@ import type {
   InlineSpec,
   NumberingSpec,
   ParagraphSpec,
+  ParagraphBorders,
   RunProps,
   SectionSpec,
   StyleSpec,
@@ -441,7 +442,7 @@ function validateTable(table: TableSpec, path: string, styleIds: Set<string>, nu
   });
 }
 
-function validateBorders(borders: TableBorders, path: string): void {
+function validateBorders(borders: TableBorders | ParagraphBorders, path: string): void {
   for (const [edge, spec] of Object.entries(borders) as Array<[string, BorderSpec | undefined]>) {
     if (!spec) continue;
     requireSupportedSchemaEnum(spec.style, `${path}/${edge}/style`, 'ST_Border', BORDER_STYLES);
@@ -516,6 +517,7 @@ type ParagraphProperties = NonNullable<StyleSpec['paragraph']>;
 
 /** Validate the paragraph-property subset shared by body paragraphs and styles. */
 function validateParagraphProps(props: ParagraphProperties, path: string): void {
+  if (props.borders) validateBorders(props.borders, `${path}/borders`);
   if (props.tabs) {
     props.tabs.forEach((stop, i) => {
       requireInteger(stop.posTwips, `${path}/tabs/${i}/posTwips`, 'Tab stop position must be a non-negative safe integer in twips', 0);
