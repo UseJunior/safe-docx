@@ -25,13 +25,11 @@
     "jszip": "^3.10.1"
   },
   "devDependencies": {
-    "@types/diff-match-patch": "^1.0.36",
     "@types/node": "^22.10.0",
     "@usejunior/docx-compare": "^0.18.0",
     "@vitest/coverage-v8": "^4.1.8",
     "@vitest/runner": "^4.1.8",
     "allure-vitest": "^3.9.0",
-    "diff-match-patch": "^1.0.5",
     "fast-check": "^3.23.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

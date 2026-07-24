@@ -9,7 +9,6 @@ import { resolve, dirname } from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { compareDocuments } from '../index.js';
-import { compareDocumentsBaselineB } from '../baselines/diffmatch/pipeline.js';
 import { extractTextWithParagraphs } from '../baselines/atomizer/trackChangesAcceptorAst.js';
 import { DocxArchive } from '@usejunior/docx-core';
 import { createTimer } from './metrics.js';
@@ -77,11 +76,6 @@ async function produceRedline(
 ): Promise<Buffer> {
   if (engine === 'atomizer') {
     const result = await compareDocuments(originalBuffer, revisedBuffer, { engine: 'atomizer', author });
-    return result.document;
-  }
-
-  if (engine === 'diffmatch') {
-    const result = await compareDocumentsBaselineB(originalBuffer, revisedBuffer, { author });
     return result.document;
   }
 
@@ -261,7 +255,7 @@ async function main(): Promise<void> {
     console.log('Usage: pnpm benchmark <manifest.json> [options]');
     console.log('');
     console.log('Options:');
-    console.log('  --engines=atomizer,diffmatch  Engines to run (comma-separated)');
+    console.log('  --engines=atomizer,aspose     Engines to run (comma-separated)');
     console.log('  --aspose-cli=<path>           Path to aspose_compare.py');
     console.log('  --libreoffice=<path>          Path to LibreOffice binary');
     console.log('  --author=<name>               Author name for revisions');
@@ -280,7 +274,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const engines = (options.engines ?? 'atomizer,diffmatch')
+  const engines = (options.engines ?? 'atomizer')
     .split(',')
     .map((e) => e.trim()) as BenchmarkEngine[];
 

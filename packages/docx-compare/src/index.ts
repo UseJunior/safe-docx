@@ -93,4 +93,3 @@ export {
 } from './baselines/atomizer/pipeline.js';
 export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';
 export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
-export { compareDocumentsBaselineB } from './baselines/diffmatch/pipeline.js';
