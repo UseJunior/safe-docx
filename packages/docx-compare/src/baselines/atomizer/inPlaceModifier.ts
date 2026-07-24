@@ -13,7 +13,12 @@
 
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
-import { childElements, findChildByTagName, insertAfterElement } from '@usejunior/docx-core';
+import {
+  childElements,
+  findChildByTagName,
+  insertAfterElement,
+  unwrapElement,
+} from '@usejunior/docx-core';
 import { enforceConsumerCompatibility } from './consumerCompatibility.js';
 import { XMLSerializer } from '@xmldom/xmldom';
 import { findChild } from '@usejunior/docx-core';
@@ -278,6 +283,75 @@ function restoreOriginalInsProvenanceOnRun(
     dateStr: prov.date || ctx.dateStr,
     state: ctx.state,
   });
+}
+
+function paragraphHasRevisionMarker(paragraph: Element | undefined): boolean {
+  if (!paragraph) return false;
+  const pPr = findChildByTagName(paragraph, 'w:pPr');
+  const rPr = pPr ? findChildByTagName(pPr, 'w:rPr') : null;
+  return !!rPr && childElements(rPr).some((child) =>
+    child.tagName === 'w:ins'
+    || child.tagName === 'w:del'
+    || child.tagName === 'w:moveFrom'
+    || child.tagName === 'w:moveTo'
+  );
+}
+
+function removeParagraphInsertionMarker(paragraph: Element | undefined): void {
+  if (!paragraph) return;
+  const pPr = findChildByTagName(paragraph, 'w:pPr');
+  const rPr = pPr ? findChildByTagName(pPr, 'w:rPr') : null;
+  if (!pPr || !rPr) return;
+
+  for (const child of childElements(rPr)) {
+    if (child.tagName === 'w:ins') rPr.removeChild(child);
+  }
+  if (childElements(rPr).length === 0) pPr.removeChild(rPr);
+  if (childElements(pPr).length === 0) paragraph.removeChild(pPr);
+}
+
+/**
+ * Resolve a revised-side insertion claim to settled content when its matched
+ * original lineage is plain.
+ *
+ * The two inputs then agree that the text exists after accepting revisions,
+ * while only the revised input calls it inserted. Keeping that physical
+ * `w:ins` in the combined output makes reject-all drop text that
+ * reject(original) keeps. Promoting the one-run collision out of `w:ins`
+ * represents the shared settled lineage and preserves both projections.
+ *
+ * Paragraph-mark insertion metadata is removed at the same time: the matched
+ * original paragraph proves that the paragraph itself is settled, while any
+ * unmatched revised runs remain independently tracked as insertions.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @see https://github.com/UseJunior/safe-docx/issues/359
+ */
+export function resolveRevisedInsCollisionOnRun(
+  atom: ComparisonUnitAtom,
+  run: Element
+): void {
+  const before = atom.comparisonUnitAtomBefore;
+  if (
+    atom.sourceDocument !== 'revised'
+    || atom.revTrackElement?.tagName !== 'w:ins'
+    || !before
+    || before.revTrackElement
+    || paragraphHasRevisionMarker(before.sourceParagraphElement)
+  ) {
+    return;
+  }
+
+  const insertion = getRunInsertionAnchor(run);
+  if (insertion.tagName !== 'w:ins') return;
+
+  const insertionChildren = childElements(insertion);
+  if (insertionChildren.length !== 1 || insertionChildren[0] !== run) {
+    return;
+  }
+
+  unwrapElement(insertion);
+  removeParagraphInsertionMarker(atom.sourceParagraphElement);
 }
 
 function isParagraphRemovedOnRejectInContext(paragraph: Element, ctx: ProcessingContext): boolean {
@@ -684,6 +758,7 @@ function handleFormatChanged(atom: ComparisonUnitAtom, ctx: ProcessingContext): 
   const run = getAtomRunAtBoundary(atom, 'start');
   if (run && atom.formatChange?.oldRunProperties) {
     addFormatChange(run, atom.formatChange.oldRunProperties, ctx.author, ctx.dateStr, ctx.state);
+    resolveRevisedInsCollisionOnRun(atom, run);
     // Equal-text/changed-format content keeps its original-side w:ins lineage
     // too (issue #358); the w:rPrChange then lives inside the wrapper.
     restoreOriginalInsProvenanceOnRun(atom, run, ctx);
@@ -725,6 +800,7 @@ function handleEqual(atom: ComparisonUnitAtom, ctx: ProcessingContext): HandlerR
   // For non-empty atoms, sourceRunElement points to revised tree - safe to use directly
   const run = getAtomRunAtBoundary(atom, 'end');
   if (run) {
+    resolveRevisedInsCollisionOnRun(atom, run);
     // Matched content whose original lineage was inside a pre-tracked w:ins
     // must keep that wrapper in the combined output (issue #358).
     restoreOriginalInsProvenanceOnRun(atom, run, ctx);
