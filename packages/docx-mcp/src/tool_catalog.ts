@@ -469,6 +469,8 @@ export const SAFE_DOCX_TOOL_CATALOG = [
       save_to_local_path: z.string().describe('Path to save the tracked-changes output (DOCX or .odt).'),
       author: z.string().optional().describe("Author name for track changes. Default: 'Comparison' (DOCX) or the configured AI author (ODF)."),
       engine: z.enum(['auto', 'atomizer']).optional().describe("Comparison engine (DOCX only). Default: 'auto'."),
+      ignore_formatting: z.boolean().optional().describe('Ignore formatting differences (DOCX only). Default: false.'),
+      compare_moves: z.boolean().optional().describe('Detect moved content (DOCX only). Default: true.'),
     }),
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
