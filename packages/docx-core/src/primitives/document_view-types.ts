@@ -7,20 +7,25 @@ export type HeaderFormatting = {
   underline: boolean;
 };
 
-export type HeadingSource =
+export type DeterministicHeadingSource =
   | 'word_style'
+  | 'list_metadata'
+  | 'outline_level';
+
+export type HeuristicHeadingSource =
   | 'run_in_header'
   | 'title_with_period'
   | 'title_with_colon'
   | 'title_caps_centered'
   | 'title_bare';
 
-export type HeuristicHeadingSource = Exclude<HeadingSource, 'word_style'>;
+export type HeadingSource = DeterministicHeadingSource | HeuristicHeadingSource;
 
 export type HeadingValue = {
   /**
    * Heading label text. Semantics depend on `source`:
-   * - `word_style`: the full paragraph text (the entire paragraph IS the heading).
+   * - Deterministic sources (`word_style`, `list_metadata`, `outline_level`):
+   *   the full paragraph text (the entire paragraph IS the heading).
    * - All heuristic sources (`run_in_header`, `title_with_period`, `title_with_colon`,
    *   `title_caps_centered`, `title_bare`): only the extracted heading prefix.
    *   For example, on `"Indemnification. The Company shall …"` the value is

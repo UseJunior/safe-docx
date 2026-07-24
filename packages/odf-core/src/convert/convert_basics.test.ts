@@ -59,11 +59,12 @@ describe('convertDocxToOdt — package validity, text, headings, runs', () => {
     expect(lossiness.some((e) => e.construct === 'unsurfaced-paragraphs-dropped')).toBe(false);
   });
 
-  it('[CONV-03] Word-style headings become text:h with the mapped outline level; plain text stays text:p', async () => {
+  it('[CONV-03] supported Word headings become text:h; deeper and manually labeled paragraphs stay text:p', async () => {
     const bodyXml =
       styledP('Heading1', 'Top heading') +
       styledP('Heading2', 'Sub heading') +
       styledP('Heading9', 'Not a real heading level') +
+      styledP('Heading3', '(i) Manually labeled legal paragraph') +
       p('Body paragraph.');
     const docx = await buildDocxFromParts({ bodyXml });
     const { odt } = await convertDocxToOdt(docx);
@@ -76,9 +77,10 @@ describe('convertDocxToOdt — package validity, text, headings, runs', () => {
       'Heading_20_1',
       'Heading_20_2',
     ]);
-    // The non-Heading[1-6] style and the body paragraph both stay text:p.
+    // The non-Heading[1-6] style, manual legal label, and body paragraph stay text:p.
     const paragraphTexts = Array.from(doc.getElementsByTagNameNS(ODF_NS.TEXT, 'p')).map((el) => el.textContent);
     expect(paragraphTexts).toContain('Not a real heading level');
+    expect(paragraphTexts).toContain('(i) Manually labeled legal paragraph');
     expect(paragraphTexts).toContain('Body paragraph.');
   });
 

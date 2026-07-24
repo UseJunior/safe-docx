@@ -336,6 +336,22 @@ property through `appendInOrder`, which throws on any property name
 missing from the table so new properties force a conscious ordering
 decision.
 
+## [ECMA-PART1-17-3-1-20] w:outlineLvl paragraph outline level
+
+```yaml
+edition: 5
+part: 1
+section: "17.3.1.20"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl
+verifiedBy: packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts
+```
+
+`w:outlineLvl` records a paragraph's outline level. Values 0 through 8
+correspond to heading levels 1 through 9, while value 9 marks body text.
+Document-view formatting resolves the direct paragraph property before the
+paragraph style chain and ignores malformed or out-of-range values.
+
 ## [ECMA-PART1-17-3-2-28] w:rPr direct-property uniqueness
 
 ```yaml
@@ -1075,6 +1091,22 @@ verifiedBy:
 Level definitions follow the CT_Lvl child sequence (start, numFmt, suff,
 lvlText, lvlJc, pPr, rPr); level indents emit through `w:pPr`/`w:ind` and
 level run properties reuse the shared rPr builder.
+
+## [ECMA-PART1-17-9-22] w:pStyle numbering-level paragraph style
+
+```yaml
+edition: 5
+part: 1
+section: "17.9.22"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle
+verifiedBy: packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts
+```
+
+An optional `w:pStyle` on `w:lvl` associates that exact numbering level with
+a paragraph style. The numbering model retains the association and exposes a
+read-only active-level lookup so heading classification never consults an
+unrelated level or mutates list counters.
 
 ## [ECMA-PART1-17-9-17] w:numFmt numbering format
 

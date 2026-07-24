@@ -680,8 +680,8 @@ describe('document_view branch coverage', () => {
     let bodyXml: string;
     let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
 
-    await given('four signature labels followed by four non-Heading1-6 styled headings', async () => {
-      // The fixture corpus uses heading-ish styles beyond Heading1-6
+    await given('four signature labels followed by four non-builtin heading styles', async () => {
+      // The fixture corpus uses custom heading-like styles outside Heading1-9
       // (Heading7-9, Title, Subtitle, Article5L1-8). They are not signature
       // labels, so they must survive suppression even though they sit
       // adjacent to a label-dense window.
@@ -1038,7 +1038,7 @@ describe('document_view branch coverage', () => {
     });
   });
 
-  test('derives word_style headings only from exact Heading1-Heading6 paragraph style IDs', async ({ given, when, then, and }: AllureBddContext) => {
+  test('derives word_style headings from exact Heading1-Heading9 paragraph style IDs', async ({ given, when, then, and }: AllureBddContext) => {
     let bodyXml: string;
     let stylesXml: Document;
     let nodes: DocumentViewNode[];
@@ -1048,6 +1048,7 @@ describe('document_view branch coverage', () => {
         `<w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
         `<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>` +
         `<w:style w:type="paragraph" w:styleId="Heading6"><w:name w:val="heading 6"/></w:style>` +
+        `<w:style w:type="paragraph" w:styleId="Heading9"><w:name w:val="heading 9"/></w:style>` +
         `<w:style w:type="paragraph" w:styleId="HeadingPara1">` +
           `<w:name w:val="Heading Para 1"/>` +
           `<w:basedOn w:val="Heading1"/>` +
@@ -1057,6 +1058,7 @@ describe('document_view branch coverage', () => {
       bodyXml =
         `<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Board Approval</w:t></w:r></w:p>` +
         `<w:p><w:pPr><w:pStyle w:val="Heading6"/></w:pPr><w:r><w:t>Minor Conditions</w:t></w:r></w:p>` +
+        `<w:p><w:pPr><w:pStyle w:val="Heading9"/></w:pPr><w:r><w:t>Deep Conditions</w:t></w:r></w:p>` +
         `<w:p><w:pPr><w:pStyle w:val="HeadingPara1"/></w:pPr><w:r><w:t>this inherited style stays body prose.</w:t></w:r></w:p>` +
         `<w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>this is ordinary body text.</w:t></w:r></w:p>`;
     });
@@ -1065,20 +1067,21 @@ describe('document_view branch coverage', () => {
       nodes = buildTestNodes(bodyXml!, stylesXml!);
     });
 
-    await then('Heading1 and Heading6 paragraphs emit word_style headings with exact levels', async () => {
-      expect(nodes).toHaveLength(4);
+    await then('Heading1, Heading6, and Heading9 paragraphs emit exact levels', async () => {
+      expect(nodes).toHaveLength(5);
       expect(nodes[0]!.heading).toEqual({ text: 'Board Approval', source: 'word_style', level: 1 });
       expect(nodes[1]!.heading).toEqual({ text: 'Minor Conditions', source: 'word_style', level: 6 });
+      expect(nodes[2]!.heading).toEqual({ text: 'Deep Conditions', source: 'word_style', level: 9 });
     });
 
     await and('HeadingPara1 inheritance does not produce a heading object', async () => {
-      expect(nodes[2]!.heading).toBeUndefined();
-      expect(Object.prototype.hasOwnProperty.call(nodes[2]!, 'heading')).toBe(false);
+      expect(nodes[3]!.heading).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(nodes[3]!, 'heading')).toBe(false);
     });
 
     await and('body paragraphs omit the heading field entirely', async () => {
-      expect(nodes[3]!.heading).toBeUndefined();
-      expect(Object.prototype.hasOwnProperty.call(nodes[3]!, 'heading')).toBe(false);
+      expect(nodes[4]!.heading).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(nodes[4]!, 'heading')).toBe(false);
     });
   });
 
@@ -1227,7 +1230,7 @@ describe('document_view branch coverage', () => {
     });
   });
 
-  test('still promotes word_style headings inside table cells (Heading1..6 wins over the cell gate)', async ({ given, when, then }: AllureBddContext) => {
+  test('still promotes word_style headings inside table cells (Heading1..9 wins over the cell gate)', async ({ given, when, then }: AllureBddContext) => {
     let bodyXml: string;
     let stylesXml: Document;
     let nodes: DocumentViewNode[];

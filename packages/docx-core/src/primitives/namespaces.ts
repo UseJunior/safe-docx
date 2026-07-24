@@ -30,6 +30,7 @@ export const W = {
 
   // Paragraph formatting
   pStyle: 'pStyle',
+  outlineLvl: 'outlineLvl',
   jc: 'jc',
   ind: 'ind',
   spacing: 'spacing',

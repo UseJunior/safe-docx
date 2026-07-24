@@ -1,9 +1,22 @@
 import { OOXML, W } from './namespaces.js';
 import { getParagraphRuns } from './text.js';
 import { extractEffectiveRunFormatting, type ParagraphAlignment, type StylesModel } from './styles.js';
-import type { DocumentViewNode, HeaderFormatting, HeadingValue, HeuristicHeadingSource } from './document_view-types.js';
+import { getBuiltInHeadingLevel } from './heading_styles.js';
+import type {
+  DeterministicHeadingSource,
+  DocumentViewNode,
+  HeaderFormatting,
+  HeadingValue,
+  HeuristicHeadingSource,
+} from './document_view-types.js';
 
-export type { HeaderFormatting, HeadingSource, HeadingValue, HeuristicHeadingSource } from './document_view-types.js';
+export type {
+  DeterministicHeadingSource,
+  HeaderFormatting,
+  HeadingSource,
+  HeadingValue,
+  HeuristicHeadingSource,
+} from './document_view-types.js';
 
 const SHORT_HEADER_MAX_LENGTH = 50;
 const MAX_HEADER_TEXT_LENGTH = 60;
@@ -46,19 +59,66 @@ export function extractHeaderInfo(cleanText: string): { header_text: string | nu
   return { header_text: null, header_style: null };
 }
 
-export function deriveHeading(
-  paragraphStyleId: string | null,
+const DETERMINISTIC_HEADING_SOURCES = new Set<DeterministicHeadingSource>([
+  'word_style',
+  'list_metadata',
+  'outline_level',
+]);
+
+export function isDeterministicHeadingSource(
+  source: string,
+): source is DeterministicHeadingSource {
+  return DETERMINISTIC_HEADING_SOURCES.has(source as DeterministicHeadingSource);
+}
+
+export function deriveHeading(params: {
+  paragraphStyleId: string | null;
+  paragraphStyleName: string;
+  numberingLevelStyleId: string | null;
+  numberingLevelStyleName: string | null;
+  outlineLevel: number | null;
   cleanText: string,
   headerText: string | null,
   headerStyle: HeuristicHeadingSource | null,
   isInTableCell: boolean,
-): HeadingValue | undefined {
-  const styleMatch = paragraphStyleId ? /^Heading([1-6])$/.exec(paragraphStyleId) : null;
-  if (styleMatch) {
+}): HeadingValue | undefined {
+  const {
+    paragraphStyleId,
+    paragraphStyleName,
+    numberingLevelStyleId,
+    numberingLevelStyleName,
+    outlineLevel,
+    cleanText,
+    headerText,
+    headerStyle,
+    isInTableCell,
+  } = params;
+  const styleLevel = getBuiltInHeadingLevel(paragraphStyleId, paragraphStyleName);
+  if (styleLevel !== null) {
     return {
       text: cleanText,
       source: 'word_style',
-      level: Number.parseInt(styleMatch[1]!, 10),
+      level: styleLevel,
+    };
+  }
+
+  const listLevel = getBuiltInHeadingLevel(
+    numberingLevelStyleId,
+    numberingLevelStyleName,
+  );
+  if (listLevel !== null) {
+    return {
+      text: cleanText,
+      source: 'list_metadata',
+      level: listLevel,
+    };
+  }
+
+  if (outlineLevel !== null && outlineLevel >= 0 && outlineLevel <= 8) {
+    return {
+      text: cleanText,
+      source: 'outline_level',
+      level: outlineLevel + 1,
     };
   }
 
