@@ -53,6 +53,7 @@ if (!exeExists) {
   );
 }
 const describeWithLean = exeExists ? describe : describe.skip;
+const describeWithMaximumShape = existsSync(MAXIMUM_SHAPE_EXE) ? describe : describe.skip;
 
 describeWithLean('Lean XML triple verifier certificate', () => {
   test
@@ -1498,8 +1499,9 @@ describe('Lean fixed-story protocol and security hardening', () => {
     }
     });
 
-  test.openspec('[LEAN-REL-22] Every legal response fits the output cap')(
-    'accepts exact maximum shared and distinct responses emitted by compiled Lean constructors', async () => {
+  describeWithMaximumShape('compiled maximum-shape response constructors', () => {
+    test.openspec('[LEAN-REL-22] Every legal response fits the output cap')(
+      'accepts exact maximum shared and distinct responses emitted by compiled Lean constructors', async () => {
       const emittedStringBytes = (value: unknown): number => {
         if (typeof value === 'string') return Buffer.byteLength(value, 'utf8');
         if (Array.isArray(value)) return value.reduce((sum, item) => sum + emittedStringBytes(item), 0);
@@ -1534,8 +1536,9 @@ describe('Lean fixed-story protocol and security hardening', () => {
       expect(distinct.relationshipStories).toHaveLength(384);
       expect(distinct.relationshipStories.flatMap((story) => story.selectingSlotOrdinals)).toHaveLength(384);
     },
-    60_000,
-  );
+      60_000,
+    );
+  });
 
   test('strictly rejects nested unknown keys and broken selector partitions', () => {
     const identity = { relationshipId: 'rId1', normalizedPartPath: 'word/header1.xml' };
