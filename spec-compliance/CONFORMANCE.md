@@ -30,6 +30,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-6-17` | w:sectPr document-final section properties | 5 | 1 | 17.6.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | — |
 | `ECMA-PART1-17-6-13` | w:pgSz page size emission | 5 | 1 | 17.6.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz` | — |
 | `ECMA-PART1-17-6-11` | w:pgMar page margin emission | 5 | 1 | 17.6.11 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar` | — |
+| `ECMA-PART1-17-3-1-24` | w:pBdr paragraph border collection | 5 | 1 | 17.3.1.24 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pBdr` | packages/docx-core/src/generation/emit/borders.ts; packages/docx-core/src/generation/generation-paragraph-borders.test.ts |
 | `ECMA-PART1-17-3-1-26` | w:pPr child-element ordering | 5 | 1 | 17.3.1.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
 | `ECMA-PART1-17-3-1-20` | w:outlineLvl paragraph outline level | 5 | 1 | 17.3.1.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-3-2-28` | w:rPr direct-property uniqueness | 5 | 1 | 17.3.2.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
@@ -364,6 +365,21 @@ always emits the full attribute set (top, right, bottom, left, header,
 footer, gutter) because readers diverge in their defaults when
 attributes are omitted; spec values fill in unspecified members from
 the standard one-inch/half-inch defaults.
+
+### ECMA-PART1-17-3-1-24 — w:pBdr paragraph border collection
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.1.24
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pBdr`
+- **Verified by:** packages/docx-core/src/generation/emit/borders.ts; packages/docx-core/src/generation/generation-paragraph-borders.test.ts
+
+Declared paragraph borders emit as a `w:pBdr` collection in the
+`CT_PBdr` sequence (`top`, `left`, `bottom`, `right`, `between`, `bar`)
+with explicit size/space/color per edge, sitting in the schema-defined
+`w:pPr` child position (see [ECMA-PART1-17-3-1-26]). The generation
+serializer shares one border builder with the table-border collections
+so every edge carries the same explicit-attribute discipline.
 
 ### ECMA-PART1-17-3-1-26 — w:pPr child-element ordering
 

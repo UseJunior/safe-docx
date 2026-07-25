@@ -21,6 +21,7 @@ export type {
   HeaderFooterSpec,
   InlineSpec,
   NumberingSpec,
+  ParagraphBorders,
   ParagraphSpec,
   RunProps,
   RunSpec,

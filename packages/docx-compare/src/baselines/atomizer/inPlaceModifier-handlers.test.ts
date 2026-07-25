@@ -1,0 +1,250 @@
+/**
+ * Characterization tests for the inPlaceModifier atom handlers.
+ *
+ * The per-status handlers (handleInserted / handleDeleted / handleMovedSource /
+ * handleMovedDestination / handleFormatChanged / handleEqual) and the
+ * whole-paragraph marker + created-paragraph bookkeeping in inPlaceModifier.ts
+ * are reachable only through the full inplace reconstruction path, not by
+ * calling the handlers in isolation. These tests drive real DOCX pairs through
+ * `compareDocuments({ reconstructionMode: 'inplace' })` so each handler branch
+ * runs against a genuine revised tree, and assert on the tracked-changes markup
+ * the handler is responsible for emitting.
+ */
+
+import JSZip from 'jszip';
+import { describe, expect } from 'vitest';
+import { compareDocuments } from '../../index.js';
+import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
+import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
+
+const test = testAllure
+  .epic('Document Comparison')
+  .withLabels({ feature: 'Inplace Modifier Handlers' });
+
+function para(text: string): string {
+  return `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+}
+
+async function documentXml(docx: Buffer): Promise<string> {
+  const part = (await JSZip.loadAsync(docx)).file('word/document.xml');
+  if (!part) throw new Error('comparison result omitted word/document.xml');
+  return part.async('string');
+}
+
+function count(xml: string, tag: string): number {
+  return (xml.match(new RegExp(`<${tag.replace(':', '\\:')}\\b`, 'g')) ?? []).length;
+}
+
+type InplaceResult = Awaited<ReturnType<typeof compareDocuments>>;
+
+async function inplaceCompareFull(
+  originalBody: string,
+  revisedBody: string,
+): Promise<{ xml: string; result: InplaceResult }> {
+  const original = await buildDocxFromBodyXml(originalBody);
+  const revised = await buildDocxFromBodyXml(revisedBody);
+  const result = await compareDocuments(original, revised, {
+    engine: 'atomizer',
+    reconstructionMode: 'inplace',
+  });
+  expect(result.reconstructionModeUsed).toBe('inplace');
+  return { xml: await documentXml(result.document), result };
+}
+
+async function inplaceCompare(originalBody: string, revisedBody: string): Promise<string> {
+  return (await inplaceCompareFull(originalBody, revisedBody)).xml;
+}
+
+describe('inPlaceModifier handlers (inplace reconstruction path)', () => {
+  test('handleInserted: a word inserted mid-paragraph is wrapped in w:ins', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let xml: string;
+
+    await given('a paragraph that gains a word in the revised document', () => {});
+
+    await when('the documents are compared in inplace mode', async () => {
+      xml = await inplaceCompare(
+        para('the brown fox'),
+        para('the quick brown fox'),
+      );
+    });
+
+    await then('the inserted word is tracked as an insertion', () => {
+      expect(count(xml, 'w:ins')).toBeGreaterThanOrEqual(1);
+      expect(xml).toContain('quick');
+    });
+  });
+
+  test('handleDeleted: a word removed mid-paragraph is wrapped in w:del', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let xml: string;
+
+    await given('a paragraph that loses a word in the revised document', () => {});
+
+    await when('the documents are compared in inplace mode', async () => {
+      xml = await inplaceCompare(
+        para('the quick brown fox'),
+        para('the brown fox'),
+      );
+    });
+
+    await then('the deleted word is tracked as a deletion with its text preserved', () => {
+      expect(count(xml, 'w:del')).toBeGreaterThanOrEqual(1);
+      expect(xml).toContain('<w:delText');
+      expect(xml).toContain('quick');
+    });
+  });
+
+  test('handleInserted (whole paragraph): an added paragraph is fully tracked as inserted', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let xml: string;
+
+    await given('a document that gains a whole paragraph', () => {});
+
+    await when('the documents are compared in inplace mode', async () => {
+      xml = await inplaceCompare(
+        `${para('First paragraph stays')}${para('Third paragraph stays')}`,
+        `${para('First paragraph stays')}${para('Second paragraph is new')}${para('Third paragraph stays')}`,
+      );
+    });
+
+    await then('the new paragraph content is inserted', () => {
+      expect(count(xml, 'w:ins')).toBeGreaterThanOrEqual(1);
+      expect(xml).toContain('Second paragraph is new');
+    });
+
+    await and('a paragraph-mark insertion marker is emitted for reject-all idempotency', () => {
+      // Whole-paragraph inserts carry a pPr-level ins marker so Reject All can
+      // drop the paragraph entirely.
+      expect(xml).toMatch(/<w:rPr>[\s\S]*<w:ins\b/);
+    });
+  });
+
+  test('handleDeleted (whole paragraph): a removed paragraph is cloned back as deleted', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let xml: string;
+
+    await given('a document that loses a whole paragraph', () => {});
+
+    await when('the documents are compared in inplace mode', async () => {
+      xml = await inplaceCompare(
+        `${para('First paragraph stays')}${para('Second paragraph goes away')}${para('Third paragraph stays')}`,
+        `${para('First paragraph stays')}${para('Third paragraph stays')}`,
+      );
+    });
+
+    await then('the deleted paragraph text is cloned back as per-word delText runs', () => {
+      expect(count(xml, 'w:del')).toBeGreaterThanOrEqual(1);
+      expect(xml).toContain('<w:delText');
+      // The cloned deletion is fragmented into per-word runs, so the words
+      // appear individually rather than as one contiguous string.
+      expect(xml).toContain('>Second<');
+      expect(xml).toContain('>away<');
+    });
+
+    await and('a paragraph-mark deletion marker is emitted for accept-all idempotency', () => {
+      // The removed paragraph carries a pPr-level w:del so Accept All collapses it.
+      expect(xml).toMatch(/<w:pPr>[\s\S]*?<w:del\b/);
+    });
+
+    await and('the surviving paragraphs are still present', () => {
+      expect(xml).toContain('First paragraph stays');
+      expect(xml).toContain('Third paragraph stays');
+    });
+  });
+
+  test('handleFormatChanged: a run that only changes formatting is counted as a format revision', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let xml: string;
+    let result: InplaceResult;
+
+    await given('a run whose text is unchanged but gains bold formatting', () => {});
+
+    await when('the documents are compared in inplace mode', async () => {
+      ({ xml, result } = await inplaceCompareFull(
+        '<w:p><w:r><w:t>Formatting target text</w:t></w:r></w:p>',
+        '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Formatting target text</w:t></w:r></w:p>',
+      ));
+    });
+
+    await then('the format change is detected and counted as a formatting revision', () => {
+      expect(result.stats.formatChanges).toBeGreaterThanOrEqual(1);
+    });
+
+    await and('the revised bold formatting is applied to the run without deleting the text', () => {
+      expect(xml).toContain('<w:b/>');
+      expect(xml).toContain('Formatting target text');
+      expect(count(xml, 'w:delText')).toBe(0);
+    });
+  });
+
+  test('handleMovedSource/Destination: a reordered paragraph is bracketed by move markers', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let xml: string;
+
+    await given('a three-paragraph document whose first paragraph moves to the end', () => {});
+
+    await when('the documents are compared in inplace mode', async () => {
+      xml = await inplaceCompare(
+        `${para('The quick brown fox jumps over the lazy dog today')}${para('Middle paragraph stays put')}${para('Final paragraph also stays')}`,
+        `${para('Middle paragraph stays put')}${para('Final paragraph also stays')}${para('The quick brown fox jumps over the lazy dog today')}`,
+      );
+    });
+
+    await then('the move is tracked with moveFrom/moveTo range markers', () => {
+      expect(count(xml, 'w:moveFromRangeStart')).toBeGreaterThanOrEqual(1);
+      expect(count(xml, 'w:moveToRangeStart')).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  test('handleEqual + mixed handlers: an in-place word replacement deletes then inserts', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    let xml: string;
+
+    await given('a paragraph whose last word is replaced', () => {});
+
+    await when('the documents are compared in inplace mode', async () => {
+      xml = await inplaceCompare(
+        para('hello cruel world'),
+        para('hello lovely world'),
+      );
+    });
+
+    await then('the replacement produces both a deletion and an insertion', () => {
+      expect(count(xml, 'w:del')).toBeGreaterThanOrEqual(1);
+      expect(count(xml, 'w:ins')).toBeGreaterThanOrEqual(1);
+    });
+
+    await and('the unchanged words survive as equal content', () => {
+      expect(xml).toContain('hello');
+      expect(xml).toContain('world');
+      expect(xml).toContain('lovely');
+      expect(xml).toContain('cruel');
+    });
+  });
+});

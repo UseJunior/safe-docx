@@ -36,6 +36,7 @@ function styledSpec(): DocumentSpec {
           {
             kind: 'paragraph',
             alignment: 'justify',
+            borders: { bottom: { style: 'single', sizeEighthPt: 8, colorHex: '2F75B5' } },
             spacing: { beforeTwips: 0, afterTwips: 200, lineTwips: 276, lineRule: 'auto' },
             indent: { leftTwips: 720, hangingTwips: 360 },
             tabs: [{ posTwips: 4320, align: 'center', leader: 'dot' }],
@@ -112,6 +113,7 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
   test('StyleSpec paragraph properties use the same runtime validation as authored paragraphs', async () => {
     const cases: Array<[string, (paragraph: NonNullable<NonNullable<DocumentSpec['styles']>[number]['paragraph']>) => void]> = [
       ['alignment', (paragraph) => { paragraph.alignment = 'distributed' as never; }],
+      ['borders/bottom/colorHex', (paragraph) => { paragraph.borders = { bottom: { style: 'single', colorHex: '#blue' } }; }],
       ['spacing/beforeTwips', (paragraph) => { paragraph.spacing = { beforeTwips: -1 }; }],
       ['tabs/0/posTwips', (paragraph) => { paragraph.tabs = [{ posTwips: -1, align: 'left' }]; }],
       ['indent/firstLineTwips', (paragraph) => { paragraph.indent = { firstLineTwips: -1 }; }],
@@ -265,7 +267,7 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
     'Scenario: paragraph properties are emitted in schema order',
     async ({ given, when, then, attachPrettyJson }: AllureBddContext) => {
       let buffer!: Buffer;
-      await given('a paragraph specifying alignment, spacing, indentation, and tab stops', async () => {
+      await given('a paragraph specifying alignment, spacing, indentation, tab stops, and a bottom border', async () => {
         buffer = await generateDocx(styledSpec());
       });
 
@@ -280,7 +282,13 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
       await then('the pPr children appear in the WML schema sequence with the requested values', async () => {
         const names = wChildNames(pPr);
         await attachPrettyJson('ppr-child-order', names);
-        expect(names).toEqual(['tabs', 'spacing', 'ind', 'jc']);
+        expect(names).toEqual(['pBdr', 'tabs', 'spacing', 'ind', 'jc']);
+        const pBdr = getDirectChildrenByName(pPr, 'pBdr')[0]!;
+        const bottom = getDirectChildrenByName(pBdr, 'bottom')[0]!;
+        expect(bottom.getAttribute('w:val')).toBe('single');
+        expect(bottom.getAttribute('w:sz')).toBe('8');
+        expect(bottom.getAttribute('w:space')).toBe('0');
+        expect(bottom.getAttribute('w:color')).toBe('2F75B5');
         const jc = pPr.getElementsByTagName('w:jc').item(0)!;
         expect(jc.getAttribute('w:val')).toBe('both');
         const tab = pPr.getElementsByTagName('w:tab').item(0)!;
@@ -316,6 +324,7 @@ describe('Traceability: styles and run/paragraph formatting emission', () => {
         });
         const probes: Array<{ path: string; mutate: (paragraph: any) => void }> = [
           { path: '/sections/0/blocks/0/alignment', mutate: (p) => { p.alignment = 'diagonal'; } },
+          { path: '/sections/0/blocks/0/borders/bottom/style', mutate: (p) => { p.borders = { bottom: { style: 'bogus' } }; } },
           { path: '/sections/0/blocks/0/spacing/beforeTwips', mutate: (p) => { p.spacing = { beforeTwips: -1 }; } },
           { path: '/sections/0/blocks/0/tabs/0/posTwips', mutate: (p) => { p.tabs = [{ posTwips: 1.5, align: 'left' }]; } },
           { path: '/sections/0/blocks/0/indent/firstLineTwips', mutate: (p) => { p.indent = { firstLineTwips: -1 }; } },
