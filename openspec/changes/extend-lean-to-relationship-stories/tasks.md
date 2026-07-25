@@ -122,6 +122,7 @@
 - [x] 5.5 `npm run test:run -w @usejunior/docx-compare -- src/baselines/atomizer/leanXmlVerifier.test.ts`
 - [x] 5.6 `npm run test:run -w @usejunior/docx-core -- src/integration/nvca-coi-regression.test.ts`
 - [x] 5.7 `npm run check:lean-xml-checker-coverage && npm run check:spec-coverage && npm run check:conformance-citations && npm run check:conformance-doc`
-- [ ] 5.8 `npm run build && npm run lint:workspaces && npm run test:run && npm run check:spec-coverage && npm run check:conformance-citations && npm run check:conformance-doc`
-  (`build`, lint, and documentation gates pass; the post-repair broad
-  `npm run test:run` remains explicitly deferred.)
+- [x] 5.8 `npm run build && npm run lint:workspaces && npm run test:run && npm run check:spec-coverage && npm run check:conformance-citations && npm run check:conformance-doc`
+  (`build`, lint, and documentation gates pass; the effective broad test
+  matrix passes package-by-package while excluding only the three docx-core
+  and four ODF tests that launch external LibreOffice.)
