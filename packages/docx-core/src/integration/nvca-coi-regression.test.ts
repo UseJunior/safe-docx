@@ -15,6 +15,7 @@ import {
   compareTexts,
   extractTextWithParagraphs,
   rejectAllChanges,
+  runLeanXmlTripleVerifier,
   type ReconstructionMode,
 } from '@usejunior/docx-compare';
 import { DocxDocument } from '../primitives/document.js';
@@ -38,6 +39,10 @@ const sourcePath = path.resolve(
 const filledPath = path.resolve(
   __dirname,
   '../../../../tests/test_documents/nvca-coi-regression/filled.docx',
+);
+const leanCheckerPath = path.resolve(
+  __dirname,
+  '../../../../verification/lean/.lake/build/bin/leanDocxChecker',
 );
 
 async function deriveMinimallyEditedRevision(source: Buffer): Promise<Buffer> {
@@ -176,4 +181,79 @@ describe('NVCA COI ancillary field evidence', () => {
       60_000,
     );
   }
+});
+
+describe('NVCA COI Lean relationship-story evidence', () => {
+  test.openspec('[LEAN-REL-19] Real NVCA compared-only selected-story mutations fail')(
+    'keeps selection stable and fails every deduplicated selected header/footer mutation',
+    async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.2' });
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.3' });
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.4' });
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.5' });
+      if (!fs.existsSync(sourcePath) || !fs.existsSync(leanCheckerPath)) {
+        throw new Error('NVCA source fixture or compiled Lean checker is missing');
+      }
+
+      const source = fs.readFileSync(sourcePath);
+      const revised = await deriveMinimallyEditedRevision(source);
+      const baseline = await compareDocuments(source, revised, {
+        engine: 'atomizer',
+        reconstructionMode: 'inplace',
+        author: 'RegressionTest',
+        leanXmlVerifier: { enabled: true, executablePath: leanCheckerPath, timeoutMs: 60_000 },
+      });
+      const evidence = baseline.documentIntegrity;
+      expect(evidence?.status).toBe('passed');
+      expect(evidence?.checkerProtocolVersion).toBe(4);
+      expect(evidence?.relationshipSlots?.length).toBeGreaterThan(0);
+      expect(evidence?.relationshipStories?.length).toBeGreaterThan(0);
+
+      const originalXml = await (await DocxArchive.load(source)).getDocumentXml();
+      const revisedXml = await (await DocxArchive.load(revised)).getDocumentXml();
+      const comparedXml = await (await DocxArchive.load(baseline.document)).getDocumentXml();
+      const baselineSlots = evidence!.relationshipSlots!;
+
+      for (const selectedStory of evidence!.relationshipStories!) {
+        const mutatedArchive = await DocxArchive.load(baseline.document);
+        const selectedXml = await mutatedArchive.getFile(selectedStory.comparedPartPath);
+        if (!selectedXml) throw new Error(`missing selected NVCA part: ${selectedStory.comparedPartPath}`);
+        const closingRoot = selectedStory.kind === 'header' ? '</w:hdr>' : '</w:ftr>';
+        if (!selectedXml.includes(closingRoot)) {
+          throw new Error(`selected NVCA part uses an unexpected root spelling: ${selectedStory.comparedPartPath}`);
+        }
+        mutatedArchive.setFile(
+          selectedStory.comparedPartPath,
+          selectedXml.replace(
+            closingRoot,
+            '<w:p><w:r><w:t>LEAN-COMPARED-ONLY-MUTATION</w:t></w:r></w:p>' + closingRoot,
+          ),
+        );
+        const mutatedCompared = await mutatedArchive.save();
+        const certificate = await runLeanXmlTripleVerifier({
+          originalDocx: source,
+          revisedDocx: revised,
+          comparedDocx: mutatedCompared,
+          legacyDocumentXml: { original: originalXml, revised: revisedXml, compared: comparedXml },
+          reconstructionMode: 'inplace',
+          options: { executablePath: leanCheckerPath, timeoutMs: 60_000 },
+        });
+
+        expect(certificate.status, selectedStory.comparedPartPath).toBe('failed');
+        expect(certificate.relationshipSelectionFailures, selectedStory.comparedPartPath).toEqual([]);
+        expect(certificate.relationshipSlots, selectedStory.comparedPartPath).toEqual(baselineSlots);
+        const failed = certificate.relationshipStories?.find((story) =>
+          story.physicalStoryOrdinal === selectedStory.physicalStoryOrdinal);
+        expect(failed?.status, selectedStory.comparedPartPath).toBe('failed');
+        expect(failed?.selectingSlotOrdinals, selectedStory.comparedPartPath).toEqual(
+          selectedStory.selectingSlotOrdinals,
+        );
+        expect(
+          Object.values(failed?.checks ?? {}).some((check) => check.status === 'failed'),
+          selectedStory.comparedPartPath,
+        ).toBe(true);
+      }
+    },
+    300_000,
+  );
 });

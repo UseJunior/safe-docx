@@ -281,10 +281,10 @@ export async function buildDocxFromBodyXml(
     `</Relationships>`;
 
   const zip = new JSZip();
-  zip.file('[Content_Types].xml', contentTypesXml);
-  zip.file('_rels/.rels', rootRelsXml);
-  zip.file('word/document.xml', documentXml);
-  zip.file('word/_rels/document.xml.rels', docRelsXml);
+  zip.file('[Content_Types].xml', contentTypesXml, { createFolders: false });
+  zip.file('_rels/.rels', rootRelsXml, { createFolders: false });
+  zip.file('word/document.xml', documentXml, { createFolders: false });
+  zip.file('word/_rels/document.xml.rels', docRelsXml, { createFolders: false });
 
   return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
 }

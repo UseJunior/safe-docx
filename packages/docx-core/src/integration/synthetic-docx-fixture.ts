@@ -390,6 +390,9 @@ export async function buildSyntheticDocx(opts: SyntheticDocxOptions): Promise<Bu
   zip.file('word/document.xml', documentXml);
   zip.file('word/_rels/document.xml.rels', docRelsXml);
 
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) delete zip.files[entry.name];
+  }
   return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
 }
 
@@ -460,6 +463,9 @@ export async function buildDocxFromParts(opts: DocxPartsOptions): Promise<Buffer
   if (opts.stylesXml) zip.file('word/styles.xml', opts.stylesXml);
   if (opts.numberingXml) zip.file('word/numbering.xml', opts.numberingXml);
 
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) delete zip.files[entry.name];
+  }
   return (await zip.generateAsync({ type: 'nodebuffer' })) as Buffer;
 }
 

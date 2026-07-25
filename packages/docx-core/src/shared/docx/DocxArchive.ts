@@ -182,6 +182,12 @@ export class DocxArchive {
    * @returns The DOCX file as a Buffer
    */
   async save(): Promise<Buffer> {
+    // OPC packages address parts by file name and do not need directory records.
+    // JSZip may synthesize folder objects while adding nested paths; remove only
+    // those objects before serialization without deleting their child parts.
+    for (const entry of Object.values(this.zip.files)) {
+      if (entry.dir) delete this.zip.files[entry.name];
+    }
     const content = await this.zip.generateAsync({
       type: 'nodebuffer',
       compression: 'DEFLATE',

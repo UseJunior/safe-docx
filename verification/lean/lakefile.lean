@@ -34,3 +34,9 @@ lean_exe leanHelperDifferential where
 @[default_target]
 lean_exe leanDocxChecker where
   root := `LeanDocxChecker
+
+-- Protocol-v4 maximum-shape audit producer. It uses the same outer response
+-- constructor as the production checker and is consumed by the strict TS decoder tests.
+@[default_target]
+lean_exe protocolV4MaximumShape where
+  root := `ProtocolV4MaximumShape

@@ -20,6 +20,11 @@ on:
       - 'packages/docx-core/src/integration/lean-differential-helpers.test.ts'
       - 'packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts'
       - 'packages/docx-core/src/baselines/atomizer/pipeline.ts'
+      - 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts'
+      - 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts'
+      - 'packages/docx-compare/src/compare-types.ts'
+      - 'packages/docx-core/src/integration/nvca-coi-regression.test.ts'
+      - 'tests/test_documents/nvca-coi-regression/source.docx'
   pull_request:
     branches: [main]
     paths:
@@ -33,6 +38,11 @@ on:
       - 'packages/docx-core/src/integration/lean-differential-helpers.test.ts'
       - 'packages/docx-core/src/baselines/atomizer/trackChangesAcceptorAst.ts'
       - 'packages/docx-core/src/baselines/atomizer/pipeline.ts'
+      - 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts'
+      - 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts'
+      - 'packages/docx-compare/src/compare-types.ts'
+      - 'packages/docx-core/src/integration/nvca-coi-regression.test.ts'
+      - 'tests/test_documents/nvca-coi-regression/source.docx'
   workflow_dispatch:
 
 permissions:
@@ -168,6 +178,12 @@ jobs:
           done
           echo "npm ci failed after 3 attempts"
           exit 1
+      - name: Compiled Lean relationship-story protocol v4
+        run: npm run test:run -w @usejunior/docx-compare -- src/baselines/atomizer/leanXmlVerifier.test.ts
+
+      - name: Real NVCA compared-only relationship-story mutations
+        run: npm run test:run -w @usejunior/docx-core -- src/integration/nvca-coi-regression.test.ts
+
       - name: Lean↔TS LCS differential harness (exhaustive)
         env:
           LEAN_DIFF_EXHAUSTIVE: '1'

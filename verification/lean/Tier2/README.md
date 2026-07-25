@@ -23,6 +23,16 @@ preservation lemma that discharges the `inv_field_001` `sorry` in
 - `RoundTripText.lean` — the round-trip text model (`extractText`, `normalizeText`,
   `revisedText`, `originalText`) and the lemmas that close `inv_rt_001`
   (`text_rename_invariant`, `extractText_reject`, `extractText_accept_normalized`).
+- `XmlTripleChecker.lean` — the namespace-aware accepted XML subset, generic
+  fixed/selected story token checker, bounded event-to-token path, and
+  collection soundness theorem.
+- `RelationshipStorySelector.lean` — the bounded binary classic-ZIP index,
+  ancestry-aware direct section/relationship selector, ordinal alignment,
+  physical-story deduplication, and four protocol-v4 selector/aggregate
+  theorem targets over checked executable functions.
+- `SelectorTheoremAudit.lean` — closed counterexample-style instantiations for
+  partial binding resolution, canonical shared-target locator order, partial
+  loaded-work projection, and exact physical-work/token-triple correspondence.
 
 ## What the closed proof says
 

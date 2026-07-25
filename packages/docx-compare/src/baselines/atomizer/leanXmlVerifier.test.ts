@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -7,7 +8,7 @@ import JSZip from 'jszip';
 import { buildSyntheticDocx } from '@usejunior/docx-core';
 import { compareDocuments } from '../../index.js';
 import type { DocumentIntegrityCertificate } from '../../compare-types.js';
-import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
+import { isLeanVerifierJson, runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
   acceptAllChanges,
   extractTextWithParagraphs,
@@ -23,6 +24,26 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_F
 const TEST_DIR = dirname(import.meta.url.replace('file://', ''));
 const PROJECT_ROOT = join(TEST_DIR, '../../../../..');
 const LEAN_EXE = join(PROJECT_ROOT, 'verification/lean/.lake/build/bin/leanDocxChecker');
+const MAXIMUM_SHAPE_EXE = join(
+  PROJECT_ROOT,
+  'verification/lean/.lake/build/bin/protocolV4MaximumShape',
+);
+
+async function runMaximumShapeProducer(mode: 'shared' | 'distinct'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(MAXIMUM_SHAPE_EXE, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve(Buffer.concat(stdout).toString('utf8'));
+      else reject(new Error(`maximum-shape producer exited ${code}: ${Buffer.concat(stderr)}`));
+    });
+    child.stdin.end(mode);
+  });
+}
 
 const exeExists = existsSync(LEAN_EXE);
 if (!exeExists) {
@@ -56,18 +77,19 @@ describeWithLean('Lean XML triple verifier certificate', () => {
         });
       });
 
-      await then('the certificate reports plain document properties and hashes', () => {
+      await then('the certificate reports plain document properties and hashes', async () => {
         expect(result.reconstructionModeUsed).toBe('inplace');
-        expect(result.documentIntegrity?.status).toBe('passed');
+        expect(result.documentIntegrity?.status, result.documentIntegrity?.reason).toBe('passed');
         expect(result.documentIntegrity?.protocolVersion).toBe(1);
         expect(result.documentIntegrity?.scope).toBe('word/document.xml');
-        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(3);
+        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(4);
         expect(result.documentIntegrity?.fixedStoryScope).toEqual([
           'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
         ]);
-        expect(result.documentIntegrity?.exclusions).toContain(
-          'comments, headers, and footers',
-        );
+        expect(result.documentIntegrity?.relationshipStoryScope).toMatchObject({
+          selection: 'direct-explicit-section-bindings',
+          inheritedRoles: false,
+        });
         expect(result.ancillaryFieldEvidence).toMatchObject({
           status: 'passed',
           reconstructionMode: 'inplace',
@@ -80,6 +102,9 @@ describeWithLean('Lean XML triple verifier certificate', () => {
         ).toContain('revised story');
         expect(JSON.stringify(result.documentIntegrity)).not.toContain('tier2.checker_sound');
         expect(JSON.stringify(result.documentIntegrity)).not.toContain('INV');
+        const packageZip = await JSZip.loadAsync(result.document);
+        expect(Object.values(packageZip.files).filter((entry) => entry.dir)).toEqual([]);
+        expect(await packageZip.file('word/document.xml')?.async('string')).toContain('w:document');
       });
     },
   );
@@ -152,7 +177,10 @@ async function replacePart(
 ): Promise<Buffer> {
   const zip = await JSZip.loadAsync(docx);
   if (xml === null) zip.remove(path);
-  else zip.file(path, xml);
+  else zip.file(path, xml, { createFolders: false });
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) delete zip.files[entry.name];
+  }
   return zip.generateAsync({ type: 'nodebuffer', compression });
 }
 
@@ -169,6 +197,243 @@ function withPrefix(xml: string, from: string, to: string): string {
 }
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PR_NS = 'http://schemas.openxmlformats.org/package/2006/relationships';
+const HEADER_REL = `${R_NS}/header`;
+const FOOTER_REL = `${R_NS}/footer`;
+
+async function relationshipDocx(options: {
+  headerText?: string;
+  footerText?: string;
+  includeAllRoles?: boolean;
+  malformedUnselectedRelationship?: boolean;
+  headerTarget?: string;
+  headerPartPath?: string;
+  bodyXml?: string;
+  omitFooterRelationship?: boolean;
+  omitFooterPart?: boolean;
+  explicitEmptyRelationships?: boolean;
+} = {}): Promise<Buffer> {
+  const roles = options.includeAllRoles ? ['first', 'default', 'even'] : ['default'];
+  const references = roles.flatMap((role, index) => [
+    `<w:headerReference w:type="${role}" r:id="rIdH${index}"/>`,
+    `<w:footerReference w:type="${role}" r:id="rIdF${index}"/>`,
+  ]).join('');
+  const base = await buildDocxFromBodyXml(
+    options.bodyXml ?? paragraphWithText('Body'),
+  );
+  const zip = await JSZip.loadAsync(base);
+  const generatedDocument = await zip.file('word/document.xml')!.async('string');
+  zip.file(
+    'word/document.xml',
+    generatedDocument.replace(
+      '<w:sectPr/>',
+      options.bodyXml === undefined
+        ? `<w:sectPr xmlns:r="${R_NS}">${references}</w:sectPr>`
+        : '',
+    ),
+    { createFolders: false },
+  );
+  const relationship = (attributes: string) =>
+    options.explicitEmptyRelationships ? `<Relationship ${attributes}></Relationship>` : `<Relationship ${attributes}/>`;
+  const relationships = roles.flatMap((_, index) => [
+    relationship(`Id="rIdH${index}" Type="${HEADER_REL}" Target="${options.headerTarget ?? 'header1.xml'}"`),
+    ...(options.omitFooterRelationship ? [] : [
+      relationship(`Id="rIdF${index}" Type="${FOOTER_REL}" Target="footer1.xml"`),
+    ]),
+  ]);
+  if (options.malformedUnselectedRelationship) {
+    relationships.push('<Relationship Id="unused" Type="urn:test" Target="unused.xml" Unknown="x"/>');
+  }
+  zip.file(
+    'word/_rels/document.xml.rels',
+    `<Relationships xmlns="${PR_NS}">${relationships.join('')}</Relationships>`,
+    { createFolders: false },
+  );
+  zip.file(
+    options.headerPartPath ?? 'word/header1.xml',
+    `<w:hdr xmlns:w="${W_NS}"><w:p><w:r><w:t>${options.headerText ?? 'Header'}</w:t></w:r></w:p></w:hdr>`,
+    { createFolders: false },
+  );
+  if (!options.omitFooterPart) {
+    zip.file(
+      'word/footer1.xml',
+      `<w:ftr xmlns:w="${W_NS}"><w:p><w:r><w:t>${options.footerText ?? 'Footer'}</w:t></w:r></w:p></w:ftr>`,
+      { createFolders: false },
+    );
+  }
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) delete zip.files[entry.name];
+  }
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+const RELATIONSHIP_SLOT_KINDS = [
+  ['header', 'first'],
+  ['header', 'default'],
+  ['header', 'even'],
+  ['footer', 'first'],
+  ['footer', 'default'],
+  ['footer', 'even'],
+] as const;
+
+async function resourceRelationshipDocx(options: {
+  storyCount: number;
+  storyXml?: (index: number, kind: 'header' | 'footer') => string;
+  footnotesXml?: string;
+  endnotesXml?: string;
+}): Promise<Buffer> {
+  const sections = Array.from(
+    { length: Math.ceil(options.storyCount / RELATIONSHIP_SLOT_KINDS.length) },
+    (_, sectionOrdinal) => {
+      const start = sectionOrdinal * RELATIONSHIP_SLOT_KINDS.length;
+      const references = RELATIONSHIP_SLOT_KINDS
+        .map(([kind, role], offset) => {
+          const index = start + offset;
+          return index < options.storyCount
+            ? `<w:${kind}Reference w:type="${role}" r:id="rId${index}"/>`
+            : '';
+        })
+        .join('');
+      return { references, terminal: sectionOrdinal === Math.ceil(options.storyCount / 6) - 1 };
+    },
+  );
+  const bodyXml =
+    sections
+      .filter(({ terminal }) => !terminal)
+      .map(({ references }) =>
+        `<w:p><w:pPr><w:sectPr xmlns:r="${R_NS}">${references}</w:sectPr></w:pPr></w:p>`,
+      )
+      .join('') + paragraphWithText('Body');
+  const base = await buildDocxFromBodyXml(bodyXml);
+  const zip = await JSZip.loadAsync(base);
+  const documentXml = await zip.file('word/document.xml')!.async('string');
+  zip.file(
+    'word/document.xml',
+    documentXml.replace(
+      '<w:sectPr/>',
+      `<w:sectPr xmlns:r="${R_NS}">${sections.at(-1)?.references ?? ''}</w:sectPr>`,
+    ),
+    { createFolders: false },
+  );
+  const relationships = Array.from({ length: options.storyCount }, (_, index) => {
+    const [kind] = RELATIONSHIP_SLOT_KINDS[index % RELATIONSHIP_SLOT_KINDS.length]!;
+    return `<Relationship Id="rId${index}" Type="${kind === 'header' ? HEADER_REL : FOOTER_REL}" ` +
+      `Target="${kind}${index}.xml"/>`;
+  }).join('');
+  zip.file(
+    'word/_rels/document.xml.rels',
+    `<Relationships xmlns="${PR_NS}">${relationships}</Relationships>`,
+    { createFolders: false },
+  );
+  for (let index = 0; index < options.storyCount; index += 1) {
+    const [kind] = RELATIONSHIP_SLOT_KINDS[index % RELATIONSHIP_SLOT_KINDS.length]!;
+    const root = kind === 'header' ? 'hdr' : 'ftr';
+    zip.file(
+      `word/${kind}${index}.xml`,
+      options.storyXml?.(index, kind) ??
+        `<w:${root} xmlns:w="${W_NS}"><w:p><w:r><w:t>${index}</w:t></w:r></w:p></w:${root}>`,
+      { createFolders: false },
+    );
+  }
+  if (options.footnotesXml !== undefined) {
+    zip.file('word/footnotes.xml', options.footnotesXml, { createFolders: false });
+  }
+  if (options.endnotesXml !== undefined) {
+    zip.file('word/endnotes.xml', options.endnotesXml, { createFolders: false });
+  }
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) delete zip.files[entry.name];
+  }
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+function centralRecordFor(buffer: Buffer, name: string): { central: number; local: number } {
+  let offset = 0;
+  while ((offset = buffer.indexOf(Buffer.from('PK\u0001\u0002', 'binary'), offset)) !== -1) {
+    const nameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const entryName = buffer.subarray(offset + 46, offset + 46 + nameLength).toString('utf8');
+    if (entryName === name) return { central: offset, local: buffer.readUInt32LE(offset + 42) };
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  throw new Error(`missing central record: ${name}`);
+}
+
+function mutateExpandedSize(docx: Buffer, name: string, expandedSize: number): Buffer {
+  const mutated = Buffer.from(docx);
+  const record = centralRecordFor(mutated, name);
+  mutated.writeUInt32LE(expandedSize, record.central + 24);
+  mutated.writeUInt32LE(expandedSize, record.local + 22);
+  return mutated;
+}
+
+function corruptCompressedPayload(docx: Buffer, name: string): Buffer {
+  const mutated = Buffer.from(docx);
+  const { local } = centralRecordFor(mutated, name);
+  const nameLength = mutated.readUInt16LE(local + 26);
+  const extraLength = mutated.readUInt16LE(local + 28);
+  const dataOffset = local + 30 + nameLength + extraLength;
+  mutated[dataOffset] = mutated[dataOffset]! ^ 0xff;
+  return mutated;
+}
+
+function mutateZipFlags(docx: Buffer, name: string, bit: number): Buffer {
+  const mutated = Buffer.from(docx);
+  const record = centralRecordFor(mutated, name);
+  mutated.writeUInt16LE(mutated.readUInt16LE(record.central + 8) | (1 << bit), record.central + 8);
+  mutated.writeUInt16LE(mutated.readUInt16LE(record.local + 6) | (1 << bit), record.local + 6);
+  return mutated;
+}
+
+function mutateZipDiskStart(docx: Buffer, name: string): Buffer {
+  const mutated = Buffer.from(docx);
+  const record = centralRecordFor(mutated, name);
+  mutated.writeUInt16LE(1, record.central + 34);
+  return mutated;
+}
+
+function mutateZipMethod(docx: Buffer, name: string, method: number): Buffer {
+  const mutated = Buffer.from(docx);
+  const record = centralRecordFor(mutated, name);
+  mutated.writeUInt16LE(method, record.central + 10);
+  mutated.writeUInt16LE(method, record.local + 8);
+  return mutated;
+}
+
+function mutateCentralFlagsOnly(docx: Buffer, name: string, bit: number): Buffer {
+  const mutated = Buffer.from(docx);
+  const record = centralRecordFor(mutated, name);
+  mutated.writeUInt16LE(mutated.readUInt16LE(record.central + 8) | (1 << bit), record.central + 8);
+  return mutated;
+}
+
+function replaceZipEntryName(docx: Buffer, name: string, replacement: string): Buffer {
+  if (Buffer.byteLength(name) !== Buffer.byteLength(replacement)) {
+    throw new Error('ZIP entry-name mutation must preserve byte length');
+  }
+  const mutated = Buffer.from(docx);
+  const record = centralRecordFor(mutated, name);
+  Buffer.from(replacement).copy(mutated, record.central + 46);
+  Buffer.from(replacement).copy(mutated, record.local + 30);
+  return mutated;
+}
+
+function injectCentralExtra(docx: Buffer, name: string, headerId: number): Buffer {
+  const record = centralRecordFor(docx, name);
+  const nameLength = docx.readUInt16LE(record.central + 28);
+  const extraLength = docx.readUInt16LE(record.central + 30);
+  const insertion = record.central + 46 + nameLength + extraLength;
+  const extra = Buffer.alloc(4);
+  extra.writeUInt16LE(headerId, 0);
+  const mutated = Buffer.concat([docx.subarray(0, insertion), extra, docx.subarray(insertion)]);
+  mutated.writeUInt16LE(extraLength + extra.length, record.central + 30);
+  const oldEocd = docx.lastIndexOf(Buffer.from('PK\u0005\u0006', 'binary'));
+  const newEocd = oldEocd + extra.length;
+  mutated.writeUInt32LE(docx.readUInt32LE(oldEocd + 12) + extra.length, newEocd + 12);
+  return mutated;
+}
 const footnotes = (userBody: string, separatorBody = '<w:r><w:separator/></w:r>') =>
   `<w:footnotes xmlns:w="${W_NS}">` +
   `<w:footnote w:type="separator" w:id="-1"><w:p>${separatorBody}</w:p></w:footnote>` +
@@ -270,13 +535,8 @@ describeWithLean('Lean fixed-story package protocol', () => {
     const base = await buildDocxFromBodyXml(paragraphWithText('Body'));
     const missingMain = await replacePart(base, 'word/document.xml', null);
     const certificate = await run(missingMain, base, base);
-    expect(certificate.status).toBe('failed');
-    expect(certificate.presenceMismatches).toEqual([{
-      name: 'main',
-      packagePart: 'word/document.xml',
-      required: true,
-      presence: { original: false, revised: true, combined: true },
-    }]);
+    expect(certificate.status).toBe('not_run');
+    expect(certificate.relationshipSlots).toBeUndefined();
   });
 
   test.openspec('[LEAN-STORY-04] Reserved separator text is excluded')(
@@ -649,14 +909,426 @@ describeWithLean('Lean fixed-story package protocol', () => {
         expect(certificate.checks.acceptingAllTrackedChangesMatchesRevisedText.status, mutation).toBe('passed');
         expect(certificate.checks.rejectingAllTrackedChangesMatchesOriginalText.status, mutation).toBe('passed');
       }
+  });
+});
+
+describeWithLean('Lean direct relationship-story protocol v4', () => {
+  const run = (originalDocx: Buffer, revisedDocx = originalDocx, comparedDocx = revisedDocx) =>
+    runLeanXmlTripleVerifier({
+      originalDocx, revisedDocx, comparedDocx,
+      legacyDocumentXml: { original: '', revised: '', compared: '' },
+      reconstructionMode: 'inplace',
+      options: { executablePath: LEAN_EXE },
     });
+
+  test
+    .openspec('[LEAN-REL-01] Direct explicit header and footer roles are selected')
+    .openspec('[LEAN-REL-05] Shared targets are checked once with all selectors')(
+    'aligns all six role slots and deduplicates shared physical targets', async () => {
+      const docx = await relationshipDocx({ includeAllRoles: true });
+      const certificate = await run(docx);
+      expect(certificate.status).toBe('passed');
+      expect(certificate.checkerProtocolVersion).toBe(4);
+      expect(certificate.relationshipSlots).toHaveLength(6);
+      expect(certificate.relationshipSlots?.map(({ kind, role }) => `${kind}:${role}`)).toEqual([
+        'header:first', 'header:default', 'header:even',
+        'footer:first', 'footer:default', 'footer:even',
+      ]);
+      expect(certificate.relationshipStories).toHaveLength(2);
+      expect(certificate.relationshipStories?.map((story) => story.selectingSlotOrdinals)).toEqual([
+        [0, 1, 2], [3, 4, 5],
+      ]);
+    },
+  );
+
+  test.openspec('[LEAN-REL-18] Selected story failures use the generic checker')(
+    'fails a compared-only parser-visible header mutation without changing selection', async () => {
+      const original = await relationshipDocx();
+      const compared = await relationshipDocx({ headerText: 'Changed header' });
+      const certificate = await run(original, original, compared);
+      expect(certificate.status).toBe('failed');
+      expect(certificate.relationshipSelectionFailures).toEqual([]);
+      expect(certificate.relationshipSlots).toHaveLength(2);
+      const header = certificate.relationshipStories?.find((story) => story.kind === 'header');
+      expect(header?.status).toBe('failed');
+      expect(Object.values(header?.checks ?? {}).some((item) => item.status === 'failed')).toBe(true);
+    },
+  );
+
+  test.openspec('[LEAN-REL-08] Selector-observable section changes fail closed')(
+    'reports an ordered slot inventory mismatch without semantic section reconciliation', async () => {
+      const selected = await relationshipDocx();
+      const plain = await buildDocxFromBodyXml(paragraphWithText('Body'));
+      const certificate = await run(selected, plain, plain);
+      expect(certificate.status).toBe('failed');
+      expect(certificate.relationshipSlots).toEqual([]);
+      expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+        'SECTION_SLOT_MISMATCH',
+      );
+    },
+  );
+
+  test('reports unsupported sectPr ancestry instead of selecting nested false positives', async () => {
+    const cases = [
+      paragraphWithText('Body') +
+        `<w:p><w:r><w:sectPr xmlns:r="${R_NS}"><w:headerReference w:type="default" r:id="rIdH0"/></w:sectPr></w:r></w:p>`,
+      paragraphWithText('Body') +
+        `<x:p xmlns:x="${W_NS}" xmlns:q="${R_NS}"><x:r><x:sectPr><x:headerReference x:type="default" q:id="rIdH0"/></x:sectPr></x:r></x:p>`,
+      `<w:tbl><w:tr><w:tc><w:p><w:pPr><w:sectPr xmlns:r="${R_NS}">` +
+        `<w:headerReference w:type="default" r:id="rIdH0"/></w:sectPr></w:pPr></w:p></w:tc></w:tr></w:tbl>`,
+    ];
+    for (const bodyXml of cases) {
+      const certificate = await run(await relationshipDocx({ bodyXml }));
+      expect(certificate.status).toBe('failed');
+      expect(certificate.relationshipSlots).toEqual([]);
+      expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+        'UNSUPPORTED_SECTION_PLACEMENT',
+      );
+    }
+  });
+
+  test('fails required-main inventory construction for malformed body and terminal sectPr shapes', async () => {
+    const document = (content: string) =>
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:document xmlns:w="${W_NS}" xmlns:r="${R_NS}">${content}</w:document>`;
+    const base = await relationshipDocx();
+    const malformedDocuments = {
+      noBody: document('<w:p/>'),
+      nestedBody: document('<w:body><w:body/></w:body>'),
+      twoTerminalSectPr: document('<w:body><w:sectPr/><w:sectPr/></w:body>'),
+      nonTerminalBodySectPr: document('<w:body><w:sectPr/><w:p/></w:body>'),
+      multipleBody: document('<w:body/><w:body/>'),
+    };
+    for (const [name, xml] of Object.entries(malformedDocuments)) {
+      const malformed = await replacePart(base, 'word/document.xml', xml);
+      const certificate = await run(malformed);
+      expect(certificate.status, name).toBe('not_run');
+      expect(certificate.relationshipSlots, name).toBeUndefined();
+    }
+  });
+
+  test('reports header and footer references outside an open supported sectPr', async () => {
+    const bodyXml =
+      paragraphWithText('Body') +
+      `<w:headerReference xmlns:r="${R_NS}" w:type="default" r:id="rIdH0"/>` +
+      `<w:footerReference xmlns:r="${R_NS}" w:type="default" r:id="rIdF0"/>`;
+    const certificate = await run(await relationshipDocx({ bodyXml }));
+    expect(certificate.status).toBe('failed');
+    expect(certificate.relationshipSlots).toEqual([]);
+    const codes = certificate.relationshipSelectionFailures?.map((issue) => issue.code);
+    expect(codes).toHaveLength(6);
+    expect(codes?.every((code) => code === 'INDIRECT_SECTION_BINDING')).toBe(true);
+  });
+
+  test('accepts namespace-resolved direct paragraph-property sectPr ancestry', async () => {
+    const bodyXml =
+      `<x:p xmlns:x="${W_NS}" xmlns:q="${R_NS}"><x:pPr><x:sectPr>` +
+      `<x:headerReference x:type="default" q:id="rIdH0"/>` +
+      `<x:footerReference x:type="default" q:id="rIdF0"/>` +
+      `</x:sectPr></x:pPr><x:r><x:t>Body</x:t></x:r></x:p>`;
+    const certificate = await run(await relationshipDocx({ bodyXml }));
+    expect(certificate.status).toBe('passed');
+    expect(certificate.relationshipSlots?.map((slot) => slot.kind)).toEqual(['header', 'footer']);
+  });
+
+  test('reports indirect descendants of supported sectPr instead of silently omitting them', async () => {
+    const cases = [
+      paragraphWithText('Body') +
+        `<w:sectPr xmlns:r="${R_NS}"><w:p><w:headerReference w:type="default" r:id="rIdH0"/></w:p></w:sectPr>`,
+      paragraphWithText('Body') +
+        `<x:sectPr xmlns:x="${W_NS}" xmlns:q="${R_NS}"><x:custom><x:headerReference x:type="default" q:id="rIdH0"/></x:custom></x:sectPr>`,
+    ];
+    for (const bodyXml of cases) {
+      const certificate = await run(await relationshipDocx({ bodyXml }));
+      expect(certificate.status).toBe('failed');
+      expect(certificate.relationshipSlots).toEqual([]);
+      expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+        'INDIRECT_SECTION_BINDING',
+      );
+    }
+  });
+
+  test('retains successfully resolved slots and stories when a peer binding fails', async () => {
+    const certificate = await run(await relationshipDocx({ omitFooterRelationship: true }));
+    expect(certificate.status).toBe('failed');
+    expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+      'MISSING_RELATIONSHIP',
+    );
+    expect(certificate.relationshipSlots?.map((slot) => slot.kind)).toEqual(['header']);
+    expect(certificate.relationshipStories?.map((story) => story.kind)).toEqual(['header']);
+  });
+
+  test('retains a valid loaded header when the independently selected footer part is missing', async () => {
+    const certificate = await run(await relationshipDocx({ omitFooterPart: true }));
+    expect(certificate.status).toBe('failed');
+    expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+      'MISSING_TARGET_PART',
+    );
+    expect(certificate.relationshipSlots?.map((slot) => slot.kind)).toEqual(['header']);
+    expect(certificate.relationshipStories?.map((story) => story.kind)).toEqual(['header']);
+    expect(certificate.relationshipStories?.[0]?.selectingSlotOrdinals).toEqual([0]);
+  });
+
+  test.openspec('[LEAN-REL-07] Every relationship record is structurally parsed')(
+    'rejects a malformed unselected relationship record as structured failed evidence', async () => {
+      const malformed = await relationshipDocx({ malformedUnselectedRelationship: true });
+      const certificate = await run(malformed);
+      expect(certificate.status).toBe('failed');
+      expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+        'MALFORMED_RELATIONSHIP_RECORD',
+      );
+    },
+  );
+
+  test('accepts safe percent-decoded targets and rejects encoded separators', async () => {
+    const safe = await relationshipDocx({
+      headerTarget: 'header%20one.xml',
+      headerPartPath: 'word/header one.xml',
+    });
+    const unsafe = await relationshipDocx({ headerTarget: 'header%2Fone.xml' });
+    expect((await run(safe)).status).toBe('passed');
+    const rejected = await run(unsafe);
+    expect(rejected.status).toBe('failed');
+    expect(rejected.relationshipSelectionFailures?.map((issue) => issue.code)).toContain('UNSAFE_TARGET');
+  });
+
+  test('accepts explicit-empty relationships and bounded repeated safe percent decoding', async () => {
+    const explicitEmpty = await relationshipDocx({ explicitEmptyRelationships: true });
+    const repeatedSafe = await relationshipDocx({
+      headerTarget: 'header%2520one.xml',
+      headerPartPath: 'word/header one.xml',
+    });
+    expect((await run(explicitEmpty)).status).toBe('passed');
+    expect((await run(repeatedSafe)).status).toBe('passed');
+    for (const headerTarget of ['header%252Fone.xml', '%252e%252e/header1.xml']) {
+      const rejected = await run(await relationshipDocx({ headerTarget }));
+      expect(rejected.status).toBe('failed');
+      expect(rejected.relationshipSelectionFailures?.map((issue) => issue.code)).toContain('UNSAFE_TARGET');
+    }
+  });
+
+  test('rejects raw and repeatedly percent-decoded glob metacharacters', async () => {
+    for (const headerTarget of [
+      'head*er1.xml', 'header[1].xml',
+      'head%2Aer1.xml', 'header%5B1%5D.xml',
+      'head%252Aer1.xml', 'header%255B1%255D.xml',
+    ]) {
+      const certificate = await run(await relationshipDocx({ headerTarget }));
+      expect(certificate.status, headerTarget).toBe('failed');
+      expect(
+        certificate.relationshipSelectionFailures?.map((issue) => issue.code),
+        headerTarget,
+      ).toContain('UNSAFE_TARGET');
+    }
+  });
+
+  test('reports invalid selected-part UTF-8 as structured failed evidence', async () => {
+    const docx = await relationshipDocx();
+    const zip = await JSZip.loadAsync(docx);
+    zip.file('word/header1.xml', Buffer.from([0xff, 0xfe]), { createFolders: false });
+    for (const entry of Object.values(zip.files)) {
+      if (entry.dir) delete zip.files[entry.name];
+    }
+    const malformed = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
+    const certificate = await run(malformed);
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain('INVALID_UTF8');
+  });
+
+  test.openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
+    'rejects more than 256 unique selected paths before selected decompression', async () => {
+    const docx = corruptCompressedPayload(
+      await resourceRelationshipDocx({ storyCount: 257 }),
+      'word/header0.xml',
+    );
+    const certificate = await run(docx);
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+      'UNIQUE_SELECTED_PART_LIMIT_EXCEEDED',
+    );
+    expect(certificate.relationshipStories).toEqual([]);
+    },
+  );
+
+  test.openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
+    'checks relationship metadata before selected parts and optional notes', async () => {
+    let docx = await resourceRelationshipDocx({
+      storyCount: 3,
+      footnotesXml: footnotes('<w:r><w:t>Must not extract</w:t></w:r>'),
+    });
+    for (let index = 0; index < 3; index += 1) {
+      docx = mutateExpandedSize(docx, `word/header${index}.xml`, 12 * 1024 * 1024);
+    }
+    docx = corruptCompressedPayload(docx, 'word/header0.xml');
+    docx = corruptCompressedPayload(docx, 'word/footnotes.xml');
+    const certificate = await run(docx);
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+      'AGGREGATE_EXPANDED_LIMIT_EXCEEDED',
+    );
+    expect(certificate.relationshipStories).toEqual([]);
+    expect(certificate.fixedStoryFailures?.map((issue) => issue.code)).toContain(
+      'OPTIONAL_STORY_AGGREGATE_LIMIT_EXCEEDED',
+    );
+    },
+  );
+
+  test.openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
+    'classifies an optional note crossing after completed relationship work', async () => {
+    const rootPrefix = `<w:hdr xmlns:w="${W_NS}">`;
+    const rootSuffix = '</w:hdr>';
+    const exactExpandedLimitXml =
+      rootPrefix +
+      ' '.repeat(16 * 1024 * 1024 - Buffer.byteLength(rootPrefix + rootSuffix)) +
+      rootSuffix;
+    let docx = await resourceRelationshipDocx({
+      storyCount: 1,
+      storyXml: () => exactExpandedLimitXml,
+      footnotesXml: footnotes('<w:r><w:t>Must not extract</w:t></w:r>'),
+    });
+    docx = mutateExpandedSize(docx, 'word/footnotes.xml', 16 * 1024 * 1024);
+    docx = corruptCompressedPayload(docx, 'word/footnotes.xml');
+    const certificate = await run(docx);
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.relationshipStories).toHaveLength(1);
+    expect(certificate.fixedStoryFailures?.map((issue) => issue.code)).toContain(
+      'OPTIONAL_STORY_AGGREGATE_LIMIT_EXCEEDED',
+    );
+    expect(certificate.relationshipSelectionFailures).toEqual([]);
+    },
+    30_000,
+  );
+
+  test.openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
+    'stops selected extraction when aggregate XML events are exhausted', async () => {
+    const repeatedEvents = '<w:r/>'.repeat(340_000);
+    const originalBase = await resourceRelationshipDocx({
+      storyCount: 4,
+      storyXml: (_index, kind) => {
+        const root = kind === 'header' ? 'hdr' : 'ftr';
+        return `<w:${root} xmlns:w="${W_NS}">${repeatedEvents}</w:${root}>`;
+      },
+    });
+    const original = corruptCompressedPayload(originalBase, 'word/footer3.xml');
+    const revised = corruptCompressedPayload(originalBase, 'word/header2.xml');
+    const certificate = await run(original, revised, originalBase);
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+      'XML_TOKEN_LIMIT_EXCEEDED',
+    );
+    expect(certificate.relationshipStories).toHaveLength(2);
+    },
+    30_000,
+  );
+
+  test.openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
+    'treats the exact per-part equality boundary as aggregate exhaustion', async () => {
+      const selectedXml = (kind: 'header' | 'footer', events: number) => {
+        const root = kind === 'header' ? 'hdr' : 'ftr';
+        return `<w:${root} xmlns:w="${W_NS}">${'<w:r/>'.repeat(events - 2)}</w:${root}>`;
+      };
+      const threeStoryMainAndRelationshipEvents = 21;
+      const eventsLeavingExactlyOnePerPartBudget =
+        1_000_000 - 500_000 - threeStoryMainAndRelationshipEvents;
+      const base = await resourceRelationshipDocx({
+        storyCount: 3,
+        storyXml: (index, kind) =>
+          selectedXml(kind, index === 0 ? eventsLeavingExactlyOnePerPartBudget : 500_001),
+      });
+      const corruptedThird = corruptCompressedPayload(base, 'word/header2.xml');
+      const certificate = await run(corruptedThird);
+      expect(certificate.status, certificate.reason).toBe('failed');
+      expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+        'XML_TOKEN_LIMIT_EXCEEDED',
+      );
+      expect(certificate.relationshipStories).toHaveLength(1);
+      expect(certificate.relationshipSelectionFailures?.[0]?.detail).toContain(
+        'aggregate limit',
+      );
+    },
+    60_000,
+  );
+
+  test.openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
+    'keeps genuine per-part overflow distinct when aggregate headroom is larger', async () => {
+      const selectedXml = (kind: 'header' | 'footer', events: number) => {
+        const root = kind === 'header' ? 'hdr' : 'ftr';
+        return `<w:${root} xmlns:w="${W_NS}">${'<w:r/>'.repeat(events - 2)}</w:${root}>`;
+      };
+      const docx = await resourceRelationshipDocx({
+        storyCount: 2,
+        storyXml: (index, kind) => selectedXml(kind, index === 0 ? 500_001 : 3),
+      });
+      const certificate = await run(docx);
+      expect(certificate.status, certificate.reason).toBe('failed');
+      expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain(
+        'XML_TOKEN_LIMIT_EXCEEDED',
+      );
+      expect(certificate.relationshipSelectionFailures?.[0]?.detail).not.toContain(
+        'aggregate limit',
+      );
+      expect(certificate.relationshipStories).toHaveLength(1);
+    },
+    60_000,
+  );
+
+  test.openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
+    'stops optional extraction at the exact aggregate equality boundary', async () => {
+      const oneStoryMainAndRelationshipEvents = 17;
+      const selectedEvents = 1_000_000 - 500_000 - oneStoryMainAndRelationshipEvents;
+      const headerXml =
+        `<w:hdr xmlns:w="${W_NS}">` +
+        `${'<w:r/>'.repeat(selectedEvents - 2)}</w:hdr>`;
+      const oversizedFootnotes =
+        `<w:footnotes xmlns:w="${W_NS}">` +
+        `${'<w:footnote/>'.repeat(499_999)}</w:footnotes>`;
+      const base = await resourceRelationshipDocx({
+        storyCount: 1,
+        storyXml: () => headerXml,
+        footnotesXml: oversizedFootnotes,
+        endnotesXml: endnotes('<w:r><w:t>Must not extract</w:t></w:r>'),
+      });
+      const corruptedEndnotes = corruptCompressedPayload(base, 'word/endnotes.xml');
+      const certificate = await run(corruptedEndnotes);
+      expect(certificate.status, certificate.reason).toBe('failed');
+      expect(certificate.relationshipStories).toHaveLength(1);
+      expect(certificate.relationshipSelectionFailures).toEqual([]);
+      expect(certificate.fixedStoryFailures?.map((issue) => issue.code)).toContain(
+        'OPTIONAL_STORY_AGGREGATE_LIMIT_EXCEEDED',
+      );
+    },
+    60_000,
+  );
+
+  test.openspec('[LEAN-REL-21] Archive ambiguity is not a structured verifier result')(
+    'rejects binary-index ambiguity before extraction', async () => {
+      const docx = await relationshipDocx();
+      const malformedPackages = [
+        mutateZipFlags(docx, 'word/document.xml', 0),
+        mutateZipFlags(docx, 'word/document.xml', 3),
+        mutateZipDiskStart(docx, 'word/document.xml'),
+        mutateZipMethod(docx, 'word/document.xml', 99),
+        mutateCentralFlagsOnly(docx, 'word/document.xml', 11),
+        injectCentralExtra(docx, 'word/document.xml', 0x0001),
+        injectCentralExtra(docx, 'word/document.xml', 0x7075),
+        replaceZipEntryName(docx, 'word/footer1.xml', 'word/header1.xml'),
+        replaceZipEntryName(docx, 'word/header1.xml', 'word/../evil.xml'),
+        docx.subarray(0, docx.length - 1),
+      ];
+      for (const malformed of malformedPackages) {
+        const certificate = await run(malformed, malformed, malformed);
+        expect(certificate.status).toBe('not_run');
+        expect(certificate.relationshipSelectionFailures).toBeUndefined();
+      }
+    },
+  );
 });
 
 const validProtocolReport = {
-  protocolVersion: 3,
-  checker: 'safe-docx-lean-fixed-story-checker',
+  protocolVersion: 4,
+  checker: 'safe-docx-lean-relationship-story-checker',
   passed: true,
-  stories: [{
+  fixedStories: [{
     name: 'main',
     presence: { original: true, revised: true, combined: true },
     parsedTokenCounts: { original: 1, revised: 1, combined: 1 },
@@ -673,6 +1345,10 @@ const validProtocolReport = {
     },
   }],
   presenceMismatches: [],
+  fixedStoryIssues: [],
+  relationshipSlots: [],
+  relationshipStories: [],
+  selectionIssues: [],
 };
 
 async function fakeChecker(output: unknown): Promise<{ dir: string; executable: string }> {
@@ -722,11 +1398,11 @@ describe('Lean fixed-story protocol and security hardening', () => {
       });
       expect(result.status).toBe('passed');
       expect(result.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
-      expect(result.checkerProtocolVersion).toBe(3);
+      expect(result.checkerProtocolVersion).toBe(4);
       expect(result.fixedStoryScope).toEqual([
         'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
       ]);
-      expect(result.exclusions).toContain('comments, headers, and footers');
+      expect(result.relationshipStoryScope?.inheritedRoles).toBe(false);
     } finally {
       await rm(fake.dir, { recursive: true, force: true });
     }
@@ -781,26 +1457,26 @@ describe('Lean fixed-story protocol and security hardening', () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
     const variants = [
       { ...validProtocolReport, protocolVersion: 2 },
-      { ...validProtocolReport, stories: [...validProtocolReport.stories, validProtocolReport.stories[0]] },
-      { ...validProtocolReport, stories: [{
-        ...validProtocolReport.stories[0],
+      { ...validProtocolReport, fixedStories: [...validProtocolReport.fixedStories, validProtocolReport.fixedStories[0]] },
+      { ...validProtocolReport, fixedStories: [{
+        ...validProtocolReport.fixedStories[0],
         parsedTokenCounts: { original: -1, revised: 1, combined: 1 },
       }] },
-      { ...validProtocolReport, stories: [{
-        ...validProtocolReport.stories[0],
+      { ...validProtocolReport, fixedStories: [{
+        ...validProtocolReport.fixedStories[0],
         parsedTokenCounts: { original: 1.5, revised: 1, combined: 1 },
       }] },
-      { ...validProtocolReport, stories: [{
-        ...validProtocolReport.stories[0],
+      { ...validProtocolReport, fixedStories: [{
+        ...validProtocolReport.fixedStories[0],
         name: 'comments',
       }] },
-      { ...validProtocolReport, stories: [{
-        ...validProtocolReport.stories[0],
+      { ...validProtocolReport, fixedStories: [{
+        ...validProtocolReport.fixedStories[0],
         name: 'footnotes',
       }] },
-      { ...validProtocolReport, stories: [{
-        ...validProtocolReport.stories[0],
-        report: { ...validProtocolReport.stories[0]!.report, passed: false },
+      { ...validProtocolReport, fixedStories: [{
+        ...validProtocolReport.fixedStories[0],
+        report: { ...validProtocolReport.fixedStories[0]!.report, passed: false },
       }] },
       { ...validProtocolReport, passed: false },
       { ...validProtocolReport, unexpected: true },
@@ -821,6 +1497,161 @@ describe('Lean fixed-story protocol and security hardening', () => {
       }
     }
     });
+
+  test.openspec('[LEAN-REL-22] Every legal response fits the output cap')(
+    'accepts exact maximum shared and distinct responses emitted by compiled Lean constructors', async () => {
+      const emittedStringBytes = (value: unknown): number => {
+        if (typeof value === 'string') return Buffer.byteLength(value, 'utf8');
+        if (Array.isArray(value)) return value.reduce((sum, item) => sum + emittedStringBytes(item), 0);
+        if (value && typeof value === 'object') {
+          return Object.values(value).reduce((sum, item) => sum + emittedStringBytes(item), 0);
+        }
+        return 0;
+      };
+      const outputs = await Promise.all(['shared', 'distinct'].map(async (mode) => {
+        const stdout = await runMaximumShapeProducer(mode as 'shared' | 'distinct');
+        return { mode, stdout, parsed: JSON.parse(stdout) as Record<string, unknown> };
+      }));
+      for (const { mode, stdout, parsed } of outputs) {
+        expect(isLeanVerifierJson(parsed), mode).toBe(true);
+        expect(Buffer.byteLength(stdout, 'utf8'), mode).toBeLessThan(8 * 1024 * 1024);
+        expect(stdout, mode).toContain('\\"');
+      }
+      expect(emittedStringBytes(outputs[0]!.parsed)).toBe(1_047_663);
+      expect(emittedStringBytes(outputs[1]!.parsed)).toBe(1_048_093);
+      const shared = outputs[0]!.parsed as {
+        relationshipSlots: unknown[];
+        relationshipStories: Array<{ selectingSlotOrdinals: number[] }>;
+      };
+      expect(shared.relationshipSlots).toHaveLength(192);
+      expect(shared.relationshipStories).toHaveLength(1);
+      expect(shared.relationshipStories[0]?.selectingSlotOrdinals).toHaveLength(192);
+      const distinct = outputs[1]!.parsed as {
+        relationshipSlots: unknown[];
+        relationshipStories: Array<{ selectingSlotOrdinals: number[] }>;
+      };
+      expect(distinct.relationshipSlots).toHaveLength(384);
+      expect(distinct.relationshipStories).toHaveLength(384);
+      expect(distinct.relationshipStories.flatMap((story) => story.selectingSlotOrdinals)).toHaveLength(384);
+    },
+    60_000,
+  );
+
+  test('strictly rejects nested unknown keys and broken selector partitions', () => {
+    const identity = { relationshipId: 'rId1', normalizedPartPath: 'word/header1.xml' };
+    const slot = {
+      slotOrdinal: 0, sectionOrdinal: 0, kind: 'header', role: 'default',
+      original: identity, revised: identity, compared: identity, physicalStoryOrdinal: 0,
+    };
+    const story = {
+      physicalStoryOrdinal: 0, kind: 'header',
+      originalPartPath: 'word/header1.xml',
+      revisedPartPath: 'word/header1.xml',
+      comparedPartPath: 'word/header1.xml',
+      selectingSlotOrdinals: [0],
+      parsedTokenCounts: { original: 1, revised: 1, combined: 1 },
+      report: validProtocolReport.fixedStories[0]!.report,
+    };
+    const valid = {
+      ...validProtocolReport,
+      relationshipSlots: [slot],
+      relationshipStories: [story],
+    };
+    expect(isLeanVerifierJson(valid)).toBe(true);
+    expect(isLeanVerifierJson({
+      ...valid,
+      relationshipSlots: [{ ...slot, original: { ...identity, unknown: true } }],
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...valid,
+      relationshipStories: [{ ...story, selectingSlotOrdinals: [0, 0] }],
+    })).toBe(false);
+  });
+
+  test('rejects 257 unique selected paths on any package side', () => {
+    const roles = ['first', 'default', 'even'] as const;
+    const identities = Array.from({ length: 257 }, (_, slotOrdinal) => {
+      const withinSection = slotOrdinal % 6;
+      const kind = withinSection < 3 ? 'header' as const : 'footer' as const;
+      const role = roles[withinSection % 3]!;
+      const path = `word/${kind}${slotOrdinal}.xml`;
+      const identity = { relationshipId: `rId${slotOrdinal}`, normalizedPartPath: path };
+      return {
+        slot: {
+          slotOrdinal,
+          sectionOrdinal: Math.floor(slotOrdinal / 6),
+          kind,
+          role,
+          original: identity,
+          revised: identity,
+          compared: identity,
+          physicalStoryOrdinal: slotOrdinal,
+        },
+        story: {
+          physicalStoryOrdinal: slotOrdinal,
+          kind,
+          originalPartPath: path,
+          revisedPartPath: path,
+          comparedPartPath: path,
+          selectingSlotOrdinals: [slotOrdinal],
+          parsedTokenCounts: { original: 1, revised: 1, combined: 1 },
+          report: validProtocolReport.fixedStories[0]!.report,
+        },
+      };
+    });
+    expect(isLeanVerifierJson({
+      ...validProtocolReport,
+      relationshipSlots: identities.map(({ slot }) => slot),
+      relationshipStories: identities.map(({ story }) => story),
+    })).toBe(false);
+  });
+
+  test('rejects simultaneous optional fixed-story success and failure evidence', () => {
+    const footnotes = {
+      ...validProtocolReport.fixedStories[0]!,
+      name: 'footnotes',
+    };
+    const footnoteIssue = {
+      code: 'OPTIONAL_STORY_INVALID_XML',
+      name: 'footnotes',
+      side: 'original',
+      packagePart: 'word/footnotes.xml',
+      detail: 'malformed optional story',
+    };
+    expect(isLeanVerifierJson({
+      ...validProtocolReport,
+      passed: false,
+      fixedStories: [...validProtocolReport.fixedStories, footnotes],
+      fixedStoryIssues: [footnoteIssue],
+    })).toBe(false);
+  });
+
+  test('accepts only the canonical terminal evidence-overflow shape', () => {
+    const terminalIssue = {
+      code: 'EVIDENCE_STRING_BUDGET_EXCEEDED',
+      detail: 'aggregate emitted strings exceed the evidence limit',
+    };
+    const terminal = {
+      ...validProtocolReport,
+      passed: false,
+      selectionIssues: [terminalIssue],
+    };
+    expect(isLeanVerifierJson(terminal)).toBe(true);
+    expect(isLeanVerifierJson({
+      ...terminal,
+      fixedStories: [
+        ...validProtocolReport.fixedStories,
+        { ...validProtocolReport.fixedStories[0]!, name: 'footnotes' },
+      ],
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...terminal,
+      selectionIssues: [terminalIssue, {
+        code: 'ISSUE_LIMIT_EXCEEDED',
+        detail: 'too many issues',
+      }],
+    })).toBe(false);
+  });
 
   test('rejects contradictory or root-inconsistent required-story presence mismatches', async () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
@@ -908,7 +1739,7 @@ describeWithLean('Lean compiled package extraction limits', () => {
     'reports corrupt archives as not_run rather than missing optional stories', async () => {
     const result = await run(Buffer.from('not a zip archive'));
     expect(result.status).toBe('not_run');
-    expect(result.reason).toContain('archive metadata failed');
+    expect(result.reason).toContain('ZIP is too short for EOCD');
     });
 
   test('rejects oversized expanded story output before buffering it', async () => {
@@ -916,16 +1747,17 @@ describeWithLean('Lean compiled package extraction limits', () => {
     const huge = footnotes(`<w:r><w:t>${'x'.repeat(16 * 1024 * 1024 + 1)}</w:t></w:r>`);
     const oversized = await replacePart(base, 'word/footnotes.xml', huge, 'DEFLATE');
     const result = await run(oversized);
-    expect(result.status).toBe('not_run');
-    expect(result.reason).toContain('expanded size exceeds');
+    expect(result.status).toBe('failed');
+    expect(result.fixedStoryFailures?.map((issue) => issue.code)).toContain(
+      'OPTIONAL_STORY_PART_LIMIT_EXCEEDED',
+    );
   });
 
-  test('rejects excessive compression ratios before extraction', async () => {
+  test('accepts highly compressed XML when explicit byte and parser limits are satisfied', async () => {
     const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
     const bomb = footnotes(`<w:r><w:t>${'x'.repeat(2 * 1024 * 1024)}</w:t></w:r>`);
     const compressed = await replacePart(base, 'word/footnotes.xml', bomb, 'DEFLATE');
     const result = await run(compressed);
-    expect(result.status).toBe('not_run');
-    expect(result.reason).toContain('compression ratio exceeds');
+    expect(result.status).toBe('passed');
   });
 });

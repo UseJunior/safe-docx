@@ -79,37 +79,37 @@ def decodeXmlReference (reference : List Char) : Except String Char := do
   if !isLegalXmlChar value then throw "XML reference is not a legal XML character"
   return Char.ofNat value
 
-partial def decodeXmlTextAux : List Char → Except String (List Char)
-  | [] => pure []
-  | '&' :: rest => do
+partial def decodeXmlTextAux : List Char → List Char → Except String (List Char)
+  | [], acc => pure acc.reverse
+  | '&' :: rest, acc => do
     let (reference, suffix) := rest.span (· != ';')
     let _ :: after := suffix | throw "unterminated XML reference"
     let decoded ← decodeXmlReference reference
-    return decoded :: (← decodeXmlTextAux after)
-  | c :: rest => do
+    decodeXmlTextAux after (decoded :: acc)
+  | c :: rest, acc => do
     if !isLegalXmlChar c.toNat then throw "literal is not a legal XML character"
-    return c :: (← decodeXmlTextAux rest)
+    decodeXmlTextAux rest (c :: acc)
 
 def decodeXmlText (s : String) : Except String String := do
-  return String.ofList (← decodeXmlTextAux s.toList)
+  return String.ofList (← decodeXmlTextAux s.toList [])
 
-partial def decodeXmlAttributeValueAux : List Char → Except String (List Char)
-  | [] => pure []
-  | '&' :: rest => do
+partial def decodeXmlAttributeValueAux : List Char → List Char → Except String (List Char)
+  | [], acc => pure acc.reverse
+  | '&' :: rest, acc => do
     let (reference, suffix) := rest.span (· != ';')
     let _ :: after := suffix | throw "unterminated XML reference"
     let decoded ← decodeXmlReference reference
-    return decoded :: (← decodeXmlAttributeValueAux after)
-  | '\r' :: '\n' :: rest => return ' ' :: (← decodeXmlAttributeValueAux rest)
-  | '\r' :: rest => return ' ' :: (← decodeXmlAttributeValueAux rest)
-  | '\n' :: rest => return ' ' :: (← decodeXmlAttributeValueAux rest)
-  | '\t' :: rest => return ' ' :: (← decodeXmlAttributeValueAux rest)
-  | c :: rest => do
+    decodeXmlAttributeValueAux after (decoded :: acc)
+  | '\r' :: '\n' :: rest, acc => decodeXmlAttributeValueAux rest (' ' :: acc)
+  | '\r' :: rest, acc => decodeXmlAttributeValueAux rest (' ' :: acc)
+  | '\n' :: rest, acc => decodeXmlAttributeValueAux rest (' ' :: acc)
+  | '\t' :: rest, acc => decodeXmlAttributeValueAux rest (' ' :: acc)
+  | c :: rest, acc => do
     if !isLegalXmlChar c.toNat then throw "literal is not a legal XML character"
-    return c :: (← decodeXmlAttributeValueAux rest)
+    decodeXmlAttributeValueAux rest (c :: acc)
 
 def decodeXmlAttributeValue (s : String) : Except String String := do
-  return String.ofList (← decodeXmlAttributeValueAux s.toList)
+  return String.ofList (← decodeXmlAttributeValueAux s.toList [])
 
 def wmlNamespace : String :=
   "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -520,6 +520,210 @@ def parseXmlTokensForRoot (xml expectedRoot : String) : Except String (List XmlT
   if !final.rootSeen then throw "XML has no root element"
   if !final.stack.isEmpty then throw "XML has unclosed elements"
   return final.tokens
+
+inductive XmlEvent
+  | startElement (uri localName : String) (attributes : List ExpandedXmlAttribute)
+      (depth : Nat) (selfClosing : Bool)
+  | endElement (uri localName : String) (depth : Nat)
+  | text (value : String) (depth : Nat)
+  deriving BEq, Repr, Inhabited
+
+structure XmlEventParseState where
+  stack : List OpenElement := []
+  events : List XmlEvent := []
+  rootSeen : Bool := false
+  declarationAllowed : Bool := false
+  eventCount : Nat := 0
+  maxDepthSeen : Nat := 0
+
+inductive XmlEventParseFailureKind
+  | invalidXml
+  | unexpectedRoot
+  | eventLimit
+  | depthLimit
+  deriving BEq, Repr, Inhabited
+
+structure XmlEventParseFailure where
+  kind : XmlEventParseFailureKind
+  detail : String
+  completedEvents : Nat
+  observedEvents : Nat
+  observedDepth : Nat
+  deriving Repr, Inhabited
+
+def xmlEventParseFailure (state : XmlEventParseState) (kind : XmlEventParseFailureKind)
+    (detail : String) (observedEvents := state.eventCount)
+    (observedDepth := state.maxDepthSeen) : XmlEventParseFailure :=
+  { kind, detail, completedEvents := state.eventCount, observedEvents, observedDepth }
+
+def liftXmlEventFailure (state : XmlEventParseState) (result : Except String α) :
+    Except XmlEventParseFailure α :=
+  result.mapError fun detail => xmlEventParseFailure state .invalidXml detail
+
+def finishXmlEventSegment (state : XmlEventParseState) (payload : String) :
+    Except String XmlEventParseState := do
+  if state.stack.isEmpty && !payload.toList.all isXmlSpace then
+    throw "non-whitespace content outside the XML root"
+  let decoded ← decodeXmlText payload
+  let whitespaceIsSemantic :=
+    match state.stack.head? with
+    | some top =>
+      top.uri == wmlNamespace &&
+        ["t", "delText", "instrText", "delInstrText"].contains top.localName
+    | none => false
+  if decoded.toList.all isXmlSpace && !whitespaceIsSemantic then return state
+  return { state with
+    events := .text decoded state.stack.length :: state.events
+    eventCount := state.eventCount + 1 }
+
+def parseXmlEventSegment (expectedRootUri expectedRootLocalName : String)
+    (state : XmlEventParseState) (segment : String) :
+    Except XmlEventParseFailure XmlEventParseState := do
+  let (tag, payload) ← liftXmlEventFailure state (tagPayload segment)
+  let trimmed := tag.trimAscii.toString
+  if trimmed.isEmpty then
+    throw (xmlEventParseFailure state .invalidXml "empty XML tag")
+  if trimmed.startsWith "?" then
+    if List.getD (tagWords trimmed) 0 "" != "?xml" then
+      throw (xmlEventParseFailure state .invalidXml
+        "processing instructions are outside the accepted XML subset")
+    if !state.declarationAllowed || state.rootSeen || !state.stack.isEmpty then
+      throw (xmlEventParseFailure state .invalidXml
+        "XML declaration must be the first construct")
+    let _ ← liftXmlEventFailure state (parseXmlDeclaration trimmed)
+    let next := { state with declarationAllowed := false }
+    return ← liftXmlEventFailure next (finishXmlEventSegment next payload)
+  if trimmed.startsWith "!" then
+    throw (xmlEventParseFailure state .invalidXml
+      "comments, CDATA, and markup declarations are outside the accepted XML subset")
+  if trimmed.startsWith "/" then
+    let rawName := (trimmed.drop 1).toString
+    if rawName.toList.any isXmlSpace || rawName.endsWith "/" then
+      throw (xmlEventParseFailure state .invalidXml "malformed closing tag")
+    let some top := state.stack.head? |
+      throw (xmlEventParseFailure state .invalidXml "unexpected closing tag")
+    let (uri, localName) ← liftXmlEventFailure state
+      (resolveQName top.namespaces rawName)
+    if uri != top.uri || localName != top.localName then
+      throw (xmlEventParseFailure state .invalidXml s!"mismatched closing tag: {rawName}")
+    let depth := state.stack.length - 1
+    let next := { state with
+      stack := state.stack.drop 1
+      events := .endElement uri localName depth :: state.events
+      eventCount := state.eventCount + 1
+      declarationAllowed := false }
+    return ← liftXmlEventFailure next (finishXmlEventSegment next payload)
+  let selfClosing := trimmed.endsWith "/"
+  if state.rootSeen && state.stack.isEmpty then
+    throw (xmlEventParseFailure state .invalidXml "multiple XML root elements")
+  let firstWord := List.getD (tagWords trimmed) 0 ""
+  let rawName := if selfClosing && firstWord.endsWith "/" then
+    dropLastString firstWord else firstWord
+  let rawAttributes ← liftXmlEventFailure state (parseTagAttributes trimmed)
+  let attributes ← liftXmlEventFailure state (decodeXmlAttributes rawAttributes)
+  let declarations ← liftXmlEventFailure state (namespaceDeclarations attributes)
+  let bindings := extendNamespaces (currentNamespaces {
+    stack := state.stack
+    tokens := []
+    rootSeen := state.rootSeen
+    declarationAllowed := state.declarationAllowed
+  }) declarations
+  let expandedAttributes ← liftXmlEventFailure state
+    (expandOrdinaryAttributes attributes bindings)
+  let _ ← liftXmlEventFailure state (validateUniqueExpandedAttributes expandedAttributes)
+  let (uri, localName) ← liftXmlEventFailure state (resolveQName bindings rawName)
+  if !state.rootSeen && (uri != expectedRootUri || localName != expectedRootLocalName) then
+    throw (xmlEventParseFailure state .unexpectedRoot
+      s!"unexpected root namespace={uri} local={localName}; expected namespace={expectedRootUri} local={expectedRootLocalName}")
+  let depth := state.stack.length
+  let next := { state with
+    events := .startElement uri localName expandedAttributes depth selfClosing :: state.events
+    rootSeen := true
+    eventCount := state.eventCount + 1
+    maxDepthSeen := max state.maxDepthSeen (depth + 1)
+    declarationAllowed := false }
+  if selfClosing then
+    return ← liftXmlEventFailure next (finishXmlEventSegment next payload)
+  let opened := {
+    next with stack := { uri, localName, namespaces := bindings } :: next.stack
+  }
+  return ← liftXmlEventFailure opened (finishXmlEventSegment opened payload)
+
+def parseXmlEventsForRootBoundedTyped (xml expectedRootUri expectedRootLocalName : String)
+    (eventLimit depthLimit : Nat) : Except XmlEventParseFailure XmlEventParseState := do
+  let empty : XmlEventParseState := {}
+  if !xml.toList.all (fun c => isLegalXmlChar c.toNat) then
+    throw (xmlEventParseFailure empty .invalidXml
+      "XML contains a disallowed literal character")
+  let normalizedXml := stripLeadingUtf8Bom xml
+  let pieces := normalizedXml.splitOn "<"
+  let leadingText := List.getD pieces 0 ""
+  if !leadingText.toList.all isXmlSpace then
+    throw (xmlEventParseFailure empty .invalidXml
+      "non-whitespace content before the XML root")
+  let segments := pieces.drop 1
+  if segments.isEmpty then
+    throw (xmlEventParseFailure empty .invalidXml "XML has no root element")
+  let initial : XmlEventParseState := { declarationAllowed := leadingText.isEmpty }
+  let final ← segments.foldlM (fun state segment => do
+    let next ← parseXmlEventSegment expectedRootUri expectedRootLocalName state segment
+    if next.eventCount > eventLimit then
+      throw (xmlEventParseFailure state .eventLimit "XML event limit exceeded"
+        next.eventCount next.maxDepthSeen)
+    if next.maxDepthSeen > depthLimit then
+      throw (xmlEventParseFailure state .depthLimit "XML depth limit exceeded"
+        next.eventCount next.maxDepthSeen)
+    return next) initial
+  if !final.rootSeen then
+    throw (xmlEventParseFailure final .invalidXml "XML has no root element")
+  if !final.stack.isEmpty then
+    throw (xmlEventParseFailure final .invalidXml "XML has unclosed elements")
+  return { final with events := final.events.reverse }
+
+def parseXmlEventsForRootBounded (xml expectedRootUri expectedRootLocalName : String)
+    (eventLimit depthLimit : Nat) : Except String XmlEventParseState :=
+  (parseXmlEventsForRootBoundedTyped xml expectedRootUri expectedRootLocalName
+    eventLimit depthLimit).mapError (·.detail)
+
+def parseXmlEventsForRoot (xml expectedRootUri expectedRootLocalName : String) :
+    Except String XmlEventParseState :=
+  parseXmlEventsForRootBounded xml expectedRootUri expectedRootLocalName
+    (xml.toUTF8.size + 1) (xml.toUTF8.size + 1)
+
+structure XmlEventTokenState where
+  stack : List (String × String) := []
+  tokens : List XmlTok := []
+
+def textTokenForElement (uri localName value : String) : List XmlTok :=
+  if uri != wmlNamespace then []
+  else if localName == "t" then [.text value]
+  else if localName == "delText" then [.delText value]
+  else if localName == "instrText" then [.instrText value]
+  else if localName == "delInstrText" then [.delInstrText value]
+  else []
+
+def tokensFromXmlEvents (events : List XmlEvent) : List XmlTok :=
+  (events.foldl (fun (state : XmlEventTokenState) event =>
+    match event with
+    | XmlEvent.startElement uri localName attributes _ selfClosing =>
+      let emitted :=
+        if ["t", "delText", "instrText", "delInstrText"].contains localName then []
+        else if uri == wmlNamespace then
+          tagTokenDecoded false localName (canonicalizeAttributes attributes) ""
+        else []
+      {
+        stack := if selfClosing then state.stack else (uri, localName) :: state.stack
+        tokens := state.tokens ++ emitted
+      }
+    | XmlEvent.endElement uri localName _ =>
+      let emitted :=
+        if uri == wmlNamespace then tagTokenDecoded true localName [] "" else []
+      { stack := state.stack.drop 1, tokens := state.tokens ++ emitted }
+    | XmlEvent.text value _ =>
+      match state.stack.head? with
+      | some (uri, localName) =>
+        { state with tokens := state.tokens ++ textTokenForElement uri localName value }
+      | none => state) {}).tokens
 
 def projectUserNoteTokensAux : Bool → List XmlTok → List XmlTok
   | _, [] => []

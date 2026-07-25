@@ -1,6 +1,7 @@
 import LeanSpike
 import LeanSpike.LcsDP
 import Tier2.XmlTripleChecker
+import Tier2.RelationshipStorySelector
 
 #print axioms LeanSpike.inv_field_001
 #print axioms LeanSpike.inv_rt_001
@@ -19,3 +20,7 @@ import Tier2.XmlTripleChecker
 #print axioms Tier2.XmlTripleChecker.projectUserNoteTokens_no_reserved
 #print axioms Tier2.XmlTripleChecker.projectUserNoteTokens_idempotent
 #print axioms Tier2.XmlTripleChecker.projectUserNoteTokens_typed_reserved
+#print axioms Tier2.RelationshipStorySelector.direct_binding_selection_complete
+#print axioms Tier2.RelationshipStorySelector.aligned_slot_unique_work_item
+#print axioms Tier2.RelationshipStorySelector.dedup_preserves_selector_locators
+#print axioms Tier2.RelationshipStorySelector.relationship_story_aggregate_sound
