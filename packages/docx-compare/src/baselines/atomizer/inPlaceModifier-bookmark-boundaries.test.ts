@@ -23,23 +23,24 @@ async function compareInplace(originalBody: string, revisedBody: string) {
 }
 
 /**
- * Characterization of KNOWN-DEFECTIVE behavior — see issue #641.
+ * A deleted paragraph's bookmark range keeps enclosing the content it named.
  *
- * When a deleted paragraph's text was enclosed by bookmark boundary markers, the markers are
- * hoisted out of the paragraph to body level and collapse into a zero-length range that no
- * longer covers the text it named. The markers survive by name only; a cross-reference to the
- * bookmark resolves to an empty span.
+ * These tests were written against the defect in issue #641: both boundary markers were hoisted
+ * out of the paragraph to body level, where they collapsed into a zero-length range. The markers
+ * survived by name only, so a cross-reference to the bookmark resolved to an empty span. Body-level
+ * bookmarkStart/bookmarkEnd is schema-legal (CT_Body -> EG_BlockLevelElts ->
+ * EG_ContentBlockContent -> EG_RunLevelElts), so no validator flagged it; the loss was semantic.
  *
- * These tests pin what the engine does today so the behavior cannot change unnoticed. They do
- * NOT endorse it. When #641 is fixed, they must be rewritten to assert that the bookmark range
- * still encloses the recreated `<w:del>` content — the way the move-source path already does
- * (see inPlaceModifier-moved-bookmark-paragraph.test.ts).
+ * They now assert the fixed shape — markers inside the recreated paragraph, wrapped around the
+ * `<w:del>` — which matches what the move-source path already produced (see
+ * inPlaceModifier-moved-bookmark-paragraph.test.ts).
  *
- * Body-level bookmarkStart/bookmarkEnd is schema-legal (CT_Body -> EG_BlockLevelElts ->
- * EG_ContentBlockContent -> EG_RunLevelElts), so no validator flags this; the loss is semantic.
+ * A boundary sitting only PARTWAY inside a revision wrapper is a separate case that still cannot be
+ * repositioned faithfully; it is pinned in consumerCompatibility-bookmark-ranges.test.ts and tracked
+ * in issue #643.
  */
 describe('inplace deleted paragraph bookmark boundaries', () => {
-  test('DEFECT #641: hoists both boundary markers to body level, detaching the bookmark from the deleted text', async ({
+  test('keeps both boundary markers inside the paragraph, wrapped around the deleted text', async ({
     given,
     when,
     then,
@@ -71,29 +72,37 @@ describe('inplace deleted paragraph bookmark boundaries', () => {
       expect(xml).toContain('<w:delText>Bookmarked</w:delText>');
     });
 
-    await and('DEFECT #641: the markers collapse to an empty range outside the deleted paragraph', () => {
+    await and('the range still covers the deleted text (issue #641)', () => {
       const start = xml.indexOf('<w:bookmarkStart w:id="41"');
       const end = xml.indexOf('<w:bookmarkEnd w:id="41"');
       const deletedText = xml.indexOf('<w:delText>Bookmarked</w:delText>');
       expect(xml.match(/<w:bookmarkStart w:id="41"/g)).toHaveLength(1);
       expect(xml.match(/<w:bookmarkEnd w:id="41"/g)).toHaveLength(1);
 
-      // Both markers land before the recreated paragraph, so the range spans no content at all.
+      // The deleted text sits between the two boundaries rather than after both of them.
       expect(start).toBeGreaterThan(-1);
-      expect(end).toBeGreaterThan(start);
-      expect(end).toBeLessThan(deletedText);
-      expect(xml.slice(start, end)).not.toContain('<w:delText>');
+      expect(start).toBeLessThan(deletedText);
+      expect(end).toBeGreaterThan(deletedText);
+      expect(xml.slice(start, end)).toContain('<w:delText>');
+    });
 
-      // ...and they sit at body level rather than inside the paragraph holding the deletion.
+    await and('both markers sit inside the paragraph holding the deletion, not at body level', () => {
+      const start = xml.indexOf('<w:bookmarkStart w:id="41"');
+      const end = xml.indexOf('<w:bookmarkEnd w:id="41"');
+      const deletedText = xml.indexOf('<w:delText>Bookmarked</w:delText>');
       const enclosingParagraphStart = xml.lastIndexOf('<w:p>', deletedText);
-      expect(enclosingParagraphStart).toBeGreaterThan(end);
+      const enclosingParagraphEnd = xml.indexOf('</w:p>', deletedText);
+
+      expect(enclosingParagraphStart).toBeLessThan(start);
+      expect(enclosingParagraphEnd).toBeGreaterThan(end);
     });
   });
 
-  test('DEFECT #641: hoists nested trailing bookmark ends ahead of the deleted fragments, preserving only their relative order', async ({
+  test('places nested trailing bookmark ends after the deleted fragments, in nesting order', async ({
     given,
     when,
     then,
+    and,
   }: AllureBddContext) => {
     let xml: string;
 
@@ -111,19 +120,30 @@ describe('inplace deleted paragraph bookmark boundaries', () => {
       ));
     });
 
-    await then('both ends precede the fragments they should follow, but stay in nesting order', () => {
+    await then('both ends follow the last fragment they cover', () => {
       const finalText = xml.indexOf('<w:delText>fragment</w:delText>', xml.indexOf('second'));
       const innerEnd = xml.indexOf('<w:bookmarkEnd w:id="52"');
       const outerEnd = xml.indexOf('<w:bookmarkEnd w:id="51"');
       expect(finalText).toBeGreaterThan(-1);
       expect(innerEnd).toBeGreaterThan(-1);
 
-      // Correct output would place both ends AFTER the final fragment. They precede it instead.
-      expect(innerEnd).toBeLessThan(finalText);
-      expect(outerEnd).toBeLessThan(finalText);
+      expect(innerEnd).toBeGreaterThan(finalText);
+      expect(outerEnd).toBeGreaterThan(finalText);
+    });
 
-      // The one property the hoisting does keep: inner closes before outer.
+    await and('nesting order survives — inner closes before outer', () => {
+      const innerEnd = xml.indexOf('<w:bookmarkEnd w:id="52"');
+      const outerEnd = xml.indexOf('<w:bookmarkEnd w:id="51"');
       expect(outerEnd).toBeGreaterThan(innerEnd);
+    });
+
+    await and('both starts still precede the deleted fragments, keeping each range non-empty', () => {
+      const outerStart = xml.indexOf('<w:bookmarkStart w:id="51"');
+      const innerStart = xml.indexOf('<w:bookmarkStart w:id="52"');
+      const firstText = xml.indexOf('<w:delText>first</w:delText>');
+      expect(outerStart).toBeGreaterThan(-1);
+      expect(outerStart).toBeLessThan(innerStart);
+      expect(innerStart).toBeLessThan(firstText);
     });
   });
 });

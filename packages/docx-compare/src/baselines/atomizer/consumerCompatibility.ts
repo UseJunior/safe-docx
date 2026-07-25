@@ -41,31 +41,122 @@ function isParagraphInsertedOrDeleted(p: Element): boolean {
   return false;
 }
 
-export function enforceConsumerCompatibility(root: Element, allocateRevisionId: () => number): void {
-  // 1. Hoist bookmark markers out of revision wrappers AND fully deleted/inserted paragraphs
-  const wrappers = new Set(['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
-  const markers = ['w:bookmarkStart', 'w:bookmarkEnd'];
-  
-  function hoistBookmarks(node: Element) {
-    if (wrappers.has(node.tagName) || (node.tagName === 'w:p' && isParagraphInsertedOrDeleted(node))) {
-      for (const markerTag of markers) {
-        // Only get immediate children if we're hoisting out of p, otherwise get all descendants
-        // Actually, if it's a p, we want to hoist all markers out of it so they survive.
-        const nestedMarkers = Array.from(node.getElementsByTagName(markerTag));
-        for (const marker of nestedMarkers) {
-          // Move the marker to be a sibling BEFORE the wrapper/paragraph, if it has a parent
-          if (node.parentNode) {
-            node.parentNode.insertBefore(marker, node);
-          }
-        }
-      }
-    } else {
-      for (const child of childElements(node)) {
-        hoistBookmarks(child);
-      }
+const BOOKMARK_MARKER_TAGS = ['w:bookmarkStart', 'w:bookmarkEnd'] as const;
+const REVISION_WRAPPER_TAGS = new Set(['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
+
+/**
+ * Whether a marker's counterpart (matched on `w:id`) also lives inside `container`.
+ *
+ * A bookmark range is identified by the `w:id` shared between its
+ * `w:bookmarkStart` and `w:bookmarkEnd`; the name lives on the start only. A
+ * range with both boundaries inside one container covers only that container's
+ * content, so it can be repositioned as a unit. A range with one boundary
+ * outside reaches into content the container does not own, and moving the inside
+ * boundary changes which text the range covers.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
+ */
+function bookmarkRangeIsEnclosedBy(container: Element, marker: Element): boolean {
+  const id = marker.getAttribute('w:id');
+  if (!id) return false;
+  const counterpartTag =
+    marker.tagName === 'w:bookmarkStart' ? 'w:bookmarkEnd' : 'w:bookmarkStart';
+
+  // An unmatched marker has no range to preserve; the orphan repair below
+  // synthesizes a counterpart, so treat it as spanning and hoist it out.
+  const counterparts = Array.from(container.getElementsByTagName(counterpartTag)) as Element[];
+  return counterparts.some((candidate) => candidate.getAttribute('w:id') === id);
+}
+
+/**
+ * Lift the bookmark markers nested inside an inline revision wrapper out to the
+ * wrapper's own level.
+ *
+ * A marker inside `<w:del>` vanishes on Accept All even though the surrounding
+ * paragraph survives, so it cannot stay there. Where it lands depends on how
+ * much of the range the wrapper owns:
+ *
+ * - A range the wrapper encloses entirely is placed around the wrapper — start
+ *   before, end after — so it still spans the content it named. Dropping both
+ *   boundaries in front of the wrapper (what this pass used to do) collapses it
+ *   to zero length, which is how the rebuild path lost the range in issue #641.
+ * - A boundary whose counterpart is outside the wrapper keeps the long-standing
+ *   placement in front of the wrapper. Anchoring such a boundary after the
+ *   wrapper instead would silently grow the range over the whole wrapped run.
+ *   Neither placement reproduces the original span, because the boundary sat
+ *   partway through content that one projection removes; repositioning it
+ *   faithfully means splitting the wrapper at the boundary, which is out of
+ *   scope here and tracked separately.
+ */
+function liftMarkersAroundWrapper(wrapper: Element): void {
+  const parent = wrapper.parentNode;
+  if (!parent) return;
+
+  const starts = Array.from(wrapper.getElementsByTagName('w:bookmarkStart')) as Element[];
+  const ends = Array.from(wrapper.getElementsByTagName('w:bookmarkEnd')) as Element[];
+
+  // Decide before moving anything: lifting the starts out first would empty the
+  // wrapper of them and make every range look like it reaches outside.
+  const endsAfter = ends.filter((end) => bookmarkRangeIsEnclosedBy(wrapper, end));
+  const endsBefore = ends.filter((end) => !endsAfter.includes(end));
+
+  for (const start of starts) {
+    parent.insertBefore(start, wrapper);
+  }
+  for (const end of endsBefore) {
+    parent.insertBefore(end, wrapper);
+  }
+  // Reverse so each insert lands directly after the wrapper, which leaves
+  // document order among these ends unchanged.
+  for (const end of [...endsAfter].reverse()) {
+    parent.insertBefore(end, wrapper.nextSibling);
+  }
+}
+
+/**
+ * Move bookmark markers to positions that keep their ranges meaningful in both
+ * the Accept All and Reject All projections.
+ *
+ * Two moves happen, in this order:
+ *
+ * 1. Out of inline revision wrappers, as described on
+ *    {@link liftMarkersAroundWrapper}.
+ *
+ * 2. Out of a wholly inserted or deleted paragraph, but only for ranges whose
+ *    other end lies outside that paragraph. Those need an anchor in content the
+ *    projection keeps. A range enclosed by the paragraph stays put: hoisting it
+ *    to body level collapses it to a zero-length span that no longer names the
+ *    text it was created for, and such a range is meant to travel with the
+ *    content it covers (issue #641).
+ */
+function hoistBookmarkMarkers(node: Element): void {
+  if (REVISION_WRAPPER_TAGS.has(node.tagName)) {
+    liftMarkersAroundWrapper(node);
+    return;
+  }
+
+  for (const child of childElements(node)) {
+    hoistBookmarkMarkers(child);
+  }
+
+  if (node.tagName !== 'w:p' || !isParagraphInsertedOrDeleted(node) || !node.parentNode) {
+    return;
+  }
+
+  // Wrapper lifting above has already moved nested markers to paragraph level,
+  // so every marker of this paragraph is now visible to the enclosure test.
+  for (const markerTag of BOOKMARK_MARKER_TAGS) {
+    for (const marker of Array.from(node.getElementsByTagName(markerTag)) as Element[]) {
+      if (bookmarkRangeIsEnclosedBy(node, marker)) continue;
+      node.parentNode.insertBefore(marker, node);
     }
   }
-  hoistBookmarks(root);
+}
+
+export function enforceConsumerCompatibility(root: Element, allocateRevisionId: () => number): void {
+  // 1. Reposition bookmark markers so their ranges survive both projections.
+  hoistBookmarkMarkers(root);
 
   // 2. Remove empty w:t tags
   const textNodes = Array.from(root.getElementsByTagName('w:t'));

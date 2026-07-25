@@ -6,7 +6,12 @@ import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'Inplace Empty And Table Cell Paragraph Placement' });
+  .withLabels({ feature: 'Inplace Empty And Table Cell Paragraph Placement' })
+  .conformance(
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.37' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.48' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.4.65' },
+  );
 
 async function compareInplace(originalBody: string, revisedBody: string) {
   const original = await buildDocxFromBodyXml(originalBody);
