@@ -46,7 +46,9 @@
     "stories": [
       "main",
       "footnotes",
-      "endnotes"
+      "endnotes",
+      "selected headers",
+      "selected footers"
     ],
     "projections": [
       "text",
@@ -54,33 +56,27 @@
     ],
     "documentSurfaces": {
       "covered": [
-        "word/document.xml text, field-marker, and tracked-move-range token stream (required)",
-        "word/footnotes.xml user-note text, field-marker, and tracked-move-range token stream (optional; absent sides modeled as empty when any side is present)",
-        "word/endnotes.xml user-note text, field-marker, and tracked-move-range token stream (optional; absent sides modeled as empty when any side is present)"
+        "required word/document.xml token stream with exactly one direct w:body, at most one terminal body-level w:sectPr, and ancestry-aware direct w:body/w:sectPr or w:body/w:p/w:pPr/w:sectPr binding inventory",
+        "optional word/footnotes.xml and word/endnotes.xml token streams",
+        "direct package-relationship records in word/_rels/document.xml.rels",
+        "direct explicit first/default/even w:headerReference and w:footerReference slots aligned by section ordinal, kind, and role",
+        "selected Transitional w:hdr and w:ftr token streams deduplicated by the complete three-side physical key"
       ],
       "excluded": [
-        "word/comments.xml and all comment anchors, reference IDs, relationships, extension parts, and thread semantics",
-        "numbering.xml",
-        "document relationships",
-        "styles.xml",
-        "settings.xml",
-        "headers",
-        "footers"
+        "word/comments.xml and comment semantics",
+        "inherited or omitted header/footer role semantics",
+        "unselected header/footer parts and unselected relationship semantics",
+        "complete OPC, content-type, relationship-graph, XML Schema, pagination, rendering, and field-evaluation validation"
       ]
     },
     "knownUncheckedAreas": [
-      "full ECMA-376 schema validation",
-      "rendering equivalence",
-      "formatting fidelity",
-      "bookmark semantic equivalence",
-      "comments.xml and comment anchor, reference-ID, relationship, extension-part, and thread integrity",
-      "footnote and endnote definition/reference integrity, including reference IDs and relationships",
-      "relationship target integrity",
-      "package-level OPC constraints",
-      "field instruction parsing, evaluation, and cached-result correctness, including PAGE and NUMPAGES semantics",
-      "OOXML extension and compatibility markup",
-      "advanced revision-record semantics other than the checked move-range pairing subset, including property snapshots, numbering/table/style revisions, custom XML revisions, conflict records, and annotation interactions",
-      "general-purpose XML canonicalization beyond the checked WordprocessingML token surface; comments, processing instructions, DTDs, and CDATA are rejected by the accepted XML subset"
+      "full ECMA-376 or OPC conformance",
+      "Strict OOXML namespaces",
+      "rendering, pagination, inherited roles, and semantic section identity",
+      "unselected parts and complete relationship/content-type integrity",
+      "note definition/reference integrity and comments",
+      "field instruction evaluation, cached results, and bookmark resolution",
+      "general XML canonicalization outside the accepted subset"
     ]
   },
   "claims": [

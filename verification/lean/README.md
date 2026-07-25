@@ -171,54 +171,74 @@ It concluded *full atom equality* (`a = b`), which held only because `Atom` expo
 
 **Scope note on optimality (INV-LCS-002) — resolved.** `rawMatches_are_longest` bounds the length of every *structural* common subsequence (`isCommonSubseq s orig rev := s <+ orig ∧ s <+ rev`, i.e. literal sublists of both). It remains true and non-vacuous after broadening, but it is *strictly weaker* than "longest under `atomsEqual`": because `atomsEqual` correlates atoms only up to `Atom.relevant`, an `atomsEqual`-matchable common subsequence need not be a structural sublist of both inputs. This gap is now closed by `rawMatches_are_longest_relevant` (`LeanSpike/LcsDP.lean`), which bounds every common subsequence of the relevant projections (`orig.map Atom.relevant`, `rev.map Atom.relevant`) — i.e. optimality at the `atomsEqual` level. It is provably stronger: e.g. two atoms with equal `Atom.relevant` but differing `correlationStatus` have an `atomsEqual`-matchable common subsequence of length 1 that is *not* a structural sublist of both. The proof reuses the `rawMatches_are_longest` induction skeleton, lifted to projected lists via a type-polymorphic `sublist_drop_heads` and the converse lemma `atomsEqual_of_relevant_eq` (projection equality ⇒ `atomsEqual`).
 
-## Lean fixed-story checker
+## Lean relationship-story checker
 
-`Tier2/XmlTripleChecker.lean` defines the compiled verifier for real comparison
-output. The `leanDocxChecker` executable receives paths to exact snapshots of
-the original, revised, and compared DOCX packages. The Lean process invokes the
-package extractor and selects these fixed WordprocessingML stories itself:
+`Tier2/XmlTripleChecker.lean` retains the generic six-check story collection.
+`Tier2/RelationshipStorySelector.lean` adds the protocol-v4 package inventory
+and selector. The `leanDocxChecker` executable receives only paths to exact
+original, revised, and compared DOCX snapshots; TypeScript does not provide a
+story manifest or pre-resolved relationship targets.
 
-- required `word/document.xml`;
-- optional `word/footnotes.xml`; and
-- optional `word/endnotes.xml`.
+Lean parses a bounded classic single-disk ZIP central directory and matching
+local headers. ZIP64, encryption, data descriptors, unsupported methods or
+flags, ambiguous names, unsafe paths, duplicate names, and overlapping local
+records fail before evidence. `unzip -p --` is used only after the binary index
+proves one exact safe entry, and the resulting byte length and CRC-32 must match
+the index. This is a bounded extraction policy, not full OPC conformance.
 
-If any package supplies an optional part, absent sides are represented by empty
-token stories. This permits checked tracked-part additions and removals while an
-untracked text divergence still fails; all-absent optional parts are omitted.
-Each story is parsed and checked independently, so field state cannot balance
-across part boundaries.
+The required `word/document.xml` must extract, decode, parse, tokenize, and
+produce an ancestry-aware inventory of exact direct
+`w:body/w:sectPr` and `w:body/w:p/w:pPr/w:sectPr` placements on all three
+sides before any valid v4 response exists. It must contain exactly one direct
+`w:body`; nested/multiple bodies, duplicate body-level terminal `w:sectPr`, or
+a body element after that terminal section fail as process-level `not_run`.
+Other section placements and references outside an open supported direct
+section are structured selection issues.
+Optional footnotes/endnotes remain fixed stories; post-main optional failures
+are structured. Direct explicit first/default/even header/footer bindings are
+resolved through each package's independently parsed
+`word/_rels/document.xml.rels`.
 
-The Lean parser resolves prefixes to namespace URIs, accepts any prefix bound to
-the WordprocessingML namespace, requires the expected expanded-name root, and
-rejects malformed or unbound XML. Reserved note entries are selected by the
-namespace-qualified `w:type` value `separator` or `continuationSeparator`, not
-by ID. Therefore a normal note with ID `0` remains visible, while a typed
-separator with any ID is excluded. `projectUserNoteTokens` is proved
-idempotent, and its typed-reserved projection theorem is included in the axiom
-audit alongside collection soundness.
+Resource admission is deterministic: required main runs first; relationship
+XML, complete selected-target metadata, and selected physical work run next;
+footnotes follow; endnotes are last. Unique-path and selected compressed/
+expanded metadata ceilings are checked before any selected target is
+decompressed. Optional metadata crossings are fixed-story issues and are not
+extracted. XML events are checked against the remaining per-part and
+per-package budget while parsing, and semantic tokens come from that bounded
+event stream; aggregate exhaustion stops later work while retaining earlier
+truthful relationship evidence. Event/depth/structural parse failures are
+typed and retain completed/observed counts. Event-limit failure at remaining
+aggregate allowance less than or equal to the per-part ceiling is aggregate
+exhaustion; only larger aggregate headroom yields per-part classification.
 
-For every supplied story, the checker checks whether:
+Logical slots align by `(sectionOrdinal, kind, role)`. Section-count or ordered
+slot differences fail closed; no semantic section identity is claimed.
+Relationship IDs and normalized paths remain side-specific. Equal complete
+three-side target keys are checked once, with every selecting slot ordinal
+retained in canonical order. If one physical target fails to load, valid
+independent physical stories and their contiguously reindexed slots remain in
+the failed response. Raw or repeatedly decoded `*`, `[`, and `]` targets are
+unsafe. Missing roles are not inherited, and unselected parts receive no
+passing evidence.
+
+Every fixed and selected physical story uses the existing generic checker:
 
 - accepting all tracked changes in the compared XML recovers the revised text;
 - rejecting all tracked changes in the compared XML recovers the original text;
 - the accept and reject projections keep valid Word field structure; and
-- the compared XML does not place field markers inside deletion markup.
+- the compared XML has valid field-marker and tracked-move structure.
 
-The public claim is deliberately per-package-triple: a separately compiled Lean
-program extracted and checked these fixed stories. It is not a proof of the
-entire TypeScript comparison engine, note/reference or relationship integrity,
-package-level OPC behavior, rendering fidelity, rebuild mode, comments,
-headers/footers, or full ECMA-376 conformance. Package extraction currently
-requires `unzip`; absence, corrupt archives, metadata errors, oversized
-packages/parts, excessive compression ratios, output-limit violations, or
-extraction failure produce `not_run`. The extractor checks compressed and
-expanded metadata before extraction and streams output under a hard bound.
-
-The executable speaks protocol v2, but the TypeScript certificate retains the
-public v1 discriminator, verifier name, main-document scope, XML hashes, checks,
-and token counts. Fixed-story scope, package hashes, story presence, per-story
-reports, and exclusions are additive fields. The exact
-parsed and out-of-scope surfaces are tracked in
+The four selector/aggregate theorem targets quantify over the checked pure
+functions invoked by `LeanDocxChecker`: per-side identifying issue-or-exact-slot
+completeness, unique work assignment, canonical ordered locator equality, and
+exact loaded-work/name/token-triple correspondence. No result carries proof fields.
+Aggregate soundness reuses `story_collection_checker_sound`. The public certificate stays
+at version 1; checker protocol version 4, relationship scope, slots, physical
+stories, fixed-story failures, and selection failures are additive fields.
+Rebuild remains `not_applicable`. Inherited roles, unselected parts, comments,
+complete relationship/OPC/schema validation, pagination, rendering, field
+evaluation, and full ECMA-376 conformance remain excluded. Exact surfaces are in
 `verification/registry/lean-xml-checker-coverage.json` and drift-checked by
 `npm run check:lean-xml-checker-coverage`.
 
@@ -229,10 +249,9 @@ This spike pins:
 - Lean 4 toolchain: `leanprover/lean4:v4.29.1`
 - mathlib4 dependency: `v4.29.1`
 
-To fetch dependencies and verify the proof:
+Using the committed manifest and existing toolchain, verify the proof:
 
 ```bash
-lake update
 lake build
 ```
 

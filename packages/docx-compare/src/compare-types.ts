@@ -366,6 +366,117 @@ export interface DocumentIntegrityStoryCertificate {
   presence: { original: boolean; revised: boolean; compared: boolean };
 }
 
+export type DocumentIntegrityRelationshipKind = 'header' | 'footer';
+export type DocumentIntegrityRelationshipRole = 'first' | 'default' | 'even';
+export type DocumentIntegrityVerifierSide = 'original' | 'revised' | 'compared';
+
+export interface DocumentIntegrityRelationshipScope {
+  selection: 'direct-explicit-section-bindings';
+  alignment: 'sectionOrdinal-kind-role';
+  kinds: readonly ['header', 'footer'];
+  roles: readonly ['first', 'default', 'even'];
+  inheritedRoles: false;
+  reconstructionMode: 'inplace';
+}
+
+export interface DocumentIntegrityRelationshipSideIdentity {
+  relationshipId: string;
+  normalizedPartPath: string;
+}
+
+export interface DocumentIntegrityRelationshipSlot {
+  slotOrdinal: number;
+  sectionOrdinal: number;
+  kind: DocumentIntegrityRelationshipKind;
+  role: DocumentIntegrityRelationshipRole;
+  original: DocumentIntegrityRelationshipSideIdentity;
+  revised: DocumentIntegrityRelationshipSideIdentity;
+  compared: DocumentIntegrityRelationshipSideIdentity;
+  physicalStoryOrdinal: number;
+}
+
+export interface DocumentIntegrityRelationshipStory {
+  physicalStoryOrdinal: number;
+  kind: DocumentIntegrityRelationshipKind;
+  originalPartPath: string;
+  revisedPartPath: string;
+  comparedPartPath: string;
+  selectingSlotOrdinals: number[];
+  status: 'passed' | 'failed';
+  checks: {
+    acceptingAllTrackedChangesMatchesRevisedText: DocumentIntegrityCheckCertificate;
+    rejectingAllTrackedChangesMatchesOriginalText: DocumentIntegrityCheckCertificate;
+    acceptingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
+    rejectingAllTrackedChangesKeepsValidFieldStructure: DocumentIntegrityCheckCertificate;
+    comparedStoryHasNoFieldMarkersInsideDeletions: DocumentIntegrityCheckCertificate;
+    trackedMoveRangesAreCorrectlyPaired: DocumentIntegrityCheckCertificate;
+  };
+  parsedTokenCounts: { original: number; revised: number; compared: number };
+}
+
+export type DocumentIntegrityRelationshipSelectionIssueCode =
+  | 'DUPLICATE_SECTION_BINDING'
+  | 'UNSUPPORTED_SECTION_PLACEMENT'
+  | 'INDIRECT_SECTION_BINDING'
+  | 'MISSING_RELATIONSHIP_ID'
+  | 'INVALID_BINDING_ROLE'
+  | 'MISSING_RELATIONSHIPS_PART'
+  | 'INVALID_RELATIONSHIPS_XML'
+  | 'INVALID_RELATIONSHIPS_ROOT'
+  | 'RELATIONSHIP_LIMIT_EXCEEDED'
+  | 'MALFORMED_RELATIONSHIP_RECORD'
+  | 'DUPLICATE_RELATIONSHIP_ID'
+  | 'MISSING_RELATIONSHIP'
+  | 'RELATIONSHIP_ID_LIMIT_EXCEEDED'
+  | 'RELATIONSHIP_TYPE_MISMATCH'
+  | 'INVALID_TARGET_MODE'
+  | 'EXTERNAL_TARGET'
+  | 'TARGET_LENGTH_LIMIT_EXCEEDED'
+  | 'UNSAFE_TARGET'
+  | 'MISSING_TARGET_PART'
+  | 'SELECTED_PART_LIMIT_EXCEEDED'
+  | 'UNIQUE_SELECTED_PART_LIMIT_EXCEEDED'
+  | 'AGGREGATE_COMPRESSED_LIMIT_EXCEEDED'
+  | 'AGGREGATE_EXPANDED_LIMIT_EXCEEDED'
+  | 'INVALID_TARGET_XML'
+  | 'TARGET_ROOT_MISMATCH'
+  | 'XML_DEPTH_LIMIT_EXCEEDED'
+  | 'XML_TOKEN_LIMIT_EXCEEDED'
+  | 'INVALID_UTF8'
+  | 'SECTION_COUNT_MISMATCH'
+  | 'SECTION_SLOT_MISMATCH'
+  | 'EVIDENCE_STRING_BUDGET_EXCEEDED'
+  | 'ISSUE_LIMIT_EXCEEDED';
+
+export interface DocumentIntegrityRelationshipSelectionFailure {
+  code: DocumentIntegrityRelationshipSelectionIssueCode;
+  side?: DocumentIntegrityVerifierSide;
+  sectionOrdinal?: number;
+  kind?: DocumentIntegrityRelationshipKind;
+  role?: DocumentIntegrityRelationshipRole;
+  relationshipId?: string;
+  rawTarget?: string;
+  normalizedPartPath?: string;
+  detail: string;
+}
+
+export type DocumentIntegrityFixedStoryIssueCode =
+  | 'OPTIONAL_STORY_PART_LIMIT_EXCEEDED'
+  | 'OPTIONAL_STORY_AGGREGATE_LIMIT_EXCEEDED'
+  | 'OPTIONAL_STORY_INVALID_UTF8'
+  | 'OPTIONAL_STORY_INVALID_XML'
+  | 'OPTIONAL_STORY_ROOT_MISMATCH'
+  | 'OPTIONAL_STORY_XML_DEPTH_LIMIT_EXCEEDED'
+  | 'OPTIONAL_STORY_XML_TOKEN_LIMIT_EXCEEDED';
+
+export interface DocumentIntegrityFixedStoryFailure {
+  code: DocumentIntegrityFixedStoryIssueCode;
+  name: 'footnotes' | 'endnotes';
+  side: DocumentIntegrityVerifierSide;
+  packagePart: 'word/footnotes.xml' | 'word/endnotes.xml';
+  detail: string;
+}
+
 export interface DocumentIntegrityCertificate {
   /** Overall result from the separately compiled Lean verifier. */
   status: DocumentIntegrityCertificateStatus;
@@ -399,7 +510,7 @@ export interface DocumentIntegrityCertificate {
   /** Stable v1 main-story token counts. */
   parsedTokenCounts?: { original: number; revised: number; compared: number };
   /** Internal executable protocol used for package-level verification. */
-  checkerProtocolVersion?: 3;
+  checkerProtocolVersion?: 3 | 4;
   fixedStoryScope?: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
   inputPackageSha256?: { originalDocx: string; revisedDocx: string; comparedDocx: string };
   stories?: DocumentIntegrityStoryCertificate[];
@@ -409,6 +520,11 @@ export interface DocumentIntegrityCertificate {
     required: boolean;
     presence: { original: boolean; revised: boolean; combined: boolean };
   }>;
+  fixedStoryFailures?: DocumentIntegrityFixedStoryFailure[];
+  relationshipStoryScope?: DocumentIntegrityRelationshipScope;
+  relationshipSlots?: DocumentIntegrityRelationshipSlot[];
+  relationshipStories?: DocumentIntegrityRelationshipStory[];
+  relationshipSelectionFailures?: DocumentIntegrityRelationshipSelectionFailure[];
   /** Important surfaces this certificate does not claim to validate. */
   exclusions?: string[];
   reason?: string;

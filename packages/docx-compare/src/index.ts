@@ -8,6 +8,8 @@
 import { compareDocumentsAtomizer } from './baselines/atomizer/pipeline.js';
 import type { CompareOptions, CompareResult } from './compare-types.js';
 
+export { runLeanXmlTripleVerifier } from './baselines/atomizer/leanXmlVerifier.js';
+
 export type {
   CompareOptions,
   CompareResult,
@@ -30,8 +32,19 @@ export type {
   DocumentIntegrityCertificateStatus,
   DocumentIntegrityCheckCertificate,
   DocumentIntegrityCheckStatus,
+  DocumentIntegrityFixedStoryFailure,
+  DocumentIntegrityFixedStoryIssueCode,
+  DocumentIntegrityRelationshipKind,
+  DocumentIntegrityRelationshipRole,
+  DocumentIntegrityRelationshipScope,
+  DocumentIntegrityRelationshipSelectionFailure,
+  DocumentIntegrityRelationshipSelectionIssueCode,
+  DocumentIntegrityRelationshipSideIdentity,
+  DocumentIntegrityRelationshipSlot,
+  DocumentIntegrityRelationshipStory,
   DocumentIntegrityStoryCertificate,
   DocumentIntegrityStoryName,
+  DocumentIntegrityVerifierSide,
   LeanXmlVerifierOptions,
   ReconstructionAttemptDiagnostics,
   ReconstructionBookmarkMismatchDetails,

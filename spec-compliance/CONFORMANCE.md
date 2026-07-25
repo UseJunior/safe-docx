@@ -39,11 +39,11 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-7-5-1` | w:docDefaults document-default properties | 5 | 1 | 17.7.5.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults` | — |
 | `ECMA-PART1-17-6-18` | w:sectPr paragraph-level section break emission | 5 | 1 | 17.6.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | — |
 | `ECMA-PART1-17-6-12` | w:pgNumType page-numbering settings emission | 5 | 1 | 17.6.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgNumType` | — |
-| `ECMA-PART1-17-10-5` | w:headerReference binding | 5 | 1 | 17.10.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:headerReference` | — |
-| `ECMA-PART1-17-10-2` | w:footerReference binding | 5 | 1 | 17.10.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footerReference` | — |
+| `ECMA-PART1-17-10-5` | w:headerReference binding | 5 | 1 | 17.10.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:headerReference` | packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
+| `ECMA-PART1-17-10-2` | w:footerReference binding | 5 | 1 | 17.10.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footerReference` | packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
 | `ECMA-PART1-17-10-6` | w:titlePg first-page header/footer switch | 5 | 1 | 17.10.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:titlePg` | — |
-| `ECMA-PART1-17-10-4` | w:hdr header part emission | 5 | 1 | 17.10.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hdr` | packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts |
-| `ECMA-PART1-17-10-3` | w:ftr footer part emission | 5 | 1 | 17.10.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr` | packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
+| `ECMA-PART1-17-10-4` | w:hdr header part emission | 5 | 1 | 17.10.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hdr` | packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
+| `ECMA-PART1-17-10-3` | w:ftr footer part emission | 5 | 1 | 17.10.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr` | packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
 | `ECMA-PART1-11-3-3` | Document Settings part | 5 | 1 | 11.3.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:settings` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-15-3-4` | w:compatSetting custom compatibility setting | 5 | 1 | 17.15.3.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:compatSetting` | packages/docx-core/src/generation/emit/settings-part.ts; packages/docx-core/src/generation/generation-baseline-settings.test.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts |
 | `ECMA-PART1-17-10-1` | w:evenAndOddHeaders setting | 5 | 1 | 17.10.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:evenAndOddHeaders` | — |
@@ -498,6 +498,7 @@ sections without explicit numbering inherit continuous decimal numbering.
 - **Part / Section:** Part 1 § 17.10.5
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:headerReference`
+- **Verified by:** packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 
 Each declared header slot (first/default/even) becomes its own part bound
 through a typed `w:headerReference` whose `r:id` (written namespace-aware
@@ -523,6 +524,7 @@ SafeDocX safety policies rather than claims made by this clause.
 - **Part / Section:** Part 1 § 17.10.2
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footerReference`
+- **Verified by:** packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 
 Footer references follow the same typed-binding discipline as header
 references, emitted in a fixed first/default/even order for deterministic
@@ -550,7 +552,7 @@ silently ignored by readers.
 - **Part / Section:** Part 1 § 17.10.4
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hdr`
-- **Verified by:** packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 
 Header parts are emitted as standalone `w:hdr` documents
 (word/headerN.xml) with content-type overrides, sharing the body's
@@ -563,7 +565,7 @@ formatting and field machinery as body content.
 - **Part / Section:** Part 1 § 17.10.3
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ftr`
-- **Verified by:** packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts
 
 Footer parts mirror header parts as `w:ftr` documents (word/footerN.xml);
 "Page X of Y" footers carry complete five-part PAGE/NUMPAGES fields with
@@ -1477,9 +1479,11 @@ ranges are excluded from exact evidence but remain subject to strict story
 validation. General field-code parsing and evaluation, ancillary revision
 synthesis or text comparison, cached-result correctness, pagination, bookmark
 resolution, and equivalence to a Word application's field engine are out of
-scope. The Lean XML verifier remains protocol v3, inplace-only, and fixed to
-main/footnotes/endnotes; it does not prove this canonical-preservation
-invariant and still excludes headers/footers.
+scope. The Lean XML verifier uses internal protocol v4 and remains
+inplace-only. It retains fixed main/footnote/endnote stories and independently
+selects direct explicit header/footer bindings by section ordinal, kind, and
+role. It does not prove this canonical-preservation invariant, inherited-role
+behavior, pagination, or rendering.
 
 Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
 display numbering for Word-conventional packages plus generated
@@ -1508,10 +1512,14 @@ style inheritance, layout, rendering, or assertions about arbitrary consumer
 behavior. Direct binding placement, exact target-mode handling, URI/path
 normalization, and package containment use a shared SafeDocX OPC safety policy;
 they are not additional claims attributed to these clauses. Comparison
-preserves ancillary parts according to its documented
-in-place/rebuild rules and validates selected field stories before publication;
-this registry does not claim revision synthesis, text comparison, or semantic
-comparison of header or footer content across document versions.
+preserves ancillary parts according to its documented in-place/rebuild rules
+and validates selected field stories before publication; the compiled Lean
+checker additionally compares selected direct header/footer story triples with
+its generic token checker. Binary package inventory, target normalization,
+containment, ordinal alignment, deduplication, and aggregation are bounded
+SafeDocX verifier policies, not additional claims under these clauses. This
+registry does not claim inherited roles, full OPC/schema validation,
+pagination, rendering, or semantic section identity.
 
 Within Part 1 §17.3, safe-docx targets the direct-formatting properties exposed
 by `ParagraphSpec` and `RunProps`: paragraph style references, keep controls,

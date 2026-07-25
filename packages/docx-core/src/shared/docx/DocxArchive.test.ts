@@ -60,6 +60,32 @@ describe('DocxArchive', () => {
         expect(docXml).toContain('w:document');
       });
     });
+
+    test('serializes only real file entries while preserving readable nested parts', async ({
+      given, when, then,
+    }: AllureBddContext) => {
+      let buffer: Buffer;
+
+      await given('an archive whose nested writes made JSZip folder objects', async () => {
+        const archive = await DocxArchive.create();
+        archive.setFile('word/media/image.bin', Buffer.from([0x01, 0x02]));
+        buffer = await archive.save();
+      });
+
+      await when('the serialized package is indexed again', async () => {
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(buffer);
+        expect(Object.values(zip.files).filter((entry) => entry.dir)).toEqual([]);
+      });
+
+      await then('the DOCX and its nested file remain readable', async () => {
+        const reloaded = await DocxArchive.load(buffer);
+        expect(await reloaded.getDocumentXml()).toContain('w:document');
+        expect(await reloaded.getFileBuffer('word/media/image.bin')).toEqual(
+          Buffer.from([0x01, 0x02]),
+        );
+      });
+    });
   });
 
   describe('setDocumentXml', () => {

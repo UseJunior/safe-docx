@@ -1,22 +1,40 @@
 {
-  "checker": "safe-docx-lean-fixed-story-checker",
-  "protocolVersion": 3,
+  "checker": "safe-docx-lean-relationship-story-checker",
+  "protocolVersion": 4,
   "scope": {
     "inputs": [
       {
         "name": "original",
         "source": "original DOCX package",
-        "packageParts": ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"]
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/footnotes.xml",
+          "word/endnotes.xml",
+          "directly selected word/header*.xml and word/footer*.xml"
+        ]
       },
       {
         "name": "revised",
         "source": "revised DOCX package",
-        "packageParts": ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"]
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/footnotes.xml",
+          "word/endnotes.xml",
+          "directly selected word/header*.xml and word/footer*.xml"
+        ]
       },
       {
         "name": "compared",
         "source": "safe-docx comparison output DOCX package",
-        "packageParts": ["word/document.xml", "word/footnotes.xml", "word/endnotes.xml"]
+        "packageParts": [
+          "word/document.xml",
+          "word/_rels/document.xml.rels",
+          "word/footnotes.xml",
+          "word/endnotes.xml",
+          "directly selected word/header*.xml and word/footer*.xml"
+        ]
       }
     ],
     "reconstructionModes": {
@@ -25,18 +43,17 @@
     },
     "documentSurfaces": {
       "covered": [
-        "word/document.xml text, field-marker, and tracked-move-range token stream (required)",
-        "word/footnotes.xml user-note text, field-marker, and tracked-move-range token stream (optional; absent sides modeled as empty when any side is present)",
-        "word/endnotes.xml user-note text, field-marker, and tracked-move-range token stream (optional; absent sides modeled as empty when any side is present)"
+        "required word/document.xml token stream with exactly one direct w:body, at most one terminal body-level w:sectPr, and ancestry-aware direct w:body/w:sectPr or w:body/w:p/w:pPr/w:sectPr binding inventory",
+        "optional word/footnotes.xml and word/endnotes.xml token streams",
+        "direct package-relationship records in word/_rels/document.xml.rels",
+        "direct explicit first/default/even w:headerReference and w:footerReference slots aligned by section ordinal, kind, and role",
+        "selected Transitional w:hdr and w:ftr token streams deduplicated by the complete three-side physical key"
       ],
       "outOfScope": [
-        "word/comments.xml and all comment anchors, reference IDs, relationships, extension parts, and thread semantics",
-        "numbering.xml",
-        "document relationships",
-        "styles.xml",
-        "settings.xml",
-        "headers",
-        "footers"
+        "word/comments.xml and comment semantics",
+        "inherited or omitted header/footer role semantics",
+        "unselected header/footer parts and unselected relationship semantics",
+        "complete OPC, content-type, relationship-graph, XML Schema, pagination, rendering, and field-evaluation validation"
       ]
     }
   },
@@ -57,100 +74,104 @@
       "w:instrText",
       "w:delInstrText",
       "w:footnote",
-      "w:endnote"
+      "w:endnote",
+      "w:sectPr",
+      "w:headerReference",
+      "w:footerReference"
     ],
-    "attributes": [
-      "w:fldCharType",
-      "w:id",
-      "w:name",
-      "w:type"
-    ],
+    "attributes": ["w:fldCharType", "w:id", "w:name", "w:type", "r:id"],
     "attributeValues": {
       "w:fldCharType": ["begin", "separate", "end"],
       "w:type": ["separator", "continuationSeparator"]
     },
     "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"],
     "numericCharacterReferencesDecoded": ["decimal", "hexadecimal"],
-    "attributeParserPolicy": [
-      "requires XML whitespace between attributes",
-      "rejects duplicate exact and namespace-expanded attribute names",
-      "rejects malformed attribute transitions and character references",
-      "rejects literal and referenced characters outside the XML 1.0 character range",
-      "requires syntactically valid element and attribute QNames before namespace expansion",
-      "rejects empty prefixed namespace bindings and illegal xml or xmlns namespace rebinding",
-      "rejects duplicate ordinary attributes by expanded namespace URI and local name across every namespace; unprefixed attributes remain in no namespace",
-      "validates and decodes character data references in every element namespace before semantic token filtering",
-      "normalizes literal attribute CRLF, CR, LF, and tab to spaces before reference resolution, while numeric character references retain their referenced XML whitespace character"
-    ],
     "acceptedXmlSubset": [
-      "package-part bytes must decode as UTF-8; one leading UTF-8 BOM is accepted and stripped",
-      "an optional leading XML 1.0 declaration with absent encoding or case-insensitive UTF-8 encoding and an optional standalone declaration",
-      "exactly one namespace-qualified root with matched element boundaries",
-      "XML whitespace only before and after the root",
-      "comments, processing instructions, DTDs, and CDATA are rejected rather than ignored"
+      "Transitional WordprocessingML, office-document relationships, and package relationships namespaces only",
+      "UTF-8 with at most one leading BOM and an optional XML 1.0 UTF-8 declaration",
+      "one expanded-name root, valid namespace-scoped QNames, and no duplicate expanded attributes",
+      "predefined and numeric XML references only; comments, non-declaration processing instructions, CDATA, and DTDs reject"
     ]
   },
-  "checkedProperties": [
-    "For every supplied fixed story, accepting all tracked changes in the compared story yields the same normalized text as the revised story.",
-    "For every supplied fixed story, rejecting all tracked changes in the compared story yields the same normalized text as the original story.",
-    "For every supplied fixed story, accept and reject projections retain structurally valid Word field markers.",
-    "For every supplied fixed story, the compared story has no Word field markers inside deletion markup.",
-    "For every supplied fixed story, tracked move ranges use the ECMA schema's ST_DecimalNumber IDs canonicalized to unique integer identities, have balanced non-crossing same-direction endpoints, occur once per source/destination move name, and pair source and destination identities by name. As a stronger SafeDocX verifier policy beyond ECMA ST_String, move names must be non-empty.",
-    "The main story is required; when any optional note story is present, absent sides are checked as empty stories.",
-    "Reserved note entries are selected by namespace-qualified w:type separator or continuationSeparator, independent of numeric ID, and excluded by an idempotent Lean projection.",
-    "Element and attribute prefixes are resolved to namespace URIs, and each fixed part must have its expected WordprocessingML expanded-name root.",
-    "Package and selected-part extraction is bounded by package size, compressed size, expanded size, compression ratio, diagnostics, and streamed-output limits."
+  "packagePolicy": [
+    "Lean constructs a bounded binary classic single-disk ZIP central/local index before extraction",
+    "ZIP64, encryption, data descriptors, unsupported methods or flag bits, ambiguous names, duplicate names, unsafe paths, and overlapping local spans reject as not_run",
+    "ZIP directory records are rejected during binary indexing; only regular file entries enter the trusted inventory",
+    "unzip -p -- is invoked only for one exact indexed safe name; output length and CRC-32 must match the binary index"
   ],
+  "checkedProperties": [
+    "The required main story must extract, decode, parse, tokenize, and produce a bounded selector inventory on all three sides before any v4 response exists.",
+    "Main inventory rejects missing, nested, or multiple direct bodies and duplicate or non-terminal body-level terminal sectPr; out-of-section header/footer references are structured issues.",
+    "Fixed main, footnote, and endnote stories retain the generic six-check collection behavior.",
+    "Every per-side supported direct binding identity has exactly one identifying issue or membership in exactly one ordinally aligned logical slot, mutually exclusively.",
+    "Every successful slot maps to exactly one physical story and each story locator list equals the canonical ordered list derived from aligned slots.",
+    "Each checked relationship triple matches its loaded physical key, generated name, and exact original/revised/combined token lists.",
+    "A selected-part load failure retains every successfully loaded physical story and its contiguously reindexed selecting slots.",
+    "Required main is processed first; complete relationship selected-target metadata and work precede footnotes and endnotes; metadata-known crossings prevent decompression, and aggregate XML-event exhaustion stops later work.",
+    "Bounded XML failures carry typed reasons and consumption counts; event-limit failure when remaining aggregate allowance is less than or equal to 500,000 is aggregate exhaustion, while larger remaining allowance preserves per-part classification.",
+    "All fixed and successfully selected stories are checked through story_collection_checker_sound.",
+    "Section count or ordered direct-slot differences fail closed without claiming semantic section identity.",
+    "Public certificate protocol v1 remains additive; internal protocol v4 evidence is present together only for valid passed or failed runs."
+  ],
+  "limits": {
+    "packageBytesPerSide": 33554432,
+    "centralDirectoryBytesPerSide": 4194304,
+    "zipEntriesPerSide": 1024,
+    "sectionsPerSide": 64,
+    "bindingsPerSide": 384,
+    "relationshipRecordsPerSide": 1024,
+    "uniqueSelectedPartsPerSide": 256,
+    "cumulativeCompressedXmlBytesPerSide": 16777216,
+    "cumulativeExpandedXmlBytesPerSide": 33554432,
+    "logicalSlots": 384,
+    "physicalStories": 384,
+    "issues": 1536,
+    "xmlDepth": 128,
+    "xmlEventsPerPart": 500000,
+    "xmlEventsPerSide": 1000000,
+    "evidenceStringsUtf8Bytes": 1048576,
+    "responseBytes": 8388608,
+    "maximumShapeEvidence": {
+      "producer": "verification/lean/ProtocolV4MaximumShape.lean",
+      "strictDecoderTest": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts",
+      "sharedSelectors": 192,
+      "sharedResponseBytes": 2173684,
+      "sharedEmittedStringBytes": 1047663,
+      "distinctStories": 384,
+      "distinctResponseBytes": 2348656,
+      "distinctEmittedStringBytes": 1048093
+    }
+  },
   "ecma376Traceability": [
     {
-      "registryId": "ECMA-PART1-17-13-5",
-      "section": "Part 1 §17.13.5",
-      "claim": "The parser recognizes the tracked-run wrappers that affect accept/reject text projection in the main document body."
+      "registryId": "ECMA-PART1-17-10-5",
+      "section": "Part 1 §17.10.5",
+      "claim": "The selector recognizes direct typed Transitional w:headerReference bindings."
     },
     {
-      "registryId": "ECMA-PART1-17-16-18",
-      "section": "Part 1 §17.16.18",
-      "claim": "For every supplied fixed story, the checker recognizes begin, separate, and end markers and requires a valid marker sequence after accepting and rejecting tracked changes."
+      "registryId": "ECMA-PART1-17-10-2",
+      "section": "Part 1 §17.10.2",
+      "claim": "The selector recognizes direct typed Transitional w:footerReference bindings."
     },
     {
-      "registryId": "ECMA-PART1-17-16-13",
-      "section": "Part 1 §17.16.13",
-      "claim": "The checker requires deleted field-code text to stay under deletion markup. Field-marker sequencing and placement are traced separately to Part 1 §17.16.18."
+      "registryId": "ECMA-PART1-17-10-4",
+      "section": "Part 1 §17.10.4",
+      "claim": "A selected header target must have a Transitional w:hdr root."
     },
     {
-      "registryId": "ECMA-PART1-17-13-5-23",
-      "section": "Part 1 §17.13.5.23",
-      "claim": "Move-source range ends must close the currently open source range with the same unique ID."
-    },
-    {
-      "registryId": "ECMA-PART1-17-13-5-24",
-      "section": "Part 1 §17.13.5.24",
-      "claim": "Move-source range starts carry the schema-required ST_DecimalNumber ID and ST_String name. The checker additionally requires unique IDs and non-empty names as SafeDocX verifier policy."
-    },
-    {
-      "registryId": "ECMA-PART1-17-13-5-27",
-      "section": "Part 1 §17.13.5.27",
-      "claim": "Move-destination range ends must close the currently open destination range with the same unique ID."
-    },
-    {
-      "registryId": "ECMA-PART1-17-13-5-28",
-      "section": "Part 1 §17.13.5.28",
-      "claim": "Move-destination range starts carry the schema-required ST_DecimalNumber ID and ST_String name. The checker additionally requires unique IDs, non-empty names, and one-to-one source-name pairing as SafeDocX verifier policy."
+      "registryId": "ECMA-PART1-17-10-3",
+      "section": "Part 1 §17.10.3",
+      "claim": "A selected footer target must have a Transitional w:ftr root."
     }
   ],
   "knownUncheckedAreas": [
-    "full ECMA-376 schema validation",
-    "rendering equivalence",
-    "formatting fidelity",
-    "bookmark semantic equivalence",
-    "comments.xml and comment anchor, reference-ID, relationship, extension-part, and thread integrity",
-    "footnote and endnote definition/reference integrity, including reference IDs and relationships",
-    "relationship target integrity",
-    "package-level OPC constraints",
-    "field instruction parsing, evaluation, and cached-result correctness, including PAGE and NUMPAGES semantics",
-    "OOXML extension and compatibility markup",
-    "advanced revision-record semantics other than the checked move-range pairing subset, including property snapshots, numbering/table/style revisions, custom XML revisions, conflict records, and annotation interactions",
-    "general-purpose XML canonicalization beyond the checked WordprocessingML token surface; comments, processing instructions, DTDs, and CDATA are rejected by the accepted XML subset"
+    "full ECMA-376 or OPC conformance",
+    "Strict OOXML namespaces",
+    "rendering, pagination, inherited roles, and semantic section identity",
+    "unselected parts and complete relationship/content-type integrity",
+    "note definition/reference integrity and comments",
+    "field instruction evaluation, cached results, and bookmark resolution",
+    "general XML canonicalization outside the accepted subset"
   ],
   "futureObligationQueue": []
 }
