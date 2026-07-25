@@ -24,6 +24,14 @@ async function compareInplace(originalBody: string, revisedBody: string) {
 
 const paragraph = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
 
+/**
+ * `CT_Tbl` requires `tblPr` and `tblGrid` before any `w:tr`. Omitting them makes the emitted
+ * document.xml fail the ECMA-376 corpus gate (`check_emitted_document_schema.mjs`), because the
+ * comparison faithfully reproduces whatever table shape it was given.
+ */
+const TABLE_PREAMBLE = '<w:tblPr><w:tblW w:w="2400" w:type="dxa"/></w:tblPr>'
+  + '<w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid>';
+
 describe('inplace empty and table-cell paragraph placement', () => {
   test('tracks an inserted and a deleted empty paragraph by paragraph marks', async ({
     given,
@@ -71,11 +79,11 @@ describe('inplace empty and table-cell paragraph placement', () => {
 
     await when('the documents are compared using inplace reconstruction', async () => {
       const comparison = await compareInplace(
-        '<w:tbl><w:tr><w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>'
+        `<w:tbl>${TABLE_PREAMBLE}<w:tr><w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>`
           + '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>removed cell heading</w:t></w:r></w:p>'
           + '<w:p><w:r><w:t>cell survivor</w:t></w:r></w:p>'
           + '</w:tc></w:tr></w:tbl>',
-        '<w:tbl><w:tr><w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>'
+        `<w:tbl>${TABLE_PREAMBLE}<w:tr><w:tc><w:tcPr><w:tcW w:w="2400" w:type="dxa"/></w:tcPr>`
           + '<w:p><w:r><w:t>cell survivor</w:t></w:r></w:p>'
           + '</w:tc></w:tr></w:tbl>',
       );
