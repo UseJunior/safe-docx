@@ -45,18 +45,19 @@ const BOOKMARK_MARKER_TAGS = ['w:bookmarkStart', 'w:bookmarkEnd'] as const;
 const REVISION_WRAPPER_TAGS = new Set(['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
 
 /**
- * Whether a marker's counterpart (matched on `w:id`) also lives inside `paragraph`.
+ * Whether a marker's counterpart (matched on `w:id`) also lives inside `container`.
  *
  * A bookmark range is identified by the `w:id` shared between its
- * `w:bookmarkStart` and `w:bookmarkEnd`; the name lives on the start only.
- * A range with both ends inside one paragraph covers only that paragraph's
- * content, so it must travel with the paragraph. A range with one end outside
- * spans surviving content and has to keep an anchor there.
+ * `w:bookmarkStart` and `w:bookmarkEnd`; the name lives on the start only. A
+ * range with both boundaries inside one container covers only that container's
+ * content, so it can be repositioned as a unit. A range with one boundary
+ * outside reaches into content the container does not own, and moving the inside
+ * boundary changes which text the range covers.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
  */
-function bookmarkRangeIsEnclosedBy(paragraph: Element, marker: Element): boolean {
+function bookmarkRangeIsEnclosedBy(container: Element, marker: Element): boolean {
   const id = marker.getAttribute('w:id');
   if (!id) return false;
   const counterpartTag =
@@ -64,19 +65,29 @@ function bookmarkRangeIsEnclosedBy(paragraph: Element, marker: Element): boolean
 
   // An unmatched marker has no range to preserve; the orphan repair below
   // synthesizes a counterpart, so treat it as spanning and hoist it out.
-  const counterparts = Array.from(paragraph.getElementsByTagName(counterpartTag)) as Element[];
+  const counterparts = Array.from(container.getElementsByTagName(counterpartTag)) as Element[];
   return counterparts.some((candidate) => candidate.getAttribute('w:id') === id);
 }
 
 /**
  * Lift the bookmark markers nested inside an inline revision wrapper out to the
- * wrapper's own level, keeping starts before it and ends after it.
+ * wrapper's own level.
  *
  * A marker inside `<w:del>` vanishes on Accept All even though the surrounding
- * paragraph survives, so it cannot stay there. Splitting the two sides around
- * the wrapper — rather than dropping both in front of it — keeps the range
- * spanning the content it named instead of collapsing it to zero length. Word
- * emits boundary markers as siblings of the wrapper in the same arrangement.
+ * paragraph survives, so it cannot stay there. Where it lands depends on how
+ * much of the range the wrapper owns:
+ *
+ * - A range the wrapper encloses entirely is placed around the wrapper — start
+ *   before, end after — so it still spans the content it named. Dropping both
+ *   boundaries in front of the wrapper (what this pass used to do) collapses it
+ *   to zero length, which is how the rebuild path lost the range in issue #641.
+ * - A boundary whose counterpart is outside the wrapper keeps the long-standing
+ *   placement in front of the wrapper. Anchoring such a boundary after the
+ *   wrapper instead would silently grow the range over the whole wrapped run.
+ *   Neither placement reproduces the original span, because the boundary sat
+ *   partway through content that one projection removes; repositioning it
+ *   faithfully means splitting the wrapper at the boundary, which is out of
+ *   scope here and tracked separately.
  */
 function liftMarkersAroundWrapper(wrapper: Element): void {
   const parent = wrapper.parentNode;
@@ -85,13 +96,21 @@ function liftMarkersAroundWrapper(wrapper: Element): void {
   const starts = Array.from(wrapper.getElementsByTagName('w:bookmarkStart')) as Element[];
   const ends = Array.from(wrapper.getElementsByTagName('w:bookmarkEnd')) as Element[];
 
+  // Decide before moving anything: lifting the starts out first would empty the
+  // wrapper of them and make every range look like it reaches outside.
+  const endsAfter = ends.filter((end) => bookmarkRangeIsEnclosedBy(wrapper, end));
+  const endsBefore = ends.filter((end) => !endsAfter.includes(end));
+
   for (const start of starts) {
     parent.insertBefore(start, wrapper);
   }
-  let anchor: Node = wrapper;
-  for (const end of ends) {
-    parent.insertBefore(end, anchor.nextSibling);
-    anchor = end;
+  for (const end of endsBefore) {
+    parent.insertBefore(end, wrapper);
+  }
+  // Reverse so each insert lands directly after the wrapper, which leaves
+  // document order among these ends unchanged.
+  for (const end of [...endsAfter].reverse()) {
+    parent.insertBefore(end, wrapper.nextSibling);
   }
 }
 
