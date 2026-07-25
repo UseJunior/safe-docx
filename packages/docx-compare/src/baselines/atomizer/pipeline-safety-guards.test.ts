@@ -56,12 +56,16 @@ describe('pipeline safety and input guards', () => {
     });
   });
 
-  test('inplace publication falls back through rebuild when a contributing note part is malformed', async ({
+  test('inplace publication fails closed — the rebuild fallback also rejects a malformed contributing note part', async ({
     given,
     when,
     then,
     and,
   }: AllureBddContext) => {
+    // The inplace attempt throws AncillaryStorySafetyError; the pipeline then
+    // retries in rebuild mode, whose base archive still carries the corrupted
+    // footnotes.xml, so rebuild fails closed with the same typed diagnostic —
+    // which is what surfaces to the caller. We assert on that terminal error.
     let original: Buffer;
     let revised: Buffer;
     let failure: unknown;
