@@ -325,7 +325,7 @@ function formalAssuranceBoundary(leanCoverage) {
       covered: [...leanCoverage.scope.reconstructionModes.covered],
       excluded: [...leanCoverage.scope.reconstructionModes.outOfScope],
     },
-    stories: ['main', 'footnotes', 'endnotes'],
+    stories: ['main', 'footnotes', 'endnotes', 'selected headers', 'selected footers'],
     projections: ['text', 'field markers'],
     documentSurfaces: {
       covered: [...leanCoverage.scope.documentSurfaces.covered],

@@ -331,7 +331,12 @@ test('the human report retains the exact formal-assurance limitations', async ()
   const report = await readFile(path.join(root, 'spec-compliance/generated/safe-docx-capability-projection.md'), 'utf8');
   assert.match(report, /scope metadata only and establishes \*\*no capability row\*\*/);
   assert.match(report, /Covered reconstruction mode: inplace\. Excluded mode: rebuild\./);
-  assert.match(report, /Covered stories: main, footnotes, endnotes\. Projections: text and field markers only\./);
-  assert.match(report, /Exact excluded surfaces: word\/comments\.xml and all comment anchors/);
-  assert.match(report, /Exact known unchecked areas: full ECMA-376 schema validation;/);
+  assert.match(
+    report,
+    /Covered stories: main, footnotes, endnotes, selected headers, selected footers\. Projections: text and field markers only\./
+  );
+  assert.match(report, /Exact excluded surfaces: word\/comments\.xml and comment semantics;/);
+  assert.match(report, /inherited or omitted header\/footer role semantics;/);
+  assert.match(report, /unselected header\/footer parts and unselected relationship semantics;/);
+  assert.match(report, /Exact known unchecked areas: full ECMA-376 or OPC conformance;/);
 });

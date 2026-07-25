@@ -46,7 +46,9 @@
     "stories": [
       "main",
       "footnotes",
-      "endnotes"
+      "endnotes",
+      "selected headers",
+      "selected footers"
     ],
     "projections": [
       "text",

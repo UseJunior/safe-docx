@@ -12,7 +12,7 @@ The registry `verification/registry/lean-xml-checker-coverage.json` is scope met
 
 Covered reconstruction mode: inplace. Excluded mode: rebuild.
 
-Covered stories: main, footnotes, endnotes. Projections: text and field markers only.
+Covered stories: main, footnotes, endnotes, selected headers, selected footers. Projections: text and field markers only.
 
 Exact covered surfaces: required word/document.xml token stream with exactly one direct w:body, at most one terminal body-level w:sectPr, and ancestry-aware direct w:body/w:sectPr or w:body/w:p/w:pPr/w:sectPr binding inventory; optional word/footnotes.xml and word/endnotes.xml token streams; direct package-relationship records in word/_rels/document.xml.rels; direct explicit first/default/even w:headerReference and w:footerReference slots aligned by section ordinal, kind, and role; selected Transitional w:hdr and w:ftr token streams deduplicated by the complete three-side physical key.
 
