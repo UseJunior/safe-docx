@@ -11,13 +11,14 @@ const REL_BASE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const FOOTER_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml';
+const TEST_FEATURE = 'Surface Unrepresented Section Changes';
 const LAYOUT =
   '<w:pgSz w:w="12240" w:h="15840"/>' +
   '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>';
 
 const test = testAllure
   .epic('Document Comparison')
-  .withLabels({ feature: 'surface-unrepresented-section-changes' });
+  .withLabels({ feature: TEST_FEATURE });
 
 async function issue648Pair(): Promise<readonly [Buffer, Buffer]> {
   const body = paragraphWithText('Page one body.') + paragraphWithText('Page two body.');
