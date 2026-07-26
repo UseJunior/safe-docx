@@ -77,6 +77,22 @@ export interface CompareStats {
 
 export type ReconstructionMode = 'rebuild' | 'inplace';
 
+export type UnrepresentedChangeScope = 'section' | 'header' | 'footer';
+export type UnrepresentedChangeKind = 'added' | 'removed' | 'changed';
+
+/**
+ * A package-level input difference not expressed by emitted tracked-change
+ * markup. Revision counts intentionally remain text-oriented.
+ */
+export interface UnrepresentedChange {
+  scope: UnrepresentedChangeScope;
+  kind: UnrepresentedChangeKind;
+  /** Zero-based document-order section ordinal. */
+  sectionIndex: number;
+  /** Header/footer role when scope is not `section`. */
+  role?: 'default' | 'first' | 'even';
+}
+
 export type ReconstructionFallbackReason =
   | 'round_trip_safety_check_failed'
   | 'ancillary_story_safety_check_failed';
@@ -537,6 +553,11 @@ export interface CompareResult {
   stats: CompareStats;
   /** Which engine was used */
   engine: 'wmlcomparer' | 'atomizer';
+  /**
+   * Input differences that the emitted revision markup does not represent.
+   * Absent when no supported package-level difference is detected.
+   */
+  unrepresentedChanges?: UnrepresentedChange[];
   /**
    * Requested reconstruction mode. Present for atomizer outputs.
    */
