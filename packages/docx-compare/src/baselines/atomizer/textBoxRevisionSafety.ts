@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { OOXML } from '@usejunior/docx-core';
+import { canonicalNode } from './opaquePassthrough.js';
 import { parseDocumentXml } from './xmlToWmlElement.js';
 
-const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 
 export interface TextBoxRevisionChange {
@@ -35,35 +35,6 @@ export class UnsupportedTextBoxRevisionError extends Error {
     this.name = 'UnsupportedTextBoxRevisionError';
     this.changes = changes;
   }
-}
-
-function structuralSignature(node: Node): string {
-  if (node.nodeType === 3 || node.nodeType === 4) {
-    return JSON.stringify(['text', node.nodeValue ?? '']);
-  }
-  if (node.nodeType !== 1) return '';
-
-  const element = node as Element;
-  const attributes = Array.from(element.attributes)
-    .filter((attribute) => attribute.namespaceURI !== XMLNS_NS)
-    .map((attribute) => [
-      attribute.namespaceURI ?? '',
-      attribute.localName,
-      attribute.value,
-    ] as const)
-    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
-  const children: string[] = [];
-  for (let child = element.firstChild; child; child = child.nextSibling) {
-    const signature = structuralSignature(child);
-    if (signature) children.push(signature);
-  }
-
-  return JSON.stringify([
-    element.namespaceURI ?? '',
-    element.localName,
-    attributes,
-    children,
-  ]);
 }
 
 function textBoxParagraphId(textBox: Element): string | undefined {
@@ -99,10 +70,10 @@ export function assertTextBoxContentUnchanged(
     const originalTextBox = originalTextBoxes[index];
     const revisedTextBox = revisedTextBoxes[index];
     const originalSignature = originalTextBox
-      ? createHash('sha256').update(structuralSignature(originalTextBox)).digest('hex')
+      ? createHash('sha256').update(canonicalNode(originalTextBox)).digest('hex')
       : undefined;
     const revisedSignature = revisedTextBox
-      ? createHash('sha256').update(structuralSignature(revisedTextBox)).digest('hex')
+      ? createHash('sha256').update(canonicalNode(revisedTextBox)).digest('hex')
       : undefined;
     if (originalSignature === revisedSignature) continue;
 
