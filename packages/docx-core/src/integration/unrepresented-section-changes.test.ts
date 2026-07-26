@@ -1,5 +1,7 @@
 import { describe, expect } from 'vitest';
 import { compareDocuments } from '@usejunior/docx-compare';
+import { DocxArchive } from '../shared/docx/DocxArchive.js';
+import { auditSectPr } from '../primitives/sectPrAudit.js';
 import {
   buildDocxWithAncillaryParts,
   paragraphWithText,
@@ -144,6 +146,10 @@ describe('unrepresented section and header/footer reporting', () => {
         `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>` +
         `</w:sectPrChange></w:sectPr>`,
     });
+    const revisedArchive = await DocxArchive.load(revised);
+    expect(
+      auditSectPr(await revisedArchive.getDocumentXml()).stats.totalSectPrCount,
+    ).toBe(1);
     const result = await compareDocuments(original, revised, {
       engine: 'atomizer',
       reconstructionMode: 'inplace',

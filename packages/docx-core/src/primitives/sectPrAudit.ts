@@ -224,7 +224,18 @@ export function auditSectPr(
     }
   }
 
-  const sectPrNodes = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, 'sectPr'));
+  const sectPrNodes = Array.from(doc.getElementsByTagNameNS(OOXML.W_NS, 'sectPr'))
+    .filter((sectPr) => {
+      for (let ancestor = sectPr.parentNode; ancestor; ancestor = ancestor.parentNode) {
+        if (
+          ancestor.nodeType === 1 &&
+          isWmlElement(ancestor as Element, 'sectPrChange')
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
   let paragraphLevelSectPrCount = 0;
   let referenceCount = 0;
 

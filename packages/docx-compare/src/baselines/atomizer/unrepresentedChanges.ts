@@ -1,4 +1,5 @@
 import {
+  auditSectPr,
   DocxArchive,
   childElements,
   getLeafText,
@@ -9,10 +10,6 @@ import type {
   UnrepresentedChangeKind,
 } from '../../compare-types.js';
 
-const REL_NS =
-  'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-const HEADER_REL = `${REL_NS}/header`;
-const FOOTER_REL = `${REL_NS}/footer`;
 const REVISION_TAGS = new Set(['sectPrChange']);
 
 interface StorySlot {
@@ -55,42 +52,17 @@ function canonicalElement(element: Element): string {
     `{${children.join('')}}(${getLeafText(element) ?? ''})`;
 }
 
-function relationshipMap(xml: string | null): Map<string, { type: string; target: string }> {
-  const result = new Map<string, { type: string; target: string }>();
-  if (!xml) return result;
-  const doc = parseXml(xml);
-  for (const element of Array.from(doc.getElementsByTagName('*'))) {
-    if (localName(element) !== 'Relationship') continue;
-    result.set(element.getAttribute('Id') ?? '', {
-      type: element.getAttribute('Type') ?? '',
-      target: element.getAttribute('Target') ?? '',
-    });
-  }
-  return result;
-}
-
-function normalizeWordTarget(target: string): string {
-  const segments = `word/${target}`.split('/');
-  const normalized: string[] = [];
-  for (const segment of segments) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') normalized.pop();
-    else normalized.push(segment);
-  }
-  return normalized.join('/');
-}
-
 async function readSections(archive: DocxArchive): Promise<SectionState[]> {
-  const document = parseXml(await archive.getDocumentXml());
-  const relationships = relationshipMap(
-    await archive.getFile('word/_rels/document.xml.rels'),
-  );
+  const documentXml = await archive.getDocumentXml();
+  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
+  const document = parseXml(documentXml);
+  const audit = auditSectPr(documentXml, relationshipsXml);
   const sections = Array.from(document.getElementsByTagName('*'))
     .filter((element) =>
       localName(element) === 'sectPr' && !hasAncestor(element, 'sectPrChange'),
     );
 
-  return Promise.all(sections.map(async (section) => {
+  return Promise.all(sections.map(async (section, sectionIndex) => {
     const propertyClone = section.cloneNode(true) as Element;
     for (const child of childElements(propertyClone)) {
       const name = localName(child);
@@ -100,22 +72,15 @@ async function readSections(archive: DocxArchive): Promise<SectionState[]> {
     }
 
     const slots = new Map<string, StorySlot>();
-    for (const child of childElements(section)) {
-      const local = localName(child);
-      if (local !== 'headerReference' && local !== 'footerReference') continue;
-      const kind = local === 'headerReference' ? 'header' : 'footer';
-      const roleValue = child.getAttribute('w:type') || child.getAttribute('type') || 'default';
-      if (roleValue !== 'default' && roleValue !== 'first' && roleValue !== 'even') continue;
-      const id = child.getAttributeNS(REL_NS, 'id') || child.getAttribute('r:id') || '';
-      const relationship = relationships.get(id);
-      const expectedType = kind === 'header' ? HEADER_REL : FOOTER_REL;
-      if (!relationship || relationship.type !== expectedType) continue;
-      const storyXml = await archive.getFile(normalizeWordTarget(relationship.target));
+    for (const binding of audit.bindings.filter(
+      (candidate) => candidate.sectionOrdinal === sectionIndex,
+    )) {
+      const storyXml = await archive.getFile(binding.targetPath);
       if (!storyXml) continue;
       const storyRoot = parseXml(storyXml).documentElement;
-      slots.set(`${kind}:${roleValue}`, {
-        kind,
-        role: roleValue,
+      slots.set(`${binding.kind}:${binding.role}`, {
+        kind: binding.kind,
+        role: binding.role,
         content: canonicalElement(storyRoot),
       });
     }
