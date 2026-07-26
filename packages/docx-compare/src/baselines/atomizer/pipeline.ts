@@ -1017,12 +1017,20 @@ export async function compareDocumentsAtomizer(
       { atomizeParagraphLevelMarkers: true },
       'rebuild'
     );
-    assembled = await assembleCandidate(comparisonResult);
+    try {
+      assembled = await assembleCandidate(comparisonResult);
+    } catch (rebuildError) {
+      if (!(rebuildError instanceof AncillaryStorySafetyError)) throw rebuildError;
+      throw new AncillaryStorySafetyError(rebuildError.issues, [
+        { reconstructionMode: 'inplace', issues: error.issues },
+        { reconstructionMode: 'rebuild', issues: rebuildError.issues },
+      ]);
+    }
   }
 
   // Rebuild remains the terminal main-story strategy. Its established
-  // round-trip diagnostics stay caller-visible; ancillary failures have
-  // already thrown before this point.
+  // round-trip diagnostics stay caller-visible. A terminal ancillary failure
+  // throws with both reconstruction attempts attached.
   let rebuildSafetyDiagnostics: ReconstructionRebuildSafetyDiagnostics | undefined;
   if (comparisonResult.outputMode === 'rebuild') {
     const safety = evaluateRoundTripSafety(comparisonResult.newDocumentXml);

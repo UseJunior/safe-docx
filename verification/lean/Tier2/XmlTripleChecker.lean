@@ -837,6 +837,9 @@ def WalkResult.isValid : WalkResult → Bool
   | .ok _ => true
   | .invalid => false
 
+def FieldCtx.insideCode (ctx : FieldCtx) : Bool :=
+  ctx.any (fun pastSeparator => !pastSeparator)
+
 def stepField (r : WalkResult) : XmlTok → WalkResult
   | .fldChar .begin =>
     match r with
@@ -854,8 +857,8 @@ def stepField (r : WalkResult) : XmlTok → WalkResult
     | .invalid => .invalid
   | .instrText _ =>
     match r with
-    | .ok (false :: _) => r
-    | _ => .invalid
+    | .ok ctx => if ctx.insideCode then r else .invalid
+    | .invalid => .invalid
   | .delInstrText _ => .invalid
   | _ => r
 

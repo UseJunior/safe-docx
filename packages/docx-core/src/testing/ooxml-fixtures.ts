@@ -107,6 +107,22 @@ export const COMPLETE_PAGEREF_FIELD = completeField(FIELD_INSTRUCTIONS.PAGEREF, 
 export const COMPLETE_REF_FIELD = completeField(FIELD_INSTRUCTIONS.REF, 'Section 1');
 
 /**
+ * Word/DMS serialization of an inner field result while the enclosing field is
+ * still in its instruction-code region. Although the inner field is past its
+ * separator, the cached value remains instruction text for the outer field.
+ */
+export const NESTED_IF_DOCPROPERTY_FIELD_WITH_INSTRUCTION_RESULT =
+  fldChar('begin') +
+  instrText(' IF "0" = "1" "', { preserve: true }) +
+  fldChar('begin') +
+  instrText(' DOCPROPERTY "SWDocID" ', { preserve: true }) +
+  fldChar('separate') +
+  instrText('RLF1 23607329v.2', { preserve: true }) +
+  fldChar('end') +
+  instrText('" ""', { preserve: true }) +
+  fldChar('end');
+
+/**
  * Build a topology-sensitive complex field used by forced-rebuild tests.
  *
  * Every field component has distinct run properties, the instruction is

@@ -2,11 +2,11 @@
 Tier 2 — field-structure predicate.
 
 Definitional mirror of the two checks in `validateFieldStructure`
-(`packages/docx-core/src/baselines/atomizer/pipeline.ts:352-402`):
+(`packages/docx-core/src/shared/field-structure.ts`):
 
   1. global `w:fldChar` begin/end counts are balanced;
-  2. every `w:instrText` / `w:delInstrText` sits inside an open, pre-`separate`
-     field body.
+  2. every `w:instrText` / `w:delInstrText` sits inside the instruction-code
+     region of at least one enclosing field.
 
 Check (2) walks every atom in document order carrying a *stack* of
 "separator-seen" bits indexed by field depth — exactly the TS engine's
@@ -40,20 +40,27 @@ def WalkResult.isValid : WalkResult → Bool
   | .ok _ => true
   | .invalid => false
 
+/-- At least one enclosing field is still before its separator. Word may emit
+    an inner field's cached result as instruction text while an outer field
+    remains in its instruction-code region. -/
+def FieldCtx.insideCode (ctx : FieldCtx) : Bool :=
+  ctx.any (fun pastSeparator => !pastSeparator)
+
 /-- Step the field-context walk across one atom, at structural del-ancestry depth
     `delDepth` (the number of enclosing `w:del` wrappers). Mirrors the main
-    `validateFieldStructure` scan at `pipeline.ts:525-560`:
+    `validateFieldStructure` scan in `field-structure.ts`:
 
     * field-context state — `begin` pushes a fresh `false`; `separate` sets the
-      top bit (no-op on the empty stack, matching the `if (depth > 0)` guard at
-      `pipeline.ts:548`); `end` pops (no-op on empty, `pipeline.ts:550`);
-      `instrText` requires a non-empty stack whose top bit is `false`
-      (`pipeline.ts:553`);
+      top bit (no-op on the empty stack, matching the runtime's `depth > 0`
+      guard); `end` pops (no-op on empty);
+      `instrText` requires at least one `false` bit in the stack, because an
+      outer field may remain in its instruction region after an inner field's
+      separator (`field-structure.ts`, issue #645);
     * DeletedFieldCode locality (constraint (3)) — a `w:fldChar` of ANY
-      `w:fldCharType` at `delDepth > 0` is `invalid` (`pipeline.ts:542`, G1), and a
-      `w:delInstrText` at `delDepth = 0` is `invalid` (`pipeline.ts:555`, G2). The
-      `delInstrText` open-pre-`separate` field check (`pipeline.ts:556`) still
-      applies once the del-ancestry gate passes. -/
+      `w:fldCharType` at `delDepth > 0` is `invalid` (G1), and a
+      `w:delInstrText` at `delDepth = 0` is `invalid` (G2). The same
+      enclosing-code-region check still applies to `delInstrText` once
+      the del-ancestry gate passes. -/
 def stepAtom (delDepth : Nat) (r : WalkResult) (a : Atom) : WalkResult :=
   match r with
   | .invalid => .invalid
@@ -76,16 +83,12 @@ def stepAtom (delDepth : Nat) (r : WalkResult) (a : Atom) : WalkResult :=
           | [] => .ok []
           | _ :: rest => .ok rest
     | .instrText _ =>
-      match ctx with
-      | false :: _ => .ok ctx
-      | _ => .invalid
+      if ctx.insideCode then .ok ctx else .invalid
     | .delInstrText _ =>
       -- constraint (3): `delInstrText` only inside a `del` ancestor (G2)
       if delDepth = 0 then .invalid
       else
-        match ctx with
-        | false :: _ => .ok ctx
-        | _ => .invalid
+        if ctx.insideCode then .ok ctx else .invalid
 
 /-- Step the field-context walk across a run's atoms, left to right, at del-depth
     `delDepth`. -/
@@ -95,9 +98,9 @@ def stepAtoms (delDepth : Nat) (r : WalkResult) (as : List Atom) : WalkResult :=
 /-- Walk the field context across a block sequence in document order at
     del-ancestry depth `delDepth`. The walk descends into every wrapper and
     transparent container, because the TS `validateFieldStructure` scans every
-    element regardless of tag (`pipeline.ts:528`). Only `del` is structurally
+    element regardless of tag. Only `del` is structurally
     significant: descending into a `del` subtree increments `delDepth`
-    (`pipeline.ts:533-538`), so the atom-level constraint-(3) gate in `stepAtom`
+    so the atom-level constraint-(3) gate in `stepAtom`
     can see the del-ancestry. The linear field context flows across the `del`
     boundary unchanged, exactly as the engine shares `depth`/`pastSeparatorAtDepth`
     across the `insideDelDepth` recursion. -/
@@ -142,8 +145,8 @@ termination_by bs => sizeOf bs
 def fldCharBalanced (d : Doc) : Bool :=
   countBlocks Atom.isBegin d.blocks == countBlocks Atom.isEnd d.blocks
 
-/-- `validateFieldStructure` — definitional mirror of the main scan at
-    `pipeline.ts:496-565` (begin/end balance, the open-field walk, and the
+/-- `validateFieldStructure` — definitional mirror of the main scan in
+    `field-structure.ts` (begin/end balance, the open-field walk, and the
     DeletedFieldCode locality constraint). The walk starts at del-depth 0. -/
 def validateFieldStructure (d : Doc) : Bool :=
   fldCharBalanced d && (walkBlocks 0 (.ok []) d.blocks).isValid
