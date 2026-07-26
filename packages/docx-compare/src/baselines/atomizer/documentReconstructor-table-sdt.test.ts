@@ -20,10 +20,12 @@ import {
   rejectAllChanges,
 } from './trackChangesAcceptorAst.js';
 
+const TEST_FEATURE = 'Document Reconstructor Table SDT';
+
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'Document Reconstructor Table SDT',
+    feature: TEST_FEATURE,
     story: 'Table-scoped content controls remain editable in rebuild',
     severity: 'critical',
   })
