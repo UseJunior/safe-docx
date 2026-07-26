@@ -16,7 +16,8 @@ const FOOTER_CONTENT_TYPE =
 const TEST_FEATURE = 'Surface Unrepresented Section Changes';
 const LAYOUT =
   '<w:pgSz w:w="12240" w:h="15840"/>' +
-  '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>';
+  '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"' +
+  ' w:header="720" w:footer="720" w:gutter="0"/>';
 
 const test = testAllure
   .epic('Document Comparison')
