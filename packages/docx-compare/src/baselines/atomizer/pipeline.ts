@@ -120,6 +120,7 @@ import {
   AncillaryStorySafetyError,
   evaluateAncillaryFieldSafety,
 } from './ancillaryFieldSafety.js';
+import { assertTextBoxContentUnchanged } from './textBoxRevisionSafety.js';
 
 /**
  * Options for the atomizer pipeline.
@@ -634,6 +635,7 @@ export async function compareDocumentsAtomizer(
   // Step 2: Extract document.xml
   const originalXml = canonicalizeWordprocessingPrefixes(await originalArchive.getDocumentXml());
   const revisedXml = canonicalizeWordprocessingPrefixes(await revisedArchive.getDocumentXml());
+  assertTextBoxContentUnchanged(originalXml, revisedXml);
 
   // Extract numbering.xml if available
   const originalNumberingXml = await originalArchive.getNumberingXml() ?? undefined;
