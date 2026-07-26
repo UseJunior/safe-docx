@@ -190,14 +190,15 @@ part: 1
 section: "17.5.2.29"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts
 ```
 
 A block `w:sdt` surrounds one or more block-level structures and orders its
 properties, optional end properties, and content under the CT_SdtBlock model.
 safe-docx preserves an unchanged direct `w:body/w:sdt` as one scaffold-owned
-boundary during forced rebuild. Exact subtree preservation is a bounded
-metamorphic invariant rather than a requirement imposed by ECMA-376.
+boundary during forced rebuild and reconstructs controlled paragraphs for a
+block control directly inside `w:tc`. Exact subtree/wrapper preservation is a
+bounded metamorphic invariant rather than a requirement imposed by ECMA-376.
 
 ## [ECMA-PART1-17-5-2-31] w:sdt inline-level structured document tag
 
@@ -215,6 +216,37 @@ are its properties, optional end properties, and content. The issue #582 pilot
 preserves an unchanged inline SDT as one opaque semantic boundary during rebuild;
 it does not author or edit controls and makes no claim about row or cell SDTs.
 
+## [ECMA-PART1-17-5-2-32] w:sdt cell-level structured document tag
+
+```yaml
+edition: 5
+part: 1
+section: "17.5.2.32"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtCell
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts
+```
+
+A cell-level `w:sdt` surrounds one or more `w:tc` elements within a table row
+and orders its properties, optional end properties, and content under the
+CT_SdtCell model. safe-docx correlates the wrapper at its direct `w:tr` child
+position while rebuilding controlled paragraphs inside the cells.
+
+## [ECMA-PART1-17-5-2-33] w:sdtContent cell-level structured document tag content
+
+```yaml
+edition: 5
+part: 1
+section: "17.5.2.33"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentCell
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts
+```
+
+Cell-level `w:sdtContent` contains controlled table cells. The bounded rebuild
+path recognizes one or more direct `w:tc` children and fails closed on wrapper
+or cell-scaffold mutation.
+
 ## [ECMA-PART1-17-5-2-34] w:sdtContent block-level structured document tag content
 
 ```yaml
@@ -223,13 +255,14 @@ part: 1
 section: "17.5.2.34"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtContentBlock
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts
 ```
 
 Block-level `w:sdtContent` contains the controlled block structures. The bounded
-rebuild path recognizes only a contiguous sequence of direct controlled
-paragraphs under a direct body-level control; tables and nested controls remain
-outside the supported placement.
+rebuild path recognizes a contiguous sequence of direct controlled paragraphs
+under a direct body-level control, or direct paragraph/table children when the
+block control is inside `w:tc`; nested controls remain outside the supported
+placement.
 
 ## [ECMA-PART1-17-5-2-36] w:sdtContent inline-level structured document tag content
 
@@ -253,7 +286,7 @@ part: 1
 section: "17.5.2.38"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtPr
-verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts
+verifiedBy: packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts
 ```
 
 The pilot retains known and ignorable-extension children under `w:sdtPr` in

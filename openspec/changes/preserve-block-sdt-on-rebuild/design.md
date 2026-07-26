@@ -18,20 +18,27 @@ payload such as DrawingML.
 - Goals: pair multiple or identical controls deterministically from local body
   placement and ownership, with precomputed/memoized group identity and
   deterministic complexity evidence.
-- Non-Goals: row/cell/nested/editable controls; controls outside `document.xml`;
-  footer or ancillary reconstruction; tables inside a supported control; rsids
-  outside the preserved subtree; fields; `sectPr`; arbitrary package parts.
+- Goals: preserve row- and cell-scoped control wrappers through their existing
+  table scaffold while allowing ordinary tracked paragraph reconstruction
+  inside `w:sdtContent`.
+- Non-Goals: nested controls; controls outside `document.xml`;
+  footer or ancillary reconstruction; tables inside a direct-body opaque
+  control; rsids outside the preserved subtree; fields; `sectPr`; arbitrary
+  package parts.
 
 ## Decisions
 
 ### Placement is explicit
 
 `OpaquePassthroughNode` records `placementKind` as `inline-run` or
-`body-block`. Inline descriptors retain one paragraph owner and paragraph-run
+`body-block`, plus `row-block` and `cell-block`. Inline descriptors retain one paragraph owner and paragraph-run
 emission. Body-block descriptors record their direct body-child ordinal and a
 closed, contiguous interval of global paragraph slots. A block descriptor is
 attached to every atom in every owned paragraph, but its subtree is emitted only
-by the body scaffold.
+by the body scaffold. Row/cell descriptors record their direct parent-child
+ordinal and a wrapper fingerprint that replaces controlled paragraphs with
+structural markers, so paragraph content can change without laundering wrapper
+or table/cell scaffold changes.
 
 ### Correlation is local and fail closed
 
@@ -72,20 +79,24 @@ also fail closed before correlation.
 ### Claims remain bounded
 
 Block structure is cited to ECMA-376 Part 1 §§17.5.2.29, 17.5.2.34, and
-17.5.2.38. Exact opaque preservation and package-part stability are SafeDocX
+17.5.2.38; cell-level structure inside a row is cited to §§17.5.2.32 and
+17.5.2.33. Exact opaque preservation and package-part stability are SafeDocX
 metamorphic invariants, not requirements imposed by ECMA-376.
 
 ## Risks / Trade-offs
 
-- An otherwise safe edit inside the control is rejected. This avoids silently
-  preserving stale controlled content or flattening unsupported structure.
-- Block controls containing tables are rejected in this slice because paragraph
-  slot ownership alone cannot represent table/cell placement safely.
+- An otherwise safe edit inside a direct-body opaque control is rejected. This
+  avoids silently preserving stale controlled content or flattening unsupported
+  structure.
+- Direct body controls containing tables remain rejected because their opaque
+  paragraph-slot ownership cannot represent nested table placement safely.
+- Row/cell controls allow paragraph edits but reject wrapper, cell-property, or
+  table-shape changes that the paragraph reconstructor cannot safely represent.
 - Footer SDTs remain outside reconstruction support; package-clone identity may
   be observed only as no-regression evidence.
 
 ## Migration Plan
 
-No API migration is required. Existing inline controls keep their current
-behavior. Newly supported direct body-level controls pass through only when the
-strict block ownership contract is satisfied.
+No API migration is required. Existing inline and direct-body controls keep
+their current behavior. Row/cell controls use the existing table scaffold only
+when their wrapper and structural identity correlate.

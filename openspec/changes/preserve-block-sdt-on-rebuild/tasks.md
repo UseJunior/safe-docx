@@ -44,3 +44,10 @@
 - [x] 7.3 Add timeout-free multi-root cycle, shared dependency, and positive/negative target controls.
 - [x] 7.4 Re-run focused/full tests, preflight/gates, DPT, schema, and LibreOffice checks.
 - [x] 7.5 Commit the final review fix conventionally without pushing.
+
+## 8. Table-scoped reconstruction bug fix
+
+- [x] 8.1 Add row-block and cell-block placement identities with container-relative anchoring.
+- [x] 8.2 Permit controlled paragraph edits while failing closed on wrapper or scaffold mutation.
+- [x] 8.3 Add forced-rebuild accept/reject evidence for both legal table-scoped placements.
+- [x] 8.4 Run the focused and mandatory repository gates and commit with `Fixes: #660`.

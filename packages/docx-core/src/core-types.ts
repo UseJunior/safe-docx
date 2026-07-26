@@ -114,8 +114,8 @@ export interface FormatChangeInfo {
  * assigning `emissionElements` from the original side.
  */
 export interface OpaquePassthroughNode {
-  /** Determines whether paragraph-run emission or the body scaffold owns output. */
-  placementKind: 'inline-run' | 'inline-range' | 'body-block';
+  /** Determines whether paragraph-run emission or a structural scaffold owns output. */
+  placementKind: 'inline-run' | 'inline-range' | 'body-block' | 'row-block' | 'cell-block';
   namespaceUri: string;
   localName: string;
   documentOrdinal: number;
@@ -125,6 +125,8 @@ export interface OpaquePassthroughNode {
   containerIdentity: string;
   /** Direct body-child position for a scaffold-owned block boundary. */
   bodyChildOrdinal?: number;
+  /** Direct parent-child position for a table-scoped scaffold boundary. */
+  containerChildOrdinal?: number;
   /** Inclusive direct paragraph-child range for an ordered inline payload. */
   inlineChildStartOrdinal?: number;
   inlineChildEndOrdinal?: number;

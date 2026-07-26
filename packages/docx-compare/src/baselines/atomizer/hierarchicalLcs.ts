@@ -438,7 +438,8 @@ function createOpaqueGroupIdentityResolver(instrumentation?: GroupLcsInstrumenta
     const identity = descriptors
       .map((descriptor) =>
         `${descriptor.placementKind}\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
-        `${descriptor.bodyChildOrdinal ?? ''}\u0000${descriptor.ownedParagraphCount ?? ''}\u0000` +
+        `${descriptor.bodyChildOrdinal ?? ''}\u0000${descriptor.containerChildOrdinal ?? ''}\u0000` +
+        `${descriptor.ownedParagraphCount ?? ''}\u0000` +
         `${descriptor.inlineRangeOrdinal ?? ''}\u0000` +
         `${relativeByDescriptor?.get(descriptor) ?? ''}\u0000` +
         `${descriptor.documentOrdinal}\u0000${descriptor.semanticFingerprint}\u0000` +
