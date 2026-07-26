@@ -23,8 +23,9 @@
  *
  * Faithful subset: the random generator stays inside the region where the Lean model and
  * the production engine provably agree — fldChar/instrText only in top-level runs;
- * delInstrText only in its one OOXML-legal home (inside a w:del, in an open pre-separate
- * field), where both engines agree; and every paragraph keeps a surviving top-level run.
+ * delInstrText only inside a w:del while at least one enclosing field remains
+ * pre-separator, where both engines agree; and every paragraph keeps a surviving
+ * top-level run.
  * Model gaps that live OUTSIDE that subset are pinned by explicit cases rather than hidden.
  * G1/G2 — the DeletedFieldCode locality constraint — are now CLOSED: the Lean model enforces
  * it (`add-lean-deleted-field-code-constraint`), so the two engines AGREE:
@@ -604,6 +605,47 @@ describeMaybe('Lean Differential Harness - Tier 2 helper extensional equivalence
         expect(lean!.validate).toBe(true);
         expect(tsValidate).toBe(true);
         expect(lean!.validate).toBe(tsValidate);
+      });
+    },
+  );
+
+  test(
+    'nested-field instruction result: Lean and TS both use any enclosing pre-separator field',
+    async ({ given, when, then }: AllureBddContext) => {
+      const nestedWordField: WireDoc = [
+        {
+          body: [
+            {
+              run: {
+                content: [
+                  { fldChar: 'begin' },
+                  { instrText: ' IF "0" = "1" "' },
+                  { fldChar: 'begin' },
+                  { instrText: ' DOCPROPERTY "SWDocID" ' },
+                  { fldChar: 'separate' },
+                  { instrText: 'RLF1 23607329v.2' },
+                  { fldChar: 'end' },
+                  { instrText: '" ""' },
+                  { fldChar: 'end' },
+                ],
+              },
+            },
+          ],
+        },
+      ];
+      let lean: HelperResult;
+      let tsValidate = false;
+
+      await given('Word instruction text after an inner separator while the outer IF field remains pre-separator', () => {
+        lean = leanHelperBatch([nestedWordField])[0]!;
+      });
+      await when('both field-structure implementations validate it', () => {
+        tsValidate = validateFieldStructure(renderDocToXml(nestedWordField));
+      });
+      await then('both accept the Word-authored nested-field serialization', () => {
+        expect(lean.validate).toBe(true);
+        expect(tsValidate).toBe(true);
+        expect(lean.validate).toBe(tsValidate);
       });
     },
   );

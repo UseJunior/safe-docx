@@ -59,6 +59,7 @@ export function hasFldCharInsideDel(documentXml: string): boolean {
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
  * @ooxmlSpec ooxml.ecma376.5ed.part1.fields.complex-field-characters
+ * @see https://github.com/UseJunior/safe-docx/issues/645
  */
 export function collectFieldStructureIssues(input: string | FieldStory[]): FieldStructureIssue[] {
   if (typeof input === 'string') {
@@ -219,6 +220,13 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
     issues.push({ code, message, story, element });
   }
 
+  function isInsideOpenFieldCodeRegion(): boolean {
+    for (let fieldDepth = 1; fieldDepth <= depth; fieldDepth++) {
+      if (!pastSeparatorAtDepth[fieldDepth]) return true;
+    }
+    return false;
+  }
+
   function scan(node: Element): void {
     for (let child = node.firstChild; child; child = child.nextSibling) {
       if (child.nodeType !== 1) continue;
@@ -252,14 +260,14 @@ function collectFieldStructureIssuesForStory(documentXml: string, story: string)
           if (depth > 0) depth--;
         }
       } else if (isW(el, 'instrText')) {
-        if (depth === 0 || pastSeparatorAtDepth[depth]) {
+        if (!isInsideOpenFieldCodeRegion()) {
           push('INSTRUCTION_TEXT_OUTSIDE_FIELD_CODE', 'w:instrText must appear inside an open field code region', 'w:instrText');
         }
       } else if (isW(el, 'delInstrText')) {
         if (insideDelDepth === 0) {
           push('DELETED_INSTRUCTION_TEXT_OUTSIDE_DELETION', 'w:delInstrText must appear inside w:del', 'w:delInstrText');
         }
-        if (depth === 0 || pastSeparatorAtDepth[depth]) {
+        if (!isInsideOpenFieldCodeRegion()) {
           push('DELETED_INSTRUCTION_TEXT_OUTSIDE_FIELD_CODE', 'w:delInstrText must appear inside an open field code region', 'w:delInstrText');
         }
       } else if (isW(el, 't') && (insideDelDepth > 0 || insideMoveFromDepth > 0)) {

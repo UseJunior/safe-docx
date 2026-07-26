@@ -136,7 +136,10 @@ export {
   compareDocumentsAtomizer,
 } from './baselines/atomizer/pipeline.js';
 export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';
-export { AncillaryStorySafetyError } from './baselines/atomizer/ancillaryFieldSafety.js';
+export {
+  AncillaryStorySafetyError,
+  type AncillaryStorySafetyAttempt,
+} from './baselines/atomizer/ancillaryFieldSafety.js';
 export {
   UnsupportedTextBoxRevisionError,
   assertTextBoxContentUnchanged,

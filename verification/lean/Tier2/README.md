@@ -45,10 +45,11 @@ the document-level `preservationFriendly d`, both `accept d` and `reject d` sati
 document-level field walk and begin/end balance unchanged — strictly weaker than
 the per-subtree `recursivelyWellformed` (`∀ ctx` neutrality of every wrapper
 subtree). The field-context walk carries a depth-indexed stack of "separator-seen"
-bits mirroring the TS engine's `pastSeparatorAtDepth: number[]`
-(`packages/docx-core/src/baselines/atomizer/pipeline.ts:525-560`) and a structural
-del-ancestry depth enforcing the DeletedFieldCode locality constraint
-(`pipeline.ts:542`/`555`).
+bits mirroring the TS engine's `pastSeparatorAtDepth: number[]`. Instruction text
+is valid when at least one enclosing field remains before its separator, which
+covers Word's nested-field result serialization (#645). The walk also carries a
+structural del-ancestry depth enforcing the DeletedFieldCode locality constraint
+in `field-structure.ts`.
 
 `inv_field_001` in `Spec.lean` is closed by composing `field_structure_preserved_doc`
 with the single named residual axiom
