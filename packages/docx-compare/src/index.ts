@@ -137,4 +137,9 @@ export {
 } from './baselines/atomizer/pipeline.js';
 export { parseDocumentXml } from './baselines/atomizer/xmlToWmlElement.js';
 export { AncillaryStorySafetyError } from './baselines/atomizer/ancillaryFieldSafety.js';
+export {
+  UnsupportedTextBoxRevisionError,
+  assertTextBoxContentUnchanged,
+} from './baselines/atomizer/textBoxRevisionSafety.js';
+export type { TextBoxRevisionChange } from './baselines/atomizer/textBoxRevisionSafety.js';
 export { computeAtomLcs, markCorrelationStatus } from './baselines/atomizer/atomLcs.js';
