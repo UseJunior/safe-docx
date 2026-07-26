@@ -92,6 +92,7 @@ import {
   extractTextWithParagraphs,
   compareTexts,
 } from './trackChangesAcceptorAst.js';
+import { detectUnrepresentedChanges } from './unrepresentedChanges.js';
 import {
   virtualizeNumberingLabels,
   type NumberingIntegrationOptions,
@@ -620,6 +621,10 @@ export async function compareDocumentsAtomizer(
   // Step 1: Load DOCX archives
   const originalArchive = await DocxArchive.load(original);
   const revisedArchive = await DocxArchive.load(revised);
+  const unrepresentedChanges = await detectUnrepresentedChanges(
+    originalArchive,
+    revisedArchive,
+  );
   const originalOpaqueRelationships = new OpaqueRelationshipClosureResolver(originalArchive);
   const revisedOpaqueRelationships = new OpaqueRelationshipClosureResolver(revisedArchive);
 
@@ -1066,6 +1071,8 @@ export async function compareDocumentsAtomizer(
     document: resultBuffer,
     stats,
     engine: 'atomizer' as const,
+    unrepresentedChanges:
+      unrepresentedChanges.length > 0 ? unrepresentedChanges : undefined,
     reconstructionModeRequested: reconstructionMode,
     reconstructionModeUsed: comparisonResult.outputMode,
     fallbackReason,
