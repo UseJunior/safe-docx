@@ -14,10 +14,12 @@ even when the control itself is unchanged.
   and contiguous paragraph-slot ownership while retaining the inline contract.
 - Capture unchanged direct body-level block SDTs, pair them deterministically,
   and preserve the validated original subtree as one scaffold-owned block.
+- Correlate row- and cell-scoped SDT wrappers by their container-relative
+  scaffold placement while allowing their controlled paragraphs to rebuild.
 - Bind every relationship-namespace attribute in a block to a memoized package
   closure covering relationship metadata, normalized targets, internal part
   hashes, and recursively referenced XML-part relationships.
-- Reject mutation, movement, ownership loss, nesting, unsupported placement, or
+- Reject wrapper mutation, movement, ownership loss, nesting, unsupported placement, or
   correlation loss before any lossy rebuilt XML is emitted.
 - Replace the ILPA count-only measurement with forced-rebuild corpus evidence
   that makes real unrelated edits and validates the complete SDT subtree,
@@ -33,4 +35,4 @@ even when the control itself is unchanged.
 - Affected code: opaque atom metadata/capture/correlation, hierarchical LCS
   identity, package relationship closure, rebuild scaffold, focused and ILPA
   corpus tests, ECMA registry, DPT pin and capability projection
-- Ref: #582
+- Ref: #582, #660

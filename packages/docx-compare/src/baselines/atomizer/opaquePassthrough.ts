@@ -319,6 +319,54 @@ function semanticFingerprint(
     .digest('hex');
 }
 
+function scaffoldNode(node: Node): string {
+  if (
+    node.nodeType === 1 &&
+    (node as Element).namespaceURI === OOXML.W_NS &&
+    (node as Element).localName === 'p'
+  ) {
+    return 'P';
+  }
+  if (node.nodeType === 1) {
+    const element = node as Element;
+    const attributes: string[] = [];
+    for (let i = 0; i < element.attributes.length; i++) {
+      const attribute = element.attributes.item(i)!;
+      if (isXmlnsAttribute(attribute)) continue;
+      attributes.push(
+        `{${attribute.namespaceURI ?? ''}}${attribute.localName ?? attribute.name}=${JSON.stringify(attribute.value)}`,
+      );
+    }
+    attributes.sort();
+    return `E{${element.namespaceURI ?? ''}}${element.localName}[${attributes.join(',')}](` +
+      Array.from(element.childNodes).map(scaffoldNode).join('') + ')';
+  }
+  if (node.nodeType === 3 || node.nodeType === 4) {
+    return (node.nodeValue ?? '').trim() ? `T${JSON.stringify(node.nodeValue)}` : '';
+  }
+  if (node.nodeType === 8) return `C${JSON.stringify(node.nodeValue ?? '')}`;
+  return '';
+}
+
+function scaffoldFingerprint(
+  element: Element,
+  bindings: Readonly<Record<string, string>>,
+  mceDeclarations: Readonly<Record<string, string>>,
+): string {
+  const namespaceIdentity = Object.entries(bindings)
+    .filter(([prefix]) => prefix !== 'xml')
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([prefix, uri]) => `${prefix}=${uri}`)
+    .join('\u0000');
+  const mceIdentity = Object.entries(mceDeclarations)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, value]) => `${name}=${value}`)
+    .join('\u0000');
+  return createHash('sha256')
+    .update(`${scaffoldNode(element)}\u0001${namespaceIdentity}\u0001${mceIdentity}`, 'utf8')
+    .digest('hex');
+}
+
 function nearestInlineBoundary(atom: ComparisonUnitAtom): Element | null {
   let paragraphIndex = -1;
   let boundaryIndex = -1;
@@ -346,6 +394,22 @@ function nearestBodyBlockBoundary(atom: ComparisonUnitAtom): Element | null {
       (parent as Element).localName === 'body'
       ? ancestor
       : null;
+  }
+  return null;
+}
+
+function nearestTableScopedBoundary(atom: ComparisonUnitAtom): Element | null {
+  for (let i = atom.ancestorElements.length - 1; i >= 0; i--) {
+    const ancestor = atom.ancestorElements[i]!;
+    if (ancestor.namespaceURI !== OOXML.W_NS || ancestor.localName !== 'sdt') continue;
+    const parent = ancestor.parentNode;
+    if (
+      parent?.nodeType === 1 &&
+      (parent as Element).namespaceURI === OOXML.W_NS &&
+      ((parent as Element).localName === 'tr' || (parent as Element).localName === 'tc')
+    ) {
+      return ancestor;
+    }
   }
   return null;
 }
@@ -509,6 +573,41 @@ function validateBlockSdtKnownStructure(boundary: Element): Element[] {
   return paragraphs;
 }
 
+function validateTableSdtKnownStructure(boundary: Element, parentName: 'tr' | 'tc'): Element[] {
+  const directChildren = Array.from(boundary.childNodes)
+    .filter((child): child is Element => child.nodeType === 1);
+  const names = directChildren.map((child) =>
+    child.namespaceURI === OOXML.W_NS ? child.localName : `{${child.namespaceURI}}${child.localName}`,
+  );
+  const expected = names[1] === 'sdtEndPr'
+    ? ['sdtPr', 'sdtEndPr', 'sdtContent']
+    : ['sdtPr', 'sdtContent'];
+  if (names.length !== expected.length || names.some((name, index) => name !== expected[index])) {
+    throw new OpaquePassthroughError(
+      'table-scoped w:sdt must contain ordered w:sdtPr, optional w:sdtEndPr, and w:sdtContent',
+    );
+  }
+  const content = directChildren[directChildren.length - 1]!;
+  const contentChildren = Array.from(content.childNodes)
+    .filter((child): child is Element => child.nodeType === 1);
+  const allowed = parentName === 'tr' ? new Set(['tc']) : new Set(['p', 'tbl']);
+  if (
+    contentChildren.length === 0 ||
+    contentChildren.some((child) => child.namespaceURI !== OOXML.W_NS || !allowed.has(child.localName))
+  ) {
+    throw new OpaquePassthroughError(
+      parentName === 'tr'
+        ? 'row-scoped w:sdtContent must directly contain one or more w:tc elements'
+        : 'cell-scoped w:sdtContent must directly contain one or more w:p or w:tbl elements',
+    );
+  }
+  const paragraphs = Array.from(content.getElementsByTagNameNS(OOXML.W_NS, 'p'));
+  if (paragraphs.length === 0) {
+    throw new OpaquePassthroughError('table-scoped w:sdt has no controlled paragraphs');
+  }
+  return paragraphs;
+}
+
 /** Validate supported SDT namespace scope before atomization clones leaf nodes. */
 export function validateSdtNamespaceOwnership(root: Element): void {
   for (const boundary of Array.from(root.getElementsByTagNameNS(OOXML.W_NS, 'sdt'))) {
@@ -518,8 +617,15 @@ export function validateSdtNamespaceOwnership(root: Element): void {
     const isBodyBlock = parent?.nodeType === 1 &&
       (parent as Element).namespaceURI === OOXML.W_NS &&
       (parent as Element).localName === 'body';
-    if (!isInline && !isBodyBlock) {
-      throw new OpaquePassthroughError('w:sdt placement is outside inline-run and direct body-block support');
+    const tableParent = parent?.nodeType === 1 &&
+        (parent as Element).namespaceURI === OOXML.W_NS &&
+        ((parent as Element).localName === 'tr' || (parent as Element).localName === 'tc')
+      ? (parent as Element).localName as 'tr' | 'tc'
+      : undefined;
+    if (!isInline && !isBodyBlock && !tableParent) {
+      throw new OpaquePassthroughError(
+        'w:sdt placement is outside inline-run, body-block, row-block, and cell-block support',
+      );
     }
     const bindings = effectiveNamespaces(boundary);
     if (bindings.w !== OOXML.W_NS) {
@@ -529,7 +635,8 @@ export function validateSdtNamespaceOwnership(root: Element): void {
       throw new OpaquePassthroughError('nested w:sdt boundaries are outside the bounded passthrough contract');
     }
     if (isInline) validateInlineSdtKnownStructure(boundary);
-    else validateBlockSdtKnownStructure(boundary);
+    else if (isBodyBlock) validateBlockSdtKnownStructure(boundary);
+    else validateTableSdtKnownStructure(boundary, tableParent!);
     validateNamespaceOwnership(boundary, bindings);
   }
 }
@@ -563,6 +670,8 @@ function materializeNamespaces(
  * property or extension vocabulary.
  *
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.29
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.32
+ * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.33
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.34
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.31
  * @conformance ECMA-376 edition 5, Part 1 § 17.5.2.36
@@ -586,15 +695,26 @@ export function captureSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]
     const isBodyBlock = parent?.nodeType === 1 &&
       (parent as Element).namespaceURI === OOXML.W_NS &&
       (parent as Element).localName === 'body';
-    if (!isInline && !isBodyBlock) {
-      throw new OpaquePassthroughError('w:sdt placement is outside inline-run and direct body-block support');
+    const tableParent = parent?.nodeType === 1 &&
+        (parent as Element).namespaceURI === OOXML.W_NS &&
+        ((parent as Element).localName === 'tr' || (parent as Element).localName === 'tc')
+      ? (parent as Element).localName as 'tr' | 'tc'
+      : undefined;
+    if (!isInline && !isBodyBlock && !tableParent) {
+      throw new OpaquePassthroughError(
+        'w:sdt placement is outside inline-run, body-block, row-block, and cell-block support',
+      );
     }
     const bindings = effectiveNamespaces(boundary);
     const mceDeclarations = effectiveMceDeclarations(boundary);
     if (bindings.w !== OOXML.W_NS) {
       throw new OpaquePassthroughError("inline w:sdt has conflicting 'w' namespace ownership");
     }
-    const blockParagraphs = isBodyBlock ? validateBlockSdtKnownStructure(boundary) : undefined;
+    const blockParagraphs = isBodyBlock
+      ? validateBlockSdtKnownStructure(boundary)
+      : tableParent
+        ? validateTableSdtKnownStructure(boundary, tableParent)
+        : undefined;
     if (isInline) validateInlineSdtKnownStructure(boundary);
     validateNamespaceOwnership(boundary, bindings);
     validateIgnorableTokens(mceDeclarations.values, bindings);
@@ -611,15 +731,24 @@ export function captureSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]
       }
     }
     descriptorByElement.set(boundary, {
-      placementKind: isInline ? 'inline-run' : 'body-block',
+      placementKind: isInline
+        ? 'inline-run'
+        : isBodyBlock
+          ? 'body-block'
+          : tableParent === 'tr'
+            ? 'row-block'
+            : 'cell-block',
       namespaceUri: OOXML.W_NS,
       localName: 'sdt',
       documentOrdinal: nextOrdinal++,
       paragraphOrdinal,
       containerIdentity: structuralContainerIdentity(ownedParagraph),
       bodyChildOrdinal: isBodyBlock ? elementChildOrdinal(boundary) : undefined,
+      containerChildOrdinal: tableParent ? elementChildOrdinal(boundary) : undefined,
       ownedParagraphCount: blockParagraphs?.length,
-      semanticFingerprint: semanticFingerprint(boundary, bindings, mceDeclarations.values),
+      semanticFingerprint: tableParent
+        ? scaffoldFingerprint(boundary, bindings, mceDeclarations.values)
+        : semanticFingerprint(boundary, bindings, mceDeclarations.values),
       sourceElement: materializeNamespaces(
         boundary,
         bindings,
@@ -633,7 +762,9 @@ export function captureSdtPassthrough(root: Element, atoms: ComparisonUnitAtom[]
 
   const ownedCounts = new Map<OpaquePassthroughNode, number>();
   for (const atom of atoms) {
-    const boundary = nearestInlineBoundary(atom) ?? nearestBodyBlockBoundary(atom);
+    const boundary = nearestInlineBoundary(atom) ??
+      nearestBodyBlockBoundary(atom) ??
+      nearestTableScopedBoundary(atom);
     if (!boundary) continue;
     const descriptor = descriptorByElement.get(boundary);
     if (!descriptor) {
@@ -1062,6 +1193,10 @@ export async function bindOpaquePassthroughCounterparts(
     descriptor.placementKind === 'body-block'
       ? `block\u0000${descriptor.containerIdentity}\u0000${descriptor.bodyChildOrdinal}\u0000` +
         `${descriptor.paragraphOrdinal}\u0000${descriptor.ownedParagraphCount}`
+      : descriptor.placementKind === 'row-block' || descriptor.placementKind === 'cell-block'
+        ? `${descriptor.placementKind}\u0000${descriptor.containerIdentity}\u0000` +
+          `${descriptor.containerChildOrdinal}\u0000${descriptor.paragraphOrdinal}\u0000` +
+          `${descriptor.ownedParagraphCount}`
       : descriptor.placementKind === 'inline-range'
         ? `field\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
           `${descriptor.inlineRangeOrdinal}\u0000${descriptor.localName}`
@@ -1070,13 +1205,21 @@ export async function bindOpaquePassthroughCounterparts(
   original.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
   revised.sort((left, right) => placementKey(left).localeCompare(placementKey(right)));
   await Promise.all([
-    ...original.filter((descriptor) => descriptor.placementKind === 'body-block').map(async (descriptor) => {
+    ...original.filter((descriptor) =>
+      descriptor.placementKind === 'body-block' ||
+      descriptor.placementKind === 'row-block' ||
+      descriptor.placementKind === 'cell-block'
+    ).map(async (descriptor) => {
       descriptor.relationshipClosureFingerprint = await originalRelationships.fingerprintBoundary(
         descriptor.sourceElement,
         ownerPart,
       );
     }),
-    ...revised.filter((descriptor) => descriptor.placementKind === 'body-block').map(async (descriptor) => {
+    ...revised.filter((descriptor) =>
+      descriptor.placementKind === 'body-block' ||
+      descriptor.placementKind === 'row-block' ||
+      descriptor.placementKind === 'cell-block'
+    ).map(async (descriptor) => {
       descriptor.relationshipClosureFingerprint = await revisedRelationships.fingerprintBoundary(
         descriptor.sourceElement,
         ownerPart,
@@ -1094,6 +1237,7 @@ export async function bindOpaquePassthroughCounterparts(
       before.namespaceUri !== after.namespaceUri ||
       before.localName !== after.localName ||
       before.bodyChildOrdinal !== after.bodyChildOrdinal ||
+      before.containerChildOrdinal !== after.containerChildOrdinal ||
       before.inlineRangeOrdinal !== after.inlineRangeOrdinal ||
       before.ownedParagraphCount !== after.ownedParagraphCount ||
       before.semanticFingerprint !== after.semanticFingerprint ||
@@ -1114,6 +1258,9 @@ export function validateOpaquePassthroughCorrelation(atoms: ComparisonUnitAtom[]
   for (const atom of atoms) {
     let descriptor = atom.opaquePassthrough;
     if (!descriptor) continue;
+    if (descriptor.placementKind === 'row-block' || descriptor.placementKind === 'cell-block') {
+      continue;
+    }
     if (atom.correlationStatus !== CorrelationStatus.Equal) {
       throw new OpaquePassthroughError(
         `boundary ${descriptor.documentOrdinal} lost equal correlation (${atom.correlationStatus})`,

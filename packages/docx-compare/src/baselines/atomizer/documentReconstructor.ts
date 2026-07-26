@@ -707,7 +707,11 @@ function buildParagraphXml(
 ): string {
   const revisionCtx = createRevisionContext({ author, date: dateStr, idState: revState });
   const hasOpaqueAtoms = group.runGroups.some((runGroup) =>
-    runGroup.atoms.some((atom) => atom.opaquePassthrough !== undefined),
+    runGroup.atoms.some((atom) =>
+      atom.opaquePassthrough !== undefined &&
+      atom.opaquePassthrough.placementKind !== 'row-block' &&
+      atom.opaquePassthrough.placementKind !== 'cell-block'
+    ),
   );
   if (
     hasOpaqueAtoms &&

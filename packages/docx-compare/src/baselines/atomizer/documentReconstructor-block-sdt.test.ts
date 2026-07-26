@@ -203,7 +203,7 @@ describe('direct body block content-control passthrough', () => {
 
 describe('unsupported body block ownership fails closed', () => {
   test.openspec('[SDX-SDT-BLOCK-03] Unsupported block ownership fails before output')(
-    'rejects mutation, insertion, deletion, reorder, movement, nesting, and table or cell placement',
+    'rejects mutation, insertion, deletion, reorder, movement, nesting, and tables inside body controls',
     async ({ given, then }: AllureBddContext) => {
       const first = paragraph('First', '00000021');
       const second = paragraph('Second', '00000022');
@@ -214,8 +214,6 @@ describe('unsupported body block ownership fails closed', () => {
         '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>' +
         '<w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
       );
-      const cellControl = '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>' +
-        `<w:tr><w:tc><w:tcPr/>${blockSdt(paragraph('Cell control', '00000026'))}</w:tc></w:tr></w:tbl>`;
       const cases: Array<[string, string, string]> = [
         ['mutation', stable + outside, blockSdt(paragraph('Changed', '00000021') + second) + outside],
         ['insertion', stable + outside, blockSdt(first + paragraph('Inserted', '00000027') + second) + outside],
@@ -224,7 +222,6 @@ describe('unsupported body block ownership fails closed', () => {
         ['movement', stable + outside, outside + stable],
         ['nesting', nested + outside, nested + outside],
         ['table content', tableBlock + outside, tableBlock + outside],
-        ['cell placement', cellControl + outside, cellControl + outside],
       ];
 
       await given('block shapes outside the bounded immutable direct-body contract', () => {});
