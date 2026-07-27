@@ -8,7 +8,11 @@ import JSZip from 'jszip';
 import { buildSyntheticDocx } from '@usejunior/docx-core';
 import { compareDocuments } from '../../index.js';
 import type { DocumentIntegrityCertificate } from '../../compare-types.js';
-import { isLeanVerifierJson, runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
+import {
+  isLeanVerifierJson,
+  runLeanXmlTripleVerifier,
+  runLeanXmlTripleVerifierForTest,
+} from './leanXmlVerifier.js';
 import {
   acceptAllChanges,
   extractTextWithParagraphs,
@@ -26,10 +30,14 @@ const PROJECT_ROOT = join(TEST_DIR, '../../../../..');
 const LEAN_EXE = join(PROJECT_ROOT, 'verification/lean/.lake/build/bin/leanDocxChecker');
 const MAXIMUM_SHAPE_EXE = join(
   PROJECT_ROOT,
-  'verification/lean/.lake/build/bin/protocolV4MaximumShape',
+  'verification/lean/.lake/build/bin/protocolV5MaximumOrdinaryShape',
+);
+const TERMINAL_SHAPES_EXE = join(
+  PROJECT_ROOT,
+  'verification/lean/.lake/build/bin/protocolV5CanonicalTerminalShapes',
 );
 
-async function runMaximumShapeProducer(mode: 'shared' | 'distinct'): Promise<string> {
+async function runMaximumShapeProducer(): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(MAXIMUM_SHAPE_EXE, [], { stdio: ['pipe', 'pipe', 'pipe'] });
     const stdout: Buffer[] = [];
@@ -41,8 +49,38 @@ async function runMaximumShapeProducer(mode: 'shared' | 'distinct'): Promise<str
       if (code === 0) resolve(Buffer.concat(stdout).toString('utf8'));
       else reject(new Error(`maximum-shape producer exited ${code}: ${Buffer.concat(stderr)}`));
     });
+    child.stdin.end();
+  });
+}
+
+async function runTerminalShapeProducer(mode: 'issues' | 'strings'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(TERMINAL_SHAPES_EXE, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve(Buffer.concat(stdout).toString('utf8'));
+      else reject(new Error(`terminal-shape producer exited ${code}: ${Buffer.concat(stderr)}`));
+    });
     child.stdin.end(mode);
   });
+}
+
+function evidenceStringBytesForTest(value: unknown): number {
+  if (typeof value === 'string') return Buffer.byteLength(JSON.stringify(value), 'utf8');
+  if (Array.isArray(value)) {
+    return value.reduce<number>((sum, item) => sum + evidenceStringBytesForTest(item), 0);
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value).reduce<number>(
+      (sum, item) => sum + evidenceStringBytesForTest(item),
+      0,
+    );
+  }
+  return 0;
 }
 
 const exeExists = existsSync(LEAN_EXE);
@@ -83,10 +121,13 @@ describeWithLean('Lean XML triple verifier certificate', () => {
         expect(result.documentIntegrity?.status, result.documentIntegrity?.reason).toBe('passed');
         expect(result.documentIntegrity?.protocolVersion).toBe(1);
         expect(result.documentIntegrity?.scope).toBe('word/document.xml');
-        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(4);
-        expect(result.documentIntegrity?.fixedStoryScope).toEqual([
-          'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
+        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(5);
+        expect(result.documentIntegrity?.fixedStoryScope).toBeUndefined();
+        expect(result.documentIntegrity?.referenceSourcePartitions).toHaveLength(3);
+        expect(result.documentIntegrity?.noteStories?.map((story) => story.kind)).toEqual([
+          'footnotes', 'endnotes',
         ]);
+        expect(result.documentIntegrity?.noteInventories).toHaveLength(6);
         expect(result.documentIntegrity?.relationshipStoryScope).toMatchObject({
           selection: 'direct-explicit-section-bindings',
           inheritedRoles: false,
@@ -321,10 +362,20 @@ async function resourceRelationshipDocx(options: {
     const [kind] = RELATIONSHIP_SLOT_KINDS[index % RELATIONSHIP_SLOT_KINDS.length]!;
     return `<Relationship Id="rId${index}" Type="${kind === 'header' ? HEADER_REL : FOOTER_REL}" ` +
       `Target="${kind}${index}.xml"/>`;
-  }).join('');
+  });
+  if (options.footnotesXml !== undefined) {
+    relationships.push(
+      `<Relationship Id="rIdFootnotes" Type="${R_NS}/footnotes" Target="footnotes.xml"/>`,
+    );
+  }
+  if (options.endnotesXml !== undefined) {
+    relationships.push(
+      `<Relationship Id="rIdEndnotes" Type="${R_NS}/endnotes" Target="endnotes.xml"/>`,
+    );
+  }
   zip.file(
     'word/_rels/document.xml.rels',
-    `<Relationships xmlns="${PR_NS}">${relationships}</Relationships>`,
+    `<Relationships xmlns="${PR_NS}">${relationships.join('')}</Relationships>`,
     { createFolders: false },
   );
   for (let index = 0; index < options.storyCount; index += 1) {
@@ -446,6 +497,77 @@ const endnotes = (userBody: string) =>
   `<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote>` +
   `<w:endnote w:id="1"><w:p>${userBody}</w:p></w:endnote></w:endnotes>`;
 
+function sizedNoteXml(kind: 'footnote' | 'endnote', targetBytes: number): string {
+  const plural = `${kind}s`;
+  const prefix = `<w:${plural} xmlns:w="${W_NS}"><w:${kind} w:id="1"><w:p><w:r><w:t>`;
+  const suffix = `</w:t></w:r></w:p></w:${kind}></w:${plural}>`;
+  const padding = targetBytes - Buffer.byteLength(prefix) - Buffer.byteLength(suffix);
+  if (padding < 0) throw new Error('target note XML size is too small');
+  return `${prefix}${'x'.repeat(padding)}${suffix}`;
+}
+
+/**
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.18.10
+ */
+async function noteIntegrityDocx(options: {
+  bodyReferences?: string;
+  footnotesPath?: string;
+  endnotesPath?: string;
+  footnotesXml?: string;
+  endnotesXml?: string;
+  extraRelationships?: string;
+  includeFootnotesRelationship?: boolean;
+  includeEndnotesRelationship?: boolean;
+  footnotesTarget?: string;
+  endnotesTarget?: string;
+} = {}): Promise<Buffer> {
+  const bodyReferences = options.bodyReferences ??
+    '<w:r><w:footnoteReference w:id="1"/></w:r>' +
+    '<w:r><w:endnoteReference w:id="2"/></w:r>';
+  const base = await buildDocxFromBodyXml(`<w:p>${bodyReferences}</w:p>`);
+  const zip = await JSZip.loadAsync(base);
+  const footnotesPath = options.footnotesPath ?? 'word/footnotes.xml';
+  const endnotesPath = options.endnotesPath ?? 'word/endnotes.xml';
+  zip.file(
+    'word/_rels/document.xml.rels',
+    `<Relationships xmlns="${PR_NS}">` +
+    `${options.includeFootnotesRelationship === false ? '' :
+      `<Relationship Id="rIdFootnotes" Type="${R_NS}/footnotes" ` +
+      `Target="${options.footnotesTarget ?? footnotesPath.slice(5)}"/>`}` +
+    `${options.includeEndnotesRelationship === false ? '' :
+      `<Relationship Id="rIdEndnotes" Type="${R_NS}/endnotes" ` +
+      `Target="${options.endnotesTarget ?? endnotesPath.slice(5)}"/>`}` +
+    `${options.extraRelationships ?? ''}</Relationships>`,
+    { createFolders: false },
+  );
+  zip.file(
+    footnotesPath,
+    options.footnotesXml ??
+      `<w:footnotes xmlns:w="${W_NS}">` +
+      `<w:footnote w:type="separator" w:id="1"><w:p/></w:footnote>` +
+      `<w:footnote w:type="continuationSeparator" w:id="0"><w:p/></w:footnote>` +
+      `<w:footnote w:type="continuationNotice" w:id="-2"><w:p/></w:footnote>` +
+      `<w:footnote w:id="1"><w:p><w:r><w:t>Foot</w:t></w:r></w:p></w:footnote>` +
+      `</w:footnotes>`,
+    { createFolders: false },
+  );
+  zip.file(
+    endnotesPath,
+    options.endnotesXml ??
+      `<w:endnotes xmlns:w="${W_NS}">` +
+      `<w:endnote w:id="2"><w:p><w:r><w:t>End</w:t></w:r></w:p></w:endnote>` +
+      `</w:endnotes>`,
+    { createFolders: false },
+  );
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) delete zip.files[entry.name];
+  }
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
 const originalMoveBody =
   paragraphWithText('Moved text') +
   paragraphWithText('Anchor text');
@@ -476,14 +598,353 @@ describeWithLean('Lean fixed-story package protocol', () => {
 
   test.openspec('[LEAN-STORY-01] Fixed stories pass together')(
     'checks main, footnote, and endnote stories in one compiled invocation', async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.7' });
       const docx = await buildSyntheticDocx({
         paragraphs: ['Body'], footnoteOnParagraph: 0, footnoteText: 'Foot',
         endnoteOnParagraph: 0, endnoteText: 'End',
       });
       const certificate = await run(docx, docx, docx);
       expect(certificate.status).toBe('passed');
-      expect(certificate.stories?.map((story) => story.name)).toEqual(['main', 'footnotes', 'endnotes']);
+      expect(certificate.stories?.map((story) => story.name)).toEqual(['main']);
+      expect(certificate.noteStories?.map((story) => story.kind)).toEqual(['footnotes', 'endnotes']);
+      expect(certificate.noteInventories?.every((inventory) =>
+        inventory.referenceOccurrences > 0 && inventory.definitions.user > 0,
+      )).toBe(true);
+      expect(certificate.fixedStoryScope).toEqual([
+        'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
+      ]);
     });
+
+  test.openspec('[LEAN-NOTE-01] Relationship-selected semantic note stories pass')(
+    'checks both note kinds at alternate safe relationship targets', async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.7' });
+      const docx = await noteIntegrityDocx({
+        footnotesPath: 'word/notes/legal-footnotes.xml',
+        endnotesPath: 'word/notes/legal-endnotes.xml',
+      });
+      const certificate = await run(docx, docx, docx);
+      expect(certificate.status, certificate.reason).toBe('passed');
+      expect(certificate.fixedStoryScope).toBeUndefined();
+      expect(certificate.noteInventories?.map((inventory) =>
+        inventory.relationship?.normalizedPartPath,
+      )).toEqual([
+        'word/notes/legal-footnotes.xml', 'word/notes/legal-endnotes.xml',
+        'word/notes/legal-footnotes.xml', 'word/notes/legal-endnotes.xml',
+        'word/notes/legal-footnotes.xml', 'word/notes/legal-endnotes.xml',
+      ]);
+    });
+
+  test.openspec('[LEAN-NOTE-02] Canonical note IDs have exactly one user definition')(
+    'rejects canonical duplicate and missing definitions but permits unreferenced definitions', async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.10' });
+      const duplicate = await noteIntegrityDocx({
+        footnotesXml:
+          `<w:footnotes xmlns:w="${W_NS}">` +
+          `<w:footnote w:id="01"><w:p/></w:footnote>` +
+          `<w:footnote w:id=" 1 "><w:p/></w:footnote>` +
+          `<w:footnote w:id="99"><w:p/></w:footnote></w:footnotes>`,
+      });
+      const duplicateCertificate = await run(duplicate, duplicate, duplicate);
+      expect(duplicateCertificate.status).toBe('failed');
+      expect(duplicateCertificate.noteIntegrityFailures?.some((issue) =>
+        issue.code === 'NOTE_USER_DEFINITION_DUPLICATE',
+      )).toBe(true);
+
+      const missing = await noteIntegrityDocx({
+        footnotesXml: `<w:footnotes xmlns:w="${W_NS}"/>`,
+      });
+      expect((await run(missing, missing, missing)).noteIntegrityFailures?.some((issue) =>
+        issue.code === 'NOTE_REFERENCE_MISSING_DEFINITION',
+      )).toBe(true);
+
+      const unreferenced = await noteIntegrityDocx({
+        footnotesXml:
+          `<w:footnotes xmlns:w="${W_NS}">` +
+          `<w:footnote w:id="1"><w:p/></w:footnote>` +
+          `<w:footnote w:id="99"><w:p/></w:footnote></w:footnotes>`,
+      });
+      expect((await run(unreferenced, unreferenced, unreferenced)).status).toBe('passed');
+    });
+
+  test.openspec('[LEAN-NOTE-03] Note definition stories cannot contain references')(
+    'rejects recursive and cross-kind note references plus ambiguous internal-external selection',
+    async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.7' });
+      const poisoned = await noteIntegrityDocx({
+        footnotesXml:
+          `<w:footnotes xmlns:w="${W_NS}"><w:footnote w:id="1"><w:p>` +
+          `<w:r><w:footnoteReference w:id="1"/></w:r>` +
+          `<w:r><w:endnoteReference w:id="2"/></w:r>` +
+          `</w:p></w:footnote></w:footnotes>`,
+      });
+      const poisonedCertificate = await run(poisoned, poisoned, poisoned);
+      expect(poisonedCertificate.status).toBe('failed');
+      expect(poisonedCertificate.noteIntegrityFailures?.filter((issue) =>
+        issue.code === 'NOTE_REFERENCE_IN_DEFINITION_STORY',
+      )).toHaveLength(6);
+      expect(poisonedCertificate.noteInventories?.every((inventory) =>
+        inventory.status === 'failed',
+      )).toBe(true);
+
+      const ambiguous = await noteIntegrityDocx({
+        extraRelationships:
+          `<Relationship Id="rIdExternalFootnotes" Type="${R_NS}/footnotes" ` +
+          `Target="https://example.invalid/notes" TargetMode="External"/>`,
+      });
+      const ambiguousCertificate = await run(ambiguous, ambiguous, ambiguous);
+      expect(ambiguousCertificate.status).toBe('failed');
+      expect(ambiguousCertificate.noteIntegrityFailures?.some((issue) =>
+        issue.code === 'NOTE_RELATIONSHIP_AMBIGUOUS',
+      )).toBe(true);
+      expect(ambiguousCertificate.noteInventories?.every((inventory) =>
+        inventory.status === 'not_evaluated',
+      )).toBe(true);
+    });
+
+  test.openspec('[LEAN-NOTE-04] Decimal aliases and overlong IDs have canonical evidence')(
+    'coalesces lexical aliases and overlong identifiers without retaining forbidden raw values',
+    async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.10' });
+      const aliases = await noteIntegrityDocx({
+        bodyReferences: '<w:r><w:footnoteReference w:id="+01"/></w:r>',
+        footnotesXml:
+          `<w:footnotes xmlns:w="${W_NS}">` +
+          `<w:footnote w:id="1"><w:p/></w:footnote>` +
+          `<w:footnote w:id=" 001 "><w:p/></w:footnote>` +
+          `<w:footnote w:id="+1"><w:p/></w:footnote>` +
+          `<w:footnote w:id="-0"><w:p/></w:footnote>` +
+          `</w:footnotes>`,
+      });
+      const aliasCertificate = await run(aliases, aliases, aliases);
+      const duplicates = aliasCertificate.noteIntegrityFailures?.filter((issue) =>
+        issue.code === 'NOTE_USER_DEFINITION_DUPLICATE',
+      ) ?? [];
+      expect(duplicates).toHaveLength(3);
+      expect(duplicates.every((issue) =>
+        issue.canonicalId === '1' && issue.occurrenceCount === 2,
+      )).toBe(true);
+
+      const overlong = '7'.repeat(65);
+      const overlongDocx = await noteIntegrityDocx({
+        bodyReferences: '',
+        footnotesXml:
+          `<w:footnotes xmlns:w="${W_NS}">` +
+          `<w:footnote w:id="${overlong}"><w:p/></w:footnote>` +
+          `<w:footnote w:id="${overlong}"><w:p/></w:footnote>` +
+          `</w:footnotes>`,
+      });
+      const overlongCertificate = await run(overlongDocx, overlongDocx, overlongDocx);
+      const lexical = overlongCertificate.noteIntegrityFailures?.filter((issue) =>
+        issue.code === 'NOTE_ID_LEXICAL_LIMIT_EXCEEDED',
+      ) ?? [];
+      expect(lexical).toHaveLength(3);
+      expect(lexical.every((issue) =>
+        issue.occurrenceCount === 2 &&
+        issue.rawId === undefined &&
+        issue.canonicalId === undefined &&
+        issue.rawIdByteLength === 65 &&
+        /^[0-9a-f]{8}$/.test(issue.rawIdDigest ?? ''),
+      )).toBe(true);
+    });
+
+  test('makes a missing exact relationship with references side-wide incomplete', async () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
+    const missingRelationship = await noteIntegrityDocx({
+      includeFootnotesRelationship: false,
+    });
+    const certificate = await run(missingRelationship, missingRelationship, missingRelationship);
+    expect(certificate.noteIntegrityFailures?.some((issue) =>
+      issue.code === 'NOTE_RELATIONSHIP_REQUIRED',
+    )).toBe(true);
+    expect(certificate.referenceSourcePartitions?.every((partition) =>
+      partition.status === 'incomplete',
+    )).toBe(true);
+    expect(certificate.noteInventories?.every((inventory) =>
+      inventory.status === 'not_evaluated' &&
+      inventory.referenceOccurrences === 0 &&
+      inventory.uniqueReferenceIds === 0,
+    )).toBe(true);
+    expect(certificate.fixedStoryScope).toBeUndefined();
+  });
+
+  test('classifies malformed definition-story reference IDs in poison ordinal space', async () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.10' });
+    const overlong = '9'.repeat(65);
+    const poisoned = await noteIntegrityDocx({
+      footnotesXml:
+        `<w:footnotes xmlns:w="${W_NS}"><w:footnote w:id="1"><w:p>` +
+        `<w:r><w:footnoteReference/></w:r>` +
+        `<w:r><w:endnoteReference w:id="bad"/></w:r>` +
+        `<w:r><w:footnoteReference w:id="${overlong}"/></w:r>` +
+        `</w:p></w:footnote></w:footnotes>`,
+    });
+    const certificate = await run(poisoned, poisoned, poisoned);
+    const malformed = certificate.noteIntegrityFailures?.filter((issue) =>
+      issue.code.startsWith('NOTE_ID_'),
+    ) ?? [];
+    expect(malformed.map((issue) => issue.code)).toEqual([
+      'NOTE_ID_MISSING', 'NOTE_ID_INVALID_DECIMAL', 'NOTE_ID_LEXICAL_LIMIT_EXCEEDED',
+      'NOTE_ID_MISSING', 'NOTE_ID_INVALID_DECIMAL', 'NOTE_ID_LEXICAL_LIMIT_EXCEEDED',
+      'NOTE_ID_MISSING', 'NOTE_ID_INVALID_DECIMAL', 'NOTE_ID_LEXICAL_LIMIT_EXCEEDED',
+    ]);
+    expect(malformed.every((issue) =>
+      issue.ordinalSpace === 'poison' &&
+      issue.source?.sourceStory === 'footnotes' &&
+      issue.referencedKind !== undefined,
+    )).toBe(true);
+    expect(malformed.filter((issue) =>
+      issue.code === 'NOTE_ID_LEXICAL_LIMIT_EXCEEDED',
+    ).every((issue) =>
+      issue.rawId === undefined && issue.rawIdByteLength === 65 &&
+      /^[0-9a-f]{8}$/.test(issue.rawIdDigest ?? ''),
+    )).toBe(true);
+  });
+
+  test('preserves XML traversal order when definition and poison limits are both saturated',
+    async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
+      const definitions = Array.from({ length: 4_096 }, (_, index) =>
+        `<w:footnote w:id="${index + 1}"><w:p/></w:footnote>`).join('');
+      const poison = Array.from({ length: 4_096 }, () =>
+        '<w:r><w:footnoteReference w:id="1"/></w:r>').join('');
+      const poisonFirst = await noteIntegrityDocx({
+        footnotesXml:
+          `<w:footnotes xmlns:w="${W_NS}">${definitions}` +
+          `${poison}<w:r><w:endnoteReference w:id="2"/></w:r>` +
+          `<w:footnote w:id="4097"/></w:footnotes>`,
+      });
+      expect((await run(poisonFirst, poisonFirst, poisonFirst))
+        .noteIntegrityFailures?.[0]?.code).toBe('NOTE_POISON_REFERENCE_LIMIT_EXCEEDED');
+
+      const definitionFirst = await noteIntegrityDocx({
+        footnotesXml:
+          `<w:footnotes xmlns:w="${W_NS}">${definitions}<w:footnote w:id="4097"/>` +
+          `${poison}<w:r><w:endnoteReference w:id="2"/></w:r></w:footnotes>`,
+      });
+      expect((await run(definitionFirst, definitionFirst, definitionFirst))
+        .noteIntegrityFailures?.[0]?.code).toBe('NOTE_DEFINITION_LIMIT_EXCEEDED');
+    },
+    60_000,
+  );
+
+  test('distinguishes an overlong relationship target from unsafe target syntax', async () => {
+    const overlong = await noteIntegrityDocx({
+      footnotesTarget: 'n'.repeat(257),
+    });
+    const certificate = await run(overlong, overlong, overlong);
+    expect(certificate.noteIntegrityFailures?.some((issue) =>
+      issue.code === 'NOTE_RELATIONSHIP_TARGET_LIMIT_EXCEEDED',
+    )).toBe(true);
+    expect(certificate.noteIntegrityFailures?.some((issue) =>
+      issue.code === 'NOTE_RELATIONSHIP_UNSAFE_TARGET',
+    )).toBe(false);
+  });
+
+  test('admits note-part bytes cumulatively across footnotes then endnotes', async () => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.2' });
+    const individuallyAdmittedBytes = 16 * 1024 * 1024 - 64;
+    const crossing = await noteIntegrityDocx({
+      footnotesXml: sizedNoteXml('footnote', individuallyAdmittedBytes),
+      endnotesXml: sizedNoteXml('endnote', individuallyAdmittedBytes),
+    });
+    const certificate = await run(crossing, crossing, crossing);
+    expect(certificate.noteIntegrityFailures?.some((issue) =>
+      issue.code === 'NOTE_PART_LIMIT_EXCEEDED' &&
+      issue.side === 'original' &&
+      issue.kind === 'endnotes' &&
+      issue.source?.sourceStory === 'endnotes',
+    )).toBe(true);
+    expect(certificate.referenceSourcePartitions?.every((partition) =>
+      partition.status === 'incomplete',
+    )).toBe(true);
+    expect(certificate.noteInventories?.every((inventory) =>
+      inventory.status === 'not_evaluated' &&
+      inventory.referenceOccurrences === 0,
+    )).toBe(true);
+  }, 60_000);
+
+  test.openspec('[LEAN-NOTE-05] Semantic limit precedence is deterministic')(
+    'lets the 8193rd reference win before a simultaneous 4097th unique ID and skips later sides',
+    async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
+      const references = Array.from({ length: 8_193 }, (_, index) => {
+        const id = index < 8_192 ? (index % 4_096) + 1 : 4_097;
+        return `<w:r><w:footnoteReference w:id="${id}"/></w:r>`;
+      }).join('');
+      const crossing = await noteIntegrityDocx({ bodyReferences: references });
+      const certificate = await run(crossing, crossing, crossing);
+      expect(certificate.status).toBe('failed');
+      expect(certificate.noteIntegrityFailures?.map((issue) => issue.code)).toEqual([
+        'NOTE_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED',
+      ]);
+      expect(certificate.noteIntegrityFailures?.[0]).toMatchObject({
+        side: 'original',
+        kind: 'footnotes',
+        ordinalSpace: 'reference',
+        firstOccurrenceOrdinal: 8_192,
+        occurrenceCount: 1,
+        source: { sourceStory: 'main', sourceStoryOrdinal: 0 },
+      });
+      expect(certificate.noteInventories?.every((inventory) =>
+        inventory.status === 'not_evaluated' &&
+        inventory.referenceOccurrences === 0 &&
+        inventory.uniqueReferenceIds === 0,
+      )).toBe(true);
+      expect(certificate.noteIntegrityFailures?.some((issue) =>
+        issue.code === 'NOTE_UNIQUE_REFERENCE_LIMIT_EXCEEDED',
+      )).toBe(false);
+    },
+    60_000,
+  );
+
+  test.openspec('[LEAN-NOTE-06] Aggregate issue exhaustion has one terminal shape')(
+    'collapses the compiled response when the 512th ordinary issue is reached',
+    async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.10' });
+      const references = Array.from(
+        { length: 512 },
+        (_, index) => `<w:r><w:footnoteReference w:id="invalid-${index}"/></w:r>`,
+      ).join('');
+      const exhausted = await noteIntegrityDocx({ bodyReferences: references });
+      const certificate = await run(exhausted, exhausted, exhausted);
+
+      expect(certificate.status).toBe('failed');
+      expect(certificate.relationshipSlots).toEqual([]);
+      expect(certificate.relationshipStories).toEqual([]);
+      expect(certificate.referenceSourcePartitions).toHaveLength(3);
+      expect(certificate.referenceSourcePartitions?.every((partition) =>
+        partition.status === 'incomplete' &&
+        partition.sources.length === 1 &&
+        partition.definitionStories.every((story) =>
+          story.partPresent === false && story.relationship === undefined),
+      )).toBe(true);
+      expect(certificate.noteStories?.every((story) =>
+        story.status === 'not_evaluated' &&
+        story.original.partPresent === false &&
+        story.revised.partPresent === false &&
+        story.compared.partPresent === false,
+      )).toBe(true);
+      expect(certificate.noteInventories?.every((inventory) =>
+        inventory.status === 'not_evaluated' &&
+        inventory.relationship === undefined &&
+        inventory.referenceOccurrences === 0 &&
+        inventory.uniqueReferenceIds === 0,
+      )).toBe(true);
+      expect(certificate.noteIntegrityFailures).toEqual([{
+        code: 'NOTE_ISSUE_LIMIT_EXCEEDED',
+        side: 'original',
+        kind: 'footnotes',
+        detail: 'protocol v5 aggregate ordinary issue limit exceeded',
+        ordinalSpace: 'aggregate',
+        firstOccurrenceOrdinal: 0,
+        occurrenceCount: 1,
+      }]);
+    },
+    60_000,
+  );
 
   test.openspec('[LEAN-STORY-02] Side-story state is isolated')(
     'rejects malformed fields even when markers balance across side stories', async () => {
@@ -494,19 +955,26 @@ describeWithLean('Lean fixed-story package protocol', () => {
       const malformed = await replacePart(withFootnote, 'word/endnotes.xml', endnotes('<w:r><w:fldChar w:fldCharType="end"/></w:r>'));
       const certificate = await run(malformed, malformed, malformed);
       expect(certificate.status).toBe('failed');
-      expect(certificate.stories?.filter((story) => story.status === 'failed').map((story) => story.name)).toEqual(['footnotes', 'endnotes']);
+      expect(certificate.noteStories?.filter((story) => story.status === 'failed')
+        .map((story) => story.kind)).toEqual(['footnotes', 'endnotes']);
     });
 
   test.openspec('[LEAN-STORY-03] Optional presence is modeled as an empty story')(
-    'checks missing stories as empty so tracked additions and removals pass but untracked divergence fails', async () => {
+    'treats a selected missing note part as failed presence without partial evidence', async () => {
       const withNote = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
       const withoutNote = await replacePart(withNote, 'word/footnotes.xml', null);
       const untrackedAddition = await run(withoutNote, withNote, withNote);
       expect(untrackedAddition.status).toBe('failed');
       expect(untrackedAddition.presenceMismatches).toEqual([]);
-      expect(untrackedAddition.stories?.find((story) => story.name === 'footnotes')?.presence).toEqual({
-        original: false, revised: true, compared: true,
-      });
+      expect(untrackedAddition.referenceSourcePartitions?.[0]?.status).toBe('incomplete');
+      expect(untrackedAddition.noteIntegrityFailures?.some((issue) =>
+        issue.code === 'NOTE_PART_MISSING',
+      )).toBe(true);
+      expect(untrackedAddition.noteInventories?.slice(0, 2).every((inventory) =>
+        inventory.status === 'not_evaluated' &&
+        inventory.referenceOccurrences === 0 &&
+        inventory.definitions.user === 0,
+      )).toBe(true);
       const added = await replacePart(
         withNote,
         'word/footnotes.xml',
@@ -528,8 +996,8 @@ describeWithLean('Lean fixed-story package protocol', () => {
         footnotes('<w:r><w:t>Removed note</w:t></w:r>')
       );
 
-      expect((await run(withoutNote, revisedAdded, added)).status).toBe('passed');
-      expect((await run(originalRemoved, withoutNote, removed)).status).toBe('passed');
+      expect((await run(withoutNote, revisedAdded, added)).status).toBe('failed');
+      expect((await run(originalRemoved, withoutNote, removed)).status).toBe('failed');
     });
 
   test('fails closed when the required main story is missing from any package', async () => {
@@ -549,15 +1017,18 @@ describeWithLean('Lean fixed-story package protocol', () => {
     });
 
   test('uses namespace-qualified note type rather than numeric IDs for reserved projection', async () => {
-    const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });
     const typedAnyId = (reserved: string, normalZero: string) =>
       `<w:footnotes xmlns:w="${W_NS}">` +
       `<w:footnote w:type="separator" w:id="77"><w:p><w:r><w:t>${reserved}</w:t></w:r></w:p></w:footnote>` +
       `<w:footnote w:id="0"><w:p><w:r><w:t>${normalZero}</w:t></w:r></w:p></w:footnote>` +
       `</w:footnotes>`;
-    const original = await replacePart(base, 'word/footnotes.xml', typedAnyId('old reserved', 'visible old'));
-    const revisedReservedOnly = await replacePart(base, 'word/footnotes.xml', typedAnyId('new reserved', 'visible old'));
-    const revisedNormalZero = await replacePart(base, 'word/footnotes.xml', typedAnyId('new reserved', 'visible new'));
+    const make = (reserved: string, normalZero: string) => noteIntegrityDocx({
+      bodyReferences: '<w:r><w:footnoteReference w:id="0"/></w:r>',
+      footnotesXml: typedAnyId(reserved, normalZero),
+    });
+    const original = await make('old reserved', 'visible old');
+    const revisedReservedOnly = await make('new reserved', 'visible old');
+    const revisedNormalZero = await make('new reserved', 'visible new');
 
     expect((await run(original, revisedReservedOnly, revisedReservedOnly)).status).toBe('passed');
     expect((await run(original, revisedNormalZero, revisedNormalZero)).status).toBe('failed');
@@ -716,7 +1187,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
       const revised = await replacePart(base, 'word/footnotes.xml', footnotes('<w:r><w:t>Revised note</w:t></w:r>'));
       const certificate = await run(original, revised, revised);
       expect(certificate.status).toBe('failed');
-      expect(certificate.stories?.find((story) => story.name === 'footnotes')?.checks.rejectingAllTrackedChangesMatchesOriginalText.status).toBe('failed');
+      expect(certificate.noteStories?.find((story) => story.kind === 'footnotes')?.status).toBe('failed');
     });
 
   test('agrees with the existing TS accept/reject oracle on a tracked footnote protocol case', async () => {
@@ -913,7 +1384,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
   });
 });
 
-describeWithLean('Lean direct relationship-story protocol v4', () => {
+describeWithLean('Lean direct relationship-story protocol v5', () => {
   const run = (originalDocx: Buffer, revisedDocx = originalDocx, comparedDocx = revisedDocx) =>
     runLeanXmlTripleVerifier({
       originalDocx, revisedDocx, comparedDocx,
@@ -929,7 +1400,7 @@ describeWithLean('Lean direct relationship-story protocol v4', () => {
       const docx = await relationshipDocx({ includeAllRoles: true });
       const certificate = await run(docx);
       expect(certificate.status).toBe('passed');
-      expect(certificate.checkerProtocolVersion).toBe(4);
+      expect(certificate.checkerProtocolVersion).toBe(5);
       expect(certificate.relationshipSlots).toHaveLength(6);
       expect(certificate.relationshipSlots?.map(({ kind, role }) => `${kind}:${role}`)).toEqual([
         'header:first', 'header:default', 'header:even',
@@ -1168,9 +1639,9 @@ describeWithLean('Lean direct relationship-story protocol v4', () => {
       'AGGREGATE_EXPANDED_LIMIT_EXCEEDED',
     );
     expect(certificate.relationshipStories).toEqual([]);
-    expect(certificate.fixedStoryFailures?.map((issue) => issue.code)).toContain(
-      'OPTIONAL_STORY_AGGREGATE_LIMIT_EXCEEDED',
-    );
+    expect(certificate.noteInventories?.every((inventory) =>
+      inventory.status === 'not_evaluated',
+    )).toBe(true);
     },
   );
 
@@ -1192,8 +1663,8 @@ describeWithLean('Lean direct relationship-story protocol v4', () => {
     const certificate = await run(docx);
     expect(certificate.status, certificate.reason).toBe('failed');
     expect(certificate.relationshipStories).toHaveLength(1);
-    expect(certificate.fixedStoryFailures?.map((issue) => issue.code)).toContain(
-      'OPTIONAL_STORY_AGGREGATE_LIMIT_EXCEEDED',
+    expect(certificate.noteIntegrityFailures?.map((issue) => issue.code)).toContain(
+      'NOTE_PART_LIMIT_EXCEEDED',
     );
     expect(certificate.relationshipSelectionFailures).toEqual([]);
     },
@@ -1294,8 +1765,8 @@ describeWithLean('Lean direct relationship-story protocol v4', () => {
       expect(certificate.status, certificate.reason).toBe('failed');
       expect(certificate.relationshipStories).toHaveLength(1);
       expect(certificate.relationshipSelectionFailures).toEqual([]);
-      expect(certificate.fixedStoryFailures?.map((issue) => issue.code)).toContain(
-        'OPTIONAL_STORY_AGGREGATE_LIMIT_EXCEEDED',
+      expect(certificate.noteIntegrityFailures?.map((issue) => issue.code)).toContain(
+        'NOTE_SOURCE_PARTITION_INCOMPLETE',
       );
     },
     60_000,
@@ -1325,9 +1796,13 @@ describeWithLean('Lean direct relationship-story protocol v4', () => {
   );
 });
 
+const validDefinitionStory = (kind: 'footnotes' | 'endnotes') => ({
+  kind,
+  partPresent: false,
+});
 const validProtocolReport = {
-  protocolVersion: 4,
-  checker: 'safe-docx-lean-relationship-story-checker',
+  protocolVersion: 5,
+  checker: 'safe-docx-lean-conventional-main-note-integrity-checker',
   passed: true,
   fixedStories: [{
     name: 'main',
@@ -1350,6 +1825,55 @@ const validProtocolReport = {
   relationshipSlots: [],
   relationshipStories: [],
   selectionIssues: [],
+  referenceSourcePartitions: ['original', 'revised', 'compared'].map((side) => ({
+    side,
+    status: 'complete',
+    sources: [{
+      sourceOrdinal: 0,
+      sourceStory: 'main',
+      normalizedPartPath: 'word/document.xml',
+    }],
+    definitionStories: [
+      validDefinitionStory('footnotes'),
+      validDefinitionStory('endnotes'),
+    ],
+  })),
+  noteStories: (['footnotes', 'endnotes'] as const).map((kind) => ({
+    kind,
+    status: 'passed',
+    original: validDefinitionStory(kind),
+    revised: validDefinitionStory(kind),
+    compared: validDefinitionStory(kind),
+    parsedTokenCounts: { original: 0, revised: 0, combined: 0 },
+    report: {
+      passed: true,
+      checks: {
+        acceptPreservesFieldStructure: true,
+        rejectPreservesFieldStructure: true,
+        acceptTextMatchesRevised: true,
+        rejectTextMatchesOriginal: true,
+        combinedHasNoFldCharInsideDel: true,
+        combinedHasValidMoveRanges: true,
+      },
+    },
+  })),
+  noteInventories: ['original', 'revised', 'compared'].flatMap((side) =>
+    (['footnotes', 'endnotes'] as const).map((kind) => ({
+      side,
+      kind,
+      status: 'passed',
+      referenceOccurrences: 0,
+      uniqueReferenceIds: 0,
+      definitions: {
+        user: 0,
+        separator: 0,
+        continuationSeparator: 0,
+        continuationNotice: 0,
+      },
+      forbiddenDefinitionStoryReferences: 0,
+    })),
+  ),
+  noteIntegrityIssues: [],
 };
 
 async function fakeChecker(output: unknown): Promise<{ dir: string; executable: string }> {
@@ -1363,21 +1887,57 @@ async function fakeChecker(output: unknown): Promise<{ dir: string; executable: 
   return { dir, executable };
 }
 
+async function lifecycleChecker(
+  mode: 'success' | 'nonzero',
+  sentinel: string,
+): Promise<{ dir: string; executable: string; rootPath: string }> {
+  const dir = await mkdtemp(join(tmpdir(), 'safe-docx-lifecycle-checker-'));
+  const executable = join(dir, 'checker');
+  const rootPath = join(dir, 'verifier-root.txt');
+  const successOutput = `${JSON.stringify(validProtocolReport)}\n`;
+  await writeFile(executable, `#!/usr/bin/env node
+const fs = require('node:fs');
+const root = process.env.SAFE_DOCX_LEAN_TEMP_ROOT;
+fs.writeFileSync(${JSON.stringify(rootPath)}, root);
+fs.writeFileSync(root + '/confidential.txt', ${JSON.stringify(sentinel)});
+process.stdin.resume();
+process.stdin.on('end', () => {
+  if (${JSON.stringify(mode)} === 'success') {
+    process.stdout.write(${JSON.stringify(successOutput)});
+  } else {
+    process.stderr.write('ordinary lifecycle failure');
+    process.exitCode = 17;
+  }
+});
+`);
+  await chmod(executable, 0o700);
+  return { dir, executable, rootPath };
+}
+
 describe('Lean fixed-story protocol and security hardening', () => {
+  const inputWith = (
+    originalDocx: Buffer,
+    revisedDocx: Buffer,
+    comparedDocx: Buffer,
+    executablePath: string,
+    timeoutMs = 10_000,
+  ) => ({
+    originalDocx,
+    revisedDocx,
+    comparedDocx,
+    legacyDocumentXml: { original: '<w:document/>', revised: '<w:document/>', compared: '<w:document/>' },
+    reconstructionMode: 'inplace' as const,
+    options: { executablePath, timeoutMs },
+  });
   const runWith = (
     originalDocx: Buffer,
     revisedDocx: Buffer,
     comparedDocx: Buffer,
     executablePath: string,
     timeoutMs = 10_000,
-  ) => runLeanXmlTripleVerifier({
-    originalDocx,
-    revisedDocx,
-    comparedDocx,
-    legacyDocumentXml: { original: '<w:document/>', revised: '<w:document/>', compared: '<w:document/>' },
-    reconstructionMode: 'inplace',
-    options: { executablePath, timeoutMs },
-  });
+  ) => runLeanXmlTripleVerifier(
+    inputWith(originalDocx, revisedDocx, comparedDocx, executablePath, timeoutMs),
+  );
 
   test
     .openspec('[LEAN-STORY-08] Public certificate remains v1 compatible')
@@ -1399,10 +1959,9 @@ describe('Lean fixed-story protocol and security hardening', () => {
       });
       expect(result.status).toBe('passed');
       expect(result.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
-      expect(result.checkerProtocolVersion).toBe(4);
-      expect(result.fixedStoryScope).toEqual([
-        'word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml',
-      ]);
+      expect(result.checkerProtocolVersion).toBe(5);
+      expect(result.fixedStoryScope).toBeUndefined();
+      expect(result.noteStoryScope?.alignment).toBe('semantic-note-kind');
       expect(result.relationshipStoryScope?.inheritedRoles).toBe(false);
     } finally {
       await rm(fake.dir, { recursive: true, force: true });
@@ -1501,40 +2060,18 @@ describe('Lean fixed-story protocol and security hardening', () => {
 
   describeWithMaximumShape('compiled maximum-shape response constructors', () => {
     test.openspec('[LEAN-REL-22] Every legal response fits the output cap')(
-      'accepts exact maximum shared and distinct responses emitted by compiled Lean constructors', async () => {
-      const emittedStringBytes = (value: unknown): number => {
-        if (typeof value === 'string') return Buffer.byteLength(value, 'utf8');
-        if (Array.isArray(value)) return value.reduce((sum, item) => sum + emittedStringBytes(item), 0);
-        if (value && typeof value === 'object') {
-          return Object.values(value).reduce((sum, item) => sum + emittedStringBytes(item), 0);
-        }
-        return 0;
-      };
-      const outputs = await Promise.all(['shared', 'distinct'].map(async (mode) => {
-        const stdout = await runMaximumShapeProducer(mode as 'shared' | 'distinct');
-        return { mode, stdout, parsed: JSON.parse(stdout) as Record<string, unknown> };
-      }));
-      for (const { mode, stdout, parsed } of outputs) {
-        expect(isLeanVerifierJson(parsed), mode).toBe(true);
-        expect(Buffer.byteLength(stdout, 'utf8'), mode).toBeLessThan(8 * 1024 * 1024);
-        expect(stdout, mode).toContain('\\"');
-      }
-      expect(emittedStringBytes(outputs[0]!.parsed)).toBe(1_047_663);
-      expect(emittedStringBytes(outputs[1]!.parsed)).toBe(1_048_093);
-      const shared = outputs[0]!.parsed as {
-        relationshipSlots: unknown[];
-        relationshipStories: Array<{ selectingSlotOrdinals: number[] }>;
-      };
-      expect(shared.relationshipSlots).toHaveLength(192);
-      expect(shared.relationshipStories).toHaveLength(1);
-      expect(shared.relationshipStories[0]?.selectingSlotOrdinals).toHaveLength(192);
-      const distinct = outputs[1]!.parsed as {
-        relationshipSlots: unknown[];
-        relationshipStories: Array<{ selectingSlotOrdinals: number[] }>;
-      };
-      expect(distinct.relationshipSlots).toHaveLength(384);
-      expect(distinct.relationshipStories).toHaveLength(384);
-      expect(distinct.relationshipStories.flatMap((story) => story.selectingSlotOrdinals)).toHaveLength(384);
+      'strict-decodes a realizable maximum ordinary protocol-v5 response', async () => {
+      const raw = await runMaximumShapeProducer();
+      const parsed = JSON.parse(raw);
+      expect(isLeanVerifierJson(parsed)).toBe(true);
+      expect(Buffer.byteLength(raw.trimEnd(), 'utf8')).toBeLessThanOrEqual(2_619_776);
+      expect(parsed.relationshipSlots).toHaveLength(384);
+      expect(parsed.relationshipStories).toHaveLength(384);
+      expect(parsed.referenceSourcePartitions.every(
+        (partition: { sources: unknown[] }) => partition.sources.length === 385,
+      )).toBe(true);
+      expect(parsed.selectionIssues.length + parsed.noteIntegrityIssues.length).toBe(511);
+      expect(evidenceStringBytesForTest(parsed)).toBe(1_571_840);
     },
       60_000,
     );
@@ -1559,6 +2096,18 @@ describe('Lean fixed-story protocol and security hardening', () => {
       ...validProtocolReport,
       relationshipSlots: [slot],
       relationshipStories: [story],
+      referenceSourcePartitions: validProtocolReport.referenceSourcePartitions.map((partition) => ({
+        ...partition,
+        sources: [
+          partition.sources[0],
+          {
+            sourceOrdinal: 1,
+            sourceStory: 'header',
+            physicalStoryOrdinal: 0,
+            normalizedPartPath: 'word/header1.xml',
+          },
+        ],
+      })),
     };
     expect(isLeanVerifierJson(valid)).toBe(true);
     expect(isLeanVerifierJson({
@@ -1568,6 +2117,228 @@ describe('Lean fixed-story protocol and security hardening', () => {
     expect(isLeanVerifierJson({
       ...valid,
       relationshipStories: [{ ...story, selectingSlotOrdinals: [0, 0] }],
+    })).toBe(false);
+  });
+
+  test('rejects a complete evaluated note story whose selected relationship part is absent', () => {
+    const relationship = {
+      relationshipId: 'rIdFootnotes',
+      normalizedPartPath: 'word/footnotes.xml',
+    };
+    const forgedStory = {
+      kind: 'footnotes',
+      relationship,
+      partPresent: false,
+    };
+    const forged = {
+      ...validProtocolReport,
+      referenceSourcePartitions: validProtocolReport.referenceSourcePartitions.map(
+        (partition) => ({
+          ...partition,
+          definitionStories: [forgedStory, partition.definitionStories[1]],
+        }),
+      ),
+      noteStories: validProtocolReport.noteStories.map((story) =>
+        story.kind === 'footnotes'
+          ? { ...story, original: forgedStory, revised: forgedStory, compared: forgedStory }
+          : story),
+      noteInventories: validProtocolReport.noteInventories.map((inventory) =>
+        inventory.kind === 'footnotes' ? { ...inventory, relationship } : inventory),
+    };
+    expect(isLeanVerifierJson(forged)).toBe(false);
+  });
+
+  test('requires canonical discriminated source identity on ordinary note issues', () => {
+    const issue = {
+      code: 'NOTE_ID_INVALID_DECIMAL',
+      side: 'original',
+      kind: 'footnotes',
+      detail: 'note reference w:id is not an ST_DecimalNumber',
+      ordinalSpace: 'reference',
+      firstOccurrenceOrdinal: 0,
+      occurrenceCount: 1,
+      source: { sourceStory: 'main', sourceStoryOrdinal: 0 },
+      rawId: 'not-a-number',
+    };
+    const failed = {
+      ...validProtocolReport,
+      passed: false,
+      noteInventories: validProtocolReport.noteInventories.map((inventory, index) =>
+        index === 0 ? { ...inventory, status: 'failed' } : inventory),
+      noteIntegrityIssues: [issue],
+    };
+    expect(isLeanVerifierJson(failed)).toBe(true);
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [{ ...issue, source: undefined }],
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [{
+        ...issue,
+        source: { sourceStory: 'main', sourceStoryOrdinal: 1 },
+      }],
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [{
+        ...issue,
+        source: { sourceStory: 'header', sourceStoryOrdinal: 384 },
+      }],
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [{
+        ...issue,
+        code: 'NOTE_ID_MISSING',
+      }],
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [{
+        ...issue,
+        rawId: undefined,
+      }],
+    })).toBe(false);
+  });
+
+  test('rejects locator fields forbidden for a relationship issue code', () => {
+    const baseIssue = {
+      code: 'NOTE_RELATIONSHIP_AMBIGUOUS',
+      side: 'original',
+      kind: 'footnotes',
+      detail: 'multiple exact Transitional note relationships select the semantic note story',
+      ordinalSpace: 'relationship',
+      firstOccurrenceOrdinal: 0,
+      occurrenceCount: 1,
+      source: { sourceStory: 'main', sourceStoryOrdinal: 0 },
+    };
+    const absent = baseIssue;
+    const presentEmpty = { ...baseIssue, rawTarget: '' };
+    const failed = {
+      ...validProtocolReport,
+      passed: false,
+      noteInventories: validProtocolReport.noteInventories.map((inventory, index) =>
+        index === 0 ? { ...inventory, status: 'failed' } : inventory),
+      noteIntegrityIssues: [absent, presentEmpty],
+    };
+    expect(isLeanVerifierJson({ ...failed, noteIntegrityIssues: [absent] })).toBe(true);
+    expect(isLeanVerifierJson(failed)).toBe(false);
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [presentEmpty, absent],
+    })).toBe(false);
+  });
+
+  test('strictly validates optional note-issue relationship and part locators', () => {
+    const baseIssue = {
+      code: 'NOTE_RELATIONSHIP_UNSAFE_TARGET',
+      side: 'original',
+      kind: 'footnotes',
+      detail: 'the sole exact Transitional note relationship target is unsafe',
+      ordinalSpace: 'relationship',
+      firstOccurrenceOrdinal: 0,
+      occurrenceCount: 1,
+      source: { sourceStory: 'main', sourceStoryOrdinal: 0 },
+      relationshipId: 'rIdFootnotes',
+      rawTarget: '../footnotes.xml',
+    };
+    const failed = {
+      ...validProtocolReport,
+      passed: false,
+      noteInventories: validProtocolReport.noteInventories.map((inventory, index) =>
+        index === 0 ? { ...inventory, status: 'failed' } : inventory),
+      noteIntegrityIssues: [baseIssue],
+    };
+    expect(isLeanVerifierJson(failed)).toBe(true);
+    for (const mutation of [
+      { relationshipId: 7 },
+      { relationshipId: '7invalid' },
+      { relationshipId: `r${'x'.repeat(128)}` },
+      { rawTarget: 7 },
+      { rawTarget: 'x'.repeat(257) },
+      { rawTarget: 'bad\u0000target' },
+    ]) {
+      expect(isLeanVerifierJson({
+        ...failed,
+        noteIntegrityIssues: [{ ...baseIssue, ...mutation }],
+      })).toBe(false);
+    }
+    const partIssue = {
+      code: 'NOTE_PART_MISSING',
+      side: 'original',
+      kind: 'footnotes',
+      detail: 'selected note relationship target part is missing',
+      ordinalSpace: 'source',
+      firstOccurrenceOrdinal: 1,
+      occurrenceCount: 1,
+      source: { sourceStory: 'footnotes', sourceStoryOrdinal: 0 },
+      normalizedPartPath: 'word/footnotes.xml',
+    };
+    const partFailed = { ...failed, noteIntegrityIssues: [partIssue] };
+    expect(isLeanVerifierJson(partFailed)).toBe(true);
+    for (const normalizedPartPath of [
+      7, `word/${'x'.repeat(252)}`, 'word/../footnotes.xml', '/word/footnotes.xml',
+    ]) {
+      expect(isLeanVerifierJson({
+        ...partFailed,
+        noteIntegrityIssues: [{ ...partIssue, normalizedPartPath }],
+      })).toBe(false);
+    }
+  });
+
+  test('binds source-partition failures to the first canonical incomplete source', () => {
+    const sourceIssue = {
+      code: 'NOTE_SOURCE_PARTITION_INCOMPLETE',
+      side: 'original',
+      kind: 'footnotes',
+      detail: 'canonical admitted source stories exceed the side-wide XML-event limit',
+      ordinalSpace: 'source',
+      firstOccurrenceOrdinal: 0,
+      occurrenceCount: 1,
+      source: { sourceStory: 'main', sourceStoryOrdinal: 0 },
+    };
+    const failed = {
+      ...validProtocolReport,
+      passed: false,
+      referenceSourcePartitions: validProtocolReport.referenceSourcePartitions.map(
+        (partition, index) => index === 0
+          ? { ...partition, status: 'incomplete' }
+          : partition,
+      ),
+      noteStories: validProtocolReport.noteStories.map(({ report: _report, ...story }) => ({
+        ...story,
+        status: 'not_evaluated',
+        parsedTokenCounts: { original: 0, revised: 0, combined: 0 },
+      })),
+      noteInventories: validProtocolReport.noteInventories.map((inventory, index) =>
+        index < 2 ? { ...inventory, status: 'not_evaluated' } : inventory),
+      noteIntegrityIssues: [sourceIssue],
+    };
+    expect(isLeanVerifierJson(failed)).toBe(true);
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [{
+        ...sourceIssue,
+        firstOccurrenceOrdinal: 1,
+        source: { sourceStory: 'footnotes', sourceStoryOrdinal: 0 },
+      }],
+    })).toBe(false);
+    const laterSourceIssue = {
+      ...sourceIssue,
+      firstOccurrenceOrdinal: 1,
+      source: { sourceStory: 'footnotes', sourceStoryOrdinal: 0 },
+    };
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [
+        laterSourceIssue,
+        sourceIssue,
+      ],
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...failed,
+      noteIntegrityIssues: [sourceIssue, laterSourceIssue],
     })).toBe(false);
   });
 
@@ -1631,13 +2402,32 @@ describe('Lean fixed-story protocol and security hardening', () => {
 
   test('accepts only the canonical terminal evidence-overflow shape', () => {
     const terminalIssue = {
-      code: 'EVIDENCE_STRING_BUDGET_EXCEEDED',
-      detail: 'aggregate emitted strings exceed the evidence limit',
+      code: 'NOTE_EVIDENCE_STRING_BUDGET_EXCEEDED',
+      side: 'original',
+      kind: 'footnotes',
+      detail: 'protocol v5 escaped evidence string budget exceeded',
+      ordinalSpace: 'aggregate',
+      firstOccurrenceOrdinal: 0,
+      occurrenceCount: 1,
     };
     const terminal = {
       ...validProtocolReport,
       passed: false,
-      selectionIssues: [terminalIssue],
+      referenceSourcePartitions: validProtocolReport.referenceSourcePartitions.map((partition) => ({
+        ...partition,
+        status: 'incomplete',
+        sources: partition.sources.slice(0, 1),
+      })),
+      noteStories: validProtocolReport.noteStories.map(({ report: _report, ...story }) => ({
+        ...story,
+        status: 'not_evaluated',
+        parsedTokenCounts: { original: 0, revised: 0, combined: 0 },
+      })),
+      noteInventories: validProtocolReport.noteInventories.map((inventory) => ({
+        ...inventory,
+        status: 'not_evaluated',
+      })),
+      noteIntegrityIssues: [terminalIssue],
     };
     expect(isLeanVerifierJson(terminal)).toBe(true);
     expect(isLeanVerifierJson({
@@ -1649,12 +2439,53 @@ describe('Lean fixed-story protocol and security hardening', () => {
     })).toBe(false);
     expect(isLeanVerifierJson({
       ...terminal,
-      selectionIssues: [terminalIssue, {
+      noteIntegrityIssues: [{ ...terminalIssue, source: {
+        sourceStory: 'main', sourceStoryOrdinal: 0,
+      } }],
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...terminal,
+      referenceSourcePartitions: terminal.referenceSourcePartitions.map((partition, index) =>
+        index === 0 ? {
+          ...partition,
+          definitionStories: [{
+            kind: 'footnotes',
+            relationship: {
+              relationshipId: 'rIdFootnotes',
+              normalizedPartPath: 'word/footnotes.xml',
+            },
+            partPresent: false,
+          }, partition.definitionStories[1]],
+        } : partition),
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...terminal,
+      noteInventories: terminal.noteInventories.map((inventory, index) =>
+        index === 0 ? {
+          ...inventory,
+          relationship: {
+            relationshipId: 'rIdFootnotes',
+            normalizedPartPath: 'word/footnotes.xml',
+          },
+        } : inventory),
+    })).toBe(false);
+    expect(isLeanVerifierJson({
+      ...terminal,
+      selectionIssues: [{
         code: 'ISSUE_LIMIT_EXCEEDED',
-        detail: 'too many issues',
+        detail: 'legacy terminal is forbidden in selectionIssues',
       }],
     })).toBe(false);
   });
+
+  test('accepts both complete canonical terminal responses emitted by Lean', async () => {
+    if (!existsSync(TERMINAL_SHAPES_EXE)) return;
+    for (const mode of ['issues', 'strings'] as const) {
+      const raw = await runTerminalShapeProducer(mode);
+      expect(Buffer.byteLength(raw, 'utf8')).toBeLessThanOrEqual(2_621_440);
+      expect(isLeanVerifierJson(JSON.parse(raw))).toBe(true);
+    }
+  }, 20_000);
 
   test('rejects contradictory or root-inconsistent required-story presence mismatches', async () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
@@ -1696,7 +2527,7 @@ process.stdin.on('end', () => setTimeout(() => {
   const req = JSON.parse(raw);
   const bytes = require('node:fs').readFileSync(req.originalDocxPath);
   if (bytes.subarray(0, 2).toString() !== 'PK') process.exit(9);
-  process.stdout.write(${JSON.stringify(JSON.stringify(validProtocolReport))});
+  process.stdout.write(${JSON.stringify(`${JSON.stringify(validProtocolReport)}\n`)});
 }, 50));
 `);
     await chmod(executable, 0o700);
@@ -1710,18 +2541,139 @@ process.stdin.on('end', () => setTimeout(() => {
     }
   });
 
+  test('removes the private verifier root and confidential sentinel after a successful response', async () => {
+    const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const sentinel = 'confidential-success-sentinel';
+    const fake = await lifecycleChecker('success', sentinel);
+    try {
+      const result = await runWith(docx, docx, docx, fake.executable);
+      expect(result.status, result.reason).toBe('passed');
+      const verifierRoot = await readFile(fake.rootPath, 'utf8');
+      expect(existsSync(verifierRoot)).toBe(false);
+      await expect(readFile(join(verifierRoot, 'confidential.txt'), 'utf8')).rejects.toThrow();
+    } finally {
+      await rm(fake.dir, { recursive: true, force: true });
+    }
+  });
+
+  test('removes the private verifier root and confidential sentinel after a nonzero child exit', async () => {
+    const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const sentinel = 'confidential-nonzero-sentinel';
+    const fake = await lifecycleChecker('nonzero', sentinel);
+    try {
+      const result = await runWith(docx, docx, docx, fake.executable);
+      expect(result.status).toBe('not_run');
+      expect(result.reason).toBe(
+        'Lean relationship-story checker exited with code 17: ordinary lifecycle failure',
+      );
+      const verifierRoot = await readFile(fake.rootPath, 'utf8');
+      expect(existsSync(verifierRoot)).toBe(false);
+      await expect(readFile(join(verifierRoot, 'confidential.txt'), 'utf8')).rejects.toThrow();
+    } finally {
+      await rm(fake.dir, { recursive: true, force: true });
+    }
+  });
+
+  test('surfaces the exact deterministic error when private-root removal fails', async () => {
+    const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const sentinel = 'confidential-cleanup-failure-sentinel';
+    const fake = await lifecycleChecker('success', sentinel);
+    let verifierRoot: string | undefined;
+    try {
+      const error = await runLeanXmlTripleVerifierForTest(
+        inputWith(docx, docx, docx, fake.executable),
+        {
+          removeRoot: async () => {
+            throw new Error('deliberately induced root-removal failure');
+          },
+        },
+      ).then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+      verifierRoot = await readFile(fake.rootPath, 'utf8');
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(
+        `Lean verifier private temporary-root cleanup failed for ${verifierRoot}: ` +
+        'deliberately induced root-removal failure',
+      );
+      expect(existsSync(verifierRoot)).toBe(true);
+      await expect(readFile(join(verifierRoot, 'confidential.txt'), 'utf8')).resolves.toBe(sentinel);
+    } finally {
+      if (verifierRoot) await rm(verifierRoot, { recursive: true, force: true });
+      await rm(fake.dir, { recursive: true, force: true });
+    }
+  });
+
   test('kills verifier process groups when a timeout fires', async () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
     const dir = await mkdtemp(join(tmpdir(), 'safe-docx-timeout-checker-'));
     const executable = join(dir, 'checker');
     const pidPath = join(dir, 'descendant.pid');
-    await writeFile(executable, `#!/bin/sh\nsleep 30 &\necho $! > '${pidPath}'\ncat >/dev/null\nwait\n`);
+    const rootPath = join(dir, 'verifier-root.txt');
+    const sentinel = 'confidential-timeout-sentinel';
+    await writeFile(executable, `#!/bin/sh
+if [ "$1" = "--probe" ]; then exit 0; fi
+printf '%s' "$SAFE_DOCX_LEAN_TEMP_ROOT" > '${rootPath}'
+printf '%s' '${sentinel}' > "$SAFE_DOCX_LEAN_TEMP_ROOT/confidential.txt"
+sleep 30 &
+echo $! > '${pidPath}'
+cat >/dev/null
+wait
+`);
     await chmod(executable, 0o700);
+    await new Promise<void>((resolve, reject) => {
+      const probe = spawn(executable, ['--probe'], { stdio: 'ignore' });
+      probe.on('error', reject);
+      probe.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`timeout checker probe exited with code ${code}`));
+      });
+    });
     try {
-      expect((await runWith(docx, docx, docx, executable, 300)).status).toBe('not_run');
-      const pid = Number((await readFile(pidPath, 'utf8')).trim());
+      const result = await runWith(docx, docx, docx, executable, 300);
+      expect(result.status, result.reason).toBe('not_run');
+      const pidText = await readFile(pidPath, 'utf8').catch((error: unknown) => {
+        throw new Error(`timeout checker did not write descendant PID: ${result.reason}`, {
+          cause: error,
+        });
+      });
+      const pid = Number(pidText.trim());
+      const verifierRoot = await readFile(rootPath, 'utf8');
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(() => process.kill(pid, 0)).toThrow();
+      expect(existsSync(verifierRoot)).toBe(false);
+      await expect(readFile(join(verifierRoot, 'confidential.txt'), 'utf8')).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('removes the private verifier root after protocol output overflow', async () => {
+    const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
+    const dir = await mkdtemp(join(tmpdir(), 'safe-docx-overflow-checker-'));
+    const executable = join(dir, 'checker');
+    const rootPath = join(dir, 'verifier-root.txt');
+    const rootModePath = join(dir, 'verifier-root-mode.txt');
+    const sentinel = 'confidential-overflow-sentinel';
+    await writeFile(executable, `#!/usr/bin/env node
+const fs = require('node:fs');
+const root = process.env.SAFE_DOCX_LEAN_TEMP_ROOT;
+fs.writeFileSync(${JSON.stringify(rootPath)}, root);
+fs.writeFileSync(${JSON.stringify(rootModePath)}, (fs.statSync(root).mode & 0o777).toString(8));
+fs.writeFileSync(root + '/confidential.txt', ${JSON.stringify(sentinel)});
+process.stdin.resume();
+process.stdin.on('end', () => process.stdout.write('x'.repeat(2621442)));
+`);
+    await chmod(executable, 0o700);
+    try {
+      const result = await runWith(docx, docx, docx, executable);
+      expect(result.status).toBe('not_run');
+      expect(result.reason).toContain('exceeded protocol output limits');
+      const verifierRoot = await readFile(rootPath, 'utf8');
+      expect(await readFile(rootModePath, 'utf8')).toBe('700');
+      expect(existsSync(verifierRoot)).toBe(false);
+      await expect(readFile(join(verifierRoot, 'confidential.txt'), 'utf8')).rejects.toThrow();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1751,8 +2703,8 @@ describeWithLean('Lean compiled package extraction limits', () => {
     const oversized = await replacePart(base, 'word/footnotes.xml', huge, 'DEFLATE');
     const result = await run(oversized);
     expect(result.status).toBe('failed');
-    expect(result.fixedStoryFailures?.map((issue) => issue.code)).toContain(
-      'OPTIONAL_STORY_PART_LIMIT_EXCEEDED',
+    expect(result.noteIntegrityFailures?.map((issue) => issue.code)).toContain(
+      'NOTE_PART_LIMIT_EXCEEDED',
     );
   });
 
@@ -1762,5 +2714,5 @@ describeWithLean('Lean compiled package extraction limits', () => {
     const compressed = await replacePart(base, 'word/footnotes.xml', bomb, 'DEFLATE');
     const result = await run(compressed);
     expect(result.status).toBe('passed');
-  });
+  }, 20_000);
 });

@@ -303,7 +303,7 @@ structure ExpandedXmlAttribute where
   uri : String
   localName : String
   value : String
-  deriving BEq, Repr
+  deriving BEq, DecidableEq, Repr
 
 def expandOrdinaryAttributes (attributes : XmlAttributes)
     (bindings : NamespaceBindings) : Except String (List ExpandedXmlAttribute) :=
@@ -526,7 +526,7 @@ inductive XmlEvent
       (depth : Nat) (selfClosing : Bool)
   | endElement (uri localName : String) (depth : Nat)
   | text (value : String) (depth : Nat)
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 structure XmlEventParseState where
   stack : List OpenElement := []

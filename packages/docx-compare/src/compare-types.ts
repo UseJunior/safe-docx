@@ -100,7 +100,11 @@ export type ReconstructionFallbackReason =
 export interface LeanXmlVerifierOptions {
   /**
    * Run the Lean fixed-story verifier. Default: false.
-   * The compiled verifier currently requires `unzip` on PATH to extract DOCX parts.
+   * The compiled verifier currently requires `unzip` on PATH for DEFLATE
+   * extraction. The TypeScript supervisor creates a private mode-0700 temporary
+   * root, passes it to Lean, and recursively removes it after the verifier
+   * process closes, including timeout and output-overflow failures. No external
+   * `chmod` executable is required.
    */
   enabled?: boolean;
   /**
@@ -493,6 +497,93 @@ export interface DocumentIntegrityFixedStoryFailure {
   detail: string;
 }
 
+export type DocumentIntegrityNoteKind = 'footnotes' | 'endnotes';
+export type DocumentIntegrityNoteStatus = 'passed' | 'failed' | 'not_evaluated';
+
+export interface DocumentIntegrityNoteRelationshipIdentity {
+  relationshipId: string;
+  normalizedPartPath: string;
+}
+
+export interface DocumentIntegrityNoteDefinitionStory {
+  kind: DocumentIntegrityNoteKind;
+  relationship?: DocumentIntegrityNoteRelationshipIdentity;
+  partPresent: boolean;
+}
+
+export interface DocumentIntegrityReferenceSource {
+  sourceOrdinal: number;
+  sourceStory: 'main' | 'header' | 'footer';
+  physicalStoryOrdinal?: number;
+  normalizedPartPath: string;
+}
+
+export interface DocumentIntegrityReferenceSourcePartition {
+  side: DocumentIntegrityVerifierSide;
+  status: 'complete' | 'incomplete';
+  sources: DocumentIntegrityReferenceSource[];
+  definitionStories: [
+    DocumentIntegrityNoteDefinitionStory,
+    DocumentIntegrityNoteDefinitionStory,
+  ];
+}
+
+export interface DocumentIntegrityNoteStory {
+  kind: DocumentIntegrityNoteKind;
+  status: DocumentIntegrityNoteStatus;
+  original: DocumentIntegrityNoteDefinitionStory;
+  revised: DocumentIntegrityNoteDefinitionStory;
+  compared: DocumentIntegrityNoteDefinitionStory;
+  parsedTokenCounts: { original: number; revised: number; compared: number };
+}
+
+export interface DocumentIntegrityNoteInventory {
+  side: DocumentIntegrityVerifierSide;
+  kind: DocumentIntegrityNoteKind;
+  status: DocumentIntegrityNoteStatus;
+  relationship?: DocumentIntegrityNoteRelationshipIdentity;
+  referenceOccurrences: number;
+  uniqueReferenceIds: number;
+  definitions: {
+    user: number;
+    separator: number;
+    continuationSeparator: number;
+    continuationNotice: number;
+  };
+  forbiddenDefinitionStoryReferences: number;
+}
+
+export interface DocumentIntegrityNoteFailure {
+  code: string;
+  side: DocumentIntegrityVerifierSide;
+  kind: DocumentIntegrityNoteKind;
+  detail: string;
+  ordinalSpace: 'relationship' | 'source' | 'definition' | 'reference' | 'poison' | 'aggregate';
+  firstOccurrenceOrdinal: number;
+  occurrenceCount: number;
+  source?: {
+    sourceStory: 'main' | 'header' | 'footer' | 'footnotes' | 'endnotes';
+    sourceStoryOrdinal: number;
+  };
+  canonicalId?: string;
+  rawId?: string;
+  rawIdByteLength?: number;
+  rawIdDigest?: string;
+  referencedKind?: DocumentIntegrityNoteKind;
+  relationshipId?: string;
+  rawTarget?: string;
+  normalizedPartPath?: string;
+}
+
+export interface DocumentIntegrityNoteScope {
+  selection: 'fixed-word-document-main-relationships';
+  mainDocumentPart: 'word/document.xml';
+  relationshipsPart: 'word/_rels/document.xml.rels';
+  alignment: 'semantic-note-kind';
+  namespaces: 'transitional';
+  reconstructionMode: 'inplace';
+}
+
 export interface DocumentIntegrityCertificate {
   /** Overall result from the separately compiled Lean verifier. */
   status: DocumentIntegrityCertificateStatus;
@@ -526,7 +617,7 @@ export interface DocumentIntegrityCertificate {
   /** Stable v1 main-story token counts. */
   parsedTokenCounts?: { original: number; revised: number; compared: number };
   /** Internal executable protocol used for package-level verification. */
-  checkerProtocolVersion?: 3 | 4;
+  checkerProtocolVersion?: 3 | 4 | 5;
   fixedStoryScope?: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
   inputPackageSha256?: { originalDocx: string; revisedDocx: string; comparedDocx: string };
   stories?: DocumentIntegrityStoryCertificate[];
@@ -541,6 +632,11 @@ export interface DocumentIntegrityCertificate {
   relationshipSlots?: DocumentIntegrityRelationshipSlot[];
   relationshipStories?: DocumentIntegrityRelationshipStory[];
   relationshipSelectionFailures?: DocumentIntegrityRelationshipSelectionFailure[];
+  noteStoryScope?: DocumentIntegrityNoteScope;
+  referenceSourcePartitions?: DocumentIntegrityReferenceSourcePartition[];
+  noteStories?: DocumentIntegrityNoteStory[];
+  noteInventories?: DocumentIntegrityNoteInventory[];
+  noteIntegrityFailures?: DocumentIntegrityNoteFailure[];
   /** Important surfaces this certificate does not claim to validate. */
   exclusions?: string[];
   reason?: string;

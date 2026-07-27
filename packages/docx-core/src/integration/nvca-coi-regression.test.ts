@@ -62,6 +62,55 @@ async function deriveMinimallyEditedRevision(source: Buffer): Promise<Buffer> {
   return (await document.toBuffer({ cleanBookmarks: false })).buffer;
 }
 
+/**
+ * @conformance ECMA-376 edition 5, Part 1 § 11.3.4
+ * @conformance ECMA-376 edition 5, Part 1 § 17.11.7
+ * @conformance ECMA-376 edition 5, Part 1 § 17.18.10
+ */
+async function addNvcaEndnoteEvidence(source: Buffer): Promise<Buffer> {
+  const archive = await DocxArchive.load(source);
+  const documentXml = await archive.getDocumentXml();
+  const paragraphClose = documentXml.indexOf('</w:p>');
+  if (paragraphClose < 0) throw new Error('NVCA source has no paragraph for endnote evidence');
+  archive.setFile(
+    'word/document.xml',
+    documentXml.slice(0, paragraphClose) +
+      '<w:r><w:endnoteReference w:id="640"/></w:r>' +
+      documentXml.slice(paragraphClose),
+  );
+  const relationshipsPath = 'word/_rels/document.xml.rels';
+  const relationships = await archive.getFile(relationshipsPath);
+  if (!relationships?.includes('</Relationships>')) {
+    throw new Error('NVCA source has no conventional Main Document relationships part');
+  }
+  const endnotesType =
+    'http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes';
+  const existingRelationship = relationships.match(/<Relationship\b[^>]*\/?>/g)
+    ?.find((record) => record.includes(`Type="${endnotesType}"`));
+  const existingTarget = existingRelationship?.match(/\bTarget="([^"]+)"/)?.[1];
+  const endnotesPath = existingTarget ? `word/${existingTarget}` : 'word/endnotes-lean-640.xml';
+  if (!existingRelationship) {
+    archive.setFile(
+      relationshipsPath,
+      relationships.replace(
+        '</Relationships>',
+        `<Relationship Id="rIdLeanEndnotes640" Type="${endnotesType}" ` +
+          'Target="endnotes-lean-640.xml"/></Relationships>',
+      ),
+    );
+  }
+  const existingEndnotes = await archive.getFile(endnotesPath);
+  const userDefinition =
+    '<w:endnote w:id="640"><w:p><w:r><w:t>NVCA endnote evidence</w:t></w:r></w:p></w:endnote>';
+  archive.setFile(
+    endnotesPath,
+    existingEndnotes?.includes('</w:endnotes>')
+      ? existingEndnotes.replace('</w:endnotes>', `${userDefinition}</w:endnotes>`)
+      : `<w:endnotes xmlns:w="${OOXML.W_NS}">${userDefinition}</w:endnotes>`,
+  );
+  return archive.save();
+}
+
 describe('NVCA COI Regression', () => {
   test('should compare COI source vs filled in inplace mode without safety fallback', async ({
     given,
@@ -191,6 +240,152 @@ describe('NVCA COI ancillary field evidence', () => {
 });
 
 describeWithCompiledLean('NVCA COI Lean relationship-story evidence', () => {
+  test.openspec('[LEAN-NOTE-04] NVCA source-derived note evidence is non-vacuous')(
+    'checks source-derived footnote and added endnote references before a poison mutation',
+    async () => {
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.7' });
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.11.14' });
+      testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '11.3.4' });
+      if (!fs.existsSync(sourcePath)) throw new Error('NVCA source fixture is missing');
+      const original = await addNvcaEndnoteEvidence(fs.readFileSync(sourcePath));
+      const revised = await deriveMinimallyEditedRevision(original);
+      const comparison = await compareDocuments(original, revised, {
+        engine: 'atomizer',
+        reconstructionMode: 'inplace',
+        author: 'RegressionTest',
+        leanXmlVerifier: { enabled: true, executablePath: leanCheckerPath, timeoutMs: 60_000 },
+      });
+      expect(
+        comparison.documentIntegrity?.status,
+        JSON.stringify(comparison.documentIntegrity, null, 2),
+      ).toBe('passed');
+      expect(comparison.documentIntegrity?.checkerProtocolVersion).toBe(5);
+      expect(comparison.documentIntegrity?.noteInventories?.every((inventory) =>
+        inventory.referenceOccurrences > 0 && inventory.definitions.user > 0,
+      )).toBe(true);
+
+      const poisoned = await DocxArchive.load(comparison.document);
+      const endnotesPath = comparison.documentIntegrity?.noteInventories?.find((inventory) =>
+        inventory.side === 'compared' && inventory.kind === 'endnotes',
+      )?.relationship?.normalizedPartPath;
+      if (!endnotesPath) throw new Error('NVCA evidence has no selected compared endnotes path');
+      const endnotesXml = await poisoned.getFile(endnotesPath);
+      if (!endnotesXml) throw new Error('NVCA selected endnotes part is missing');
+      poisoned.setFile(
+        endnotesPath,
+        endnotesXml.replace(
+          '</w:endnotes>',
+          '<w:endnote w:id="641"><w:p>' +
+            '<w:r><w:endnoteReference w:id="640"/></w:r>' +
+            '<w:r><w:footnoteReference w:id="1"/></w:r>' +
+            '</w:p></w:endnote>' +
+            '</w:endnotes>',
+        ),
+      );
+      const originalXml = await (await DocxArchive.load(original)).getDocumentXml();
+      const revisedXml = await (await DocxArchive.load(revised)).getDocumentXml();
+      const comparedXml = await (await DocxArchive.load(comparison.document)).getDocumentXml();
+      const runCompared = async (comparedDocx: Buffer) => runLeanXmlTripleVerifier({
+        originalDocx: original,
+        revisedDocx: revised,
+        comparedDocx,
+        legacyDocumentXml: { original: originalXml, revised: revisedXml, compared: comparedXml },
+        reconstructionMode: 'inplace',
+        options: { executablePath: leanCheckerPath, timeoutMs: 60_000 },
+      });
+      const expectedRelationshipStories = comparison.documentIntegrity?.relationshipStories;
+      const failed = await runCompared(await poisoned.save());
+      expect(failed.status).toBe('failed');
+      expect(failed.noteIntegrityFailures?.some((issue) =>
+        issue.code === 'NOTE_REFERENCE_IN_DEFINITION_STORY',
+      )).toBe(true);
+      expect(failed.relationshipStories).toEqual(expectedRelationshipStories);
+
+      const missingDefinition = await DocxArchive.load(comparison.document);
+      missingDefinition.setFile(
+        endnotesPath,
+        endnotesXml.replace(
+          '<w:endnote w:id="640"><w:p><w:r><w:t>NVCA endnote evidence</w:t></w:r></w:p></w:endnote>',
+          '',
+        ),
+      );
+      const missingDefinitionResult = await runCompared(await missingDefinition.save());
+      expect(missingDefinitionResult.noteIntegrityFailures?.some((issue) =>
+        issue.code === 'NOTE_REFERENCE_MISSING_DEFINITION' &&
+        issue.side === 'compared' && issue.kind === 'endnotes',
+      )).toBe(true);
+      expect(missingDefinitionResult.relationshipStories).toEqual(expectedRelationshipStories);
+
+      const missingRelationship = await DocxArchive.load(comparison.document);
+      const relsPath = 'word/_rels/document.xml.rels';
+      const relsXml = await missingRelationship.getFile(relsPath);
+      const endnoteRelationshipId = comparison.documentIntegrity?.noteInventories?.find((inventory) =>
+        inventory.side === 'compared' && inventory.kind === 'endnotes',
+      )?.relationship?.relationshipId;
+      if (!relsXml || !endnoteRelationshipId) {
+        throw new Error('NVCA compared endnote relationship evidence is missing');
+      }
+      const relationshipPattern = new RegExp(
+        `<Relationship\\b(?=[^>]*\\bId="${endnoteRelationshipId}")[^>]*` +
+        `(?:/>|>[\\s\\S]*?</Relationship>)`,
+      );
+      const relationshipsWithoutEndnotes = relsXml.replace(relationshipPattern, '');
+      expect(relationshipsWithoutEndnotes).not.toBe(relsXml);
+      missingRelationship.setFile(relsPath, relationshipsWithoutEndnotes);
+      const missingRelationshipResult = await runCompared(await missingRelationship.save());
+      expect(
+        missingRelationshipResult.status,
+        JSON.stringify(missingRelationshipResult, null, 2),
+      ).toBe('failed');
+      expect(missingRelationshipResult.noteIntegrityFailures?.some((issue) =>
+        issue.code === 'NOTE_RELATIONSHIP_REQUIRED' &&
+        issue.side === 'compared' && issue.kind === 'endnotes',
+      )).toBe(true);
+
+      const lexicalAlias = await DocxArchive.load(comparison.document);
+      lexicalAlias.setFile(
+        endnotesPath,
+        endnotesXml.replace('w:id="640"', 'w:id=" +0640 "'),
+      );
+      const lexicalAliasResult = await runCompared(await lexicalAlias.save());
+      expect(lexicalAliasResult.status).toBe('passed');
+      expect(lexicalAliasResult.relationshipStories).toEqual(expectedRelationshipStories);
+
+      const collision = await DocxArchive.load(comparison.document);
+      collision.setFile(
+        endnotesPath,
+        endnotesXml.replace(
+          '</w:endnotes>',
+          '<w:endnote w:id="+0640"><w:p/></w:endnote>' +
+            '<w:endnote w:id="00640"><w:p/></w:endnote></w:endnotes>',
+        ),
+      );
+      const collisionResult = await runCompared(await collision.save());
+      expect(collisionResult.noteIntegrityFailures?.filter((issue) =>
+        issue.code === 'NOTE_USER_DEFINITION_DUPLICATE' &&
+        issue.side === 'compared' && issue.kind === 'endnotes',
+      )).toEqual([
+        expect.objectContaining({ canonicalId: '640', occurrenceCount: 2 }),
+      ]);
+
+      const relocated = await DocxArchive.load(comparison.document);
+      const relocatedPath = 'word/notes/nvca-endnotes.xml';
+      relocated.setFile(relocatedPath, endnotesXml);
+      const currentTarget = endnotesPath.replace(/^word\//, '');
+      relocated.setFile(
+        relsPath,
+        relsXml.replace(`Target="${currentTarget}"`, 'Target="notes/nvca-endnotes.xml"'),
+      );
+      const relocatedResult = await runCompared(await relocated.save());
+      expect(relocatedResult.status).toBe('passed');
+      expect(relocatedResult.noteInventories?.find((inventory) =>
+        inventory.side === 'compared' && inventory.kind === 'endnotes',
+      )?.relationship?.normalizedPartPath).toBe(relocatedPath);
+      expect(relocatedResult.relationshipStories).toEqual(expectedRelationshipStories);
+    },
+    300_000,
+  );
+
   test.openspec('[LEAN-REL-19] Real NVCA compared-only selected-story mutations fail')(
     'keeps selection stable and fails every deduplicated selected header/footer mutation',
     async () => {
@@ -212,7 +407,7 @@ describeWithCompiledLean('NVCA COI Lean relationship-story evidence', () => {
       });
       const evidence = baseline.documentIntegrity;
       expect(evidence?.status).toBe('passed');
-      expect(evidence?.checkerProtocolVersion).toBe(4);
+      expect(evidence?.checkerProtocolVersion).toBe(5);
       expect(evidence?.relationshipSlots?.length).toBeGreaterThan(0);
       expect(evidence?.relationshipStories?.length).toBeGreaterThan(0);
 

@@ -174,8 +174,11 @@ It concluded *full atom equality* (`a = b`), which held only because `Atom` expo
 ## Lean relationship-story checker
 
 `Tier2/XmlTripleChecker.lean` retains the generic six-check story collection.
-`Tier2/RelationshipStorySelector.lean` adds the protocol-v4 package inventory
-and selector. The `leanDocxChecker` executable receives only paths to exact
+`Tier2/RelationshipStorySelector.lean` adds the package inventory and
+header/footer selector. `Tier2/NoteReferenceIntegrity.lean` adds the
+protocol-v5 conventional-main note selector, namespace-resolved event scanner,
+package-local reference/definition checker, and six axiom-free theorem targets.
+The `leanDocxChecker` executable receives only paths to exact
 original, revised, and compared DOCX snapshots; TypeScript does not provide a
 story manifest or pre-resolved relationship targets.
 
@@ -189,21 +192,23 @@ the index. This is a bounded extraction policy, not full OPC conformance.
 The required `word/document.xml` must extract, decode, parse, tokenize, and
 produce an ancestry-aware inventory of exact direct
 `w:body/w:sectPr` and `w:body/w:p/w:pPr/w:sectPr` placements on all three
-sides before any valid v4 response exists. It must contain exactly one direct
+sides before any valid v5 response exists. It must contain exactly one direct
 `w:body`; nested/multiple bodies, duplicate body-level terminal `w:sectPr`, or
 a body element after that terminal section fail as process-level `not_run`.
 Other section placements and references outside an open supported direct
 section are structured selection issues.
-Optional footnotes/endnotes remain fixed stories; post-main optional failures
-are structured. Direct explicit first/default/even header/footer bindings are
+Footnotes and endnotes are selected by exact Transitional relationship type
+from `word/_rels/document.xml.rels`; alternate safe paths are supported and
+aligned by semantic note kind across snapshots. Direct explicit
+first/default/even header/footer bindings are
 resolved through each package's independently parsed
 `word/_rels/document.xml.rels`.
 
 Resource admission is deterministic: required main runs first; relationship
 XML, complete selected-target metadata, and selected physical work run next;
-footnotes follow; endnotes are last. Unique-path and selected compressed/
+semantic footnotes follow; endnotes are last. Unique-path and selected compressed/
 expanded metadata ceilings are checked before any selected target is
-decompressed. Optional metadata crossings are fixed-story issues and are not
+decompressed. Note metadata crossings are structured issues and are not
 extracted. XML events are checked against the remaining per-part and
 per-package budget while parsing, and semantic tokens come from that bounded
 event stream; aggregate exhaustion stops later work while retaining earlier
@@ -229,13 +234,61 @@ Every fixed and selected physical story uses the existing generic checker:
 - the accept and reject projections keep valid Word field structure; and
 - the compared XML has valid field-marker and tracked-move structure.
 
-The four selector/aggregate theorem targets quantify over the checked pure
-functions invoked by `LeanDocxChecker`: per-side identifying issue-or-exact-slot
-completeness, unique work assignment, canonical ordered locator equality, and
-exact loaded-work/name/token-triple correspondence. No result carries proof fields.
-Aggregate soundness reuses `story_collection_checker_sound`. The public certificate stays
-at version 1; checker protocol version 4, relationship scope, slots, physical
-stories, fixed-story failures, and selection failures are additive fields.
+For main plus successfully selected header/footer sources, protocol v5 also
+scans `w:footnoteReference` and `w:endnoteReference`. Each canonical decimal
+user reference must resolve to exactly one typed user definition in the
+relationship-selected package part. Typed separator definitions do not become
+user definitions by numeric convention; unique unreferenced definitions are
+allowed. Any self-kind or cross-kind reference inside a note-definition story
+is a structured failure. A failed or incomplete source partition zeros both
+side-kind inventories rather than exposing partial counts.
+
+Six independent semantic theorem targets prove selector identity, complete and
+incomplete partition behavior, parsed inventory correspondence, package-local
+note integrity, and aggregate/serialization soundness with empty axiom sets.
+The separate `production_run_request_core_refinement_sound` theorem binds the
+actual `runRequestCore` package records and parser evidence through selection,
+bounded scanning, inventories, aggregate pass, every protocol-v5 JSON field,
+and finalized stdout. Its exact foundation set is `propext`,
+`Classical.choice`, and `Quot.sound`, introduced by the concrete
+`Lean.Json`/`String` production path; its recursive dependency closure rejects
+all LeanSpike engine and residual constants. No result carries proof fields.
+Production extraction, parsing, and note scanning are single-pass: exact
+request package bytes, extracted entry bytes, successful parser equations, and
+one retained bounded-scan result per evaluated side cross the pure core
+boundary. The TypeScript supervisor creates a private mode-0700 temporary root
+and passes it as `SAFE_DOCX_LEAN_TEMP_ROOT`. Each caller path is read once, and
+Lean writes those retained bytes once to package snapshots inside that root;
+all ZIP indexing and extraction then uses the snapshots, so later caller-path
+mutation cannot change extracted input. The supervisor waits for child close
+and recursively removes the entire root after success, verifier failure,
+timeout, or output overflow. Lean also reports deterministic cleanup failures;
+there is no PATH-resolved `chmod` dependency. Evidence records the central/local
+offsets, exact compressed slice, decompressed bytes, and one-call counters. The
+external `unzip` deflate operation and OS snapshot write remain explicit trust
+boundaries; Lean proves the retained input/output relation, not the deflate
+implementation. The proof gate consumes that evidence without
+whole-package CRC recomputation, parser reruns, or semantic rescans. Concrete
+JSON must equal the independently typed `semanticProtocolV5Projection`; its
+recursive value dependency closure excludes every production encoder,
+ordering/coalescing/budget/terminal helper, the production builder, and
+`runRequestCore`. Compiled drift witnesses cover field names and values, array
+order, issue coalescing/budget behavior, and terminal shape.
+
+When the executable is launched without the TypeScript supervisor, Lean's
+in-process secure temporary-directory API creates a root readable and writable
+only by the creating user. Lean normally removes that root recursively in
+`finally`. An operating-system kill of the standalone process can prevent that
+process from cleaning its own directory. Production callers should use the
+supervisor-owned root; the standalone fallback does not claim kill-resistant
+cleanup.
+
+The public
+certificate stays at version 1; checker protocol version 5, relationship
+scope, slots, physical stories, semantic note scope, three source partitions,
+two note stories, six inventories, and structured failures are additive
+fields. Legacy `fixedStoryScope` is emitted only when all six note slots were
+actually checked at the conventional paths.
 Rebuild remains `not_applicable`. Inherited roles, unselected parts, comments,
 complete relationship/OPC/schema validation, pagination, rendering, field
 evaluation, and full ECMA-376 conformance remain excluded. Exact surfaces are in

@@ -531,9 +531,8 @@ def inspectDocumentEvent (side : VerifierSide) (state : InventoryState) (event :
     | none => { nextState with ancestors := nextAncestors }
   | .text .. => state
 
-def parseDocumentInventory (side : VerifierSide) (xml : String) :
-    Except String DocumentInventory := do
-  let parsed ← parseXmlEventsForRoot xml wmlNamespace "document"
+def documentInventoryFromParsed (side : VerifierSide)
+    (parsed : XmlEventParseState) : Except String DocumentInventory := do
   if parsed.eventCount > maxXmlEventsPerPart then throw "XML event limit exceeded"
   if parsed.maxDepthSeen > maxXmlDepth then throw "XML depth limit exceeded"
   let state := parsed.events.foldl (inspectDocumentEvent side) {}
@@ -549,6 +548,11 @@ def parseDocumentInventory (side : VerifierSide) (xml : String) :
     eventCount := parsed.eventCount
     maxDepthSeen := parsed.maxDepthSeen
   }
+
+def parseDocumentInventory (side : VerifierSide) (xml : String) :
+    Except String DocumentInventory := do
+  let parsed ← parseXmlEventsForRoot xml wmlNamespace "document"
+  documentInventoryFromParsed side parsed
 
 structure RelationshipRecord where
   id : String
@@ -573,8 +577,6 @@ def parseRelationshipRecord (attributes : List ExpandedXmlAttribute) :
   let targetMode := expandedAttribute? attributes "" "TargetMode"
   if id.toUTF8.size > maxRelationshipIdBytes then
     throw "relationship record Id exceeds its limit"
-  if targetValue.toUTF8.size > maxLocatorBytes then
-    throw "relationship record Target exceeds its limit"
   return RelationshipRecord.mk id relationshipType targetValue targetMode
 
 def parseRelationships (xml : String) : Except String (List RelationshipRecord × Nat) := do

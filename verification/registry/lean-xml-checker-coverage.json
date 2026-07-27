@@ -1,6 +1,6 @@
 {
-  "checker": "safe-docx-lean-relationship-story-checker",
-  "protocolVersion": 4,
+  "checker": "safe-docx-lean-conventional-main-note-integrity-checker",
+  "protocolVersion": 5,
   "scope": {
     "inputs": [
       {
@@ -9,8 +9,8 @@
         "packageParts": [
           "word/document.xml",
           "word/_rels/document.xml.rels",
-          "word/footnotes.xml",
-          "word/endnotes.xml",
+          "relationship-selected footnotes semantic part",
+          "relationship-selected endnotes semantic part",
           "directly selected word/header*.xml and word/footer*.xml"
         ]
       },
@@ -20,8 +20,8 @@
         "packageParts": [
           "word/document.xml",
           "word/_rels/document.xml.rels",
-          "word/footnotes.xml",
-          "word/endnotes.xml",
+          "relationship-selected footnotes semantic part",
+          "relationship-selected endnotes semantic part",
           "directly selected word/header*.xml and word/footer*.xml"
         ]
       },
@@ -31,8 +31,8 @@
         "packageParts": [
           "word/document.xml",
           "word/_rels/document.xml.rels",
-          "word/footnotes.xml",
-          "word/endnotes.xml",
+          "relationship-selected footnotes semantic part",
+          "relationship-selected endnotes semantic part",
           "directly selected word/header*.xml and word/footer*.xml"
         ]
       }
@@ -44,7 +44,10 @@
     "documentSurfaces": {
       "covered": [
         "required word/document.xml token stream with exactly one direct w:body, at most one terminal body-level w:sectPr, and ancestry-aware direct w:body/w:sectPr or w:body/w:p/w:pPr/w:sectPr binding inventory",
-        "optional word/footnotes.xml and word/endnotes.xml token streams",
+        "zero or one exact internal Transitional footnotes and endnotes relationship selected from the fixed Main Document Part relationships",
+        "semantic note-definition stories aligned by note kind across differing safe package paths",
+        "namespace-resolved footnote/endnote references in main and selected header/footer stories with exactly-one user-definition checks",
+        "typed separator, continuationSeparator, and continuationNotice definitions plus definition-story poison-reference rejection",
         "direct package-relationship records in word/_rels/document.xml.rels",
         "direct explicit first/default/even w:headerReference and w:footerReference slots aligned by section ordinal, kind, and role",
         "selected Transitional w:hdr and w:ftr token streams deduplicated by the complete three-side physical key"
@@ -75,6 +78,8 @@
       "w:delInstrText",
       "w:footnote",
       "w:endnote",
+      "w:footnoteReference",
+      "w:endnoteReference",
       "w:sectPr",
       "w:headerReference",
       "w:footerReference"
@@ -82,7 +87,7 @@
     "attributes": ["w:fldCharType", "w:id", "w:name", "w:type", "r:id"],
     "attributeValues": {
       "w:fldCharType": ["begin", "separate", "end"],
-      "w:type": ["separator", "continuationSeparator"]
+      "w:type": ["normal", "separator", "continuationSeparator", "continuationNotice"]
     },
     "xmlEntitiesDecoded": ["&lt;", "&gt;", "&quot;", "&apos;", "&amp;"],
     "numericCharacterReferencesDecoded": ["decimal", "hexadecimal"],
@@ -100,9 +105,11 @@
     "unzip -p -- is invoked only for one exact indexed safe name; output length and CRC-32 must match the binary index"
   ],
   "checkedProperties": [
-    "The required main story must extract, decode, parse, tokenize, and produce a bounded selector inventory on all three sides before any v4 response exists.",
+    "The required main story must extract, decode, parse, tokenize, and produce a bounded selector inventory on all three sides before any v5 response exists.",
     "Main inventory rejects missing, nested, or multiple direct bodies and duplicate or non-terminal body-level terminal sectPr; out-of-section header/footer references are structured issues.",
-    "Fixed main, footnote, and endnote stories retain the generic six-check collection behavior.",
+    "The fixed main story and relationship-selected semantic footnote/endnote story triples retain the generic six-check collection behavior.",
+    "Each canonical user note reference has exactly one package-local user definition; unique unreferenced user definitions are allowed.",
+    "Note definition stories reject recursive self-kind and cross-kind reference elements.",
     "Every per-side supported direct binding identity has exactly one identifying issue or membership in exactly one ordinally aligned logical slot, mutually exclusively.",
     "Every successful slot maps to exactly one physical story and each story locator list equals the canonical ordered list derived from aligned slots.",
     "Each checked relationship triple matches its loaded physical key, generated name, and exact original/revised/combined token lists.",
@@ -111,7 +118,7 @@
     "Bounded XML failures carry typed reasons and consumption counts; event-limit failure when remaining aggregate allowance is less than or equal to 500,000 is aggregate exhaustion, while larger remaining allowance preserves per-part classification.",
     "All fixed and successfully selected stories are checked through story_collection_checker_sound.",
     "Section count or ordered direct-slot differences fail closed without claiming semantic section identity.",
-    "Public certificate protocol v1 remains additive; internal protocol v4 evidence is present together only for valid passed or failed runs."
+    "Public certificate protocol v1 remains additive; internal protocol v5 note evidence is present together only for valid passed or failed runs."
   ],
   "limits": {
     "packageBytesPerSide": 33554432,
@@ -125,21 +132,24 @@
     "cumulativeExpandedXmlBytesPerSide": 33554432,
     "logicalSlots": 384,
     "physicalStories": 384,
-    "issues": 1536,
+    "issues": 511,
+    "validNoteReferencesPerSide": 8192,
+    "uniqueNoteReferenceIdsPerSideKind": 4096,
+    "noteDefinitionsPerPart": 4096,
+    "definitionStoryPoisonReferencesPerSide": 4096,
     "xmlDepth": 128,
     "xmlEventsPerPart": 500000,
     "xmlEventsPerSide": 1000000,
-    "evidenceStringsUtf8Bytes": 1048576,
-    "responseBytes": 8388608,
+    "evidenceStringsUtf8Bytes": 1572864,
+    "responseBytes": 2621440,
     "maximumShapeEvidence": {
-      "producer": "verification/lean/ProtocolV4MaximumShape.lean",
+      "producer": "verification/lean/ProtocolV5MaximumOrdinaryShape.lean",
       "strictDecoderTest": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts",
-      "sharedSelectors": 192,
-      "sharedResponseBytes": 2173684,
-      "sharedEmittedStringBytes": 1047663,
-      "distinctStories": 384,
-      "distinctResponseBytes": 2348656,
-      "distinctEmittedStringBytes": 1048093
+      "ordinaryIssues": 511,
+      "ordinaryEscapedStringBytes": 1571840,
+      "maximumOrdinaryResponseBytes": 2619776,
+      "terminalReserveBytes": 1024,
+      "legalResponseBytes": 2621440
     }
   },
   "ecma376Traceability": [
@@ -162,6 +172,26 @@
       "registryId": "ECMA-PART1-17-10-3",
       "section": "Part 1 §17.10.3",
       "claim": "A selected footer target must have a Transitional w:ftr root."
+    },
+    {
+      "registryId": "ECMA-PART1-17-11-14",
+      "section": "Part 1 §17.11.14",
+      "claim": "Footnote references resolve to exactly one typed user definition in the relationship-selected semantic part."
+    },
+    {
+      "registryId": "ECMA-PART1-17-11-7",
+      "section": "Part 1 §17.11.7",
+      "claim": "Endnote references resolve to exactly one typed user definition and note stories contain no recursive references."
+    },
+    {
+      "registryId": "ECMA-PART1-17-11-2",
+      "section": "Part 1 §17.11.2",
+      "claim": "Definition type, not numeric ID, distinguishes user and special note definitions."
+    },
+    {
+      "registryId": "ECMA-PART1-17-18-10",
+      "section": "Part 1 §17.18.10",
+      "claim": "Note IDs use bounded ST_DecimalNumber parsing and canonical evidence."
     }
   ],
   "knownUncheckedAreas": [
@@ -169,7 +199,7 @@
     "Strict OOXML namespaces",
     "rendering, pagination, inherited roles, and semantic section identity",
     "unselected parts and complete relationship/content-type integrity",
-    "note definition/reference integrity and comments",
+    "comments and comment-reference integrity",
     "field instruction evaluation, cached results, and bookmark resolution",
     "general XML canonicalization outside the accepted subset"
   ],
