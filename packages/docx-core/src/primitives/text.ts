@@ -539,6 +539,87 @@ function applyRunProps(doc: Document, run: Element, add: AddRunProps | undefined
   if (add.fontName !== undefined) ensureFont(doc, rPr, add.fontName);
 }
 
+type ContainerSegment = {
+  parent: Node;
+  start: number;
+  end: number;
+};
+
+function describeRunContainer(node: Node): string {
+  if (node.nodeType !== 1) return node.nodeName;
+  const el = node as Element;
+  if (el.namespaceURI === OOXML.W_NS) return `w:${el.localName}`;
+  return el.tagName;
+}
+
+function previewContainerText(text: string, start: number, end: number): string {
+  const value = text.slice(start, end);
+  return value.length <= 120 ? value : `${value.slice(0, 117)}...`;
+}
+
+function getContainerBoundaryError(
+  runs: readonly TextRun[],
+  startRunIdx: number,
+  endRunIdx: number,
+  start: number,
+  end: number,
+  fullText: string,
+): SafeDocxError | null {
+  const segments: ContainerSegment[] = [];
+  let runStart = 0;
+
+  for (let i = 0; i < runs.length; i++) {
+    const run = runs[i]!;
+    const runEnd = runStart + run.text.length;
+    if (i >= startRunIdx && i <= endRunIdx) {
+      const overlapStart = Math.max(start, runStart);
+      const overlapEnd = Math.min(end, runEnd);
+      if (overlapEnd > overlapStart) {
+        const parent = run.r.parentNode;
+        if (!parent) throw new Error('Run has no parent');
+        const previous = segments.at(-1);
+        if (previous?.parent === parent && previous.end === overlapStart) {
+          previous.end = overlapEnd;
+        } else {
+          segments.push({ parent, start: overlapStart, end: overlapEnd });
+        }
+      }
+    }
+    runStart = runEnd;
+  }
+
+  if (segments.length <= 1) return null;
+
+  const first = segments[0]!;
+  const second = segments[1]!;
+  const largest = segments.reduce((best, segment) =>
+    segment.end - segment.start > best.end - best.start ? segment : best,
+  );
+  const boundaryOffset = first.end;
+  const firstContainer = describeRunContainer(first.parent);
+  const secondContainer = describeRunContainer(second.parent);
+  const largestContainer = describeRunContainer(largest.parent);
+  const preview = previewContainerText(fullText, largest.start, largest.end);
+
+  return new SafeDocxError(
+    'UNSAFE_CONTAINER_BOUNDARY',
+    `Edit range [${start}, ${end}) crosses a container boundary at offset ${boundaryOffset} ` +
+      `(${firstContainer} → ${secondContainer}). Largest contained sub-span: ` +
+      `[${largest.start}, ${largest.end}) in ${largestContainer}, ${JSON.stringify(preview)}.`,
+    `Retry with old_string limited to one container, such as the text in range ` +
+      `[${largest.start}, ${largest.end}), or make separate edits on each side of offset ${boundaryOffset}.`,
+  );
+}
+
+/**
+ * Replace a visible paragraph range while keeping tracked runs inside their
+ * existing run container. In particular, edits wholly inside `w:hyperlink`
+ * remain nested there, while cross-container ranges are refused before the
+ * DOM is changed.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
+ * @see #652
+ */
 export function replaceParagraphTextRange(
   p: Element,
   start: number,
@@ -565,6 +646,16 @@ export function replaceParagraphTextRange(
   const { startRunIdx, startOffset, endRunIdx, endOffset } = findOffsetInRuns(runs, start, end);
   const startRun = runs[startRunIdx]!;
   const endRun = runs[endRunIdx]!;
+
+  const containerBoundaryError = getContainerBoundaryError(
+    runs,
+    startRunIdx,
+    endRunIdx,
+    start,
+    end,
+    fullText,
+  );
+  if (containerBoundaryError) throw containerBoundaryError;
 
   // A cached result may span many runs, but every touched run must belong to
   // the same complex field. Moving ordinary text, a field marker, or another
@@ -648,11 +739,7 @@ export function replaceParagraphTextRange(
   const parent = rangeStartRunEl.parentNode;
   if (!parent) throw new Error('Run has no parent');
   if (rangeEndRunEl.parentNode !== parent) {
-    throw new SafeDocxError(
-      'UNSAFE_CONTAINER_BOUNDARY',
-      'Edit crosses container boundaries (e.g. hyperlinks/SDTs).',
-      'Narrow old_string so the match is contained within a single container, or avoid editing inside hyperlinks.',
-    );
+    throw new Error('Container boundary changed while splitting replacement runs');
   }
 
   const insertBeforeNode = rangeEndRunEl.nextSibling;
