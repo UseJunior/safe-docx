@@ -86,19 +86,10 @@ const boundaryShiftFailure: ExpectedFailure = {
   messageIncludes: 'boundary 0 changed paragraph ownership, moved, or mutated',
 };
 
-const nestedFieldFailure: ExpectedFailure = {
-  issue: '#645',
-  kind: 'comparison-error',
-  errorName: 'AncillaryStorySafetyError',
-  messageIncludes: 'Ancillary story safety check failed with 3 issue(s)',
-};
-
 const expectedFailures: Readonly<
   Record<string, Partial<Record<ReconstructionMode, ExpectedFailure>>>
 > = {
-  'nvca-certificate-of-incorporation': { rebuild: boundaryShiftFailure },
   'nvca-indemnification-agreement': {
-    inplace: nestedFieldFailure,
     rebuild: {
       issue: '#646',
       kind: 'comparison-error',
@@ -120,7 +111,6 @@ const expectedFailures: Readonly<
       kind: 'bookmark-range-failure',
       names: ['_Ref_ContractCompanion_9kb9Ur019'],
     },
-    rebuild: boundaryShiftFailure,
   },
   'nvca-stock-purchase-agreement': {
     rebuild: {
