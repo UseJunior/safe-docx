@@ -42,6 +42,7 @@ function isParagraphInsertedOrDeleted(p: Element): boolean {
 }
 
 const BOOKMARK_MARKER_TAGS = ['w:bookmarkStart', 'w:bookmarkEnd'] as const;
+const BOOKMARK_MARKER_TAG_SET: ReadonlySet<string> = new Set(BOOKMARK_MARKER_TAGS);
 const REVISION_WRAPPER_TAGS = new Set(['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo']);
 
 /**
@@ -69,48 +70,123 @@ function bookmarkRangeIsEnclosedBy(container: Element, marker: Element): boolean
   return counterparts.some((candidate) => candidate.getAttribute('w:id') === id);
 }
 
+/** Whether the marker has any sibling before/after it inside its parent. */
+function hasSibling(marker: Element, direction: 'previous' | 'next'): boolean {
+  let node = direction === 'previous' ? marker.previousSibling : marker.nextSibling;
+  while (node) {
+    // Elements count as content; so do non-whitespace text nodes. Interelement
+    // whitespace never carries content in WordprocessingML run containers.
+    if (node.nodeType === 1) return true;
+    if (node.nodeType === 3 && (node.nodeValue ?? '').trim().length > 0) return true;
+    node = direction === 'previous' ? node.previousSibling : node.nextSibling;
+  }
+  return false;
+}
+
+/**
+ * Move `marker` out of every revision wrapper between it and `boundary`,
+ * splitting each wrapper the marker sits partway through so the marker keeps
+ * its exact position in the content stream.
+ *
+ * At each level the marker is either at an edge of its container — then it
+ * steps directly outside that edge, which is exact and creates nothing — or it
+ * has content on both sides, and the container is split in two: the trailing
+ * content moves into a fresh clone of the container (attributes copied, fresh
+ * `w:id`) placed after the marker. Both projections then keep the original
+ * span: accepting or rejecting the two halves is equivalent to accepting or
+ * rejecting the one wrapper they came from, and the marker stays anchored
+ * between the same two runs of content.
+ *
+ * Clones a marker only ever steps over — never into — are collected in
+ * `createdTails` so the caller can drop any that later markers empty out.
+ */
+function splitWrapperAtMarker(
+  marker: Element,
+  boundary: Node,
+  allocateRevisionId: () => number,
+  createdTails: Element[],
+): void {
+  while (marker.parentNode && marker.parentNode !== boundary) {
+    const container = marker.parentNode as Element;
+    const containerParent = container.parentNode;
+    if (!containerParent) return;
+
+    if (!hasSibling(marker, 'previous')) {
+      containerParent.insertBefore(marker, container);
+    } else if (!hasSibling(marker, 'next')) {
+      containerParent.insertBefore(marker, container.nextSibling);
+    } else {
+      const tail = container.cloneNode(false) as Element;
+      if (container.getAttribute('w:id') !== null) {
+        tail.setAttribute('w:id', String(allocateRevisionId()));
+      }
+      while (marker.nextSibling) {
+        tail.appendChild(marker.nextSibling);
+      }
+      containerParent.insertBefore(marker, container.nextSibling);
+      containerParent.insertBefore(tail, marker.nextSibling);
+      createdTails.push(tail);
+    }
+  }
+}
+
 /**
  * Lift the bookmark markers nested inside an inline revision wrapper out to the
- * wrapper's own level.
+ * wrapper's own level, splitting the wrapper wherever a marker sits partway
+ * through its content.
  *
  * A marker inside `<w:del>` vanishes on Accept All even though the surrounding
- * paragraph survives, so it cannot stay there. Where it lands depends on how
- * much of the range the wrapper owns:
+ * paragraph survives, so it cannot stay there. Every marker is walked out via
+ * {@link splitWrapperAtMarker}, which preserves the marker's exact position in
+ * the content stream:
  *
- * - A range the wrapper encloses entirely is placed around the wrapper — start
- *   before, end after — so it still spans the content it named. Dropping both
- *   boundaries in front of the wrapper (what this pass used to do) collapses it
- *   to zero length, which is how the rebuild path lost the range in issue #641.
- * - A boundary whose counterpart is outside the wrapper keeps the long-standing
- *   placement in front of the wrapper. Anchoring such a boundary after the
- *   wrapper instead would silently grow the range over the whole wrapped run.
- *   Neither placement reproduces the original span, because the boundary sat
- *   partway through content that one projection removes; repositioning it
- *   faithfully means splitting the wrapper at the boundary, which is out of
- *   scope here and tracked separately.
+ * - A range the wrapper encloses entirely comes out placed around the wrapper —
+ *   start before, end after — so it still spans the content it named. Dropping
+ *   both boundaries in front of the wrapper (what this pass used to do)
+ *   collapses it to zero length, which is how the rebuild path lost the range
+ *   in issue #641.
+ * - A boundary partway inside the wrapper used to be dropped in front of it,
+ *   silently shrinking the range (or growing it, for a start boundary).
+ *   Splitting the wrapper at the boundary — attributes copied onto the second
+ *   half, fresh `w:id` — keeps the original span in both projections
+ *   (issue #643).
+ *
+ * Markers are processed in document order so each split sees the pieces earlier
+ * splits produced; a tail clone that later markers empty out entirely is
+ * dropped rather than emitted as a contentless revision wrapper.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/641
+ * @see https://github.com/UseJunior/safe-docx/issues/643
  */
-function liftMarkersAroundWrapper(wrapper: Element): void {
+function liftMarkersAroundWrapper(wrapper: Element, allocateRevisionId: () => number): void {
   const parent = wrapper.parentNode;
   if (!parent) return;
 
-  const starts = Array.from(wrapper.getElementsByTagName('w:bookmarkStart')) as Element[];
-  const ends = Array.from(wrapper.getElementsByTagName('w:bookmarkEnd')) as Element[];
+  // Collect markers in document order before mutating anything.
+  const markers: Element[] = [];
+  const collect = (node: Element): void => {
+    for (const child of childElements(node)) {
+      if (BOOKMARK_MARKER_TAG_SET.has(child.tagName)) {
+        markers.push(child);
+      } else {
+        collect(child);
+      }
+    }
+  };
+  collect(wrapper);
 
-  // Decide before moving anything: lifting the starts out first would empty the
-  // wrapper of them and make every range look like it reaches outside.
-  const endsAfter = ends.filter((end) => bookmarkRangeIsEnclosedBy(wrapper, end));
-  const endsBefore = ends.filter((end) => !endsAfter.includes(end));
+  const createdTails: Element[] = [];
+  for (const marker of markers) {
+    splitWrapperAtMarker(marker, parent, allocateRevisionId, createdTails);
+  }
 
-  for (const start of starts) {
-    parent.insertBefore(start, wrapper);
-  }
-  for (const end of endsBefore) {
-    parent.insertBefore(end, wrapper);
-  }
-  // Reverse so each insert lands directly after the wrapper, which leaves
-  // document order among these ends unchanged.
-  for (const end of [...endsAfter].reverse()) {
-    parent.insertBefore(end, wrapper.nextSibling);
+  // A tail created for one marker can be emptied by the next marker stepping
+  // out of it (adjacent boundaries); an empty revision wrapper says nothing
+  // and only confuses consumers, so drop it.
+  for (const tail of createdTails) {
+    if (!tail.firstChild && tail.parentNode) {
+      tail.parentNode.removeChild(tail);
+    }
   }
 }
 
@@ -130,14 +206,14 @@ function liftMarkersAroundWrapper(wrapper: Element): void {
  *    text it was created for, and such a range is meant to travel with the
  *    content it covers (issue #641).
  */
-function hoistBookmarkMarkers(node: Element): void {
+function hoistBookmarkMarkers(node: Element, allocateRevisionId: () => number): void {
   if (REVISION_WRAPPER_TAGS.has(node.tagName)) {
-    liftMarkersAroundWrapper(node);
+    liftMarkersAroundWrapper(node, allocateRevisionId);
     return;
   }
 
   for (const child of childElements(node)) {
-    hoistBookmarkMarkers(child);
+    hoistBookmarkMarkers(child, allocateRevisionId);
   }
 
   if (node.tagName !== 'w:p' || !isParagraphInsertedOrDeleted(node) || !node.parentNode) {
@@ -156,7 +232,7 @@ function hoistBookmarkMarkers(node: Element): void {
 
 export function enforceConsumerCompatibility(root: Element, allocateRevisionId: () => number): void {
   // 1. Reposition bookmark markers so their ranges survive both projections.
-  hoistBookmarkMarkers(root);
+  hoistBookmarkMarkers(root, allocateRevisionId);
 
   // 2. Remove empty w:t tags
   const textNodes = Array.from(root.getElementsByTagName('w:t'));

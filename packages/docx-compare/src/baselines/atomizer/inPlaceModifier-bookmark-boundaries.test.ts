@@ -35,9 +35,9 @@ async function compareInplace(originalBody: string, revisedBody: string) {
  * `<w:del>` — which matches what the move-source path already produced (see
  * inPlaceModifier-moved-bookmark-paragraph.test.ts).
  *
- * A boundary sitting only PARTWAY inside a revision wrapper is a separate case that still cannot be
- * repositioned faithfully; it is pinned in consumerCompatibility-bookmark-ranges.test.ts and tracked
- * in issue #643.
+ * A boundary sitting only PARTWAY inside a revision wrapper is repositioned by splitting the
+ * wrapper at the boundary (issue #643); that behavior is covered in
+ * consumerCompatibility-bookmark-ranges.test.ts.
  */
 describe('inplace deleted paragraph bookmark boundaries', () => {
   test('keeps both boundary markers inside the paragraph, wrapped around the deleted text', async ({
