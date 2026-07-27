@@ -10,6 +10,7 @@ import { insertParagraph } from '../tools/insert_paragraph.js';
 import { batchEdit } from '../tools/batch_edit.js';
 import { clearFormatting } from '../tools/clear_formatting.js';
 import { formatLayout } from '../tools/format_layout.js';
+import { formatNumbering } from '../tools/format_numbering.js';
 import { addComment } from '../tools/add_comment.js';
 import { deleteComment } from '../tools/delete_comment.js';
 import { addFootnote } from '../tools/add_footnote.js';
@@ -20,6 +21,11 @@ import { save } from '../tools/save.js';
 const test = testAllure.epic('Document Editing').withLabels({
   feature: 'Canonical Emission MCP Regression',
 });
+const numberingTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.1.19' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.18' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.3' },
+);
 
 const AI_AUTHOR = 'SafeDocX';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -312,6 +318,60 @@ describe('Tool integration through SessionManager: canonical revision emission',
 
     await then('document.xml contains SafeDocX-authored layout property changes', () => {
       expectTrackedElementsWithAuthor(documentXml, ['pPrChange', 'trPrChange', 'tcPrChange']);
+    });
+  });
+
+  numberingTest('format_numbering saves a SafeDocX-authored paragraph property change', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let documentXml: string;
+
+    await given('a tracked session with a directly numbered paragraph', async () => {
+      opened = await openSession([], {
+        mgr: createManager(),
+        xml: makeDocXml(
+          '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="10"/></w:numPr></w:pPr><w:r><w:t>Numbered</w:t></w:r></w:p>',
+        ),
+        extraFiles: {
+          'word/numbering.xml':
+            `<w:numbering xmlns:w="${W_NS}">`
+            + '<w:abstractNum w:abstractNumId="1">'
+            + '<w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+            + '<w:lvl w:ilvl="1"><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2."/></w:lvl>'
+            + '</w:abstractNum>'
+            + '<w:num w:numId="10"><w:abstractNumId w:val="1"/></w:num>'
+            + '</w:numbering>',
+        },
+      });
+    });
+
+    await when('format_numbering changes the direct list level and saves tracked output', async () => {
+      const formatted = await formatNumbering(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        num_id: '10',
+        ilvl: 1,
+      });
+      assertSuccess(formatted, 'format_numbering');
+
+      const parts = await saveAndReadParts(
+        opened.mgr,
+        opened.inputPath,
+        path.join(opened.tmpDir, 'format-numbering-regression.docx'),
+        ['word/document.xml'],
+      );
+      documentXml = parts['word/document.xml'];
+    });
+
+    await then('document.xml contains a SafeDocX-authored paragraph property change', () => {
+      expectTrackedElementsWithAuthor(documentXml, ['pPrChange']);
+      const doc = parseXml(documentXml);
+      const change = doc.getElementsByTagNameNS(W_NS, 'pPrChange')[0] as Element;
+      const priorIlvl = change.getElementsByTagNameNS(W_NS, 'ilvl')[0] as Element;
+      expect(wordAttr(priorIlvl, 'val')).toBe('0');
     });
   });
 

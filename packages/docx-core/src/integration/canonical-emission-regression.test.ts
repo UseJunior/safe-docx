@@ -16,6 +16,11 @@ import { buildSyntheticDocx, getResultParts } from './synthetic-docx-fixture.js'
 const test = testAllure.epic('Document Comparison').withLabels({
   feature: 'Canonical Emission Regression',
 });
+const numberingTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.1.19' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.18' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.3' },
+);
 
 const AI_AUTHOR = 'SafeDocX';
 const FIXED_DATE = '2026-05-07T12:00:00Z';
@@ -202,6 +207,46 @@ describe('Canonical emission catalog', () => {
 
     await then('the paragraph properties change wrapper carries revision metadata', () => {
       expectTrackedElementsWithFixedMetadata(documentXml, ['pPrChange']);
+    });
+  });
+
+  numberingTest('Table A: paragraph_numbering.ts setDirectParagraphNumbering emits w:pPrChange', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let documentXml: string;
+
+    await given('a directly numbered paragraph and its numbering definitions', async () => {
+      const numberingXml =
+        `<w:numbering xmlns:w="${W_NS}">`
+        + '<w:abstractNum w:abstractNumId="1">'
+        + '<w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+        + '<w:lvl w:ilvl="1"><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2."/></w:lvl>'
+        + '</w:abstractNum>'
+        + '<w:num w:numId="10"><w:abstractNumId w:val="1"/></w:num>'
+        + '</w:numbering>';
+      const { doc, paragraphIds } = await loadIndexedDoc(
+        await makeMinimalDocx(
+          '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="10"/></w:numPr></w:pPr><w:r><w:t>Numbered</w:t></w:r></w:p>',
+          { 'word/numbering.xml': numberingXml },
+        ),
+      );
+
+      await when('tracked direct numbering is changed to another valid level', async () => {
+        doc.setDirectParagraphNumbering(
+          { paragraphId: paragraphIds[0]!, numbering: { numId: '10', ilvl: 1 } },
+          createCtx(),
+        );
+        ({ parts: { 'word/document.xml': documentXml } } = await toPartMap(doc, ['word/document.xml']));
+      });
+    });
+
+    await then('the paragraph property change preserves the prior numbering with revision metadata', () => {
+      expectTrackedElementsWithFixedMetadata(documentXml, ['pPrChange']);
+      const change = elementsByName(documentXml, 'pPrChange')[0]!;
+      const priorIlvl = change.getElementsByTagNameNS(W_NS, 'ilvl')[0] as Element;
+      expect(wordAttr(priorIlvl, 'val')).toBe('0');
     });
   });
 
