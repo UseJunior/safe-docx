@@ -119,8 +119,10 @@ export interface OpaquePassthroughNode {
   namespaceUri: string;
   localName: string;
   documentOrdinal: number;
-  /** Source-order paragraph identity; movement is outside the bounded contract and fails closed. */
+  /** Source-order paragraph fallback used when no stable Word identity is available. */
   paragraphOrdinal: number;
+  /** Stable Word paragraph identity when the source paragraph carries w14:paraId. */
+  paragraphIdentity?: string;
   /** Structural parent path (body or table/cell position) owning the paragraph. */
   containerIdentity: string;
   /** Direct body-child position for a scaffold-owned block boundary. */

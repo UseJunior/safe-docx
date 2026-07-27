@@ -21,6 +21,16 @@ export class OpaquePassthroughError extends Error {
   }
 }
 
+/**
+ * Preserve the authoring application's paragraph identity across unrelated
+ * insertions and deletions. Absence deliberately retains ordinal fail-closed
+ * behavior instead of deriving identity from mutable paragraph text.
+ */
+function stableParagraphIdentity(paragraph: Element): string | undefined {
+  const paraId = paragraph.getAttributeNS(OOXML.W14_NS, 'paraId');
+  return paraId ? paraId.toUpperCase() : undefined;
+}
+
 interface PackageRelationship {
   id: string;
   type: string;
@@ -1068,6 +1078,7 @@ export function captureComplexFieldPassthrough(
       localName: `complexField:${fieldKind}`,
       documentOrdinal: nextOrdinal++,
       paragraphOrdinal,
+      paragraphIdentity: stableParagraphIdentity(paragraph),
       containerIdentity: structuralContainerIdentity(paragraph),
       inlineChildStartOrdinal: startOrdinal,
       inlineChildEndOrdinal: endOrdinal,
@@ -1198,7 +1209,8 @@ export async function bindOpaquePassthroughCounterparts(
           `${descriptor.containerChildOrdinal}\u0000${descriptor.paragraphOrdinal}\u0000` +
           `${descriptor.ownedParagraphCount}`
       : descriptor.placementKind === 'inline-range'
-        ? `field\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
+        ? `field\u0000${descriptor.containerIdentity}\u0000` +
+          `${descriptor.paragraphIdentity ?? descriptor.paragraphOrdinal}\u0000` +
           `${descriptor.inlineRangeOrdinal}\u0000${descriptor.localName}`
         : `inline\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
           `${descriptor.documentOrdinal}\u0000${descriptor.localName}`;
@@ -1229,10 +1241,15 @@ export async function bindOpaquePassthroughCounterparts(
   for (let i = 0; i < original.length; i++) {
     const before = original[i]!;
     const after = revised[i]!;
+    const sameParagraphOwner = before.placementKind === 'inline-range' &&
+        after.placementKind === 'inline-range' &&
+        (before.paragraphIdentity !== undefined || after.paragraphIdentity !== undefined)
+      ? before.paragraphIdentity === after.paragraphIdentity
+      : before.paragraphOrdinal === after.paragraphOrdinal;
     if (
       placementKey(before) !== placementKey(after) ||
       before.placementKind !== after.placementKind ||
-      before.paragraphOrdinal !== after.paragraphOrdinal ||
+      !sameParagraphOwner ||
       before.containerIdentity !== after.containerIdentity ||
       before.namespaceUri !== after.namespaceUri ||
       before.localName !== after.localName ||

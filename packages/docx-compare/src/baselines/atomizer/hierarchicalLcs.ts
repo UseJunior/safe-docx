@@ -436,15 +436,18 @@ function createOpaqueGroupIdentityResolver(instrumentation?: GroupLcsInstrumenta
     }
     descriptors.sort((left, right) => left.documentOrdinal - right.documentOrdinal);
     const identity = descriptors
-      .map((descriptor) =>
-        `${descriptor.placementKind}\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
-        `${descriptor.bodyChildOrdinal ?? ''}\u0000${descriptor.containerChildOrdinal ?? ''}\u0000` +
-        `${descriptor.ownedParagraphCount ?? ''}\u0000` +
-        `${descriptor.inlineRangeOrdinal ?? ''}\u0000` +
-        `${relativeByDescriptor?.get(descriptor) ?? ''}\u0000` +
-        `${descriptor.documentOrdinal}\u0000${descriptor.semanticFingerprint}\u0000` +
-        `${descriptor.relationshipClosureFingerprint ?? ''}`,
-      )
+      .map((descriptor) => {
+        const paragraphIdentity = descriptor.placementKind === 'inline-range'
+          ? descriptor.paragraphIdentity ?? descriptor.paragraphOrdinal
+          : descriptor.paragraphOrdinal;
+        return `${descriptor.placementKind}\u0000${descriptor.containerIdentity}\u0000${paragraphIdentity}\u0000` +
+          `${descriptor.bodyChildOrdinal ?? ''}\u0000${descriptor.containerChildOrdinal ?? ''}\u0000` +
+          `${descriptor.ownedParagraphCount ?? ''}\u0000` +
+          `${descriptor.inlineRangeOrdinal ?? ''}\u0000` +
+          `${relativeByDescriptor?.get(descriptor) ?? ''}\u0000` +
+          `${descriptor.documentOrdinal}\u0000${descriptor.semanticFingerprint}\u0000` +
+          `${descriptor.relationshipClosureFingerprint ?? ''}`;
+      })
       .join('\u0001');
     cache.set(group, identity);
     return identity;
