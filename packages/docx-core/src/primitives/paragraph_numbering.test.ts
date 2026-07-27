@@ -13,7 +13,7 @@ import { parseXml, serializeXml } from './xml.js';
 
 const W_NS = OOXML.W_NS;
 const test = testAllure.epic('Document Comparison').withLabels({
-  feature: 'add-paragraph-numbering-formatting',
+  feature: 'Add Paragraph Numbering Formatting',
 });
 const numberingConformanceTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.1.19' },
