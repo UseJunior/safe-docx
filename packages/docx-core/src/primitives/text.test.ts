@@ -7,6 +7,11 @@ import { SafeDocxError } from './errors.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { revisionEvidence, revisionEvidenceCases } from '../testing/revision-evidence.js';
 import {
+  fldChar,
+  instrText,
+  resultText,
+} from '../testing/ooxml-fixtures.js';
+import {
   getParagraphRuns,
   getParagraphText,
   splitRunAtVisibleOffset,
@@ -159,6 +164,37 @@ describe('getParagraphRuns', () => {
       expect(runs).toHaveLength(1);
       expect(runs[0]!.text).toBe('InlineResult');
       expect(runs[0]!.isFieldResult).toBe(true);
+    });
+  });
+
+  test('restores the enclosing result identity after a nested field ends', async ({ given, then }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
+    let doc: Document;
+
+    await given('an outer result containing a complete nested field', () => {
+      doc = makeDoc(
+        `<w:p>` +
+        fldChar('begin') +
+        instrText(' IF 1 = 1 ') +
+        fldChar('separate') +
+        resultText('Outer A') +
+        fldChar('begin') +
+        instrText(' REF X ') +
+        fldChar('separate') +
+        resultText('Inner') +
+        fldChar('end') +
+        resultText('Outer B') +
+        fldChar('end') +
+        `</w:p>`,
+      );
+    });
+
+    await then('the outer runs share an identity distinct from the nested result', () => {
+      const runs = getParagraphRuns(firstParagraph(doc));
+      expect(runs.map((run) => run.text)).toEqual(['Outer A', 'Inner', 'Outer B']);
+      expect(runs[0]!.fieldResultId).toBe(runs[2]!.fieldResultId);
+      expect(runs[1]!.fieldResultId).not.toBe(runs[0]!.fieldResultId);
+      expect(runs.map((run) => run.fieldInstruction)).toEqual(['IF 1 = 1', 'REF X', 'IF 1 = 1']);
     });
   });
 
@@ -574,35 +610,32 @@ describe('replaceParagraphTextRange', () => {
     });
   });
 
-  test('throws UNSUPPORTED_EDIT for multi-run edit crossing field results', async ({ given, when, then }: AllureBddContext) => {
+  test('edits a cached field result split across multiple runs', async ({ given, when, then }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
     let p: Element;
 
-    await given('a paragraph where a field result spans two runs', () => {
+    await given('a PAGEREF cached result split across two runs', () => {
       const doc = makeDoc(
         `<w:p>` +
-        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
-        `<w:r><w:instrText>REF X</w:instrText></w:r>` +
-        `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
-        `<w:r><w:t>Visible</w:t></w:r>` +
-        `<w:r><w:t> Result</w:t></w:r>` +
-        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        fldChar('begin') +
+        instrText(' PAGEREF _Toc1 \\h ', { preserve: true }) +
+        fldChar('separate') +
+        resultText('1') +
+        resultText('2') +
+        fldChar('end') +
         `</w:p>`,
       );
       p = firstParagraph(doc);
     });
 
-    await when('an edit spanning both field result runs is attempted', () => {
-      // captured for assertion
+    await when('the entire cached result is replaced', () => {
+      replaceParagraphTextRange(p, 0, 2, '13');
     });
 
-    await then('UNSUPPORTED_EDIT error is thrown', () => {
-      try {
-        replaceParagraphTextRange(p, 0, 14, 'Updated');
-        expect.unreachable('Should have thrown');
-      } catch (e) {
-        expect(e).toBeInstanceOf(SafeDocxError);
-        expect((e as SafeDocxError).code).toBe('UNSUPPORTED_EDIT');
-      }
+    await then('the result changes while all complex-field markers remain', () => {
+      expect(getParagraphText(p)).toBe('13');
+      const fldChars = p.getElementsByTagNameNS(W_NS, W.fldChar);
+      expect(fldChars).toHaveLength(3);
     });
   });
 
@@ -628,6 +661,98 @@ describe('replaceParagraphTextRange', () => {
 
     await then('the edit succeeds and text is updated', () => {
       expect(getParagraphText(p)).toBe('Changed');
+    });
+  });
+
+  test('maps a field-result edit correctly when it begins at a run boundary', async ({ given, when, then }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
+    let p: Element;
+
+    await given('literal text immediately followed by a PAGEREF cached result', () => {
+      const doc = makeDoc(
+        `<w:p>` +
+        resultText('Section One') +
+        fldChar('begin') +
+        instrText(' PAGEREF _Toc1 \\h ', { preserve: true }) +
+        fldChar('separate') +
+        resultText('8') +
+        fldChar('end') +
+        `</w:p>`,
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the one-character cached result is replaced', () => {
+      replaceParagraphTextRange(p, 11, 12, '9');
+    });
+
+    await then('only the cached result changes', () => {
+      expect(getParagraphText(p)).toBe('Section One9');
+      expect(p.getElementsByTagNameNS(W_NS, W.fldChar)).toHaveLength(3);
+    });
+  });
+
+  test('refuses a replacement that crosses into a cached field result', async ({ given, when, then }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
+    let p: Element;
+
+    await given('literal text immediately followed by a PAGEREF cached result', () => {
+      const doc = makeDoc(
+        `<w:p>` +
+        resultText('One') +
+        fldChar('begin') +
+        instrText(' PAGEREF _Toc1 \\h ', { preserve: true }) +
+        fldChar('separate') +
+        resultText('8') +
+        fldChar('end') +
+        `</w:p>`,
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('a raw primitive replacement crosses the field boundary', () => {
+      // captured for assertion
+    });
+
+    await then('the error identifies the PAGEREF result boundary', () => {
+      expect(() => replaceParagraphTextRange(p, 0, 4, 'One9')).toThrowError(
+        expect.objectContaining({
+          code: 'UNSUPPORTED_EDIT',
+          message: expect.stringContaining('PAGEREF field result'),
+        }),
+      );
+    });
+  });
+
+  test('refuses a cached-result edit when its separator shares the visible run', async ({ given, when, then }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.18' });
+    let p: Element;
+
+    await given('literal text, a complete field, and its cached result serialized in one run', () => {
+      const doc = makeDoc(
+        `<w:p>` +
+        `<w:r>` +
+        `<w:t>Outside</w:t>` +
+        `<w:fldChar w:fldCharType="begin"/>` +
+        `<w:instrText> REF X </w:instrText>` +
+        `<w:fldChar w:fldCharType="separate"/>` +
+        `<w:t>Visible</w:t>` +
+        `<w:fldChar w:fldCharType="end"/>` +
+        `</w:r>` +
+        `</w:p>`,
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('replacement would remove the run that owns the separator', () => {
+      // captured for assertion
+    });
+
+    await then('the primitive fails closed instead of deleting the separator', () => {
+      expect(() => replaceParagraphTextRange(p, 0, 14, 'Changed')).toThrowError(
+        expect.objectContaining({ code: 'UNSUPPORTED_EDIT' }),
+      );
+      expect(p.getElementsByTagNameNS(W_NS, W.fldChar)).toHaveLength(3);
     });
   });
 

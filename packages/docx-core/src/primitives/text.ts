@@ -12,26 +12,61 @@ export type TextRun = {
   r: Element; // w:r
   text: string; // visible text for this run (field-code aware)
   isFieldResult: boolean;
+  fieldResultId?: number | null; // paragraph-local identity for one complex field
+  fieldInstruction?: string | null;
 };
 
+/**
+ * Return the paragraph's visible runs while retaining enough complex-field
+ * provenance to distinguish a safe cached-result edit from a field-boundary
+ * rewrite.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.18
+ * @see #651
+ */
 export function getParagraphRuns(p: Element): TextRun[] {
-  enum FieldState {
-    OUTSIDE_FIELD = 0,
-    IN_FIELD_CODE = 1,
-    IN_FIELD_RESULT = 2,
+  type FieldFrame = {
+    id: number;
+    phase: 'instruction' | 'result';
+    instruction: string;
+  };
+
+  type PendingTextRun = Pick<TextRun, 'r' | 'text' | 'isFieldResult'> & {
+    fieldResultId: number | null;
+  };
+
+  function currentResultId(stack: readonly FieldFrame[]): number | null {
+    if (stack.length === 0 || stack.some((frame) => frame.phase === 'instruction')) return null;
+    return stack.at(-1)!.id;
   }
 
   function getWAttr(el: Element, localName: string): string | null {
     return getAttributeSafe(el, OOXML.W_NS, localName, 'w');
   }
 
-  const runs: TextRun[] = [];
+  const runs: PendingTextRun[] = [];
   const rElems = Array.from(p.getElementsByTagNameNS(OOXML.W_NS, W.r));
 
-  let state: FieldState = FieldState.OUTSIDE_FIELD;
+  const fieldStack: FieldFrame[] = [];
+  const fieldInstructions = new Map<number, string>();
+  let nextFieldId = 1;
   for (const r of rElems) {
     let runText = '';
-    let sawResult = state === FieldState.IN_FIELD_RESULT;
+    let sawResult = false;
+    let runFieldResultId: number | null | undefined;
+
+    const appendVisibleText = (text: string): void => {
+      const resultId = currentResultId(fieldStack);
+      sawResult ||= resultId !== null;
+      if (runFieldResultId === undefined) {
+        runFieldResultId = resultId;
+      } else if (runFieldResultId !== resultId) {
+        // A run whose visible content straddles a field boundary cannot be
+        // rewritten as one unit without moving content across that boundary.
+        runFieldResultId = null;
+      }
+      runText += text;
+    };
 
     // Walk children in order so we can handle rare cases where fldChar and result text
     // appear in the same run.
@@ -42,32 +77,54 @@ export function getParagraphRuns(p: Element): TextRun[] {
 
       if (el.localName === W.fldChar) {
         const typ = getWAttr(el, 'fldCharType') ?? '';
-        if (typ === 'begin') state = FieldState.IN_FIELD_CODE;
-        else if (typ === 'separate') state = FieldState.IN_FIELD_RESULT;
-        else if (typ === 'end') state = FieldState.OUTSIDE_FIELD;
+        if (typ === 'begin') {
+          fieldStack.push({ id: nextFieldId++, phase: 'instruction', instruction: '' });
+        } else if (typ === 'separate') {
+          const frame = fieldStack.at(-1);
+          if (frame) {
+            frame.phase = 'result';
+            fieldInstructions.set(frame.id, frame.instruction.trim());
+          }
+        } else if (typ === 'end') {
+          fieldStack.pop();
+        }
         continue;
       }
 
-      if (state === FieldState.IN_FIELD_CODE) {
+      const instructionFrame = [...fieldStack].reverse().find((frame) => frame.phase === 'instruction');
+      if (instructionFrame) {
+        if (el.localName === W.instrText || el.localName === 'delInstrText') {
+          instructionFrame.instruction += el.textContent ?? '';
+        }
         // Skip field code/instruction text.
         continue;
       }
 
-      if (state === FieldState.IN_FIELD_RESULT) sawResult = true;
-
       if (el.localName === W.t) {
-        runText += el.textContent ?? '';
+        appendVisibleText(el.textContent ?? '');
       } else if (el.localName === W.tab) {
-        runText += '\t';
+        appendVisibleText('\t');
       } else if (el.localName === W.br) {
-        runText += '\n';
+        appendVisibleText('\n');
       }
     }
 
-    if (runText) runs.push({ r, text: runText, isFieldResult: sawResult });
+    if (runText) {
+      runs.push({
+        r,
+        text: runText,
+        isFieldResult: sawResult,
+        fieldResultId: runFieldResultId ?? null,
+      });
+    }
   }
 
-  return runs;
+  return runs.map((run) => ({
+    ...run,
+    fieldInstruction: run.fieldResultId === null
+      ? null
+      : (fieldInstructions.get(run.fieldResultId) ?? null),
+  }));
 }
 
 export function getParagraphText(p: Element): string {
@@ -91,16 +148,25 @@ function findOffsetInRuns(runs: TextRun[], start: number, end: number): {
 
   for (let i = 0; i < runs.length; i++) {
     const len = runs[i]!.text.length;
-    if (startRunIdx === -1 && start >= pos && start <= pos + len) {
+    const nextPos = pos + len;
+    const startIsInRun = start === end
+      ? start <= nextPos
+      : start < nextPos;
+    if (startRunIdx === -1 && start >= pos && startIsInRun) {
       startRunIdx = i;
       startOffset = start - pos;
     }
-    if (endRunIdx === -1 && end >= pos && end <= pos + len) {
+    if (endRunIdx === -1 && end > pos && end <= nextPos) {
       endRunIdx = i;
       endOffset = end - pos;
       break;
     }
-    pos += len;
+    pos = nextPos;
+  }
+
+  if (start === end && startRunIdx !== -1) {
+    endRunIdx = startRunIdx;
+    endOffset = startOffset;
   }
 
   if (startRunIdx === -1 || endRunIdx === -1) {
@@ -500,16 +566,36 @@ export function replaceParagraphTextRange(
   const startRun = runs[startRunIdx]!;
   const endRun = runs[endRunIdx]!;
 
-  // For now we only support field edits that stay within a single visible run.
-  if (startRunIdx !== endRunIdx) {
-    for (let i = startRunIdx; i <= endRunIdx; i++) {
-      if (runs[i]?.isFieldResult) {
-        throw new SafeDocxError(
-          'UNSUPPORTED_EDIT',
-          'Edit spans multiple runs and intersects a field result. This is currently unsupported in Safe-Docx TS.',
-          'Narrow old_string so the edit does not cross a field, or edit the field result text in a smaller span.',
-        );
-      }
+  // A cached result may span many runs, but every touched run must belong to
+  // the same complex field. Moving ordinary text, a field marker, or another
+  // field's result across a fldChar boundary would change document semantics.
+  const spanRuns = runs.slice(startRunIdx, endRunIdx + 1);
+  const fieldRuns = spanRuns.filter((run) => run.isFieldResult);
+  if (fieldRuns.length > 0) {
+    const fieldIds = new Set(fieldRuns.map((run) => run.fieldResultId));
+    const containsInlineFieldMarker = fieldRuns.some((run) =>
+      getDirectContentElements(run.r).some((el) => isW(el, W.fldChar)),
+    );
+    const isOneCompleteResultSpan =
+      fieldRuns.length === spanRuns.length &&
+      [...fieldIds].every((fieldId) => typeof fieldId === 'number') &&
+      fieldIds.size === 1 &&
+      !containsInlineFieldMarker;
+
+    if (!isOneCompleteResultSpan) {
+      const instructions = new Set(
+        fieldRuns
+          .map((run) => run.fieldInstruction?.split(/\s+/u)[0])
+          .filter((instruction): instruction is string => !!instruction),
+      );
+      const fieldLabel = instructions.size === 1
+        ? `${[...instructions][0]} field result`
+        : 'complex field result';
+      throw new SafeDocxError(
+        'UNSUPPORTED_EDIT',
+        `Edit crosses the boundary of a ${fieldLabel}; cached-result edits must stay inside one field.`,
+        'Narrow old_string so the changed range is entirely inside one cached field result.',
+      );
     }
   }
 

@@ -338,10 +338,17 @@ describe('Traceability: TypeScript Formatting Parity', () => {
       target_paragraph_id: paraId,
       old_string: 'Amount: 100 due.',
       new_string: 'Amount: 250 due.',
-      instruction: 'field-aware refusal',
+      instruction: 'update cached field result',
     });
-    assertFailure(edited, 'EDIT_ERROR', 'edit');
-    expect(edited.error.message).toContain('unsupported');
+    assertSuccess(edited, 'edit');
+
+    const session = (await mgr.getSessionByFilePath(inputPath))!;
+    expect(session.doc.getParagraphTextById(paraId)).toBe('Amount: 250 due.');
+    expect(
+      session.doc
+        .getParagraphElementById(paraId)!
+        .getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'fldChar'),
+    ).toHaveLength(3);
   });
 
   humanReadableTest.openspec('pagination rules deterministic for zero offset')('Scenario: pagination rules deterministic for offset=0', async () => {
