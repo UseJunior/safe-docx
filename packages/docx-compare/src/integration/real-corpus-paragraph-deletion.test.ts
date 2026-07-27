@@ -79,13 +79,6 @@ type ExpectedFailure =
 
 const corpusEntries = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')) as CorpusEntry[];
 
-const boundaryShiftFailure: ExpectedFailure = {
-  issue: '#646',
-  kind: 'comparison-error',
-  errorName: 'OpaquePassthroughError',
-  messageIncludes: 'boundary 0 changed paragraph ownership, moved, or mutated',
-};
-
 const expectedFailures: Readonly<
   Record<string, Partial<Record<ReconstructionMode, ExpectedFailure>>>
 > = {
