@@ -16,6 +16,7 @@ import {
 } from './atomLcs.js';
 import type { ComparisonUnitAtom } from '@usejunior/docx-core';
 import { el } from '../../testing/dom-test-helpers.js';
+import { EMPTY_PARAGRAPH_TAG } from '../../atomizer.js';
 import { getLeafText } from '@usejunior/docx-core';
 
 const test = testAllure.epic('Document Comparison').withLabels({
@@ -118,6 +119,79 @@ describe('atomLcs Regression Tests (Allure)', () => {
           (a) => a.correlationStatus === CorrelationStatus.Equal
         );
         expect(movedSourceAtom!.paragraphIndex).toBe(equalAtom!.paragraphIndex);
+      });
+    });
+  });
+
+  describe('Equal empty-paragraph twin remapping', () => {
+    const twinTest = test.allure({ story: 'Unified index for revised empty twins', severity: 'critical' });
+
+    /**
+     * For Equal empty-paragraph pairs, createMergedAtomList keeps the ORIGINAL
+     * atom, so the revised twin never flows through the merged remapping loop.
+     * Its paragraphIndex must still be remapped to the unified index: the
+     * inplace modifier keys revised paragraphs by unified index
+     * (unifiedParaToElement), and a raw revised index either misses the lookup
+     * (stale insertion anchor) or collides with a different paragraph's
+     * unified index, mis-anchoring neighboring deleted paragraphs.
+     *
+     * @see https://github.com/UseJunior/safe-docx/issues/678
+     */
+    twinTest('remaps the revised twin of an Equal empty paragraph to the unified index', async ({ given, when, then, and }: AllureBddContext) => {
+      let originalAtoms: ComparisonUnitAtom[];
+      let revisedAtoms: ComparisonUnitAtom[];
+      let lcsResult: ReturnType<typeof computeAtomLcs>;
+      let merged: ComparisonUnitAtom[];
+
+      const createEmptyParagraphAtom = (paragraphIndex: number): ComparisonUnitAtom => ({
+        contentElement: el(EMPTY_PARAGRAPH_TAG),
+        ancestorElements: [],
+        ancestorUnids: [],
+        part: { uri: 'word/document.xml', contentType: 'text/xml' },
+        sha1Hash: 'hash_empty_shared',
+        correlationStatus: CorrelationStatus.Unknown,
+        isEmptyParagraph: true,
+        paragraphIndex,
+      });
+
+      await given('an original with anchor text, a deleted paragraph, and a trailing empty paragraph', () => {
+        originalAtoms = [
+          createMockAtom('Anchor', 0),
+          createMockAtom('Gone', 1),
+          createEmptyParagraphAtom(2),
+        ];
+      });
+
+      await and('a revised with the same anchor and the same trailing empty paragraph', () => {
+        revisedAtoms = [
+          createMockAtom('Anchor', 0),
+          createEmptyParagraphAtom(1),
+        ];
+      });
+
+      await when('the LCS matches the anchor and the empty paragraph and deletes the middle paragraph', () => {
+        lcsResult = {
+          matches: [
+            { originalIndex: 0, revisedIndex: 0 },
+            { originalIndex: 2, revisedIndex: 1 },
+          ],
+          deletedIndices: [1],
+          insertedIndices: [],
+        };
+        markCorrelationStatus(originalAtoms!, revisedAtoms!, lcsResult);
+        merged = createMergedAtomList(originalAtoms!, revisedAtoms!, lcsResult!);
+        assignUnifiedParagraphIndices(originalAtoms!, revisedAtoms!, merged, lcsResult!);
+      });
+
+      await then('the merged list carries the ORIGINAL empty atom for the Equal pair', () => {
+        const mergedEmpty = merged!.find((a) => a.contentElement.tagName === EMPTY_PARAGRAPH_TAG);
+        expect(mergedEmpty).toBe(originalAtoms![2]);
+      });
+
+      await and('the revised twin shares the merged atom unified paragraph index', () => {
+        expect(revisedAtoms![1]!.paragraphIndex).toBe(originalAtoms![2]!.paragraphIndex);
+        // Unified layout: anchor=0, deleted middle=1, matched empty=2.
+        expect(revisedAtoms![1]!.paragraphIndex).toBe(2);
       });
     });
   });

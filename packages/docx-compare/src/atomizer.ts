@@ -668,15 +668,40 @@ function isEmptyParagraph(node: WmlElement): boolean {
  * These atoms represent empty paragraphs that have no text content,
  * ensuring they are preserved during document reconstruction.
  *
- * The hash includes a paragraph-level content signature for the previous
- * content-bearing paragraph and a consecutive-empty index. Text fragment
- * boundaries are ignored, while non-text leaves contribute stable tokens.
+ * The hash includes the structural container chain (tables, text boxes), a
+ * paragraph-level content signature for the previous content-bearing
+ * paragraph, and a consecutive-empty index. Text fragment boundaries are
+ * ignored, while non-text leaves contribute stable tokens.
+ *
+ * Identity is deliberately positional only: `w:pPr` does not participate.
+ * A `w:pPr` carries no visible content of its own — OOXML `CT_PPrBase`
+ * permits no attributes, so the only attributes that reach it in practice
+ * are namespace declarations (`xmlns:*`), which record where a prefix is
+ * bound, not formatting — and its children are paragraph *formatting*.
+ * Folding any of that into identity turns serialization topology (bare
+ * `<w:pPr/>` vs absent, inherited vs locally redeclared namespace bindings)
+ * or a formatting-only edit into a phantom paragraph delete+insert pair,
+ * while the identical formatting edit on a non-empty paragraph produces no
+ * markup at all. Paragraph-property change *detection* — for empty and
+ * non-empty paragraphs alike — is a separate concern from paragraph
+ * identity and is tracked in issue #679.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/678
+ * @see https://github.com/UseJunior/safe-docx/issues/679
  *
  * @param paragraphElement - The w:p element
  * @param ancestors - Ancestor elements from root to parent
  * @param part - The OPC part
  * @param state - Atomization state with context information
  */
+/**
+ * Structural containers that scope empty-paragraph position. An empty
+ * paragraph inside a table cell occupies a different structural position
+ * than one at body level, so its identity must not collide with body-level
+ * empties that share the same content context.
+ */
+const STRUCTURAL_CONTAINER_TAGS = new Set(['w:tbl', 'w:tr', 'w:tc', 'w:txbxContent']);
+
 function createEmptyParagraphAtomWithContext(
   paragraphElement: WmlElement,
   ancestors: WmlElement[],
@@ -692,10 +717,17 @@ function createEmptyParagraphAtomWithContext(
   // Determine initial correlation status
   const correlationStatus = getStatusFromRevisionTracking(revTrackElement);
 
-  const pPr = findChildByTagName(paragraphElement, 'w:pPr');
-  const pPrHash = pPr ? hashElement(pPr) : 'no-pPr';
   const contextHash = state.lastContentHash || 'document-start';
-  const hashContent = `empty-paragraph:${contextHash}:${state.consecutiveEmptyIndex}:${pPrHash}`;
+  // Structural container chain (tables, text boxes) is part of position: a
+  // body-level empty paragraph and a table-cell empty paragraph must never
+  // pair, even when they share the same preceding-content signature. Without
+  // this, coarse identity lets the LCS match empties across container
+  // boundaries, which mis-anchors neighboring deleted paragraphs.
+  const containerChain = ancestors
+    .map((ancestor) => ancestor.tagName)
+    .filter((tag) => STRUCTURAL_CONTAINER_TAGS.has(tag))
+    .join('/');
+  const hashContent = `empty-paragraph:${containerChain}:${contextHash}:${state.consecutiveEmptyIndex}`;
 
   // Empty-paragraph identity is the context signature, not the (empty) element.
   return withAtomIdentity(

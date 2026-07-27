@@ -407,7 +407,9 @@ export function assignUnifiedParagraphIndices(
 
   // Assign unified paragraph indices to merged atoms
   let emptyParagraphsWithoutMapping = 0;
+  const remappedAtoms = new Set<ComparisonUnitAtom>();
   for (const atom of merged) {
+    remappedAtoms.add(atom);
     if (atom.paragraphIndex === undefined) continue;
 
     const isEmptyPara = atom.contentElement.tagName === EMPTY_PARAGRAPH_TAG;
@@ -438,6 +440,22 @@ export function assignUnifiedParagraphIndices(
       } else if (isEmptyPara) {
         emptyParagraphsWithoutMapping++;
       }
+    }
+  }
+  // Remap revised-side atoms that are NOT represented in the merged list.
+  // For Equal empty-paragraph pairs, createMergedAtomList keeps the ORIGINAL
+  // atom, so the revised twin never flows through the loop above and would
+  // otherwise keep its raw revised-tree paragraph index. Downstream consumers
+  // key revised paragraphs by unified index (inPlaceModifier's
+  // unifiedParaToElement), so a raw index either misses the lookup (stale
+  // insertion anchor) or collides with a different paragraph's unified index,
+  // mis-anchoring neighboring deleted paragraphs.
+  for (const atom of revised) {
+    if (remappedAtoms.has(atom)) continue;
+    if (atom.paragraphIndex === undefined) continue;
+    const outputPara = revisedToOutputPara.get(atom.paragraphIndex);
+    if (outputPara !== undefined) {
+      atom.paragraphIndex = outputPara;
     }
   }
   if (emptyParagraphsWithoutMapping > 0) {
