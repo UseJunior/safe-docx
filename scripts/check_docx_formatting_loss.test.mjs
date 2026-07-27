@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   buildMinimalDocx,
   detectFormattingLoss,
+  findRevisionMarkers,
   formatReport,
   hasFindings,
   main,
@@ -16,9 +17,15 @@ import {
   wrapBodyXml,
 } from './check_docx_formatting_loss.mjs';
 
-function compare(beforeBody, afterBody) {
-  return detectFormattingLoss(projectParagraphs(wrapBodyXml(beforeBody)), projectParagraphs(wrapBodyXml(afterBody)));
+function compare(beforeBody, afterBody, options) {
+  return detectFormattingLoss(
+    projectParagraphs(wrapBodyXml(beforeBody)),
+    projectParagraphs(wrapBodyXml(afterBody)),
+    options,
+  );
 }
+
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 function paragraph(paraId, inner, properties = '') {
   return `<w:p w14:paraId="${paraId}">${properties}${inner}</w:p>`;
@@ -97,6 +104,17 @@ test('D1 reads w:val on toggle properties, so an explicit on-value is not a chan
   assert.deepEqual(turnedOff.flattenedParagraphIds, ['AAAA0006']);
 });
 
+test('D1 sees emphasis dropped by removing a character style, not only direct properties', () => {
+  // Without w:rStyle in the tuple this loss is silent: no direct property
+  // changed, so the projection would compare equal.
+  const result = compare(
+    paragraph('AAAA0007', run('Term', '<w:rStyle w:val="Strong"/>')),
+    paragraph('AAAA0007', run('Term')),
+  );
+
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0007']);
+});
+
 test('D2 flags a paragraph that carried text before and carries none after', () => {
   const result = compare(paragraph('BBBB0001', run('An obligation.')), paragraph('BBBB0001', ''));
 
@@ -128,6 +146,34 @@ test('D2 does not report an orphan label for an emptied paragraph with no number
   assert.deepEqual(result.orphanNumberingParagraphIds, []);
 });
 
+test('D2 does not report a numbered paragraph that was already empty before the change', () => {
+  // Otherwise comparing an untouched document to itself exits 1.
+  const numbering = '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr>';
+  const body = paragraph('BBBB0005', '', numbering);
+  const result = compare(body, body);
+
+  assert.deepEqual(result.orphanNumberingParagraphIds, []);
+  assert.equal(hasFindings(result), false);
+  assert.equal(result.preExistingEmptyNumbered, 1);
+  assert.ok(formatReport(result).some((line) => line.includes('were already empty before the change')));
+});
+
+test('D2 does not treat an image-only paragraph as empty', () => {
+  // A w:drawing puts marks on the page even though it contributes no w:t text.
+  const drawing = '<w:r><w:drawing><wp:inline xmlns:wp="urn:x"/></w:drawing></w:r>';
+  const numbering = '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr>';
+
+  const stillAnImage = compare(paragraph('BBBB0006', drawing, numbering), paragraph('BBBB0006', drawing, numbering));
+  assert.deepEqual(stillAnImage.orphanNumberingParagraphIds, []);
+  assert.equal(stillAnImage.preExistingEmptyNumbered, 0);
+
+  const textToImage = compare(paragraph('BBBB0007', run('Caption.')), paragraph('BBBB0007', drawing));
+  assert.deepEqual(textToImage.emptiedParagraphIds, []);
+
+  const imageRemoved = compare(paragraph('BBBB0008', drawing), paragraph('BBBB0008', ''));
+  assert.deepEqual(imageRemoved.emptiedParagraphIds, ['BBBB0008']);
+});
+
 test('a paragraph nested in a text box is projected separately from the paragraph containing it', () => {
   // A w:p inside w:txbxContent sits inside a run of the outer w:p. Attributing
   // its runs to the outer paragraph would mask changes on both.
@@ -141,7 +187,7 @@ test('a paragraph nested in a text box is projected separately from the paragrap
 
   const projection = projectParagraphs(wrapBodyXml(before));
   assert.equal(projection.totalParagraphs, 2);
-  assert.deepEqual(projection.byParaId.get('CCCC0001').emphasisSpans, [[5, true, false, 'none']]);
+  assert.deepEqual(projection.byParaId.get('CCCC0001').emphasisSpans, [[5, true, false, 'none', '']]);
 
   const result = compare(before, after);
   assert.deepEqual(result.flattenedParagraphIds, ['CCCC0002']);
@@ -157,19 +203,44 @@ test('duplicate paraIds are excluded from matching rather than silently resolved
 
   const result = detectFormattingLoss(projection, projection);
   assert.equal(result.matchedParagraphs, 0);
-  assert.equal(result.coverage.beforeDuplicateIds, 1);
+  assert.equal(result.coverage.beforeDuplicateParagraphs, 2);
 });
 
 test('paragraphs without a paraId are counted as uncompared instead of being key-substituted', () => {
   const result = compare(
     paragraph('EEEE0001', run('Keyed.')) + `<w:p>${run('Unkeyed.')}</w:p>`,
     paragraph('EEEE0001', run('Keyed.')) + `<w:p>${run('Unkeyed.')}</w:p>`,
+    { minCoverage: 0 },
   );
 
   assert.equal(result.matchedParagraphs, 1);
   assert.equal(result.coverage.beforeUnkeyed, 1);
   assert.equal(result.coverage.afterUnkeyed, 1);
-  assert.ok(formatReport(result).some((line) => line.includes('carry no w14:paraId and were not compared')));
+  assert.equal(result.coverageRatio, 0.5);
+});
+
+test('output carrying no paraId at all is inconclusive rather than a clean pass', () => {
+  // reconstructionMode 'rebuild' emits exactly this: every paragraph unkeyed.
+  // Matched=0 makes every detector report zero, which reads as a pass.
+  const result = compare(
+    paragraph('EEEE0002', run('Term', '<w:b/>') + run(' means.')),
+    `<w:p>${run('Term means.')}</w:p>`,
+  );
+
+  assert.equal(result.matchedParagraphs, 0);
+  assert.equal(result.coverageRatio, 0);
+  assert.equal(result.inconclusive, true);
+  assert.equal(hasFindings(result), false);
+  assert.ok(formatReport(result).some((line) => line.startsWith('INCONCLUSIVE')));
+});
+
+test('an unresolvable duplicate group counts every excluded paragraph, not just the id', () => {
+  const body = ['First.', 'Second.', 'Third.'].map((text) => paragraph('EEEE0003', run(text))).join('');
+  const projection = projectParagraphs(wrapBodyXml(body));
+
+  assert.equal(projection.duplicateParagraphs, 3);
+  assert.deepEqual(projection.duplicateParaIds, ['EEEE0003']);
+  assert.equal(detectFormattingLoss(projection, projection).inconclusive, true);
 });
 
 test('the report states all three counts even when every detector is silent', () => {
@@ -209,6 +280,23 @@ test('a malformed document part fails loudly instead of projecting zero paragrap
   assert.throws(() => projectParagraphs('<w:p xmlns:w="urn:x"/>garbage'), /did not parse/);
 });
 
+test('a well-formed part that is not a w:document is rejected rather than read as empty', () => {
+  assert.throws(() => projectParagraphs('<foo/>'), /not a WordprocessingML w:document part/);
+  assert.throws(
+    () => projectParagraphs(`<w:document xmlns:w="${W_NS}"><w:notBody/></w:document>`),
+    /has no w:body/,
+  );
+});
+
+test('revision markup is detected so a redline is never mistaken for clean output', () => {
+  assert.deepEqual(findRevisionMarkers(wrapBodyXml(paragraph('HHHH0001', run('Clean.')))), []);
+
+  const redline =
+    `<w:p w14:paraId="HHHH0002"><w:del w:id="1" w:author="x" w:date="2026-01-01T00:00:00Z">` +
+    `<w:r><w:delText>Gone.</w:delText></w:r></w:del></w:p>`;
+  assert.deepEqual(findRevisionMarkers(wrapBodyXml(redline)), ['del']);
+});
+
 test('the CLI reads real .docx packages and exits 1 on findings, 0 when clean, 2 on misuse', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'formatting-loss-'));
   try {
@@ -234,6 +322,51 @@ test('the CLI reads real .docx packages and exits 1 on findings, 0 when clean, 2
 
     const missing = await captureConsole(() => main([beforePath, join(directory, 'absent.docx')]));
     assert.equal(missing.value, 2);
+
+    // An unknown flag must not be swallowed — a typo'd threshold would
+    // otherwise silently run at the default and read as a deliberate result.
+    const typo = await captureConsole(() => main(['--min-coverge', '0.5', beforePath, afterPath]));
+    assert.equal(typo.value, 2);
+    assert.ok(typo.lines.some((line) => line.includes('unknown option --min-coverge')));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('the CLI refuses a redline and exits 2 rather than answering a question it cannot answer', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'formatting-loss-redline-'));
+  try {
+    const cleanPath = join(directory, 'clean.docx');
+    const redlinePath = join(directory, 'redline.docx');
+    writeFileSync(cleanPath, await buildMinimalDocx(SELF_TEST_BEFORE_BODY));
+    writeFileSync(
+      redlinePath,
+      await buildMinimalDocx(
+        `<w:p w14:paraId="11111111"><w:ins w:id="1" w:author="x" w:date="2026-01-01T00:00:00Z">` +
+          `<w:r><w:t>Added.</w:t></w:r></w:ins></w:p>`,
+      ),
+    );
+
+    const { value, lines } = await captureConsole(() => main([cleanPath, redlinePath]));
+    assert.equal(value, 2);
+    assert.ok(lines.some((line) => line.includes('carries revision markup')));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('rebuild-shaped output exits 2 through the CLI instead of reporting a pass', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'formatting-loss-rebuild-'));
+  try {
+    const keyedPath = join(directory, 'keyed.docx');
+    const unkeyedPath = join(directory, 'unkeyed.docx');
+    writeFileSync(keyedPath, await buildMinimalDocx(SELF_TEST_BEFORE_BODY));
+    // Same content with every w14:paraId removed — what 'rebuild' emits.
+    writeFileSync(unkeyedPath, await buildMinimalDocx(SELF_TEST_AFTER_BODY.replace(/ w14:paraId="[^"]*"/g, '')));
+
+    const { value, lines } = await captureConsole(() => main([keyedPath, unkeyedPath]));
+    assert.equal(value, 2);
+    assert.ok(lines.some((line) => line.startsWith('INCONCLUSIVE')));
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

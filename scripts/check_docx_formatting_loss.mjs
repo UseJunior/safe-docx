@@ -12,45 +12,63 @@
  *   D1 run-formatting flattening — a replacement whose span crosses a run
  *      boundary collapses the boundary and drops bold/italic from the affected
  *      span. Detected per paragraph by projecting each character of the
- *      paragraph onto its (bold, italic, underline) triple: if the text is
- *      unchanged but that projection changed, emphasis was flattened.
+ *      paragraph onto its (bold, italic, underline, character style) tuple: if
+ *      the text is unchanged but that projection changed, emphasis was lost.
  *
  *      Issue #682 sketched D1 as a multiset of runs keyed on
  *      (text, bold, italic, underline). That formulation fires on any run
- *      boundary move, including boundary moves that preserve every character's
- *      emphasis — which this codebase produces routinely, via atomizer token
- *      splitting and rsid churn (#677). The character projection is invariant
- *      to boundary churn and fires only on actual loss, so it is what shipped.
+ *      boundary move, including moves that preserve every character's emphasis
+ *      — which this codebase produces routinely, via atomizer token splitting
+ *      and rsid churn (#677). The character projection is invariant to boundary
+ *      churn and fires only on actual loss, so it is what shipped.
  *
  *   D2 emptied-but-retained paragraphs — replacing a block leaves paragraph
  *      shells behind. An empty body paragraph renders as a blank line; an empty
  *      list paragraph that keeps its w:numPr renders an orphan numbered label,
- *      which a reader sees and a text diff does not. Detected by matching
- *      paragraphs on w14:paraId.
+ *      which a reader sees and a text diff does not. Both are reported only as
+ *      transitions: a paragraph that was already empty before is not a loss
+ *      this comparison caused.
  *
  * Paragraphs are matched on w14:paraId rather than on document order because
  * order shifts whenever a comparison inserts or deletes a paragraph, which is
- * exactly the run this check has to survive. Paragraphs without a paraId cannot
- * be matched at all; they are counted and reported rather than key-substituted,
- * so the coverage line always states what the detectors could not see.
+ * exactly the run this check has to survive.
  *
- * Output discipline: this runs over confidential documents, so it emits only
- * counts, w14:paraId values, and element names — never document text. The
- * projection keeps a digest of each paragraph's text rather than the text
- * itself, so even a dump of the intermediate state carries no recoverable
- * prose, and a unit test holds the report to the same line.
+ * That match key is also this tool's sharpest edge, so it is enforced rather
+ * than assumed. `reconstructionMode: 'rebuild'` emits output carrying no
+ * w14:paraId at all, which matches nothing, finds nothing, and reads as a clean
+ * pass. Coverage below --min-coverage is therefore reported as INCONCLUSIVE and
+ * exits 2. A detector that cannot see the document must not be able to bless it.
+ *
+ * Scope of D1. It compares *declared* formatting — direct w:rPr plus the
+ * w:rStyle reference — not formatting resolved through styles.xml. Removing a
+ * style that carried bold is caught, because the reference changes. Editing the
+ * definition of that style, or a change expressed only through paragraph-style
+ * inheritance, is not. Consolidating onto docx-core's effective-formatting
+ * resolver is tracked in #684; until then this limit is stated rather than
+ * papered over.
+ *
+ * D1 also requires the two paragraphs to carry identical text. Formatting loss
+ * that co-occurs with a text edit in the same paragraph is out of its reach.
+ *
+ * Output discipline: this runs over confidential documents. Detector reports
+ * emit only counts, w14:paraId values, and element names, and the projection
+ * keeps a digest of each paragraph's text rather than the text itself, so even
+ * a dump of the intermediate state carries no recoverable prose. Usage and IO
+ * errors do echo the paths you passed in.
  *
  * Usage:
  *   node scripts/check_docx_formatting_loss.mjs <before.docx> <after.docx>
  *   node scripts/check_docx_formatting_loss.mjs --self-test
  *   node scripts/check_docx_formatting_loss.mjs --json <before.docx> <after.docx>
+ *   node scripts/check_docx_formatting_loss.mjs --min-coverage 0.9 <a.docx> <b.docx>
  *
  * --self-test first proves the detectors fire on a known-bad pair and stay
  * silent on a known-good one. A detector that has never been shown to fire is
  * indistinguishable from no detector, and "no findings" from such a run is not
  * evidence of anything.
  *
- * Exit status: 0 when no detector fires, 1 when any does, 2 on usage or IO error.
+ * Exit status: 0 when no detector fires, 1 when any does, 2 on usage or IO
+ * error or when coverage is too low for the result to mean anything.
  */
 
 import { createHash } from 'node:crypto';
@@ -67,6 +85,25 @@ const MAX_LISTED_IDS = 20;
 
 /** ST_OnOff values that turn a toggle property off. ECMA-376 Part 1 § 17.17.4. */
 const OFF_VALUES = new Set(['0', 'false', 'off']);
+
+/**
+ * Fraction of the larger side's paragraphs that must be matched by paraId
+ * before a finding count is worth believing. Real documents fall a little short
+ * of 1 because duplicate paraIds occur; rebuild output falls to 0.
+ */
+const DEFAULT_MIN_COVERAGE = 0.95;
+
+/**
+ * Run children that put marks on the page without contributing w:t text. A
+ * paragraph holding only one of these is not empty, and reporting it as
+ * emptied would flag every image-only paragraph in the document.
+ */
+const RENDERABLE_RUN_CONTENT = new Set([
+  'drawing', 'object', 'pict', 'tab', 'br', 'sym', 'ptab', 'softHyphen', 'noBreakHyphen', 'fldChar', 'instrText',
+]);
+
+/** Presence of any of these means the document is a redline, not clean output. */
+const REVISION_MARKERS = ['ins', 'del', 'rPrChange', 'pPrChange', 'moveFrom', 'moveTo'];
 
 function elementsByTag(node, localName) {
   return Array.from(node.getElementsByTagNameNS(W_NS, localName));
@@ -120,6 +157,17 @@ function underlineValue(runProperties) {
   return attributeValue(underline, W_NS, 'val') ?? 'unspecified';
 }
 
+/**
+ * The character style reference. Included so that dropping a style that carried
+ * the emphasis is visible: without it, removing w:rStyle="Strong" changes no
+ * direct property and the loss is silent.
+ */
+function characterStyleId(runProperties) {
+  if (!runProperties) return '';
+  const style = directChild(runProperties, 'rStyle');
+  return style ? (attributeValue(style, W_NS, 'val') ?? '') : '';
+}
+
 function runText(run, paragraph) {
   let text = '';
   for (const node of elementsByTag(run, 't')) {
@@ -128,9 +176,23 @@ function runText(run, paragraph) {
   return text;
 }
 
+function runHasRenderableContent(run, paragraph) {
+  for (const localName of RENDERABLE_RUN_CONTENT) {
+    for (const node of elementsByTag(run, localName)) {
+      if (owningParagraph(node) === paragraph) return true;
+    }
+  }
+  return false;
+}
+
 function runEmphasis(run) {
   const runProperties = directChild(run, 'rPr');
-  return [toggleIsOn(runProperties, 'b'), toggleIsOn(runProperties, 'i'), underlineValue(runProperties)];
+  return [
+    toggleIsOn(runProperties, 'b'),
+    toggleIsOn(runProperties, 'i'),
+    underlineValue(runProperties),
+    characterStyleId(runProperties),
+  ];
 }
 
 /**
@@ -142,7 +204,7 @@ function runEmphasis(run) {
 function appendEmphasisSpan(spans, length, emphasis) {
   if (length === 0) return;
   const previous = spans[spans.length - 1];
-  if (previous && previous[1] === emphasis[0] && previous[2] === emphasis[1] && previous[3] === emphasis[2]) {
+  if (previous && emphasis.every((value, index) => previous[index + 1] === value)) {
     previous[0] += length;
     return;
   }
@@ -152,6 +214,38 @@ function appendEmphasisSpan(spans, length, emphasis) {
 function sameEmphasisProjection(before, after) {
   if (before.length !== after.length) return false;
   return before.every((span, index) => span.every((value, position) => value === after[index][position]));
+}
+
+function parseDocumentPart(documentXml) {
+  const errors = [];
+  let document;
+  try {
+    document = new DOMParser({
+      onError: (level, message) => {
+        if (level === 'error' || level === 'fatalError') errors.push(String(message));
+      },
+    }).parseFromString(documentXml, 'application/xml');
+  } catch (error) {
+    throw new Error(`word/document.xml did not parse: ${error.message}`);
+  }
+  if (errors.length > 0) throw new Error(`word/document.xml did not parse: ${errors[0]}`);
+
+  // A well-formed but structurally wrong part would otherwise project zero
+  // paragraphs, and zero paragraphs reads exactly like a clean pass.
+  const root = document.documentElement;
+  if (!root || root.namespaceURI !== W_NS || root.localName !== 'document') {
+    throw new Error('word/document.xml is not a WordprocessingML w:document part');
+  }
+  if (!directChild(root, 'body')) {
+    throw new Error('word/document.xml has no w:body');
+  }
+  return document;
+}
+
+/** Revision markup means this is a redline, where "empty" means something else. */
+export function findRevisionMarkers(documentXml) {
+  const document = parseDocumentPart(documentXml);
+  return REVISION_MARKERS.filter((localName) => elementsByTag(document, localName).length > 0);
 }
 
 /**
@@ -164,26 +258,11 @@ function sameEmphasisProjection(before, after) {
  * @param {string} documentXml raw word/document.xml
  */
 export function projectParagraphs(documentXml) {
-  // A parse failure has to be loud: a document that silently projects to zero
-  // paragraphs makes every detector report zero findings, which reads as a pass.
-  const errors = [];
-  let document;
-  try {
-    document = new DOMParser({
-      onError: (level, message) => {
-        if (level === 'error' || level === 'fatalError') errors.push(String(message));
-      },
-    }).parseFromString(documentXml, 'application/xml');
-  } catch (error) {
-    throw new Error(`word/document.xml did not parse: ${error.message}`);
-  }
-
-  if (errors.length > 0) {
-    throw new Error(`word/document.xml did not parse: ${errors[0]}`);
-  }
+  const document = parseDocumentPart(documentXml);
 
   const byParaId = new Map();
   const duplicateParaIds = new Set();
+  let duplicateParagraphs = 0;
   let unkeyedParagraphs = 0;
   let totalParagraphs = 0;
 
@@ -195,13 +274,15 @@ export function projectParagraphs(documentXml) {
       continue;
     }
     if (byParaId.has(paraId) || duplicateParaIds.has(paraId)) {
-      byParaId.delete(paraId);
+      if (byParaId.delete(paraId)) duplicateParagraphs += 1;
       duplicateParaIds.add(paraId);
+      duplicateParagraphs += 1;
       continue;
     }
 
     const emphasisSpans = [];
     let text = '';
+    let hasRenderableContent = false;
     for (const run of elementsByTag(paragraph, 'r')) {
       if (owningParagraph(run) !== paragraph) continue;
       const ownText = runText(run, paragraph);
@@ -209,13 +290,14 @@ export function projectParagraphs(documentXml) {
       // Empty runs (bookmarks, field characters, breaks) span no characters, so
       // they carry no emphasis that could be lost.
       appendEmphasisSpan(emphasisSpans, ownText.length, runEmphasis(run));
+      if (!hasRenderableContent && runHasRenderableContent(run, paragraph)) hasRenderableContent = true;
     }
 
     const paragraphProperties = directChild(paragraph, 'pPr');
     byParaId.set(paraId, {
       emphasisSpans,
       textDigest: createHash('sha256').update(text).digest('hex'),
-      isEmpty: text.trim() === '',
+      isEmpty: text.trim() === '' && !hasRenderableContent,
       hasNumbering: paragraphProperties ? directChild(paragraphProperties, 'numPr') !== undefined : false,
     });
   }
@@ -223,6 +305,7 @@ export function projectParagraphs(documentXml) {
   return {
     byParaId,
     duplicateParaIds: [...duplicateParaIds].sort(),
+    duplicateParagraphs,
     unkeyedParagraphs,
     totalParagraphs,
   };
@@ -233,11 +316,14 @@ export function projectParagraphs(documentXml) {
  *
  * @param {ReturnType<typeof projectParagraphs>} before
  * @param {ReturnType<typeof projectParagraphs>} after
+ * @param {{ minCoverage?: number }} [options]
  */
-export function detectFormattingLoss(before, after) {
+export function detectFormattingLoss(before, after, options = {}) {
+  const minCoverage = options.minCoverage ?? DEFAULT_MIN_COVERAGE;
   const flattenedParagraphIds = [];
   const emptiedParagraphIds = [];
   const orphanNumberingParagraphIds = [];
+  let preExistingEmptyNumbered = 0;
   let matchedParagraphs = 0;
 
   for (const [paraId, beforeParagraph] of before.byParaId) {
@@ -253,31 +339,36 @@ export function detectFormattingLoss(before, after) {
       flattenedParagraphIds.push(paraId);
     }
 
-    // D2a — carried text before, carries none after.
+    // D2 — carried content before, carries none after. Both halves are
+    // transitions: a paragraph already empty on the before side is a property
+    // of the input, not damage this comparison did.
     if (!beforeParagraph.isEmpty && afterParagraph.isEmpty) {
       emptiedParagraphIds.push(paraId);
+      if (afterParagraph.hasNumbering) orphanNumberingParagraphIds.push(paraId);
+    } else if (afterParagraph.isEmpty && afterParagraph.hasNumbering) {
+      preExistingEmptyNumbered += 1;
     }
   }
 
-  // D2b — an empty paragraph that kept its numbering renders an orphan label.
-  for (const [paraId, afterParagraph] of after.byParaId) {
-    if (afterParagraph.isEmpty && afterParagraph.hasNumbering) {
-      orphanNumberingParagraphIds.push(paraId);
-    }
-  }
+  const comparableParagraphs = Math.max(before.totalParagraphs, after.totalParagraphs);
+  const coverageRatio = comparableParagraphs === 0 ? 1 : matchedParagraphs / comparableParagraphs;
 
   return {
     flattenedParagraphIds: flattenedParagraphIds.sort(),
     emptiedParagraphIds: emptiedParagraphIds.sort(),
     orphanNumberingParagraphIds: orphanNumberingParagraphIds.sort(),
     matchedParagraphs,
+    preExistingEmptyNumbered,
+    coverageRatio,
+    minCoverage,
+    inconclusive: coverageRatio < minCoverage,
     coverage: {
       beforeTotal: before.totalParagraphs,
       afterTotal: after.totalParagraphs,
       beforeUnkeyed: before.unkeyedParagraphs,
       afterUnkeyed: after.unkeyedParagraphs,
-      beforeDuplicateIds: before.duplicateParaIds.length,
-      afterDuplicateIds: after.duplicateParaIds.length,
+      beforeDuplicateParagraphs: before.duplicateParagraphs,
+      afterDuplicateParagraphs: after.duplicateParagraphs,
     },
   };
 }
@@ -303,21 +394,32 @@ function formatIdList(ids) {
  */
 export function formatReport(result) {
   const { coverage } = result;
-  const unmatched = coverage.beforeUnkeyed + coverage.afterUnkeyed;
+  const percent = (result.coverageRatio * 100).toFixed(1);
   const lines = [
     `D1 run-formatting flattened paragraphs: ${result.flattenedParagraphIds.length} ${formatIdList(result.flattenedParagraphIds)}`,
     `D2 emptied-but-retained paragraphs: ${result.emptiedParagraphIds.length} ${formatIdList(result.emptiedParagraphIds)}`,
     `D2 empty paragraphs retaining w:numPr: ${result.orphanNumberingParagraphIds.length} ${formatIdList(result.orphanNumberingParagraphIds)}`,
-    `coverage: ${result.matchedParagraphs} paragraphs matched by w14:paraId ` +
-      `(before ${coverage.beforeTotal} paragraphs, ${coverage.beforeUnkeyed} unkeyed, ${coverage.beforeDuplicateIds} duplicate ids; ` +
-      `after ${coverage.afterTotal} paragraphs, ${coverage.afterUnkeyed} unkeyed, ${coverage.afterDuplicateIds} duplicate ids)`,
+    `coverage: ${result.matchedParagraphs} of ${Math.max(coverage.beforeTotal, coverage.afterTotal)} paragraphs matched by w14:paraId (${percent}%) ` +
+      `(before ${coverage.beforeTotal} paragraphs, ${coverage.beforeUnkeyed} unkeyed, ${coverage.beforeDuplicateParagraphs} sharing a duplicate id; ` +
+      `after ${coverage.afterTotal} paragraphs, ${coverage.afterUnkeyed} unkeyed, ${coverage.afterDuplicateParagraphs} sharing a duplicate id)`,
   ];
-  if (unmatched > 0) {
+
+  if (result.preExistingEmptyNumbered > 0) {
     lines.push(
-      `note: ${unmatched} paragraphs carry no w14:paraId and were not compared — ` +
-        `a zero count above does not cover them`,
+      `note: ${result.preExistingEmptyNumbered} numbered paragraphs were already empty before the change — ` +
+        `document hygiene, not loss this comparison caused`,
     );
   }
+
+  if (result.inconclusive) {
+    lines.push(
+      `INCONCLUSIVE: coverage ${percent}% is below the ${(result.minCoverage * 100).toFixed(1)}% floor, ` +
+        `so the counts above describe only a fragment of the document and must not be read as a pass. ` +
+        `reconstructionMode 'rebuild' emits no w14:paraId at all; compare an 'inplace' output, ` +
+        `or lower the floor with --min-coverage once you have decided what the gap means`,
+    );
+  }
+
   return lines;
 }
 
@@ -399,6 +501,9 @@ async function runSelfTest() {
   if (hasFindings(unchanged)) {
     failures.push('known-good pair reported findings — the detectors have false positives');
   }
+  if (unchanged.inconclusive || damaged.inconclusive) {
+    failures.push('self-test fixtures did not reach full coverage — the harness itself is broken');
+  }
   if (damaged.flattenedParagraphIds.length !== 1) {
     failures.push(`D1 did not fire on the known-bad pair (got ${damaged.flattenedParagraphIds.length}, expected 1)`);
   }
@@ -421,22 +526,56 @@ async function runSelfTest() {
   return 0;
 }
 
+const KNOWN_FLAGS = new Set(['--json', '--self-test', '--min-coverage']);
+
+function usage() {
+  console.error('usage: check_docx_formatting_loss.mjs [--json] [--min-coverage <0..1>] <before.docx> <after.docx>');
+  console.error('       check_docx_formatting_loss.mjs --self-test');
+  return 2;
+}
+
 export async function main(argv) {
-  const useJson = argv.includes('--json');
-  const positional = argv.filter((argument) => !argument.startsWith('--'));
+  const positional = [];
+  let useJson = false;
+  let minCoverage = DEFAULT_MIN_COVERAGE;
 
-  if (argv.includes('--self-test')) return runSelfTest();
-
-  if (positional.length !== 2) {
-    console.error('usage: check_docx_formatting_loss.mjs [--json] <before.docx> <after.docx>');
-    console.error('       check_docx_formatting_loss.mjs --self-test');
-    return 2;
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--self-test') return runSelfTest();
+    if (argument === '--json') {
+      useJson = true;
+    } else if (argument === '--min-coverage') {
+      minCoverage = Number(argv[index + 1]);
+      index += 1;
+      if (!Number.isFinite(minCoverage) || minCoverage < 0 || minCoverage > 1) {
+        console.error('check_docx_formatting_loss: --min-coverage takes a fraction between 0 and 1');
+        return 2;
+      }
+    } else if (argument.startsWith('--') && !KNOWN_FLAGS.has(argument)) {
+      // Silently ignoring an unknown flag lets a typo'd threshold read as a pass.
+      console.error(`check_docx_formatting_loss: unknown option ${argument}`);
+      return usage();
+    } else {
+      positional.push(argument);
+    }
   }
+
+  if (positional.length !== 2) return usage();
 
   let result;
   try {
     const [beforeXml, afterXml] = await Promise.all(positional.map(readDocumentXml));
-    result = detectFormattingLoss(projectParagraphs(beforeXml), projectParagraphs(afterXml));
+    for (const [path, xml] of [[positional[0], beforeXml], [positional[1], afterXml]]) {
+      const markers = findRevisionMarkers(xml);
+      if (markers.length > 0) {
+        throw new Error(
+          `${path} carries revision markup (${markers.map((name) => `w:${name}`).join(', ')}). ` +
+            `These detectors read clean output — in a redline, deleted text is still present ` +
+            `and "empty" does not mean what D2 assumes. Accept or reject the revisions first.`,
+        );
+      }
+    }
+    result = detectFormattingLoss(projectParagraphs(beforeXml), projectParagraphs(afterXml), { minCoverage });
   } catch (error) {
     console.error(`check_docx_formatting_loss: ${error.message}`);
     return 2;
@@ -447,6 +586,8 @@ export async function main(argv) {
   } else {
     for (const line of formatReport(result)) console.log(line);
   }
+
+  if (result.inconclusive) return 2;
   return hasFindings(result) ? 1 : 0;
 }
 
