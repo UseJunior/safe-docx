@@ -93,6 +93,27 @@ replace_text(
 
 The change is applied to the live document session. Untouched paragraphs remain outside the edit operation.
 
+### Delete An Ordinary DOCX Paragraph
+
+There is no separate `delete_paragraph` tool. To delete an ordinary body
+paragraph, target its exact full visible text and replace it with an empty string:
+
+```text
+replace_text(
+  file_path="~/docs/NDA.docx",
+  target_paragraph_id="_bk_7d130acfe245",
+  old_string="This duplicated paragraph should be removed.",
+  new_string="",
+  instruction="Delete the duplicated paragraph"
+)
+```
+
+A clean save removes the paragraph. A tracked save retains its deletion for
+review. Re-read the target first and use this pattern only when `old_string`
+matches the complete paragraph text. Inspect the document structure before using
+it on a paragraph that carries section properties, is structurally required as
+the last paragraph in a table cell, or owns bookmark or comment anchors.
+
 ## Step 6: Save Reviewable Outputs
 
 ```text
@@ -135,6 +156,7 @@ Visual review remains appropriate for material documents because Safe Docx is no
 | Compare two documents | `compare_documents` |
 | Inspect or accept revisions | `has_tracked_changes`, `extract_revisions`, `accept_changes` |
 | Insert a paragraph | `insert_paragraph` |
+| Delete an ordinary DOCX body paragraph | `replace_text` with the complete text and an empty `new_string` |
 | Apply several edits together | `batch_edit` |
 | Convert DOCX to ODT | `convert_to_odt` |
 | Convert DOCX to Markdown | `export` with `format="markdown"` |
