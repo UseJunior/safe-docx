@@ -863,9 +863,15 @@ export function atomizeTree(
     : mergedAtoms;
 
   // Step 4: Merge punctuation-only atoms with preceding text
-  // This handles "Conduct" + "," vs "Conduct," split differences
-  // Must run AFTER word split since that's when punctuation becomes separate atoms
-  const atoms = mergePunctuationAtoms(wordSplitAtoms, normalizedOptions);
+  // This handles "Conduct" + "," vs "Conduct," split differences for
+  // run-level atomization. When word-splitting ran, edge punctuation was
+  // already split into its own atoms on BOTH sides (splitTokenAtPunctuationEdges),
+  // which normalizes the same boundary differences symmetrically; re-gluing
+  // here would depend on run structure and re-introduce asymmetric tokens
+  // (e.g. "officer]" on one side vs "officer" + "]" on the other).
+  const atoms = normalizedOptions.splitTextIntoWords
+    ? wordSplitAtoms
+    : mergePunctuationAtoms(wordSplitAtoms, normalizedOptions);
 
   console.log(
     `[DEBUG] atomizeTree: created ${rawAtoms.length} atoms, field-collapsed to ${fieldCollapsedAtoms.length}, merged to ${mergedAtoms.length}, word-split to ${wordSplitAtoms.length}, punct-merged to ${atoms.length}, ${state.emptyParagraphCount} empty paragraphs`
@@ -1132,6 +1138,48 @@ export function collapseFieldSequences(
  * @param atom - A w:t atom to split
  * @returns Array of word-level atoms (or original atom if not w:t)
  */
+/**
+ * Punctuation classes split off token edges by {@link splitAtomIntoWords}.
+ *
+ * The trailing class mirrors {@link isPunctuationOnlyAtom}; the leading class
+ * holds the matching openers. Kept deliberately narrow: currency/percent signs
+ * and interior punctuation (e.g. "$204,000.00", "don't") stay glued to their
+ * token so figures remain single atoms on both sides of a comparison.
+ *
+ * Implemented as character sets scanned linearly (not regexes) because the
+ * input is document-controlled text and an end-anchored `[...]+$` pattern is
+ * quadratic on adversarial inputs (CodeQL js/polynomial-redos).
+ */
+const LEADING_EDGE_PUNCTUATION = new Set(["'", '"', '(', '[', '{', '<']);
+const TRAILING_EDGE_PUNCTUATION = new Set([',', '.', ':', ';', '!', '?', "'", '"', ')', ']', '}', '>']);
+
+/**
+ * Split a whitespace-free token into leading punctuation, core, and trailing
+ * punctuation parts, dropping empty parts.
+ *
+ * Tokenization must be a pure function of paragraph text — not of run
+ * boundaries — or identical text on the two sides of a comparison can
+ * tokenize differently and produce delete+insert pairs over unchanged words.
+ * Splitting edge punctuation into its own atoms keeps a punctuation-only edit
+ * (e.g. removing template brackets: "[or officer]" -> "or officer") from
+ * consuming its neighbouring unchanged words (issue #675).
+ */
+function splitTokenAtPunctuationEdges(token: string): string[] {
+  let coreStart = 0;
+  while (coreStart < token.length && LEADING_EDGE_PUNCTUATION.has(token[coreStart]!)) {
+    coreStart++;
+  }
+  let coreEnd = token.length;
+  while (coreEnd > coreStart && TRAILING_EDGE_PUNCTUATION.has(token[coreEnd - 1]!)) {
+    coreEnd--;
+  }
+  const parts: string[] = [];
+  if (coreStart > 0) parts.push(token.slice(0, coreStart));
+  if (coreEnd > coreStart) parts.push(token.slice(coreStart, coreEnd));
+  if (coreEnd < token.length) parts.push(token.slice(coreEnd));
+  return parts.length > 0 ? parts : [token];
+}
+
 function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
   // Only split w:t elements
   if (atom.contentElement.tagName !== 'w:t') {
@@ -1145,14 +1193,18 @@ function splitAtomIntoWords(atom: ComparisonUnitAtom): ComparisonUnitAtom[] {
 
   const text = getLeafText(atom.contentElement) ?? '';
 
-  // Don't split short text or single words
-  if (text.length <= 1 || !text.includes(' ')) {
+  // Don't split short text
+  if (text.length <= 1) {
     return [atom];
   }
 
-  // Split into words and whitespace, preserving both
-  // Uses regex to split on word boundaries while keeping whitespace
-  const parts = text.split(/(\s+)/);
+  // Split into words and whitespace, preserving both, then split edge
+  // punctuation off each word so tokenization does not depend on how runs
+  // happened to fragment the text.
+  const parts = text
+    .split(/(\s+)/)
+    .filter((part) => part !== '')
+    .flatMap((part) => (/^\s+$/.test(part) ? [part] : splitTokenAtPunctuationEdges(part)));
   if (parts.length <= 1) {
     return [atom];
   }
