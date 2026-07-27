@@ -16,6 +16,7 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | `layout.ts` — `setParagraphSpacing` | `packages/docx-core/src/primitives/layout.ts` | `w:pPrChange` | Paragraph spacing mutations change paragraph properties, not spacer-paragraph structure. **Verified by [120.8] (#143) regression test.** |
 | `layout.ts` — `setTableRowHeight` | `packages/docx-core/src/primitives/layout.ts` | `w:trPrChange` | Row geometry changes belong under row-property revisions. **Verified by [120.8] (#143) regression test.** |
 | `layout.ts` — `setTableCellPadding` | `packages/docx-core/src/primitives/layout.ts` | `w:tcPrChange` | Cell padding changes belong under cell-property revisions. **Verified by [120.8] (#143) regression test.** |
+| `paragraph_numbering.ts` — `setDirectParagraphNumbering` | `packages/docx-core/src/primitives/paragraph_numbering.ts` | `w:pPrChange` | Direct `w:numPr` assignment, replacement, and removal preserve the prior paragraph properties under a native property-change revision. **Verified by the #653 canonical-emission regression test.** |
 | `comments.ts` — `addComment` | `packages/docx-core/src/primitives/comments.ts` | `w:ins` | Only the body-story `w:commentReference` run is wrapped in `w:ins`; range markers and root-comment text in `comments.xml` are not revision-wrapped. Comment body text, author metadata, and package bootstrap are listed in Table B. **Verified by [120.8] (#143) regression test.** |
 | `comments.ts` — `deleteComment` | `packages/docx-core/src/primitives/comments.ts` | `w:del` | Only the removed body-story `w:commentReference` run is wrapped in `w:del`; range markers are removed structurally, and comment/reply text removal from `comments.xml` is a Table B side-part mutation. `commentsExtended.xml` cleanup is also the Table B companion. **Verified by [120.8] (#143) regression test.** |
 | `footnotes.ts` — `addFootnote` | `packages/docx-core/src/primitives/footnotes.ts` | `w:ins` | The inserted `w:footnoteReference` in the body story and the new footnote text both belong to the revisionable surface. Companion package bootstrap is listed in Table B. **Verified by [120.8] (#143) regression test.** |
@@ -26,6 +27,7 @@ The "OOXML revision element" column uses ECMA-376 element names from the tracked
 | `batch_edit` | `packages/docx-mcp/src/tools/batch_edit.ts` | `w:ins`, `w:del`, `w:pPrChange`, `w:rPrChange` | Batch execution is only an orchestrator, but every applied step delegates to revisionable body-edit primitives. **Verified by [120.8] (#143) regression test.** |
 | `clear_formatting` | `packages/docx-mcp/src/tools/clear_formatting.ts` | `w:rPrChange` | Run-property clearing is a run formatting revision, not a package mutation. **Verified by [120.8] (#143) regression test.** |
 | `format_layout` | `packages/docx-mcp/src/tools/format_layout.ts` | `w:pPrChange`, `w:trPrChange`, `w:tcPrChange` | Deterministic OOXML geometry edits belong under native property-change revisions. **Verified by [120.8] (#143) regression test.** |
+| `format_numbering` | `packages/docx-mcp/src/tools/format_numbering.ts` | `w:pPrChange` | DOCX-only direct paragraph numbering changes delegate to the canonical numbering primitive and retain the previous `w:numPr` in tracked output. **Verified by the #653 canonical-emission MCP regression test.** |
 | `add_comment` | `packages/docx-mcp/src/tools/add_comment.ts` | `w:ins` (root-comment mode only) | Root-comment mode wraps only the body-story `w:commentReference` run in `w:ins`; range markers and root-comment text in `comments.xml` are not revision-wrapped. **Reply-mode** dispatches through `comments.ts` `addCommentReply` which is Table B (side-part metadata only; no body revision marker). Missing comment infrastructure is also a Table B companion. **Verified by [120.8] (#143) regression test.** |
 | `delete_comment` | `packages/docx-mcp/src/tools/delete_comment.ts` | `w:del` | Comment deletion wraps only the removed body-story `w:commentReference` run in `w:del`; range markers and `comments.xml` comment/reply text are removed as Table B side-part/structural mutations. `commentsExtended.xml` cleanup is the Table B companion. **Verified by [120.8] (#143) regression test.** |
 | `add_footnote` | `packages/docx-mcp/src/tools/add_footnote.ts` | `w:ins` | Footnote reference insertion and note-body creation are revisionable content. Missing footnote infrastructure is the Table B companion. **Verified by [120.8] (#143) regression test.** |
@@ -211,6 +213,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `merge_runs.ts` — Internal / non-contract utilities
 - `namespaces.ts` — Internal / non-contract utilities
 - `numbering.ts` — Internal / non-contract utilities
+- `paragraph_numbering.ts` — Table A
 - `prevent_double_elevation.ts` — Internal / non-contract utilities
 - `reject_changes.ts` — Internal / non-contract utilities
 - `relationships.ts` — Internal / non-contract utilities
@@ -239,6 +242,7 @@ This appendix is deliberately mechanical. It makes it easy to audit that every n
 - `docx_archive_guard.ts` — Internal / non-contract utilities
 - `extract_revisions.ts` — Internal / non-contract utilities
 - `format_layout.ts` — Table A
+- `format_numbering.ts` — Table A
 - `get_comments.ts` — Internal / non-contract utilities
 - `get_file_status.ts` — Internal / non-contract utilities
 - `get_footnotes.ts` — Internal / non-contract utilities
