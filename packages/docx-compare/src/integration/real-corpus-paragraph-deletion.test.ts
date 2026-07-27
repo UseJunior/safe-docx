@@ -38,6 +38,7 @@ import { testAllure } from '../testing/allure-test.js';
 
 const CORPUS_ENV = 'SAFE_DOCX_REAL_CORPUS_DIR';
 const REQUIRED_ENV = 'SAFE_DOCX_REAL_CORPUS_REQUIRED';
+const CI_RUNTIME_PROFILE = 'linux-node20';
 const INTEGRATION_DIR = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = join(INTEGRATION_DIR, 'real-corpus-manifest.json');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -93,12 +94,12 @@ const nestedFieldFailure: ExpectedFailure = {
   messageIncludes: 'Ancillary story safety check failed with 3 issue(s)',
 };
 
-const expectedFailures: Readonly<
+type ExpectedFailures = Readonly<
   Record<string, Partial<Record<ReconstructionMode, ExpectedFailure>>>
-> = {
-  'nvca-certificate-of-incorporation': { rebuild: boundaryShiftFailure },
+>;
+
+const commonExpectedFailures: ExpectedFailures = {
   'nvca-indemnification-agreement': {
-    inplace: nestedFieldFailure,
     rebuild: {
       issue: '#646',
       kind: 'comparison-error',
@@ -120,7 +121,6 @@ const expectedFailures: Readonly<
       kind: 'bookmark-range-failure',
       names: ['_Ref_ContractCompanion_9kb9Ur019'],
     },
-    rebuild: boundaryShiftFailure,
   },
   'nvca-stock-purchase-agreement': {
     rebuild: {
@@ -144,6 +144,37 @@ const expectedFailures: Readonly<
     },
   },
 };
+
+const darwinNode26ExpectedFailures: ExpectedFailures = {
+  'nvca-certificate-of-incorporation': { rebuild: boundaryShiftFailure },
+  'nvca-indemnification-agreement': { inplace: nestedFieldFailure },
+  'nvca-rofr-co-sale-agreement': { rebuild: boundaryShiftFailure },
+};
+
+function currentRuntimeProfile(): string {
+  const nodeMajor = process.versions.node.split('.')[0];
+  return `${process.platform}-node${nodeMajor}`;
+}
+
+function expectedFailuresForRuntime(runtimeProfile: string): ExpectedFailures {
+  if (runtimeProfile !== 'darwin-node26') return commonExpectedFailures;
+
+  return Object.fromEntries(
+    Array.from(
+      new Set([
+        ...Object.keys(commonExpectedFailures),
+        ...Object.keys(darwinNode26ExpectedFailures),
+      ]),
+      (entryId) => [
+        entryId,
+        {
+          ...commonExpectedFailures[entryId],
+          ...darwinNode26ExpectedFailures[entryId],
+        },
+      ],
+    ),
+  );
+}
 
 const preferredDeletionTarget: Readonly<Partial<Record<string, string>>> = {
   'nvca-voting-agreement': '_Ref444624639',
@@ -439,6 +470,8 @@ function assertExpectedOutcome(outcome: CellOutcome, expectedFailure?: ExpectedF
 
 const corpusRoot = process.env[CORPUS_ENV] ?? '';
 const corpusAvailability = resolveCorpusAvailability(corpusRoot);
+const runtimeProfile = currentRuntimeProfile();
+const expectedFailures = expectedFailuresForRuntime(runtimeProfile);
 if (!corpusAvailability.available) {
   console.warn(corpusAvailability.skipWarning);
 }
@@ -451,10 +484,32 @@ describe('real-corpus gate availability', () => {
     expect(resolution.skipWarning).toContain(CORPUS_ENV);
   });
 
+  test('runtime profiles preserve the characterized Darwin-only failures', () => {
+    const linuxFailures = expectedFailuresForRuntime(CI_RUNTIME_PROFILE);
+    const darwinFailures = expectedFailuresForRuntime('darwin-node26');
+
+    expect(linuxFailures['nvca-certificate-of-incorporation']?.rebuild).toBeUndefined();
+    expect(linuxFailures['nvca-indemnification-agreement']?.inplace).toBeUndefined();
+    expect(linuxFailures['nvca-rofr-co-sale-agreement']?.rebuild).toBeUndefined();
+    expect(darwinFailures['nvca-certificate-of-incorporation']?.rebuild).toEqual(
+      boundaryShiftFailure,
+    );
+    expect(darwinFailures['nvca-indemnification-agreement']?.inplace).toEqual(
+      nestedFieldFailure,
+    );
+    expect(darwinFailures['nvca-rofr-co-sale-agreement']?.rebuild).toEqual(
+      boundaryShiftFailure,
+    );
+  });
+
   if (process.env[REQUIRED_ENV] === '1') {
     test('required CI corpus is complete and SHA-256 verified', () => {
       expect(corpusAvailability.skipWarning).toBeNull();
       expect(corpusAvailability.available).toBe(true);
+    });
+
+    test('required CI runs on the characterized runtime profile', () => {
+      expect(runtimeProfile).toBe(CI_RUNTIME_PROFILE);
     });
   }
 });
