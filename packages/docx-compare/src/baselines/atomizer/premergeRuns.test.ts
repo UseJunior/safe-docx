@@ -3,7 +3,7 @@ import { describe, expect } from 'vitest';
 import { compareDocuments } from '../../index.js';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { premergeAdjacentRuns } from './premergeRuns.js';
-import { el } from '../../testing/dom-test-helpers.js';
+import { el, testDoc } from '../../testing/dom-test-helpers.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 import { childElements, getLeafText } from '@usejunior/docx-core';
 import { assertDefined } from '../../testing/test-utils.js';
@@ -204,6 +204,32 @@ describe('premergeAdjacentRuns', () => {
       // merge understands — stay conservative and refuse.
       expect(merges).toBe(0);
       expect(childElements(p)).toHaveLength(2);
+    });
+  });
+
+  test('does not merge when stray text follows an initial whitespace text node', async ({ given, when, then }: AllureBddContext) => {
+    let p: Element;
+    let merges: number;
+
+    await given('a run with indentation before w:t and stray text after it', () => {
+      // Every direct text child must be scanned: getLeafText() returns only
+      // the FIRST text child, so a whitespace node before <w:t> must not let
+      // later non-whitespace text slip past the guard — mergeRunInto moves
+      // element children only and would silently drop the stray text.
+      const r1 = el('w:r', {}, [el('w:t', {}, undefined, 'A')], '\n        ');
+      r1.appendChild(testDoc.createTextNode('stray'));
+      const r2 = el('w:r', {}, [el('w:t', {}, undefined, 'B')]);
+      p = el('w:p', {}, [r1, r2]);
+    });
+
+    await when('premergeAdjacentRuns is called', () => {
+      merges = premergeAdjacentRuns(p);
+    });
+
+    await then('no merges are reported and both runs remain', () => {
+      expect(merges).toBe(0);
+      expect(childElements(p)).toHaveLength(2);
+      expect(childElements(p)[0]!.textContent).toContain('stray');
     });
   });
 
@@ -496,6 +522,55 @@ describe('rsid-fragmented runs through the comparison pipeline (issue #675)', ()
         expect(deleted).not.toContain('$');
         expect(xml).toContain('$204,000.00');
       }
+    });
+  });
+
+  test('bracket removal around unchanged words does not strike the words', async ({ given, when, then, and }: AllureBddContext) => {
+    let source!: Buffer;
+    let revised!: Buffer;
+    let xml!: string;
+
+    await given('a source with "[or officer]" split across rsid-fragmented runs and a bracketless revision', async () => {
+      // Reduced from the NVCA COI pair: premerge heals the run fragmentation,
+      // so tokenization must split the brackets into their own atoms or the
+      // unchanged words "or" / "officer" get struck and reinserted.
+      source = await buildDocxFromBodyXml(
+        '<w:p>' +
+          '<w:r w:rsidRPr="00F9719D" w:rsidR="00932CCC"><w:t xml:space="preserve">No director [or</w:t></w:r>' +
+          '<w:r w:rsidR="00932CCC"><w:t xml:space="preserve"> officer]</w:t></w:r>' +
+          '<w:r w:rsidRPr="00F9719D" w:rsidR="00932CCC"><w:t xml:space="preserve"> shall be personally liable. Legacy term applies.</w:t></w:r>' +
+          '</w:p>',
+      );
+      revised = await buildDocxFromBodyXml(
+        '<w:p>' +
+          '<w:r><w:t xml:space="preserve">No director or officer shall be personally liable. Updated term applies.</w:t></w:r>' +
+          '</w:p>',
+      );
+    });
+
+    await when('the documents are compared in inplace mode', async () => {
+      const result = await compareDocuments(source, revised, {
+        engine: 'atomizer',
+        reconstructionMode: 'inplace',
+      });
+      xml = await documentXml(result.document);
+    });
+
+    await then('only the brackets and the genuine edit are deleted', () => {
+      const deleted = delTexts(xml);
+      expect(deleted).toContain('[');
+      expect(deleted).toContain(']');
+      expect(deleted.join(' ')).toContain('Legacy');
+      expect(deleted.join(' ')).not.toContain('or');
+      expect(deleted.join(' ')).not.toContain('officer');
+    });
+
+    await and('the unchanged words are not reinserted', () => {
+      const inserted = [...xml.matchAll(/<w:ins [^>]*>([\s\S]*?)<\/w:ins>/g)]
+        .flatMap((m) => [...m[1]!.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((t) => t[1]!))
+        .join(' ');
+      expect(inserted).toContain('Updated');
+      expect(inserted).not.toContain('officer');
     });
   });
 });

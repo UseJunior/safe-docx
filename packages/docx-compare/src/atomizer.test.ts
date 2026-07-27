@@ -10,6 +10,7 @@ import {
   createComparisonUnitAtom,
   atomizeTree,
   getAncestors,
+  splitAtomsIntoWords,
   EMPTY_PARAGRAPH_TAG,
 } from './atomizer.js';
 import { CorrelationStatus, OpcPart } from '@usejunior/docx-core';
@@ -1347,6 +1348,80 @@ describe('getAncestors', () => {
       expect(ancestors[1]).toBe(body);
       expect(ancestors[2]).toBe(para);
       expect(ancestors[3]).toBe(run);
+    });
+  });
+});
+
+describe('splitAtomsIntoWords edge punctuation', () => {
+  const PART: OpcPart = { uri: 'word/document.xml', contentType: 'text/xml' };
+
+  function wordTexts(text: string): string[] {
+    const textEl = el('w:t', {}, undefined, text);
+    const run = el('w:r', {}, [textEl]);
+    const paragraph = el('w:p', {}, [run]);
+    const atom = createComparisonUnitAtom({
+      contentElement: textEl,
+      ancestors: [paragraph, run],
+      part: PART,
+    });
+    return splitAtomsIntoWords([atom]).map((a) => a.contentElement.textContent ?? '');
+  }
+
+  test('splits bracket edges into their own atoms', async ({ given, when, then }: AllureBddContext) => {
+    let tokens: string[];
+
+    await given('text with template brackets "[or officer]"', () => {});
+
+    await when('the atom is word-split', () => {
+      tokens = wordTexts('[or officer]');
+    });
+
+    await then('brackets become separate atoms so the words can match a bracketless side', () => {
+      // Tokenization must be a pure function of paragraph text: "[or officer]"
+      // vs "or officer" must share the "or" and "officer" atoms (issue #675).
+      expect(tokens).toEqual(['[', 'or', ' ', 'officer', ']']);
+    });
+  });
+
+  test('keeps currency amounts as single atoms', async ({ given, when, then }: AllureBddContext) => {
+    let tokens: string[];
+
+    await given('text containing a currency amount', () => {});
+
+    await when('the atom is word-split', () => {
+      tokens = wordTexts('exceed $204,000.00 net');
+    });
+
+    await then('the amount stays one atom; interior and currency punctuation stay glued', () => {
+      expect(tokens).toEqual(['exceed', ' ', '$204,000.00', ' ', 'net']);
+    });
+  });
+
+  test('splits trailing sentence punctuation', async ({ given, when, then }: AllureBddContext) => {
+    let tokens: string[];
+
+    await given('a single-token atom with trailing punctuation', () => {});
+
+    await when('the atom is word-split', () => {
+      tokens = wordTexts('Conduct,');
+    });
+
+    await then('the comma becomes its own atom, matching a "Conduct" + "," run split', () => {
+      expect(tokens).toEqual(['Conduct', ',']);
+    });
+  });
+
+  test('leaves pure punctuation tokens intact', async ({ given, when, then }: AllureBddContext) => {
+    let tokens: string[];
+
+    await given('a token made only of punctuation', () => {});
+
+    await when('the atom is word-split', () => {
+      tokens = wordTexts('a ). b');
+    });
+
+    await then('the punctuation token stays a single atom', () => {
+      expect(tokens).toEqual(['a', ' ', ').', ' ', 'b']);
     });
   });
 });

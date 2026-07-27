@@ -23,7 +23,7 @@
  */
 
 import { createHash } from 'crypto';
-import { getLeafText, childElements } from '@usejunior/docx-core';
+import { getLeafText, childElements, NODE_TYPE } from '@usejunior/docx-core';
 
 const SAFE_RUN_CHILD_TAGS = new Set([
   'w:rPr',
@@ -124,6 +124,16 @@ function runPropertiesEqual(aRun: Element, bRun: Element): boolean {
   return hashElementDeep(aRPr) === hashElementDeep(bRPr);
 }
 
+function hasNonWhitespaceDirectText(element: Element): boolean {
+  for (let i = 0; i < element.childNodes.length; i++) {
+    const child = element.childNodes[i]!;
+    if (child.nodeType === NODE_TYPE.TEXT && (child.nodeValue ?? '').trim() !== '') {
+      return true;
+    }
+  }
+  return false;
+}
+
 function runIsSafeToMerge(run: Element): boolean {
   if (run.tagName !== 'w:r') return false;
   // Direct text under <w:r> is meaningless in OOXML (significant text lives in
@@ -132,9 +142,10 @@ function runIsSafeToMerge(run: Element): boolean {
   // a comparison whenever only that side was pretty-printed, which
   // desynchronised run boundaries between the two documents and produced
   // phantom delete+insert pairs at every shared fragment boundary (issue #675).
-  // Only non-whitespace direct text marks a run unsafe.
-  const leafText = getLeafText(run);
-  if (leafText !== undefined && leafText.trim() !== '') return false;
+  // Only non-whitespace direct text marks a run unsafe — and every direct text
+  // child is checked, not just the first, because mergeRunInto moves element
+  // children only and would silently drop stray text that slipped through.
+  if (hasNonWhitespaceDirectText(run)) return false;
 
   for (const child of childElements(run)) {
     if (!SAFE_RUN_CHILD_TAGS.has(child.tagName)) return false;
