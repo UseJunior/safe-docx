@@ -8,6 +8,7 @@ import {
   OOXML,
   W,
   DocxDocument,
+  SafeDocxError,
   findUniqueSubstringMatch,
   applyDocumentQuoteStyle,
   getParagraphRuns,
@@ -314,6 +315,9 @@ export async function replaceText(
       after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
     }, metadata));
   } catch (e: unknown) {
+    if (e instanceof SafeDocxError) {
+      return err(e.code, e.message, e.hint);
+    }
     const msg = errorMessage(e);
     return err('EDIT_ERROR', `Failed to edit document: ${msg}`);
   }

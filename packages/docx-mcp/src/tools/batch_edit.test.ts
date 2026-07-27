@@ -217,6 +217,53 @@ describe('batch_edit tool — edge cases', () => {
     });
   });
 
+  test('returns an actionable hyperlink-boundary error without applying the batch', async ({ given, when, then, and }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' });
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let result: Awaited<ReturnType<typeof batchEdit>>;
+
+    await given('a paragraph with literal text followed by an anchored hyperlink', async () => {
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:body><w:p>` +
+        `<w:r><w:t xml:space="preserve">See Section </w:t></w:r>` +
+        `<w:hyperlink w:anchor="_Ref1"><w:r><w:t>4.2(b)(ix)</w:t></w:r></w:hyperlink>` +
+        `<w:r><w:t xml:space="preserve"> for details.</w:t></w:r>` +
+        `</w:p></w:body></w:document>`;
+      opened = await openSession([], { xml });
+    });
+
+    await when('a batch replacement genuinely crosses the hyperlink boundary', async () => {
+      result = await batchEdit(opened.mgr, {
+        file_path: opened.inputPath,
+        steps: [{
+          step_id: 'cross-hyperlink',
+          operation: 'replace_text',
+          target_paragraph_id: opened.firstParaId,
+          old_string: 'Section 4.2(b)(ix)',
+          new_string: 'Clause 5.3(c)(xii)!',
+          instruction: 'cross hyperlink boundary',
+        }],
+      });
+    });
+
+    await then('batch_edit preserves the structured boundary code and exact localization', () => {
+      assertFailure(result, 'UNSAFE_CONTAINER_BOUNDARY');
+      expect(result.error.message).toContain('range [4, 22)');
+      expect(result.error.message).toContain('at offset 12');
+      expect(result.error.message).toContain('(w:p → w:hyperlink)');
+      expect(result.error.message).toContain('[12, 22) in w:hyperlink, "4.2(b)(ix)"');
+      expect(result.error.hint).toContain('each side of offset 12');
+    });
+
+    await and('the original session remains unchanged', async () => {
+      const session = await opened.mgr.getSessionByFilePath(opened.inputPath);
+      expect(session?.doc.getParagraphTextById(opened.firstParaId))
+        .toBe('See Section 4.2(b)(ix) for details.');
+    });
+  });
+
   test('rejects neither steps nor plan_file_path', async ({ given, when, then }: AllureBddContext) => {
     let opened: Awaited<ReturnType<typeof openSession>>;
     let result: Awaited<ReturnType<typeof batchEdit>>;

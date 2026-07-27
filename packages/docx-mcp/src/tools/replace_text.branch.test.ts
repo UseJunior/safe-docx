@@ -100,6 +100,58 @@ describe('replace_text branch coverage', () => {
     assertFailure(missingAnchor, 'ANCHOR_NOT_FOUND', 'anchor missing');
   });
 
+  test('edits text wholly inside an anchored hyperlink and localizes a crossing range', async ({ given, when, then, and }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' });
+    let contained: Awaited<ReturnType<typeof openSession>>;
+    let crossing: Awaited<ReturnType<typeof openSession>>;
+    let containedResult: Awaited<ReturnType<typeof replaceText>>;
+    let crossingResult: Awaited<ReturnType<typeof replaceText>>;
+
+    const xml = makeDocXml(
+      `<w:p>` +
+        `<w:r><w:t xml:space="preserve">See Section </w:t></w:r>` +
+        `<w:hyperlink w:anchor="_Ref1"><w:r><w:t>4.2(b)(ix)</w:t></w:r></w:hyperlink>` +
+        `<w:r><w:t xml:space="preserve"> for details.</w:t></w:r>` +
+      `</w:p>`,
+    );
+
+    await given('two sessions containing the same literal-hyperlink-literal paragraph', async () => {
+      contained = await openSession([], { xml });
+      crossing = await openSession([], { xml });
+    });
+
+    await when('one edit stays in the hyperlink and one crosses into it', async () => {
+      containedResult = await replaceText(contained.mgr, {
+        file_path: contained.filePath,
+        target_paragraph_id: contained.firstParaId,
+        old_string: '4.2(b)(ix)',
+        new_string: '4.2(b)(xii)',
+        instruction: 'renumber hyperlink',
+      });
+      crossingResult = await replaceText(crossing.mgr, {
+        file_path: crossing.filePath,
+        target_paragraph_id: crossing.firstParaId,
+        old_string: 'Section 4.2(b)(ix)',
+        new_string: 'Clause 5.3(c)(xii)!',
+        instruction: 'cross hyperlink boundary',
+      });
+    });
+
+    await then('the contained edit succeeds through replace_text', () => {
+      assertSuccess(containedResult);
+      expect(containedResult.after_text).toContain('Section 4.2(b)(xii) for details.');
+    });
+
+    await and('the crossing edit returns a structured, actionable boundary error', () => {
+      assertFailure(crossingResult, 'UNSAFE_CONTAINER_BOUNDARY');
+      expect(crossingResult.error.message).toContain('range [4, 22)');
+      expect(crossingResult.error.message).toContain('at offset 12');
+      expect(crossingResult.error.message).toContain('(w:p → w:hyperlink)');
+      expect(crossingResult.error.message).toContain('[12, 22) in w:hyperlink, "4.2(b)(ix)"');
+      expect(crossingResult.error.hint).toContain('each side of offset 12');
+    });
+  });
+
   test('non-markup replacement across mixed-format runs uses template from trimmed range', async () => {
     // "Alpha " (plain) + "Beta" (bold) → "Gamma Delta"
     // No shared prefix/suffix → full range replacement with predominant template run.

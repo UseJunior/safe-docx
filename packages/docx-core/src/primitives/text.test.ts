@@ -1313,8 +1313,53 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
     });
   });
 
-  test('preserves UNSAFE_CONTAINER_BOUNDARY refusal for tracked edits crossing a hyperlink boundary', async ({ given, when, then }: AllureBddContext) => {
+  test('allows a tracked edit wholly inside an anchored hyperlink', async ({ given, when, then, and }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' });
     let p: Element;
+
+    await given('literal text followed by a one-run anchored hyperlink and more literal text', () => {
+      const doc = makeDoc(
+        `<w:p>` +
+          `<w:r><w:t xml:space="preserve">See Section </w:t></w:r>` +
+          `<w:hyperlink w:anchor="_Ref1"><w:r><w:t>4.2(b)(ix)</w:t></w:r></w:hyperlink>` +
+          `<w:r><w:t xml:space="preserve"> for details.</w:t></w:r>` +
+        `</w:p>`,
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the complete visible hyperlink text is replaced with tracked changes', () => {
+      replaceParagraphTextRange(
+        p,
+        12,
+        22,
+        '4.2(b)(xii)',
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-07-27T12:00:00Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('the visible paragraph contains the replacement', () => {
+      expect(getParagraphText(p)).toBe('See Section 4.2(b)(xii) for details.');
+    });
+
+    await and('the tracked deletion and insertion stay inside the original hyperlink', () => {
+      const hyperlink = p.getElementsByTagNameNS(W_NS, W.hyperlink).item(0) as Element;
+      expect(hyperlink.getAttributeNS(W_NS, 'anchor')).toBe('_Ref1');
+      expect(hyperlink.getElementsByTagNameNS(W_NS, W.del)).toHaveLength(1);
+      expect(hyperlink.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(1);
+      expect(p.childNodes.item(1)).toBe(hyperlink);
+    });
+  });
+
+  test('localizes UNSAFE_CONTAINER_BOUNDARY refusal before mutating the paragraph', async ({ given, when, then, and }: AllureBddContext) => {
+    testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.22' });
+    let p: Element;
+    let beforeXml: string;
+    let error: SafeDocxError | null = null;
 
     await given('a paragraph whose visible range spans from a hyperlink into plain paragraph content', () => {
       const doc = makeDoc(
@@ -1324,13 +1369,10 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
         `</w:p>`,
       );
       p = firstParagraph(doc);
+      beforeXml = serialize(p);
     });
 
     await when('a tracked replacement crosses the hyperlink boundary', () => {
-      // captured for assertion
-    });
-
-    await then('the primitive throws UNSAFE_CONTAINER_BOUNDARY', () => {
       try {
         replaceParagraphTextRange(
           p,
@@ -1343,11 +1385,23 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
             idState: createRevisionIdState(),
           }),
         );
-        expect.unreachable('Should have thrown');
-      } catch (e) {
-        expect(e).toBeInstanceOf(SafeDocxError);
-        expect((e as SafeDocxError).code).toBe('UNSAFE_CONTAINER_BOUNDARY');
+      } catch (caught) {
+        if (!(caught instanceof SafeDocxError)) throw caught;
+        error = caught;
       }
+    });
+
+    await then('the error identifies the range, boundary, containers, and largest safe sub-span', () => {
+      expect(error?.code).toBe('UNSAFE_CONTAINER_BOUNDARY');
+      expect(error?.message).toContain('range [0, 6)');
+      expect(error?.message).toContain('at offset 5');
+      expect(error?.message).toContain('(w:hyperlink → w:p)');
+      expect(error?.message).toContain('[0, 5) in w:hyperlink, "Hello"');
+      expect(error?.hint).toContain('each side of offset 5');
+    });
+
+    await and('the refusal leaves the paragraph XML byte-for-byte unchanged', () => {
+      expect(serialize(p)).toBe(beforeXml);
     });
   });
 });

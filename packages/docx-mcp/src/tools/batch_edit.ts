@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import {
   DocxDocument,
+  SafeDocxError,
   findUniqueSubstringMatch,
   replaceParagraphTextRange,
   type RevisionContext,
@@ -571,12 +572,22 @@ export async function batchEdit(
 
     const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
     if (result.failed_step_id !== undefined) {
+      const failedStepResult = result.step_results.find(
+        (stepResult) => stepResult.step_id === result.failed_step_id && !stepResult.success,
+      )?.result as { error?: { code?: string; message?: string; hint?: string } } | undefined;
+      const nestedError = failedStepResult?.error;
+      const preserveStructuralError =
+        nestedError?.code === 'UNSAFE_CONTAINER_BOUNDARY' ||
+        nestedError?.code === 'UNSUPPORTED_EDIT';
       return {
         success: false,
         error: {
-          code: 'BATCH_PARTIAL_FAILURE',
-          message: `Batch execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}).`,
-          hint: 'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
+          code: preserveStructuralError ? nestedError.code! : 'BATCH_PARTIAL_FAILURE',
+          message: preserveStructuralError && nestedError.message
+            ? `Batch execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}): ${nestedError.message}`
+            : `Batch execution stopped at step '${result.failed_step_id}' (index ${result.failed_step_index}).`,
+          hint: (preserveStructuralError ? nestedError.hint : undefined) ??
+            'Completed steps have already been applied. Reapply to original DOCX if rollback is needed.',
         },
         file_path: manager.normalizePath(session.originalPath),
         completed_count: result.completed_step_ids.length,
@@ -598,6 +609,9 @@ export async function batchEdit(
       ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
     });
   } catch (e: unknown) {
+    if (e instanceof SafeDocxError) {
+      return err(e.code, e.message, e.hint);
+    }
     return err('BATCH_EDIT_ERROR', `Failed to apply batch edit: ${errorMessage(e)}`);
   }
 }
