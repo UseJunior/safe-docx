@@ -204,9 +204,11 @@ function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null
   if (!parent) return null;
   const el = getFirstChild(parent, OOXML.W_NS, tagLocal);
   if (!el) return null;
-  // <w:b/> implies true. <w:b w:val="0"/> implies false.
+  // <w:b/> implies true. <w:b w:val="0"/> implies false. 'off' is the
+  // transitional OOXML ST_OnOff spelling; documents produced by older writers
+  // still carry it, and reading it as "on" would invert the property.
   const v = getWAttr(el, 'val');
-  if (v === '0' || v === 'false') return false;
+  if (v === '0' || v === 'false' || v === 'off') return false;
   return true;
 }
 
@@ -256,6 +258,29 @@ function parseHighlightVal(parent: Element | null): string | null {
   return v;
 }
 
+/**
+ * Resolve the run formatting a reader actually sees, not merely the formatting
+ * the run declares. Each property is taken from the first layer that specifies
+ * it: direct `w:rPr` on the run, then the `w:rStyle` character-style `basedOn`
+ * chain, then the paragraph mark's `w:rPr` inside `pPr`, then the paragraph
+ * style's `basedOn` chain. A property specified nowhere resolves to the
+ * neutral value (`false`, `''`, `0`, or `null`).
+ *
+ * Not resolved: `w:docDefaults`, table-style run properties, and
+ * numbering-level `rPr`. A formatting change confined to one of those layers
+ * is invisible to this resolver.
+ *
+ * Part of docx-core's public surface (see `src/index.ts`) so external
+ * diagnostics — `scripts/check_docx_formatting_loss.mjs` today, the planned
+ * formatting-convention detector (#687) — consume this one implementation
+ * instead of growing declared-properties re-implementations that drift.
+ *
+ * @param params.run the `w:r` element (a non-run element yields style/paragraph
+ *   contributions only)
+ * @param params.paragraphPPr the owning paragraph's `w:pPr`, or null
+ * @param params.paragraphStyleId the `w:val` of `pPr/w:pStyle`, or null
+ * @param params.styles the model produced by {@link parseStylesXml}
+ */
 export function extractEffectiveRunFormatting(params: {
   run: Element;
   paragraphPPr: Element | null;
