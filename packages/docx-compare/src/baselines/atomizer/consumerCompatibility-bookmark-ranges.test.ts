@@ -143,6 +143,21 @@ function rangeText(documentXml: string, id: string): string {
   return text;
 }
 
+const REVISION_WRAPPER_TAGS = ['w:ins', 'w:del', 'w:moveFrom', 'w:moveTo'] as const;
+
+/** Assert every emitted revision wrapper carries a unique `w:id`. */
+function expectUniqueWrapperIds(documentXml: string): void {
+  const body = bodyOf(documentXml);
+  const ids: string[] = [];
+  for (const tag of REVISION_WRAPPER_TAGS) {
+    for (const wrapper of Array.from(body.getElementsByTagName(tag)) as Element[]) {
+      const id = wrapper.getAttribute('w:id');
+      if (id !== null) ids.push(`${tag}#${id}`);
+    }
+  }
+  expect(new Set(ids).size).toBe(ids.length);
+}
+
 const ORIGINAL_WITH_BOOKMARKED_PARAGRAPH =
   textParagraph('Leading survivor') +
   bookmarkedParagraph('41', 'DeletedBoundary', 'Bookmarked deleted text', '<w:pPr><w:keepNext/></w:pPr>') +
@@ -372,6 +387,10 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
     await and('Accept All shrinks the range to the surviving text only', () => {
       expect(rangeText(acceptAllChanges(documentXml), '50')).toBe('kept');
     });
+
+    await and('every emitted revision wrapper keeps a unique w:id', () => {
+      expectUniqueWrapperIds(documentXml);
+    });
   });
 
   test('a boundary partway through newly deleted text closes between the deletions [inplace]', async (
@@ -409,6 +428,10 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
 
     await and('Accept All leaves the range without the deleted text', () => {
       expect(rangeText(acceptAllChanges(documentXml), '50')).toBe('');
+    });
+
+    await and('every emitted revision wrapper keeps a unique w:id', () => {
+      expectUniqueWrapperIds(documentXml);
     });
   });
 
@@ -458,6 +481,10 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
 
     await and('Accept All keeps the range over the surviving text only', () => {
       expect(rangeText(acceptAllChanges(documentXml), '50')).toBe('kept');
+    });
+
+    await and('the split half w:id does not collide with the pre-existing wrapper ids', () => {
+      expectUniqueWrapperIds(documentXml);
     });
   });
 });
