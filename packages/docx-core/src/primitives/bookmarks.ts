@@ -29,7 +29,7 @@ function ancestorSignature(p: Element): string {
   return parts.join('/');
 }
 
-function getW14ParaId(p: Element): string | null {
+export function getW14ParaId(p: Element): string | null {
   const namespaced = p.getAttributeNS(W14_NS, 'paraId');
   if (namespaced) return namespaced.toLowerCase();
 

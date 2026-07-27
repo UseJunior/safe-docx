@@ -52,6 +52,15 @@ function textRun(text: string): string {
   return `<w:r><w:t>${text}</w:t></w:r>`;
 }
 
+function paragraphWithId(
+  paraId: string,
+  content: string,
+  prefix = 'w14',
+): string {
+  const namespace = prefix === 'w14' ? '' : ` xmlns:${prefix}="${OOXML.W14_NS}"`;
+  return `<w:p${namespace} ${prefix}:paraId="${paraId}">${content}</w:p>`;
+}
+
 function fieldCharType(element: Element): string | null {
   const marker = Array.from(element.getElementsByTagNameNS(OOXML.W_NS, 'fldChar'))[0];
   return marker?.getAttributeNS(OOXML.W_NS, 'fldCharType') ??
@@ -246,6 +255,46 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
   );
 
   test
+    .openspec('[SDX-FIELD-REBUILD-01] Outside edit preserves decorated supported fields')(
+      'preserves an unchanged REF field after an earlier paragraph is deleted',
+      async ({
+        given,
+        when,
+        then,
+        and,
+      }: AllureBddContext) => {
+        const field = decoratedComplexField(FIELD_INSTRUCTIONS.REF, 'Section 1', 'Clause_1');
+        const stableFieldParagraph = paragraphWithId('22222222', field, 'word14');
+        const originalBody =
+          paragraphWithId('11111111', textRun('Delete this unrelated paragraph.')) +
+          stableFieldParagraph;
+        const revisedBody = stableFieldParagraph;
+        let output = '';
+
+        await given(
+          'an unchanged REF field whose Word paragraph identity survives an earlier deletion',
+          () => {},
+        );
+        await when('the paragraph deletion is compared through forced rebuild', async () => {
+          output = await outputXml(await compare(originalBody, revisedBody));
+        });
+        await then('the field retains its original ordered topology in its stable owner', async () => {
+          const originalXml = await (await DocxArchive.load(
+            await buildDocxFromBodyXml(originalBody),
+          )).getDocumentXml();
+          expect(canonicalRanges(output)).toEqual(canonicalRanges(originalXml));
+          expect(fieldRanges(output)).toHaveLength(1);
+        });
+        await and('accept and reject projections retain the paragraph deletion', () => {
+          expect(extractTextWithParagraphs(acceptAllChanges(output)))
+            .not.toContain('Delete this unrelated paragraph.');
+          expect(extractTextWithParagraphs(rejectAllChanges(output)))
+            .toContain('Delete this unrelated paragraph.');
+        });
+      },
+    );
+
+  test
     .openspec('[SDX-FIELD-REBUILD-03] Unsafe field ownership fails closed')(
     'rejects changed, moved, nested, spanning, malformed, and shared ranges before reconstruction',
     async ({ given, when, then }: AllureBddContext) => {
@@ -290,8 +339,12 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
         },
         {
           name: 'field moved to another paragraph',
-          original: `<w:p>${page}</w:p><w:p>${textRun('plain')}</w:p>`,
-          revised: `<w:p>${textRun('plain')}</w:p><w:p>${page}</w:p>`,
+          original:
+            paragraphWithId('33333333', page) +
+            paragraphWithId('44444444', textRun('plain')),
+          revised:
+            paragraphWithId('33333333', textRun('plain')) +
+            paragraphWithId('44444444', page),
         },
         {
           name: 'nested field',

@@ -3,6 +3,7 @@ import { posix } from 'node:path';
 import type { ComparisonUnitAtom, DocxArchive, OpaquePassthroughNode } from '@usejunior/docx-core';
 import {
   CorrelationStatus,
+  getW14ParaId,
   OOXML,
   normalizeOpcRelationshipTarget,
   parseXml,
@@ -1068,6 +1069,9 @@ export function captureComplexFieldPassthrough(
       localName: `complexField:${fieldKind}`,
       documentOrdinal: nextOrdinal++,
       paragraphOrdinal,
+      // Preserve Word's stable owner across unrelated paragraph edits. Absence
+      // deliberately retains the ordinal-based fail-closed behavior.
+      paragraphIdentity: getW14ParaId(paragraph) ?? undefined,
       containerIdentity: structuralContainerIdentity(paragraph),
       inlineChildStartOrdinal: startOrdinal,
       inlineChildEndOrdinal: endOrdinal,
@@ -1198,7 +1202,8 @@ export async function bindOpaquePassthroughCounterparts(
           `${descriptor.containerChildOrdinal}\u0000${descriptor.paragraphOrdinal}\u0000` +
           `${descriptor.ownedParagraphCount}`
       : descriptor.placementKind === 'inline-range'
-        ? `field\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
+        ? `field\u0000${descriptor.containerIdentity}\u0000` +
+          `${descriptor.paragraphIdentity ?? descriptor.paragraphOrdinal}\u0000` +
           `${descriptor.inlineRangeOrdinal}\u0000${descriptor.localName}`
         : `inline\u0000${descriptor.containerIdentity}\u0000${descriptor.paragraphOrdinal}\u0000` +
           `${descriptor.documentOrdinal}\u0000${descriptor.localName}`;
@@ -1229,10 +1234,15 @@ export async function bindOpaquePassthroughCounterparts(
   for (let i = 0; i < original.length; i++) {
     const before = original[i]!;
     const after = revised[i]!;
+    const sameParagraphOwner = before.placementKind === 'inline-range' &&
+        after.placementKind === 'inline-range' &&
+        (before.paragraphIdentity !== undefined || after.paragraphIdentity !== undefined)
+      ? before.paragraphIdentity === after.paragraphIdentity
+      : before.paragraphOrdinal === after.paragraphOrdinal;
     if (
       placementKey(before) !== placementKey(after) ||
       before.placementKind !== after.placementKind ||
-      before.paragraphOrdinal !== after.paragraphOrdinal ||
+      !sameParagraphOwner ||
       before.containerIdentity !== after.containerIdentity ||
       before.namespaceUri !== after.namespaceUri ||
       before.localName !== after.localName ||
