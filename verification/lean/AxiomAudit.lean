@@ -2,6 +2,8 @@ import LeanSpike
 import LeanSpike.LcsDP
 import Tier2.XmlTripleChecker
 import Tier2.RelationshipStorySelector
+import Tier2.NoteReferenceIntegrity
+import LeanDocxChecker
 
 #print axioms LeanSpike.inv_field_001
 #print axioms LeanSpike.inv_rt_001
@@ -24,3 +26,15 @@ import Tier2.RelationshipStorySelector
 #print axioms Tier2.RelationshipStorySelector.aligned_slot_unique_work_item
 #print axioms Tier2.RelationshipStorySelector.dedup_preserves_selector_locators
 #print axioms Tier2.RelationshipStorySelector.relationship_story_aggregate_sound
+#print axioms Tier2.ConventionalMainNoteSelector.selected_note_identity_sound
+#print axioms Tier2.NoteReferenceIntegrity.admitted_source_partition_complete
+#print axioms Tier2.NoteReferenceIntegrity.parsed_inventory_evidence_exact
+#print axioms Tier2.NoteReferenceIntegrity.package_note_reference_integrity_sound
+#print axioms Tier2.NoteReferenceIntegrity.incomplete_partition_zero_evidence_sound
+#print axioms Tier2.NoteReferenceIntegrity.note_integrity_aggregate_pass_sound
+#print axioms Tier2.NoteReferenceIntegrity.production_run_request_core_refinement_sound
+#print axioms Tier2.ConventionalMainNoteSelector.production_note_selector_exact
+#print axioms Tier2.NoteReferenceIntegrity.production_note_scan_exact
+#print axioms Tier2.NoteReferenceIntegrity.production_note_integrity_sound
+#print axioms Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
+#print axioms Tier2.NoteReferenceIntegrity.production_protocol_v5_serialization_exact

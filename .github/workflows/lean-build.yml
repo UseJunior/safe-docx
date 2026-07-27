@@ -9,6 +9,9 @@ on:
       - 'verification/lean/**'
       - 'verification/registry/**'
       - 'scripts/normalize_lean_axioms.mjs'
+      - 'scripts/check_lean_empty_axiom_targets.mjs'
+      - 'scripts/check_lean_note_semantics_dependencies.mjs'
+      - 'scripts/check_lean_production_axiom_target.mjs'
       - '.github/workflows/lean-build.yml'
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
       # The differential gate guards the production TS LCS against the Lean model,
@@ -31,6 +34,9 @@ on:
       - 'verification/lean/**'
       - 'verification/registry/**'
       - 'scripts/normalize_lean_axioms.mjs'
+      - 'scripts/check_lean_empty_axiom_targets.mjs'
+      - 'scripts/check_lean_note_semantics_dependencies.mjs'
+      - 'scripts/check_lean_production_axiom_target.mjs'
       - '.github/workflows/lean-build.yml'
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
       - 'packages/docx-core/src/baselines/atomizer/atomLcs.ts'
@@ -114,12 +120,19 @@ jobs:
 
       - name: Build LeanSpike
         working-directory: verification/lean
-        run: lake build
+        run: |
+          lake build
+          lake env lean Tier2/NoteReferenceIntegrityWitnesses.lean
+          lake env lean ProtocolV5StructuralChargeAudit.lean
+          lake env lean ProtocolV5ProjectionDriftWitnesses.lean
+          node ../../scripts/check_lean_note_semantics_dependencies.mjs
 
       - name: Audit Lean axiom allowlist
         working-directory: verification/lean
         run: |
           lake env lean AxiomAudit.lean > /tmp/axiom-audit-raw.txt
+          node ../../scripts/check_lean_empty_axiom_targets.mjs /tmp/axiom-audit-raw.txt
+          node ../../scripts/check_lean_production_axiom_target.mjs /tmp/axiom-audit-raw.txt
           node ../../scripts/normalize_lean_axioms.mjs /tmp/axiom-audit-raw.txt > /tmp/axiom-audit-observed.txt
           sort -u expected-axioms.txt > /tmp/axiom-audit-expected.txt
           echo "Observed axiom union:"
@@ -178,7 +191,7 @@ jobs:
           done
           echo "npm ci failed after 3 attempts"
           exit 1
-      - name: Compiled Lean relationship-story protocol v4
+      - name: Compiled Lean relationship-story protocol v5
         run: npm run test:run -w @usejunior/docx-compare -- src/baselines/atomizer/leanXmlVerifier.test.ts
 
       - name: Real NVCA compared-only relationship-story mutations

@@ -6,18 +6,46 @@ const root = process.cwd();
 const ledgerPath = join(root, 'verification/registry/lean-xml-checker-coverage.json');
 const leanPath = join(root, 'verification/lean/Tier2/XmlTripleChecker.lean');
 const selectorPath = join(root, 'verification/lean/Tier2/RelationshipStorySelector.lean');
+const noteIntegrityPath = join(root,
+  'verification/lean/Tier2/NoteReferenceIntegrity/Semantics.lean');
+const noteWitnessesPath = join(root, 'verification/lean/Tier2/NoteReferenceIntegrityWitnesses.lean');
 const executablePath = join(root, 'verification/lean/LeanDocxChecker.lean');
-const maximumShapePath = join(root, 'verification/lean/ProtocolV4MaximumShape.lean');
+const maximumShapePath = join(root, 'verification/lean/ProtocolV5MaximumOrdinaryShape.lean');
 const decoderPath = join(root, 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts');
 
 const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'));
 const lean = readFileSync(leanPath, 'utf8');
 const selector = readFileSync(selectorPath, 'utf8');
+const noteIntegrity = readFileSync(noteIntegrityPath, 'utf8');
+const noteWitnesses = readFileSync(noteWitnessesPath, 'utf8');
 const executable = readFileSync(executablePath, 'utf8');
 const maximumShape = readFileSync(maximumShapePath, 'utf8');
 const decoder = readFileSync(decoderPath, 'utf8');
 
 const errors = [];
+
+for (const required of [
+  'internalExternalPackage',
+  'forgedRequest',
+  'admittedIncompleteCause forgedRequest .original = none',
+  'missingMainPackage',
+  'undecodedMainPart',
+  'unparsedMainPart',
+  'partialMainPart',
+  'absentWithReferenceScans',
+  'missingSelectedPartPackage',
+  'omittedPhysicalPackage',
+  'forgedLocalRequest',
+  'forgedSkippedRequest',
+  'duplicateInventory',
+  'failedGenericRequest',
+  'parseDecimalId "+001"',
+  'parseDecimalId "-0"',
+]) {
+  if (!noteWitnesses.includes(required)) {
+    errors.push(`note-integrity negative witness coverage requires ${required}`);
+  }
+}
 
 function requireArray(path, value) {
   if (!Array.isArray(value) || value.length === 0) {
@@ -32,7 +60,9 @@ requireArray('knownUncheckedAreas', ledger.knownUncheckedAreas);
 for (const element of ledger.parsedWordprocessingML?.elements ?? []) {
   const localName = element.replace(/^w:/, '');
   if (!lean.includes(`localName == "${localName}"`) &&
-      !selector.includes(`localName == "${localName}"`)) {
+      !selector.includes(`localName == "${localName}"`) &&
+      !noteIntegrity.includes(`localName == "${localName}"`) &&
+      !noteIntegrity.includes(`=> "${localName}"`)) {
     errors.push(`ledger element ${element} is not referenced by the Lean parser or selector`);
   }
 }
@@ -85,8 +115,8 @@ if (!ledger.scope?.reconstructionModes?.outOfScope?.includes('rebuild')) {
   errors.push('ledger must mark rebuild as out of scope');
 }
 
-if (ledger.protocolVersion !== 4 || !executable.includes('protocolVersion != 4')) {
-  errors.push('ledger and Lean executable must agree on protocol version 4');
+if (ledger.protocolVersion !== 5 || !executable.includes('protocolVersion != 5')) {
+  errors.push('ledger and Lean executable must agree on protocol version 5');
 }
 if (!executable.includes('String.fromUTF8?')) {
   errors.push('accepted XML subset requires strict UTF-8 package-part decoding');
@@ -95,15 +125,16 @@ for (const required of [
   'relationshipMetadataPlan',
   'maxCumulativeCompressedBytes',
   'maxCumulativeExpandedBytes',
-  'loadOptionalStories packages usage selectedAggregateStopped',
+  'buildNoteSideEvidence',
+  'selectConventionalMainNote',
 ]) {
   if (!executable.includes(required)) {
     errors.push(`canonical resource admission requires ${required}`);
   }
 }
 if (executable.indexOf('let metadataPlan := relationshipMetadataPlan') >
-    executable.indexOf('let optional ← loadOptionalStories')) {
-  errors.push('relationship metadata/work must precede optional-story loading');
+    executable.indexOf('buildNoteSideEvidence originalPackage')) {
+  errors.push('relationship metadata/work must precede semantic note-story loading');
 }
 for (const required of [
   'parseXmlEventsForRootBounded',
@@ -132,7 +163,7 @@ if (ledger.limits?.uniqueSelectedPartsPerSide !== 256 ||
   errors.push('coverage ledger must pin selected path, byte, and XML-event aggregate limits');
 }
 
-for (const part of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']) {
+for (const part of ['word/document.xml', 'word/_rels/document.xml.rels']) {
   if (!executable.includes(`"${part}"`)) {
     errors.push(`Lean executable does not own fixed story extraction for ${part}`);
   }
@@ -149,7 +180,8 @@ if (!lean.includes('projectUserNoteTokens') || !lean.includes('story_collection_
 }
 
 for (const value of ledger.parsedWordprocessingML?.attributeValues?.['w:type'] ?? []) {
-  if (!lean.includes(`tagAttribute attributes "w:type" == "${value}"`)) {
+  if (!lean.includes(`tagAttribute attributes "w:type" == "${value}"`) &&
+      !noteIntegrity.includes(`some "${value}"`)) {
     errors.push(`ledger reserved note type ${value} is not recognized by the Lean checker`);
   }
 }
@@ -191,8 +223,8 @@ if (!selector.includes('if isDirectory then throw')) {
   errors.push('classic ZIP policy must explicitly reject directory records');
 }
 if (ledger.limits?.maximumShapeEvidence?.producer !==
-    'verification/lean/ProtocolV4MaximumShape.lean' ||
-    !maximumShape.includes('protocolV4ResponseJson false') ||
+    'verification/lean/ProtocolV5MaximumOrdinaryShape.lean' ||
+    !maximumShape.includes('maximumOrdinaryResponseBytes') ||
     !decoder.includes('.size > 256')) {
   errors.push('maximum-shape ledger evidence must match the compiled producer and strict 256-path decoder');
 }
@@ -210,6 +242,55 @@ for (const required of [
 ]) {
   if (!selector.includes(required)) {
     errors.push(`protocol v4 selector coverage requires ${required}`);
+  }
+}
+
+for (const required of [
+  'selected_note_identity_sound',
+  'admitted_source_partition_complete',
+  'parsed_inventory_evidence_exact',
+  'package_note_reference_integrity_sound',
+  'incomplete_partition_zero_evidence_sound',
+  'note_integrity_aggregate_pass_sound',
+  'maxReferenceOccurrences',
+  'maxUniqueReferenceIds',
+  'maxDefinitions',
+  'maxPoisonReferences',
+]) {
+  if (!noteIntegrity.includes(required)) {
+    errors.push(`protocol v5 note-integrity coverage requires ${required}`);
+  }
+}
+
+if (!executable.includes('production_run_request_core_refinement_sound')) {
+  errors.push('protocol v5 production refinement theorem is missing from LeanDocxChecker');
+}
+
+for (const required of [
+  'semanticProtocolV5Projection',
+  'SemanticProtocolV5ProjectionOf',
+  'packageReadCount',
+  'parseInvocationCount',
+  'scanInvocationCount',
+  'parseResultExact',
+  'outputExact',
+]) {
+  if (!executable.includes(required)) {
+    errors.push(`single-pass production refinement requires ${required}`);
+  }
+}
+
+for (const required of [
+  'snapshotExtractionEvidenceCheck',
+  'SnapshotExtractionEvidenceOf',
+  'snapshotWriteCount',
+  'extractionInvocationCount',
+  'valueDependencyClosure',
+]) {
+  if (!executable.includes(required) &&
+      !readFileSync(join(root, 'verification/lean/NoteSemanticDependencyAudit.lean'), 'utf8')
+        .includes(required)) {
+    errors.push(`single-pass semantic call-graph audit requires ${required}`);
   }
 }
 

@@ -40,3 +40,11 @@ lean_exe leanDocxChecker where
 @[default_target]
 lean_exe protocolV4MaximumShape where
   root := `ProtocolV4MaximumShape
+
+@[default_target]
+lean_exe protocolV5MaximumOrdinaryShape where
+  root := `ProtocolV5MaximumOrdinaryShape
+
+@[default_target]
+lean_exe protocolV5CanonicalTerminalShapes where
+  root := `ProtocolV5CanonicalTerminalShapes

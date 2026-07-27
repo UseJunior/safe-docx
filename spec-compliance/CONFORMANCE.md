@@ -20,7 +20,18 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-7-1` | Permission range end | 5 | 1 | 17.13.7.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-7-2` | Permission range start | 5 | 1 | 17.13.7.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:permStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-8-1` | Proofing error anchors | 5 | 1 | 17.13.8.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:proofErr` | — |
-| `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts |
+| `ECMA-PART1-11-3-4` | Main Document relationship ownership of endnotes | 5 | 1 | 11.3.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnotes` | verification/lean/LeanDocxChecker.lean |
+| `ECMA-PART1-11-3-7` | Main Document relationship ownership of footnotes | 5 | 1 | 11.3.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes` | verification/lean/LeanDocxChecker.lean |
+| `ECMA-PART1-17-11-14` | w:footnoteReference identifier vs display number | 5 | 1 | 17.11.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference` | packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts; verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-11-7` | Endnote reference integrity | 5 | 1 | 17.11.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference` | verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-11-7-TYPE` | CT_FtnEdnRef note-reference schema | 5 | 1 | 17.11.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdnRef` | verification/lean/LeanDocxChecker.lean |
+| `ECMA-PART1-17-11-2` | Typed footnote/endnote definitions | 5 | 1 | 17.11.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_FtnEdn` | verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
+| `ECMA-PART1-17-11-3` | Endnote definition schema | 5 | 1 | 17.11.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdn` | verification/lean/LeanDocxChecker.lean |
+| `ECMA-PART1-17-11-8` | Endnotes part root | 5 | 1 | 17.11.8 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnotes` | verification/lean/LeanDocxChecker.lean |
+| `ECMA-PART1-17-11-9` | Typed footnote definitions | 5 | 1 | 17.11.9 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_FtnEdn` | verification/lean/LeanDocxChecker.lean |
+| `ECMA-PART1-17-11-10` | Footnote definition schema | 5 | 1 | 17.11.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdn` | verification/lean/LeanDocxChecker.lean |
+| `ECMA-PART1-17-11-15` | Footnotes part root | 5 | 1 | 17.11.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes` | verification/lean/LeanDocxChecker.lean |
+| `ECMA-PART1-17-18-10` | ST_DecimalNumber note identifiers | 5 | 1 | 17.18.10 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_DecimalNumber` | verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
 | `ECMA-PART1-17-16-22` | w:hyperlink container preservation under tracked changes | 5 | 1 | 17.16.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:hyperlink` | — |
 | `ECMA-PART1-17-5-2-29` | w:sdt block-level structured document tag | 5 | 1 | 17.5.2.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtBlock` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-block-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-table-sdt.test.ts |
 | `ECMA-PART1-17-5-2-31` | w:sdt inline-level structured document tag | 5 | 1 | 17.5.2.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SdtRun` | packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts; packages/docx-compare/src/baselines/atomizer/documentReconstructor-inline-sdt.test.ts |
@@ -211,13 +222,35 @@ treats a paragraph whose only children are proofing anchors as an empty
 paragraph for comparison. Rebuild reconstruction does not re-emit those
 anchors.
 
+### ECMA-PART1-11-3-4 — Main Document relationship ownership of endnotes
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 11.3.4
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnotes`
+- **Verified by:** verification/lean/LeanDocxChecker.lean
+
+The inplace verifier admits an Endnotes Part only through the sole exact
+Transitional endnotes relationship owned by fixed `word/document.xml`.
+
+### ECMA-PART1-11-3-7 — Main Document relationship ownership of footnotes
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 11.3.7
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes`
+- **Verified by:** verification/lean/LeanDocxChecker.lean
+
+The inplace verifier admits a Footnotes Part only through the sole exact
+Transitional footnotes relationship owned by fixed `word/document.xml`.
+
 ### ECMA-PART1-17-11-14 — w:footnoteReference identifier vs display number
 
 - **Edition:** ECMA-376 5
 - **Part / Section:** Part 1 § 17.11.14
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnoteReference`
-- **Verified by:** packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts
+- **Verified by:** packages/docx-core/src/footnotes.ts; packages/docx-core/src/footnotes.test.ts; verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 
 `w:id` on `w:footnoteReference` is a *reference identifier*, not the
 displayed footnote number. For the supported Word-conventional package
@@ -233,12 +266,115 @@ numeric identifiers. Arbitrary packages that use `0` or `1` for user notes,
 full `w:type` interpretation, and complete `w:customMarkFollows` display-mark
 semantics are outside the present numbering claim.
 
-The compiled Lean checker reads `word/footnotes.xml` and
-`word/endnotes.xml` from the original, revised, and compared packages, but
-only proves normalized text projection and field-marker structure for user
-notes. It does not inspect `w:footnoteReference`/`w:endnoteReference`, match
-reference IDs to definitions, or validate note relationships. Those claims
-remain runtime-and-test-backed only.
+The compiled Lean checker selects the Transitional footnotes relationship from
+the fixed Main Document Part relationship set, scans namespace-resolved
+`w:footnoteReference` events, classifies definitions by `w:type`, and requires
+each canonical user reference ID to have exactly one package-local user
+definition. Unique unreferenced definitions remain valid. This claim is
+inplace-only and does not cover display numbering or custom marks.
+
+### ECMA-PART1-17-11-7 — Endnote reference integrity
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.7
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnoteReference`
+- **Verified by:** verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+
+The compiled Lean checker selects the Transitional endnotes relationship from
+`word/_rels/document.xml.rels` and requires each namespace-resolved user
+`w:endnoteReference` ID to have exactly one user definition in that selected
+part. References inside either selected note-definition story are rejected.
+
+### ECMA-PART1-17-11-7-TYPE — CT_FtnEdnRef note-reference schema
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.7
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdnRef`
+- **Verified by:** verification/lean/LeanDocxChecker.lean
+
+Namespace-resolved note references use the required decimal `w:id` shape
+declared by `CT_FtnEdnRef`; malformed and missing IDs are retained as failures.
+
+### ECMA-PART1-17-11-2 — Typed footnote/endnote definitions
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.2
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_FtnEdn`
+- **Verified by:** verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+
+Absent or `normal` `w:type` values identify user definitions. `separator`,
+`continuationSeparator`, and `continuationNotice` identify special definitions;
+numeric IDs, including `0` and `1`, never infer that classification.
+
+### ECMA-PART1-17-11-3 — Endnote definition schema
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.3
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdn`
+- **Verified by:** verification/lean/LeanDocxChecker.lean
+
+Direct `w:endnote` definitions are scanned as `CT_FtnEdn` records and retain
+their typed classification and decimal identity.
+
+### ECMA-PART1-17-11-8 — Endnotes part root
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.8
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:endnotes`
+- **Verified by:** verification/lean/LeanDocxChecker.lean
+
+A selected Endnotes Part is admitted only when its expanded root name is
+Transitional `w:endnotes`.
+
+### ECMA-PART1-17-11-9 — Typed footnote definitions
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.9
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_FtnEdn`
+- **Verified by:** verification/lean/LeanDocxChecker.lean
+
+The verifier distinguishes normal and special footnote definitions by the
+`ST_FtnEdn` value rather than by numeric ID conventions.
+
+### ECMA-PART1-17-11-10 — Footnote definition schema
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.10
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_FtnEdn`
+- **Verified by:** verification/lean/LeanDocxChecker.lean
+
+Direct `w:footnote` definitions are scanned as `CT_FtnEdn` records.
+
+### ECMA-PART1-17-11-15 — Footnotes part root
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.11.15
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footnotes`
+- **Verified by:** verification/lean/LeanDocxChecker.lean
+
+A selected Footnotes Part is admitted only when its expanded root name is
+Transitional `w:footnotes`.
+
+### ECMA-PART1-17-18-10 — ST_DecimalNumber note identifiers
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.18.10
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_DecimalNumber`
+- **Verified by:** verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+
+Note IDs are admitted only after a 64-byte raw lexical bound, XML Schema
+whitespace collapse, and signed decimal parsing. Evidence uses a canonical
+decimal spelling; aliases such as leading zeroes and negative zero therefore
+cannot create distinct semantic definitions.
 
 ### ECMA-PART1-17-16-22 — w:hyperlink container preservation under tracked changes
 
@@ -1508,19 +1644,27 @@ ranges are excluded from exact evidence but remain subject to strict story
 validation. General field-code parsing and evaluation, ancillary revision
 synthesis or text comparison, cached-result correctness, pagination, bookmark
 resolution, and equivalence to a Word application's field engine are out of
-scope. The Lean XML verifier uses internal protocol v4 and remains
-inplace-only. It retains fixed main/footnote/endnote stories and independently
-selects direct explicit header/footer bindings by section ordinal, kind, and
-role. It does not prove this canonical-preservation invariant, inherited-role
-behavior, pagination, or rendering.
+scope. The Lean XML verifier uses internal protocol v5 and remains
+inplace-only. It retains the fixed main story, independently selects direct
+explicit header/footer bindings by section ordinal, kind, and role, and
+relationship-selects Transitional footnote/endnote parts from the fixed Main
+Document Part. Its bounded note-integrity proof covers canonical reference IDs,
+typed definitions, exactly-one package-local definition matching, and poison
+references inside definition stories. It does not prove this field
+canonical-preservation invariant, inherited header/footer roles, pagination,
+or rendering.
 
 Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
 display numbering for Word-conventional packages plus generated
-single-paragraph root comments. It does not claim arbitrary numeric note-ID
-assignment, complete `w:type` or `w:customMarkFollows` display semantics,
-complete note-definition/reference integrity, relationship validation,
-arbitrary cross-paragraph comment ranges, threaded-comment semantics,
-resolution-state semantics, or repair of malformed third-party comment parts.
+single-paragraph root comments. For inplace comparison, the bounded Lean v5
+checker additionally validates Transitional footnote/endnote relationship
+selection, typed definition classification, and package-local reference to
+exactly-one-definition integrity while permitting unreferenced definitions.
+It does not claim arbitrary numeric note-ID assignment, rendering or numbering
+semantics for `w:type` or `w:customMarkFollows`, full OPC/content-type
+validation, Strict namespaces, arbitrary cross-paragraph comment ranges,
+threaded-comment semantics, resolution-state semantics, or repair of malformed
+third-party comment parts.
 Comparison's integer-canonical note-ID validation, rejection of invalid or
 numeric-equivalent duplicate direct IDs, contributor-aware post-collision
 provenance mapping, and per-entry validation are SafeDocX evidence-safety
