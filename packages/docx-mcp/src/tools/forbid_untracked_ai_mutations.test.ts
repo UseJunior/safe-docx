@@ -13,6 +13,7 @@ import { deleteComment } from './delete_comment.js';
 import { batchEdit } from './batch_edit.js';
 import { clearFormatting } from './clear_formatting.js';
 import { formatLayout } from './format_layout.js';
+import { formatNumbering } from './format_numbering.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { replaceText } from './replace_text.js';
 import { save } from './save.js';
@@ -129,6 +130,18 @@ const REVISIONABLE_EDITORS: Array<{
       formatLayout(mgr, {
         file_path: filePath,
         paragraph_spacing: { paragraph_ids: [firstParaId], before_twips: 240 },
+      }),
+  },
+  {
+    name: 'format_numbering',
+    bodyXml:
+      '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>'
+      + '<w:r><w:t>Alpha bravo charlie</w:t></w:r></w:p>',
+    run: (mgr, filePath, firstParaId) =>
+      formatNumbering(mgr, {
+        file_path: filePath,
+        target_paragraph_id: firstParaId,
+        remove: true,
       }),
   },
   {

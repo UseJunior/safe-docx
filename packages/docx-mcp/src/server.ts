@@ -18,6 +18,7 @@ import { getFileStatus } from './tools/get_file_status.js';
 import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
 import { closeFile } from './tools/close_file.js';
 import { formatLayout } from './tools/format_layout.js';
+import { formatNumbering } from './tools/format_numbering.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { acceptAiEdits } from './tools/accept_ai_edits.js';
 import { rejectAiEdits } from './tools/reject_ai_edits.js';
@@ -185,6 +186,10 @@ export async function dispatchToolCall(
     case 'format_layout':
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'format_layout');
       return await formatLayout(sessions, args as Parameters<typeof formatLayout>[1]);
+    case 'format_numbering':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'format_numbering');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'format_numbering');
+      return await formatNumbering(sessions, args as Parameters<typeof formatNumbering>[1]);
     case 'accept_changes':
       return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
     case 'accept_ai_edits':

@@ -173,6 +173,23 @@ Apply layout controls (paragraph spacing, table row height, cell padding). Googl
 | `row_height` | `object` | no |  |
 | `cell_padding` | `object` | no |  |
 
+## `format_numbering`
+
+Change one DOCX body paragraph’s direct numbering reference. Use remove=true to drop direct w:numPr, match_paragraph_id to adopt another paragraph’s explicit numbering, or num_id with ilvl to reference an existing numbering definition. This tool does not create numbering definitions or change style-inherited numbering. Effective edits emit a native w:pPrChange; identical requests are no-ops.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+| `target_paragraph_id` | `string` | yes | Target paragraph anchor returned by read_file. |
+| `remove` | `boolean` | no | Set true to remove the target paragraph’s direct w:numPr. |
+| `match_paragraph_id` | `string` | no | Copy this paragraph’s complete direct num_id and ilvl to the target. |
+| `num_id` | `string` | no | Existing positive decimal w:numId from this DOCX; requires ilvl. |
+| `ilvl` | `integer` | no | Existing numbering level for num_id; requires num_id. |
+
 ## `accept_changes`
 
 Accept all tracked changes in the document body, producing a clean document with no revision markup. Returns acceptance stats.

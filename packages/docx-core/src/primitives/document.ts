@@ -23,6 +23,13 @@ import { serializeToPlainText, type SerializePlainTextOptions } from './serializ
 import type { FormattingMode } from './formatting_tags.js';
 import { parseStylesXml, type StylesModel } from './styles.js';
 import { parseNumberingXml, type NumberingModel } from './numbering.js';
+import {
+  getDirectParagraphNumbering,
+  setDirectParagraphNumbering,
+  type DirectParagraphNumbering,
+  type ParagraphNumberingMutation,
+  type ParagraphNumberingMutationResult,
+} from './paragraph_numbering.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
 import {
@@ -923,6 +930,27 @@ export class DocxDocument {
   ): ParagraphSpacingMutationResult {
     const result = setParagraphSpacing(this.documentXml, mutation, ctx);
     if (result.affectedParagraphs > 0) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return result;
+  }
+
+  getDirectParagraphNumbering(paragraphId: string): DirectParagraphNumbering | null {
+    return getDirectParagraphNumbering(this.documentXml, paragraphId);
+  }
+
+  setDirectParagraphNumbering(
+    mutation: ParagraphNumberingMutation,
+    ctx?: RevisionContext,
+  ): ParagraphNumberingMutationResult {
+    const result = setDirectParagraphNumbering(
+      this.documentXml,
+      this.numberingXml,
+      mutation,
+      ctx,
+    );
+    if (result.changed) {
       this.dirty = true;
       this.documentViewCache = null;
     }

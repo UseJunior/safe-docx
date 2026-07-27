@@ -89,8 +89,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-1` | w:abstractNum abstract numbering definition | 5 | 1 | 17.9.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNum` | — |
 | `ECMA-PART1-17-9-2` | w:abstractNumId abstract definition reference | 5 | 1 | 17.9.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:abstractNumId` | — |
 | `ECMA-PART1-17-9-15` | w:num numbering definition instance | 5 | 1 | 17.9.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:num` | — |
-| `ECMA-PART1-17-9-18` | w:numId numbering instance reference | 5 | 1 | 17.9.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId` | — |
-| `ECMA-PART1-17-9-3` | w:ilvl numbering level reference | 5 | 1 | 17.9.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl` | — |
+| `ECMA-PART1-17-9-18` | w:numId numbering instance reference | 5 | 1 | 17.9.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
+| `ECMA-PART1-17-9-3` | w:ilvl numbering level reference | 5 | 1 | 17.9.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-9-6` | w:lvl numbering level definition | 5 | 1 | 17.9.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvl` | — |
 | `ECMA-PART1-17-9-22` | w:pStyle numbering-level paragraph style | 5 | 1 | 17.9.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pStyle` | packages/docx-core/src/primitives/numbering.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-9-17` | w:numFmt numbering format | 5 | 1 | 17.9.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numFmt` | — |
@@ -99,7 +99,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-9-28` | w:suff content between numbering symbol and text | 5 | 1 | 17.9.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:suff` | — |
 | `ECMA-PART1-17-9-12` | w:multiLevelType abstract definition type | 5 | 1 | 17.9.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:multiLevelType` | — |
 | `ECMA-PART1-17-9-7` | w:lvlJc numbering level justification | 5 | 1 | 17.9.7 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:lvlJc` | — |
-| `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | — |
+| `ECMA-PART1-17-3-1-19` | w:numPr paragraph numbering reference | 5 | 1 | 17.3.1.19 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr` | packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts |
 | `ECMA-PART1-17-13-4-6` | w:comments comment-collection part emission | 5 | 1 | 17.13.4.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments` | packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-2` | w:comment comment content emission | 5 | 1 | 17.13.4.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment` | packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-4` | w:commentRangeStart comment anchor opening | 5 | 1 | 17.13.4.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeStart` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
@@ -1119,10 +1119,11 @@ paragraph references bind through.
 - **Part / Section:** Part 1 § 17.9.18
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId`
+- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
 
-List paragraphs reference their instance via `w:numId` inside `w:numPr`;
-spec validation rejects handles with no declared definition
-(`dangling_numbering_reference`) before any XML is produced.
+List paragraphs reference their instance via `w:numId` inside `w:numPr`.
+Generation and paragraph mutation validate that the instance exists before
+emitting or changing document XML.
 
 ### ECMA-PART1-17-9-3 — w:ilvl numbering level reference
 
@@ -1130,10 +1131,11 @@ spec validation rejects handles with no declared definition
 - **Part / Section:** Part 1 § 17.9.3
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl`
+- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
 
 The paragraph's level reference is emitted before `w:numId` per the
-CT_NumPr sequence, and validation requires the referenced level to exist
-in the bound definition.
+CT_NumPr sequence. Generation and paragraph mutation require the referenced
+level to exist in the bound definition.
 
 ### ECMA-PART1-17-9-6 — w:lvl numbering level definition
 
@@ -1231,10 +1233,11 @@ differing widths on their right edge — the standard legal-outline convention.
 - **Part / Section:** Part 1 § 17.3.1.19
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr`
+- **Verified by:** packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
 
-List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot
-via the PPR_ORDER table; the numeric id comes from the numbering part's
-deterministic handle map.
+List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.
+Generation binds deterministic handles; paragraph mutation can remove or
+re-point a direct reference while preserving the numbering definitions.
 
 ### ECMA-PART1-17-13-4-6 — w:comments comment-collection part emission
 

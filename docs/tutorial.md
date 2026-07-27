@@ -114,6 +114,36 @@ matches the complete paragraph text. Inspect the document structure before using
 it on a paragraph that carries section properties, is structurally required as
 the last paragraph in a table cell, or owns bookmark or comment anchors.
 
+### Repair DOCX Paragraph Numbering
+
+Use `format_numbering` when a paragraph has a stray direct list label:
+
+```text
+format_numbering(
+  file_path="~/docs/NDA.docx",
+  target_paragraph_id="_bk_4d71f33e924a",
+  remove=true
+)
+```
+
+To join a paragraph to an existing list sequence, copy another paragraph's
+explicit numbering:
+
+```text
+format_numbering(
+  file_path="~/docs/NDA.docx",
+  target_paragraph_id="_bk_9fc26ad74408",
+  match_paragraph_id="_bk_d39ac1a3b3f0"
+)
+```
+
+The tool also accepts an existing `num_id` with its `ilvl`, but matching a
+paragraph is usually safer because numbering IDs are local to each DOCX. The
+tool changes only direct `w:numPr`: it does not create numbering definitions,
+change numbering inherited only through a paragraph style, restart lists, or
+guarantee a rendered label without the surrounding list context. Effective
+changes are recorded as paragraph-property tracked changes.
+
 ## Step 6: Save Reviewable Outputs
 
 ```text
@@ -157,6 +187,7 @@ Visual review remains appropriate for material documents because Safe Docx is no
 | Inspect or accept revisions | `has_tracked_changes`, `extract_revisions`, `accept_changes` |
 | Insert a paragraph | `insert_paragraph` |
 | Delete an ordinary DOCX body paragraph | `replace_text` with the complete text and an empty `new_string` |
+| Remove or repair direct DOCX paragraph numbering | `format_numbering` |
 | Apply several edits together | `batch_edit` |
 | Convert DOCX to ODT | `convert_to_odt` |
 | Convert DOCX to Markdown | `export` with `format="markdown"` |

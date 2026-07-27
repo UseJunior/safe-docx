@@ -336,6 +336,38 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
+    name: 'format_numbering',
+    surface: 'revisionable',
+    description:
+      'Change one DOCX body paragraph’s direct numbering reference. Use remove=true to drop direct w:numPr, match_paragraph_id to adopt another paragraph’s explicit numbering, or num_id with ilvl to reference an existing numbering definition. This tool does not create numbering definitions or change style-inherited numbering. Effective edits emit a native w:pPrChange; identical requests are no-ops.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
+      target_paragraph_id: z
+        .string()
+        .describe('Target paragraph anchor returned by read_file.'),
+      remove: z
+        .boolean()
+        .optional()
+        .describe('Set true to remove the target paragraph’s direct w:numPr.'),
+      match_paragraph_id: z
+        .string()
+        .optional()
+        .describe('Copy this paragraph’s complete direct num_id and ilvl to the target.'),
+      num_id: z
+        .string()
+        .optional()
+        .describe('Existing positive decimal w:numId from this DOCX; requires ilvl.'),
+      ilvl: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe('Existing numbering level for num_id; requires num_id.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
     name: 'accept_changes',
     surface: 'internal',
     description: 'Accept all tracked changes in the document body, producing a clean document with no revision markup. Returns acceptance stats.',
