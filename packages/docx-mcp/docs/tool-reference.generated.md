@@ -76,7 +76,7 @@ Single-agent front door for applying multiple edit steps (replace_text, insert_p
 
 ## `replace_text`
 
-Replace text in a paragraph by provider paragraph id, preserving formatting where supported. Supports DOCX, ODT, and Google Docs. Surface: revisionable — DOCX edits emit native OOXML tracked changes (w:ins/w:del/w:rPrChange).
+Replace text in a paragraph by provider paragraph id, preserving formatting where supported. Supports DOCX, ODT, and Google Docs. To delete an ordinary DOCX body paragraph, pass its complete visible text as old_string and an empty new_string; a clean save removes the paragraph and a tracked save keeps the deletion for review. Do not use this shortcut for paragraphs that carry section properties, are structurally required by a table cell, or own bookmark/comment anchors without inspecting the structure first. Surface: revisionable — DOCX edits emit native OOXML tracked changes (w:ins/w:del/w:rPrChange).
 
 - readOnly: `false`
 - destructive: `true`
