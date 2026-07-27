@@ -408,6 +408,43 @@ jobs:
             packages/docx-core/allure-results/
             packages/docx-mcp/allure-results/
 
+  real-corpus-comparison:
+    name: Real-corpus paragraph deletion
+    runs-on: ubuntu-latest
+    needs: workspace-lint
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies (npm ci with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "npm ci attempt ${attempt}/3"
+            if npm ci; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "npm ci failed after 3 attempts"
+          exit 1
+      - name: Materialize SHA-256-verified comparison corpus
+        env:
+          SAFE_DOCX_REAL_CORPUS_DIR: ${{ runner.temp }}/open-agreements-cache
+        run: node scripts/prepare_real_comparison_corpus.mjs "$SAFE_DOCX_REAL_CORPUS_DIR"
+      - name: Run real-corpus paragraph-deletion gate
+        env:
+          SAFE_DOCX_REAL_CORPUS_DIR: ${{ runner.temp }}/open-agreements-cache
+          SAFE_DOCX_REAL_CORPUS_REQUIRED: "1"
+        run: >-
+          npm run test:run -w @usejunior/docx-compare --
+          src/integration/real-corpus-paragraph-deletion.test.ts
+
   mcpb-bundle:
     runs-on: ubuntu-latest
     needs: workspace-test

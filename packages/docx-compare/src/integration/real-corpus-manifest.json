@@ -1,0 +1,37 @@
+[
+  {
+    "id": "nvca-certificate-of-incorporation",
+    "sourceUrl": "https://nvca.org/wp-content/uploads/2025/10/NVCA-Model-COI-10-1-2025.docx",
+    "sha256": "d75600769c12724990de48149d7a2bb161f3522daa54b1783672f93697d87d29"
+  },
+  {
+    "id": "nvca-indemnification-agreement",
+    "sourceUrl": "https://nvca.org/wp-content/uploads/2021/12/NVCA-2020-Indemnification-Agreement.docx",
+    "sha256": "f9b61b4d99e245573de41d9469925b4332f871ec0e6ac6593055cdfe17825300"
+  },
+  {
+    "id": "nvca-investors-rights-agreement",
+    "sourceUrl": "https://nvca.org/wp-content/uploads/2025/10/NVCA-Model-IRA-10-1-2025-2-1.docx",
+    "sha256": "be8ad13f171a343bdb53716b1d318689ae3477cdf7f1986b2e3985e1cabbd08a"
+  },
+  {
+    "id": "nvca-management-rights-letter",
+    "sourceUrl": "https://nvca.org/wp-content/uploads/2025/12/NVCA-2020-Management-Rights-Letter-1-1.docx",
+    "sha256": "9661d2a68ca20ee77cf553f1ec5804f08147e7e4c35f5a03938e76a778083e8b"
+  },
+  {
+    "id": "nvca-rofr-co-sale-agreement",
+    "sourceUrl": "https://nvca.org/wp-content/uploads/2025/10/NVCA-Model-ROFRA-10-1-2025.docx",
+    "sha256": "126b4a402d41b768ff0c9aebf593792159c31ca7a930c440dd5ae0516ef4c4ad"
+  },
+  {
+    "id": "nvca-stock-purchase-agreement",
+    "sourceUrl": "https://nvca.org/wp-content/uploads/2025/10/NVCA-Model-SPA-10-28-2025-1.docx",
+    "sha256": "b2c76452fa82dcda72f1fa9f82ba0ce28ea9445441c897f9cb7ac6663930dcab"
+  },
+  {
+    "id": "nvca-voting-agreement",
+    "sourceUrl": "https://nvca.org/wp-content/uploads/2024/10/NVCA-Model-VA-10-1-2025.docx",
+    "sha256": "3496d7ae9343d1b5b7db13239313c6512e7e0d68d13273538c4dbf06416a5f0d"
+  }
+]

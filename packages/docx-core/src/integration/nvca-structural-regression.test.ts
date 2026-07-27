@@ -16,10 +16,8 @@ describe('NVCA Structural Regression', () => {
     let res: Awaited<ReturnType<typeof compareDocuments>>;
 
     await given('NVCA source and filled fixture files exist and are loaded', async () => {
-      if (!fs.existsSync(sourcePath) || !fs.existsSync(filledPath)) {
-        console.warn('Skipping NVCA Structural Regression: fixture files not found');
-        return;
-      }
+      expect(fs.existsSync(sourcePath), `missing committed fixture: ${sourcePath}`).toBe(true);
+      expect(fs.existsSync(filledPath), `missing committed fixture: ${filledPath}`).toBe(true);
       sourceBuf = fs.readFileSync(sourcePath);
       filledBuf = fs.readFileSync(filledPath);
     });
