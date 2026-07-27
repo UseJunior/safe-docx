@@ -1266,12 +1266,12 @@ part: 1
 section: "17.9.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numId
-verifiedBy:
+verifiedBy: packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
 ```
 
-List paragraphs reference their instance via `w:numId` inside `w:numPr`;
-spec validation rejects handles with no declared definition
-(`dangling_numbering_reference`) before any XML is produced.
+List paragraphs reference their instance via `w:numId` inside `w:numPr`.
+Generation and paragraph mutation validate that the instance exists before
+emitting or changing document XML.
 
 ## [ECMA-PART1-17-9-3] w:ilvl numbering level reference
 
@@ -1281,12 +1281,12 @@ part: 1
 section: "17.9.3"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ilvl
-verifiedBy:
+verifiedBy: packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
 ```
 
 The paragraph's level reference is emitted before `w:numId` per the
-CT_NumPr sequence, and validation requires the referenced level to exist
-in the bound definition.
+CT_NumPr sequence. Generation and paragraph mutation require the referenced
+level to exist in the bound definition.
 
 ## [ECMA-PART1-17-9-6] w:lvl numbering level definition
 
@@ -1417,12 +1417,12 @@ part: 1
 section: "17.3.1.19"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:numPr
-verifiedBy:
+verifiedBy: packages/docx-core/src/primitives/paragraph_numbering.ts; packages/docx-core/src/primitives/paragraph_numbering.test.ts
 ```
 
-List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot
-via the PPR_ORDER table; the numeric id comes from the numbering part's
-deterministic handle map.
+List paragraphs carry `w:numPr` (ilvl then numId) at its CT_PPrBase slot.
+Generation binds deterministic handles; paragraph mutation can remove or
+re-point a direct reference while preserving the numbering definitions.
 
 ## [ECMA-PART1-17-13-4-6] w:comments comment-collection part emission
 

@@ -61,6 +61,10 @@
       "description": "Apply deterministic paragraph/table layout formatting controls."
     },
     {
+      "name": "format_numbering",
+      "description": "Change one DOCX paragraph's direct numbering reference using existing numbering definitions."
+    },
+    {
       "name": "accept_changes",
       "description": "Accept tracked changes in the document body."
     },

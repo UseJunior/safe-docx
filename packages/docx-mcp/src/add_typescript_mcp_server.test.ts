@@ -70,6 +70,7 @@ describe('TypeScript MCP server behavior', () => {
       'replace_text',
       'insert_paragraph',
       'format_layout',
+      'format_numbering',
       'save',
       'has_tracked_changes',
       'get_file_status',
@@ -97,7 +98,7 @@ describe('TypeScript MCP server behavior', () => {
   });
 
   humanReadableTest.openspec('Destructive tools annotated correctly')('Scenario: Destructive tools annotated correctly', async () => {
-    const destructiveTools = new Set(['batch_edit', 'replace_text', 'insert_paragraph', 'format_layout', 'save']);
+    const destructiveTools = new Set(['batch_edit', 'replace_text', 'insert_paragraph', 'format_layout', 'format_numbering', 'save']);
     for (const tool of MCP_TOOLS) {
       if (!destructiveTools.has(tool.name)) continue;
       expect(tool.annotations.readOnlyHint).toBe(false);
