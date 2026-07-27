@@ -125,6 +125,7 @@ describe('safe-docx CLI routing', () => {
       expect(output).toHaveLength(1);
       expect(output[0]).toContain('safe-docx CLI');
       expect(output[0]).toContain('compare <original> <revised> [output]');
+      expect(output[0]).toContain('Reconstruction mode (default: inplace)');
       expect(serve).not.toHaveBeenCalled();
       expect(compare).not.toHaveBeenCalled();
     });

@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { compareDocuments, type CompareOptions } from '@usejunior/docx-compare';
+import { DEFAULT_RECONSTRUCTION_MODE } from '../../tools/comparison_defaults.js';
 
 const SUPPORTED_ENGINES: ReadonlySet<NonNullable<CompareOptions['engine']>> = new Set([
   'auto',
@@ -36,7 +37,7 @@ function normalizeEngine(raw: string | undefined): NonNullable<CompareOptions['e
 }
 
 function normalizeMode(raw: string | undefined): 'inplace' | 'rebuild' {
-  const candidate = (raw ?? 'rebuild').trim().toLowerCase();
+  const candidate = (raw ?? DEFAULT_RECONSTRUCTION_MODE).trim().toLowerCase();
   if (candidate !== 'inplace' && candidate !== 'rebuild') {
     throw new Error(`Unsupported mode: ${String(raw)}. Use inplace or rebuild.`);
   }
