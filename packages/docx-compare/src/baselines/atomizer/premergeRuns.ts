@@ -15,6 +15,10 @@
  * This step is intentionally conservative:
  * - Only merges immediately-adjacent <w:r> siblings under the same parent.
  * - Requires identical run attributes and identical <w:rPr> formatting subtree.
+ *   Revision-save identifiers (OOXML w:rsidR, w:rsidRPr, w:rsidDel, ...) are
+ *   excluded from that comparison: they record which editing session last
+ *   touched a run — bookkeeping with no rendering or semantic effect — so they
+ *   must not keep two otherwise-identical runs fragmented (issue #675).
  * - Only merges runs that contain a small, "safe" subset of child elements.
  */
 
@@ -62,12 +66,44 @@ function hashElementDeep(element: Element): string {
   return sha1([tagName, ...parts].join('|'));
 }
 
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+/**
+ * Whether an attribute is an OOXML revision-save identifier (w:rsidR,
+ * w:rsidRPr, w:rsidDel, ...).
+ *
+ * Attributes on elements parsed from a document carry namespace metadata, so
+ * the primary check is w-namespace + localName. Attributes created without it
+ * (e.g. via `setAttribute('w:rsidR', ...)` in fixtures) expose the qualified
+ * name only, so fall back to the `w:`-prefixed name.
+ */
+function isRsidAttribute(attr: Attr): boolean {
+  if (attr.namespaceURI) {
+    return attr.namespaceURI === W_NS && (attr.localName ?? '').startsWith('rsid');
+  }
+  return attr.name.startsWith('w:rsid');
+}
+
+function nonRsidAttributes(element: Element): Attr[] {
+  const attrs: Attr[] = [];
+  for (let i = 0; i < element.attributes.length; i++) {
+    const attr = element.attributes[i]!;
+    if (!isRsidAttribute(attr)) attrs.push(attr);
+  }
+  return attrs;
+}
+
+/**
+ * Compare run attributes, ignoring rsid revision-save identifiers on both
+ * sides. Equal filtered counts plus a value check of every remaining `a`
+ * attribute against `b` gives symmetric equality over the non-rsid sets.
+ */
 function attrsEqual(a: Element, b: Element): boolean {
-  if (a.attributes.length !== b.attributes.length) return false;
-  for (let i = 0; i < a.attributes.length; i++) {
-    const aAttr = a.attributes[i]!;
-    const bVal = b.getAttribute(aAttr.name);
-    if (bVal !== aAttr.value) return false;
+  const aAttrs = nonRsidAttributes(a);
+  const bAttrs = nonRsidAttributes(b);
+  if (aAttrs.length !== bAttrs.length) return false;
+  for (const aAttr of aAttrs) {
+    if (b.getAttribute(aAttr.name) !== aAttr.value) return false;
   }
   return true;
 }
@@ -90,7 +126,15 @@ function runPropertiesEqual(aRun: Element, bRun: Element): boolean {
 
 function runIsSafeToMerge(run: Element): boolean {
   if (run.tagName !== 'w:r') return false;
-  if (getLeafText(run) !== undefined) return false;
+  // Direct text under <w:r> is meaningless in OOXML (significant text lives in
+  // <w:t>), but pretty-printed documents put indentation text nodes inside
+  // every run. Treating those as content made premerge a no-op on one side of
+  // a comparison whenever only that side was pretty-printed, which
+  // desynchronised run boundaries between the two documents and produced
+  // phantom delete+insert pairs at every shared fragment boundary (issue #675).
+  // Only non-whitespace direct text marks a run unsafe.
+  const leafText = getLeafText(run);
+  if (leafText !== undefined && leafText.trim() !== '') return false;
 
   for (const child of childElements(run)) {
     if (!SAFE_RUN_CHILD_TAGS.has(child.tagName)) return false;
