@@ -170,6 +170,53 @@ describe('batch_edit tool — edge cases', () => {
     });
   });
 
+  test('replaces a cached field result split across runs', async ({ given, when, then }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let result: Awaited<ReturnType<typeof batchEdit>>;
+
+    await given('a session containing a two-run PAGEREF cached result', async () => {
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
+        `<w:body><w:p>` +
+        `<w:r><w:t>Section One</w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+        `<w:r><w:instrText xml:space="preserve"> PAGEREF _Toc1 \\h </w:instrText></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="separate"/></w:r>` +
+        `<w:r><w:t>1</w:t></w:r><w:r><w:t>2</w:t></w:r>` +
+        `<w:r><w:fldChar w:fldCharType="end"/></w:r>` +
+        `</w:p></w:body></w:document>`;
+      opened = await openSession([], { xml });
+    });
+
+    await when('batch_edit changes the cached page number', async () => {
+      result = await batchEdit(opened.mgr, {
+        file_path: opened.inputPath,
+        steps: [{
+          step_id: 'field-result',
+          operation: 'replace_text',
+          target_paragraph_id: opened.firstParaId,
+          old_string: '12',
+          new_string: '13',
+          instruction: 'update cached page number',
+        }],
+      });
+    });
+
+    await then('the batch succeeds and preserves the complex-field markers', async () => {
+      assertSuccess(result);
+      const session = (await opened.mgr.getSessionByFilePath(opened.inputPath))!;
+      expect(session.doc.getParagraphTextById(opened.firstParaId)).toBe('Section One13');
+      const paragraph = session.doc.getParagraphElementById(opened.firstParaId)!;
+      expect(
+        paragraph.getElementsByTagNameNS(
+          'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+          'fldChar',
+        ),
+      ).toHaveLength(3);
+    });
+  });
+
   test('rejects neither steps nor plan_file_path', async ({ given, when, then }: AllureBddContext) => {
     let opened: Awaited<ReturnType<typeof openSession>>;
     let result: Awaited<ReturnType<typeof batchEdit>>;

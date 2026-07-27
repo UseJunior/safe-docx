@@ -525,8 +525,7 @@ describe('replace_text branch coverage', () => {
     expect(afterText).toContain('commencement date');
   });
 
-  test('edit that changes field text still throws UNSUPPORTED_EDIT (Fix 3)', async () => {
-    // Try to change the field result text itself — primitive should reject.
+  test('edit that changes cached field text succeeds without removing field markers', async () => {
     const xml = makeDocXml(
       `<w:p>` +
         `<w:r><w:t xml:space="preserve">see </w:t></w:r>` +
@@ -548,9 +547,13 @@ describe('replace_text branch coverage', () => {
       new_string: 'see Changed here',
       instruction: 'edit that changes field text',
     });
-    // This should fail with UNSUPPORTED_EDIT wrapped as EDIT_ERROR because the
-    // trimmed range "Visible" → "Changed" crosses the field result run.
-    assertFailure(edited, 'EDIT_ERROR', 'edit crossing field');
+    assertSuccess(edited, 'edit cached field result');
+
+    const session = (await opened.mgr.getSessionByFilePath(opened.filePath))!;
+    const pEl = session.doc.getParagraphElementById(paraId);
+    expect(pEl).toBeTruthy();
+    expect(session.doc.getParagraphTextById(paraId)).toBe('see Changed here');
+    expect(pEl!.getElementsByTagNameNS(W_NS, 'fldChar')).toHaveLength(3);
   });
 
   humanReadableReplaceTest

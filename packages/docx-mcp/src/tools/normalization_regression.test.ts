@@ -146,8 +146,8 @@ describe('normalization regression tests', () => {
 
       const { mgr, filePath, firstParaId } = await openSession([], { xml, prefix: 'barrier-field-' });
 
-      // The field text "100" should still be protected. Editing across field
-      // boundaries should fail.
+      // Common-prefix/suffix trimming narrows this to the cached result. The
+      // edit should succeed without normalization merging away field markers.
       const edited = await replaceText(mgr, {
         file_path: filePath,
         target_paragraph_id: firstParaId,
@@ -155,8 +155,14 @@ describe('normalization regression tests', () => {
         new_string: 'Amount: 250 due.',
         instruction: 'field barrier test',
       });
-      // This should fail because the text spans a field complex.
-      expect(edited.success).toBe(false);
+      expect(edited.success).toBe(true);
+      const session = (await mgr.getSessionByFilePath(filePath))!;
+      expect(session.doc.getParagraphTextById(firstParaId)).toBe('Amount: 250 due.');
+      expect(
+        session.doc
+          .getParagraphElementById(firstParaId)!
+          .getElementsByTagNameNS(W_NS, 'fldChar'),
+      ).toHaveLength(3);
     });
 
     test('bookmark-separated runs are not merged through the full pipeline', async () => {
