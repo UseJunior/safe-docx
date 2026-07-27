@@ -21,6 +21,10 @@ OpenSpec is the repository's statement of intended behavior. It does not prove t
 
 Tests use shared DOCX builders and OOXML fixtures so repeated package shapes have one canonical implementation.
 
+## Diagnosing A Comparison Failure
+
+Automated tests cover named shapes. Diagnosing a comparison failure on a document outside the corpus is a separate procedure, because some failure classes leave extracted text unchanged and therefore pass every text-level check. The [comparison failure diagnosis guide](comparison-failure-diagnosis.md) states those classes, the structural detectors that catch them, and the criterion a diagnostic run has to clear before it counts as a pass.
+
 ## Human-Readable Test Evidence
 
 Tests attach Allure metadata describing the capability, scenario, conformance citation, and business-readable steps. Generated reports make the exercised behavior easier to inspect without treating report prose as a separate source of requirements.
