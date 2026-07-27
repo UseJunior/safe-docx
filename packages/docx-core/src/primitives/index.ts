@@ -38,6 +38,7 @@ export * from './content_fingerprint.js';
 export * from './locator.js';
 export { buildTableMetaMap, deriveTableContext, type TableMeta } from './table_context.js';
 export {
+  getW14ParaId,
   getParagraphBookmarkId,
   getParagraphBookmarkNames,
   findParagraphByBookmarkId,

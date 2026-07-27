@@ -3,6 +3,7 @@ import { posix } from 'node:path';
 import type { ComparisonUnitAtom, DocxArchive, OpaquePassthroughNode } from '@usejunior/docx-core';
 import {
   CorrelationStatus,
+  getW14ParaId,
   OOXML,
   normalizeOpcRelationshipTarget,
   parseXml,
@@ -19,16 +20,6 @@ export class OpaquePassthroughError extends Error {
     super(`Opaque passthrough: ${message}`);
     this.name = 'OpaquePassthroughError';
   }
-}
-
-/**
- * Preserve the authoring application's paragraph identity across unrelated
- * insertions and deletions. Absence deliberately retains ordinal fail-closed
- * behavior instead of deriving identity from mutable paragraph text.
- */
-function stableParagraphIdentity(paragraph: Element): string | undefined {
-  const paraId = paragraph.getAttributeNS(OOXML.W14_NS, 'paraId');
-  return paraId ? paraId.toUpperCase() : undefined;
 }
 
 interface PackageRelationship {
@@ -1078,7 +1069,9 @@ export function captureComplexFieldPassthrough(
       localName: `complexField:${fieldKind}`,
       documentOrdinal: nextOrdinal++,
       paragraphOrdinal,
-      paragraphIdentity: stableParagraphIdentity(paragraph),
+      // Preserve Word's stable owner across unrelated paragraph edits. Absence
+      // deliberately retains the ordinal-based fail-closed behavior.
+      paragraphIdentity: getW14ParaId(paragraph) ?? undefined,
       containerIdentity: structuralContainerIdentity(paragraph),
       inlineChildStartOrdinal: startOrdinal,
       inlineChildEndOrdinal: endOrdinal,
