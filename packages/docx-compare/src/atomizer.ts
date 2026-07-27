@@ -1145,9 +1145,13 @@ export function collapseFieldSequences(
  * holds the matching openers. Kept deliberately narrow: currency/percent signs
  * and interior punctuation (e.g. "$204,000.00", "don't") stay glued to their
  * token so figures remain single atoms on both sides of a comparison.
+ *
+ * Implemented as character sets scanned linearly (not regexes) because the
+ * input is document-controlled text and an end-anchored `[...]+$` pattern is
+ * quadratic on adversarial inputs (CodeQL js/polynomial-redos).
  */
-const LEADING_EDGE_PUNCTUATION = /^['"(\[{<]+/;
-const TRAILING_EDGE_PUNCTUATION = /[,.:;!?'")\]}>]+$/;
+const LEADING_EDGE_PUNCTUATION = new Set(["'", '"', '(', '[', '{', '<']);
+const TRAILING_EDGE_PUNCTUATION = new Set([',', '.', ':', ';', '!', '?', "'", '"', ')', ']', '}', '>']);
 
 /**
  * Split a whitespace-free token into leading punctuation, core, and trailing
@@ -1161,14 +1165,18 @@ const TRAILING_EDGE_PUNCTUATION = /[,.:;!?'")\]}>]+$/;
  * consuming its neighbouring unchanged words (issue #675).
  */
 function splitTokenAtPunctuationEdges(token: string): string[] {
-  const leading = LEADING_EDGE_PUNCTUATION.exec(token)?.[0] ?? '';
-  let core = token.slice(leading.length);
-  const trailing = TRAILING_EDGE_PUNCTUATION.exec(core)?.[0] ?? '';
-  core = core.slice(0, core.length - trailing.length);
+  let coreStart = 0;
+  while (coreStart < token.length && LEADING_EDGE_PUNCTUATION.has(token[coreStart]!)) {
+    coreStart++;
+  }
+  let coreEnd = token.length;
+  while (coreEnd > coreStart && TRAILING_EDGE_PUNCTUATION.has(token[coreEnd - 1]!)) {
+    coreEnd--;
+  }
   const parts: string[] = [];
-  if (leading) parts.push(leading);
-  if (core) parts.push(core);
-  if (trailing) parts.push(trailing);
+  if (coreStart > 0) parts.push(token.slice(0, coreStart));
+  if (coreEnd > coreStart) parts.push(token.slice(coreStart, coreEnd));
+  if (coreEnd < token.length) parts.push(token.slice(coreEnd));
   return parts.length > 0 ? parts : [token];
 }
 
