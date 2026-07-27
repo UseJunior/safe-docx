@@ -52,6 +52,14 @@ export interface RevisionIdState {
    * multiple atoms (word-level atomization).
    */
   emittedSourceBookmarkMarkers: Set<Element>;
+  /**
+   * Marker clones emitted for the markers that FOLLOWED a source run, keyed by
+   * that source run. Word-level atomization fragments one source run into many
+   * wrappers inserted one after another; each later fragment moves its run's
+   * trailing clones after itself, so they come to rest after the run's final
+   * fragment — where the source markers sat (issue #643).
+   */
+  trailingSourceBookmarkClones: Map<Element, Element[]>;
 }
 
 /**
@@ -65,6 +73,7 @@ export function createRevisionIdState(preservedRoots: readonly Element[] = []): 
     generatedMoveRangeMarkers: new Set(),
     wrappedRuns: new Set(),
     emittedSourceBookmarkMarkers: new Set(),
+    trailingSourceBookmarkClones: new Map(),
   };
   for (const root of preservedRoots) seedRevisionIdsFromMarkup(state, root);
   return state;

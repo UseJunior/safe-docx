@@ -13,6 +13,11 @@
  * surviving content still gets that boundary anchored outside, because the
  * paragraph disappears in one of the two projections.
  *
+ * A boundary partway inside an inline revision wrapper splits the wrapper at
+ * the boundary (attributes copied, fresh `w:id` on the second half), so the
+ * range keeps its exact original span instead of shrinking or growing to the
+ * nearest wrapper edge (issue #643).
+ *
  * The second describe block drives the pass directly, because the boundary cases
  * it covers are hard to reach through a whole comparison: the atomizer is free
  * to align a fixture into a different revision shape than the one under test.
@@ -108,6 +113,34 @@ function paragraphChildTags(documentXml: string, text: string): string[] {
     }
   }
   throw new Error(`no paragraph containing ${JSON.stringify(text)}`);
+}
+
+/**
+ * Concatenated visible text (`w:t` / `w:delText`) lying between the
+ * `w:bookmarkStart` and `w:bookmarkEnd` of range `id`, in document order.
+ * This is the text a `REF` field aimed at the bookmark would resolve to.
+ */
+function rangeText(documentXml: string, id: string): string {
+  let inside = false;
+  let text = '';
+  const visit = (node: Element): void => {
+    for (const child of childElements(node)) {
+      if (child.tagName === 'w:bookmarkStart' && child.getAttribute('w:id') === id) {
+        inside = true;
+        continue;
+      }
+      if (child.tagName === 'w:bookmarkEnd' && child.getAttribute('w:id') === id) {
+        inside = false;
+        continue;
+      }
+      if (inside && (child.tagName === 'w:t' || child.tagName === 'w:delText')) {
+        text += child.textContent ?? '';
+      }
+      visit(child);
+    }
+  };
+  visit(bodyOf(documentXml));
+  return text;
 }
 
 const ORIGINAL_WITH_BOOKMARKED_PARAGRAPH =
@@ -301,12 +334,142 @@ describe('Bookmark ranges survive paragraph-level revisions', () => {
       });
     });
   }
+
+  test('a boundary partway through newly deleted text splits the emitted deletion [rebuild]', async (
+    { given, when, then, and }: AllureBddContext
+  ) => {
+    let documentXml: string;
+
+    await given('an original whose bookmark ends partway through text the revision deletes', () => {});
+
+    await when('the documents are compared in rebuild mode', async () => {
+      documentXml = await compare(
+        '<w:p><w:bookmarkStart w:id="50" w:name="Partial"/>' +
+          '<w:r><w:t>kept inside-range</w:t></w:r>' +
+          '<w:bookmarkEnd w:id="50"/>' +
+          '<w:r><w:t>outside-range</w:t></w:r></w:p>',
+        '<w:p><w:r><w:t>kept</w:t></w:r></w:p>',
+        'rebuild'
+      );
+    });
+
+    await then('the emitted deletion is split with the boundary between the halves', () => {
+      // The join proves the split survived into the FINAL document XML: had a
+      // postprocess pass re-merged the halves across the boundary, the marker
+      // would sit before or after one w:del instead of between two.
+      expect(paragraphChildTags(documentXml, 'inside-range').join(',')).toContain(
+        'w:del,w:bookmarkEnd,w:del'
+      );
+    });
+
+    await and('Reject All restores the range over exactly its original span', () => {
+      const restored = rangeText(rejectAllChanges(documentXml), '50');
+      expect(restored).toContain('kept');
+      expect(restored).toContain('inside-range');
+      expect(restored).not.toContain('outside-range');
+    });
+
+    await and('Accept All shrinks the range to the surviving text only', () => {
+      expect(rangeText(acceptAllChanges(documentXml), '50')).toBe('kept');
+    });
+  });
+
+  test('a boundary partway through newly deleted text closes between the deletions [inplace]', async (
+    { given, when, then, and }: AllureBddContext
+  ) => {
+    let documentXml: string;
+
+    await given('an original whose bookmark ends partway through text the revision deletes', () => {});
+
+    await when('the documents are compared in inplace mode', async () => {
+      documentXml = await compare(
+        '<w:p><w:bookmarkStart w:id="50" w:name="Partial"/>' +
+          '<w:r><w:t>kept inside-range</w:t></w:r>' +
+          '<w:bookmarkEnd w:id="50"/>' +
+          '<w:r><w:t>outside-range</w:t></w:r></w:p>',
+        '<w:p><w:r><w:t>kept</w:t></w:r></w:p>',
+        'inplace'
+      );
+    });
+
+    await then('the end marker sits between the two emitted deletions', () => {
+      // The end sat between the two original runs, so it must re-emit between
+      // their deletion wrappers — not collapse onto the leading edge of the
+      // first one, which is what shrank the NVCA heading ranges (issue #643).
+      expect(paragraphChildTags(documentXml, 'inside-range').join(',')).toContain(
+        'w:del,w:bookmarkEnd,w:del'
+      );
+    });
+
+    await and('Reject All keeps the deleted inside text within the range', () => {
+      const restored = rangeText(rejectAllChanges(documentXml), '50');
+      expect(restored).toContain('inside-range');
+      expect(restored).not.toContain('outside-range');
+    });
+
+    await and('Accept All leaves the range without the deleted text', () => {
+      expect(rangeText(acceptAllChanges(documentXml), '50')).toBe('');
+    });
+  });
+
+  test('a boundary partway inside a pre-existing deletion splits it in the final document [inplace]', async (
+    { given, when, then, and }: AllureBddContext
+  ) => {
+    let documentXml: string;
+    const trackedBody =
+      '<w:p><w:bookmarkStart w:id="50" w:name="Partial"/>' +
+      '<w:r><w:t>kept</w:t></w:r>' +
+      '<w:del w:id="1" w:author="Earlier" w:date="2026-01-01T00:00:00Z">' +
+      '<w:r><w:delText>inside-range</w:delText></w:r>' +
+      '<w:bookmarkEnd w:id="50"/>' +
+      '<w:r><w:delText>outside-range</w:delText></w:r></w:del></w:p>';
+
+    await given('both documents carry a tracked deletion with a bookmark end partway inside', () => {});
+
+    await when('the identical documents are compared in inplace mode', async () => {
+      // The inplace pipeline runs its wrapper-merging postprocess passes over
+      // this tree, so this asserts end-to-end that none of them re-merge the
+      // split halves across the boundary.
+      documentXml = await compare(trackedBody, trackedBody, 'inplace');
+    });
+
+    await then('the pre-existing wrapper is split with the boundary between the halves', () => {
+      expect(paragraphChildTags(documentXml, 'inside-range')).toEqual([
+        'w:bookmarkStart',
+        'w:r',
+        'w:del',
+        'w:bookmarkEnd',
+        'w:del',
+      ]);
+    });
+
+    await and('the second half keeps the original author under a fresh w:id', () => {
+      const paragraph = bodyOf(documentXml).getElementsByTagName('w:p')[0] as Element;
+      const halves = childElements(paragraph).filter((child) => child.tagName === 'w:del');
+      expect(halves[0]!.getAttribute('w:id')).toBe('1');
+      expect(halves[1]!.getAttribute('w:id')).not.toBe('1');
+      expect(halves[1]!.getAttribute('w:author')).toBe('Earlier');
+    });
+
+    await and('Reject All restores the range over exactly its original span', () => {
+      const restored = rangeText(rejectAllChanges(documentXml), '50');
+      expect(restored).toBe('keptinside-range');
+    });
+
+    await and('Accept All keeps the range over the surviving text only', () => {
+      expect(rangeText(acceptAllChanges(documentXml), '50')).toBe('kept');
+    });
+  });
 });
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 /** Run the pass over one hand-written paragraph and report where markers landed. */
-function markerLayout(paragraphXml: string): { paragraph: string[]; body: string[] } {
+function markerLayout(paragraphXml: string): {
+  paragraph: string[];
+  body: string[];
+  paragraphEl: Element;
+} {
   const doc = parseXml(`<w:document xmlns:w="${W_NS}"><w:body>${paragraphXml}</w:body></w:document>`);
   const body = doc.getElementsByTagName('w:body')[0] as Element;
   let nextRevisionId = 900;
@@ -319,6 +482,7 @@ function markerLayout(paragraphXml: string): { paragraph: string[]; body: string
   return {
     paragraph: childElements(paragraph).map(label),
     body: childElements(body).map(label),
+    paragraphEl: paragraph,
   };
 }
 
@@ -356,7 +520,7 @@ describe('Bookmark boundaries relative to an inline revision wrapper', () => {
     });
   });
 
-  test('a boundary partway inside a wrapper keeps the long-standing placement ahead of it', async (
+  test('a boundary partway inside a wrapper splits the wrapper at the boundary', async (
     { given, when, then, and }: AllureBddContext
   ) => {
     let endInside: ReturnType<typeof markerLayout>;
@@ -368,7 +532,8 @@ describe('Bookmark boundaries relative to an inline revision wrapper', () => {
       endInside = markerLayout(
         '<w:p><w:bookmarkStart w:id="50" w:name="Partial"/>' +
           '<w:r><w:t>kept</w:t></w:r>' +
-          '<w:del w:id="1"><w:r><w:delText>inside-range</w:delText></w:r>' +
+          '<w:del w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z">' +
+          '<w:r><w:delText>inside-range</w:delText></w:r>' +
           '<w:bookmarkEnd w:id="50"/>' +
           '<w:r><w:delText>outside-range</w:delText></w:r></w:del></w:p>'
       );
@@ -381,25 +546,157 @@ describe('Bookmark boundaries relative to an inline revision wrapper', () => {
       );
     });
 
-    await then('the inside end is anchored before the wrapper, shrinking the range', () => {
-      // Neither placement outside the wrapper reproduces the original span, so
-      // this keeps the placement the pass has always used rather than swapping
-      // one inaccuracy for another. Splitting the wrapper at the boundary is the
-      // faithful fix, tracked in issue #643 — update this test when it lands.
+    await then('the wrapper is split in two with the end between the halves', () => {
+      // Anchoring the end before or after the whole wrapper would shrink or
+      // grow the range, because the boundary sat partway through content one
+      // projection removes. Splitting keeps the original span exactly
+      // (issue #643, superseding the lossy placement pinned before it).
       expect(endInside.paragraph).toEqual([
         'w:bookmarkStart#50',
         'w:r',
+        'w:del',
         'w:bookmarkEnd#50',
         'w:del',
       ]);
     });
 
-    await and('the mirrored case leaves the start before the wrapper too', () => {
+    await and('the second half copies the wrapper attributes under a fresh w:id', () => {
+      const halves = childElements(endInside.paragraphEl).filter(
+        (child) => child.tagName === 'w:del'
+      );
+      expect(halves[0]!.textContent).toBe('inside-range');
+      expect(halves[1]!.textContent).toBe('outside-range');
+      expect(halves[0]!.getAttribute('w:id')).toBe('1');
+      expect(halves[1]!.getAttribute('w:id')).toBe('900');
+      expect(halves[1]!.getAttribute('w:author')).toBe('A');
+      expect(halves[1]!.getAttribute('w:date')).toBe('2026-01-01T00:00:00Z');
+    });
+
+    await and('the mirrored case splits around the inside start the same way', () => {
       expect(startInside.paragraph).toEqual([
+        'w:del',
         'w:bookmarkStart#51',
         'w:del',
         'w:r',
         'w:bookmarkEnd#51',
+      ]);
+      const halves = childElements(startInside.paragraphEl).filter(
+        (child) => child.tagName === 'w:del'
+      );
+      expect(halves[0]!.textContent).toBe('before-range');
+      expect(halves[1]!.textContent).toBe('inside-range');
+    });
+  });
+
+  test('a boundary partway inside a move wrapper splits it too', async (
+    { given, when, then }: AllureBddContext
+  ) => {
+    let layout: ReturnType<typeof markerLayout>;
+
+    await given('a range whose end sits partway inside a w:moveFrom', () => {});
+
+    await when('the consumer-compatibility pass runs', () => {
+      layout = markerLayout(
+        '<w:p><w:bookmarkStart w:id="54" w:name="MovePartial"/>' +
+          '<w:r><w:t>kept</w:t></w:r>' +
+          '<w:moveFrom w:id="7" w:author="A" w:date="2026-01-01T00:00:00Z">' +
+          '<w:r><w:t>inside-range</w:t></w:r>' +
+          '<w:bookmarkEnd w:id="54"/>' +
+          '<w:r><w:t>outside-range</w:t></w:r></w:moveFrom></w:p>'
+      );
+    });
+
+    await then('the move wrapper is split with the end between the halves', () => {
+      expect(layout.paragraph).toEqual([
+        'w:bookmarkStart#54',
+        'w:r',
+        'w:moveFrom',
+        'w:bookmarkEnd#54',
+        'w:moveFrom',
+      ]);
+      const halves = childElements(layout.paragraphEl).filter(
+        (child) => child.tagName === 'w:moveFrom'
+      );
+      expect(halves[1]!.getAttribute('w:author')).toBe('A');
+      expect(halves[1]!.getAttribute('w:id')).not.toBe('7');
+    });
+  });
+
+  test('an enclosed range and a partial boundary in one wrapper come out in content order', async (
+    { given, when, then, and }: AllureBddContext
+  ) => {
+    let layout: ReturnType<typeof markerLayout>;
+
+    await given('a wrapper holding a partial end followed by a whole enclosed range', () => {});
+
+    await when('the consumer-compatibility pass runs', () => {
+      layout = markerLayout(
+        '<w:p><w:bookmarkStart w:id="60" w:name="Outer"/>' +
+          '<w:r><w:t>lead</w:t></w:r>' +
+          '<w:del w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z">' +
+          '<w:r><w:delText>up-to-boundary</w:delText></w:r>' +
+          '<w:bookmarkEnd w:id="60"/>' +
+          '<w:bookmarkStart w:id="61" w:name="Inner"/>' +
+          '<w:r><w:delText>enclosed</w:delText></w:r>' +
+          '<w:bookmarkEnd w:id="61"/>' +
+          '</w:del></w:p>'
+      );
+    });
+
+    await then('the two ranges stay disjoint instead of crossing', () => {
+      // Before the split fix, the partial end and the enclosed start were both
+      // dropped in front of the wrapper in a crossing order — legal, since
+      // bookmark markers pair by id rather than nesting, but a gratuitous
+      // reshuffle of ranges that were disjoint in the input (issue #643).
+      expect(layout.paragraph).toEqual([
+        'w:bookmarkStart#60',
+        'w:r',
+        'w:del',
+        'w:bookmarkEnd#60',
+        'w:bookmarkStart#61',
+        'w:del',
+        'w:bookmarkEnd#61',
+      ]);
+    });
+
+    await and('each range still covers exactly its original content', () => {
+      const halves = childElements(layout.paragraphEl).filter(
+        (child) => child.tagName === 'w:del'
+      );
+      expect(halves[0]!.textContent).toBe('up-to-boundary');
+      expect(halves[1]!.textContent).toBe('enclosed');
+    });
+  });
+
+  test('adjacent boundaries inside a wrapper do not leave an empty wrapper half behind', async (
+    { given, when, then }: AllureBddContext
+  ) => {
+    let layout: ReturnType<typeof markerLayout>;
+
+    await given('two ranges whose ends sit back to back inside a w:del', () => {});
+
+    await when('the consumer-compatibility pass runs', () => {
+      layout = markerLayout(
+        '<w:p><w:bookmarkStart w:id="64" w:name="First"/>' +
+          '<w:bookmarkStart w:id="65" w:name="Second"/>' +
+          '<w:r><w:t>kept</w:t></w:r>' +
+          '<w:del w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z">' +
+          '<w:r><w:delText>inside</w:delText></w:r>' +
+          '<w:bookmarkEnd w:id="64"/>' +
+          '<w:bookmarkEnd w:id="65"/>' +
+          '<w:r><w:delText>outside</w:delText></w:r></w:del></w:p>'
+      );
+    });
+
+    await then('one split serves both boundaries, in their original order', () => {
+      expect(layout.paragraph).toEqual([
+        'w:bookmarkStart#64',
+        'w:bookmarkStart#65',
+        'w:r',
+        'w:del',
+        'w:bookmarkEnd#64',
+        'w:bookmarkEnd#65',
+        'w:del',
       ]);
     });
   });
