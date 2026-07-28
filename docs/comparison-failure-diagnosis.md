@@ -63,28 +63,32 @@ Running only the suspect input establishes what happened to that input. It does 
 
 A comparison run needs its own control — a known-bad document put through the same harness. When a control has to be reconstructed rather than staged, treat the reconstruction as a hypothesis. If it does not reproduce the expected failure, record that as a negative result and stop. A control iterated until something finally breaks is not a control.
 
-**No document-level control is currently available for the run-split abort.** A
-2026-07-27 reconstruction attempt for
+**No independently occurring document-level control is currently available for
+the run-split abort.** A 2026-07-27 reconstruction attempt for
 [#693](https://github.com/UseJunior/safe-docx/issues/693) scrubbed the public
 NVCA indemnification agreement in place, preserving its package structure and
-109 `w:instrText` field instructions. In a field-bearing paragraph, the revised
-side changed one character of a 17-character scrubbed text run and split that
-run in two. The committed public `compareDocuments` entry point succeeded in
-both requested modes: `inplace` reported `reconstructionModeUsed: 'inplace'`,
-and `rebuild` reported `reconstructionModeUsed: 'rebuild'`.
+109 `w:instrText` field instructions. The revised side changed one character of
+a 17-character scrubbed text run and split that run in two. The public
+`compareDocuments` entry point succeeded in both requested modes: `inplace`
+reported `reconstructionModeUsed: 'inplace'`, and `rebuild` reported
+`reconstructionModeUsed: 'rebuild'`.
 
-That result means the real-document run split moved none of the discriminators
-the opaque-boundary guard compares. In summary those cover boundary placement
-and paragraph ownership, container identity, positional ordinals, element
-identity, owned-paragraph count, semantic fingerprint, and
-relationship-closure fingerprint — the guard's own comparison in
-`packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts` is the
-authoritative list. No fixture was committed:
-tuning the reconstruction until one of those discriminators moved would create
-a deliberately manufactured failure, not a control for the original abort.
-Until an independently occurring known-bad pair can be staged and pinned
-through `compareDocuments`, a diagnostic run can prove the detector self-tests
-ran, but it cannot prove that its comparison harness can surface this abort.
+Later review established the limit of that result: the chosen run followed the
+end of an unsupported `SEQ` field, so no opaque descriptor governed the split.
+Success proved only that this mutation did not reach the opaque-boundary guard;
+it did not prove the guard's discriminators stayed stable. Deliberately moving
+the same split into a supported `REF` field result does make `rebuild` throw the
+expected `OpaquePassthroughError` while `inplace` succeeds. That targeted probe
+validates the guard path, but it is not a control for the original real-world
+abort: its failure was manufactured by placing the split inside a construct
+known to be guarded.
+
+No fixture was therefore committed. Until an independently occurring known-bad
+pair can be staged and pinned through `compareDocuments`, a diagnostic run can
+prove the detector self-tests ran, but it cannot prove that its comparison
+harness can surface this abort. The reconstruction retained field codes and
+bookmark names only because its source was a public standard form; the same
+scrub would not be sufficient redaction for a confidential document.
 
 ## Reproducing A Defect Outside The Original Document
 
