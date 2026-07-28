@@ -102,3 +102,10 @@
   real-DOCX tests.
 - [ ] 4.5 Obtain independent implementation review and post-merge real-document
   smoke before closing #672.
+
+Independent review findings were repaired by #709, but its exact-merge smoke
+found that full-document comment scanning exhausts the native stack. Issue #672
+was reopened, and #710 tracks the stack-safe full-document acceptance work.
+
+Archive is deferred to #706 so formal Lean theorem evidence is not
+misrepresented as TypeScript runtime-test coverage.
