@@ -231,6 +231,47 @@ test('basedOn resolution is per property: a derived style adding color does not 
   assert.deepEqual(result.flattenedParagraphIds, ['AAAA0013']);
 });
 
+test('toggle precedence: an explicit off at a nearer tier beats an ancestor or later tier turning it on', () => {
+  // w:b is a toggle: <w:b w:val="0"/> is a specification, not an absence, so
+  // per-property resolution must let a nearer off defeat a more distant on.
+  // Three tiers checked: within a basedOn chain, direct-over-paragraph-style,
+  // and character-style-over-paragraph-style.
+  const chain = wrapStylesXml(
+    styleDef('Base', 'character', '<w:b/>') + styleDef('Derived', 'character', '<w:b w:val="0"/>', 'Base'),
+  );
+  const viaChain = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0016', run('Term', '<w:rStyle w:val="Derived"/>'))),
+    chain,
+  );
+  assert.equal(viaChain.byParaId.get('AAAA0016').emphasisSpans[0][1], false);
+
+  const boldParagraphStyle = wrapStylesXml(styleDef('Emphatic', 'paragraph', '<w:b/>'));
+  const directOff = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0017', run('Term', '<w:b w:val="0"/>'), '<w:pPr><w:pStyle w:val="Emphatic"/></w:pPr>')),
+    boldParagraphStyle,
+  );
+  assert.equal(directOff.byParaId.get('AAAA0017').emphasisSpans[0][1], false);
+
+  const mixedTiers = wrapStylesXml(
+    styleDef('Quiet', 'character', '<w:b w:val="0"/>') + styleDef('Emphatic', 'paragraph', '<w:b/>'),
+  );
+  const characterOff = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0018', run('Term', '<w:rStyle w:val="Quiet"/>'), '<w:pPr><w:pStyle w:val="Emphatic"/></w:pPr>')),
+    mixedTiers,
+  );
+  assert.equal(characterOff.byParaId.get('AAAA0018').emphasisSpans[0][1], false);
+
+  // The inverse direction still resolves: nearer on over ancestor off.
+  const onOverOff = wrapStylesXml(
+    styleDef('Base', 'character', '<w:b w:val="0"/>') + styleDef('Derived', 'character', '<w:b/>', 'Base'),
+  );
+  const viaOn = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0019', run('Term', '<w:rStyle w:val="Derived"/>'))),
+    onOverOff,
+  );
+  assert.equal(viaOn.byParaId.get('AAAA0019').emphasisSpans[0][1], true);
+});
+
 test('color hex compares case-insensitively, because casing is a writer artifact rather than ink', () => {
   const result = compare(
     paragraph('AAAA0014', run('Term', '<w:color w:val="ff0000"/>')),
