@@ -74,11 +74,12 @@ both requested modes: `inplace` reported `reconstructionModeUsed: 'inplace'`,
 and `rebuild` reported `reconstructionModeUsed: 'rebuild'`.
 
 That result means the real-document run split moved none of the discriminators
-the opaque-boundary guard compares
-(`packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts`):
-placement, paragraph ownership, container identity, body, container, and
-inline-range ordinals, element name, owned-paragraph count, semantic
-fingerprint, and relationship-closure fingerprint. No fixture was committed:
+the opaque-boundary guard compares. In summary those cover boundary placement
+and paragraph ownership, container identity, positional ordinals, element
+identity, owned-paragraph count, semantic fingerprint, and
+relationship-closure fingerprint — the guard's own comparison in
+`packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts` is the
+authoritative list. No fixture was committed:
 tuning the reconstruction until one of those discriminators moved would create
 a deliberately manufactured failure, not a control for the original abort.
 Until an independently occurring known-bad pair can be staged and pinned
