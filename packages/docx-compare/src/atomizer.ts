@@ -28,6 +28,7 @@ import {
   sameOpaqueOwner,
   validateSdtNamespaceOwnership,
 } from './baselines/atomizer/opaquePassthrough.js';
+import { canonicalizeParagraphPropertiesForIdentity } from './baselines/atomizer/formattingFidelity.js';
 
 // =============================================================================
 // Shared synthetic document for creating virtual elements
@@ -670,21 +671,26 @@ function isEmptyParagraph(node: WmlElement): boolean {
  *
  * The hash includes the structural container chain (tables, text boxes), a
  * paragraph-level content signature for the previous content-bearing
- * paragraph, and a consecutive-empty index. Text fragment boundaries are
- * ignored, while non-text leaves contribute stable tokens.
+ * paragraph, a consecutive-empty index, and a canonical projection of the
+ * paragraph's `w:pPr`. Text fragment boundaries are ignored, while
+ * non-text leaves contribute stable tokens.
  *
- * Identity is deliberately positional only: `w:pPr` does not participate.
- * A `w:pPr` carries no visible content of its own — OOXML `CT_PPrBase`
- * permits no attributes, so the only attributes that reach it in practice
- * are namespace declarations (`xmlns:*`), which record where a prefix is
- * bound, not formatting — and its children are paragraph *formatting*.
- * Folding any of that into identity turns serialization topology (bare
- * `<w:pPr/>` vs absent, inherited vs locally redeclared namespace bindings)
- * or a formatting-only edit into a phantom paragraph delete+insert pair,
- * while the identical formatting edit on a non-empty paragraph produces no
- * markup at all. Paragraph-property change *detection* — for empty and
- * non-empty paragraphs alike — is a separate concern from paragraph
- * identity and is tracked in issue #679.
+ * `w:pPr` participates through a CANONICAL projection, not its serialized
+ * shape. OOXML `CT_PPrBase` permits no attributes, so the only attributes
+ * that reach a `w:pPr` in practice are namespace declarations (`xmlns:*`),
+ * which record where a prefix is bound, not formatting; likewise bare
+ * `<w:pPr/>` vs absent, inter-element whitespace, child order, and
+ * revision-tracking metadata (`w:pPrChange`, `w:pPr/w:rPr/w:ins|w:del`)
+ * are serialization topology or provenance. Folding those into identity
+ * produced phantom paragraph delete+insert pairs. Substantive children —
+ * including `w:sectPr`, which is section topology — DO distinguish: two
+ * empty paragraphs with genuinely different properties must pair as
+ * delete+insert so both reconstruction modes represent the difference,
+ * rather than one side's properties being silently kept and the other's
+ * silently dropped depending on mode. Representing a paragraph-property
+ * delta as `w:pPrChange` instead of delete+insert — for empty and
+ * non-empty paragraphs alike — is change *detection* and is tracked in
+ * issue #679.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/678
  * @see https://github.com/UseJunior/safe-docx/issues/679
@@ -727,7 +733,9 @@ function createEmptyParagraphAtomWithContext(
     .map((ancestor) => ancestor.tagName)
     .filter((tag) => STRUCTURAL_CONTAINER_TAGS.has(tag))
     .join('/');
-  const hashContent = `empty-paragraph:${containerChain}:${contextHash}:${state.consecutiveEmptyIndex}`;
+  const pPr = findChildByTagName(paragraphElement, 'w:pPr');
+  const pPrIdentity = canonicalizeParagraphPropertiesForIdentity(pPr);
+  const hashContent = `empty-paragraph:${containerChain}:${contextHash}:${state.consecutiveEmptyIndex}:${pPrIdentity}`;
 
   // Empty-paragraph identity is the context signature, not the (empty) element.
   return withAtomIdentity(

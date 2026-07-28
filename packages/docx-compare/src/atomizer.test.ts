@@ -923,23 +923,29 @@ describe('empty paragraph context hashing', () => {
   });
 
   /**
-   * Principle: empty-paragraph identity is positional (structural container
-   * chain + preceding-content signature + consecutive-empty index) and w:pPr
-   * does not participate. OOXML CT_PPrBase permits no attributes, so the only
-   * attributes a w:pPr carries in practice are namespace declarations —
-   * serialization topology, not content — and its children are paragraph
-   * formatting, whose change detection is a separate concern from paragraph
-   * identity.
+   * Principle: empty-paragraph identity is position (structural container
+   * chain + preceding-content signature + consecutive-empty index) plus a
+   * CANONICAL projection of w:pPr. Serialization topology — bare vs absent
+   * pPr, namespace declarations (OOXML CT_PPrBase permits no attributes, so
+   * only xmlns:* ever appears there), child order, whitespace — and
+   * revision-tracking provenance never distinguish; substantive property
+   * children, including w:sectPr (section topology), always do, so that
+   * both reconstruction modes represent a genuine property difference
+   * instead of silently keeping one side. Representing such a delta as
+   * w:pPrChange instead of delete+insert is #679's change-detection scope.
    *
    * @see https://github.com/UseJunior/safe-docx/issues/678
    * @see https://github.com/UseJunior/safe-docx/issues/679
    */
-  test('excludes w:pPr from empty-paragraph identity so only position distinguishes empties', async ({ given, when, then }: AllureBddContext) => {
-    let hashes: string[];
+  test('canonicalizes w:pPr in empty-paragraph identity so topology never distinguishes but substance does', async ({ given, when, then, and }: AllureBddContext) => {
+    let equivalentHashes: string[];
     let differentContextHash: string;
     let tableCellHash: string;
+    let substantiveChildHash: string;
+    let sectPrHash: string;
+    let differentSectPrContentHash: string;
 
-    await given('formatting-variant empty paragraphs and positional variants', () => {});
+    await given('serialization-variant, revision-variant, and substantive-variant empty paragraphs', () => {});
 
     await when('each empty paragraph is atomized', () => {
       const hashFor = (paragraph: Element, precedingText = 'alpha') => {
@@ -948,21 +954,30 @@ describe('empty paragraph context hashing', () => {
         return atom.sha1Hash;
       };
 
-      hashes = [
+      equivalentHashes = [
         // Absent pPr.
         hashFor(emptyParagraph()),
         // Bare pPr — formatting-equivalent to absent.
         hashFor(emptyParagraph([el('w:pPr')])),
         // Redundant namespace redeclaration — legal XML, pure serialization topology.
         hashFor(emptyParagraph([el('w:pPr', { 'xmlns:w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main' })])),
-        // Paragraph-mark revision metadata (w:pPr/w:rPr/w:ins) — provenance, not identity.
+        // Paragraph-mark revision metadata (w:pPr/w:rPr/w:ins) — provenance,
+        // not identity; the w:rPr shell it leaves behind is also erased.
         hashFor(emptyParagraph([el('w:pPr', {}, [el('w:rPr', {}, [el('w:ins', { 'w:id': '7', 'w:author': 'A', 'w:date': '2024-01-01T00:00:00Z' })])])])),
-        // Substantive formatting child — formatting change detection is #679's
-        // concern, for empty and non-empty paragraphs alike; identity here
-        // must not turn a formatting-only edit into a delete+insert pair.
-        hashFor(emptyParagraph([el('w:pPr', {}, [el('w:rPr', {}, [el('w:b')])])])),
       ];
       differentContextHash = hashFor(emptyParagraph(), 'beta');
+      // Substantive paragraph-mark formatting distinguishes: silently pairing
+      // it with a plain empty would let reconstruction mode decide which
+      // side's properties survive.
+      substantiveChildHash = hashFor(emptyParagraph([el('w:pPr', {}, [el('w:rPr', {}, [el('w:b')])])]));
+      // A section break is document topology, never equal to a plain empty.
+      // It participates as a PRESENCE marker: section properties (page
+      // geometry, header/footer r:id bindings) belong to the section
+      // dimension, and equivalent breaks routinely differ in r:ids across
+      // packages, so content-sensitive identity would delete+insert every
+      // both-sided section break with unresolvable cloned r:ids.
+      sectPrHash = hashFor(emptyParagraph([el('w:pPr', {}, [el('w:sectPr', {}, [el('w:pgSz', { 'w:w': '12240', 'w:h': '15840' })])])]));
+      differentSectPrContentHash = hashFor(emptyParagraph([el('w:pPr', {}, [el('w:sectPr', {}, [el('w:pgSz', { 'w:w': '11906', 'w:h': '16838' })])])]));
 
       // Same content context, but inside a table cell instead of at body level.
       const cellBody = el('w:body', {}, [
@@ -974,13 +989,22 @@ describe('empty paragraph context hashing', () => {
       tableCellHash = cellAtom.sha1Hash;
     });
 
-    await then('all pPr variants hash identically while position still distinguishes', () => {
-      const [first, ...rest] = hashes;
+    await then('serialization and revision variants hash identically', () => {
+      const [first, ...rest] = equivalentHashes;
       for (const hash of rest) {
         expect(hash).toBe(first);
       }
+    });
+
+    await and('position and substantive properties still distinguish', () => {
+      const first = equivalentHashes[0];
       expect(differentContextHash).not.toBe(first);
       expect(tableCellHash).not.toBe(first);
+      expect(substantiveChildHash).not.toBe(first);
+      expect(sectPrHash).not.toBe(first);
+      expect(sectPrHash).not.toBe(substantiveChildHash);
+      // Presence marker: differing section CONTENT does not distinguish.
+      expect(differentSectPrContentHash).toBe(sectPrHash);
     });
   });
 
