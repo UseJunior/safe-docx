@@ -516,6 +516,9 @@ optional orientation. The generation section emitter
 `w:w`/`w:h` for every section (defaulting to US Letter) and sets
 `w:orient="landscape"` with swapped dimensions when the spec requests
 landscape, so readers never fall back to printer-driver defaults.
+The section editing primitive updates explicit width, height, and orientation
+attributes atomically, preserves untargeted attributes such as paper code, and
+requires both dimensions before creating a missing `w:pgSz`.
 
 ### ECMA-PART1-17-6-11 — w:pgMar page margin emission
 
@@ -530,6 +533,9 @@ always emits the full attribute set (top, right, bottom, left, header,
 footer, gutter) because readers diverge in their defaults when
 attributes are omitted; spec values fill in unspecified members from
 the standard one-inch/half-inch defaults.
+The section editing primitive permits partial updates of an existing complete
+margin record, supports the signed top/bottom domains, and requires all seven
+attributes before creating a missing `w:pgMar`.
 
 ### ECMA-PART1-17-3-1-24 — w:pBdr paragraph border collection
 
