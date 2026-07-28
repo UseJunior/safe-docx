@@ -9,9 +9,11 @@ import { buildSyntheticDocx } from '@usejunior/docx-core';
 import { compareDocuments } from '../../index.js';
 import type { DocumentIntegrityCertificate } from '../../compare-types.js';
 import {
+  isCommentIssue,
   isLeanVerifierJson,
   runLeanXmlTripleVerifier,
   runLeanXmlTripleVerifierForTest,
+  validateCanonicalProtocolJson,
 } from './leanXmlVerifier.js';
 import {
   acceptAllChanges,
@@ -28,18 +30,18 @@ const test = testAllure.epic('Document Comparison').withLabels({ feature: TEST_F
 const TEST_DIR = dirname(import.meta.url.replace('file://', ''));
 const PROJECT_ROOT = join(TEST_DIR, '../../../../..');
 const LEAN_EXE = join(PROJECT_ROOT, 'verification/lean/.lake/build/bin/leanDocxChecker');
-const MAXIMUM_SHAPE_EXE = join(
+const NEAR_ENVELOPE_EXE = join(
   PROJECT_ROOT,
-  'verification/lean/.lake/build/bin/protocolV5MaximumOrdinaryShape',
+  'verification/lean/.lake/build/bin/protocolV6OrdinaryEnvelopeWitness',
 );
 const TERMINAL_SHAPES_EXE = join(
   PROJECT_ROOT,
-  'verification/lean/.lake/build/bin/protocolV5CanonicalTerminalShapes',
+  'verification/lean/.lake/build/bin/protocolV6CanonicalTerminalShapes',
 );
 
-async function runMaximumShapeProducer(): Promise<string> {
+async function runNearEnvelopeProducer(): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(MAXIMUM_SHAPE_EXE, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(NEAR_ENVELOPE_EXE, [], { stdio: ['pipe', 'pipe', 'pipe'] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
@@ -47,7 +49,7 @@ async function runMaximumShapeProducer(): Promise<string> {
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve(Buffer.concat(stdout).toString('utf8'));
-      else reject(new Error(`maximum-shape producer exited ${code}: ${Buffer.concat(stderr)}`));
+      else reject(new Error(`near-envelope producer exited ${code}: ${Buffer.concat(stderr)}`));
     });
     child.stdin.end();
   });
@@ -83,6 +85,19 @@ function evidenceStringBytesForTest(value: unknown): number {
   return 0;
 }
 
+function canonicalJsonForTest(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJsonForTest).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${canonicalJsonForTest(child)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 const exeExists = existsSync(LEAN_EXE);
 if (!exeExists) {
   console.warn(
@@ -91,7 +106,7 @@ if (!exeExists) {
   );
 }
 const describeWithLean = exeExists ? describe : describe.skip;
-const describeWithMaximumShape = existsSync(MAXIMUM_SHAPE_EXE) ? describe : describe.skip;
+const describeWithNearEnvelope = existsSync(NEAR_ENVELOPE_EXE) ? describe : describe.skip;
 
 describeWithLean('Lean XML triple verifier certificate', () => {
   test
@@ -121,7 +136,7 @@ describeWithLean('Lean XML triple verifier certificate', () => {
         expect(result.documentIntegrity?.status, result.documentIntegrity?.reason).toBe('passed');
         expect(result.documentIntegrity?.protocolVersion).toBe(1);
         expect(result.documentIntegrity?.scope).toBe('word/document.xml');
-        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(5);
+        expect(result.documentIntegrity?.checkerProtocolVersion).toBe(6);
         expect(result.documentIntegrity?.fixedStoryScope).toBeUndefined();
         expect(result.documentIntegrity?.referenceSourcePartitions).toHaveLength(3);
         expect(result.documentIntegrity?.noteStories?.map((story) => story.kind)).toEqual([
@@ -250,6 +265,7 @@ async function relationshipDocx(options: {
   includeAllRoles?: boolean;
   malformedUnselectedRelationship?: boolean;
   headerTarget?: string;
+  headerTargets?: string[];
   headerPartPath?: string;
   bodyXml?: string;
   omitFooterRelationship?: boolean;
@@ -279,7 +295,9 @@ async function relationshipDocx(options: {
   const relationship = (attributes: string) =>
     options.explicitEmptyRelationships ? `<Relationship ${attributes}></Relationship>` : `<Relationship ${attributes}/>`;
   const relationships = roles.flatMap((_, index) => [
-    relationship(`Id="rIdH${index}" Type="${HEADER_REL}" Target="${options.headerTarget ?? 'header1.xml'}"`),
+    relationship(`Id="rIdH${index}" Type="${HEADER_REL}" Target="${
+      options.headerTargets?.[index] ?? options.headerTarget ?? 'header1.xml'
+    }"`),
     ...(options.omitFooterRelationship ? [] : [
       relationship(`Id="rIdF${index}" Type="${FOOTER_REL}" Target="footer1.xml"`),
     ]),
@@ -292,11 +310,16 @@ async function relationshipDocx(options: {
     `<Relationships xmlns="${PR_NS}">${relationships.join('')}</Relationships>`,
     { createFolders: false },
   );
-  zip.file(
-    options.headerPartPath ?? 'word/header1.xml',
-    `<w:hdr xmlns:w="${W_NS}"><w:p><w:r><w:t>${options.headerText ?? 'Header'}</w:t></w:r></w:p></w:hdr>`,
-    { createFolders: false },
-  );
+  const headerPartPaths = options.headerTargets
+    ? new Set(options.headerTargets.map((target) => `word/${target}`))
+    : new Set([options.headerPartPath ?? 'word/header1.xml']);
+  for (const path of headerPartPaths) {
+    zip.file(
+      path,
+      `<w:hdr xmlns:w="${W_NS}"><w:p><w:r><w:t>${options.headerText ?? 'Header'}</w:t></w:r></w:p></w:hdr>`,
+      { createFolders: false },
+    );
+  }
   if (!options.omitFooterPart) {
     zip.file(
       'word/footer1.xml',
@@ -568,6 +591,529 @@ async function noteIntegrityDocx(options: {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
+/**
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.18.10
+ */
+async function commentIntegrityDocx(options: {
+  referenceId?: string;
+  commentsPath?: string;
+  commentsTarget?: string;
+  commentsXml?: string | Buffer;
+  includeRelationship?: boolean;
+  extraRelationships?: string;
+  relationshipTargetMode?: string;
+  omitCommentsPart?: boolean;
+} = {}): Promise<Buffer> {
+  const referenceId = options.referenceId ?? '7';
+  const base = await buildDocxFromBodyXml(
+    `<w:p><w:r><w:t>Commented</w:t></w:r>` +
+    `<w:r><w:commentReference w:id="${referenceId}"/></w:r></w:p>`,
+  );
+  const zip = await JSZip.loadAsync(base);
+  const commentsPath = options.commentsPath ?? 'word/comments.xml';
+  zip.file(
+    'word/_rels/document.xml.rels',
+    `<Relationships xmlns="${PR_NS}">` +
+    `${options.includeRelationship === false ? '' :
+      `<Relationship Id="rIdComments" Type="${R_NS}/comments" ` +
+      `Target="${options.commentsTarget ?? commentsPath.slice(5)}"` +
+      `${options.relationshipTargetMode
+        ? ` TargetMode="${options.relationshipTargetMode}"` : ''}/>`}` +
+    `${options.extraRelationships ?? ''}</Relationships>`,
+    { createFolders: false },
+  );
+  if (!options.omitCommentsPart) {
+    zip.file(
+      commentsPath,
+      options.commentsXml ??
+        `<w:comments xmlns:w="${W_NS}">` +
+        `<w:comment w:id="7"><w:p><w:r><w:t>Comment</w:t></w:r></w:p></w:comment>` +
+        `<w:comment w:id="99"><w:p><w:r><w:t>Unreferenced</w:t></w:r></w:p></w:comment>` +
+        `</w:comments>`,
+      { createFolders: false },
+    );
+  }
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) delete zip.files[entry.name];
+  }
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+/**
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.6
+ * @conformance ECMA-376 edition 5, Part 1 § 17.18.10
+ */
+async function commentIntegrityAllStoriesDocx(
+  omitDefinition?: string,
+): Promise<Buffer> {
+  const reference = (id: string) =>
+    `<w:p><w:r><w:commentReference w:id="${id}"/></w:r></w:p>`;
+  const base = await buildDocxFromBodyXml(reference('1'), [], {
+    namespaces: { r: R_NS },
+  });
+  const zip = await JSZip.loadAsync(base);
+  const documentXml = await zip.file('word/document.xml')!.async('string');
+  zip.file(
+    'word/document.xml',
+    documentXml.replace(
+      '<w:sectPr/>',
+      `<w:sectPr>` +
+      `<w:headerReference w:type="default" r:id="rIdHeader"/>` +
+      `<w:footerReference w:type="default" r:id="rIdFooter"/>` +
+      `</w:sectPr>`,
+    ),
+    { createFolders: false },
+  );
+  zip.file(
+    'word/_rels/document.xml.rels',
+    `<Relationships xmlns="${PR_NS}">` +
+    `<Relationship Id="rIdHeader" Type="${R_NS}/header" Target="header-legal.xml"/>` +
+    `<Relationship Id="rIdFooter" Type="${R_NS}/footer" Target="footer-legal.xml"/>` +
+    `<Relationship Id="rIdFootnotes" Type="${R_NS}/footnotes" Target="footnotes.xml"/>` +
+    `<Relationship Id="rIdEndnotes" Type="${R_NS}/endnotes" Target="endnotes.xml"/>` +
+    `<Relationship Id="rIdComments" Type="${R_NS}/comments" ` +
+    `Target="annotations/comments-legal.xml"/>` +
+    `</Relationships>`,
+    { createFolders: false },
+  );
+  zip.file(
+    'word/header-legal.xml',
+    `<w:hdr xmlns:w="${W_NS}">${reference('2')}</w:hdr>`,
+    { createFolders: false },
+  );
+  zip.file(
+    'word/footer-legal.xml',
+    `<w:ftr xmlns:w="${W_NS}">${reference('3')}</w:ftr>`,
+    { createFolders: false },
+  );
+  zip.file(
+    'word/footnotes.xml',
+    `<w:footnotes xmlns:w="${W_NS}">` +
+    `<w:footnote w:id="10">${reference('4')}</w:footnote>` +
+    `</w:footnotes>`,
+    { createFolders: false },
+  );
+  zip.file(
+    'word/endnotes.xml',
+    `<w:endnotes xmlns:w="${W_NS}">` +
+    `<w:endnote w:id="11">${reference('5')}</w:endnote>` +
+    `</w:endnotes>`,
+    { createFolders: false },
+  );
+  const definitions = ['1', '2', '3', '4', '5']
+    .filter((id) => id !== omitDefinition)
+    .map((id) => `<w:comment w:id="${id}"><w:p/></w:comment>`)
+    .join('');
+  zip.file(
+    'word/annotations/comments-legal.xml',
+    `<w:comments xmlns:w="${W_NS}">${definitions}</w:comments>`,
+    { createFolders: false },
+  );
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir) delete zip.files[entry.name];
+  }
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
+describeWithLean('Lean conventional comment-reference integrity', () => {
+  const run = (
+    originalDocx: Buffer,
+    revisedDocx = originalDocx,
+    comparedDocx = revisedDocx,
+  ) => runLeanXmlTripleVerifier({
+    originalDocx,
+    revisedDocx,
+    comparedDocx,
+    legacyDocumentXml: { original: '', revised: '', compared: '' },
+    reconstructionMode: 'inplace',
+    options: { executablePath: LEAN_EXE },
+  });
+  const expectGlobalCommentStop = (
+    certificate: Awaited<ReturnType<typeof run>>,
+    firstCode: string,
+  ) => {
+    expect(certificate.commentIntegrityFailures?.[0]).toMatchObject({
+      side: 'original',
+      code: firstCode,
+    });
+    expect(certificate.commentIntegrityFailures?.some((issue) =>
+      issue.side === 'revised' || issue.side === 'compared')).toBe(false);
+    expect(certificate.commentInventories).toHaveLength(3);
+    expect(certificate.commentInventories?.every((inventory) =>
+      inventory.status === 'not_evaluated' &&
+      inventory.referenceOccurrences === 0 &&
+      inventory.definitions === 0)).toBe(true);
+    expect(certificate.commentStory?.original.status).toBe('not_evaluated');
+    expect(certificate.commentStory?.revised.status).toBe('not_evaluated');
+    expect(certificate.commentStory?.compared.status).toBe('not_evaluated');
+  };
+
+  test
+    .openspec('[LEAN-COMMENT-01] Selected comments resolve admitted references')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })(
+    'accepts relocated comments and retains unique unreferenced definitions', async () => {
+      const docx = await commentIntegrityDocx({
+        commentsPath: 'word/annotations/legal-comments.xml',
+      });
+      const certificate = await run(docx);
+      expect(certificate.status, certificate.reason).toBe('passed');
+      expect(certificate.checkerProtocolVersion).toBe(6);
+      expect(certificate.commentStory?.original.status).toBe('passed');
+      expect(certificate.commentStory?.original.relationship?.normalizedPartPath)
+        .toBe('word/annotations/legal-comments.xml');
+      expect(certificate.commentInventories?.[0]).toMatchObject({
+        status: 'passed',
+        referenceOccurrences: 1,
+        uniqueReferenceIds: 1,
+        definitions: 2,
+        unreferencedDefinitions: 1,
+      });
+    },
+  );
+
+  test
+    .openspec('[LEAN-COMMENT-02] Comment relationship absence wins before ID decoding')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })(
+    'reports required relationship before a malformed reference ID', async () => {
+      const docx = await commentIntegrityDocx({
+        referenceId: 'not-a-decimal',
+        includeRelationship: false,
+      });
+      const certificate = await run(docx);
+      expect(certificate.status, certificate.reason).toBe('failed');
+      expect(certificate.commentIntegrityFailures?.map((issue) => issue.code))
+        .toContain('COMMENT_RELATIONSHIP_REQUIRED');
+      expect(certificate.commentIntegrityFailures?.map((issue) => issue.code))
+        .not.toContain('COMMENT_REFERENCE_ID_MALFORMED');
+      expectGlobalCommentStop(certificate, 'COMMENT_RELATIONSHIP_REQUIRED');
+    },
+  );
+
+  test
+    .openspec('[LEAN-COMMENT-03] Direct definitions are unique by decimal value')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.10' })(
+    'rejects an aliased duplicate definition only in the compared package', async () => {
+      const valid = await commentIntegrityDocx();
+      const compared = await commentIntegrityDocx({
+        commentsXml: `<w:comments xmlns:w="${W_NS}">` +
+          `<w:comment w:id="7"><w:p/></w:comment>` +
+          `<w:comment w:id="+007"><w:p/></w:comment></w:comments>`,
+      });
+      const certificate = await run(valid, valid, compared);
+      expect(certificate.status).toBe('failed');
+      expect(certificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          side: 'compared',
+          code: 'COMMENT_DEFINITION_DUPLICATE',
+          canonicalId: '7',
+        }),
+      ]));
+    },
+  );
+
+  test
+    .openspec('[LEAN-COMMENT-04] Comment selector and realization failures are fail-closed')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2' })(
+    'rejects an external comments relationship', async () => {
+      const certificate = await run(await commentIntegrityDocx({
+        relationshipTargetMode: 'External',
+      }));
+      expect(certificate.status, certificate.reason).toBe('failed');
+      expect(certificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          side: 'original',
+          code: 'COMMENT_RELATIONSHIP_EXTERNAL',
+        }),
+      ]));
+      expectGlobalCommentStop(certificate, 'COMMENT_RELATIONSHIP_EXTERNAL');
+    },
+  );
+
+  test('rejects an unsafe comments relationship target', async () => {
+    testAllure.conformance({
+      spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2',
+    });
+    const certificate = await run(await commentIntegrityDocx({
+      commentsTarget: '../../outside.xml',
+    }));
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        side: 'original',
+        code: 'COMMENT_RELATIONSHIP_UNSAFE_TARGET',
+      }),
+    ]));
+    expectGlobalCommentStop(certificate, 'COMMENT_RELATIONSHIP_UNSAFE_TARGET');
+  });
+
+  test('rejects ambiguous comments relationships', async () => {
+    testAllure.conformance({
+      spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2',
+    });
+    const certificate = await run(await commentIntegrityDocx({
+      extraRelationships:
+        `<Relationship Id="rIdComments2" Type="${R_NS}/comments" Target="comments2.xml"/>`,
+    }));
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        side: 'original',
+        code: 'COMMENT_RELATIONSHIP_AMBIGUOUS',
+      }),
+    ]));
+    expectGlobalCommentStop(certificate, 'COMMENT_RELATIONSHIP_AMBIGUOUS');
+  });
+
+  test('rejects a missing selected comments part', async () => {
+    testAllure.conformance({
+      spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.6',
+    });
+    const certificate = await run(await commentIntegrityDocx({
+      omitCommentsPart: true,
+    }));
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
+      expect.objectContaining({ side: 'original', code: 'COMMENT_PART_MISSING' }),
+    ]));
+    expectGlobalCommentStop(certificate, 'COMMENT_PART_MISSING');
+  });
+
+  test('rejects a selected comments part with the wrong root', async () => {
+    testAllure.conformance({
+      spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.6',
+    });
+    const certificate = await run(await commentIntegrityDocx({
+      commentsXml: `<w:footnotes xmlns:w="${W_NS}"/>`,
+    }));
+    expect(certificate.status, certificate.reason).toBe('failed');
+    expect(certificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        side: 'original',
+        code: 'COMMENT_PART_ROOT_MISMATCH',
+      }),
+    ]));
+    expectGlobalCommentStop(certificate, 'COMMENT_PART_ROOT_MISMATCH');
+  });
+
+  test
+    .openspec('[LEAN-COMMENT-05] Comment IDs use bounded ST_DecimalNumber semantics')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.10' })(
+    'canonicalizes signed aliases and rejects malformed, overlong, and non-direct definitions',
+    async () => {
+      const aliases = await run(await commentIntegrityDocx({
+        referenceId: ' +007 ',
+      }));
+      expect(aliases.status, aliases.reason).toBe('passed');
+
+      const malformed = await run(await commentIntegrityDocx({
+        referenceId: 'seven',
+      }));
+      expect(malformed.status, malformed.reason).toBe('failed');
+      expect(malformed.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'COMMENT_REFERENCE_ID_MALFORMED', rawId: 'seven' }),
+      ]));
+
+      const overlong = await run(await commentIntegrityDocx({
+        referenceId: '1'.repeat(65),
+      }));
+      expect(overlong.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'COMMENT_REFERENCE_ID_TOO_LONG',
+          rawIdByteLength: 65,
+        }),
+      ]));
+
+      const nonDirect = await run(await commentIntegrityDocx({
+        commentsXml: `<w:comments xmlns:w="${W_NS}"><w:custom>` +
+          `<w:comment w:id="7"><w:p/></w:comment></w:custom></w:comments>`,
+      }));
+      expect(nonDirect.status, nonDirect.reason).toBe('failed');
+      expect(nonDirect.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'COMMENT_DEFINITION_NOT_DIRECT',
+          canonicalId: '7',
+        }),
+      ]));
+
+      const definitionCases = [
+        [
+          `<w:comments xmlns:w="${W_NS}"><w:comment><w:p/></w:comment></w:comments>`,
+          'COMMENT_DEFINITION_ID_MISSING',
+        ],
+        [
+          `<w:comments xmlns:w="${W_NS}"><w:comment w:id="seven"><w:p/></w:comment></w:comments>`,
+          'COMMENT_DEFINITION_ID_MALFORMED',
+        ],
+        [
+          `<w:comments xmlns:w="${W_NS}"><w:comment w:id="${'1'.repeat(65)}">` +
+          `<w:p/></w:comment></w:comments>`,
+          'COMMENT_DEFINITION_ID_TOO_LONG',
+        ],
+      ] as const;
+      for (const [commentsXml, code] of definitionCases) {
+        const result = await run(await commentIntegrityDocx({ commentsXml }));
+        expect(result.commentIntegrityFailures).toEqual(expect.arrayContaining([
+          expect.objectContaining({ code }),
+        ]));
+      }
+
+      const negativeZero = await run(await commentIntegrityDocx({
+        referenceId: '-0',
+        commentsXml: `<w:comments xmlns:w="${W_NS}">` +
+          `<w:comment w:id="+0"><w:p/></w:comment></w:comments>`,
+      }));
+      expect(negativeZero.status, negativeZero.reason).toBe('passed');
+    },
+  );
+
+  test
+    .openspec('[LEAN-COMMENT-06] Every admitted physical story contributes references')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.5' })(
+    'collects main, header, footer, footnote, and endnote references in canonical order',
+    async () => {
+      const valid = await commentIntegrityAllStoriesDocx();
+      const certificate = await run(valid);
+      expect(certificate.status, certificate.reason).toBe('passed');
+      expect(certificate.commentInventories?.[0]).toMatchObject({
+        status: 'passed',
+        referenceOccurrences: 5,
+        uniqueReferenceIds: 5,
+        definitions: 5,
+      });
+
+      const compared = await commentIntegrityAllStoriesDocx('5');
+      const mutated = await run(valid, valid, compared);
+      expect(mutated.status).toBe('failed');
+      expect(mutated.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          side: 'compared',
+          code: 'COMMENT_DEFINITION_MISSING',
+          canonicalId: '5',
+          source: { sourceStory: 'endnotes', sourceStoryOrdinal: 0 },
+        }),
+      ]));
+    },
+  );
+
+  test
+    .openspec('[LEAN-COMMENT-07] Comments metadata and XML limits fail before semantic reads')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.2' })(
+    'classifies expanded-size, ratio, and depth crossings without later ID evidence',
+    async () => {
+      const base = await commentIntegrityDocx();
+      const expanded = corruptCompressedPayload(
+        mutateExpandedSize(base, 'word/comments.xml', 16 * 1024 * 1024 + 1),
+        'word/comments.xml',
+      );
+      const expandedCertificate = await run(expanded);
+      expect(expandedCertificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'COMMENT_PART_EXPANDED_LIMIT_EXCEEDED' }),
+      ]));
+      expect(expandedCertificate.commentIntegrityFailures?.some((issue) =>
+        issue.code === 'COMMENT_PART_EXTRACTION_FAILED')).toBe(false);
+      expectGlobalCommentStop(
+        expandedCertificate,
+        'COMMENT_PART_EXPANDED_LIMIT_EXCEEDED',
+      );
+
+      const ratio = corruptCompressedPayload(
+        mutateExpandedSize(base, 'word/comments.xml', 1024 * 1024),
+        'word/comments.xml',
+      );
+      const ratioCertificate = await run(ratio);
+      expect(ratioCertificate.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'COMMENT_PART_RATIO_LIMIT_EXCEEDED' }),
+      ]));
+      expect(ratioCertificate.commentIntegrityFailures?.some((issue) =>
+        issue.code === 'COMMENT_PART_EXTRACTION_FAILED')).toBe(false);
+      expectGlobalCommentStop(ratioCertificate, 'COMMENT_PART_RATIO_LIMIT_EXCEEDED');
+
+      const wrappers = Array.from({ length: 129 }, (_, index) => `<w:d${index}>`).join('');
+      const closes = Array.from(
+        { length: 129 },
+        (_, index) => `</w:d${128 - index}>`,
+      ).join('');
+      const depth = await run(await commentIntegrityDocx({
+        commentsXml: `<w:comments xmlns:w="${W_NS}">${wrappers}${closes}</w:comments>`,
+      }));
+      expect(depth.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'COMMENT_PART_XML_DEPTH_LIMIT_EXCEEDED' }),
+      ]));
+      expect(depth.commentIntegrityFailures?.some((issue) =>
+        issue.code.startsWith('COMMENT_DEFINITION_'))).toBe(false);
+      expectGlobalCommentStop(depth, 'COMMENT_PART_XML_DEPTH_LIMIT_EXCEEDED');
+
+      const extraction = await run(corruptCompressedPayload(
+        base,
+        'word/comments.xml',
+      ));
+      expect(extraction.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'COMMENT_PART_EXTRACTION_FAILED' }),
+      ]));
+      expectGlobalCommentStop(extraction, 'COMMENT_PART_EXTRACTION_FAILED');
+
+      const invalidUtf8 = await run(await commentIntegrityDocx({
+        commentsXml: Buffer.from([0xff, 0xfe, 0xfd]),
+      }));
+      expect(invalidUtf8.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'COMMENT_PART_INVALID_UTF8' }),
+      ]));
+      expectGlobalCommentStop(invalidUtf8, 'COMMENT_PART_INVALID_UTF8');
+
+      const invalidXml = await run(await commentIntegrityDocx({
+        commentsXml: `<w:comments xmlns:w="${W_NS}"><w:comment`,
+      }));
+      expect(invalidXml.commentIntegrityFailures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'COMMENT_PART_INVALID_XML' }),
+      ]));
+      expectGlobalCommentStop(invalidXml, 'COMMENT_PART_INVALID_XML');
+
+      const incompleteSourceZip = await JSZip.loadAsync(
+        await commentIntegrityAllStoriesDocx(),
+      );
+      incompleteSourceZip.remove('word/footnotes.xml');
+      const incompleteSource = await run(await incompleteSourceZip.generateAsync({
+        type: 'nodebuffer',
+        compression: 'DEFLATE',
+      }));
+      expect(incompleteSource.commentIntegrityFailures).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'COMMENT_SOURCE_PARTITION_INCOMPLETE',
+          }),
+        ]),
+      );
+      expectGlobalCommentStop(
+        incompleteSource,
+        'COMMENT_SOURCE_PARTITION_INCOMPLETE',
+      );
+
+      for (const stopped of [
+        extraction,
+        invalidUtf8,
+        invalidXml,
+        incompleteSource,
+      ]) {
+        expect(stopped.commentInventories).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            status: 'not_evaluated',
+            referenceOccurrences: 0,
+            definitions: 0,
+          }),
+        ]));
+        expect(stopped.commentIntegrityFailures?.some((issue) =>
+          issue.code.startsWith('COMMENT_REFERENCE_') ||
+          issue.code.startsWith('COMMENT_DEFINITION_'))).toBe(false);
+      }
+    },
+  );
+});
+
 const originalMoveBody =
   paragraphWithText('Moved text') +
   paragraphWithText('Anchor text');
@@ -647,7 +1193,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
           `<w:footnote w:id="99"><w:p/></w:footnote></w:footnotes>`,
       });
       const duplicateCertificate = await run(duplicate, duplicate, duplicate);
-      expect(duplicateCertificate.status).toBe('failed');
+      expect(duplicateCertificate.status, duplicateCertificate.reason).toBe('failed');
       expect(duplicateCertificate.noteIntegrityFailures?.some((issue) =>
         issue.code === 'NOTE_USER_DEFINITION_DUPLICATE',
       )).toBe(true);
@@ -911,7 +1457,7 @@ describeWithLean('Lean fixed-story package protocol', () => {
       const exhausted = await noteIntegrityDocx({ bodyReferences: references });
       const certificate = await run(exhausted, exhausted, exhausted);
 
-      expect(certificate.status).toBe('failed');
+      expect(certificate.status, certificate.reason).toBe('failed');
       expect(certificate.relationshipSlots).toEqual([]);
       expect(certificate.relationshipStories).toEqual([]);
       expect(certificate.referenceSourcePartitions).toHaveLength(3);
@@ -933,11 +1479,12 @@ describeWithLean('Lean fixed-story package protocol', () => {
         inventory.referenceOccurrences === 0 &&
         inventory.uniqueReferenceIds === 0,
       )).toBe(true);
-      expect(certificate.noteIntegrityFailures).toEqual([{
-        code: 'NOTE_ISSUE_LIMIT_EXCEEDED',
+      expect(certificate.noteIntegrityFailures).toEqual([]);
+      expect(certificate.commentIntegrityFailures).toEqual([{
+        code: 'COMMENT_ISSUE_LIMIT_EXCEEDED',
         side: 'original',
-        kind: 'footnotes',
-        detail: 'protocol v5 aggregate ordinary issue limit exceeded',
+        kind: 'comments',
+        detail: 'protocol v6 aggregate ordinary issue limit exceeded',
         ordinalSpace: 'aggregate',
         firstOccurrenceOrdinal: 0,
         occurrenceCount: 1,
@@ -1400,7 +1947,7 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
       const docx = await relationshipDocx({ includeAllRoles: true });
       const certificate = await run(docx);
       expect(certificate.status).toBe('passed');
-      expect(certificate.checkerProtocolVersion).toBe(5);
+      expect(certificate.checkerProtocolVersion).toBe(6);
       expect(certificate.relationshipSlots).toHaveLength(6);
       expect(certificate.relationshipSlots?.map(({ kind, role }) => `${kind}:${role}`)).toEqual([
         'header:first', 'header:default', 'header:even',
@@ -1410,6 +1957,32 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
       expect(certificate.relationshipStories?.map((story) => story.selectingSlotOrdinals)).toEqual([
         [0, 1, 2], [3, 4, 5],
       ]);
+    },
+  );
+
+  test.openspec('[LEAN-REL-05] Shared targets are checked once with all selectors')(
+    'preserves first-seen physical order for an interleaved A, B, A target partition',
+    async () => {
+      const docx = await relationshipDocx({
+        includeAllRoles: true,
+        headerTargets: ['headerA.xml', 'headerB.xml', 'headerA.xml'],
+      });
+      const certificate = await run(docx);
+
+      expect(certificate.status, certificate.reason).toBe('passed');
+      expect(certificate.relationshipStories?.map((story) => ({
+        path: story.originalPartPath,
+        selectors: story.selectingSlotOrdinals,
+      }))).toEqual([
+        { path: 'word/headerA.xml', selectors: [0, 2] },
+        { path: 'word/headerB.xml', selectors: [1] },
+        { path: 'word/footer1.xml', selectors: [3, 4, 5] },
+      ]);
+      expect(certificate.referenceSourcePartitions?.every((partition) =>
+        partition.sources.slice(1).map((source) => source.normalizedPartPath)
+          .join('|') ===
+            'word/headerA.xml|word/headerB.xml|word/footer1.xml',
+      )).toBe(true);
     },
   );
 
@@ -1801,8 +2374,8 @@ const validDefinitionStory = (kind: 'footnotes' | 'endnotes') => ({
   partPresent: false,
 });
 const validProtocolReport = {
-  protocolVersion: 5,
-  checker: 'safe-docx-lean-conventional-main-note-integrity-checker',
+  protocolVersion: 6,
+  checker: 'safe-docx-lean-conventional-main-comment-integrity-checker',
   passed: true,
   fixedStories: [{
     name: 'main',
@@ -1874,14 +2447,423 @@ const validProtocolReport = {
     })),
   ),
   noteIntegrityIssues: [],
+  commentStory: {
+    status: 'passed',
+    original: { status: 'absent', relationship: null, partPresent: false },
+    revised: { status: 'absent', relationship: null, partPresent: false },
+    compared: { status: 'absent', relationship: null, partPresent: false },
+    parsedTokenCounts: { original: 0, revised: 0, combined: 0 },
+  },
+  commentInventories: ['original', 'revised', 'compared'].map((side) => ({
+    side,
+    status: 'passed',
+    relationship: null,
+    referenceOccurrences: 0,
+    uniqueReferenceIds: 0,
+    definitions: 0,
+    unreferencedDefinitions: 0,
+    nonDirectDefinitions: 0,
+  })),
+  commentIntegrityIssues: [],
 };
+
+test('rejects duplicate and non-canonical raw JSON object keys before parsing', () => {
+  expect(() => validateCanonicalProtocolJson(
+    '{"a":{"a":"\\b\\f\\n\\r\\t\\u0000","b":2},"b":[]}',
+  )).not.toThrow();
+  expect(() => validateCanonicalProtocolJson('{"a":1,"a":2}'))
+    .toThrow(/duplicate object key/);
+  expect(() => validateCanonicalProtocolJson('{"b":1,"a":2}'))
+    .toThrow(/canonical order/);
+  expect(() => validateCanonicalProtocolJson('{"a":{"b":1,"a":2}}'))
+    .toThrow(/canonical order/);
+});
+
+test('strictly decodes protocol-v6 comment identities, counts, issues, and status equations', () => {
+  const relationship = {
+    relationshipId: 'rIdComments',
+    relationshipRecordOrdinal: 0,
+    normalizedPartPath: 'word/comments.xml',
+  };
+  const selected = {
+    ...validProtocolReport,
+    commentStory: {
+      ...validProtocolReport.commentStory,
+      original: { status: 'passed', relationship, partPresent: true },
+      parsedTokenCounts: { original: 1, revised: 0, combined: 0 },
+    },
+    commentInventories: validProtocolReport.commentInventories.map((inventory, index) =>
+      index === 0 ? {
+        ...inventory,
+        relationship,
+        referenceOccurrences: 1,
+        uniqueReferenceIds: 1,
+        definitions: 2,
+        unreferencedDefinitions: 1,
+      } : inventory),
+  };
+  expect(isLeanVerifierJson(selected)).toBe(true);
+  expect(isLeanVerifierJson({
+    ...selected,
+    commentStory: {
+      ...selected.commentStory,
+      original: {
+        ...selected.commentStory.original,
+        relationship: { ...relationship, relationshipRecordOrdinal: -1 },
+      },
+    },
+  })).toBe(false);
+  expect(isLeanVerifierJson({
+    ...selected,
+    commentInventories: selected.commentInventories.map((inventory, index) =>
+      index === 0 ? { ...inventory, uniqueReferenceIds: 2 } : inventory),
+  })).toBe(false);
+  expect(isLeanVerifierJson({
+    ...selected,
+    commentStory: {
+      ...selected.commentStory,
+      original: { status: 'absent', relationship, partPresent: false },
+    },
+  })).toBe(false);
+
+  const issue = {
+    code: 'COMMENT_DEFINITION_MISSING',
+    side: 'original',
+    kind: 'comments',
+    detail: 'comment reference does not resolve to exactly one direct definition',
+    ordinalSpace: 'reference',
+    firstOccurrenceOrdinal: 0,
+    occurrenceCount: 1,
+    source: { sourceStory: 'main', sourceStoryOrdinal: 0 },
+    canonicalId: '7',
+  };
+  const failed = {
+    ...selected,
+    passed: false,
+    commentStory: {
+      ...selected.commentStory,
+      status: 'failed',
+      original: { status: 'failed', relationship, partPresent: true },
+    },
+    commentInventories: selected.commentInventories.map((inventory, index) =>
+      index === 0 ? { ...inventory, status: 'failed' } : inventory),
+    commentIntegrityIssues: [issue],
+  };
+  expect(isLeanVerifierJson(failed)).toBe(true);
+  expect(isLeanVerifierJson({
+    ...failed,
+    commentIntegrityIssues: [{ ...issue, canonicalId: undefined }],
+  })).toBe(false);
+  expect(isLeanVerifierJson({
+    ...failed,
+    commentIntegrityIssues: [{ ...issue, rawId: '7' }],
+  })).toBe(false);
+  expect(isLeanVerifierJson({
+    ...failed,
+    commentIntegrityIssues: [{
+      ...issue,
+      source: { sourceStory: 'comments', sourceStoryOrdinal: 0 },
+    }],
+  })).toBe(false);
+});
+
+test('enforces the canonical equation table for all 40 comment issue codes', () => {
+  type IssueSpec = {
+    code: string;
+    space: 'relationship' | 'source' | 'reference' | 'definition' | 'aggregate';
+    ordinal: number;
+    source?: { sourceStory: string; sourceStoryOrdinal: number };
+    status: 'failed' | 'not_evaluated';
+    selected?: boolean;
+    extras?: Record<string, unknown>;
+    coalesced?: 'definitions' | 'references';
+    counts?: Partial<{
+      referenceOccurrences: number;
+      uniqueReferenceIds: number;
+      definitions: number;
+      unreferencedDefinitions: number;
+      nonDirectDefinitions: number;
+    }>;
+  };
+  const main = { sourceStory: 'main', sourceStoryOrdinal: 0 };
+  const comments = { sourceStory: 'comments', sourceStoryOrdinal: 0 };
+  const selectedExtras = {
+    relationshipId: 'rIdComments',
+    normalizedPartPath: 'word/comments.xml',
+  };
+  const specs: IssueSpec[] = [
+    { code: 'COMMENT_RELATIONSHIP_AMBIGUOUS', space: 'relationship', ordinal: 1, source: main, status: 'not_evaluated' },
+    { code: 'COMMENT_RELATIONSHIP_EXTERNAL', space: 'relationship', ordinal: 0, source: main, status: 'not_evaluated', extras: { relationshipId: 'rIdComments', rawTarget: 'comments.xml' } },
+    { code: 'COMMENT_RELATIONSHIP_INVALID_TARGET_MODE', space: 'relationship', ordinal: 0, source: main, status: 'not_evaluated', extras: { relationshipId: 'rIdComments', rawTarget: 'comments.xml', targetMode: 'Unsupported' } },
+    { code: 'COMMENT_RELATIONSHIP_TARGET_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: main, status: 'not_evaluated', extras: { relationshipId: 'rIdComments', rawTargetByteLength: 257 } },
+    { code: 'COMMENT_RELATIONSHIP_UNSAFE_TARGET', space: 'relationship', ordinal: 0, source: main, status: 'not_evaluated', extras: { relationshipId: 'rIdComments', rawTarget: '../comments.xml' } },
+    { code: 'COMMENT_SOURCE_PARTITION_INCOMPLETE', space: 'source', ordinal: 0, source: main, status: 'not_evaluated' },
+    { code: 'COMMENT_RELATIONSHIP_REQUIRED', space: 'reference', ordinal: 0, source: main, status: 'not_evaluated' },
+    { code: 'COMMENT_PART_MISSING', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_SELECTED_PART_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_TRIPLE_SELECTED_PART_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_COMPRESSED_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_EXPANDED_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_RATIO_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_CUMULATIVE_COMPRESSED_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_CUMULATIVE_EXPANDED_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_TRIPLE_COMPRESSED_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_TRIPLE_EXPANDED_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_EXTRACTION_FAILED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_INVALID_UTF8', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_INVALID_XML', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_XML_DEPTH_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_XML_EVENT_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_CUMULATIVE_XML_EVENT_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_TRIPLE_XML_EVENT_LIMIT_EXCEEDED', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_PART_ROOT_MISMATCH', space: 'relationship', ordinal: 0, source: comments, status: 'not_evaluated', selected: true, extras: selectedExtras },
+    { code: 'COMMENT_REFERENCE_ID_MISSING', space: 'reference', ordinal: 0, source: main, status: 'failed', selected: true, counts: { referenceOccurrences: 1 } },
+    { code: 'COMMENT_REFERENCE_ID_MALFORMED', space: 'reference', ordinal: 0, source: main, status: 'failed', selected: true, extras: { rawId: 'bad' }, counts: { referenceOccurrences: 1 } },
+    { code: 'COMMENT_REFERENCE_ID_TOO_LONG', space: 'reference', ordinal: 0, source: main, status: 'failed', selected: true, extras: { rawIdByteLength: 65 }, counts: { referenceOccurrences: 1 } },
+    { code: 'COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED', space: 'reference', ordinal: 4096, source: main, status: 'not_evaluated', selected: true },
+    { code: 'COMMENT_UNIQUE_REFERENCE_ID_LIMIT_EXCEEDED', space: 'reference', ordinal: 4095, source: main, status: 'not_evaluated', selected: true, extras: { canonicalId: '4096' } },
+    { code: 'COMMENT_DEFINITION_ID_MISSING', space: 'definition', ordinal: 0, source: comments, status: 'failed', selected: true },
+    { code: 'COMMENT_DEFINITION_ID_MALFORMED', space: 'definition', ordinal: 0, source: comments, status: 'failed', selected: true, extras: { rawId: 'bad' } },
+    { code: 'COMMENT_DEFINITION_ID_TOO_LONG', space: 'definition', ordinal: 0, source: comments, status: 'failed', selected: true, extras: { rawIdByteLength: 65 } },
+    { code: 'COMMENT_DEFINITION_LIMIT_EXCEEDED', space: 'definition', ordinal: 4096, source: comments, status: 'not_evaluated', selected: true },
+    { code: 'COMMENT_DEFINITION_NOT_DIRECT', space: 'definition', ordinal: 0, source: comments, status: 'failed', selected: true, extras: { canonicalId: '7' }, counts: { nonDirectDefinitions: 1 } },
+    { code: 'COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED', space: 'definition', ordinal: 4096, source: comments, status: 'not_evaluated', selected: true },
+    { code: 'COMMENT_DEFINITION_DUPLICATE', space: 'definition', ordinal: 1, source: comments, status: 'failed', selected: true, extras: { canonicalId: '7' }, coalesced: 'definitions', counts: { definitions: 2 } },
+    { code: 'COMMENT_DEFINITION_MISSING', space: 'reference', ordinal: 0, source: main, status: 'failed', selected: true, extras: { canonicalId: '7' }, coalesced: 'references', counts: { referenceOccurrences: 1, uniqueReferenceIds: 1 } },
+    { code: 'COMMENT_ISSUE_LIMIT_EXCEEDED', space: 'aggregate', ordinal: 0, status: 'not_evaluated' },
+    { code: 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED', space: 'aggregate', ordinal: 0, status: 'not_evaluated' },
+  ];
+  expect(specs).toHaveLength(40);
+  expect(new Set(specs.map(({ code }) => code)).size).toBe(40);
+
+  const relationship = {
+    relationshipId: 'rIdComments',
+    relationshipRecordOrdinal: 0,
+    normalizedPartPath: 'word/comments.xml',
+  };
+  const issueFor = (spec: IssueSpec, occurrenceCount = 1): Record<string, unknown> => ({
+    code: spec.code,
+    side: 'original',
+    kind: 'comments',
+    detail: 'bounded mutation fixture',
+    ordinalSpace: spec.space,
+    firstOccurrenceOrdinal: spec.ordinal,
+    occurrenceCount,
+    ...(spec.source ? { source: spec.source } : {}),
+    ...spec.extras,
+  });
+  const reportFor = (spec: IssueSpec, issue: Record<string, unknown>) => {
+    if (spec.space === 'aggregate') {
+      return {
+        ...validProtocolReport,
+        passed: false,
+        relationshipSlots: [],
+        relationshipStories: [],
+        selectionIssues: [],
+        referenceSourcePartitions: validProtocolReport.referenceSourcePartitions.map(
+          (partition) => ({
+            ...partition,
+            status: 'incomplete',
+            sources: partition.sources.slice(0, 1),
+          }),
+        ),
+        noteStories: validProtocolReport.noteStories.map(
+          ({ report: _report, ...story }) => ({
+            ...story,
+            status: 'not_evaluated',
+            parsedTokenCounts: { original: 0, revised: 0, combined: 0 },
+          }),
+        ),
+        noteInventories: validProtocolReport.noteInventories.map((inventory) => ({
+          ...inventory,
+          status: 'not_evaluated',
+        })),
+        noteIntegrityIssues: [],
+        commentStory: {
+          status: 'not_evaluated',
+          original: { status: 'not_evaluated', relationship: null, partPresent: false },
+          revised: { status: 'not_evaluated', relationship: null, partPresent: false },
+          compared: { status: 'not_evaluated', relationship: null, partPresent: false },
+          parsedTokenCounts: { original: 0, revised: 0, combined: 0 },
+        },
+        commentInventories: validProtocolReport.commentInventories.map((inventory) => ({
+          ...inventory,
+          status: 'not_evaluated',
+        })),
+        commentIntegrityIssues: [issue],
+      };
+    }
+    const occurrenceCount = issue.occurrenceCount as number;
+    const counts = {
+      referenceOccurrences: 0,
+      uniqueReferenceIds: 0,
+      definitions: 0,
+      unreferencedDefinitions: 0,
+      nonDirectDefinitions: 0,
+      ...spec.counts,
+      ...(spec.coalesced === 'definitions'
+        ? { definitions: occurrenceCount + 1 } : {}),
+      ...(spec.coalesced === 'references'
+        ? { referenceOccurrences: occurrenceCount, uniqueReferenceIds: 1 } : {}),
+    };
+    const inventory = {
+      side: 'original',
+      status: spec.status,
+      relationship: spec.selected ? relationship : null,
+      ...counts,
+    };
+    if (spec.status === 'failed') {
+      return {
+        ...validProtocolReport,
+        passed: false,
+        commentStory: {
+          ...validProtocolReport.commentStory,
+          status: 'failed',
+          original: {
+            status: 'failed',
+            relationship,
+            partPresent: true,
+          },
+        },
+        commentInventories: [
+          inventory,
+          ...validProtocolReport.commentInventories.slice(1),
+        ],
+        commentIntegrityIssues: [issue],
+      };
+    }
+    return {
+      ...validProtocolReport,
+      passed: false,
+      commentStory: {
+        status: 'not_evaluated',
+        original: {
+          status: 'not_evaluated',
+          relationship: spec.selected ? relationship : null,
+          partPresent: false,
+        },
+        revised: { status: 'not_evaluated', relationship: null, partPresent: false },
+        compared: { status: 'not_evaluated', relationship: null, partPresent: false },
+        parsedTokenCounts: { original: 0, revised: 0, combined: 0 },
+      },
+      commentInventories: ['original', 'revised', 'compared'].map((side, index) => ({
+        side,
+        status: 'not_evaluated',
+        relationship: index === 0 && spec.selected
+          ? relationship : null,
+        referenceOccurrences: 0,
+        uniqueReferenceIds: 0,
+        definitions: 0,
+        unreferencedDefinitions: 0,
+        nonDirectDefinitions: 0,
+      })),
+      commentIntegrityIssues: [issue],
+    };
+  };
+
+  const invalidExtras: Record<string, unknown[]> = {
+    canonicalId: [7, '+7', '7'.repeat(65)],
+    rawId: [7, 'x'.repeat(65)],
+    rawIdByteLength: ['65', 64],
+    relationshipId: [7, '', 'r'.repeat(129)],
+    rawTarget: [7, 'x'.repeat(257)],
+    rawTargetByteLength: ['257', 256],
+    targetMode: [7, 'x'.repeat(17)],
+    normalizedPartPath: [7, '/unsafe', `word/${'é'.repeat(124)}.xml`],
+  };
+  const normalizedPartPath256 = `word/${'é'.repeat(123)}a.xml`;
+  const normalizedPartPath257 = `word/${'é'.repeat(124)}.xml`;
+  expect(Buffer.byteLength(normalizedPartPath256, 'utf8')).toBe(256);
+  expect(Buffer.byteLength(normalizedPartPath257, 'utf8')).toBe(257);
+
+  for (const spec of specs) {
+    const issue = issueFor(spec);
+    expect(isCommentIssue(issue), `${spec.code}: valid row`).toBe(true);
+    expect(isCommentIssue({ ...issue, occurrenceCount: 0 }),
+      `${spec.code}: zero count`).toBe(false);
+    if (!spec.coalesced) {
+      expect(isCommentIssue({ ...issue, occurrenceCount: 2 }),
+        `${spec.code}: non-coalescing count 2`).toBe(false);
+    } else {
+      const coalesced = issueFor(spec, 2);
+      expect(isCommentIssue(coalesced),
+        `${spec.code}: coalesced count 2`).toBe(true);
+      expect(isLeanVerifierJson(reportFor(spec, coalesced)),
+        `${spec.code}: coalesced count equations`).toBe(true);
+    }
+    expect(isCommentIssue({
+      ...issue,
+      ordinalSpace: issue.ordinalSpace === 'aggregate' ? 'relationship' : 'aggregate',
+    }), `${spec.code}: wrong space`).toBe(false);
+    const wrongSourceIssue = {
+      ...issue,
+      source: spec.source
+        ? {
+          sourceStory: spec.source.sourceStory === 'comments' ? 'main' : 'comments',
+          sourceStoryOrdinal: spec.source.sourceStoryOrdinal,
+        }
+        : comments,
+    };
+    expect(isLeanVerifierJson(reportFor(spec, wrongSourceIssue)),
+      `${spec.code}: wrong source`).toBe(false);
+    expect(isCommentIssue({ ...issue, unexpected: true }),
+      `${spec.code}: extra field`).toBe(false);
+    const boundary = spec.space === 'relationship' ? 1024
+      : spec.space === 'source' ? 387
+        : spec.space === 'aggregate' ? 1 : 4096;
+    if (spec.ordinal !== boundary) {
+      expect(isCommentIssue({ ...issue, firstOccurrenceOrdinal: boundary }),
+        `${spec.code}: boundary or terminal ordinal`).toBe(false);
+    }
+    if (spec.ordinal === 4096) {
+      expect(isCommentIssue({ ...issue, firstOccurrenceOrdinal: 4095 }),
+        `${spec.code}: sentinel minus one`).toBe(false);
+      expect(isCommentIssue({ ...issue, firstOccurrenceOrdinal: 4097 }),
+        `${spec.code}: sentinel plus one`).toBe(false);
+    }
+    for (const [key, value] of Object.entries(spec.extras ?? {})) {
+      const missing = { ...issue };
+      delete missing[key];
+      expect(isCommentIssue(missing), `${spec.code}: missing ${key}`).toBe(false);
+      for (const invalid of invalidExtras[key] ?? []) {
+        expect(isCommentIssue({ ...issue, [key]: invalid }),
+          `${spec.code}: invalid ${key}=${String(invalid)}`).toBe(false);
+      }
+      expect(value).not.toBeUndefined();
+      if (key === 'normalizedPartPath') {
+        const boundaryIssue = { ...issue, normalizedPartPath: normalizedPartPath256 };
+        expect(isCommentIssue(boundaryIssue),
+          `${spec.code}: normalized path exact 256-byte boundary`).toBe(true);
+        expect(isLeanVerifierJson(reportFor(spec, boundaryIssue)),
+          `${spec.code}: decoder accepts normalized path exact 256-byte boundary`).toBe(true);
+        const overBoundaryIssue = { ...issue, normalizedPartPath: normalizedPartPath257 };
+        expect(isCommentIssue(overBoundaryIssue),
+          `${spec.code}: normalized path 257-byte boundary`).toBe(false);
+        expect(isLeanVerifierJson(reportFor(spec, overBoundaryIssue)),
+          `${spec.code}: decoder rejects normalized path 257-byte boundary`).toBe(false);
+      }
+    }
+    const report = reportFor(spec, issue);
+    expect(isLeanVerifierJson(report), `${spec.code}: valid report`).toBe(true);
+    const wrongStatus = structuredClone(report);
+    if (spec.space === 'aggregate') {
+      wrongStatus.commentStory.status = 'failed';
+    } else {
+      wrongStatus.commentStory.original.status =
+        spec.status === 'failed' ? 'not_evaluated' : 'failed';
+      wrongStatus.commentInventories[0]!.status =
+        spec.status === 'failed' ? 'not_evaluated' : 'failed';
+    }
+    expect(isLeanVerifierJson(wrongStatus), `${spec.code}: wrong status`).toBe(false);
+  }
+});
 
 async function fakeChecker(output: unknown): Promise<{ dir: string; executable: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'safe-docx-fake-checker-'));
   const executable = join(dir, 'checker');
   await writeFile(
     executable,
-    `#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '${JSON.stringify(output)}'\n`,
+    `#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '${canonicalJsonForTest(output)}'\n`,
   );
   await chmod(executable, 0o700);
   return { dir, executable };
@@ -1894,7 +2876,7 @@ async function lifecycleChecker(
   const dir = await mkdtemp(join(tmpdir(), 'safe-docx-lifecycle-checker-'));
   const executable = join(dir, 'checker');
   const rootPath = join(dir, 'verifier-root.txt');
-  const successOutput = `${JSON.stringify(validProtocolReport)}\n`;
+  const successOutput = `${canonicalJsonForTest(validProtocolReport)}\n`;
   await writeFile(executable, `#!/usr/bin/env node
 const fs = require('node:fs');
 const root = process.env.SAFE_DOCX_LEAN_TEMP_ROOT;
@@ -1959,7 +2941,7 @@ describe('Lean fixed-story protocol and security hardening', () => {
       });
       expect(result.status).toBe('passed');
       expect(result.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
-      expect(result.checkerProtocolVersion).toBe(5);
+      expect(result.checkerProtocolVersion).toBe(6);
       expect(result.fixedStoryScope).toBeUndefined();
       expect(result.noteStoryScope?.alignment).toBe('semantic-note-kind');
       expect(result.relationshipStoryScope?.inheritedRoles).toBe(false);
@@ -2058,19 +3040,24 @@ describe('Lean fixed-story protocol and security hardening', () => {
     }
     });
 
-  describeWithMaximumShape('compiled maximum-shape response constructors', () => {
+  describeWithNearEnvelope('compiled near-envelope response constructors', () => {
     test.openspec('[LEAN-REL-22] Every legal response fits the output cap')(
-      'strict-decodes a realizable maximum ordinary protocol-v5 response', async () => {
-      const raw = await runMaximumShapeProducer();
+      'strict-decodes a realizable near-envelope ordinary protocol-v6 response', async () => {
+      const raw = await runNearEnvelopeProducer();
       const parsed = JSON.parse(raw);
       expect(isLeanVerifierJson(parsed)).toBe(true);
-      expect(Buffer.byteLength(raw.trimEnd(), 'utf8')).toBeLessThanOrEqual(2_619_776);
+      expect(Buffer.byteLength(raw.trimEnd(), 'utf8')).toBeLessThanOrEqual(2_624_704);
       expect(parsed.relationshipSlots).toHaveLength(384);
       expect(parsed.relationshipStories).toHaveLength(384);
       expect(parsed.referenceSourcePartitions.every(
         (partition: { sources: unknown[] }) => partition.sources.length === 385,
       )).toBe(true);
-      expect(parsed.selectionIssues.length + parsed.noteIntegrityIssues.length).toBe(511);
+      expect(
+        parsed.selectionIssues.length +
+        parsed.noteIntegrityIssues.length +
+        parsed.commentIntegrityIssues.length,
+      ).toBe(511);
+      expect(parsed.commentIntegrityIssues.length).toBeGreaterThan(0);
       expect(evidenceStringBytesForTest(parsed)).toBe(1_571_840);
     },
       60_000,
@@ -2402,10 +3389,10 @@ describe('Lean fixed-story protocol and security hardening', () => {
 
   test('accepts only the canonical terminal evidence-overflow shape', () => {
     const terminalIssue = {
-      code: 'NOTE_EVIDENCE_STRING_BUDGET_EXCEEDED',
+      code: 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED',
       side: 'original',
-      kind: 'footnotes',
-      detail: 'protocol v5 escaped evidence string budget exceeded',
+      kind: 'comments',
+      detail: 'protocol v6 escaped evidence string budget exceeded',
       ordinalSpace: 'aggregate',
       firstOccurrenceOrdinal: 0,
       occurrenceCount: 1,
@@ -2427,7 +3414,19 @@ describe('Lean fixed-story protocol and security hardening', () => {
         ...inventory,
         status: 'not_evaluated',
       })),
-      noteIntegrityIssues: [terminalIssue],
+      commentStory: {
+        status: 'not_evaluated',
+        original: { status: 'not_evaluated', relationship: null, partPresent: false },
+        revised: { status: 'not_evaluated', relationship: null, partPresent: false },
+        compared: { status: 'not_evaluated', relationship: null, partPresent: false },
+        parsedTokenCounts: { original: 0, revised: 0, combined: 0 },
+      },
+      commentInventories: validProtocolReport.commentInventories.map((inventory) => ({
+        ...inventory,
+        status: 'not_evaluated',
+      })),
+      noteIntegrityIssues: [],
+      commentIntegrityIssues: [terminalIssue],
     };
     expect(isLeanVerifierJson(terminal)).toBe(true);
     expect(isLeanVerifierJson({
@@ -2482,7 +3481,7 @@ describe('Lean fixed-story protocol and security hardening', () => {
     if (!existsSync(TERMINAL_SHAPES_EXE)) return;
     for (const mode of ['issues', 'strings'] as const) {
       const raw = await runTerminalShapeProducer(mode);
-      expect(Buffer.byteLength(raw, 'utf8')).toBeLessThanOrEqual(2_621_440);
+      expect(Buffer.byteLength(raw, 'utf8')).toBeLessThanOrEqual(2_626_369);
       expect(isLeanVerifierJson(JSON.parse(raw))).toBe(true);
     }
   }, 20_000);
@@ -2527,7 +3526,7 @@ process.stdin.on('end', () => setTimeout(() => {
   const req = JSON.parse(raw);
   const bytes = require('node:fs').readFileSync(req.originalDocxPath);
   if (bytes.subarray(0, 2).toString() !== 'PK') process.exit(9);
-  process.stdout.write(${JSON.stringify(`${JSON.stringify(validProtocolReport)}\n`)});
+  process.stdout.write(${JSON.stringify(`${canonicalJsonForTest(validProtocolReport)}\n`)});
 }, 50));
 `);
     await chmod(executable, 0o700);
@@ -2663,7 +3662,7 @@ fs.writeFileSync(${JSON.stringify(rootPath)}, root);
 fs.writeFileSync(${JSON.stringify(rootModePath)}, (fs.statSync(root).mode & 0o777).toString(8));
 fs.writeFileSync(root + '/confidential.txt', ${JSON.stringify(sentinel)});
 process.stdin.resume();
-process.stdin.on('end', () => process.stdout.write('x'.repeat(2621442)));
+process.stdin.on('end', () => process.stdout.write('x'.repeat(2626370)));
 `);
     await chmod(executable, 0o700);
     try {
@@ -2713,6 +3712,6 @@ describeWithLean('Lean compiled package extraction limits', () => {
     const bomb = footnotes(`<w:r><w:t>${'x'.repeat(2 * 1024 * 1024)}</w:t></w:r>`);
     const compressed = await replacePart(base, 'word/footnotes.xml', bomb, 'DEFLATE');
     const result = await run(compressed);
-    expect(result.status).toBe('passed');
+    expect(result.status, result.reason).toBe('passed');
   }, 20_000);
 });

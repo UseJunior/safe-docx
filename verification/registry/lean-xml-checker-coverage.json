@@ -1,6 +1,6 @@
 {
-  "checker": "safe-docx-lean-conventional-main-note-integrity-checker",
-  "protocolVersion": 5,
+  "checker": "safe-docx-lean-conventional-main-comment-integrity-checker",
+  "protocolVersion": 6,
   "scope": {
     "inputs": [
       {
@@ -11,6 +11,7 @@
           "word/_rels/document.xml.rels",
           "relationship-selected footnotes semantic part",
           "relationship-selected endnotes semantic part",
+          "relationship-selected comments semantic part",
           "directly selected word/header*.xml and word/footer*.xml"
         ]
       },
@@ -22,6 +23,7 @@
           "word/_rels/document.xml.rels",
           "relationship-selected footnotes semantic part",
           "relationship-selected endnotes semantic part",
+          "relationship-selected comments semantic part",
           "directly selected word/header*.xml and word/footer*.xml"
         ]
       },
@@ -33,6 +35,7 @@
           "word/_rels/document.xml.rels",
           "relationship-selected footnotes semantic part",
           "relationship-selected endnotes semantic part",
+          "relationship-selected comments semantic part",
           "directly selected word/header*.xml and word/footer*.xml"
         ]
       }
@@ -48,12 +51,14 @@
         "semantic note-definition stories aligned by note kind across differing safe package paths",
         "namespace-resolved footnote/endnote references in main and selected header/footer stories with exactly-one user-definition checks",
         "typed separator, continuationSeparator, and continuationNotice definitions plus definition-story poison-reference rejection",
+        "zero or one exact internal Transitional comments relationship selected from fixed main relationships, including relocated safe targets",
+        "direct w:comment definitions and w:commentReference occurrences from admitted main, note, header, and footer stories with exact-one canonical decimal resolution",
         "direct package-relationship records in word/_rels/document.xml.rels",
         "direct explicit first/default/even w:headerReference and w:footerReference slots aligned by section ordinal, kind, and role",
         "selected Transitional w:hdr and w:ftr token streams deduplicated by the complete three-side physical key"
       ],
       "outOfScope": [
-        "word/comments.xml and comment semantics",
+        "comment range start/end pairing, range topology, and Microsoft threaded-comment extensions",
         "inherited or omitted header/footer role semantics",
         "unselected header/footer parts and unselected relationship semantics",
         "complete OPC, content-type, relationship-graph, XML Schema, pagination, rendering, and field-evaluation validation"
@@ -80,6 +85,8 @@
       "w:endnote",
       "w:footnoteReference",
       "w:endnoteReference",
+      "w:comment",
+      "w:commentReference",
       "w:sectPr",
       "w:headerReference",
       "w:footerReference"
@@ -105,10 +112,11 @@
     "unzip -p -- is invoked only for one exact indexed safe name; output length and CRC-32 must match the binary index"
   ],
   "checkedProperties": [
-    "The required main story must extract, decode, parse, tokenize, and produce a bounded selector inventory on all three sides before any v5 response exists.",
+    "The required main story must extract, decode, parse, tokenize, and produce a bounded selector inventory on all three sides before any v6 response exists.",
     "Main inventory rejects missing, nested, or multiple direct bodies and duplicate or non-terminal body-level terminal sectPr; out-of-section header/footer references are structured issues.",
     "The fixed main story and relationship-selected semantic footnote/endnote story triples retain the generic six-check collection behavior.",
     "Each canonical user note reference has exactly one package-local user definition; unique unreferenced user definitions are allowed.",
+    "Each admitted comment reference has exactly one direct package-local comment definition; unique unreferenced direct definitions are allowed.",
     "Note definition stories reject recursive self-kind and cross-kind reference elements.",
     "Every per-side supported direct binding identity has exactly one identifying issue or membership in exactly one ordinally aligned logical slot, mutually exclusively.",
     "Every successful slot maps to exactly one physical story and each story locator list equals the canonical ordered list derived from aligned slots.",
@@ -118,7 +126,7 @@
     "Bounded XML failures carry typed reasons and consumption counts; event-limit failure when remaining aggregate allowance is less than or equal to 500,000 is aggregate exhaustion, while larger remaining allowance preserves per-part classification.",
     "All fixed and successfully selected stories are checked through story_collection_checker_sound.",
     "Section count or ordered direct-slot differences fail closed without claiming semantic section identity.",
-    "Public certificate protocol v1 remains additive; internal protocol v5 note evidence is present together only for valid passed or failed runs."
+    "Public certificate protocol v1 remains additive; internal protocol v6 note and comment evidence is present together only for valid passed or failed runs."
   ],
   "limits": {
     "packageBytesPerSide": 33554432,
@@ -137,19 +145,24 @@
     "uniqueNoteReferenceIdsPerSideKind": 4096,
     "noteDefinitionsPerPart": 4096,
     "definitionStoryPoisonReferencesPerSide": 4096,
+    "commentReferencesPerSide": 4096,
+    "uniqueCommentReferenceIdsPerSide": 4096,
+    "commentDefinitionsPerPart": 4096,
+    "nonDirectCommentDefinitionsPerPart": 4096,
     "xmlDepth": 128,
     "xmlEventsPerPart": 500000,
     "xmlEventsPerSide": 1000000,
     "evidenceStringsUtf8Bytes": 1572864,
-    "responseBytes": 2621440,
-    "maximumShapeEvidence": {
-      "producer": "verification/lean/ProtocolV5MaximumOrdinaryShape.lean",
+    "responseBytes": 2626368,
+    "ordinaryEnvelopeEvidence": {
+      "producer": "verification/lean/ProtocolV6OrdinaryEnvelopeWitness.lean",
       "strictDecoderTest": "packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts",
       "ordinaryIssues": 511,
       "ordinaryEscapedStringBytes": 1571840,
-      "maximumOrdinaryResponseBytes": 2619776,
+      "ordinaryLegalUpperEnvelopeBytes": 2624704,
       "terminalReserveBytes": 1024,
-      "legalResponseBytes": 2621440
+      "legalResponseBytes": 2626368,
+      "legalStdoutBytes": 2626369
     }
   },
   "ecma376Traceability": [
@@ -191,7 +204,22 @@
     {
       "registryId": "ECMA-PART1-17-18-10",
       "section": "Part 1 §17.18.10",
-      "claim": "Note IDs use bounded ST_DecimalNumber parsing and canonical evidence."
+      "claim": "Note and legacy comment IDs use bounded ST_DecimalNumber parsing and canonical evidence."
+    },
+    {
+      "registryId": "ECMA-PART1-17-13-4-2",
+      "section": "Part 1 §17.13.4.2",
+      "claim": "The selected Transitional comments part admits direct w:comment definitions."
+    },
+    {
+      "registryId": "ECMA-PART1-17-13-4-5",
+      "section": "Part 1 §17.13.4.5",
+      "claim": "Admitted legacy w:commentReference occurrences resolve exactly once package-locally."
+    },
+    {
+      "registryId": "ECMA-PART1-17-13-4-6",
+      "section": "Part 1 §17.13.4.6",
+      "claim": "CT_TrackChange ancestry is parsed for admitted comment-reference-bearing stories without claiming range topology."
     }
   ],
   "knownUncheckedAreas": [
@@ -199,7 +227,7 @@
     "Strict OOXML namespaces",
     "rendering, pagination, inherited roles, and semantic section identity",
     "unselected parts and complete relationship/content-type integrity",
-    "comments and comment-reference integrity",
+    "comment range topology and Microsoft threaded-comment extensions",
     "field instruction evaluation, cached results, and bookmark resolution",
     "general XML canonicalization outside the accepted subset"
   ],

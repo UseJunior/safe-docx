@@ -11,6 +11,7 @@ import { batchEdit } from '../tools/batch_edit.js';
 import { clearFormatting } from '../tools/clear_formatting.js';
 import { formatLayout } from '../tools/format_layout.js';
 import { formatNumbering } from '../tools/format_numbering.js';
+import { formatSection } from '../tools/format_section.js';
 import { addComment } from '../tools/add_comment.js';
 import { deleteComment } from '../tools/delete_comment.js';
 import { addFootnote } from '../tools/add_footnote.js';
@@ -25,6 +26,10 @@ const numberingTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.1.19' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.18' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.3' },
+);
+const sectionTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.12' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
 );
 
 const AI_AUTHOR = 'SafeDocX';
@@ -372,6 +377,45 @@ describe('Tool integration through SessionManager: canonical revision emission',
       const change = doc.getElementsByTagNameNS(W_NS, 'pPrChange')[0] as Element;
       const priorIlvl = change.getElementsByTagNameNS(W_NS, 'ilvl')[0] as Element;
       expect(wordAttr(priorIlvl, 'val')).toBe('0');
+    });
+  });
+
+  sectionTest('format_section saves a SafeDocX-authored section property change', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let documentXml: string;
+
+    await given('a tracked session with a final section', async () => {
+      opened = await openSession([], {
+        mgr: createManager(),
+        xml: makeDocXml('<w:p><w:r><w:t>Section body</w:t></w:r></w:p>'),
+      });
+    });
+
+    await when('format_section restarts page numbering and saves tracked output', async () => {
+      const formatted = await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 0,
+        page_number_start: 1,
+      });
+      assertSuccess(formatted, 'format_section');
+      const parts = await saveAndReadParts(
+        opened.mgr,
+        opened.inputPath,
+        path.join(opened.tmpDir, 'format-section-regression.docx'),
+        ['word/document.xml'],
+      );
+      documentXml = parts['word/document.xml'];
+    });
+
+    await then('document.xml contains a SafeDocX-authored section property change', () => {
+      expectTrackedElementsWithAuthor(documentXml, ['sectPrChange']);
+      const doc = parseXml(documentXml);
+      const current = doc.getElementsByTagNameNS(W_NS, 'pgNumType')[0] as Element;
+      expect(wordAttr(current, 'start')).toBe('1');
     });
   });
 

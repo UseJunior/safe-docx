@@ -39,6 +39,18 @@ Get a compact structural map of a document's headings (DOCX only). Each entry is
 | `format` | `enum("json", "markdown")` | no | Output format: 'json' (default, structured outline array) or 'markdown' (indented ATX outline under `content`). |
 | `include_heuristic_headings` | `boolean` | no | When true, also include heuristic title/run-in/centered-caps headings alongside deterministic word_style, list_metadata, and outline_level headings. Default: false (all deterministic sources only). |
 
+## `get_sections`
+
+Read DOCX main-document sections in document order. Returns zero-based session-relative section_index values, paragraph/body boundary metadata, page numbering, page size, margins, and header/footer relationship references. Call again after any operation that changes section topology. Read-only.
+
+- readOnly: `true`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+
 ## `grep`
 
 Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs. ODT supported via file_path (single-file) only.
@@ -189,6 +201,20 @@ Change one DOCX body paragraph’s direct numbering reference. Use remove=true t
 | `match_paragraph_id` | `string` | no | Copy this paragraph’s complete direct num_id and ilvl to the target. |
 | `num_id` | `string` | no | Existing positive decimal w:numId from this DOCX; requires ilvl. |
 | `ilvl` | `integer` | no | Existing numbering level for num_id; requires num_id. |
+
+## `format_section`
+
+Set one DOCX section’s page-number restart using a zero-based section_index from get_sections. This first slice writes only w:pgNumType/@w:start, preserves page setup and header/footer references, and emits a native w:sectPrChange. It does not create sections or change page size, margins, break type, headers, footers, or page-number format.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+| `section_index` | `integer` | yes | Zero-based session-relative index returned by get_sections. |
+| `page_number_start` | `integer` | yes | Non-negative page number at which this section starts. |
 
 ## `accept_changes`
 
