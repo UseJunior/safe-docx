@@ -12,6 +12,7 @@ import { clearFormatting } from '../tools/clear_formatting.js';
 import { formatLayout } from '../tools/format_layout.js';
 import { formatNumbering } from '../tools/format_numbering.js';
 import { formatSection } from '../tools/format_section.js';
+import { insertSectionBreakTool } from '../tools/insert_section_break.js';
 import { addComment } from '../tools/add_comment.js';
 import { deleteComment } from '../tools/delete_comment.js';
 import { addFootnote } from '../tools/add_footnote.js';
@@ -31,6 +32,12 @@ const sectionTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.12' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.11' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
+);
+const sectionBreakTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.18' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.22' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.20' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
 );
 
@@ -475,6 +482,60 @@ describe('Tool integration through SessionManager: canonical revision emission',
       expect(wordAttr(pgSz, 'orient')).toBe('landscape');
       expect(wordAttr(pgMar, 'top')).toBe('720');
       expect(wordAttr(pgMar, 'gutter')).toBe('0');
+    });
+  });
+
+  sectionBreakTest('insert_section_break saves tracked topology and following setup', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let documentXml: string;
+
+    await given('a tracked session with two paragraphs and one final section', async () => {
+      opened = await openSession([], {
+        mgr: createManager(),
+        xml: makeDocXml(
+          '<w:p><w:r><w:t>First section body</w:t></w:r></w:p>'
+          + '<w:p><w:r><w:t>Following body</w:t></w:r></w:p>',
+        ),
+      });
+    });
+
+    await when('insert_section_break splits after the first paragraph and saves tracked output', async () => {
+      const inserted = await insertSectionBreakTool(opened.mgr, {
+        file_path: opened.inputPath,
+        paragraph_id: opened.firstParaId,
+        break_type: 'nextPage',
+        new_section: { page_number_start: 1 },
+      });
+      assertSuccess(inserted, 'insert_section_break');
+      const parts = await saveAndReadParts(
+        opened.mgr,
+        opened.inputPath,
+        path.join(opened.tmpDir, 'insert-section-break-regression.docx'),
+        ['word/document.xml'],
+      );
+      documentXml = parts['word/document.xml'];
+    });
+
+    await then('document.xml contains one inserted boundary mark and following section snapshot', () => {
+      expectTrackedElementsWithAuthor(documentXml, ['ins', 'sectPrChange']);
+      const doc = parseXml(documentXml);
+      const insertedMarks = Array.from(doc.getElementsByTagNameNS(W_NS, 'ins'))
+        .filter((element) =>
+          (element.parentNode as Element | null)?.localName === 'rPr'
+          && (element.parentNode?.parentNode as Element | null)?.localName === 'pPr');
+      expect(insertedMarks).toHaveLength(1);
+      const sections = Array.from(doc.getElementsByTagNameNS(W_NS, 'sectPr'))
+        .filter((element) =>
+          (element.parentNode as Element | null)?.localName !== 'sectPrChange');
+      expect(sections).toHaveLength(2);
+      const type = sections[0]?.getElementsByTagNameNS(W_NS, 'type')[0] as Element;
+      expect(wordAttr(type, 'val')).toBe('nextPage');
+      const currentPageNumber = sections[1]?.getElementsByTagNameNS(W_NS, 'pgNumType')[0] as Element;
+      expect(wordAttr(currentPageNumber, 'start')).toBe('1');
     });
   });
 

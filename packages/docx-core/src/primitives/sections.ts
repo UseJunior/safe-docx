@@ -1,7 +1,12 @@
-import { getParagraphBookmarkId } from './bookmarks.js';
+import {
+  findParagraphByBookmarkId,
+  getParagraphBookmarkId,
+  insertSingleParagraphBookmark,
+} from './bookmarks.js';
 import { childElements, createWmlElement, getDirectChildrenByName, isW } from './dom-helpers.js';
 import { OOXML, W } from './namespaces.js';
 import {
+  allocateRevisionId,
   buildSectPrChangeElement,
   type RevisionContext,
 } from './track-changes-emitter.js';
@@ -84,9 +89,41 @@ export type SectionPropertiesMutationResult = {
   currentSection: DocumentSection;
 };
 
+export type SectionBreakType =
+  | 'nextPage'
+  | 'nextColumn'
+  | 'continuous'
+  | 'evenPage'
+  | 'oddPage';
+
+export type InsertSectionBreakMutation = {
+  anchorParagraphId: string;
+  breakType: SectionBreakType;
+  inheritProperties?: boolean;
+  newSection?: Omit<SectionPropertiesMutation, 'sectionIndex'>;
+};
+
+export type InsertSectionBreakResult = {
+  changed: true;
+  insertedBoundaryParagraphId: string;
+  precedingSectionIndex: number;
+  followingSectionIndex: number;
+  sectionCountBefore: number;
+  sectionCountAfter: number;
+  precedingSection: DocumentSection;
+  followingSection: DocumentSection;
+};
+
 export type SectionMutationErrorCode =
   | 'INVALID_SECTION_INDEX'
   | 'SECTION_NOT_FOUND'
+  | 'INVALID_SECTION_ANCHOR'
+  | 'SECTION_ANCHOR_NOT_FOUND'
+  | 'SECTION_ANCHOR_NOT_BODY'
+  | 'SECTION_BOUNDARY_EXISTS'
+  | 'SECTION_INSERTION_INVARIANT'
+  | 'INVALID_SECTION_BREAK_TYPE'
+  | 'INVALID_INHERIT_PROPERTIES'
   | 'INVALID_PAGE_NUMBER_START'
   | 'EMPTY_SECTION_MUTATION'
   | 'INVALID_PAGE_SIZE'
@@ -406,6 +443,105 @@ function insertPgNumTypeInSchemaOrder(sectPr: Element, pgNumType: Element): void
   else sectPr.appendChild(pgNumType);
 }
 
+function setSectionBreakType(sectPr: Element, breakType: SectionBreakType): void {
+  const existingTypes = getDirectChildrenByName(sectPr, W.type);
+  let type = existingTypes[0];
+  for (const duplicate of existingTypes.slice(1)) {
+    sectPr.removeChild(duplicate);
+  }
+  if (!type) {
+    type = createWmlElement(sectPr.ownerDocument, W.type);
+    const successor = childElements(sectPr).find((child) =>
+      child.localName !== W.headerReference
+      && child.localName !== W.footerReference
+    );
+    if (successor) sectPr.insertBefore(type, successor);
+    else sectPr.appendChild(type);
+  }
+  type.setAttributeNS(OOXML.W_NS, `w:${W.val}`, breakType);
+}
+
+function removeDirectSectionChange(sectPr: Element): void {
+  for (const change of getDirectChildrenByName(sectPr, 'sectPrChange')) {
+    sectPr.removeChild(change);
+  }
+}
+
+function resetNonRelationshipSectionProperties(sectPr: Element): void {
+  for (const child of childElements(sectPr)) {
+    if (
+      !isW(child, W.headerReference)
+      && !isW(child, W.footerReference)
+    ) {
+      sectPr.removeChild(child);
+    }
+  }
+  for (let i = sectPr.attributes.length - 1; i >= 0; i--) {
+    const attribute = sectPr.attributes.item(i);
+    if (attribute?.namespaceURI === OOXML.W_NS) {
+      sectPr.removeAttributeNode(attribute);
+    }
+  }
+}
+
+function ensureProspectiveSectionMutationIsValid(
+  doc: Document,
+  sectionIndex: number,
+  mutation: Omit<SectionPropertiesMutation, 'sectionIndex'>,
+  inheritProperties: boolean,
+  currentSectPr: Element,
+): void {
+  const fullMutation: SectionPropertiesMutation = { sectionIndex, ...mutation };
+  validateMutation(fullMutation);
+  const prospectiveSectPr = inheritProperties
+    ? currentSectPr.cloneNode(true) as Element
+    : createWmlElement(doc, W.sectPr);
+  if (!inheritProperties) {
+    for (const reference of childElements(currentSectPr)) {
+      if (
+        isW(reference, W.headerReference)
+        || isW(reference, W.footerReference)
+      ) {
+        prospectiveSectPr.appendChild(reference.cloneNode(true));
+      }
+    }
+  }
+  assertMissingElementsCanBeCreated(
+    { sectPr: prospectiveSectPr, location: 'body', paragraph: null },
+    fullMutation,
+  );
+}
+
+function paragraphInsertionReference(anchor: Element): Node | null {
+  let cursor = anchor.nextSibling;
+  while (cursor) {
+    if (cursor.nodeType !== 1) {
+      cursor = cursor.nextSibling;
+      continue;
+    }
+    if (isW(cursor as Element, W.bookmarkEnd)) {
+      cursor = cursor.nextSibling;
+      continue;
+    }
+    break;
+  }
+  return cursor;
+}
+
+function addParagraphInsertionMarker(
+  doc: Document,
+  pPr: Element,
+  ctx: RevisionContext,
+): void {
+  const rPr = createWmlElement(doc, W.rPr);
+  rPr.appendChild(createWmlElement(doc, 'ins', {
+    'w:id': String(allocateRevisionId(ctx.idState)),
+    'w:author': ctx.author,
+    'w:date': ctx.date,
+  }));
+  pPr.insertBefore(rPr, pPr.firstChild);
+}
+
 function requestedValueDiffers(
   element: Element | undefined,
   localName: string,
@@ -585,6 +721,228 @@ export function updateSectionProperties(
     previousSection,
     currentSection: projectSection(liveSection, mutation.sectionIndex),
   };
+}
+
+const SECTION_BREAK_TYPES = new Set<SectionBreakType>([
+  'nextPage',
+  'nextColumn',
+  'continuous',
+  'evenPage',
+  'oddPage',
+]);
+
+function removeInsertedBoundaryWithBookmarks(paragraph: Element): void {
+  const parent = paragraph.parentNode;
+  if (!parent) return;
+  const previous = paragraph.previousSibling;
+  const next = paragraph.nextSibling;
+  if (previous?.nodeType === 1 && isW(previous as Element, W.bookmarkStart)) {
+    parent.removeChild(previous);
+  }
+  if (next?.nodeType === 1 && isW(next as Element, W.bookmarkEnd)) {
+    parent.removeChild(next);
+  }
+  parent.removeChild(paragraph);
+}
+
+/**
+ * Insert one main-document section boundary after a stable direct-body
+ * paragraph and optionally initialize the following section's page setup.
+ *
+ * The dedicated boundary paragraph carries an inserted paragraph-mark revision
+ * so accepting retains the split and rejecting removes it. Following-section
+ * property overrides use one prior-state snapshot.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see #654
+ */
+export function insertSectionBreak(
+  doc: Document,
+  mutation: InsertSectionBreakMutation,
+  ctx?: RevisionContext,
+): InsertSectionBreakResult {
+  if (
+    typeof mutation.anchorParagraphId !== 'string'
+    || mutation.anchorParagraphId.trim().length === 0
+  ) {
+    throw new SectionMutationError(
+      'INVALID_SECTION_ANCHOR',
+      'anchorParagraphId must be a non-empty paragraph id.',
+    );
+  }
+  if (!SECTION_BREAK_TYPES.has(mutation.breakType)) {
+    throw new SectionMutationError(
+      'INVALID_SECTION_BREAK_TYPE',
+      'breakType must be nextPage, nextColumn, continuous, evenPage, or oddPage.',
+    );
+  }
+  if (
+    mutation.inheritProperties !== undefined
+    && typeof mutation.inheritProperties !== 'boolean'
+  ) {
+    throw new SectionMutationError(
+      'INVALID_INHERIT_PROPERTIES',
+      'inheritProperties must be a boolean.',
+    );
+  }
+
+  const anchor = findParagraphByBookmarkId(doc, mutation.anchorParagraphId);
+  if (!anchor) {
+    throw new SectionMutationError(
+      'SECTION_ANCHOR_NOT_FOUND',
+      `Paragraph "${mutation.anchorParagraphId}" was not found or was ambiguous.`,
+    );
+  }
+  const body = doc.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0);
+  if (!body || anchor.parentNode !== body) {
+    throw new SectionMutationError(
+      'SECTION_ANCHOR_NOT_BODY',
+      'The section-break anchor must be a direct child of the main document body.',
+    );
+  }
+  const anchorPPr = getDirectChildrenByName(anchor, W.pPr)[0];
+  if (
+    anchorPPr
+    && getDirectChildrenByName(anchorPPr, W.sectPr).length > 0
+  ) {
+    throw new SectionMutationError(
+      'SECTION_BOUNDARY_EXISTS',
+      'The anchor paragraph already ends a section.',
+    );
+  }
+
+  const liveSections = collectLiveSections(doc);
+  let containingSection: LiveSection | undefined;
+  let cursor: Node | null = anchor.nextSibling;
+  while (cursor) {
+    if (cursor.nodeType === 1) {
+      const element = cursor as Element;
+      if (isW(element, W.p)) {
+        const pPr = getDirectChildrenByName(element, W.pPr)[0];
+        const sectPr = pPr
+          ? getDirectChildrenByName(pPr, W.sectPr)[0]
+          : undefined;
+        if (sectPr) {
+          containingSection = liveSections.find((section) => section.sectPr === sectPr);
+          break;
+        }
+      } else if (isW(element, W.sectPr)) {
+        containingSection = liveSections.find((section) => section.sectPr === element);
+        break;
+      }
+    }
+    cursor = cursor.nextSibling;
+  }
+  if (!containingSection) {
+    throw new SectionMutationError(
+      'SECTION_NOT_FOUND',
+      'No live section boundary follows the anchor paragraph.',
+    );
+  }
+  const sectionIndex = liveSections.indexOf(containingSection);
+  if (sectionIndex < 0) {
+    throw new SectionMutationError(
+      'SECTION_NOT_FOUND',
+      'The containing section could not be resolved.',
+    );
+  }
+
+  const inheritProperties = mutation.inheritProperties ?? true;
+  if (mutation.newSection) {
+    ensureProspectiveSectionMutationIsValid(
+      doc,
+      sectionIndex,
+      mutation.newSection,
+      inheritProperties,
+      containingSection.sectPr,
+    );
+  }
+
+  const sectionCountBefore = liveSections.length;
+  const originalFollowingSectPr = containingSection.sectPr.cloneNode(true) as Element;
+  const boundarySectPr = originalFollowingSectPr.cloneNode(true) as Element;
+  removeDirectSectionChange(boundarySectPr);
+  setSectionBreakType(boundarySectPr, mutation.breakType);
+
+  const boundaryParagraph = createWmlElement(doc, W.p);
+  const boundaryPPr = createWmlElement(doc, W.pPr);
+  if (ctx) addParagraphInsertionMarker(doc, boundaryPPr, ctx);
+  boundaryPPr.appendChild(boundarySectPr);
+  boundaryParagraph.appendChild(boundaryPPr);
+
+  let followingChanged = false;
+  let boundaryInserted = false;
+  try {
+    if (!inheritProperties) {
+      resetNonRelationshipSectionProperties(containingSection.sectPr);
+      followingChanged = true;
+      if (mutation.newSection) {
+        updateSectionProperties(
+          doc,
+          { sectionIndex, ...mutation.newSection },
+        );
+      }
+      if (ctx) {
+        containingSection.sectPr.appendChild(
+          buildSectPrChangeElement(originalFollowingSectPr, ctx),
+        );
+      }
+    } else if (mutation.newSection) {
+      followingChanged = updateSectionProperties(
+        doc,
+        { sectionIndex, ...mutation.newSection },
+        ctx,
+      ).changed;
+    }
+
+    body.insertBefore(boundaryParagraph, paragraphInsertionReference(anchor));
+    boundaryInserted = true;
+    const insertedBoundaryParagraphId = insertSingleParagraphBookmark(
+      doc,
+      boundaryParagraph,
+    );
+    const sectionsAfter = getDocumentSections(doc);
+    if (sectionsAfter.length !== sectionCountBefore + 1) {
+      throw new SectionMutationError(
+        'SECTION_INSERTION_INVARIANT',
+        'Section insertion did not add exactly one live section.',
+      );
+    }
+    const precedingSection = sectionsAfter[sectionIndex];
+    const followingSection = sectionsAfter[sectionIndex + 1];
+    if (
+      !precedingSection
+      || !followingSection
+      || precedingSection.anchorParagraphId !== insertedBoundaryParagraphId
+    ) {
+      throw new SectionMutationError(
+        'SECTION_INSERTION_INVARIANT',
+        'Inserted section boundaries were not projected at the expected indexes.',
+      );
+    }
+    return {
+      changed: true,
+      insertedBoundaryParagraphId,
+      precedingSectionIndex: sectionIndex,
+      followingSectionIndex: sectionIndex + 1,
+      sectionCountBefore,
+      sectionCountAfter: sectionsAfter.length,
+      precedingSection,
+      followingSection,
+    };
+  } catch (error) {
+    if (boundaryInserted && boundaryParagraph.parentNode) {
+      removeInsertedBoundaryWithBookmarks(boundaryParagraph);
+    }
+    const liveParent = containingSection.sectPr.parentNode;
+    if (followingChanged && liveParent) {
+      liveParent.replaceChild(originalFollowingSectPr, containingSection.sectPr);
+    }
+    throw error;
+  }
 }
 
 /**

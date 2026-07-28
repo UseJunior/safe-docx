@@ -15,6 +15,7 @@ import { clearFormatting } from './clear_formatting.js';
 import { formatLayout } from './format_layout.js';
 import { formatNumbering } from './format_numbering.js';
 import { formatSection } from './format_section.js';
+import { insertSectionBreakTool } from './insert_section_break.js';
 import { insertParagraph } from './insert_paragraph.js';
 import { replaceText } from './replace_text.js';
 import { save } from './save.js';
@@ -155,6 +156,19 @@ const REVISIONABLE_EDITORS: Array<{
         file_path: filePath,
         section_index: 0,
         page_number_start: 1,
+      }),
+  },
+  {
+    name: 'insert_section_break',
+    bodyXml:
+      '<w:p><w:r><w:t>Alpha bravo charlie</w:t></w:r></w:p>'
+      + '<w:p><w:r><w:t>Following paragraph</w:t></w:r></w:p>'
+      + '<w:sectPr><w:pgNumType w:start="2"/></w:sectPr>',
+    run: (mgr, filePath, firstParaId) =>
+      insertSectionBreakTool(mgr, {
+        file_path: filePath,
+        paragraph_id: firstParaId,
+        break_type: 'nextPage',
       }),
   },
   {

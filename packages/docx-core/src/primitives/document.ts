@@ -32,9 +32,12 @@ import {
 } from './paragraph_numbering.js';
 import {
   getDocumentSections,
+  insertSectionBreak,
   setSectionPageNumberStart,
   updateSectionProperties,
   type DocumentSection,
+  type InsertSectionBreakMutation,
+  type InsertSectionBreakResult,
   type SectionPageNumberMutation,
   type SectionPageNumberMutationResult,
   type SectionPropertiesMutation,
@@ -969,6 +972,16 @@ export class DocxDocument {
 
   getSections(): DocumentSection[] {
     return getDocumentSections(this.documentXml);
+  }
+
+  insertSectionBreak(
+    mutation: InsertSectionBreakMutation,
+    ctx?: RevisionContext,
+  ): InsertSectionBreakResult {
+    const result = insertSectionBreak(this.documentXml, mutation, ctx);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
   }
 
   setSectionPageNumberStart(

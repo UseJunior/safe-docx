@@ -660,7 +660,7 @@ part: 1
 section: "17.6.18"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
 ```
 
 A non-final section's properties bind through a `w:sectPr` inside the
@@ -668,7 +668,27 @@ A non-final section's properties bind through a `w:sectPr` inside the
 Insert → Section Break, and the one that sidesteps the trailing-table case
 (a table cannot carry section properties). The generation document emitter
 appends such a break paragraph after every non-final section's blocks;
-`auditSectPr` verifies the pPr-only placement on the way back out.
+`auditSectPr` verifies the pPr-only placement on the way back out. The editing
+primitive inserts the same dedicated shape after a stable direct-body paragraph,
+preserves the containing `w:sectPr`, and verifies that exactly one ordered live
+section is added.
+
+## [ECMA-PART1-17-6-22] w:type section start kind
+
+```yaml
+edition: 5
+part: 1
+section: "17.6.22"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SectType
+verifiedBy: packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
+```
+
+The inserted paragraph-level section properties carry exactly one `w:type`
+whose `w:val` is one of the schema's `nextPage`, `nextColumn`, `continuous`,
+`evenPage`, or `oddPage` section marks. Invalid values fail before document
+mutation. This claim covers emitted section-start markup, not pagination or
+reader layout behavior.
 
 ## [ECMA-PART1-17-6-12] w:pgNumType page-numbering settings emission
 
@@ -1570,7 +1590,7 @@ part: 1
 section: "17.13.5.20"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
-verifiedBy: packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts
+verifiedBy: packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
 ```
 
 ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked
@@ -1581,6 +1601,9 @@ only where they carry their own run-level `w:ins` wrappers. safe-docx's reject
 paths implement this merge in
 `packages/docx-core/src/primitives/reject_changes.ts` and
 `packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+Section-break insertion uses the same paragraph-mark form on a dedicated empty
+boundary paragraph so rejecting removes the new topology and accepting retains
+the boundary.
 
 ## [ECMA-PART1-17-13-5-4] Custom XML deletion range end
 
@@ -1871,14 +1894,15 @@ part: 1
 section: "17.13.5.32"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange
-verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
+verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
 ```
 
-safe-docx emits bounded page-number restart snapshots and consumes existing
+safe-docx emits bounded page-number/page-setup snapshots and consumes existing
 `w:sectPrChange` records: accept removes the prior snapshot and reject restores
-it. The authoring claim is limited to `w:pgNumType/@w:start`; header/footer part
-editing, relationship mutation, general pagination, and Lean are outside the
-claim.
+it. Section-break insertion uses one such snapshot when the following section's
+non-relationship properties change. Header/footer references remain live
+because `CT_SectPrChange` carries `CT_SectPrBase`; header/footer part editing,
+relationship mutation, general pagination, and Lean are outside the claim.
 
 ## [ECMA-PART1-17-13-5-34] Table-property revisions (w:tblPrChange)
 

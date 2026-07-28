@@ -182,7 +182,28 @@ margin values (top, right, bottom, left, header, footer, and gutter).
 
 Orientation is literal: changing it does not silently swap width and height.
 Section formatting preserves break type, columns, page-number format, page
-borders, and header/footer references, and it does not create or split sections.
+borders, and header/footer references.
+
+To split a section after a stable direct-body paragraph, use the paragraph id
+from `read_file`:
+
+```text
+insert_section_break(
+  file_path="~/docs/NDA.docx",
+  paragraph_id="_bk_9fc26ad74408",
+  break_type="nextPage",
+  new_section={"page_number_start": 1}
+)
+```
+
+The inserted boundary preserves the current page setup and header/footer
+relationship references. The following section inherits its current properties
+by default. Set `inherit_properties=false` to reset its non-relationship
+properties, then provide complete page dimensions and margins in `new_section`
+when those elements need to be recreated. Header/footer parts and relationship
+attachments are deliberately preserved; edit those through the separate
+header/footer capability when available. Call `get_sections` again after a
+successful split because every later section index shifts.
 
 ## Step 6: Save Reviewable Outputs
 
@@ -228,7 +249,7 @@ Visual review remains appropriate for material documents because Safe Docx is no
 | Insert a paragraph | `insert_paragraph` |
 | Delete an ordinary DOCX body paragraph | `replace_text` with the complete text and an empty `new_string` |
 | Remove or repair direct DOCX paragraph numbering | `format_numbering` |
-| Inspect DOCX sections or change page numbering/page setup | `get_sections`, `format_section` |
+| Inspect, split, or change DOCX sections | `get_sections`, `insert_section_break`, `format_section` |
 | Apply several edits together | `batch_edit` |
 | Convert DOCX to ODT | `convert_to_odt` |
 | Convert DOCX to Markdown | `export` with `format="markdown"` |

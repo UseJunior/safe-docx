@@ -436,6 +436,54 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
+    name: 'insert_section_break',
+    surface: 'revisionable',
+    description:
+      'Insert a tracked DOCX section break after a stable direct-body paragraph. The new boundary preserves the containing section’s page setup and header/footer relationship references. The following section inherits current properties by default; set inherit_properties=false to reset non-relationship properties, and optionally provide page-number/page-size/margin overrides in new_section. Call get_sections again after success because section indexes change.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      paragraph_id: z
+        .string()
+        .min(1)
+        .describe('Stable paragraph id returned by read_file; must identify a direct main-body paragraph that does not already end a section.'),
+      break_type: z
+        .enum(['nextPage', 'nextColumn', 'continuous', 'evenPage', 'oddPage'])
+        .describe('OOXML start behavior for the following section.'),
+      inherit_properties: z
+        .boolean()
+        .optional()
+        .describe('Whether the following section retains current non-relationship properties. Default: true. Header/footer references are always preserved.'),
+      new_section: z
+        .object({
+          page_number_start: z.number().int().nonnegative().optional(),
+          page_size: z
+            .object({
+              width_twips: z.number().int().positive().optional(),
+              height_twips: z.number().int().positive().optional(),
+              orientation: z.enum(['portrait', 'landscape']).optional(),
+            })
+            .strict()
+            .optional(),
+          margins: z
+            .object({
+              top_twips: z.number().int().optional(),
+              right_twips: z.number().int().nonnegative().optional(),
+              bottom_twips: z.number().int().optional(),
+              left_twips: z.number().int().nonnegative().optional(),
+              header_twips: z.number().int().nonnegative().optional(),
+              footer_twips: z.number().int().nonnegative().optional(),
+              gutter_twips: z.number().int().nonnegative().optional(),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict()
+        .optional()
+        .describe('Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
     name: 'accept_changes',
     surface: 'internal',
     description: 'Accept all tracked changes in the document body, producing a clean document with no revision markup. Returns acceptance stats.',
