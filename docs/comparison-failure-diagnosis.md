@@ -74,14 +74,18 @@ reported `reconstructionModeUsed: 'inplace'`, and `rebuild` reported
 `reconstructionModeUsed: 'rebuild'`.
 
 Later review established the limit of that result: the chosen run followed the
-end of an unsupported `SEQ` field, so no opaque descriptor governed the split.
-Success proved only that this mutation did not reach the opaque-boundary guard;
-it did not prove the guard's discriminators stayed stable. Deliberately moving
-the same split into a supported `REF` field result does make `rebuild` throw the
-expected `OpaquePassthroughError` while `inplace` succeeds. That targeted probe
-validates the guard path, but it is not a control for the original real-world
-abort: its failure was manufactured by placing the split inside a construct
-known to be guarded.
+end of a `SEQ` field and therefore sat outside the field range. Rebuild still
+correlated all 108 captured `REF` boundaries, but success proved only that the
+mutation perturbed none of them. Because the split landed outside every opaque
+descriptor, their stability says nothing about the guard's sensitivity to a
+run split. The authoritative comparison is in
+`packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts`.
+
+An equivalent pure run split deliberately placed inside a supported `REF` field
+result does make `rebuild` throw the expected `OpaquePassthroughError` while
+`inplace` succeeds. That targeted probe validates the guard path, but it is not
+a control for the original real-world abort: its failure was manufactured by
+placing the split inside a construct known to be guarded.
 
 No fixture was therefore committed. Until an independently occurring known-bad
 pair can be staged and pinned through `compareDocuments`, a diagnostic run can
