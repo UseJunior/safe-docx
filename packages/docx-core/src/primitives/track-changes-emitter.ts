@@ -1,6 +1,6 @@
 import { parseXml, serializeXml } from './xml.js';
 import { childElements, createWmlElement, renameElement } from './dom-helpers.js';
-import { OOXML } from './namespaces.js';
+import { OOXML, W } from './namespaces.js';
 
 const SYNTHETIC_DOC = parseXml(
   '<root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
@@ -13,6 +13,17 @@ const EXCLUDED_TRPR_CHANGE_CHILDREN = new Set(['w:trPrChange', 'w:ins', 'w:del']
 // change-of-a-change marker w:tcPrChange itself is excluded. See:
 // https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.previoustablecellproperties
 const EXCLUDED_TCPR_CHANGE_CHILDREN = new Set(['w:tcPrChange']);
+const EXCLUDED_SECTPR_CHANGE_CHILDREN = new Set([
+  'w:headerReference',
+  'w:footerReference',
+  'w:sectPrChange',
+]);
+const SECTPR_BASE_ATTRIBUTE_NAMES = new Set([
+  'rsidRPr',
+  'rsidDel',
+  'rsidR',
+  'rsidSect',
+]);
 
 /**
  * State for allocating monotonically increasing revision IDs.
@@ -228,6 +239,50 @@ export function buildTcPrChangeElement(oldTcPr: Element | null, ctx: RevisionCon
 
   tcPrChange.appendChild(previousTcPr);
   return tcPrChange;
+}
+
+/**
+ * Build a `<w:sectPrChange>` wrapper containing the previous section
+ * properties. A prior change record is excluded from the nested snapshot so
+ * the emitter never authors a change-of-a-change.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see #654
+ */
+export function buildSectPrChangeElement(
+  oldSectPr: Element,
+  ctx: RevisionContext,
+): Element {
+  const sectPrChange = createWmlElement(
+    getOwnerDocument(oldSectPr),
+    'sectPrChange',
+    revisionAttributes(ctx),
+  );
+  const previousSectPr = createWmlElement(getOwnerDocument(oldSectPr), W.sectPr);
+
+  for (let i = 0; i < oldSectPr.attributes.length; i++) {
+    const attribute = oldSectPr.attributes.item(i);
+    if (
+      attribute
+      && attribute.namespaceURI === OOXML.W_NS
+      && SECTPR_BASE_ATTRIBUTE_NAMES.has(attribute.localName)
+    ) {
+      previousSectPr.setAttributeNS(
+        OOXML.W_NS,
+        `w:${attribute.localName}`,
+        attribute.value,
+      );
+    }
+  }
+
+  for (const child of childElements(oldSectPr)) {
+    if (!EXCLUDED_SECTPR_CHANGE_CHILDREN.has(child.tagName)) {
+      previousSectPr.appendChild(child.cloneNode(true));
+    }
+  }
+
+  sectPrChange.appendChild(previousSectPr);
+  return sectPrChange;
 }
 
 /**

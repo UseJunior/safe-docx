@@ -494,6 +494,22 @@ export function rejectChanges(
       if (originalProps) {
         // Replace the current property element with the original
         const restored = originalProps.cloneNode(true) as Element;
+        // CT_SectPrChange carries CT_SectPrBase, which intentionally excludes
+        // header/footer references. Those live bindings are not part of the
+        // page-setup property revision and must survive rejection.
+        if (localName === 'sectPrChange') {
+          const liveReferences = Array.from(parentProp.childNodes)
+            .filter((node): node is Element =>
+              node.nodeType === 1
+              && (
+                isW(node as Element, 'headerReference')
+                || isW(node as Element, 'footerReference')
+              ))
+            .map((reference) => reference.cloneNode(true));
+          for (const reference of liveReferences.reverse()) {
+            restored.insertBefore(reference, restored.firstChild);
+          }
+        }
         grandParent.replaceChild(restored, parentProp);
       } else {
         // Original props were empty — remove the parent property element entirely

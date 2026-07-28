@@ -658,12 +658,14 @@ part: 1
 section: "17.6.12"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgNumType
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/tools/format_section.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
 ```
 
 `w:pgNumType` declares a section's page-number format and restart value.
-Generation emits `w:start`/`w:fmt` only when the spec requests them, so
-sections without explicit numbering inherit continuous decimal numbering.
+Generation emits `w:start`/`w:fmt` only when the spec requests them. The
+section-formatting primitive updates only `w:start` and preserves any existing
+format or chapter-number attributes. Sections without explicit numbering
+inherit continuous decimal numbering.
 
 ## [ECMA-PART1-17-10-5] w:headerReference binding
 
@@ -1842,12 +1844,13 @@ part: 1
 section: "17.13.5.32"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange
-verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
 ```
 
-safe-docx consumes existing `w:sectPrChange` records: accept removes the prior
-snapshot and reject restores it. No current primitive authors these records;
-headers, footers, relationship semantics, pagination, and Lean are outside the
+safe-docx emits bounded page-number restart snapshots and consumes existing
+`w:sectPrChange` records: accept removes the prior snapshot and reject restores
+it. The authoring claim is limited to `w:pgNumType/@w:start`; header/footer part
+editing, relationship mutation, general pagination, and Lean are outside the
 claim.
 
 ## [ECMA-PART1-17-13-5-34] Table-property revisions (w:tblPrChange)
