@@ -30,6 +30,13 @@ import {
   type ParagraphNumberingMutation,
   type ParagraphNumberingMutationResult,
 } from './paragraph_numbering.js';
+import {
+  getDocumentSections,
+  setSectionPageNumberStart,
+  type DocumentSection,
+  type SectionPageNumberMutation,
+  type SectionPageNumberMutationResult,
+} from './sections.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
 import {
@@ -950,6 +957,22 @@ export class DocxDocument {
       mutation,
       ctx,
     );
+    if (result.changed) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return result;
+  }
+
+  getSections(): DocumentSection[] {
+    return getDocumentSections(this.documentXml);
+  }
+
+  setSectionPageNumberStart(
+    mutation: SectionPageNumberMutation,
+    ctx?: RevisionContext,
+  ): SectionPageNumberMutationResult {
+    const result = setSectionPageNumberStart(this.documentXml, mutation, ctx);
     if (result.changed) {
       this.dirty = true;
       this.documentViewCache = null;

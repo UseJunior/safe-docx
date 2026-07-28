@@ -21,6 +21,10 @@ const numberingTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.18' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.3' },
 );
+const sectionTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.12' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
+);
 
 const AI_AUTHOR = 'SafeDocX';
 const FIXED_DATE = '2026-05-07T12:00:00Z';
@@ -133,7 +137,7 @@ type RevisionTuple = {
 
 function revisionTuples(xml: string, requiredAuthor?: string): RevisionTuple[] {
   const out: RevisionTuple[] = [];
-  for (const kind of ['ins', 'del', 'pPrChange', 'rPrChange', 'trPrChange', 'tcPrChange']) {
+  for (const kind of ['ins', 'del', 'pPrChange', 'rPrChange', 'sectPrChange', 'trPrChange', 'tcPrChange']) {
     for (const el of elementsByName(xml, kind)) {
       const author = wordAttr(el, 'author');
       if (requiredAuthor && author !== requiredAuthor) continue;
@@ -247,6 +251,43 @@ describe('Canonical emission catalog', () => {
       const change = elementsByName(documentXml, 'pPrChange')[0]!;
       const priorIlvl = change.getElementsByTagNameNS(W_NS, 'ilvl')[0] as Element;
       expect(wordAttr(priorIlvl, 'val')).toBe('0');
+    });
+  });
+
+  sectionTest('Table A: sections.ts setSectionPageNumberStart emits w:sectPrChange', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let documentXml: string;
+
+    await given('a final section with an existing page-number restart', async () => {
+      const { doc } = await loadIndexedDoc(
+        await makeMinimalDocx('<w:p><w:r><w:t>Section body</w:t></w:r></w:p>'),
+      );
+      doc.setSectionPageNumberStart({ sectionIndex: 0, pageNumberStart: 3 });
+
+      await when('the restart is changed with a revision context', async () => {
+        doc.setSectionPageNumberStart(
+          { sectionIndex: 0, pageNumberStart: 1 },
+          createCtx(),
+        );
+        ({ parts: { 'word/document.xml': documentXml } } = await toPartMap(
+          doc,
+          ['word/document.xml'],
+        ));
+      });
+    });
+
+    await then('the prior restart is captured with canonical revision metadata', () => {
+      expectTrackedElementsWithFixedMetadata(documentXml, ['sectPrChange']);
+      const change = elementsByName(documentXml, 'sectPrChange')[0]!;
+      const priorPgNumType = change.getElementsByTagNameNS(
+        W_NS,
+        'pgNumType',
+      )[0] as Element;
+      expect(wordAttr(priorPgNumType, 'start')).toBe('3');
+      expect(change.getElementsByTagNameNS(W_NS, 'sectPrChange')).toHaveLength(0);
     });
   });
 
