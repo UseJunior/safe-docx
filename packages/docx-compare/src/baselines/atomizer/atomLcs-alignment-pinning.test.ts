@@ -12,8 +12,11 @@
  * These tests pin the CURRENT alignment as observable behavior — they do not
  * claim it is the only correct one. Any refactor of the LCS internals (the
  * Myers/prefix-trim work gated behind #583 Track B, or an innocuous-looking loop
- * rewrite) that changes the chosen alignment MUST fail here, forcing a deliberate,
- * reviewed decision instead of a silent redline shift.
+ * rewrite) that changes any of these pinned alignment choices MUST fail here,
+ * forcing a deliberate, reviewed decision instead of a silent redline shift.
+ * (They are a characterization set, not exhaustive equivalence evidence: a
+ * refactor could preserve these cases while changing other ambiguous alignments
+ * — the corpus-wide differential harness proposed in #584 remains follow-up.)
  *
  * Perturbations each test discriminates:
  * - "swapped adjacent atoms" / "reversed sequence": fail when the DP tie-breaker
