@@ -123,8 +123,21 @@ export function findTargetContainerForAtom(
   // 1. Check if atom was in a table cell (original tree ancestors)
   const sourceTc = findAncestorByTag(atom, 'w:tc');
   if (!sourceTc) {
-    // Body-level paragraph — use global anchor (current behavior, correct)
-    return { container: ctx.body, insertAfter: ctx.lastProcessedParagraph };
+    // Body-level paragraph — use the global anchor, hoisted to a direct child
+    // of the body. When the last processed paragraph sits inside a nested
+    // container (e.g. a table cell that matched Equal just before this
+    // deletion), inserting as its sibling would drop a body-level paragraph
+    // INTO the cell; anchoring after the enclosing top-level element (the
+    // table) keeps it at body level in the same document-order slot.
+    let anchor: Element | null = ctx.lastProcessedParagraph;
+    while (anchor && anchor.parentNode && anchor.parentNode !== ctx.body) {
+      anchor = anchor.parentNode as Element;
+    }
+    if (!anchor || anchor.parentNode !== ctx.body) {
+      // Anchor is not under the body (or absent) — keep legacy behavior.
+      anchor = ctx.lastProcessedParagraph;
+    }
+    return { container: ctx.body, insertAfter: anchor };
   }
 
   // 2. Compute structural path from original tree

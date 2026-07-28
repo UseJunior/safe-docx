@@ -145,6 +145,45 @@ function canonicalizeElement(el: Element): string {
 }
 
 /**
+ * Canonical identity string for a paragraph's `w:pPr`, for use in atom
+ * identity. Serialization topology is erased — namespace declarations,
+ * inter-element whitespace, child order, attributes on the `w:pPr` itself
+ * (OOXML `CT_PPrBase` permits none, so only namespace declarations or
+ * non-conforming noise ever appear there), and a bare or revision-only
+ * `w:pPr` versus an absent one — while substantive children remain
+ * identity-distinguishing.
+ *
+ * `w:sectPr` participates as a PRESENCE marker only. A section break's
+ * existence is document topology: letting a section-break paragraph
+ * compare equal to a plain empty paragraph makes reconstruction mode
+ * decide whether the section survives. Its content is not identity: the
+ * section's properties (page geometry, header/footer bindings via
+ * package-local r:ids) belong to the section dimension — the same split
+ * {@link PPR_EXCLUDED_TAGS} draws for the paragraph-formatting dimension —
+ * and two documents routinely express an equivalent section break through
+ * different relationship ids, so content-sensitive identity would turn
+ * every both-sided section break into a delete+insert pair whose cloned
+ * original r:ids cannot resolve in revised-based output.
+ *
+ * Revision-tracking subtrees and a `w:rPr` left empty after their removal
+ * are provenance, not content.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/678
+ */
+export function canonicalizeParagraphPropertiesForIdentity(
+  pPr: Element | null | undefined,
+): string {
+  if (!pPr) return '<w:pPr/>';
+  const children = childElements(pPr)
+    .filter((child) => !REVISION_PROPERTY_TAGS.has(child.tagName))
+    .map((child) => (child.tagName === 'w:sectPr' ? '<w:sectPr/>' : canonicalizeElement(child)))
+    .filter((canonical) => canonical !== '<w:rPr/>')
+    .sort();
+  if (children.length === 0) return '<w:pPr/>';
+  return `<w:pPr>${children.join('')}</w:pPr>`;
+}
+
+/**
  * Map of property tag → canonical serialization for the direct children of a
  * property container (w:rPr, w:pPr, w:tcPr, ...). Repeated tags are merged
  * into one sorted entry. An absent container equals an empty one.
