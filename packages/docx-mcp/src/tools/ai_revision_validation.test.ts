@@ -388,6 +388,38 @@ describe('AI revision validation guard', () => {
     );
   });
 
+  test('successful add_comment reply surfaces non-blocking validator warnings (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        `<w:p><w:r><w:t>Alpha Beta</w:t></w:r>` +
+        `<w:del w:id="906" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+      ),
+    });
+
+    const root = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      anchor_text: 'Beta',
+      author: 'Reviewer',
+      text: 'Root comment.',
+    });
+    assertSuccess(root);
+
+    const reply = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      parent_comment_id: root.comment_id as number,
+      author: 'Reviewer',
+      text: 'Reply comment.',
+    });
+
+    assertSuccess(reply);
+    expect(reply.mode).toBe('reply');
+    expect(reply.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('REVISION_METADATA_MISSING')]),
+    );
+  });
+
   test('formatAiRevisionWarning renders code, message, and any location fields (#686)', async () => {
     const { formatAiRevisionWarning } = await import('./ai_revision_guard.js');
     expect(

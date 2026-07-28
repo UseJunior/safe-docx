@@ -87,10 +87,11 @@ export function splitIntroducedDiagnostics(
 
 /**
  * Renders one non-blocking diagnostic as a plain string, matching the
- * `warnings` channel shape tool success responses already use (batch_edit,
- * format_layout, read_file expose warnings as human-readable strings, not
- * structured objects). Location fields are appended when present so an agent
- * can act on the warning without re-running validation.
+ * plain-string `warnings` channels tool success responses already use
+ * (format_layout and read_file expose `warnings` as human-readable strings;
+ * batch_edit wraps the same human-readable strings with step metadata as
+ * `{ step_id, warning }` entries). Location fields are appended when present
+ * so an agent can act on the warning without re-running validation.
  */
 export function formatAiRevisionWarning(d: AiRevisionDiagnostic): string {
   const location = [
