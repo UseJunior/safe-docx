@@ -682,15 +682,11 @@ function isEmptyParagraph(node: WmlElement): boolean {
  * `<w:pPr/>` vs absent, inter-element whitespace, child order, and
  * revision-tracking metadata (`w:pPrChange`, `w:pPr/w:rPr/w:ins|w:del`)
  * are serialization topology or provenance. Folding those into identity
- * produced phantom paragraph delete+insert pairs. Substantive children —
- * including `w:sectPr`, which is section topology — DO distinguish: two
- * empty paragraphs with genuinely different properties must pair as
- * delete+insert so both reconstruction modes represent the difference,
- * rather than one side's properties being silently kept and the other's
- * silently dropped depending on mode. Representing a paragraph-property
- * delta as `w:pPrChange` instead of delete+insert — for empty and
- * non-empty paragraphs alike — is change *detection* and is tracked in
- * issue #679.
+ * produced phantom paragraph delete+insert pairs. Direct `w:pStyle` is also
+ * excluded so issue #679's paragraph-level detector can pair the paragraphs
+ * and emit `w:pPrChange`. Other substantive children — including `w:sectPr`,
+ * which is section topology — still distinguish and remain outside that
+ * focused style-reference slice.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/678
  * @see https://github.com/UseJunior/safe-docx/issues/679

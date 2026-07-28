@@ -603,12 +603,18 @@ export function addFormatChange(
  * @param author - Author name
  * @param dateStr - Formatted date
  * @param state - Revision ID state
+ * @param originalParagraphProperties - Explicit before-state snapshot. When
+ * omitted, the live properties are snapshotted for inserted-paragraph callers.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @see https://github.com/UseJunior/safe-docx/issues/679
  */
 export function addParagraphPropertyChange(
   paragraph: Element,
   author: string,
   dateStr: string,
-  state: RevisionIdState
+  state: RevisionIdState,
+  originalParagraphProperties?: Element | null,
 ): void {
   let pPr = findChildByTagName(paragraph, 'w:pPr');
   if (!pPr) {
@@ -625,12 +631,17 @@ export function addParagraphPropertyChange(
     'w:date': dateStr,
   });
 
-  // Clone current pPr content as "before" snapshot.
+  // Clone the explicit original pPr when provided; legacy callers that mark
+  // inserted paragraphs snapshot the live pPr.
   // pPrChange child pPr must be CT_PPrBase — exclude rPr, rPrChange, sectPr, pPrChange.
   const EXCLUDED = new Set(['w:rPr', 'w:rPrChange', 'w:pPrChange', 'w:sectPr']);
   const oldPPr = createEl('w:pPr');
-  for (const child of childElements(pPr)) {
-    if (!EXCLUDED.has(child.tagName)) oldPPr.appendChild(child.cloneNode(true) as Element);
+  const snapshotSource =
+    originalParagraphProperties === undefined ? pPr : originalParagraphProperties;
+  if (snapshotSource) {
+    for (const child of childElements(snapshotSource)) {
+      if (!EXCLUDED.has(child.tagName)) oldPPr.appendChild(child.cloneNode(true) as Element);
+    }
   }
   pPrChange.appendChild(oldPPr);
   pPr.appendChild(pPrChange); // pPrChange goes last in pPr per schema

@@ -109,6 +109,11 @@ outside scope and must receive separate requirements before implementation.
   whose explicit style reference did not change neither enter the
   paragraph-style inventory nor gain `w:pPrChange` attributable to that
   detector.
+- The existing #646 unsupported-REF characterization blocks the
+  investors-rights document before rebuild atomization. That document remains
+  covered through inplace detection, while every currently rebuild-supported
+  corpus member runs in both modes; the pre-detection #646 pin does not count
+  as paragraph-style evidence.
 
 ## Open Questions
 

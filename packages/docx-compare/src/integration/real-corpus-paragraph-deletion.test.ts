@@ -132,6 +132,12 @@ const test = testAllure
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.1' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.6.2' },
   );
+const paragraphStyleTest = test.conformance({
+  spec: 'ECMA-376',
+  edition: 5,
+  part: 1,
+  section: '17.13.5.29',
+});
 
 function sha256(buffer: Buffer): string {
   return createHash('sha256').update(buffer).digest('hex');
@@ -444,6 +450,51 @@ describe.skipIf(!corpusAvailability.available)('real-corpus paragraph deletion m
             await runCell(entry, reconstructionMode),
             expectedFailure,
           );
+        },
+        120_000,
+      );
+    }
+  }
+});
+
+describe.skipIf(!corpusAvailability.available)('real-corpus paragraph style no-phantom matrix', () => {
+  for (const entry of corpusAvailability.entries) {
+    // The investors-rights rebuild cell is blocked before style detection by
+    // the exact unsupported-REF characterization pinned to #646 above. Inplace
+    // still exercises that SHA-pinned document, while every currently
+    // rebuild-supported corpus member exercises both reconstruction modes.
+    const reconstructionModes: readonly ReconstructionMode[] =
+      entry.id === 'nvca-investors-rights-agreement'
+        ? ['inplace']
+        : ['inplace', 'rebuild'];
+    for (const reconstructionMode of reconstructionModes) {
+      paragraphStyleTest.openspec('[SDX-CMP-PSTYLE-07] Unchanged real paragraph styles produce no phantom markup')(
+        `${entry.id} × ${reconstructionMode} × unchanged paragraph styles`,
+        async () => {
+          const source = readFileSync(join(corpusRoot, entry.id, 'source.docx'));
+          const author = 'Real Corpus Paragraph Style Gate';
+          const result = await compareDocumentsAtomizer(source, source, {
+            author,
+            date: new Date('2026-07-28T00:00:00Z'),
+            reconstructionMode,
+          });
+          expect(result.reconstructionModeUsed).toBe(reconstructionMode);
+          expect(result.stats.formatChanges).toBe(0);
+
+          const comparedZip = await JSZip.loadAsync(result.document);
+          const comparedDocumentXml = await comparedZip
+            .file('word/document.xml')!
+            .async('string');
+          const comparedDocument = new DOMParser().parseFromString(
+            comparedDocumentXml,
+            'text/xml',
+          );
+          const authoredPPrChanges = elements(comparedDocument, 'w:pPrChange')
+            .filter((change) =>
+              (change.getAttribute('w:author') ??
+                change.getAttributeNS(W_NS, 'author')) === author,
+            );
+          expect(authoredPPrChanges).toHaveLength(0);
         },
         120_000,
       );

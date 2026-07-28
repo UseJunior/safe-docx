@@ -46,6 +46,7 @@ import {
 } from './inPlaceModifier-bookmarks.js';
 import {
   addFormatChange,
+  addParagraphPropertyChange,
   getAtomRunAtBoundary,
   getAtomRuns,
   getOriginalInsProvenance,
@@ -112,6 +113,8 @@ export function modifyRevisedDocument(
     state,
     revisedRoot
   );
+
+  applyParagraphStyleChanges(mergedAtoms, ctx);
 
   // Add paragraph-mark revision markers for whole-paragraph insert/delete cases.
   // This is required for idempotency in Word:
@@ -1051,6 +1054,40 @@ function applyWholeParagraphRevisionMarkers(
         wrapParagraphAsDeleted(para, ctx.author, ctx.dateStr, ctx.state);
       }
     }
+  }
+}
+
+/**
+ * Emit one paragraph-property revision for each aligned direct style change.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @see https://github.com/UseJunior/safe-docx/issues/679
+ */
+function applyParagraphStyleChanges(
+  mergedAtoms: ComparisonUnitAtom[],
+  ctx: ProcessingContext,
+): void {
+  const handledParagraphs = new Set<number>();
+  for (const atom of mergedAtoms) {
+    const paragraphIndex = atom.paragraphIndex;
+    const change = atom.paragraphStyleChange;
+    if (
+      paragraphIndex === undefined ||
+      !change?.tracked ||
+      handledParagraphs.has(paragraphIndex)
+    ) {
+      continue;
+    }
+    const paragraph = ctx.unifiedParaToElement.get(paragraphIndex);
+    if (!paragraph) continue;
+    addParagraphPropertyChange(
+      paragraph,
+      ctx.author,
+      ctx.dateStr,
+      ctx.state,
+      change.oldParagraphProperties,
+    );
+    handledParagraphs.add(paragraphIndex);
   }
 }
 
