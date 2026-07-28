@@ -41,6 +41,7 @@ const REQUIRED_ENV = 'SAFE_DOCX_REAL_CORPUS_REQUIRED';
 const INTEGRATION_DIR = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = join(INTEGRATION_DIR, 'real-corpus-manifest.json');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const TEST_FEATURE = 'docx-comparison';
 
 interface CorpusEntry {
   id: string;
@@ -123,7 +124,7 @@ const preferredDeletionTarget: Readonly<Partial<Record<string, string>>> = {
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'Real-Corpus Paragraph Deletion Gate',
+    feature: TEST_FEATURE,
     story: 'Word-Authored Agreement Paragraph Deletion',
     severity: 'critical',
   })

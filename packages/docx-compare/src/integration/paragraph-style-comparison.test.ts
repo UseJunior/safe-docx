@@ -19,11 +19,12 @@ import { parseDocumentXml } from '../baselines/atomizer/xmlToWmlElement.js';
 const AUTHOR = 'Paragraph Style Comparison';
 const DATE = new Date('2026-07-28T16:00:00Z');
 const MODES = ['inplace', 'rebuild'] as const;
+const TEST_FEATURE = 'docx-comparison';
 
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'Paragraph Style Change Tracking',
+    feature: TEST_FEATURE,
     story: 'Direct w:pStyle Comparison',
     severity: 'critical',
   })
