@@ -8,6 +8,13 @@ const targets = [
   'Tier2.NoteReferenceIntegrity.package_note_reference_integrity_sound',
   'Tier2.NoteReferenceIntegrity.incomplete_partition_zero_evidence_sound',
   'Tier2.NoteReferenceIntegrity.note_integrity_aggregate_pass_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_selector_result_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_selection_to_realization_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_admitted_comment_source_set_complete',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_parsed_comment_inventory_evidence_exact',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_package_comment_reference_integrity_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_incomplete_comment_partition_zero_evidence_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_integrity_aggregate_pass_sound',
 ];
 
 const path = process.argv[2];

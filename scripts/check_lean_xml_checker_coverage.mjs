@@ -8,18 +8,21 @@ const leanPath = join(root, 'verification/lean/Tier2/XmlTripleChecker.lean');
 const selectorPath = join(root, 'verification/lean/Tier2/RelationshipStorySelector.lean');
 const noteIntegrityPath = join(root,
   'verification/lean/Tier2/NoteReferenceIntegrity/Semantics.lean');
+const commentIntegrityPath = join(root,
+  'verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean');
 const noteWitnessesPath = join(root, 'verification/lean/Tier2/NoteReferenceIntegrityWitnesses.lean');
 const executablePath = join(root, 'verification/lean/LeanDocxChecker.lean');
-const maximumShapePath = join(root, 'verification/lean/ProtocolV5MaximumOrdinaryShape.lean');
+const ordinaryEnvelopePath = join(root, 'verification/lean/ProtocolV6OrdinaryEnvelopeWitness.lean');
 const decoderPath = join(root, 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts');
 
 const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'));
 const lean = readFileSync(leanPath, 'utf8');
 const selector = readFileSync(selectorPath, 'utf8');
 const noteIntegrity = readFileSync(noteIntegrityPath, 'utf8');
+const commentIntegrity = readFileSync(commentIntegrityPath, 'utf8');
 const noteWitnesses = readFileSync(noteWitnessesPath, 'utf8');
 const executable = readFileSync(executablePath, 'utf8');
-const maximumShape = readFileSync(maximumShapePath, 'utf8');
+const ordinaryEnvelope = readFileSync(ordinaryEnvelopePath, 'utf8');
 const decoder = readFileSync(decoderPath, 'utf8');
 
 const errors = [];
@@ -62,7 +65,8 @@ for (const element of ledger.parsedWordprocessingML?.elements ?? []) {
   if (!lean.includes(`localName == "${localName}"`) &&
       !selector.includes(`localName == "${localName}"`) &&
       !noteIntegrity.includes(`localName == "${localName}"`) &&
-      !noteIntegrity.includes(`=> "${localName}"`)) {
+      !noteIntegrity.includes(`=> "${localName}"`) &&
+      !commentIntegrity.includes(`localName == "${localName}"`)) {
     errors.push(`ledger element ${element} is not referenced by the Lean parser or selector`);
   }
 }
@@ -115,8 +119,8 @@ if (!ledger.scope?.reconstructionModes?.outOfScope?.includes('rebuild')) {
   errors.push('ledger must mark rebuild as out of scope');
 }
 
-if (ledger.protocolVersion !== 5 || !executable.includes('protocolVersion != 5')) {
-  errors.push('ledger and Lean executable must agree on protocol version 5');
+if (ledger.protocolVersion !== 6 || !executable.includes('protocolVersion != 6')) {
+  errors.push('ledger and Lean executable must agree on protocol version 6');
 }
 if (!executable.includes('String.fromUTF8?')) {
   errors.push('accepted XML subset requires strict UTF-8 package-part decoding');
@@ -127,6 +131,8 @@ for (const required of [
   'maxCumulativeExpandedBytes',
   'buildNoteSideEvidence',
   'selectConventionalMainNote',
+  'selectConventionalMainComment',
+  'buildCommentSideEvidence',
 ]) {
   if (!executable.includes(required)) {
     errors.push(`canonical resource admission requires ${required}`);
@@ -222,11 +228,11 @@ if (selector.includes('selectionCompleteProof') || selector.includes('structure 
 if (!selector.includes('if isDirectory then throw')) {
   errors.push('classic ZIP policy must explicitly reject directory records');
 }
-if (ledger.limits?.maximumShapeEvidence?.producer !==
-    'verification/lean/ProtocolV5MaximumOrdinaryShape.lean' ||
-    !maximumShape.includes('maximumOrdinaryResponseBytes') ||
+if (ledger.limits?.ordinaryEnvelopeEvidence?.producer !==
+    'verification/lean/ProtocolV6OrdinaryEnvelopeWitness.lean' ||
+    !ordinaryEnvelope.includes('ordinaryLegalUpperEnvelope') ||
     !decoder.includes('.size > 256')) {
-  errors.push('maximum-shape ledger evidence must match the compiled producer and strict 256-path decoder');
+  errors.push('ordinary-envelope ledger evidence must match the compiled producer and strict 256-path decoder');
 }
 
 for (const required of [
@@ -258,17 +264,31 @@ for (const required of [
   'maxPoisonReferences',
 ]) {
   if (!noteIntegrity.includes(required)) {
-    errors.push(`protocol v5 note-integrity coverage requires ${required}`);
+    errors.push(`protocol v6 note-integrity coverage requires ${required}`);
   }
 }
 
-if (!executable.includes('production_run_request_core_refinement_sound')) {
-  errors.push('protocol v5 production refinement theorem is missing from LeanDocxChecker');
+for (const required of [
+  'comment_selector_result_sound',
+  'comment_selection_to_realization_sound',
+  'admitted_comment_source_set_complete',
+  'parsed_comment_inventory_evidence_exact',
+  'package_comment_reference_integrity_sound',
+  'incomplete_comment_partition_zero_evidence_sound',
+  'comment_integrity_aggregate_pass_sound',
+]) {
+  if (!commentIntegrity.includes(required)) {
+    errors.push(`protocol v6 comment-integrity coverage requires ${required}`);
+  }
+}
+
+if (!executable.includes('production_run_request_core_v6_refinement_sound')) {
+  errors.push('protocol v6 production refinement theorem is missing from LeanDocxChecker');
 }
 
 for (const required of [
-  'semanticProtocolV5Projection',
-  'SemanticProtocolV5ProjectionOf',
+  'semanticProtocolV6Projection',
+  'SemanticProtocolV6ProjectionOf',
   'packageReadCount',
   'parseInvocationCount',
   'scanInvocationCount',

@@ -176,8 +176,9 @@ It concluded *full atom equality* (`a = b`), which held only because `Atom` expo
 `Tier2/XmlTripleChecker.lean` retains the generic six-check story collection.
 `Tier2/RelationshipStorySelector.lean` adds the package inventory and
 header/footer selector. `Tier2/NoteReferenceIntegrity.lean` adds the
-protocol-v5 conventional-main note selector, namespace-resolved event scanner,
-package-local reference/definition checker, and six axiom-free theorem targets.
+conventional-main note selector. `Tier2/CommentReferenceIntegrity/Semantics.lean`
+adds the protocol-v6 legacy comment selector, namespace-resolved event scanner,
+and package-local reference/definition checker.
 The `leanDocxChecker` executable receives only paths to exact
 original, revised, and compared DOCX snapshots; TypeScript does not provide a
 story manifest or pre-resolved relationship targets.
@@ -192,12 +193,12 @@ the index. This is a bounded extraction policy, not full OPC conformance.
 The required `word/document.xml` must extract, decode, parse, tokenize, and
 produce an ancestry-aware inventory of exact direct
 `w:body/w:sectPr` and `w:body/w:p/w:pPr/w:sectPr` placements on all three
-sides before any valid v5 response exists. It must contain exactly one direct
+sides before any valid v6 response exists. It must contain exactly one direct
 `w:body`; nested/multiple bodies, duplicate body-level terminal `w:sectPr`, or
 a body element after that terminal section fail as process-level `not_run`.
 Other section placements and references outside an open supported direct
 section are structured selection issues.
-Footnotes and endnotes are selected by exact Transitional relationship type
+Footnotes, endnotes, and legacy comments are selected by exact Transitional relationship type
 from `word/_rels/document.xml.rels`; alternate safe paths are supported and
 aligned by semantic note kind across snapshots. Direct explicit
 first/default/even header/footer bindings are
@@ -234,7 +235,7 @@ Every fixed and selected physical story uses the existing generic checker:
 - the accept and reject projections keep valid Word field structure; and
 - the compared XML has valid field-marker and tracked-move structure.
 
-For main plus successfully selected header/footer sources, protocol v5 also
+For main plus successfully selected header/footer sources, protocol v6 also
 scans `w:footnoteReference` and `w:endnoteReference`. Each canonical decimal
 user reference must resolve to exactly one typed user definition in the
 relationship-selected package part. Typed separator definitions do not become
@@ -243,12 +244,23 @@ allowed. Any self-kind or cross-kind reference inside a note-definition story
 is a structured failure. A failed or incomplete source partition zeros both
 side-kind inventories rather than exposing partial counts.
 
-Six independent semantic theorem targets prove selector identity, complete and
-incomplete partition behavior, parsed inventory correspondence, package-local
-note integrity, and aggregate/serialization soundness with empty axiom sets.
-The separate `production_run_request_core_refinement_sound` theorem binds the
+The retained main, header/footer, footnote, and endnote event sources are then
+scanned once for `w:commentReference`. An absent comments relationship is valid
+only when no admitted reference element exists; relationship absence is
+decided before reading a reference ID. A selected relationship may target any
+safe internal part, whose root must be Transitional `w:comments`. Every
+canonical decimal reference must resolve to exactly one direct-child
+`w:comment`; unique unreferenced definitions are allowed. Non-direct
+definitions fail. Comment range pairing/topology and Microsoft threaded
+comments remain outside scope.
+
+Seven independent comment-semantic theorem targets prove selector identity,
+request-bound realization, complete and incomplete partition behavior, parsed
+inventory correspondence, package-local integrity, and aggregate soundness
+with empty axiom sets.
+The separate `production_run_request_core_v6_refinement_sound` theorem binds the
 actual `runRequestCore` package records and parser evidence through selection,
-bounded scanning, inventories, aggregate pass, every protocol-v5 JSON field,
+bounded scanning, inventories, aggregate pass, every protocol-v6 JSON field,
 and finalized stdout. Its exact foundation set is `propext`,
 `Classical.choice`, and `Quot.sound`, introduced by the concrete
 `Lean.Json`/`String` production path; its recursive dependency closure rejects
@@ -269,7 +281,7 @@ external `unzip` deflate operation and OS snapshot write remain explicit trust
 boundaries; Lean proves the retained input/output relation, not the deflate
 implementation. The proof gate consumes that evidence without
 whole-package CRC recomputation, parser reruns, or semantic rescans. Concrete
-JSON must equal the independently typed `semanticProtocolV5Projection`; its
+JSON must equal the independently typed `semanticProtocolV6Projection`; its
 recursive value dependency closure excludes every production encoder,
 ordering/coalescing/budget/terminal helper, the production builder, and
 `runRequestCore`. Compiled drift witnesses cover field names and values, array
@@ -284,12 +296,14 @@ supervisor-owned root; the standalone fallback does not claim kill-resistant
 cleanup.
 
 The public
-certificate stays at version 1; checker protocol version 5, relationship
+certificate stays at version 1; checker protocol version 6, relationship
 scope, slots, physical stories, semantic note scope, three source partitions,
-two note stories, six inventories, and structured failures are additive
+two note stories, six note inventories, one comment story, three comment
+inventories, and structured failures are additive
 fields. Legacy `fixedStoryScope` is emitted only when all six note slots were
 actually checked at the conventional paths.
-Rebuild remains `not_applicable`. Inherited roles, unselected parts, comments,
+Rebuild remains `not_applicable`. Inherited roles, unselected parts, comment
+range topology, Microsoft threaded comments,
 complete relationship/OPC/schema validation, pagination, rendering, field
 evaluation, and full ECMA-376 conformance remain excluded. Exact surfaces are in
 `verification/registry/lean-xml-checker-coverage.json` and drift-checked by
