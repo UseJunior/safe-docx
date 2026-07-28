@@ -1,0 +1,344 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://usejunior.com/schemas/safe-docx-conformance-explorer-v1.json",
+  "title": "Safe DOCX Conformance Explorer Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "product",
+    "sources",
+    "sections",
+    "schemaDeclarations",
+    "capabilityClaims"
+  ],
+  "properties": {
+    "contract": {
+      "const": "safe-docx-conformance-explorer/v1"
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "const": "safe-docx" },
+        "name": { "const": "Safe DOCX" }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registries", "neutralProjection"],
+      "properties": {
+        "registries": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/repositoryPath" }
+        },
+        "neutralProjection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "commit", "registryVersion", "profileId"],
+          "properties": {
+            "repository": { "const": "open-agreements/docx-platform-tests" },
+            "commit": { "$ref": "#/$defs/commit" },
+            "registryVersion": { "type": "integer", "minimum": 1 },
+            "profileId": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "schemaDeclarations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/schemaDeclaration" }
+    },
+    "capabilityClaims": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/capabilityClaim" }
+    }
+  },
+  "$defs": {
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "standardCitation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["standard", "edition", "part", "section"],
+      "properties": {
+        "standard": { "const": "ECMA-376" },
+        "edition": { "type": "integer", "minimum": 1 },
+        "part": { "type": "integer", "minimum": 1 },
+        "section": {
+          "type": "string",
+          "pattern": "^[0-9]+(?:\\.[0-9]+)*$"
+        }
+      }
+    },
+    "evidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "source",
+            "test",
+            "formal-verification",
+            "generated-evidence",
+            "registry",
+            "documentation"
+          ]
+        },
+        "path": { "$ref": "#/$defs/repositoryPath" }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "classification",
+        "citation",
+        "canonicalUrl",
+        "schemaRef",
+        "claimRationale",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ECMA-PART[0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "classification": { "enum": ["targeted", "non-goal"] },
+        "citation": { "$ref": "#/$defs/standardCitation" },
+        "canonicalUrl": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "schemaRef": { "$ref": "#/$defs/schemaRef" },
+        "claimRationale": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidenceReference" }
+        }
+      }
+    },
+    "schemaRef": {
+      "type": "string",
+      "pattern": "^spec-compliance/ecma-376/schemas/.+\\.xsd#(?:element|type|attribute):[^#]+$"
+    },
+    "schemaOccurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contextPath"],
+      "properties": {
+        "contextPath": { "type": "string", "minLength": 1 },
+        "declaredType": { "type": "string", "minLength": 1 },
+        "ref": { "type": "string", "minLength": 1 },
+        "use": { "type": "string", "minLength": 1 },
+        "minOccurs": { "type": "string", "minLength": 1 },
+        "maxOccurs": { "type": "string", "minLength": 1 }
+      }
+    },
+    "schemaDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "schemaPath",
+        "conformanceClass",
+        "targetNamespace",
+        "kind",
+        "name",
+        "occurrences"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/schemaRef" },
+        "schemaPath": { "$ref": "#/$defs/repositoryPath" },
+        "conformanceClass": {
+          "enum": ["strict", "transitional", "opc", "other"]
+        },
+        "targetNamespace": {
+          "type": "string",
+          "pattern": "^(?:https?://|urn:)"
+        },
+        "kind": { "enum": ["element", "type", "attribute"] },
+        "name": { "type": "string", "minLength": 1 },
+        "occurrences": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/schemaOccurrence" }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageParts", "stories", "reconstructionModes"],
+      "properties": {
+        "packageParts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "stories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "reconstructionModes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["inplace", "rebuild", "not-applicable"]
+          }
+        }
+      }
+    },
+    "claimEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "evidenceClass",
+        "path",
+        "implementationVersion",
+        "lastVerifiedCommit"
+      ],
+      "properties": {
+        "kind": { "const": "neutral-result" },
+        "evidenceClass": {
+          "enum": [
+            "normative-behavioral-scenario",
+            "cross-implementation-differential"
+          ]
+        },
+        "path": { "$ref": "#/$defs/repositoryPath" },
+        "implementationVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "lastVerifiedCommit": { "$ref": "#/$defs/commit" }
+      }
+    },
+    "capabilityClaim": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": { "const": "preservation-only" }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "axis": { "const": "preserve" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["supported", "partial", "preservation-only"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "evidence": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ],
+      "required": [
+        "capabilityId",
+        "axis",
+        "status",
+        "implementationVersion",
+        "lastVerifiedCommit",
+        "scope",
+        "rationale",
+        "evidence",
+        "mappedScenarioIds"
+      ],
+      "properties": {
+        "capabilityId": {
+          "type": "string",
+          "pattern": "^word(?:\\.[a-z][a-z0-9-]*){2,}$"
+        },
+        "axis": {
+          "enum": [
+            "detect",
+            "preserve",
+            "parse",
+            "validate",
+            "generate",
+            "edit",
+            "compare",
+            "acceptReject",
+            "wordRoundtrip",
+            "crossPlatform"
+          ]
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "partial",
+            "preservation-only",
+            "gap",
+            "non-goal",
+            "untested"
+          ]
+        },
+        "implementationVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "lastVerifiedCommit": { "$ref": "#/$defs/commit" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "rationale": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/claimEvidence" }
+        },
+        "mappedScenarioIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
