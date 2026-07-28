@@ -629,7 +629,12 @@ export function rejectAllChanges(documentXml: string): string {
     renameElement(delInstrText, 'w:instrText');
   }
 
-  // Remove format change tracking
+  // Restore original direct paragraph properties before removing format
+  // tracking. The pPrChange child is a CT_PPrBase snapshot; paragraph-mark
+  // properties and section topology sit outside that base and remain live.
+  restoreParagraphPropertiesFromChanges(root);
+
+  // Remove remaining format change tracking
   removeAllByTagName(root, 'w:rPrChange');
   removeAllByTagName(root, 'w:pPrChange');
 
@@ -640,6 +645,40 @@ export function rejectAllChanges(documentXml: string): string {
   removeEmptyHyperlinks(root);
 
   return serializeToXml(root);
+}
+
+/**
+ * Restore the original paragraph-property snapshot carried by `w:pPrChange`.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @see https://github.com/UseJunior/safe-docx/issues/679
+ */
+function restoreParagraphPropertiesFromChanges(root: Element): void {
+  const changes = findAllByTagName(root, 'w:pPrChange');
+  for (const change of changes) {
+    const livePPr = change.parentNode as Element | null;
+    const paragraph = livePPr?.parentNode;
+    if (
+      !livePPr ||
+      livePPr.tagName !== 'w:pPr' ||
+      !paragraph ||
+      (paragraph as Element).tagName !== 'w:p'
+    ) {
+      continue;
+    }
+
+    const snapshot = childElements(change).find((child) => child.tagName === 'w:pPr');
+    if (!snapshot) continue;
+    const restored = snapshot.cloneNode(true) as Element;
+
+    // CT_PPrBase intentionally excludes these live, non-base children.
+    for (const child of childElements(livePPr)) {
+      if (child.tagName === 'w:rPr' || child.tagName === 'w:sectPr') {
+        restored.appendChild(child.cloneNode(true));
+      }
+    }
+    paragraph.replaceChild(restored, livePPr);
+  }
 }
 
 /**

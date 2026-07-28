@@ -7,7 +7,7 @@ import {
 } from './session_resolution.js';
 import { err, ok, type ToolResponse } from './types.js';
 
-function projectSection(section: DocumentSection) {
+export function projectSectionForTool(section: DocumentSection) {
   return {
     section_index: section.sectionIndex,
     location: section.location,
@@ -53,7 +53,7 @@ export async function getSections(
   const { session, metadata } = resolved;
 
   try {
-    const sections = session.doc.getSections().map(projectSection);
+    const sections = session.doc.getSections().map(projectSectionForTool);
     manager.touch(session);
     return ok(mergeSessionResolutionMetadata({
       file_path: manager.normalizePath(session.originalPath),

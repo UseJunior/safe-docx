@@ -85,6 +85,8 @@
   inventory projection and `response.commentParsedEvidence side`; assert
   private-root removal after child close on success, failure, timeout, and
   overflow.
+- [x] 3.10 Close checker/decoder issue-shape drift for malformed non-direct
+  definitions and reject source or optional extras on terminal comment issues.
 
 ## 4. Coverage and acceptance
 
@@ -100,3 +102,10 @@
   real-DOCX tests.
 - [ ] 4.5 Obtain independent implementation review and post-merge real-document
   smoke before closing #672.
+
+Independent review findings were repaired by #709, but its exact-merge smoke
+found that full-document comment scanning exhausts the native stack. Issue #672
+was reopened, and #710 tracks the stack-safe full-document acceptance work.
+
+Archive is deferred to #706 so formal Lean theorem evidence is not
+misrepresented as TypeScript runtime-test coverage.

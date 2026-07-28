@@ -148,9 +148,9 @@ describe('inplace empty and table-cell paragraph placement', () => {
  * `CT_PPrBase` permits no attributes, so only xmlns:* ever appears there —
  * whitespace, child order) and revision provenance never distinguish, so
  * none of these shapes may produce phantom paragraph-mark delete+insert
- * pairs. Substantive property children still distinguish (see the
- * substantive/sectPr describe blocks below). Representing a property delta
- * as w:pPrChange instead of delete+insert is #679's change-detection scope.
+ * pairs. Direct w:pStyle is also aligned for #679's detector; other
+ * substantive property children still distinguish (see the
+ * substantive/sectPr describe blocks below).
  *
  * @see https://github.com/UseJunior/safe-docx/issues/678
  * @see https://github.com/UseJunior/safe-docx/issues/679
@@ -302,12 +302,13 @@ describe('deleted body paragraph after equal table-cell empties', () => {
 });
 
 /**
- * Substantive w:pPr children distinguish empty-paragraph identity: pairing
+ * Substantive w:pPr children other than direct w:pStyle distinguish
+ * empty-paragraph identity: pairing
  * two empty paragraphs whose properties genuinely differ would let
  * reconstruction mode decide which side's properties survive, silently.
  * As delete+insert markup, the difference is representable: accept yields
  * the revised properties, reject restores the original's, identically in
- * both modes. Representing the delta as w:pPrChange instead is #679.
+ * both modes. Direct style deltas instead use #679's w:pPrChange path.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/678
  * @see https://github.com/UseJunior/safe-docx/issues/679

@@ -32,10 +32,16 @@ import {
 } from './paragraph_numbering.js';
 import {
   getDocumentSections,
+  insertSectionBreak,
   setSectionPageNumberStart,
+  updateSectionProperties,
   type DocumentSection,
+  type InsertSectionBreakMutation,
+  type InsertSectionBreakResult,
   type SectionPageNumberMutation,
   type SectionPageNumberMutationResult,
+  type SectionPropertiesMutation,
+  type SectionPropertiesMutationResult,
 } from './sections.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
@@ -968,11 +974,33 @@ export class DocxDocument {
     return getDocumentSections(this.documentXml);
   }
 
+  insertSectionBreak(
+    mutation: InsertSectionBreakMutation,
+    ctx?: RevisionContext,
+  ): InsertSectionBreakResult {
+    const result = insertSectionBreak(this.documentXml, mutation, ctx);
+    this.dirty = true;
+    this.documentViewCache = null;
+    return result;
+  }
+
   setSectionPageNumberStart(
     mutation: SectionPageNumberMutation,
     ctx?: RevisionContext,
   ): SectionPageNumberMutationResult {
     const result = setSectionPageNumberStart(this.documentXml, mutation, ctx);
+    if (result.changed) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return result;
+  }
+
+  updateSectionProperties(
+    mutation: SectionPropertiesMutation,
+    ctx?: RevisionContext,
+  ): SectionPropertiesMutationResult {
+    const result = updateSectionProperties(this.documentXml, mutation, ctx);
     if (result.changed) {
       this.dirty = true;
       this.documentViewCache = null;

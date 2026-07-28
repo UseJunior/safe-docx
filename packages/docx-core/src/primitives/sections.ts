@@ -1,7 +1,12 @@
-import { getParagraphBookmarkId } from './bookmarks.js';
+import {
+  findParagraphByBookmarkId,
+  getParagraphBookmarkId,
+  insertSingleParagraphBookmark,
+} from './bookmarks.js';
 import { childElements, createWmlElement, getDirectChildrenByName, isW } from './dom-helpers.js';
 import { OOXML, W } from './namespaces.js';
 import {
+  allocateRevisionId,
   buildSectPrChangeElement,
   type RevisionContext,
 } from './track-changes-emitter.js';
@@ -54,10 +59,78 @@ export type SectionPageNumberMutationResult = {
   currentPageNumberStart: number;
 };
 
+export type SectionPageSizeMutation = {
+  widthTwips?: number;
+  heightTwips?: number;
+  orientation?: 'portrait' | 'landscape';
+};
+
+export type SectionMarginsMutation = {
+  topTwips?: number;
+  rightTwips?: number;
+  bottomTwips?: number;
+  leftTwips?: number;
+  headerTwips?: number;
+  footerTwips?: number;
+  gutterTwips?: number;
+};
+
+export type SectionPropertiesMutation = {
+  sectionIndex: number;
+  pageNumberStart?: number;
+  pageSize?: SectionPageSizeMutation;
+  margins?: SectionMarginsMutation;
+};
+
+export type SectionPropertiesMutationResult = {
+  sectionIndex: number;
+  changed: boolean;
+  previousSection: DocumentSection;
+  currentSection: DocumentSection;
+};
+
+export type SectionBreakType =
+  | 'nextPage'
+  | 'nextColumn'
+  | 'continuous'
+  | 'evenPage'
+  | 'oddPage';
+
+export type InsertSectionBreakMutation = {
+  anchorParagraphId: string;
+  breakType: SectionBreakType;
+  inheritProperties?: boolean;
+  newSection?: Omit<SectionPropertiesMutation, 'sectionIndex'>;
+};
+
+export type InsertSectionBreakResult = {
+  changed: true;
+  insertedBoundaryParagraphId: string;
+  precedingSectionIndex: number;
+  followingSectionIndex: number;
+  sectionCountBefore: number;
+  sectionCountAfter: number;
+  precedingSection: DocumentSection;
+  followingSection: DocumentSection;
+};
+
 export type SectionMutationErrorCode =
   | 'INVALID_SECTION_INDEX'
   | 'SECTION_NOT_FOUND'
-  | 'INVALID_PAGE_NUMBER_START';
+  | 'INVALID_SECTION_ANCHOR'
+  | 'SECTION_ANCHOR_NOT_FOUND'
+  | 'SECTION_ANCHOR_NOT_BODY'
+  | 'SECTION_BOUNDARY_EXISTS'
+  | 'SECTION_INSERTION_INVARIANT'
+  | 'INVALID_SECTION_BREAK_TYPE'
+  | 'INVALID_INHERIT_PROPERTIES'
+  | 'INVALID_PAGE_NUMBER_START'
+  | 'EMPTY_SECTION_MUTATION'
+  | 'INVALID_PAGE_SIZE'
+  | 'INVALID_PAGE_ORIENTATION'
+  | 'INCOMPLETE_PAGE_SIZE'
+  | 'INVALID_PAGE_MARGINS'
+  | 'INCOMPLETE_PAGE_MARGINS';
 
 export class SectionMutationError extends Error {
   constructor(
@@ -183,22 +256,171 @@ export function getDocumentSections(doc: Document): DocumentSection[] {
   return collectLiveSections(doc).map(projectSection);
 }
 
-function validateMutation(mutation: SectionPageNumberMutation): void {
+const PAGE_SIZE_KEYS = [
+  'widthTwips',
+  'heightTwips',
+  'orientation',
+] as const satisfies readonly (keyof SectionPageSizeMutation)[];
+
+const MARGIN_KEYS = [
+  'topTwips',
+  'rightTwips',
+  'bottomTwips',
+  'leftTwips',
+  'headerTwips',
+  'footerTwips',
+  'gutterTwips',
+] as const satisfies readonly (keyof SectionMarginsMutation)[];
+
+function hasDefinedValue<T extends object>(
+  value: T | undefined,
+  keys: readonly (keyof T)[],
+): boolean {
+  return value !== undefined && keys.some((key) => value[key] !== undefined);
+}
+
+function validatePositiveTwips(value: unknown, label: string): void {
+  if (!Number.isSafeInteger(value) || (value as number) <= 0) {
+    throw new SectionMutationError(
+      'INVALID_PAGE_SIZE',
+      `${label} must be a positive safe integer.`,
+    );
+  }
+}
+
+function validateSignedTwips(value: unknown, label: string): void {
+  if (!Number.isSafeInteger(value)) {
+    throw new SectionMutationError(
+      'INVALID_PAGE_MARGINS',
+      `${label} must be a safe integer.`,
+    );
+  }
+}
+
+function validateUnsignedTwips(value: unknown, label: string): void {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new SectionMutationError(
+      'INVALID_PAGE_MARGINS',
+      `${label} must be a non-negative safe integer.`,
+    );
+  }
+}
+
+function validateMutation(mutation: SectionPropertiesMutation): void {
   if (!Number.isSafeInteger(mutation.sectionIndex) || mutation.sectionIndex < 0) {
     throw new SectionMutationError(
       'INVALID_SECTION_INDEX',
       'sectionIndex must be a non-negative safe integer.',
     );
   }
+
+  const hasPageSize = hasDefinedValue(mutation.pageSize, PAGE_SIZE_KEYS);
+  const hasMargins = hasDefinedValue(mutation.margins, MARGIN_KEYS);
   if (
-    !Number.isSafeInteger(mutation.pageNumberStart)
-    || mutation.pageNumberStart < 0
+    mutation.pageNumberStart === undefined
+    && !hasPageSize
+    && !hasMargins
   ) {
     throw new SectionMutationError(
-      'INVALID_PAGE_NUMBER_START',
-      'pageNumberStart must be a non-negative safe integer.',
+      'EMPTY_SECTION_MUTATION',
+      'At least one section page-setup value must be provided.',
     );
   }
+
+  if (mutation.pageNumberStart !== undefined) {
+    if (
+      !Number.isSafeInteger(mutation.pageNumberStart)
+      || mutation.pageNumberStart < 0
+    ) {
+      throw new SectionMutationError(
+        'INVALID_PAGE_NUMBER_START',
+        'pageNumberStart must be a non-negative safe integer.',
+      );
+    }
+  }
+
+  if (mutation.pageSize?.widthTwips !== undefined) {
+    validatePositiveTwips(mutation.pageSize.widthTwips, 'pageSize.widthTwips');
+  }
+  if (mutation.pageSize?.heightTwips !== undefined) {
+    validatePositiveTwips(mutation.pageSize.heightTwips, 'pageSize.heightTwips');
+  }
+  if (
+    mutation.pageSize?.orientation !== undefined
+    && mutation.pageSize.orientation !== 'portrait'
+    && mutation.pageSize.orientation !== 'landscape'
+  ) {
+    throw new SectionMutationError(
+      'INVALID_PAGE_ORIENTATION',
+      'pageSize.orientation must be "portrait" or "landscape".',
+    );
+  }
+
+  if (mutation.margins?.topTwips !== undefined) {
+    validateSignedTwips(mutation.margins.topTwips, 'margins.topTwips');
+  }
+  if (mutation.margins?.bottomTwips !== undefined) {
+    validateSignedTwips(mutation.margins.bottomTwips, 'margins.bottomTwips');
+  }
+  for (const key of [
+    'rightTwips',
+    'leftTwips',
+    'headerTwips',
+    'footerTwips',
+    'gutterTwips',
+  ] as const) {
+    const value = mutation.margins?.[key];
+    if (value !== undefined) validateUnsignedTwips(value, `margins.${key}`);
+  }
+}
+
+function insertPgSzInSchemaOrder(sectPr: Element, pgSz: Element): void {
+  const successors = new Set([
+    W.pgMar,
+    'paperSrc',
+    'pgBorders',
+    'lnNumType',
+    W.pgNumType,
+    'cols',
+    'formProt',
+    'vAlign',
+    'noEndnote',
+    W.titlePg,
+    'textDirection',
+    'bidi',
+    'rtlGutter',
+    'docGrid',
+    'printerSettings',
+    'sectPrChange',
+  ]);
+  const successor = childElements(sectPr)
+    .find((child) => successors.has(child.localName));
+  if (successor) sectPr.insertBefore(pgSz, successor);
+  else sectPr.appendChild(pgSz);
+}
+
+function insertPgMarInSchemaOrder(sectPr: Element, pgMar: Element): void {
+  const successors = new Set([
+    'paperSrc',
+    'pgBorders',
+    'lnNumType',
+    W.pgNumType,
+    'cols',
+    'formProt',
+    'vAlign',
+    'noEndnote',
+    W.titlePg,
+    'textDirection',
+    'bidi',
+    'rtlGutter',
+    'docGrid',
+    'printerSettings',
+    'sectPrChange',
+  ]);
+  const successor = childElements(sectPr)
+    .find((child) => successors.has(child.localName));
+  if (successor) sectPr.insertBefore(pgMar, successor);
+  else sectPr.appendChild(pgMar);
 }
 
 function insertPgNumTypeInSchemaOrder(sectPr: Element, pgNumType: Element): void {
@@ -221,6 +443,508 @@ function insertPgNumTypeInSchemaOrder(sectPr: Element, pgNumType: Element): void
   else sectPr.appendChild(pgNumType);
 }
 
+function setSectionBreakType(sectPr: Element, breakType: SectionBreakType): void {
+  const existingTypes = getDirectChildrenByName(sectPr, W.type);
+  let type = existingTypes[0];
+  for (const duplicate of existingTypes.slice(1)) {
+    sectPr.removeChild(duplicate);
+  }
+  if (!type) {
+    type = createWmlElement(sectPr.ownerDocument, W.type);
+    const successor = childElements(sectPr).find((child) =>
+      child.localName !== W.headerReference
+      && child.localName !== W.footerReference
+    );
+    if (successor) sectPr.insertBefore(type, successor);
+    else sectPr.appendChild(type);
+  }
+  type.setAttributeNS(OOXML.W_NS, `w:${W.val}`, breakType);
+}
+
+function removeDirectSectionChange(sectPr: Element): void {
+  for (const change of getDirectChildrenByName(sectPr, 'sectPrChange')) {
+    sectPr.removeChild(change);
+  }
+}
+
+function resetNonRelationshipSectionProperties(sectPr: Element): void {
+  for (const child of childElements(sectPr)) {
+    if (
+      !isW(child, W.headerReference)
+      && !isW(child, W.footerReference)
+    ) {
+      sectPr.removeChild(child);
+    }
+  }
+  for (let i = sectPr.attributes.length - 1; i >= 0; i--) {
+    const attribute = sectPr.attributes.item(i);
+    if (attribute?.namespaceURI === OOXML.W_NS) {
+      sectPr.removeAttributeNode(attribute);
+    }
+  }
+}
+
+function ensureProspectiveSectionMutationIsValid(
+  doc: Document,
+  sectionIndex: number,
+  mutation: Omit<SectionPropertiesMutation, 'sectionIndex'>,
+  inheritProperties: boolean,
+  currentSectPr: Element,
+): void {
+  const fullMutation: SectionPropertiesMutation = { sectionIndex, ...mutation };
+  validateMutation(fullMutation);
+  const prospectiveSectPr = inheritProperties
+    ? currentSectPr.cloneNode(true) as Element
+    : createWmlElement(doc, W.sectPr);
+  if (!inheritProperties) {
+    for (const reference of childElements(currentSectPr)) {
+      if (
+        isW(reference, W.headerReference)
+        || isW(reference, W.footerReference)
+      ) {
+        prospectiveSectPr.appendChild(reference.cloneNode(true));
+      }
+    }
+  }
+  assertMissingElementsCanBeCreated(
+    { sectPr: prospectiveSectPr, location: 'body', paragraph: null },
+    fullMutation,
+  );
+}
+
+function paragraphInsertionReference(anchor: Element): Node | null {
+  let cursor = anchor.nextSibling;
+  while (cursor) {
+    if (cursor.nodeType !== 1) {
+      cursor = cursor.nextSibling;
+      continue;
+    }
+    if (isW(cursor as Element, W.bookmarkEnd)) {
+      cursor = cursor.nextSibling;
+      continue;
+    }
+    break;
+  }
+  return cursor;
+}
+
+function addParagraphInsertionMarker(
+  doc: Document,
+  pPr: Element,
+  ctx: RevisionContext,
+): void {
+  const rPr = createWmlElement(doc, W.rPr);
+  rPr.appendChild(createWmlElement(doc, 'ins', {
+    'w:id': String(allocateRevisionId(ctx.idState)),
+    'w:author': ctx.author,
+    'w:date': ctx.date,
+  }));
+  pPr.insertBefore(rPr, pPr.firstChild);
+}
+
+function requestedValueDiffers(
+  element: Element | undefined,
+  localName: string,
+  value: number | string | undefined,
+): boolean {
+  return value !== undefined
+    && (!element || getWAttr(element, localName) !== String(value));
+}
+
+function assertMissingElementsCanBeCreated(
+  liveSection: LiveSection,
+  mutation: SectionPropertiesMutation,
+): void {
+  if (
+    hasDefinedValue(mutation.pageSize, PAGE_SIZE_KEYS)
+    && getDirectChildrenByName(liveSection.sectPr, W.pgSz).length === 0
+    && (
+      mutation.pageSize?.widthTwips === undefined
+      || mutation.pageSize.heightTwips === undefined
+    )
+  ) {
+    throw new SectionMutationError(
+      'INCOMPLETE_PAGE_SIZE',
+      'A section without w:pgSz requires both widthTwips and heightTwips.',
+    );
+  }
+
+  if (
+    hasDefinedValue(mutation.margins, MARGIN_KEYS)
+    && getDirectChildrenByName(liveSection.sectPr, W.pgMar).length === 0
+    && MARGIN_KEYS.some((key) => mutation.margins?.[key] === undefined)
+  ) {
+    throw new SectionMutationError(
+      'INCOMPLETE_PAGE_MARGINS',
+      'A section without w:pgMar requires all seven margin values.',
+    );
+  }
+}
+
+/**
+ * Atomically update one section's page setup while preserving every
+ * unspecified section property and recording one prior-state snapshot.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.13
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.11
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.12
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see #654
+ */
+export function updateSectionProperties(
+  doc: Document,
+  mutation: SectionPropertiesMutation,
+  ctx?: RevisionContext,
+): SectionPropertiesMutationResult {
+  validateMutation(mutation);
+  const liveSection = collectLiveSections(doc)[mutation.sectionIndex];
+  if (!liveSection) {
+    throw new SectionMutationError(
+      'SECTION_NOT_FOUND',
+      `Section index ${mutation.sectionIndex} was not found.`,
+    );
+  }
+  assertMissingElementsCanBeCreated(liveSection, mutation);
+
+  const existingPgNumTypes = getDirectChildrenByName(
+    liveSection.sectPr,
+    W.pgNumType,
+  );
+  const existingPageSizes = getDirectChildrenByName(liveSection.sectPr, W.pgSz);
+  const existingMargins = getDirectChildrenByName(liveSection.sectPr, W.pgMar);
+  const previousSection = projectSection(liveSection, mutation.sectionIndex);
+
+  const pageNumberChanged = mutation.pageNumberStart !== undefined && (
+    existingPgNumTypes.length !== 1
+    || decimalAttr(existingPgNumTypes[0] ?? null, W.start) !== mutation.pageNumberStart
+  );
+  const pageSizeChanged = hasDefinedValue(mutation.pageSize, PAGE_SIZE_KEYS) && (
+    existingPageSizes.length !== 1
+    || requestedValueDiffers(existingPageSizes[0], W.w, mutation.pageSize?.widthTwips)
+    || requestedValueDiffers(existingPageSizes[0], 'h', mutation.pageSize?.heightTwips)
+    || requestedValueDiffers(existingPageSizes[0], 'orient', mutation.pageSize?.orientation)
+  );
+  const marginsChanged = hasDefinedValue(mutation.margins, MARGIN_KEYS) && (
+    existingMargins.length !== 1
+    || requestedValueDiffers(existingMargins[0], W.top, mutation.margins?.topTwips)
+    || requestedValueDiffers(existingMargins[0], W.right, mutation.margins?.rightTwips)
+    || requestedValueDiffers(existingMargins[0], W.bottom, mutation.margins?.bottomTwips)
+    || requestedValueDiffers(existingMargins[0], W.left, mutation.margins?.leftTwips)
+    || requestedValueDiffers(existingMargins[0], 'header', mutation.margins?.headerTwips)
+    || requestedValueDiffers(existingMargins[0], 'footer', mutation.margins?.footerTwips)
+    || requestedValueDiffers(existingMargins[0], 'gutter', mutation.margins?.gutterTwips)
+  );
+
+  if (!pageNumberChanged && !pageSizeChanged && !marginsChanged) {
+    return {
+      sectionIndex: mutation.sectionIndex,
+      changed: false,
+      previousSection,
+      currentSection: previousSection,
+    };
+  }
+
+  const oldSectPr = liveSection.sectPr.cloneNode(true) as Element;
+
+  if (pageSizeChanged) {
+    let pgSz = existingPageSizes[0];
+    for (const duplicate of existingPageSizes.slice(1)) {
+      liveSection.sectPr.removeChild(duplicate);
+    }
+    if (!pgSz) {
+      pgSz = createWmlElement(doc, W.pgSz);
+      insertPgSzInSchemaOrder(liveSection.sectPr, pgSz);
+    }
+    const pageSizeAttrs = [
+      [W.w, mutation.pageSize?.widthTwips],
+      ['h', mutation.pageSize?.heightTwips],
+      ['orient', mutation.pageSize?.orientation],
+    ] as const;
+    for (const [name, value] of pageSizeAttrs) {
+      if (value !== undefined) {
+        pgSz.setAttributeNS(OOXML.W_NS, `w:${name}`, String(value));
+      }
+    }
+  }
+
+  if (marginsChanged) {
+    let pgMar = existingMargins[0];
+    for (const duplicate of existingMargins.slice(1)) {
+      liveSection.sectPr.removeChild(duplicate);
+    }
+    if (!pgMar) {
+      pgMar = createWmlElement(doc, W.pgMar);
+      insertPgMarInSchemaOrder(liveSection.sectPr, pgMar);
+    }
+    const marginAttrs = [
+      [W.top, mutation.margins?.topTwips],
+      [W.right, mutation.margins?.rightTwips],
+      [W.bottom, mutation.margins?.bottomTwips],
+      [W.left, mutation.margins?.leftTwips],
+      ['header', mutation.margins?.headerTwips],
+      ['footer', mutation.margins?.footerTwips],
+      ['gutter', mutation.margins?.gutterTwips],
+    ] as const;
+    for (const [name, value] of marginAttrs) {
+      if (value !== undefined) {
+        pgMar.setAttributeNS(OOXML.W_NS, `w:${name}`, String(value));
+      }
+    }
+  }
+
+  if (pageNumberChanged) {
+    let pgNumType = existingPgNumTypes[0];
+    for (const duplicate of existingPgNumTypes.slice(1)) {
+      liveSection.sectPr.removeChild(duplicate);
+    }
+    if (!pgNumType) {
+      pgNumType = createWmlElement(doc, W.pgNumType);
+      insertPgNumTypeInSchemaOrder(liveSection.sectPr, pgNumType);
+    }
+    pgNumType.setAttributeNS(
+      OOXML.W_NS,
+      `w:${W.start}`,
+      String(mutation.pageNumberStart),
+    );
+  }
+
+  if (ctx) {
+    for (const stale of getDirectChildrenByName(liveSection.sectPr, 'sectPrChange')) {
+      liveSection.sectPr.removeChild(stale);
+    }
+    liveSection.sectPr.appendChild(buildSectPrChangeElement(oldSectPr, ctx));
+  }
+
+  return {
+    sectionIndex: mutation.sectionIndex,
+    changed: true,
+    previousSection,
+    currentSection: projectSection(liveSection, mutation.sectionIndex),
+  };
+}
+
+const SECTION_BREAK_TYPES = new Set<SectionBreakType>([
+  'nextPage',
+  'nextColumn',
+  'continuous',
+  'evenPage',
+  'oddPage',
+]);
+
+function removeInsertedBoundaryWithBookmarks(paragraph: Element): void {
+  const parent = paragraph.parentNode;
+  if (!parent) return;
+  const previous = paragraph.previousSibling;
+  const next = paragraph.nextSibling;
+  if (previous?.nodeType === 1 && isW(previous as Element, W.bookmarkStart)) {
+    parent.removeChild(previous);
+  }
+  if (next?.nodeType === 1 && isW(next as Element, W.bookmarkEnd)) {
+    parent.removeChild(next);
+  }
+  parent.removeChild(paragraph);
+}
+
+/**
+ * Insert one main-document section boundary after a stable direct-body
+ * paragraph and optionally initialize the following section's page setup.
+ *
+ * The dedicated boundary paragraph carries an inserted paragraph-mark revision
+ * so accepting retains the split and rejecting removes it. Following-section
+ * property overrides use one prior-state snapshot.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.6.22
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.32
+ * @see #654
+ */
+export function insertSectionBreak(
+  doc: Document,
+  mutation: InsertSectionBreakMutation,
+  ctx?: RevisionContext,
+): InsertSectionBreakResult {
+  if (
+    typeof mutation.anchorParagraphId !== 'string'
+    || mutation.anchorParagraphId.trim().length === 0
+  ) {
+    throw new SectionMutationError(
+      'INVALID_SECTION_ANCHOR',
+      'anchorParagraphId must be a non-empty paragraph id.',
+    );
+  }
+  if (!SECTION_BREAK_TYPES.has(mutation.breakType)) {
+    throw new SectionMutationError(
+      'INVALID_SECTION_BREAK_TYPE',
+      'breakType must be nextPage, nextColumn, continuous, evenPage, or oddPage.',
+    );
+  }
+  if (
+    mutation.inheritProperties !== undefined
+    && typeof mutation.inheritProperties !== 'boolean'
+  ) {
+    throw new SectionMutationError(
+      'INVALID_INHERIT_PROPERTIES',
+      'inheritProperties must be a boolean.',
+    );
+  }
+
+  const anchor = findParagraphByBookmarkId(doc, mutation.anchorParagraphId);
+  if (!anchor) {
+    throw new SectionMutationError(
+      'SECTION_ANCHOR_NOT_FOUND',
+      `Paragraph "${mutation.anchorParagraphId}" was not found or was ambiguous.`,
+    );
+  }
+  const body = doc.getElementsByTagNameNS(OOXML.W_NS, W.body).item(0);
+  if (!body || anchor.parentNode !== body) {
+    throw new SectionMutationError(
+      'SECTION_ANCHOR_NOT_BODY',
+      'The section-break anchor must be a direct child of the main document body.',
+    );
+  }
+  const anchorPPr = getDirectChildrenByName(anchor, W.pPr)[0];
+  if (
+    anchorPPr
+    && getDirectChildrenByName(anchorPPr, W.sectPr).length > 0
+  ) {
+    throw new SectionMutationError(
+      'SECTION_BOUNDARY_EXISTS',
+      'The anchor paragraph already ends a section.',
+    );
+  }
+
+  const liveSections = collectLiveSections(doc);
+  let containingSection: LiveSection | undefined;
+  let cursor: Node | null = anchor.nextSibling;
+  while (cursor) {
+    if (cursor.nodeType === 1) {
+      const element = cursor as Element;
+      if (isW(element, W.p)) {
+        const pPr = getDirectChildrenByName(element, W.pPr)[0];
+        const sectPr = pPr
+          ? getDirectChildrenByName(pPr, W.sectPr)[0]
+          : undefined;
+        if (sectPr) {
+          containingSection = liveSections.find((section) => section.sectPr === sectPr);
+          break;
+        }
+      } else if (isW(element, W.sectPr)) {
+        containingSection = liveSections.find((section) => section.sectPr === element);
+        break;
+      }
+    }
+    cursor = cursor.nextSibling;
+  }
+  if (!containingSection) {
+    throw new SectionMutationError(
+      'SECTION_NOT_FOUND',
+      'No live section boundary follows the anchor paragraph.',
+    );
+  }
+  const sectionIndex = liveSections.indexOf(containingSection);
+  if (sectionIndex < 0) {
+    throw new SectionMutationError(
+      'SECTION_NOT_FOUND',
+      'The containing section could not be resolved.',
+    );
+  }
+
+  const inheritProperties = mutation.inheritProperties ?? true;
+  if (mutation.newSection) {
+    ensureProspectiveSectionMutationIsValid(
+      doc,
+      sectionIndex,
+      mutation.newSection,
+      inheritProperties,
+      containingSection.sectPr,
+    );
+  }
+
+  const sectionCountBefore = liveSections.length;
+  const originalFollowingSectPr = containingSection.sectPr.cloneNode(true) as Element;
+  const boundarySectPr = originalFollowingSectPr.cloneNode(true) as Element;
+  removeDirectSectionChange(boundarySectPr);
+  setSectionBreakType(boundarySectPr, mutation.breakType);
+
+  const boundaryParagraph = createWmlElement(doc, W.p);
+  const boundaryPPr = createWmlElement(doc, W.pPr);
+  if (ctx) addParagraphInsertionMarker(doc, boundaryPPr, ctx);
+  boundaryPPr.appendChild(boundarySectPr);
+  boundaryParagraph.appendChild(boundaryPPr);
+
+  let followingChanged = false;
+  let boundaryInserted = false;
+  try {
+    if (!inheritProperties) {
+      resetNonRelationshipSectionProperties(containingSection.sectPr);
+      followingChanged = true;
+      if (mutation.newSection) {
+        updateSectionProperties(
+          doc,
+          { sectionIndex, ...mutation.newSection },
+        );
+      }
+      if (ctx) {
+        containingSection.sectPr.appendChild(
+          buildSectPrChangeElement(originalFollowingSectPr, ctx),
+        );
+      }
+    } else if (mutation.newSection) {
+      followingChanged = updateSectionProperties(
+        doc,
+        { sectionIndex, ...mutation.newSection },
+        ctx,
+      ).changed;
+    }
+
+    body.insertBefore(boundaryParagraph, paragraphInsertionReference(anchor));
+    boundaryInserted = true;
+    const insertedBoundaryParagraphId = insertSingleParagraphBookmark(
+      doc,
+      boundaryParagraph,
+    );
+    const sectionsAfter = getDocumentSections(doc);
+    if (sectionsAfter.length !== sectionCountBefore + 1) {
+      throw new SectionMutationError(
+        'SECTION_INSERTION_INVARIANT',
+        'Section insertion did not add exactly one live section.',
+      );
+    }
+    const precedingSection = sectionsAfter[sectionIndex];
+    const followingSection = sectionsAfter[sectionIndex + 1];
+    if (
+      !precedingSection
+      || !followingSection
+      || precedingSection.anchorParagraphId !== insertedBoundaryParagraphId
+    ) {
+      throw new SectionMutationError(
+        'SECTION_INSERTION_INVARIANT',
+        'Inserted section boundaries were not projected at the expected indexes.',
+      );
+    }
+    return {
+      changed: true,
+      insertedBoundaryParagraphId,
+      precedingSectionIndex: sectionIndex,
+      followingSectionIndex: sectionIndex + 1,
+      sectionCountBefore,
+      sectionCountAfter: sectionsAfter.length,
+      precedingSection,
+      followingSection,
+    };
+  } catch (error) {
+    if (boundaryInserted && boundaryParagraph.parentNode) {
+      removeInsertedBoundaryWithBookmarks(boundaryParagraph);
+    }
+    const liveParent = containingSection.sectPr.parentNode;
+    if (followingChanged && liveParent) {
+      liveParent.replaceChild(originalFollowingSectPr, containingSection.sectPr);
+    }
+    throw error;
+  }
+}
+
 /**
  * Set one section's page-number restart while preserving all unrelated section
  * properties and recording the prior state when a revision context is supplied.
@@ -234,61 +958,12 @@ export function setSectionPageNumberStart(
   mutation: SectionPageNumberMutation,
   ctx?: RevisionContext,
 ): SectionPageNumberMutationResult {
-  validateMutation(mutation);
-  const liveSection = collectLiveSections(doc)[mutation.sectionIndex];
-  if (!liveSection) {
-    throw new SectionMutationError(
-      'SECTION_NOT_FOUND',
-      `Section index ${mutation.sectionIndex} was not found.`,
-    );
-  }
-
-  const existingPgNumTypes = getDirectChildrenByName(
-    liveSection.sectPr,
-    W.pgNumType,
-  );
-  const previousPageNumberStart = decimalAttr(
-    existingPgNumTypes[0] ?? null,
-    W.start,
-  );
-  if (
-    existingPgNumTypes.length === 1
-    && previousPageNumberStart === mutation.pageNumberStart
-  ) {
-    return {
-      sectionIndex: mutation.sectionIndex,
-      changed: false,
-      previousPageNumberStart,
-      currentPageNumberStart: mutation.pageNumberStart,
-    };
-  }
-
-  const oldSectPr = liveSection.sectPr.cloneNode(true) as Element;
-  let pgNumType = existingPgNumTypes[0];
-  for (const duplicate of existingPgNumTypes.slice(1)) {
-    liveSection.sectPr.removeChild(duplicate);
-  }
-  if (!pgNumType) {
-    pgNumType = createWmlElement(doc, W.pgNumType);
-    insertPgNumTypeInSchemaOrder(liveSection.sectPr, pgNumType);
-  }
-  pgNumType.setAttributeNS(
-    OOXML.W_NS,
-    `w:${W.start}`,
-    String(mutation.pageNumberStart),
-  );
-
-  if (ctx) {
-    for (const stale of getDirectChildrenByName(liveSection.sectPr, 'sectPrChange')) {
-      liveSection.sectPr.removeChild(stale);
-    }
-    liveSection.sectPr.appendChild(buildSectPrChangeElement(oldSectPr, ctx));
-  }
-
+  const result = updateSectionProperties(doc, mutation, ctx);
   return {
-    sectionIndex: mutation.sectionIndex,
-    changed: true,
-    previousPageNumberStart,
-    currentPageNumberStart: mutation.pageNumberStart,
+    sectionIndex: result.sectionIndex,
+    changed: result.changed,
+    previousPageNumberStart: result.previousSection.pageNumberStart,
+    currentPageNumberStart: result.currentSection.pageNumberStart
+      ?? mutation.pageNumberStart,
   };
 }

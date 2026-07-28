@@ -66,7 +66,11 @@
     },
     {
       "name": "format_section",
-      "description": "Set a DOCX section's page-number restart with tracked-change support."
+      "description": "Partially update a DOCX section's page numbering, page size/orientation, or margins with tracked-change support."
+    },
+    {
+      "name": "insert_section_break",
+      "description": "Insert a tracked DOCX section break after a stable main-body paragraph."
     },
     {
       "name": "format_numbering",

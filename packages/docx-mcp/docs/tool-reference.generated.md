@@ -204,7 +204,7 @@ Change one DOCX body paragraph’s direct numbering reference. Use remove=true t
 
 ## `format_section`
 
-Set one DOCX section’s page-number restart using a zero-based section_index from get_sections. This first slice writes only w:pgNumType/@w:start, preserves page setup and header/footer references, and emits a native w:sectPrChange. It does not create sections or change page size, margins, break type, headers, footers, or page-number format.
+Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content.
 
 - readOnly: `false`
 - destructive: `true`
@@ -214,7 +214,24 @@ Set one DOCX section’s page-number restart using a zero-based section_index fr
 | `file_path` | `string` | no | Path to the DOCX or ODT file. |
 | `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
 | `section_index` | `integer` | yes | Zero-based session-relative index returned by get_sections. |
-| `page_number_start` | `integer` | yes | Non-negative page number at which this section starts. |
+| `page_number_start` | `integer` | no | Non-negative page number at which this section starts. |
+| `page_size` | `object` | no | Partial page-size update. Both dimensions are required when w:pgSz is absent. |
+| `margins` | `object` | no | Partial margin update in twips. All seven values are required when w:pgMar is absent. |
+
+## `insert_section_break`
+
+Insert a tracked DOCX section break after a stable direct-body paragraph. The new boundary preserves the containing section’s page setup and header/footer relationship references. The following section inherits current properties by default; set inherit_properties=false to reset non-relationship properties, and optionally provide page-number/page-size/margin overrides in new_section. Call get_sections again after success because section indexes change.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `paragraph_id` | `string` | yes | Stable paragraph id returned by read_file; must identify a direct main-body paragraph that does not already end a section. |
+| `break_type` | `enum("nextPage", "nextColumn", "continuous", "evenPage", "oddPage")` | yes | OOXML start behavior for the following section. |
+| `inherit_properties` | `boolean` | no | Whether the following section retains current non-relationship properties. Default: true. Header/footer references are always preserved. |
+| `new_section` | `object` | no | Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements. |
 
 ## `accept_changes`
 

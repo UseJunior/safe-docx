@@ -132,6 +132,7 @@ export async function compareDocuments(
 export * from './atomizer.js';
 export * from './move-detection.js';
 export * from './format-detection.js';
+export * from './paragraph-style-detection.js';
 export * from './baselines/atomizer/formattingFidelity.js';
 export {
   acceptAllChanges,

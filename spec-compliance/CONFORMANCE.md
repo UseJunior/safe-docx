@@ -50,7 +50,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-7-4-18` | w:styles style-definitions part emission | 5 | 1 | 17.7.4.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles` | — |
 | `ECMA-PART1-17-7-4-17` | w:style style-definition emission | 5 | 1 | 17.7.4.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style` | — |
 | `ECMA-PART1-17-7-5-1` | w:docDefaults document-default properties | 5 | 1 | 17.7.5.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults` | — |
-| `ECMA-PART1-17-6-18` | w:sectPr paragraph-level section break emission | 5 | 1 | 17.6.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | — |
+| `ECMA-PART1-17-6-18` | w:sectPr paragraph-level section break emission | 5 | 1 | 17.6.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr` | packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
+| `ECMA-PART1-17-6-22` | w:type section start kind | 5 | 1 | 17.6.22 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SectType` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
 | `ECMA-PART1-17-6-12` | w:pgNumType page-numbering settings emission | 5 | 1 | 17.6.12 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgNumType` | packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/tools/format_section.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts |
 | `ECMA-PART1-17-10-5` | w:headerReference binding | 5 | 1 | 17.10.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:headerReference` | packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
 | `ECMA-PART1-17-10-2` | w:footerReference binding | 5 | 1 | 17.10.2 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:footerReference` | packages/docx-core/src/primitives/sectPrAudit.ts; packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-compare/src/baselines/atomizer/ancillaryFieldSafety.ts; verification/lean/Tier2/RelationshipStorySelector.lean; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts; packages/docx-core/src/integration/ancillary-field-safety.test.ts; packages/docx-core/src/integration/nvca-coi-regression.test.ts |
@@ -106,7 +107,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-4-3` | w:commentRangeEnd comment anchor closing | 5 | 1 | 17.13.4.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentRangeEnd` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts |
 | `ECMA-PART1-17-13-4-5` | w:commentReference comment reference mark | 5 | 1 | 17.13.4.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference` | packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts |
 | `ECMA-PART1-17-13-5-15` | Deleted paragraph mark (w:del under w:pPr/w:rPr) | 5 | 1 | 17.13.5.15 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts |
-| `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts |
+| `ECMA-PART1-17-13-5-20` | Inserted paragraph mark (w:ins under w:pPr/w:rPr) | 5 | 1 | 17.13.5.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
 | `ECMA-PART1-17-13-5-4` | Custom XML deletion range end | 5 | 1 | 17.13.5.4 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-5` | Custom XML deletion range start | 5 | 1 | 17.13.5.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlDelRangeStart` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-6` | Custom XML insertion range end | 5 | 1 | 17.13.5.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:customXmlInsRangeEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
@@ -126,7 +127,7 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-29` | Paragraph-property revisions (w:pPrChange) | 5 | 1 | 17.13.5.29 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-30` | Paragraph-mark run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.30 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-31` | Run-property revisions (w:rPrChange) | 5 | 1 | 17.13.5.31 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
-| `ECMA-PART1-17-13-5-32` | Section-property revisions (w:sectPrChange) | 5 | 1 | 17.13.5.32 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts |
+| `ECMA-PART1-17-13-5-32` | Section-property revisions (w:sectPrChange) | 5 | 1 | 17.13.5.32 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts |
 | `ECMA-PART1-17-13-5-34` | Table-property revisions (w:tblPrChange) | 5 | 1 | 17.13.5.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
@@ -516,6 +517,9 @@ optional orientation. The generation section emitter
 `w:w`/`w:h` for every section (defaulting to US Letter) and sets
 `w:orient="landscape"` with swapped dimensions when the spec requests
 landscape, so readers never fall back to printer-driver defaults.
+The section editing primitive updates explicit width, height, and orientation
+attributes atomically, preserves untargeted attributes such as paper code, and
+requires both dimensions before creating a missing `w:pgSz`.
 
 ### ECMA-PART1-17-6-11 — w:pgMar page margin emission
 
@@ -530,6 +534,9 @@ always emits the full attribute set (top, right, bottom, left, header,
 footer, gutter) because readers diverge in their defaults when
 attributes are omitted; spec values fill in unspecified members from
 the standard one-inch/half-inch defaults.
+The section editing primitive permits partial updates of an existing complete
+margin record, supports the signed top/bottom domains, and requires all seven
+attributes before creating a missing `w:pgMar`.
 
 ### ECMA-PART1-17-3-1-24 — w:pBdr paragraph border collection
 
@@ -638,13 +645,31 @@ between Word, LibreOffice, and Google Docs import.
 - **Part / Section:** Part 1 § 17.6.18
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPr`
+- **Verified by:** packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
 
 A non-final section's properties bind through a `w:sectPr` inside the
 `w:pPr` of a dedicated break paragraph — the shape Word itself produces on
 Insert → Section Break, and the one that sidesteps the trailing-table case
 (a table cannot carry section properties). The generation document emitter
 appends such a break paragraph after every non-final section's blocks;
-`auditSectPr` verifies the pPr-only placement on the way back out.
+`auditSectPr` verifies the pPr-only placement on the way back out. The editing
+primitive inserts the same dedicated shape after a stable direct-body paragraph,
+preserves the containing `w:sectPr`, and verifies that exactly one ordered live
+section is added.
+
+### ECMA-PART1-17-6-22 — w:type section start kind
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.6.22
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_SectType`
+- **Verified by:** packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
+
+The inserted paragraph-level section properties carry exactly one `w:type`
+whose `w:val` is one of the schema's `nextPage`, `nextColumn`, `continuous`,
+`evenPage`, or `oddPage` section marks. Invalid values fail before document
+mutation. This claim covers emitted section-start markup, not pagination or
+reader layout behavior.
 
 ### ECMA-PART1-17-6-12 — w:pgNumType page-numbering settings emission
 
@@ -1346,7 +1371,7 @@ contents themselves are deleted only where they carry their own run-level
 - **Part / Section:** Part 1 § 17.13.5.20
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins`
-- **Verified by:** packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts
+- **Verified by:** packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts; packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
 
 ECMA-376 Part 1 §17.13.5.20 defines `w:ins` inside `w:pPr/w:rPr` as a tracked
 insertion of the *paragraph mark*, not of the paragraph's contents. Rejecting
@@ -1356,6 +1381,9 @@ only where they carry their own run-level `w:ins` wrappers. safe-docx's reject
 paths implement this merge in
 `packages/docx-core/src/primitives/reject_changes.ts` and
 `packages/docx-compare/src/baselines/atomizer/trackChangesAcceptorAst.ts`.
+Section-break insertion uses the same paragraph-mark form on a dedicated empty
+boundary paragraph so rejecting removes the new topology and accepting retains
+the boundary.
 
 ### ECMA-PART1-17-13-5-4 — Custom XML deletion range end
 
@@ -1587,13 +1615,14 @@ safe-docx emits bounded run-formatting snapshots and consumes existing
 - **Part / Section:** Part 1 § 17.13.5.32
 - **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
 - **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange`
-- **Verified by:** packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
+- **Verified by:** packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/primitives/sections_insert_break.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts; packages/docx-mcp/src/tools/insert_section_break.test.ts
 
-safe-docx emits bounded page-number restart snapshots and consumes existing
+safe-docx emits bounded page-number/page-setup snapshots and consumes existing
 `w:sectPrChange` records: accept removes the prior snapshot and reject restores
-it. The authoring claim is limited to `w:pgNumType/@w:start`; header/footer part
-editing, relationship mutation, general pagination, and Lean are outside the
-claim.
+it. Section-break insertion uses one such snapshot when the following section's
+non-relationship properties change. Header/footer references remain live
+because `CT_SectPrChange` carries `CT_SectPrBase`; header/footer part editing,
+relationship mutation, general pagination, and Lean are outside the claim.
 
 ### ECMA-PART1-17-13-5-34 — Table-property revisions (w:tblPrChange)
 

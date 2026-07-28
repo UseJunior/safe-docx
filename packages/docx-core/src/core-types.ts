@@ -105,6 +105,22 @@ export interface FormatChangeInfo {
 }
 
 /**
+ * Paragraph-scoped direct-style change detected after content alignment.
+ *
+ * The payload is attached to every atom in the aligned paragraph so either
+ * reconstruction path can recover it without making run fragmentation part
+ * of the revision identity.
+ */
+export interface ParagraphStyleChangeInfo {
+  /** Original paragraph properties captured before the direct style change. */
+  oldParagraphProperties: WmlElement | null;
+  /** Revised paragraph properties that remain live in comparison output. */
+  newParagraphProperties: WmlElement | null;
+  /** Whether comparison should emit/report the change instead of ignoring it. */
+  tracked: boolean;
+}
+
+/**
  * Process-local payload for a comparison atom owned by an opaque XML boundary.
  *
  * The comparison model is already DOM-backed; this descriptor intentionally
@@ -188,6 +204,8 @@ export interface ComparisonUnitAtom extends ComparisonUnit {
   // Format change properties
   /** Format change details when text is equal but formatting differs */
   formatChange?: FormatChangeInfo;
+  /** Direct w:pStyle change shared by the atom's aligned paragraph. */
+  paragraphStyleChange?: ParagraphStyleChangeInfo;
   /** Reference to the corresponding atom in the other document (for Equal atoms) */
   comparisonUnitAtomBefore?: ComparisonUnitAtom;
 

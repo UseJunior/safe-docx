@@ -3195,12 +3195,12 @@ def buildCommentSideEvidence (package : Package) (side : VerifierSide)
       let duplicates := duplicateCommentDefinitionIssues side definitions
       let missing := missingCommentDefinitionIssues side sources references definitions
       let nonDirect := scan.nonDirectDefinitions.map fun definition =>
-        let canonicalId := (definition.rawId.bind fun raw =>
-          (parseDecimalId raw).toOption.map (·.text)).getD ""
+        let canonicalId := definition.rawId.bind fun raw =>
+          (parseDecimalId raw).toOption.map (·.text)
         commentIssueJson "COMMENT_DEFINITION_NOT_DIRECT"
           "w:comment definitions must be direct children of w:comments"
           side "definition" definition.occurrenceOrdinal "comments" 0
-          [("canonicalId", toJson canonicalId)]
+          (canonicalId.map (fun value => ("canonicalId", toJson value))).toList
       let crossingIssues := match retained.output.crossing with
         | none => []
         | some (.references sourceOrdinal ordinal) =>

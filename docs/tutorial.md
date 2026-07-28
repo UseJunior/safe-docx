@@ -144,7 +144,7 @@ change numbering inherited only through a paragraph style, restart lists, or
 guarantee a rendered label without the surrounding list context. Effective
 changes are recorded as paragraph-property tracked changes.
 
-### Inspect Sections and Restart Page Numbering
+### Inspect and Format Sections
 
 Read the current main-document sections before choosing a target:
 
@@ -152,21 +152,58 @@ Read the current main-document sections before choosing a target:
 get_sections(file_path="~/docs/NDA.docx")
 ```
 
-Then restart numbering for one returned section:
+Then update one returned section. This example restarts numbering, switches to
+explicit Letter landscape geometry, and narrows selected margins atomically:
 
 ```text
 format_section(
   file_path="~/docs/NDA.docx",
   section_index=1,
-  page_number_start=1
+  page_number_start=1,
+  page_size={
+    "width_twips": 15840,
+    "height_twips": 12240,
+    "orientation": "landscape"
+  },
+  margins={
+    "top_twips": 720,
+    "bottom_twips": 720,
+    "left_twips": 720,
+    "right_twips": 720
+  }
 )
 ```
 
 `section_index` is zero-based and session-relative, so call `get_sections` again
-after any operation that changes section topology. This first slice changes only
-the page-number restart. It preserves break type, page size, margins, columns,
-page-number format, and header/footer references, and it does not create or split
-sections.
+after any operation that changes section topology. Page size and margin objects
+are partial when the corresponding setting already exists. A section without
+`w:pgSz` requires both dimensions, and one without `w:pgMar` requires all seven
+margin values (top, right, bottom, left, header, footer, and gutter).
+
+Orientation is literal: changing it does not silently swap width and height.
+Section formatting preserves break type, columns, page-number format, page
+borders, and header/footer references.
+
+To split a section after a stable direct-body paragraph, use the paragraph id
+from `read_file`:
+
+```text
+insert_section_break(
+  file_path="~/docs/NDA.docx",
+  paragraph_id="_bk_9fc26ad74408",
+  break_type="nextPage",
+  new_section={"page_number_start": 1}
+)
+```
+
+The inserted boundary preserves the current page setup and header/footer
+relationship references. The following section inherits its current properties
+by default. Set `inherit_properties=false` to reset its non-relationship
+properties, then provide complete page dimensions and margins in `new_section`
+when those elements need to be recreated. Header/footer parts and relationship
+attachments are deliberately preserved; edit those through the separate
+header/footer capability when available. Call `get_sections` again after a
+successful split because every later section index shifts.
 
 ## Step 6: Save Reviewable Outputs
 
@@ -212,7 +249,7 @@ Visual review remains appropriate for material documents because Safe Docx is no
 | Insert a paragraph | `insert_paragraph` |
 | Delete an ordinary DOCX body paragraph | `replace_text` with the complete text and an empty `new_string` |
 | Remove or repair direct DOCX paragraph numbering | `format_numbering` |
-| Inspect DOCX sections or restart page numbering | `get_sections`, `format_section` |
+| Inspect, split, or change DOCX sections | `get_sections`, `insert_section_break`, `format_section` |
 | Apply several edits together | `batch_edit` |
 | Convert DOCX to ODT | `convert_to_odt` |
 | Convert DOCX to Markdown | `export` with `format="markdown"` |
