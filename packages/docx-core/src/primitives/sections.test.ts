@@ -132,7 +132,7 @@ describe('OpenSpec traceability: section page numbering', () => {
     () => {
       const doc = makeDocument(
         '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
-          + '<w:sectPr><w:pgSz w:w="12240"/><w:pgMar w:top="1440"/><w:cols w:num="2"/><w:titlePg/><w:docGrid w:linePitch="360"/></w:sectPr>',
+          + '<w:sectPr><w:pgSz w:w="12240"/><w:pgMar w:top="1440" w:right="720" w:bottom="1440" w:left="720" w:header="360" w:footer="360" w:gutter="0"/><w:cols w:num="2"/><w:titlePg/><w:docGrid w:linePitch="360"/></w:sectPr>',
       );
 
       expect(setSectionPageNumberStart(
@@ -165,7 +165,7 @@ describe('OpenSpec traceability: section page numbering', () => {
           + '<w:sectPr w:rsidR="AA">'
           + '<w:headerReference w:type="default" r:id="rId1"/>'
           + '<w:pgSz w:w="12240" w:h="15840"/>'
-          + '<w:pgMar w:top="1440" w:left="720"/>'
+          + '<w:pgMar w:top="1440" w:right="720" w:bottom="1440" w:left="720" w:header="360" w:footer="360" w:gutter="0"/>'
           + '<w:pgNumType w:start="2" w:fmt="lowerRoman" w:chapStyle="1" w:chapSep="hyphen"/>'
           + '<w:cols w:num="2"/>'
           + '<w:titlePg/>'
@@ -207,7 +207,7 @@ describe('OpenSpec traceability: section page numbering', () => {
           + '<w:headerReference w:type="default" r:id="rId1"/>'
           + '<w:footerReference w:type="first" r:id="rId2"/>'
           + '<w:pgSz w:w="12240" w:h="15840"/>'
-          + '<w:pgMar w:top="1440" w:left="720"/>'
+          + '<w:pgMar w:top="1440" w:right="720" w:bottom="1440" w:left="720" w:header="360" w:footer="360" w:gutter="0"/>'
           + '<w:pgNumType w:start="2"/><w:cols w:num="2"/>'
           + '</w:sectPr>',
       );

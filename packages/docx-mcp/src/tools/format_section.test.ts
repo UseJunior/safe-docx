@@ -30,14 +30,14 @@ const DOCUMENT_XML =
   + '<w:p><w:pPr><w:sectPr>'
   + '<w:headerReference w:type="default" r:id="rId4"/>'
   + '<w:pgSz w:w="12240" w:h="15840"/>'
-  + '<w:pgMar w:top="1440" w:right="720" w:bottom="1440" w:left="720"/>'
+  + '<w:pgMar w:top="1440" w:right="720" w:bottom="1440" w:left="720" w:header="360" w:footer="360" w:gutter="0"/>'
   + '<w:pgNumType w:start="2" w:fmt="lowerRoman"/>'
   + '<w:cols w:num="2"/><w:titlePg/>'
   + '</w:sectPr></w:pPr><w:r><w:t>Section boundary</w:t></w:r></w:p>'
   + '<w:p><w:r><w:t>Final section</w:t></w:r></w:p>'
   + '<w:sectPr><w:footerReference w:type="default" r:id="rId5"/>'
   + '<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>'
-  + '<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>'
+  + '<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="360" w:footer="360" w:gutter="0"/>'
   + '</w:sectPr>'
   + '</w:body></w:document>';
 
