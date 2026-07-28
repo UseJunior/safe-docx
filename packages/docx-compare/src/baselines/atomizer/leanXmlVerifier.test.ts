@@ -940,6 +940,23 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
         }),
       ]));
 
+      const nestedDefinitionCases = [
+        `<w:comment><w:p/></w:comment>`,
+        `<w:comment w:id="seven"><w:p/></w:comment>`,
+        `<w:comment w:id="${'1'.repeat(65)}"><w:p/></w:comment>`,
+      ];
+      for (const nestedDefinition of nestedDefinitionCases) {
+        const result = await run(await commentIntegrityDocx({
+          commentsXml: `<w:comments xmlns:w="${W_NS}"><w:custom>` +
+            `${nestedDefinition}</w:custom></w:comments>`,
+        }));
+        expect(result.status, result.reason).toBe('failed');
+        const issue = result.commentIntegrityFailures?.find((candidate) =>
+          candidate.code === 'COMMENT_DEFINITION_NOT_DIRECT');
+        expect(issue).toBeDefined();
+        expect(issue?.canonicalId).toBeUndefined();
+      }
+
       const definitionCases = [
         [
           `<w:comments xmlns:w="${W_NS}"><w:comment><w:p/></w:comment></w:comments>`,
@@ -2824,7 +2841,14 @@ test('enforces the canonical equation table for all 40 comment issue codes', () 
     for (const [key, value] of Object.entries(spec.extras ?? {})) {
       const missing = { ...issue };
       delete missing[key];
-      expect(isCommentIssue(missing), `${spec.code}: missing ${key}`).toBe(false);
+      const optionalNonDirectCanonicalId =
+        spec.code === 'COMMENT_DEFINITION_NOT_DIRECT' && key === 'canonicalId';
+      expect(isCommentIssue(missing), `${spec.code}: missing ${key}`)
+        .toBe(optionalNonDirectCanonicalId);
+      if (optionalNonDirectCanonicalId) {
+        expect(isLeanVerifierJson(reportFor(spec, missing)),
+          `${spec.code}: decoder accepts absent canonicalId`).toBe(true);
+      }
       for (const invalid of invalidExtras[key] ?? []) {
         expect(isCommentIssue({ ...issue, [key]: invalid }),
           `${spec.code}: invalid ${key}=${String(invalid)}`).toBe(false);
@@ -3429,6 +3453,33 @@ describe('Lean fixed-story protocol and security hardening', () => {
       commentIntegrityIssues: [terminalIssue],
     };
     expect(isLeanVerifierJson(terminal)).toBe(true);
+    const forbiddenTerminalExtras = {
+      source: { sourceStory: 'main', sourceStoryOrdinal: 0 },
+      canonicalId: '7',
+      rawId: 'bad',
+      rawIdByteLength: 65,
+      relationshipId: 'rIdComments',
+      rawTarget: 'comments.xml',
+      rawTargetByteLength: 257,
+      targetMode: 'External',
+      normalizedPartPath: 'word/comments.xml',
+    };
+    const terminalIssues = [
+      terminalIssue,
+      {
+        ...terminalIssue,
+        code: 'COMMENT_ISSUE_LIMIT_EXCEEDED',
+        detail: 'protocol v6 aggregate ordinary issue limit exceeded',
+      },
+    ];
+    for (const candidate of terminalIssues) {
+      for (const [key, extra] of Object.entries(forbiddenTerminalExtras)) {
+        expect(isLeanVerifierJson({
+          ...terminal,
+          commentIntegrityIssues: [{ ...candidate, [key]: extra }],
+        }), `${candidate.code} terminal extra ${key}`).toBe(false);
+      }
+    }
     expect(isLeanVerifierJson({
       ...terminal,
       fixedStories: [

@@ -866,7 +866,7 @@ Semantic issue fields and ordinals are:
 | `COMMENT_DEFINITION_ID_MALFORMED` | definition / direct ordinal | comments/0 | `rawId` |
 | `COMMENT_DEFINITION_ID_TOO_LONG` | definition / direct ordinal | comments/0 | `rawIdByteLength` |
 | `COMMENT_DEFINITION_LIMIT_EXCEEDED` | definition / `4096` | comments/0 | none |
-| `COMMENT_DEFINITION_NOT_DIRECT` | definition / event ordinal `0..4095` | comments/0 | `canonicalId` |
+| `COMMENT_DEFINITION_NOT_DIRECT` | definition / event ordinal `0..4095` | comments/0 | `canonicalId` only when the nested definition has a valid decimal ID; otherwise none |
 | `COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED` | definition / `4096` | comments/0 | none |
 | `COMMENT_DEFINITION_DUPLICATE` | definition / second direct ordinal | comments/0 | `canonicalId` |
 | `COMMENT_DEFINITION_MISSING` | reference / first occurrence for ID | exact first source | `canonicalId` |
@@ -1010,8 +1010,8 @@ inside the 640 unit:
 
 | Exact issue shape | Structural bytes |
 | --- | ---: |
-| base plus no extras: ambiguous, source-incomplete, relationship-required, missing-ID, occurrence/definition/non-direct limits | 512 |
-| base plus one bounded numeric or string extra: target-limit, ID-malformed/too-long, unique-ID, non-direct, duplicate, missing-definition | 544 |
+| base plus no extras: ambiguous, source-incomplete, relationship-required, missing-ID, malformed-ID non-direct, occurrence/definition/non-direct limits | 512 |
+| base plus one bounded numeric or string extra: target-limit, ID-malformed/too-long, valid-ID non-direct, unique-ID, duplicate, missing-definition | 544 |
 | base plus `relationshipId` and `rawTarget`, or identity/path | 576 |
 | base plus `relationshipId`, `rawTarget`, and `targetMode` | 608 |
 | existing v5 selection/note ordinary per-slot upper charge | 640 |
