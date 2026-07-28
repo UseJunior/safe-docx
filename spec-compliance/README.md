@@ -14,6 +14,8 @@ The contents are auditable in-repo:
 | `evidence/`                   | Generated, mutation-sensitive executable evidence results.         |
 | `capabilities/`               | Pinned neutral denominator and SafeDocX per-axis evidence claims.   |
 | `generated/safe-docx-capability-projection.*` | Generated per-axis report; do not edit by hand.      |
+| `generated/conformance-explorer.json` | Versioned external presentation contract; do not edit by hand. |
+| `conformance-explorer.schema.json` | JSON Schema for the external explorer contract.      |
 | `ecma-376/coverage-ledger/`   | Planning ledgers for expanding coverage without overclaiming.      |
 | `ecma-376/schemas/`           | Vendored normative ECMA-376 XSDs (3.3 MB total, in-tree).          |
 | `ecma-376/COPYRIGHT.txt`      | Ecma International copyright notice preserved with the schemas.    |
@@ -78,3 +80,6 @@ scenarios; missing, extra, or duplicate rows are rejected.
 See [`AGENTS.md`](./AGENTS.md) for the full citation rules and the
 [issue #227 problem statement](https://github.com/UseJunior/safe-docx/issues/227)
 for the WHATWG-style auditability goal this directory serves.
+
+See [`CONFORMANCE_EXPLORER.md`](./CONFORMANCE_EXPLORER.md) for the external
+manifest contract and the downstream pinned-snapshot workflow.

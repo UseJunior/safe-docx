@@ -1,0 +1,207 @@
+{
+  "contract": "safe-docx-conformance-explorer/v1",
+  "product": {
+    "id": "safe-docx",
+    "name": "Safe DOCX"
+  },
+  "sources": {
+    "registries": [
+      "spec-compliance/registry/ecma-376.md"
+    ],
+    "neutralProjection": {
+      "repository": "open-agreements/docx-platform-tests",
+      "commit": "ba9936af06cc18249e892dc594ed9bcefaf98463",
+      "registryVersion": 1,
+      "profileId": "current-neutral-surface"
+    }
+  },
+  "sections": [
+    {
+      "id": "ECMA-PART1-17-3-1-22",
+      "title": "Paragraph structure",
+      "classification": "targeted",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.3.1.22"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:p",
+      "claimRationale": "Safe DOCX targets a bounded paragraph-structure surface.",
+      "evidence": [
+        {
+          "kind": "test",
+          "path": "packages/docx-core/src/integration/cross-implementation-suite.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "ECMA-PART1-17-13-5-1",
+      "title": "Table cell deletion",
+      "classification": "non-goal",
+      "citation": {
+        "standard": "ECMA-376",
+        "edition": 5,
+        "part": 1,
+        "section": "17.13.5.1"
+      },
+      "canonicalUrl": "https://ecma-international.org/publications-and-standards/standards/ecma-376/",
+      "schemaRef": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellDel",
+      "claimRationale": "Safe DOCX does not currently resolve tracked table-cell deletion semantics.",
+      "evidence": []
+    }
+  ],
+  "schemaDeclarations": [
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:p",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "p",
+      "occurrences": [
+        {
+          "contextPath": "schema/complexType:CT_Body/sequence/element:p",
+          "declaredType": "CT_P",
+          "minOccurs": "0",
+          "maxOccurs": "unbounded"
+        },
+        {
+          "contextPath": "schema/group:EG_BlockLevelElts/choice/element:p",
+          "declaredType": "CT_P"
+        }
+      ]
+    },
+    {
+      "id": "spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:cellDel",
+      "schemaPath": "spec-compliance/ecma-376/schemas/transitional/wml.xsd",
+      "conformanceClass": "transitional",
+      "targetNamespace": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+      "kind": "element",
+      "name": "cellDel",
+      "occurrences": [
+        {
+          "contextPath": "schema/complexType:CT_TcPrChange/sequence/element:cellDel",
+          "declaredType": "CT_TrackChange"
+        }
+      ]
+    }
+  ],
+  "capabilityClaims": [
+    {
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "preserve",
+      "status": "supported",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": ["word/document.xml"],
+        "stories": ["main"],
+        "reconstructionModes": ["inplace", "rebuild"]
+      },
+      "rationale": "The pinned neutral scenario passed.",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "evidenceClass": "normative-behavioral-scenario",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072cc18249e892dc594ed9bcefaf98463"
+        }
+      ],
+      "mappedScenarioIds": ["appendParagraphPreservesExistingContent"]
+    },
+    {
+      "capabilityId": "word.paragraphs.structure",
+      "axis": "generate",
+      "status": "partial",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": ["word/document.xml"],
+        "stories": ["main"],
+        "reconstructionModes": ["not-applicable"]
+      },
+      "rationale": "Only the bounded generated paragraph subset is covered.",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "evidenceClass": "normative-behavioral-scenario",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072cc18249e892dc594ed9bcefaf98463"
+        }
+      ],
+      "mappedScenarioIds": ["composeParagraphsProduceTextRuns"]
+    },
+    {
+      "capabilityId": "word.tables.cells",
+      "axis": "preserve",
+      "status": "preservation-only",
+      "implementationVersion": "0.15.0",
+      "lastVerifiedCommit": "459051c072cc18249e892dc594ed9bcefaf98463",
+      "scope": {
+        "packageParts": ["word/document.xml"],
+        "stories": ["main"],
+        "reconstructionModes": ["inplace", "rebuild"]
+      },
+      "rationale": "The fixture demonstrates the preservation-only vocabulary.",
+      "evidence": [
+        {
+          "kind": "neutral-result",
+          "evidenceClass": "normative-behavioral-scenario",
+          "path": "spec-compliance/capabilities/upstream/capability-summary.json",
+          "implementationVersion": "0.15.0",
+          "lastVerifiedCommit": "459051c072cc18249e892dc594ed9bcefaf98463"
+        }
+      ],
+      "mappedScenarioIds": []
+    },
+    {
+      "capabilityId": "word.tables.rows",
+      "axis": "acceptReject",
+      "status": "gap",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": ["word/document.xml"],
+        "stories": ["main"],
+        "reconstructionModes": ["not-applicable"]
+      },
+      "rationale": "Tracked table-row resolution remains a gap.",
+      "evidence": [],
+      "mappedScenarioIds": []
+    },
+    {
+      "capabilityId": "word.settings.compatibility-mode",
+      "axis": "generate",
+      "status": "non-goal",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": ["word/settings.xml"],
+        "stories": ["main"],
+        "reconstructionModes": ["not-applicable"]
+      },
+      "rationale": "This illustrative row is outside the selected product goal.",
+      "evidence": [],
+      "mappedScenarioIds": []
+    },
+    {
+      "capabilityId": "word.comments.anchors",
+      "axis": "crossPlatform",
+      "status": "untested",
+      "implementationVersion": "0.16.0",
+      "lastVerifiedCommit": "4ea2a263dc199cb81132a6580a5d22785fcda7e3",
+      "scope": {
+        "packageParts": ["word/document.xml", "word/comments.xml"],
+        "stories": ["main", "comments"],
+        "reconstructionModes": ["not-applicable"]
+      },
+      "rationale": "No pinned neutral result covers this pair.",
+      "evidence": [],
+      "mappedScenarioIds": []
+    }
+  ]
+}
