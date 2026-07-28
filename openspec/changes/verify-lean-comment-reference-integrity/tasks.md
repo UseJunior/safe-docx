@@ -85,6 +85,8 @@
   inventory projection and `response.commentParsedEvidence side`; assert
   private-root removal after child close on success, failure, timeout, and
   overflow.
+- [x] 3.10 Close checker/decoder issue-shape drift for malformed non-direct
+  definitions and reject source or optional extras on terminal comment issues.
 
 ## 4. Coverage and acceptance
 

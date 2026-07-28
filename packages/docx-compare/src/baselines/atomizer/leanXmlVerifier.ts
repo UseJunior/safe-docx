@@ -877,9 +877,13 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
   const terminal = value.code === 'COMMENT_ISSUE_LIMIT_EXCEEDED' ||
     value.code === 'COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED';
   if (terminal) {
+    const terminalExtras = [
+      'source', 'canonicalId', 'rawId', 'rawIdByteLength', 'relationshipId',
+      'rawTarget', 'rawTargetByteLength', 'targetMode', 'normalizedPartPath',
+    ] as const;
     return value.ordinalSpace === 'aggregate' && value.side === 'original' &&
       value.firstOccurrenceOrdinal === 0 && value.occurrenceCount === 1 &&
-      !('source' in value);
+      terminalExtras.every((key) => !(key in value));
   }
   if (!('source' in value)) return false;
   const source = value.source as Record<string, unknown>;
@@ -1004,10 +1008,11 @@ export function isCommentIssue(value: unknown): value is DocumentIntegrityCommen
     case 'COMMENT_DEFINITION_ID_TOO_LONG':
       return hasExactExtras(['rawIdByteLength']);
     case 'COMMENT_UNIQUE_REFERENCE_ID_LIMIT_EXCEEDED':
-    case 'COMMENT_DEFINITION_NOT_DIRECT':
     case 'COMMENT_DEFINITION_DUPLICATE':
     case 'COMMENT_DEFINITION_MISSING':
       return hasExactExtras(['canonicalId']);
+    case 'COMMENT_DEFINITION_NOT_DIRECT':
+      return hasExactExtras('canonicalId' in value ? ['canonicalId'] : []);
     default:
       return false;
   }
