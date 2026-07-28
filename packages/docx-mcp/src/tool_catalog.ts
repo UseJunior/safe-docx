@@ -128,6 +128,17 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   {
+    name: 'get_sections',
+    surface: 'internal',
+    description:
+      'Read DOCX main-document sections in document order. Returns zero-based session-relative section_index values, paragraph/body boundary metadata, page numbering, page size, margins, and header/footer relationship references. Call again after any operation that changes section topology. Read-only.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false },
+  },
+  {
     name: 'grep',
     surface: 'internal',
     description: 'Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs. ODT supported via file_path (single-file) only.',
@@ -364,6 +375,27 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .nonnegative()
         .optional()
         .describe('Existing numbering level for num_id; requires num_id.'),
+    }),
+    annotations: { readOnlyHint: false, destructiveHint: true },
+  },
+  {
+    name: 'format_section',
+    surface: 'revisionable',
+    description:
+      'Set one DOCX section’s page-number restart using a zero-based section_index from get_sections. This first slice writes only w:pgNumType/@w:start, preserves page setup and header/footer references, and emits a native w:sectPrChange. It does not create sections or change page size, margins, break type, headers, footers, or page-number format.',
+    input: z.object({
+      ...FILE_FIELD_OPTIONAL,
+      ...GOOGLE_DOC_ID_FIELD,
+      section_index: z
+        .number()
+        .int()
+        .nonnegative()
+        .describe('Zero-based session-relative index returned by get_sections.'),
+      page_number_start: z
+        .number()
+        .int()
+        .nonnegative()
+        .describe('Non-negative page number at which this section starts.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },

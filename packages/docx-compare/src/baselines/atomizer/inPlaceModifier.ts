@@ -38,6 +38,7 @@ import {
   isEntireParagraphAtomsWithStatus,
 } from './inPlaceModifier-containers.js';
 import {
+  anchorPastTrailingBookmarkClones,
   cloneParagraphBoundaryBookmarkMarkers,
   filterEquivalentBookmarkMarkers,
   insertLeadingMarkers,
@@ -562,7 +563,11 @@ function handleDeleted(atom: ComparisonUnitAtom, ctx: ProcessingContext): Handle
       // Collapsed-field atoms emit multiple siblings (some outside <w:del>)
       // and are left unnested; a pre-tracked inserted field is out of scope.
       const prov = !isCollapsedFieldAtom(atom) ? getOriginalInsProvenance(atom) : null;
-      const anchor = prov ? wrapWithOriginalInsProvenance(del, prov, ctx.state) : del;
+      const wrapped = prov ? wrapWithOriginalInsProvenance(del, prov, ctx.state) : del;
+      // Anchor the next atom past this run's trailing bookmark clones, so a
+      // range closing after this run's content is not pushed rightward by
+      // later fragments (issue #643).
+      const anchor = anchorPastTrailingBookmarkClones(wrapped, atom.sourceRunElement, ctx.state);
       // Track last run in created paragraphs
       if (unifiedPara !== undefined && ctx.createdParagraphs.has(unifiedPara)) {
         ctx.createdParagraphLastRun.set(unifiedPara, anchor);
@@ -703,12 +708,15 @@ function handleMovedSource(atom: ComparisonUnitAtom, ctx: ProcessingContext): Ha
     );
 
     if (moveFrom) {
+      // See handleDeleted: keep later fragments from landing between this
+      // fragment and its run's trailing bookmark clones (issue #643).
+      const anchor = anchorPastTrailingBookmarkClones(moveFrom, atom.sourceRunElement, ctx.state);
       // Track last run in created paragraphs
       if (unifiedPara !== undefined && ctx.createdParagraphs.has(unifiedPara)) {
-        ctx.createdParagraphLastRun.set(unifiedPara, moveFrom);
+        ctx.createdParagraphLastRun.set(unifiedPara, anchor);
       }
       return {
-        newLastRun: moveFrom,
+        newLastRun: anchor,
         newLastParagraph: targetParagraph,
         newLastParagraphIndex: atom.paragraphIndex,
       };

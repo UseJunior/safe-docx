@@ -144,6 +144,30 @@ change numbering inherited only through a paragraph style, restart lists, or
 guarantee a rendered label without the surrounding list context. Effective
 changes are recorded as paragraph-property tracked changes.
 
+### Inspect Sections and Restart Page Numbering
+
+Read the current main-document sections before choosing a target:
+
+```text
+get_sections(file_path="~/docs/NDA.docx")
+```
+
+Then restart numbering for one returned section:
+
+```text
+format_section(
+  file_path="~/docs/NDA.docx",
+  section_index=1,
+  page_number_start=1
+)
+```
+
+`section_index` is zero-based and session-relative, so call `get_sections` again
+after any operation that changes section topology. This first slice changes only
+the page-number restart. It preserves break type, page size, margins, columns,
+page-number format, and header/footer references, and it does not create or split
+sections.
+
 ## Step 6: Save Reviewable Outputs
 
 ```text
@@ -188,6 +212,7 @@ Visual review remains appropriate for material documents because Safe Docx is no
 | Insert a paragraph | `insert_paragraph` |
 | Delete an ordinary DOCX body paragraph | `replace_text` with the complete text and an empty `new_string` |
 | Remove or repair direct DOCX paragraph numbering | `format_numbering` |
+| Inspect DOCX sections or restart page numbering | `get_sections`, `format_section` |
 | Apply several edits together | `batch_edit` |
 | Convert DOCX to ODT | `convert_to_odt` |
 | Convert DOCX to Markdown | `export` with `format="markdown"` |

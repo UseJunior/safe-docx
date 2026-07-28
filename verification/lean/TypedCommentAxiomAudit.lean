@@ -1,0 +1,16 @@
+import Tier2.CommentReferenceIntegrity.TypedSemantics
+
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typed_comment_selector_result_sound
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typed_comment_selection_to_realization_sound
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typed_admitted_comment_source_set_complete
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typed_parsed_comment_inventory_evidence_exact
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typed_package_comment_reference_integrity_sound
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typed_incomplete_comment_partition_zero_evidence_sound
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typed_comment_integrity_aggregate_pass_sound
+#print axioms Tier2.CommentReferenceIntegrity.Typed.independentProtocolV6Projection
+#print axioms Tier2.CommentReferenceIntegrity.Typed.encodeTypedJson
+#print axioms Tier2.CommentReferenceIntegrity.Typed.protocolV6Fields
+#print axioms Tier2.CommentReferenceIntegrity.Typed.encodeNatDigits
+#print axioms Tier2.CommentReferenceIntegrity.Typed.encodeByteString
+#print axioms Tier2.CommentReferenceIntegrity.Typed.encodeTypedJsonFuel
+#print axioms Tier2.CommentReferenceIntegrity.Typed.joinEncoded

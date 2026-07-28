@@ -98,13 +98,6 @@ const expectedFailures: Readonly<
       messageIncludes: 'unsupported REF field instruction shape',
     },
   },
-  'nvca-rofr-co-sale-agreement': {
-    inplace: {
-      issue: '#643',
-      kind: 'bookmark-range-failure',
-      names: ['_Ref_ContractCompanion_9kb9Ur019'],
-    },
-  },
   'nvca-stock-purchase-agreement': {
     rebuild: {
       issue: '#646',
@@ -114,11 +107,6 @@ const expectedFailures: Readonly<
     },
   },
   'nvca-voting-agreement': {
-    inplace: {
-      issue: '#643',
-      kind: 'bookmark-range-failure',
-      names: ['_Ref444624639'],
-    },
     rebuild: {
       issue: '#646',
       kind: 'comparison-error',

@@ -33,6 +33,10 @@
       "description": "Get a compact structural map of the document's headings with stable paragraph IDs."
     },
     {
+      "name": "get_sections",
+      "description": "Inspect DOCX sections, page setup, header/footer references, and page-number settings."
+    },
+    {
       "name": "batch_edit",
       "description": "Validate, conflict-check, and apply multiple edit steps in one call."
     },
@@ -59,6 +63,10 @@
     {
       "name": "format_layout",
       "description": "Apply deterministic paragraph/table layout formatting controls."
+    },
+    {
+      "name": "format_section",
+      "description": "Set a DOCX section's page-number restart with tracked-change support."
     },
     {
       "name": "format_numbering",
