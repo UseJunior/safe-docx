@@ -299,7 +299,7 @@ verifiedBy: verification/lean/LeanDocxChecker.lean
 A selected Footnotes Part is admitted only when its expanded root name is
 Transitional `w:footnotes`.
 
-## [ECMA-PART1-17-18-10] ST_DecimalNumber note identifiers
+## [ECMA-PART1-17-18-10] ST_DecimalNumber note and comment identifiers
 
 ```yaml
 edition: 5
@@ -307,10 +307,10 @@ part: 1
 section: "17.18.10"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:ST_DecimalNumber
-verifiedBy: verification/lean/Tier2/NoteReferenceIntegrity.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
+verifiedBy: verification/lean/Tier2/NoteReferenceIntegrity.lean; verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
-Note IDs are admitted only after a 64-byte raw lexical bound, XML Schema
+Note and legacy comment IDs are admitted only after a 64-byte raw lexical bound, XML Schema
 whitespace collapse, and signed decimal parsing. Evidence uses a canonical
 decimal spelling; aliases such as leading zeroes and negative zero therefore
 cannot create distinct semantic definitions.
@@ -658,12 +658,14 @@ part: 1
 section: "17.6.12"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgNumType
-verifiedBy:
+verifiedBy: packages/docx-core/src/generation/generation-sections-fields.test.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/tools/format_section.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
 ```
 
 `w:pgNumType` declares a section's page-number format and restart value.
-Generation emits `w:start`/`w:fmt` only when the spec requests them, so
-sections without explicit numbering inherit continuous decimal numbering.
+Generation emits `w:start`/`w:fmt` only when the spec requests them. The
+section-formatting primitive updates only `w:start` and preserves any existing
+format or chapter-number attributes. Sections without explicit numbering
+inherit continuous decimal numbering.
 
 ## [ECMA-PART1-17-10-5] w:headerReference binding
 
@@ -1432,7 +1434,7 @@ part: 1
 section: "17.13.4.6"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comments
-verifiedBy: packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; verification/lean/LeanDocxChecker.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
 Drafting notes compile to a word/comments.xml part holding one
@@ -1442,7 +1444,11 @@ writes, cross-checked against the Open XML SDK part constants). The
 emitter lives in `packages/docx-core/src/generation/emit/comments-part.ts`.
 This claim is limited to generated root-comment collections. Thread replies,
 comment-resolution semantics, and arbitrary third-party comment-part repair
-are not claimed. `comments.xml` is outside the compiled Lean checker scope.
+are not claimed. The compiled Lean checker independently selects an exact
+internal Transitional comments relationship, accepts a relocated safe part,
+requires a `w:comments` root, and scans direct `CT_Comment` definitions.
+`CT_TrackChange` ancestry is retained by the shared parser, but range pairing
+and topology are explicitly outside this claim.
 
 ## [ECMA-PART1-17-13-4-2] w:comment comment content emission
 
@@ -1452,7 +1458,7 @@ part: 1
 section: "17.13.4.2"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:comment
-verifiedBy: packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/comments-part.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
 Each comment carries deterministic metadata: sequential ids in document
@@ -1460,8 +1466,9 @@ order, author falling back note.author → meta.author → 'safe-docx' with
 derived initials, dates only from DraftingNoteSpec.dateIso or
 meta.createdIso (never the clock), and a `w14:paraId` derived from the
 comment id so commentsExtended entries pair up by construction.
-This does not claim validation of externally supplied comment IDs, extension
-thread graphs, or comment relationships.
+The compiled checker additionally validates bounded canonical IDs and requires
+definitions to be direct `w:comments` children. Extension thread graphs remain
+outside scope.
 
 ## [ECMA-PART1-17-13-4-4] w:commentRangeStart comment anchor opening
 
@@ -1504,14 +1511,16 @@ part: 1
 section: "17.13.4.5"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:commentReference
-verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts
+verifiedBy: packages/docx-core/src/generation/emit/paragraph.ts; packages/docx-core/src/generation/generation-drafting-notes.test.ts; verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean; packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts
 ```
 
 The trailing reference run carries `w:commentReference` with the same id
 as its range anchors; the existing deleteComment editing path removes the
 trio cleanly, which the strip scenario verifies on generated output.
-The compiled Lean checker does not read `comments.xml` or prove anchor,
-reference-ID, relationship, or thread integrity.
+The compiled Lean checker collects references from admitted main, note,
+header, and footer physical stories and requires exactly one direct definition
+with the same canonical decimal ID. It does not prove range-anchor pairing,
+range topology, or Microsoft threaded-comment extension integrity.
 
 ## [ECMA-PART1-17-13-5-15] Deleted paragraph mark (w:del under w:pPr/w:rPr)
 
@@ -1842,12 +1851,13 @@ part: 1
 section: "17.13.5.32"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:sectPrChange
-verifiedBy: packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts
+verifiedBy: packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/sections.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/primitives/sections.test.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts; packages/docx-core/src/integration/canonical-emission-regression.test.ts; packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
 ```
 
-safe-docx consumes existing `w:sectPrChange` records: accept removes the prior
-snapshot and reject restores it. No current primitive authors these records;
-headers, footers, relationship semantics, pagination, and Lean are outside the
+safe-docx emits bounded page-number restart snapshots and consumes existing
+`w:sectPrChange` records: accept removes the prior snapshot and reject restores
+it. The authoring claim is limited to `w:pgNumType/@w:start`; header/footer part
+editing, relationship mutation, general pagination, and Lean are outside the
 claim.
 
 ## [ECMA-PART1-17-13-5-34] Table-property revisions (w:tblPrChange)
@@ -1922,22 +1932,33 @@ ranges are excluded from exact evidence but remain subject to strict story
 validation. General field-code parsing and evaluation, ancillary revision
 synthesis or text comparison, cached-result correctness, pagination, bookmark
 resolution, and equivalence to a Word application's field engine are out of
-scope. The Lean XML verifier uses internal protocol v5 and remains
+scope. The Lean XML verifier uses private protocol v6 and remains
 inplace-only. It retains the fixed main story, independently selects direct
 explicit header/footer bindings by section ordinal, kind, and role, and
 relationship-selects Transitional footnote/endnote parts from the fixed Main
 Document Part. Its bounded note-integrity proof covers canonical reference IDs,
 typed definitions, exactly-one package-local definition matching, and poison
-references inside definition stories. It does not prove this field
+references inside definition stories. The same request-bound run independently
+selects an exact internal Transitional comments relationship, admits a
+relocated safe comments part, requires a `w:comments` root, and checks direct
+legacy comment definitions against references collected from every admitted
+main, note, header, and footer physical story. It does not prove this field
 canonical-preservation invariant, inherited header/footer roles, pagination,
 or rendering.
 
 Within Part 1 §17.11 and §17.13.4, safe-docx targets document-order note
 display numbering for Word-conventional packages plus generated
-single-paragraph root comments. For inplace comparison, the bounded Lean v5
+single-paragraph root comments. For inplace comparison, the bounded Lean v6
 checker additionally validates Transitional footnote/endnote relationship
 selection, typed definition classification, and package-local reference to
 exactly-one-definition integrity while permitting unreferenced definitions.
+It also validates relationship-selected legacy comments using bounded
+`ST_DecimalNumber` IDs: zero exact comments relationships means absent, one
+admissible internal relationship selects the part, and malformed, ambiguous,
+external, unsafe, missing, over-limit, extraction, UTF-8, XML, root, source,
+and package-resource failures stop all later comment-side evidence. Every
+admitted `w:commentReference` resolves to exactly one unique direct
+`w:comment` definition; unreferenced direct definitions are permitted.
 It does not claim arbitrary numeric note-ID assignment, rendering or numbering
 semantics for `w:type` or `w:customMarkFollows`, full OPC/content-type
 validation, Strict namespaces, arbitrary cross-paragraph comment ranges,
@@ -1950,9 +1971,10 @@ policies and do not broaden this into a complete note integrity or relationship
 claim. Unused merge-source note parts are outside the selected assembly
 evidence boundary.
 The compiled Lean checker independently covers fixed-story text projection and
-field-marker structure in `word/footnotes.xml` and `word/endnotes.xml`; it does
-not cover any of those excluded reference, relationship, anchor, or thread
-semantics and does not read `word/comments.xml`.
+field-marker structure in `word/footnotes.xml` and `word/endnotes.xml`, plus the
+bounded legacy comment definition/reference integrity claim above. Comment
+range pairing/topology and Microsoft threaded-comment extension semantics
+remain excluded.
 
 Within Part 1 §17.6 and §17.10, safe-docx targets generated section-property
 placement, explicit page-setup values, and explicit first/default/even

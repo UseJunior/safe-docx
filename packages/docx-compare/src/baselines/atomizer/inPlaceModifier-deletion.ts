@@ -17,6 +17,7 @@ import {
 } from './inPlaceModifier-shared.js';
 import {
   cloneUnemittedSourceBookmarkMarkers,
+  emitTrailingSourceBookmarkClones,
   insertMarkersBeforeWrapper,
   type BookmarkSurvivalContext,
 } from './inPlaceModifier-bookmarks.js';
@@ -162,8 +163,11 @@ export function insertDeletedRun(
     }
   }
 
+  // Re-emit source markers on the side of the run they came from, so a range
+  // that closed after this run's content still closes there (issue #643).
   const sourceMarkers = cloneUnemittedSourceBookmarkMarkers(sourceRun, targetParagraph, state, context);
-  if (sourceMarkers.length > 0) insertMarkersBeforeWrapper(del, sourceMarkers);
+  insertMarkersBeforeWrapper(del, sourceMarkers.before);
+  emitTrailingSourceBookmarkClones(sourceRun, del, sourceMarkers.after, state);
 
   return del;
 }
@@ -245,9 +249,10 @@ export function insertFragmentedDeletedField(
     place(del);
   }
 
-  if (firstInserted) {
+  if (firstInserted && lastInserted) {
     const sourceMarkers = cloneUnemittedSourceBookmarkMarkers(sourceRun, targetParagraph, state, context);
-    if (sourceMarkers.length > 0) insertMarkersBeforeWrapper(firstInserted, sourceMarkers);
+    insertMarkersBeforeWrapper(firstInserted, sourceMarkers.before);
+    emitTrailingSourceBookmarkClones(sourceRun, lastInserted, sourceMarkers.after, state);
   }
 
   return lastInserted;
@@ -351,7 +356,8 @@ export function insertMoveFromRun(
   }
 
   const sourceMarkers = cloneUnemittedSourceBookmarkMarkers(sourceRun, targetParagraph, state, context);
-  if (sourceMarkers.length > 0) insertMarkersBeforeWrapper(moveFrom, sourceMarkers);
+  insertMarkersBeforeWrapper(moveFrom, sourceMarkers.before);
+  emitTrailingSourceBookmarkClones(sourceRun, rangeEnd, sourceMarkers.after, state);
 
   return moveFrom;
 }

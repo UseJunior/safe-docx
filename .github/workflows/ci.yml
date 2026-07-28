@@ -77,6 +77,8 @@ jobs:
         run: npm run check:release-isolation
       - name: Test release-isolation guard
         run: npm run test:release-isolation
+      - name: Test formatting-loss detectors (unit tests + known-bad self-test)
+        run: npm run test:docx-formatting-loss
 
   spec-coverage:
     runs-on: ubuntu-latest

@@ -1,9 +1,9 @@
 import LeanDocxChecker
 
 open Lean Tier2.XmlTripleChecker Tier2.RelationshipStorySelector
-  Tier2.NoteReferenceIntegrity
+  Tier2.NoteReferenceIntegrity Tier2.CommentReferenceIntegrity
 
-namespace ProtocolV5ProjectionDriftWitnesses
+namespace ProtocolV6ProjectionDriftWitnesses
 
 def fixturePackageBytes : ByteArray := ByteArray.mk #[
   80,75,3,4,10,0,0,0,0,0,166,88,251,92,76,215,97,195,105,0,0,0,105,0,0,0,
@@ -120,13 +120,53 @@ def fixtureSide (side : Tier2.RelationshipStorySelector.VerifierSide)
 }
 
 def fixtureRecord (side : Tier2.RelationshipStorySelector.VerifierSide)
-    (parseEvidence : ProductionParseEvidence) (issues : List Json := []) :
+    (parseEvidence : ProductionParseEvidence)
+    (packageIndexExact :
+      IndependentBinaryIndexOf fixturePackageBytes parseEvidence.extraction.zipIndex)
+    (issues : List Json := []) :
     RunRequestPackageRecord := {
   packagePath := "/request-bound/fixture.docx"
   packageBytes := fixturePackageBytes
   packageReadCount := 1
+  packageIndex := parseEvidence.extraction.zipIndex
+  packageIndexExact
+  snapshotPath := parseEvidence.extraction.snapshotPath
+  snapshotBytes := fixturePackageBytes
+  snapshotWriteCount := 1
+  snapshotWriteCountExact := rfl
+  snapshotBytesExact := rfl
   relationships := []
   noteEvidence := fixtureSide side parseEvidence issues
+  commentEvidence := {
+    side
+    sources := (fixtureSide side parseEvidence issues).sources
+    sourcePartitionAdmitted := true
+    realizationFailureCode := none
+    realizationFailureDetail := none
+    identity := none
+    partPresent := false
+    part := none
+    retainedScan := some (Tier2.CommentReferenceIntegrity.retainCommentScanEvidence {
+      sourceEvents := [(0, parseEvidence.parsed.events)]
+      definitionEvents := []
+    })
+    complete := true
+    semanticLimitCrossed := false
+    productionIntegrityPassed := true
+    usage := (fixtureSide side parseEvidence issues).usage
+    tripleUsage := {}
+    issues := []
+    inventory := {
+      side
+      status := "passed"
+      identity := none
+      referenceOccurrences := 0
+      uniqueReferenceIds := 0
+      definitions := 0
+      unreferencedDefinitions := 0
+      nonDirectDefinitions := 0
+    }
+  }
 }
 
 def mainTriple (parseEvidence : ProductionParseEvidence) : NamedStoryTriple := {
@@ -145,28 +185,41 @@ def issue (ordinal : Nat) : SelectionIssue := {
 def fixtureRequest (selectionIssues : List SelectionIssue := []) :
     Except String RunRequestCoreRequest := do
   let parseEvidence ← fixtureParseEvidence
-  return {
-    fixedTriples := [mainTriple parseEvidence]
-    relationshipSlots := []
-    relationshipStories := []
-    relationshipTriples := []
-    selectionIssues
-    original := fixtureRecord .original parseEvidence
-    revised := fixtureRecord .revised parseEvidence
-    compared := fixtureRecord .compared parseEvidence
-  }
+  if hIndependent :
+      independentBinaryIndexCheck fixturePackageBytes
+        parseEvidence.extraction.zipIndex = true then
+    let packageIndexExact :=
+      independent_binary_index_check_sound fixturePackageBytes
+        parseEvidence.extraction.zipIndex hIndependent
+    return {
+      fixedTriples := [mainTriple parseEvidence]
+      relationshipSlots := []
+      relationshipStories := []
+      relationshipTriples := []
+      selectionIssues
+      original := fixtureRecord .original parseEvidence packageIndexExact
+      revised := fixtureRecord .revised parseEvidence packageIndexExact
+      compared := fixtureRecord .compared parseEvidence packageIndexExact
+    }
+  else
+    throw "fixture package index failed independent validation"
 
 def evaluateProductionCase (request : RunRequestCoreRequest) :
     Except String RunRequestCoreResult := do
   let semanticRequest := semanticRequestOfCore request
   let (semanticResponse, semanticStdout) ← canonicalSemanticResponse semanticRequest
-  finishRunRequestCore request semanticRequest semanticResponse semanticStdout
+  let result ← finishRunRequestCore request semanticRequest semanticResponse
+    semanticStdout
+  if protocolV6JsonProjectionCheck result.response result.responsePassed then
+    return result
+  else
+    throw "production response diverges from typed protocol-v6 projection"
 
 def fieldValue (value : Json) (field : String) : Json :=
   (value.getObjVal? field).toOption.getD Json.null
 
 def rebuildFields (value : Json) (replace : String → String × Json) : Json :=
-  Json.mkObj <| protocolV5FieldNames.map fun field =>
+  Json.mkObj <| protocolV6FieldNames.map fun field =>
     let replacement := replace field
     (replacement.1, if replacement.2 == Json.null then fieldValue value field else replacement.2)
 
@@ -178,6 +231,10 @@ def renameField (value : Json) (field renamed : String) : Json :=
   rebuildFields value fun current =>
     if current == field then (renamed, fieldValue value current) else (current, Json.null)
 
+def omitField (value : Json) (field : String) : Json :=
+  Json.mkObj <| (protocolV6FieldNames.filter (· != field)).map fun current =>
+    (current, fieldValue value current)
+
 def reverseArrayField (value : Json) (field : String) : Json :=
   match fieldValue value field with
   | .arr values => replaceField value field (.arr values.reverse)
@@ -187,8 +244,8 @@ def allProtocolFieldsPresent (value : Json) : Bool :=
   match value.getObj? with
   | .error _ => false
   | .ok object =>
-    object.keys.length == protocolV5FieldNames.length &&
-      protocolV5FieldNames.all fun field => (value.getObjVal? field).isOk
+    object.keys.length == protocolV6FieldNames.length &&
+      protocolV6FieldNames.all fun field => (value.getObjVal? field).isOk
 
 def baselineAgrees (requestResult : Except String RunRequestCoreRequest) : Bool :=
   match requestResult with
@@ -197,16 +254,17 @@ def baselineAgrees (requestResult : Except String RunRequestCoreRequest) : Bool 
   | .error _ => false
   | .ok result =>
     result.responsePassed &&
-    result.response == semanticProtocolV5Projection request result.semanticResponse &&
+    result.response == semanticProtocolV6Projection request result.semanticResponse &&
     allProtocolFieldsPresent result.response &&
-    fieldValue result.response "protocolVersion" == toJson (5 : Nat) &&
+    fieldValue result.response "protocolVersion" == toJson (6 : Nat) &&
     fieldValue result.response "checker" ==
-      toJson "safe-docx-lean-conventional-main-note-integrity-checker" &&
+      toJson "safe-docx-lean-conventional-main-comment-integrity-checker" &&
     fieldValue result.response "passed" == toJson true &&
     (fieldValue result.response "fixedStories").getArr?.toOption.any (·.size == 1) &&
     (fieldValue result.response "referenceSourcePartitions").getArr?.toOption.any (·.size == 3) &&
     (fieldValue result.response "noteStories").getArr?.toOption.any (·.size == 2) &&
-    (fieldValue result.response "noteInventories").getArr?.toOption.any (·.size == 6)
+    (fieldValue result.response "noteInventories").getArr?.toOption.any (·.size == 6) &&
+    (fieldValue result.response "commentInventories").getArr?.toOption.any (·.size == 3)
 
 def ordinaryRequest : Except String RunRequestCoreRequest := fixtureRequest
 def duplicateIssueRequest : Except String RunRequestCoreRequest :=
@@ -221,7 +279,7 @@ def mutationDisagrees (requestResult : Except String RunRequestCoreRequest)
   | .ok request => match evaluateProductionCase request with
   | .error _ => false
   | .ok result =>
-    let expected := semanticProtocolV5Projection request result.semanticResponse
+    let expected := semanticProtocolV6Projection request result.semanticResponse
     result.response == expected && mutate request result != expected
 
 def coalescingMutation (_request : RunRequestCoreRequest)
@@ -245,8 +303,22 @@ def witnessResults : List (String × Bool) :=
       renameField result.response "checker" "checkerName")
   , ("field-value", mutationDisagrees ordinaryRequest fun _ result =>
       replaceField result.response "checker" "mutant-checker")
+  , ("inherited-field-omitted", mutationDisagrees ordinaryRequest fun _ result =>
+      omitField result.response "fixedStories")
+  , ("inherited-field-mutated", mutationDisagrees ordinaryRequest fun _ result =>
+      replaceField result.response "fixedStories" (.arr #[]))
   , ("array-order", mutationDisagrees ordinaryRequest fun _ result =>
       reverseArrayField result.response "noteStories")
+  , ("comment-story", mutationDisagrees ordinaryRequest fun _ result =>
+      replaceField result.response "commentStory" (toJson false))
+  , ("comment-inventory-order", mutationDisagrees ordinaryRequest fun _ result =>
+      reverseArrayField result.response "commentInventories")
+  , ("comment-issues", mutationDisagrees ordinaryRequest fun _ result =>
+      replaceField result.response "commentIntegrityIssues"
+        (.arr #[commentIssueJson "COMMENT_DEFINITION_MISSING"
+          "drift witness" .original "reference" 0 "main" 0]))
+  , ("comment-issues-omitted", mutationDisagrees ordinaryRequest fun _ result =>
+      omitField result.response "commentIntegrityIssues")
   , ("issue-coalescing", mutationDisagrees duplicateIssueRequest coalescingMutation)
   , ("issue-budget", mutationDisagrees budgetRequest budgetMutation)
   , ("terminal-shape", mutationDisagrees budgetRequest terminalShapeMutation)
@@ -255,9 +327,9 @@ def witnessResults : List (String × Bool) :=
 def run : IO Unit := do
   for (name, passed) in witnessResults do
     unless passed do
-      throw (IO.userError s!"realizable protocol-v5 production drift witness failed: {name}")
-  IO.println s!"realizable protocol-v5 production drift witnesses passed: {witnessResults.length - 1}"
+      throw (IO.userError s!"realizable protocol-v6 production drift witness failed: {name}")
+  IO.println s!"realizable protocol-v6 production drift witnesses passed: {witnessResults.length - 1}"
 
-end ProtocolV5ProjectionDriftWitnesses
+end ProtocolV6ProjectionDriftWitnesses
 
-#eval ProtocolV5ProjectionDriftWitnesses.run
+#eval ProtocolV6ProjectionDriftWitnesses.run

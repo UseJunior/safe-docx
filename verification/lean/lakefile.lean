@@ -48,3 +48,11 @@ lean_exe protocolV5MaximumOrdinaryShape where
 @[default_target]
 lean_exe protocolV5CanonicalTerminalShapes where
   root := `ProtocolV5CanonicalTerminalShapes
+
+@[default_target]
+lean_exe protocolV6OrdinaryEnvelopeWitness where
+  root := `ProtocolV6OrdinaryEnvelopeWitness
+
+@[default_target]
+lean_exe protocolV6CanonicalTerminalShapes where
+  root := `ProtocolV6CanonicalTerminalShapes
