@@ -266,9 +266,13 @@ function parseHighlightVal(parent: Element | null): string | null {
  * style's `basedOn` chain. A property specified nowhere resolves to the
  * neutral value (`false`, `''`, `0`, or `null`).
  *
- * Not resolved: `w:docDefaults`, table-style run properties, and
- * numbering-level `rPr`. A formatting change confined to one of those layers
- * is invisible to this resolver.
+ * Each property is resolved independently down the chain — a style that
+ * specifies only color does not mask an ancestor's bold.
+ *
+ * Not resolved: `w:docDefaults`, table-style run properties, numbering-level
+ * `rPr`, and theme font references (`w:asciiTheme` etc., which would need
+ * `theme1.xml`). A formatting change confined to one of those layers is
+ * invisible to this resolver.
  *
  * Part of docx-core's public surface (see `src/index.ts`) so external
  * diagnostics — `scripts/check_docx_formatting_loss.mjs` today, the planned
@@ -295,28 +299,29 @@ export function extractEffectiveRunFormatting(params: {
   // Resolve w:rStyle character style chain (e.g. "Strong" → bold via style definition).
   const rStyleEl = rPr ? getFirstChild(rPr, OOXML.W_NS, W.rStyle) : null;
   const rStyleId = rStyleEl ? (getWAttr(rStyleEl, 'val') ?? null) : null;
-  const rStyleChain = resolveStyleChain(styles, rStyleId);
-  const rStyleRPr = firstNonNull(rStyleChain.map((s) => s.rPr));
 
-  const paraChain = resolveStyleChain(styles, paragraphStyleId);
-  const styleRPr = firstNonNull(paraChain.map((s) => s.rPr));
-
-  // Priority: direct rPr → rStyle chain rPr → paragraph rPr → paragraph style chain rPr
-  const bold = firstNonNull([parseBoolProp(rPr, W.b), parseBoolProp(rStyleRPr, W.b), parseBoolProp(pRPr, W.b), parseBoolProp(styleRPr, W.b)]) ?? false;
-  const italic = firstNonNull([parseBoolProp(rPr, W.i), parseBoolProp(rStyleRPr, W.i), parseBoolProp(pRPr, W.i), parseBoolProp(styleRPr, W.i)]) ?? false;
-  const underline = firstNonNull([parseUnderline(rPr), parseUnderline(rStyleRPr), parseUnderline(pRPr), parseUnderline(styleRPr)]) ?? false;
-  const highlightVal = firstNonNull([parseHighlightVal(rPr), parseHighlightVal(rStyleRPr), parseHighlightVal(pRPr), parseHighlightVal(styleRPr)]);
-  const fontName = firstNonNull([parseFontName(rPr), parseFontName(rStyleRPr), parseFontName(pRPr), parseFontName(styleRPr)]) ?? '';
-  const fontSizePt = firstNonNull([parseFontSizePt(rPr), parseFontSizePt(rStyleRPr), parseFontSizePt(pRPr), parseFontSizePt(styleRPr)]) ?? 0;
-  const colorHex = firstNonNull([parseColorHex(rPr), parseColorHex(rStyleRPr), parseColorHex(pRPr), parseColorHex(styleRPr)]);
+  // Priority: direct rPr → rStyle chain rPrs → paragraph mark rPr → paragraph
+  // style chain rPrs. Each property resolves independently down this list: a
+  // chain member that specifies only color must not mask an ancestor's bold,
+  // so the sources are the individual rPr containers, never "the first chain
+  // member that has an rPr" (peer review on #684; extractStyleRunFormatting
+  // above already resolved per property).
+  const sources: Array<Element | null> = [
+    rPr,
+    ...resolveStyleChain(styles, rStyleId).map((s) => s.rPr),
+    pRPr,
+    ...resolveStyleChain(styles, paragraphStyleId).map((s) => s.rPr),
+  ];
+  const resolve = <T>(parse: (el: Element | null) => T | null): T | null =>
+    firstNonNull(sources.map(parse));
 
   return {
-    bold,
-    italic,
-    underline,
-    highlightVal: highlightVal ?? null,
-    fontName,
-    fontSizePt,
-    colorHex: colorHex ?? null,
+    bold: resolve((el) => parseBoolProp(el, W.b)) ?? false,
+    italic: resolve((el) => parseBoolProp(el, W.i)) ?? false,
+    underline: resolve(parseUnderline) ?? false,
+    highlightVal: resolve(parseHighlightVal),
+    fontName: resolve(parseFontName) ?? '',
+    fontSizePt: resolve(parseFontSizePt) ?? 0,
+    colorHex: resolve(parseColorHex),
   };
 }

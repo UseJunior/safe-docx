@@ -56,11 +56,13 @@
  *     not a loss a reader can see.
  *
  * What the resolver does not reach, this check does not reach: w:docDefaults,
- * table-style run properties, and numbering-level rPr. And because the
- * resolver reduces w:u to on/off, an underline style-to-style change (single
- * to dotted) is no longer reported; the old declared-properties projection
- * caught it, and trading that corner for one shared implementation instead of
- * two that drift is the point of #684.
+ * table-style run properties, numbering-level rPr, and theme font references
+ * (w:asciiTheme — swapping a theme reference for the explicit font the theme
+ * maps to reads as a font change here, because equivalence would need
+ * theme1.xml). And because the resolver reduces w:u to on/off, an underline
+ * style-to-style change (single to dotted) is no longer reported; the old
+ * declared-properties projection caught it, and trading that corner for one
+ * shared implementation instead of two that drift is the point of #684.
  *
  * D1 also requires the two paragraphs to carry identical text. Formatting loss
  * that co-occurs with a text edit in the same paragraph is out of its reach.
@@ -191,7 +193,8 @@ function runHasRenderableContent(run, paragraph) {
  * declarations differ but resolve identically produce the same tuple, and a
  * style-definition edit changes the tuple with no change to the run at all.
  * Nullable fields are pinned to sentinel strings so tuple positions compare
- * by value.
+ * by value. Color hex is compared case-insensitively — ff0000 and FF0000 are
+ * the same ink, and the raw casing is a property of the writer, not the page.
  */
 function runEmphasis(run, paragraphPPr, paragraphStyleId, styles) {
   const formatting = extractEffectiveRunFormatting({ run, paragraphPPr, paragraphStyleId, styles });
@@ -202,7 +205,7 @@ function runEmphasis(run, paragraphPPr, paragraphStyleId, styles) {
     formatting.highlightVal ?? 'none',
     formatting.fontName,
     formatting.fontSizePt,
-    formatting.colorHex ?? 'auto',
+    formatting.colorHex === null ? 'auto' : formatting.colorHex.toUpperCase(),
   ];
 }
 
@@ -273,6 +276,12 @@ export function parseStylesPart(stylesXml) {
     throw new Error(`word/styles.xml did not parse: ${error.message}`);
   }
   if (errors.length > 0) throw new Error(`word/styles.xml did not parse: ${errors[0]}`);
+  // A well-formed part with the wrong root would parse to zero styles, and an
+  // empty model makes every style-carried loss invisible while reading clean.
+  const root = document.documentElement;
+  if (!root || root.namespaceURI !== W_NS || root.localName !== 'styles') {
+    throw new Error('word/styles.xml is not a WordprocessingML w:styles part');
+  }
   return parseStylesXml(document);
 }
 

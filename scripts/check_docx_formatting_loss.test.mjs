@@ -212,6 +212,44 @@ test('D1 resolves through a basedOn chain, so editing an ancestor style is caugh
   assert.deepEqual(result.flattenedParagraphIds, ['AAAA0011']);
 });
 
+test('basedOn resolution is per property: a derived style adding color does not mask inherited bold', () => {
+  // Peer review on #684 caught the resolver reading every property from the
+  // first chain member that had ANY rPr, so Derived(color) hid Base(bold).
+  const withBold = wrapStylesXml(
+    styleDef('Base', 'character', '<w:b/>') + styleDef('Derived', 'character', '<w:color w:val="FF0000"/>', 'Base'),
+  );
+  const body = paragraph('AAAA0013', run('Term', '<w:rStyle w:val="Derived"/>'));
+
+  const projection = projectParagraphs(wrapBodyXml(body), withBold);
+  assert.deepEqual(projection.byParaId.get('AAAA0013').emphasisSpans, [[4, true, false, false, 'none', '', 0, 'FF0000']]);
+
+  // And a de-bolding of the ancestor is therefore a finding, color intact.
+  const withoutBold = wrapStylesXml(
+    styleDef('Base', 'character', '') + styleDef('Derived', 'character', '<w:color w:val="FF0000"/>', 'Base'),
+  );
+  const result = compare(body, body, undefined, { before: withBold, after: withoutBold });
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0013']);
+});
+
+test('color hex compares case-insensitively, because casing is a writer artifact rather than ink', () => {
+  const result = compare(
+    paragraph('AAAA0014', run('Term', '<w:color w:val="ff0000"/>')),
+    paragraph('AAAA0014', run('Term', '<w:color w:val="FF0000"/>')),
+  );
+
+  assert.deepEqual(result.flattenedParagraphIds, []);
+  assert.equal(hasFindings(result), false);
+});
+
+test('a present styles part that is not w:styles is rejected rather than read as an empty model', () => {
+  // An empty model resolves every style to nothing, which silently blinds D1
+  // to style-carried loss while the run reads as a clean pass.
+  assert.throws(
+    () => projectParagraphs(wrapBodyXml(paragraph('AAAA0015', run('Text.'))), '<foo/>'),
+    /not a WordprocessingML w:styles part/,
+  );
+});
+
 test('D1 covers the full resolved tuple: a dropped highlight is a finding', () => {
   const result = compare(
     paragraph('AAAA0012', run('Payment is due.', '<w:highlight w:val="yellow"/>')),
