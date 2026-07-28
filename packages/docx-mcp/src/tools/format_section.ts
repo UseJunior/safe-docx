@@ -1,4 +1,8 @@
-import { SectionMutationError } from '@usejunior/docx-core';
+import {
+  SectionMutationError,
+  type SectionMarginsMutation,
+  type SectionPageSizeMutation,
+} from '@usejunior/docx-core';
 import { errorMessage } from '../error_utils.js';
 import {
   getRevisionContextForSession,
@@ -10,11 +14,14 @@ import {
   resolveSessionForTool,
 } from './session_resolution.js';
 import { err, ok, type ToolResponse } from './types.js';
+import { projectSectionForTool } from './get_sections.js';
 
 export type FormatSectionParams = {
   file_path?: string;
   section_index?: unknown;
   page_number_start?: unknown;
+  page_size?: unknown;
+  margins?: unknown;
 };
 
 function mutationHint(code: SectionMutationError['code']): string {
@@ -25,7 +32,151 @@ function mutationHint(code: SectionMutationError['code']): string {
       return 'Call get_sections again and choose a current section_index.';
     case 'INVALID_PAGE_NUMBER_START':
       return 'Pass page_number_start as a non-negative integer.';
+    case 'EMPTY_SECTION_MUTATION':
+      return 'Provide page_number_start or at least one page_size or margins value.';
+    case 'INVALID_PAGE_SIZE':
+      return 'Pass positive safe-integer width_twips and height_twips values.';
+    case 'INVALID_PAGE_ORIENTATION':
+      return 'Pass orientation as "portrait" or "landscape".';
+    case 'INCOMPLETE_PAGE_SIZE':
+      return 'This section has no page size; provide both width_twips and height_twips.';
+    case 'INVALID_PAGE_MARGINS':
+      return 'Use safe-integer twips; only top_twips and bottom_twips may be negative.';
+    case 'INCOMPLETE_PAGE_MARGINS':
+      return 'This section has no margins; provide all seven margin values.';
   }
+}
+
+type ValidationResult<T> =
+  | { ok: true; value: T | undefined }
+  | { ok: false; response: ToolResponse };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validationError(message: string, hint: string): ValidationResult<never> {
+  return { ok: false, response: err('VALIDATION_ERROR', message, hint) };
+}
+
+function parsePageSize(value: unknown): ValidationResult<SectionPageSizeMutation> {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (!isRecord(value)) {
+    return validationError(
+      'page_size must be an object.',
+      'Pass width_twips, height_twips, or orientation in page_size.',
+    );
+  }
+  const allowed = new Set(['width_twips', 'height_twips', 'orientation']);
+  const unknownKey = Object.keys(value).find((key) => !allowed.has(key));
+  if (unknownKey) {
+    return validationError(
+      `page_size contains unsupported field "${unknownKey}".`,
+      'Use only width_twips, height_twips, and orientation.',
+    );
+  }
+  if (!Object.keys(value).some((key) => value[key] !== undefined)) {
+    return validationError(
+      'page_size must contain at least one value.',
+      'Pass width_twips, height_twips, or orientation.',
+    );
+  }
+  for (const key of ['width_twips', 'height_twips'] as const) {
+    const member = value[key];
+    if (
+      member !== undefined
+      && (
+        typeof member !== 'number'
+        || !Number.isSafeInteger(member)
+        || member <= 0
+      )
+    ) {
+      return validationError(
+        `page_size.${key} must be a positive safe integer.`,
+        'Pass dimensions in twentieths of a point, such as 12240 by 15840.',
+      );
+    }
+  }
+  if (
+    value.orientation !== undefined
+    && value.orientation !== 'portrait'
+    && value.orientation !== 'landscape'
+  ) {
+    return validationError(
+      'page_size.orientation must be "portrait" or "landscape".',
+      'Orientation is literal; provide matching width_twips and height_twips when rotating paper.',
+    );
+  }
+  return {
+    ok: true,
+    value: {
+      widthTwips: value.width_twips as number | undefined,
+      heightTwips: value.height_twips as number | undefined,
+      orientation: value.orientation as SectionPageSizeMutation['orientation'],
+    },
+  };
+}
+
+function parseMargins(value: unknown): ValidationResult<SectionMarginsMutation> {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (!isRecord(value)) {
+    return validationError(
+      'margins must be an object.',
+      'Pass one or more margin values in twips.',
+    );
+  }
+  const keys = [
+    'top_twips',
+    'right_twips',
+    'bottom_twips',
+    'left_twips',
+    'header_twips',
+    'footer_twips',
+    'gutter_twips',
+  ] as const;
+  const allowed = new Set<string>(keys);
+  const unknownKey = Object.keys(value).find((key) => !allowed.has(key));
+  if (unknownKey) {
+    return validationError(
+      `margins contains unsupported field "${unknownKey}".`,
+      `Use only ${keys.join(', ')}.`,
+    );
+  }
+  if (!keys.some((key) => value[key] !== undefined)) {
+    return validationError(
+      'margins must contain at least one value.',
+      'Pass one or more margin values in twips.',
+    );
+  }
+  for (const key of keys) {
+    const member = value[key];
+    const signed = key === 'top_twips' || key === 'bottom_twips';
+    if (
+      member !== undefined
+      && (
+        typeof member !== 'number'
+        || !Number.isSafeInteger(member)
+        || (!signed && member < 0)
+      )
+    ) {
+      return validationError(
+        `margins.${key} must be ${signed ? 'a' : 'a non-negative'} safe integer.`,
+        'Only top_twips and bottom_twips may be negative.',
+      );
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      topTwips: value.top_twips as number | undefined,
+      rightTwips: value.right_twips as number | undefined,
+      bottomTwips: value.bottom_twips as number | undefined,
+      leftTwips: value.left_twips as number | undefined,
+      headerTwips: value.header_twips as number | undefined,
+      footerTwips: value.footer_twips as number | undefined,
+      gutterTwips: value.gutter_twips as number | undefined,
+    },
+  };
 }
 
 export async function formatSection(
@@ -44,14 +195,32 @@ export async function formatSection(
     );
   }
   if (
-    typeof params.page_number_start !== 'number'
-    || !Number.isSafeInteger(params.page_number_start)
-    || params.page_number_start < 0
+    params.page_number_start !== undefined
+    && (
+      typeof params.page_number_start !== 'number'
+      || !Number.isSafeInteger(params.page_number_start)
+      || params.page_number_start < 0
+    )
   ) {
     return err(
       'VALIDATION_ERROR',
       'page_number_start must be a non-negative safe integer.',
       'Pass an integer such as 0 or 1.',
+    );
+  }
+  const parsedPageSize = parsePageSize(params.page_size);
+  if (!parsedPageSize.ok) return parsedPageSize.response;
+  const parsedMargins = parseMargins(params.margins);
+  if (!parsedMargins.ok) return parsedMargins.response;
+  if (
+    params.page_number_start === undefined
+    && parsedPageSize.value === undefined
+    && parsedMargins.value === undefined
+  ) {
+    return err(
+      'VALIDATION_ERROR',
+      'At least one section page-setup value must be provided.',
+      'Provide page_number_start, page_size, or margins.',
     );
   }
 
@@ -76,18 +245,20 @@ export async function formatSection(
     const ctx = await getRevisionContextForSession(session);
     const mutation = {
       sectionIndex: params.section_index,
-      pageNumberStart: params.page_number_start,
+      pageNumberStart: params.page_number_start as number | undefined,
+      pageSize: parsedPageSize.value,
+      margins: parsedMargins.value,
     };
     const revisionPreflight = await preflightAiRevisionMutation(
       session,
       ctx,
       (previewDoc, previewCtx) => {
-        previewDoc.setSectionPageNumberStart(mutation, previewCtx);
+        previewDoc.updateSectionProperties(mutation, previewCtx);
       },
     );
     if (revisionPreflight) return revisionPreflight;
 
-    const result = session.doc.setSectionPageNumberStart(mutation, ctx);
+    const result = session.doc.updateSectionProperties(mutation, ctx);
     const sectionsAfter = session.doc.getSections();
     const paragraphCountAfter = session.doc.getParagraphs().length;
     if (
@@ -108,15 +279,19 @@ export async function formatSection(
       file_path: manager.normalizePath(session.originalPath),
       section_index: result.sectionIndex,
       changed: result.changed,
-      previous_page_number_start: result.previousPageNumberStart,
-      resulting_page_number_start: result.currentPageNumberStart,
+      previous_page_number_start: result.previousSection.pageNumberStart,
+      resulting_page_number_start: result.currentSection.pageNumberStart,
+      previous_page_size: projectSectionForTool(result.previousSection).page_size,
+      resulting_page_size: projectSectionForTool(result.currentSection).page_size,
+      previous_margins: projectSectionForTool(result.previousSection).margins,
+      resulting_margins: projectSectionForTool(result.currentSection).margins,
       section_count_before: sectionsBefore.length,
       section_count_after: sectionsAfter.length,
       paragraph_count_before: paragraphCountBefore,
       paragraph_count_after: paragraphCountAfter,
       message: result.changed
-        ? 'Section page numbering updated with a tracked property change.'
-        : 'Section page numbering already matched the requested state; no edit was recorded.',
+        ? 'Section page setup updated with a tracked property change.'
+        : 'Section page setup already matched the requested state; no edit was recorded.',
     }, metadata));
   } catch (error: unknown) {
     if (error instanceof SectionMutationError) {

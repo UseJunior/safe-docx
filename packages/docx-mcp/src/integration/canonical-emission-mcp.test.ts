@@ -29,6 +29,8 @@ const numberingTest = test.conformance(
 );
 const sectionTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.12' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.11' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
 );
 
@@ -416,6 +418,63 @@ describe('Tool integration through SessionManager: canonical revision emission',
       const doc = parseXml(documentXml);
       const current = doc.getElementsByTagNameNS(W_NS, 'pgNumType')[0] as Element;
       expect(wordAttr(current, 'start')).toBe('1');
+    });
+  });
+
+  sectionTest('format_section saves atomic page size and margin changes', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let documentXml: string;
+
+    await given('a tracked session whose final section has no explicit page setup', async () => {
+      opened = await openSession([], {
+        mgr: createManager(),
+        xml: makeDocXml('<w:p><w:r><w:t>Page setup body</w:t></w:r></w:p>'),
+      });
+    });
+
+    await when('format_section creates landscape geometry and complete margins', async () => {
+      const formatted = await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 0,
+        page_size: {
+          width_twips: 15840,
+          height_twips: 12240,
+          orientation: 'landscape',
+        },
+        margins: {
+          top_twips: 720,
+          right_twips: 720,
+          bottom_twips: 720,
+          left_twips: 720,
+          header_twips: 360,
+          footer_twips: 360,
+          gutter_twips: 0,
+        },
+      });
+      assertSuccess(formatted, 'format_section page setup');
+      const parts = await saveAndReadParts(
+        opened.mgr,
+        opened.inputPath,
+        path.join(opened.tmpDir, 'format-section-page-setup-regression.docx'),
+        ['word/document.xml'],
+      );
+      documentXml = parts['word/document.xml'];
+    });
+
+    await then('document.xml contains current geometry and one SafeDocX section snapshot', () => {
+      expectTrackedElementsWithAuthor(documentXml, ['sectPrChange']);
+      const doc = parseXml(documentXml);
+      const pgSz = doc.getElementsByTagNameNS(W_NS, 'pgSz')[0] as Element;
+      const pgMar = doc.getElementsByTagNameNS(W_NS, 'pgMar')[0] as Element;
+      expect(wordAttr(pgSz, 'w')).toBe('15840');
+      expect(wordAttr(pgSz, 'h')).toBe('12240');
+      expect(wordAttr(pgSz, 'orient')).toBe('landscape');
+      expect(wordAttr(pgMar, 'top')).toBe('720');
+      expect(wordAttr(pgMar, 'gutter')).toBe('0');
     });
   });
 

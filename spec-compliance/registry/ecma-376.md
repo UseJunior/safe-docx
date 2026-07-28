@@ -480,6 +480,13 @@ section: "17.6.13"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgSz
 verifiedBy:
+  - packages/docx-core/src/generation/emit/section.ts
+  - packages/docx-core/src/generation/generation-skeleton.test.ts
+  - packages/docx-core/src/primitives/sections.ts
+  - packages/docx-core/src/primitives/sections_page_setup.test.ts
+  - packages/docx-core/src/integration/canonical-emission-regression.test.ts
+  - packages/docx-mcp/src/tools/format_section_page_setup.test.ts
+  - packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
 ```
 
 `w:pgSz` carries the page width/height in twentieths of a point and an
@@ -488,6 +495,9 @@ optional orientation. The generation section emitter
 `w:w`/`w:h` for every section (defaulting to US Letter) and sets
 `w:orient="landscape"` with swapped dimensions when the spec requests
 landscape, so readers never fall back to printer-driver defaults.
+The section editing primitive updates explicit width, height, and orientation
+attributes atomically, preserves untargeted attributes such as paper code, and
+requires both dimensions before creating a missing `w:pgSz`.
 
 ## [ECMA-PART1-17-6-11] w:pgMar page margin emission
 
@@ -498,6 +508,13 @@ section: "17.6.11"
 url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
 schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pgMar
 verifiedBy:
+  - packages/docx-core/src/generation/emit/section.ts
+  - packages/docx-core/src/generation/generation-skeleton.test.ts
+  - packages/docx-core/src/primitives/sections.ts
+  - packages/docx-core/src/primitives/sections_page_setup.test.ts
+  - packages/docx-core/src/integration/canonical-emission-regression.test.ts
+  - packages/docx-mcp/src/tools/format_section_page_setup.test.ts
+  - packages/docx-mcp/src/integration/canonical-emission-mcp.test.ts
 ```
 
 `w:pgMar` declares the page margins plus header/footer offsets and
@@ -506,6 +523,9 @@ always emits the full attribute set (top, right, bottom, left, header,
 footer, gutter) because readers diverge in their defaults when
 attributes are omitted; spec values fill in unspecified members from
 the standard one-inch/half-inch defaults.
+The section editing primitive permits partial updates of an existing complete
+margin record, supports the signed top/bottom domains, and requires all seven
+attributes before creating a missing `w:pgMar`.
 
 ## [ECMA-PART1-17-3-1-24] w:pBdr paragraph border collection
 

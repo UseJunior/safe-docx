@@ -8,6 +8,7 @@ import {
   getDocumentSections,
   SectionMutationError,
   setSectionPageNumberStart,
+  updateSectionProperties,
 } from './sections.js';
 import { createRevisionContext, createRevisionIdState } from './track-changes-emitter.js';
 import { parseXml, serializeXml } from './xml.js';
@@ -22,6 +23,14 @@ const test = testAllure.epic('Document Comparison').withLabels({
 const conformanceTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.12' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.18' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
+);
+const pageSetupTest = testAllure.epic('Document Comparison').withLabels({
+  feature: 'add-section-page-setup-formatting',
+});
+const pageSetupConformanceTest = pageSetupTest.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.11' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
 );
 
@@ -345,6 +354,327 @@ describe('OpenSpec traceability: section page numbering', () => {
         code: 'INVALID_PAGE_NUMBER_START',
       }));
       expect(serializeXml(doc)).toBe(before);
+    },
+  );
+});
+
+describe('OpenSpec traceability: section page setup', () => {
+  pageSetupConformanceTest.openspec('Existing page size receives a partial update')(
+    'changes requested page-size attributes and preserves paper code',
+    () => {
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
+          + '<w:sectPr><w:pgSz w:w="12240" w:h="15840" w:orient="portrait" w:code="1"/>'
+          + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+          + '</w:sectPr>',
+      );
+
+      const result = updateSectionProperties(doc, {
+        sectionIndex: 0,
+        pageSize: { widthTwips: 15840, orientation: 'landscape' },
+      });
+
+      expect(result.changed).toBe(true);
+      const pgSz = direct(liveSectPr(doc, 0), W.pgSz);
+      expect(attr(pgSz, W.w)).toBe('15840');
+      expect(attr(pgSz, 'h')).toBe('15840');
+      expect(attr(pgSz, 'orient')).toBe('landscape');
+      expect(attr(pgSz, 'code')).toBe('1');
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Missing page size is created with explicit dimensions')(
+    'creates a complete page size in schema order and rejects incomplete creation',
+    () => {
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
+          + '<w:sectPr><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+          + '<w:pgNumType w:start="1"/><w:cols/></w:sectPr>',
+      );
+      updateSectionProperties(doc, {
+        sectionIndex: 0,
+        pageSize: {
+          widthTwips: 15840,
+          heightTwips: 12240,
+          orientation: 'landscape',
+        },
+      });
+      expect(Array.from(liveSectPr(doc, 0).children).map((el) => el.localName))
+        .toEqual([W.pgSz, W.pgMar, W.pgNumType, 'cols']);
+
+      const incomplete = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr/>',
+      );
+      const before = serializeXml(incomplete);
+      expect(() => updateSectionProperties(incomplete, {
+        sectionIndex: 0,
+        pageSize: { orientation: 'landscape' },
+      })).toThrowError(expect.objectContaining({ code: 'INCOMPLETE_PAGE_SIZE' }));
+      expect(serializeXml(incomplete)).toBe(before);
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Existing margins receive a partial update')(
+    'changes selected signed and unsigned margins only',
+    () => {
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
+          + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+          + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+          + '</w:sectPr>',
+      );
+      updateSectionProperties(doc, {
+        sectionIndex: 0,
+        margins: { topTwips: -120, rightTwips: 720 },
+      });
+      expect(getDocumentSections(doc)[0]?.margins).toEqual({
+        topTwips: -120,
+        rightTwips: 720,
+        bottomTwips: 1440,
+        leftTwips: 1440,
+        headerTwips: 720,
+        footerTwips: 720,
+        gutterTwips: 0,
+      });
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Missing margins require the complete attribute set')(
+    'creates all required margin attributes in schema order and rejects omissions',
+    () => {
+      const fullMargins = {
+        topTwips: 720,
+        rightTwips: 720,
+        bottomTwips: 720,
+        leftTwips: 720,
+        headerTwips: 360,
+        footerTwips: 360,
+        gutterTwips: 0,
+      };
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
+          + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+          + '<w:pgNumType w:start="1"/><w:cols/></w:sectPr>',
+      );
+      updateSectionProperties(doc, {
+        sectionIndex: 0,
+        margins: fullMargins,
+      });
+      expect(Array.from(liveSectPr(doc, 0).children).map((el) => el.localName))
+        .toEqual([W.pgSz, W.pgMar, W.pgNumType, 'cols']);
+      expect(getDocumentSections(doc)[0]?.margins).toEqual(fullMargins);
+
+      const incomplete = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr/>',
+      );
+      const before = serializeXml(incomplete);
+      expect(() => updateSectionProperties(incomplete, {
+        sectionIndex: 0,
+        margins: { topTwips: 720 },
+      })).toThrowError(expect.objectContaining({ code: 'INCOMPLETE_PAGE_MARGINS' }));
+      expect(serializeXml(incomplete)).toBe(before);
+    },
+  );
+
+  pageSetupTest.openspec('Page setup values follow their OOXML domains')(
+    'rejects invalid dimensions, orientations, and unsigned margins transactionally',
+    () => {
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
+          + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+          + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+          + '</w:sectPr>',
+      );
+      const before = serializeXml(doc);
+      const invalidMutations = [
+        { pageSize: { widthTwips: 0 } },
+        { pageSize: { heightTwips: Number.MAX_SAFE_INTEGER + 1 } },
+        { pageSize: { orientation: 'sideways' } },
+        { margins: { leftTwips: -1 } },
+        { margins: { topTwips: 1.5 } },
+        {},
+      ];
+      for (const mutation of invalidMutations) {
+        expect(() => updateSectionProperties(doc, {
+          sectionIndex: 0,
+          ...mutation,
+        } as never)).toThrowError(SectionMutationError);
+        expect(serializeXml(doc)).toBe(before);
+      }
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Mixed page setup changes are atomic')(
+    'applies all requested values with one prior-state snapshot',
+    () => {
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
+          + '<w:sectPr><w:pgSz w:w="12240" w:h="15840" w:code="1"/>'
+          + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+          + '<w:pgNumType w:start="1" w:fmt="decimal"/></w:sectPr>',
+      );
+      const result = updateSectionProperties(
+        doc,
+        {
+          sectionIndex: 0,
+          pageNumberStart: 3,
+          pageSize: {
+            widthTwips: 15840,
+            heightTwips: 12240,
+            orientation: 'landscape',
+          },
+          margins: { topTwips: 720, gutterTwips: 180 },
+        },
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-07-28T12:00:00Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+      expect(result.currentSection).toMatchObject({
+        pageNumberStart: 3,
+        pageSize: {
+          widthTwips: 15840,
+          heightTwips: 12240,
+          orientation: 'landscape',
+        },
+        margins: { topTwips: 720, gutterTwips: 180 },
+      });
+      const changes = getDirectChildrenByName(liveSectPr(doc, 0), 'sectPrChange');
+      expect(changes).toHaveLength(1);
+      const prior = direct(changes[0]!, W.sectPr);
+      expect(attr(direct(prior, W.pgSz), W.w)).toBe('12240');
+      expect(attr(direct(prior, W.pgMar), W.top)).toBe('1440');
+      expect(attr(direct(prior, W.pgNumType), W.start)).toBe('1');
+    },
+  );
+
+  pageSetupTest.openspec('Identical page setup is a deterministic no-op')(
+    'does not serialize or allocate a revision for an identical mixed request',
+    () => {
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
+          + '<w:sectPr><w:pgSz w:w="12240" w:h="15840" w:orient="portrait"/>'
+          + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+          + '</w:sectPr>',
+      );
+      const ctx = createRevisionContext({
+        author: 'SafeDocX AI',
+        idState: createRevisionIdState(),
+      });
+      const before = serializeXml(doc);
+      expect(updateSectionProperties(doc, {
+        sectionIndex: 0,
+        pageSize: { widthTwips: 12240, orientation: 'portrait' },
+        margins: { topTwips: 1440, gutterTwips: 0 },
+      }, ctx).changed).toBe(false);
+      expect(serializeXml(doc)).toBe(before);
+      expect(ctx.idState.nextId).toBe(1);
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Untargeted section properties survive page setup editing')(
+    'preserves references, numbering format, break type, columns, borders, and topology',
+    () => {
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Visible body</w:t></w:r></w:p>'
+          + '<w:sectPr w:rsidR="ABCD">'
+          + '<w:headerReference w:type="default" r:id="rId1"/>'
+          + '<w:footerReference w:type="first" r:id="rId2"/>'
+          + '<w:type w:val="continuous"/>'
+          + '<w:pgSz w:w="12240" w:h="15840" w:code="1"/>'
+          + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+          + '<w:pgBorders/><w:pgNumType w:start="1" w:fmt="lowerRoman"/>'
+          + '<w:cols w:num="2"/></w:sectPr>',
+      );
+      const before = getDocumentSections(doc)[0]!;
+      const paragraphsBefore = doc.getElementsByTagNameNS(W_NS, W.p).length;
+      const textBefore = doc.documentElement.textContent;
+      const preserved = [
+        direct(liveSectPr(doc, 0), W.headerReference).toString(),
+        direct(liveSectPr(doc, 0), W.footerReference).toString(),
+        direct(liveSectPr(doc, 0), W.type).toString(),
+        direct(liveSectPr(doc, 0), 'pgBorders').toString(),
+        direct(liveSectPr(doc, 0), W.pgNumType).toString(),
+        direct(liveSectPr(doc, 0), 'cols').toString(),
+      ];
+      updateSectionProperties(doc, {
+        sectionIndex: 0,
+        pageSize: { widthTwips: 15840 },
+        margins: { leftTwips: 720 },
+      });
+      const after = getDocumentSections(doc)[0]!;
+      expect([
+        direct(liveSectPr(doc, 0), W.headerReference).toString(),
+        direct(liveSectPr(doc, 0), W.footerReference).toString(),
+        direct(liveSectPr(doc, 0), W.type).toString(),
+        direct(liveSectPr(doc, 0), 'pgBorders').toString(),
+        direct(liveSectPr(doc, 0), W.pgNumType).toString(),
+        direct(liveSectPr(doc, 0), 'cols').toString(),
+      ]).toEqual(preserved);
+      expect(after.breakType).toBe(before.breakType);
+      expect(after.pageNumberFormat).toBe(before.pageNumberFormat);
+      expect(after.headers).toEqual(before.headers);
+      expect(after.footers).toEqual(before.footers);
+      expect(getDocumentSections(doc)).toHaveLength(1);
+      expect(doc.getElementsByTagNameNS(W_NS, W.p)).toHaveLength(paragraphsBefore);
+      expect(doc.documentElement.textContent).toBe(textBefore);
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Accept and reject preserve page setup semantics')(
+    'keeps the atomic page setup on accept and restores all prior values on reject',
+    () => {
+      const doc = makeDocument(
+        '<w:p><w:r><w:t>Body</w:t></w:r></w:p>'
+          + '<w:sectPr><w:headerReference w:type="default" r:id="rId1"/>'
+          + '<w:pgSz w:w="12240" w:h="15840" w:code="1"/>'
+          + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+          + '<w:pgNumType w:start="1" w:fmt="decimal"/></w:sectPr>',
+      );
+      updateSectionProperties(
+        doc,
+        {
+          sectionIndex: 0,
+          pageNumberStart: 4,
+          pageSize: {
+            widthTwips: 15840,
+            heightTwips: 12240,
+            orientation: 'landscape',
+          },
+          margins: { topTwips: 720, leftTwips: 720 },
+        },
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          idState: createRevisionIdState(),
+        }),
+      );
+
+      const accepted = doc.cloneNode(true) as Document;
+      acceptChanges(accepted);
+      expect(getDocumentSections(accepted)[0]).toMatchObject({
+        pageNumberStart: 4,
+        pageSize: {
+          widthTwips: 15840,
+          heightTwips: 12240,
+          orientation: 'landscape',
+        },
+        margins: { topTwips: 720, leftTwips: 720 },
+      });
+
+      const rejected = doc.cloneNode(true) as Document;
+      rejectChanges(rejected);
+      expect(getDocumentSections(rejected)[0]).toMatchObject({
+        pageNumberStart: 1,
+        pageNumberFormat: 'decimal',
+        pageSize: {
+          widthTwips: 12240,
+          heightTwips: 15840,
+          orientation: null,
+        },
+        margins: { topTwips: 1440, leftTwips: 1440 },
+        headers: [{ type: 'default', relationshipId: 'rId1' }],
+      });
     },
   );
 });

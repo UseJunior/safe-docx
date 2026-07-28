@@ -23,6 +23,14 @@ const TEST_FEATURE = 'add-section-page-numbering-formatting';
 const test = testAllure.epic('Document Editing').withLabels({
   feature: TEST_FEATURE,
 });
+const pageSetupTest = testAllure.epic('Document Editing').withLabels({
+  feature: 'add-section-page-setup-formatting',
+});
+const pageSetupConformanceTest = pageSetupTest.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.11' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
+);
 
 const DOCUMENT_XML =
   `<w:document xmlns:w="${W_NS}" xmlns:r="${R_NS}"><w:body>`
@@ -292,6 +300,272 @@ describe('OpenSpec traceability: section tools', () => {
       expect((await getSessionSections(rejected))[0]?.pageNumberStart).toBe(2);
       expect((await getSessionSections(rejected))[0]?.pageNumberFormat)
         .toBe('lowerRoman');
+    },
+  );
+});
+
+describe('OpenSpec traceability: section page setup tool', () => {
+  pageSetupConformanceTest.openspec('Mixed page setup request is revisionable')(
+    'updates numbering, paper geometry, and margins with one revision',
+    async () => {
+      const opened = await openSectionSession();
+      const result = await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 0,
+        page_number_start: 5,
+        page_size: {
+          width_twips: 15840,
+          height_twips: 12240,
+          orientation: 'landscape',
+        },
+        margins: {
+          top_twips: 720,
+          gutter_twips: 180,
+        },
+      });
+      assertSuccess(result, 'mixed format_section');
+      expect(result).toMatchObject({
+        changed: true,
+        previous_page_number_start: 2,
+        resulting_page_number_start: 5,
+        previous_page_size: {
+          width_twips: 12240,
+          height_twips: 15840,
+          orientation: null,
+        },
+        resulting_page_size: {
+          width_twips: 15840,
+          height_twips: 12240,
+          orientation: 'landscape',
+        },
+        previous_margins: { top_twips: 1440, gutter_twips: 0 },
+        resulting_margins: { top_twips: 720, gutter_twips: 180 },
+      });
+      const session = await opened.mgr.getSessionByFilePath(opened.inputPath);
+      if (!session || session.provider !== 'docx') throw new Error('Expected DOCX session');
+      const xml = await readZipText(
+        (await session.doc.toBuffer({ cleanBookmarks: false })).buffer,
+        'word/document.xml',
+      );
+      if (xml === null) throw new Error('Expected word/document.xml');
+      expect(xml.match(/<w:sectPrChange\b/g)).toHaveLength(1);
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Page setup objects support partial updates')(
+    'changes selected leaves and preserves every unspecified projection',
+    async () => {
+      const opened = await openSectionSession();
+      const before = (await getSessionSections(opened))[0]!;
+      assertSuccess(await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 0,
+        page_size: { orientation: 'portrait' },
+        margins: { right_twips: 960 },
+      }), 'partial format_section');
+      const after = (await getSessionSections(opened))[0]!;
+      expect(after.pageSize).toEqual({
+        ...before.pageSize,
+        orientation: 'portrait',
+      });
+      expect(after.margins).toEqual({
+        ...before.margins,
+        rightTwips: 960,
+      });
+      expect(after.pageNumberStart).toBe(before.pageNumberStart);
+      expect(after.pageNumberFormat).toBe(before.pageNumberFormat);
+    },
+  );
+
+  pageSetupTest.openspec('Empty or invalid requests are transactional')(
+    'rejects malformed values and incomplete missing-element creation',
+    async () => {
+      const opened = await openSectionSession();
+      const before = await getSessionSections(opened);
+      const session = await opened.mgr.getSessionByFilePath(opened.inputPath);
+      const editsBefore = session?.editCount;
+      const invalid = [
+        {},
+        { page_size: {} },
+        { page_size: { width_twips: 0 } },
+        { page_size: { orientation: 'sideways' } },
+        { margins: { left_twips: -1 } },
+        { margins: { unknown_twips: 1 } },
+      ];
+      for (const extra of invalid) {
+        assertFailure(await formatSection(opened.mgr, {
+          file_path: opened.inputPath,
+          section_index: 0,
+          ...extra,
+        }), 'VALIDATION_ERROR');
+      }
+
+      const missingMgr = createTestSessionManager({ defaultAiAuthor: 'SafeDocX AI' });
+      const missing = await openSession([], {
+        mgr: missingMgr,
+        xml: `<w:document xmlns:w="${W_NS}"><w:body>`
+          + '<w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr/>'
+          + '</w:body></w:document>',
+      });
+      assertFailure(await formatSection(missing.mgr, {
+        file_path: missing.inputPath,
+        section_index: 0,
+        page_size: { orientation: 'landscape' },
+      }), 'INCOMPLETE_PAGE_SIZE');
+      assertFailure(await formatSection(missing.mgr, {
+        file_path: missing.inputPath,
+        section_index: 0,
+        margins: { top_twips: 720 },
+      }), 'INCOMPLETE_PAGE_MARGINS');
+
+      expect(await getSessionSections(opened)).toEqual(before);
+      expect(session?.editCount).toBe(editsBefore);
+    },
+  );
+
+  pageSetupTest.openspec('Identical mixed request does not create an edit')(
+    'keeps XML and edit accounting unchanged',
+    async () => {
+      const opened = await openSectionSession();
+      const session = await opened.mgr.getSessionByFilePath(opened.inputPath);
+      if (!session || session.provider !== 'docx') throw new Error('Expected DOCX session');
+      const editsBefore = session.editCount;
+      const before = await session.doc.toBuffer({ cleanBookmarks: false });
+      const result = await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 1,
+        page_size: {
+          width_twips: 15840,
+          height_twips: 12240,
+          orientation: 'landscape',
+        },
+        margins: { top_twips: 720, gutter_twips: 0 },
+      });
+      assertSuccess(result, 'no-op format_section');
+      expect(result.changed).toBe(false);
+      expect(session.editCount).toBe(editsBefore);
+      const after = await session.doc.toBuffer({ cleanBookmarks: false });
+      expect(await readZipText(after.buffer, 'word/document.xml'))
+        .toBe(await readZipText(before.buffer, 'word/document.xml'));
+    },
+  );
+
+  pageSetupTest.openspec('Existing page-number-only calls remain compatible')(
+    'retains the original restart response fields',
+    async () => {
+      const opened = await openSectionSession();
+      const result = await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 1,
+        page_number_start: 1,
+      });
+      assertSuccess(result, 'compatible format_section');
+      expect(result).toMatchObject({
+        changed: true,
+        previous_page_number_start: null,
+        resulting_page_number_start: 1,
+      });
+      expect((await getSessionSections(opened))[1]?.pageNumberStart).toBe(1);
+    },
+  );
+
+  pageSetupTest.openspec('Unsupported providers remain rejected')(
+    'rejects page setup calls at both provider chokepoints',
+    async () => {
+      const manager = createTestSessionManager();
+      const pageSetup = {
+        section_index: 0,
+        page_size: { width_twips: 12240, height_twips: 15840 },
+      };
+      assertFailure(
+        await dispatchToolCall(manager, 'format_section', {
+          file_path: '/tmp/not-opened-page-setup.odt',
+          ...pageSetup,
+        }) as { success: boolean; error?: { code?: string } },
+        'UNSUPPORTED_FOR_ODF',
+      );
+      assertFailure(
+        await dispatchToolCall(manager, 'format_section', {
+          google_doc_id: 'fake-id',
+          ...pageSetup,
+        }) as { success: boolean; error?: { code?: string } },
+        'UNSUPPORTED_FOR_PROVIDER',
+      );
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Page setup and relationships remain narrowly scoped')(
+    'preserves untargeted settings, side parts, and topology',
+    async () => {
+      const opened = await openSectionSession();
+      const before = (await getSessionSections(opened))[0]!;
+      const sessionBefore = await opened.mgr.getSessionByFilePath(opened.inputPath);
+      if (!sessionBefore || sessionBefore.provider !== 'docx') {
+        throw new Error('Expected DOCX session');
+      }
+      const paragraphsBefore = sessionBefore.doc.getParagraphs().length;
+      assertSuccess(await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 0,
+        page_size: { width_twips: 15840 },
+        margins: { left_twips: 960 },
+      }), 'preserving format_section');
+      const after = (await getSessionSections(opened))[0]!;
+      expect(after.breakType).toBe(before.breakType);
+      expect(after.pageNumberStart).toBe(before.pageNumberStart);
+      expect(after.pageNumberFormat).toBe(before.pageNumberFormat);
+      expect(after.headers).toEqual(before.headers);
+      expect(after.footers).toEqual(before.footers);
+      expect((await getSessionSections(opened))).toHaveLength(2);
+      const session = await opened.mgr.getSessionByFilePath(opened.inputPath);
+      if (!session || session.provider !== 'docx') throw new Error('Expected DOCX session');
+      expect(session.doc.getParagraphs()).toHaveLength(paragraphsBefore);
+      const output = path.join(opened.tmpDir, 'page-setup-preserved.docx');
+      assertSuccess(await save(opened.mgr, {
+        file_path: opened.inputPath,
+        save_to_local_path: output,
+        save_format: 'tracked',
+      }), 'save');
+      expect(await readZipText(
+        await fs.readFile(output),
+        'word/custom-preserved.xml',
+      )).toBe('<root keep="yes"/>');
+    },
+  );
+
+  pageSetupConformanceTest.openspec('Clean and tracked saves agree on current page setup')(
+    'keeps current geometry in both outputs and the prior snapshot only in tracked',
+    async () => {
+      const opened = await openSectionSession();
+      assertSuccess(await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 0,
+        page_size: {
+          width_twips: 15840,
+          height_twips: 12240,
+          orientation: 'landscape',
+        },
+        margins: { top_twips: 720, left_twips: 720 },
+      }), 'format_section');
+      const cleanPath = path.join(opened.tmpDir, 'page-setup-clean.docx');
+      const trackedPath = path.join(opened.tmpDir, 'page-setup-tracked.docx');
+      assertSuccess(await save(opened.mgr, {
+        file_path: opened.inputPath,
+        save_to_local_path: cleanPath,
+        tracked_save_to_local_path: trackedPath,
+        save_format: 'both',
+      }), 'save');
+      const cleanXml = await readZipText(await fs.readFile(cleanPath), 'word/document.xml');
+      const trackedXml = await readZipText(await fs.readFile(trackedPath), 'word/document.xml');
+      for (const xml of [cleanXml, trackedXml]) {
+        expect(xml).toContain('w:w="15840"');
+        expect(xml).toContain('w:h="12240"');
+        expect(xml).toContain('w:orient="landscape"');
+        expect(xml).toContain('w:top="720"');
+        expect(xml).toContain('w:left="720"');
+      }
+      expect(cleanXml).not.toContain('<w:sectPrChange');
+      expect(trackedXml).toContain('<w:sectPrChange');
     },
   );
 });

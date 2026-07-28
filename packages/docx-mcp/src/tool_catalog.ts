@@ -382,7 +382,7 @@ export const SAFE_DOCX_TOOL_CATALOG = [
     name: 'format_section',
     surface: 'revisionable',
     description:
-      'Set one DOCX section’s page-number restart using a zero-based section_index from get_sections. This first slice writes only w:pgNumType/@w:start, preserves page setup and header/footer references, and emits a native w:sectPrChange. It does not create sections or change page size, margins, break type, headers, footers, or page-number format.',
+      'Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content.',
     input: z.object({
       ...FILE_FIELD_OPTIONAL,
       ...GOOGLE_DOC_ID_FIELD,
@@ -395,7 +395,43 @@ export const SAFE_DOCX_TOOL_CATALOG = [
         .number()
         .int()
         .nonnegative()
+        .optional()
         .describe('Non-negative page number at which this section starts.'),
+      page_size: z
+        .object({
+          width_twips: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe('Positive page width in twentieths of a point.'),
+          height_twips: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe('Positive page height in twentieths of a point.'),
+          orientation: z
+            .enum(['portrait', 'landscape'])
+            .optional()
+            .describe('Literal OOXML orientation; dimensions are not auto-swapped.'),
+        })
+        .strict()
+        .optional()
+        .describe('Partial page-size update. Both dimensions are required when w:pgSz is absent.'),
+      margins: z
+        .object({
+          top_twips: z.number().int().optional(),
+          right_twips: z.number().int().nonnegative().optional(),
+          bottom_twips: z.number().int().optional(),
+          left_twips: z.number().int().nonnegative().optional(),
+          header_twips: z.number().int().nonnegative().optional(),
+          footer_twips: z.number().int().nonnegative().optional(),
+          gutter_twips: z.number().int().nonnegative().optional(),
+        })
+        .strict()
+        .optional()
+        .describe('Partial margin update in twips. All seven values are required when w:pgMar is absent.'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: true },
   },

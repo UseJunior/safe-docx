@@ -33,9 +33,12 @@ import {
 import {
   getDocumentSections,
   setSectionPageNumberStart,
+  updateSectionProperties,
   type DocumentSection,
   type SectionPageNumberMutation,
   type SectionPageNumberMutationResult,
+  type SectionPropertiesMutation,
+  type SectionPropertiesMutationResult,
 } from './sections.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { parseDocumentRels, type RelsMap } from './relationships.js';
@@ -973,6 +976,18 @@ export class DocxDocument {
     ctx?: RevisionContext,
   ): SectionPageNumberMutationResult {
     const result = setSectionPageNumberStart(this.documentXml, mutation, ctx);
+    if (result.changed) {
+      this.dirty = true;
+      this.documentViewCache = null;
+    }
+    return result;
+  }
+
+  updateSectionProperties(
+    mutation: SectionPropertiesMutation,
+    ctx?: RevisionContext,
+  ): SectionPropertiesMutationResult {
+    const result = updateSectionProperties(this.documentXml, mutation, ctx);
     if (result.changed) {
       this.dirty = true;
       this.documentViewCache = null;
