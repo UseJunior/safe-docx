@@ -149,9 +149,11 @@ function canonicalizeElement(el: Element): string {
  * identity. Serialization topology is erased — namespace declarations,
  * inter-element whitespace, child order, attributes on the `w:pPr` itself
  * (OOXML `CT_PPrBase` permits none, so only namespace declarations or
- * non-conforming noise ever appear there), and a bare or revision-only
+ * non-conforming noise ever appear there), direct `w:pStyle`, and a bare or revision-only
  * `w:pPr` versus an absent one — while substantive children remain
- * identity-distinguishing.
+ * identity-distinguishing. Direct style is excluded so an empty paragraph can
+ * align and the comparison layer can represent the difference as one native
+ * `w:pPrChange`.
  *
  * `w:sectPr` participates as a PRESENCE marker only. A section break's
  * existence is document topology: letting a section-break paragraph
@@ -169,13 +171,15 @@ function canonicalizeElement(el: Element): string {
  * are provenance, not content.
  *
  * @see https://github.com/UseJunior/safe-docx/issues/678
+ * @see https://github.com/UseJunior/safe-docx/issues/679
  */
 export function canonicalizeParagraphPropertiesForIdentity(
   pPr: Element | null | undefined,
 ): string {
   if (!pPr) return '<w:pPr/>';
   const children = childElements(pPr)
-    .filter((child) => !REVISION_PROPERTY_TAGS.has(child.tagName))
+    .filter((child) =>
+      !REVISION_PROPERTY_TAGS.has(child.tagName) && child.tagName !== 'w:pStyle')
     .map((child) => (child.tagName === 'w:sectPr' ? '<w:sectPr/>' : canonicalizeElement(child)))
     .filter((canonical) => canonical !== '<w:rPr/>')
     .sort();

@@ -7,7 +7,11 @@
 
 import { XMLSerializer } from '@xmldom/xmldom';
 import { parseXml } from '@usejunior/docx-core';
-import type { ComparisonUnitAtom, OpaquePassthroughNode } from '@usejunior/docx-core';
+import type {
+  ComparisonUnitAtom,
+  OpaquePassthroughNode,
+  ParagraphStyleChangeInfo,
+} from '@usejunior/docx-core';
 import { CorrelationStatus } from '@usejunior/docx-core';
 import { getLeafText, childElements, findChildByTagName } from '@usejunior/docx-core';
 import {
@@ -170,6 +174,8 @@ export function reconstructDocument(
 interface ParagraphGroup {
   /** Paragraph properties (w:pPr) if available */
   pPr: Element | null;
+  /** Direct style change shared by this aligned paragraph, if any. */
+  paragraphStyleChange?: ParagraphStyleChangeInfo;
   /** Atoms in this paragraph, grouped by run and status */
   runGroups: RunGroup[];
 }
@@ -277,7 +283,11 @@ function groupAtomsByParagraph(atoms: ComparisonUnitAtom[]): ParagraphGroup[] {
     const rAncestor = findAncestorByTag(atom, 'w:r');
 
     // Check if we need a new paragraph
-    const pPr = pAncestor ? findChildByTag(pAncestor, 'w:pPr') : null;
+    const pPr = atom.paragraphStyleChange
+      ? atom.paragraphStyleChange.newParagraphProperties
+      : pAncestor
+        ? findChildByTag(pAncestor, 'w:pPr')
+        : null;
 
     // Pass currentRunGroup and current atom to check if we should start a new paragraph
     // Uses paragraphIndex for comparison instead of object references
@@ -288,6 +298,7 @@ function groupAtomsByParagraph(atoms: ComparisonUnitAtom[]): ParagraphGroup[] {
       currentRunGroup = null;
       currentGroup = {
         pPr: pPr ? cloneElement(pPr) : null,
+        paragraphStyleChange: atom.paragraphStyleChange,
         runGroups: [],
       };
       groups.push(currentGroup);
@@ -706,6 +717,7 @@ function buildParagraphXml(
   hyperlinkRelResolver?: HyperlinkRelResolver
 ): string {
   const revisionCtx = createRevisionContext({ author, date: dateStr, idState: revState });
+  const livePPr = paragraphPropertiesWithStyleChange(group, revisionCtx);
   const hasOpaqueAtoms = group.runGroups.some((runGroup) =>
     runGroup.atoms.some((atom) =>
       atom.opaquePassthrough !== undefined &&
@@ -860,8 +872,8 @@ function buildParagraphXml(
   parts.push('<w:p>');
 
   // Add paragraph properties
-  if (group.pPr) {
-    parts.push(serializeToXml(group.pPr));
+  if (livePPr) {
+    parts.push(serializeToXml(livePPr));
   }
 
   // Add run groups with track changes, restoring validated opaque boundaries
@@ -893,6 +905,31 @@ function buildParagraphXml(
   parts.push('</w:p>');
 
   return parts.join('');
+}
+
+/**
+ * Keep revised paragraph properties live and append the original CT_PPrBase
+ * snapshot as the final child required by CT_PPr.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.29
+ * @see https://github.com/UseJunior/safe-docx/issues/679
+ */
+function paragraphPropertiesWithStyleChange(
+  group: ParagraphGroup,
+  revisionCtx: ReturnType<typeof createRevisionContext>,
+): Element | null {
+  if (!group.paragraphStyleChange?.tracked) return group.pPr;
+
+  const livePPr = group.pPr ? cloneElement(group.pPr) : createEl('w:pPr');
+  if (!findChildByTagName(livePPr, 'w:pPrChange')) {
+    livePPr.appendChild(
+      buildPPrChangeElement(
+        group.paragraphStyleChange.oldParagraphProperties,
+        revisionCtx,
+      ),
+    );
+  }
+  return livePPr;
 }
 
 /**

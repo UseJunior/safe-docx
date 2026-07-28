@@ -59,6 +59,7 @@ import {
 import { OOXML } from '@usejunior/docx-core';
 import { collectPreservedMoveNames, detectMovesInAtomList } from '../../move-detection.js';
 import { detectFormatChangesInAtomList } from '../../format-detection.js';
+import { detectParagraphStyleChanges } from '../../paragraph-style-detection.js';
 import {
   parseDocumentXml,
   findBody,
@@ -772,6 +773,13 @@ export async function compareDocumentsAtomizer(
     }
 
     // Step 9: Run format detection
+    // Paragraph styles are inventoried even when formatting is ignored so the
+    // rebuild path can retain the revised live style for equal empty paragraphs.
+    detectParagraphStyleChanges(
+      originalAtoms,
+      revisedAtoms,
+      formatSettings.detectFormatChanges,
+    );
     if (formatSettings.detectFormatChanges) {
       // Format detection operates on the revised atoms that are Equal
       detectFormatChangesInAtomList(revisedAtoms, formatSettings);
@@ -1889,10 +1897,14 @@ export function computeAtomizerStats(mergedAtoms: ComparisonUnitAtom[]): Compare
   let previousRangeStatus: CorrelationStatus.Inserted | CorrelationStatus.Deleted | CorrelationStatus.FormatChanged | null = null;
   let previousRangeParagraph: string | undefined;
   const paragraphs = new Map<string, ParagraphChangeFlags>();
+  const paragraphStyleChanges = new Set<string>();
 
   for (const atom of mergedAtoms) {
     const paragraphKey = paragraphStatsKey(atom);
     const status = atom.correlationStatus;
+    if (paragraphKey && atom.paragraphStyleChange?.tracked) {
+      paragraphStyleChanges.add(paragraphKey);
+    }
     const rangeStatus =
       status === CorrelationStatus.Inserted ||
       status === CorrelationStatus.Deleted ||
@@ -1934,7 +1946,7 @@ export function computeAtomizerStats(mergedAtoms: ComparisonUnitAtom[]): Compare
     insertedAtoms: reconstructionStats.insertions,
     deletedAtoms: reconstructionStats.deletions,
     modifiedParagraphs,
-    formatChanges,
-    formatChangeAtoms: reconstructionStats.formatChanges,
+    formatChanges: formatChanges + paragraphStyleChanges.size,
+    formatChangeAtoms: reconstructionStats.formatChanges + paragraphStyleChanges.size,
   };
 }

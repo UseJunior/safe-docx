@@ -928,11 +928,9 @@ describe('empty paragraph context hashing', () => {
    * CANONICAL projection of w:pPr. Serialization topology — bare vs absent
    * pPr, namespace declarations (OOXML CT_PPrBase permits no attributes, so
    * only xmlns:* ever appears there), child order, whitespace — and
-   * revision-tracking provenance never distinguish; substantive property
-   * children, including w:sectPr (section topology), always do, so that
-   * both reconstruction modes represent a genuine property difference
-   * instead of silently keeping one side. Representing such a delta as
-   * w:pPrChange instead of delete+insert is #679's change-detection scope.
+   * revision-tracking provenance never distinguish. Direct w:pStyle is also
+   * excluded for #679's paragraph-level change detector; other substantive
+   * property children, including w:sectPr (section topology), still do.
    *
    * @see https://github.com/UseJunior/safe-docx/issues/678
    * @see https://github.com/UseJunior/safe-docx/issues/679
