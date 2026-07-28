@@ -21,6 +21,7 @@ import { closeFile } from './tools/close_file.js';
 import { formatLayout } from './tools/format_layout.js';
 import { formatNumbering } from './tools/format_numbering.js';
 import { formatSection } from './tools/format_section.js';
+import { insertSectionBreakTool } from './tools/insert_section_break.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { acceptAiEdits } from './tools/accept_ai_edits.js';
 import { rejectAiEdits } from './tools/reject_ai_edits.js';
@@ -200,6 +201,13 @@ export async function dispatchToolCall(
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'format_section');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'format_section');
       return await formatSection(sessions, args as Parameters<typeof formatSection>[1]);
+    case 'insert_section_break':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'insert_section_break');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'insert_section_break');
+      return await insertSectionBreakTool(
+        sessions,
+        args as Parameters<typeof insertSectionBreakTool>[1],
+      );
     case 'accept_changes':
       return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
     case 'accept_ai_edits':

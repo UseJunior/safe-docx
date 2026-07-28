@@ -30,6 +30,14 @@ function mutationHint(code: SectionMutationError['code']): string {
       return 'Pass a non-negative section_index returned by get_sections.';
     case 'SECTION_NOT_FOUND':
       return 'Call get_sections again and choose a current section_index.';
+    case 'INVALID_SECTION_ANCHOR':
+    case 'SECTION_ANCHOR_NOT_FOUND':
+    case 'SECTION_ANCHOR_NOT_BODY':
+    case 'SECTION_BOUNDARY_EXISTS':
+    case 'INVALID_SECTION_BREAK_TYPE':
+    case 'INVALID_INHERIT_PROPERTIES':
+    case 'SECTION_INSERTION_INVARIANT':
+      return 'Use insert_section_break for section topology changes.';
     case 'INVALID_PAGE_NUMBER_START':
       return 'Pass page_number_start as a non-negative integer.';
     case 'EMPTY_SECTION_MUTATION':
@@ -47,7 +55,7 @@ function mutationHint(code: SectionMutationError['code']): string {
   }
 }
 
-type ValidationResult<T> =
+export type ValidationResult<T> =
   | { ok: true; value: T | undefined }
   | { ok: false; response: ToolResponse };
 
@@ -59,7 +67,7 @@ function validationError(message: string, hint: string): ValidationResult<never>
   return { ok: false, response: err('VALIDATION_ERROR', message, hint) };
 }
 
-function parsePageSize(value: unknown): ValidationResult<SectionPageSizeMutation> {
+export function parseSectionPageSize(value: unknown): ValidationResult<SectionPageSizeMutation> {
   if (value === undefined) return { ok: true, value: undefined };
   if (!isRecord(value)) {
     return validationError(
@@ -117,7 +125,7 @@ function parsePageSize(value: unknown): ValidationResult<SectionPageSizeMutation
   };
 }
 
-function parseMargins(value: unknown): ValidationResult<SectionMarginsMutation> {
+export function parseSectionMargins(value: unknown): ValidationResult<SectionMarginsMutation> {
   if (value === undefined) return { ok: true, value: undefined };
   if (!isRecord(value)) {
     return validationError(
@@ -208,9 +216,9 @@ export async function formatSection(
       'Pass an integer such as 0 or 1.',
     );
   }
-  const parsedPageSize = parsePageSize(params.page_size);
+  const parsedPageSize = parseSectionPageSize(params.page_size);
   if (!parsedPageSize.ok) return parsedPageSize.response;
-  const parsedMargins = parseMargins(params.margins);
+  const parsedMargins = parseSectionMargins(params.margins);
   if (!parsedMargins.ok) return parsedMargins.response;
   if (
     params.page_number_start === undefined
