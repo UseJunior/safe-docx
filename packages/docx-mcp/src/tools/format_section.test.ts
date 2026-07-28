@@ -24,7 +24,7 @@ const test = testAllure.epic('Document Editing').withLabels({
   feature: TEST_FEATURE,
 });
 const pageSetupTest = testAllure.epic('Document Editing').withLabels({
-  feature: 'add-section-page-setup-formatting',
+  feature: 'Add Section Page Setup Formatting',
 });
 const pageSetupConformanceTest = pageSetupTest.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' },

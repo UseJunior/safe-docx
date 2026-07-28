@@ -26,7 +26,7 @@ const conformanceTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
 );
 const pageSetupTest = testAllure.epic('Document Comparison').withLabels({
-  feature: 'add-section-page-setup-formatting',
+  feature: 'Add Section Page Setup Formatting',
 });
 const pageSetupConformanceTest = pageSetupTest.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' },
