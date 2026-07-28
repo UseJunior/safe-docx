@@ -269,6 +269,16 @@ function parseHighlightVal(parent: Element | null): string | null {
  * Each property is resolved independently down the chain — a style that
  * specifies only color does not mask an ancestor's bold.
  *
+ * OOXML toggle properties (`w:b`, `w:i`) are resolved as a
+ * nearest-declaration cascade: the first tier that specifies the property
+ * wins, and an explicit off (`w:val` of `0`/`false`/`off`) at a nearer tier
+ * defeats a more distant on. This is deliberately simpler than full OOXML
+ * toggle-property evaluation, in which a style-level true XORs against the
+ * accumulated state and a style-level false leaves it unchanged — repeated
+ * toggle declarations across style levels can therefore resolve differently
+ * here than in Word. The previous container-level resolver applied the same
+ * nearest-value rule, so this is a stated limit, not a regression.
+ *
  * Not resolved: `w:docDefaults`, table-style run properties, numbering-level
  * `rPr`, and theme font references (`w:asciiTheme` etc., which would need
  * `theme1.xml`). A formatting change confined to one of those layers is

@@ -232,10 +232,16 @@ test('basedOn resolution is per property: a derived style adding color does not 
 });
 
 test('toggle precedence: an explicit off at a nearer tier beats an ancestor or later tier turning it on', () => {
-  // w:b is a toggle: <w:b w:val="0"/> is a specification, not an absence, so
-  // per-property resolution must let a nearer off defeat a more distant on.
-  // Three tiers checked: within a basedOn chain, direct-over-paragraph-style,
-  // and character-style-over-paragraph-style.
+  // <w:b w:val="0"/> is a specification, not an absence, so per-property
+  // resolution must let a nearer off defeat a more distant on. Three tiers
+  // checked: within a basedOn chain, direct-over-paragraph-style, and
+  // character-style-over-paragraph-style.
+  //
+  // Scope: these pin the resolver's documented nearest-declaration cascade,
+  // NOT full OOXML toggle-property evaluation (where a style-level true XORs
+  // against accumulated state and a style-level false leaves it unchanged).
+  // The simplification predates this change and is stated in the resolver's
+  // JSDoc; do not read these tests as a conformance claim.
   const chain = wrapStylesXml(
     styleDef('Base', 'character', '<w:b/>') + styleDef('Derived', 'character', '<w:b w:val="0"/>', 'Base'),
   );
