@@ -70,7 +70,7 @@ export async function addComment(
         async (doc, activeCtx) => { await mutate(doc, activeCtx); },
         COMMENT_TOUCHED_CONTEXT,
       );
-      if (revisionPreflight) return revisionPreflight;
+      if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
       const result = await mutate(session.doc, ctx);
       manager.markEdited(session);
@@ -86,6 +86,7 @@ export async function addComment(
         parent_comment_id: result.parentCommentId,
         mode: 'reply',
         file_path: manager.normalizePath(session.originalPath),
+        ...(revisionPreflight.warnings.length > 0 ? { warnings: revisionPreflight.warnings } : {}),
       }, metadata));
     }
 
@@ -154,7 +155,7 @@ export async function addComment(
       async (doc, activeCtx) => { await mutate(doc, activeCtx); },
       COMMENT_TOUCHED_CONTEXT,
     );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     const result = await mutate(session.doc, ctx);
 
@@ -174,6 +175,7 @@ export async function addComment(
       anchor_text: params.anchor_text ?? null,
       mode: 'root',
       file_path: manager.normalizePath(session.originalPath),
+      ...(revisionPreflight.warnings.length > 0 ? { warnings: revisionPreflight.warnings } : {}),
     }, metadata));
   } catch (e: unknown) {
     return err('COMMENT_ERROR', errorMessage(e));

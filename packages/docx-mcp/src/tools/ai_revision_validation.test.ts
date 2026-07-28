@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect } from 'vitest';
 import { SessionManager, type DocxSession } from '../session/manager.js';
+import { addComment } from './add_comment.js';
+import { clearFormatting } from './clear_formatting.js';
 import { formatLayout } from './format_layout.js';
 import { getFileStatus } from './get_file_status.js';
 import { readFile } from './read_file.js';
@@ -273,6 +275,12 @@ describe('AI revision validation guard', () => {
       instruction: 'replace Beta',
     });
     assertSuccess(writeResult);
+    // The pre-existing anomaly is demoted rather than blocking, but it is
+    // still a finding: the success response must surface it (#686) instead of
+    // silently dropping the demoted diagnostics.
+    expect(writeResult.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('FIELD_BEGIN_END_MISMATCH')]),
+    );
 
     const outPath = path.join(opened.tmpDir, 'preexisting-anomaly.docx');
     const saveResult = await save(opened.mgr, {
@@ -287,6 +295,115 @@ describe('AI revision validation guard', () => {
       ]),
     });
     await expect(fs.access(outPath)).resolves.toBeUndefined();
+  });
+
+  test('successful replace_text surfaces non-blocking validator warnings (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        // Foreign del intentionally lacks w:date: schema-valid, but the AI
+        // revision validator flags it as a non-blocking warning. Before #686
+        // the success path returned bare null from the preflight and this
+        // warning was structurally unreachable.
+        `<w:p><w:r><w:t>Alpha Beta</w:t></w:r>` +
+        `<w:del w:id="903" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+      ),
+    });
+
+    const result = await replaceText(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      old_string: 'Beta',
+      new_string: 'Gamma',
+      instruction: 'replace Beta',
+    });
+
+    assertSuccess(result);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('REVISION_METADATA_MISSING')]),
+    );
+  });
+
+  test('successful replace_text with no validator findings omits the warnings field (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(`<w:p><w:r><w:t>Alpha Beta</w:t></w:r></w:p>`),
+    });
+
+    const result = await replaceText(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      old_string: 'Beta',
+      new_string: 'Gamma',
+      instruction: 'replace Beta',
+    });
+
+    assertSuccess(result);
+    expect('warnings' in result).toBe(false);
+  });
+
+  test('successful clear_formatting surfaces non-blocking validator warnings (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Alpha</w:t></w:r>` +
+        `<w:del w:id="904" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+      ),
+    });
+
+    const result = await clearFormatting(opened.mgr, {
+      file_path: opened.filePath,
+      paragraph_ids: [opened.firstParaId],
+      clear_bold: true,
+    });
+
+    assertSuccess(result);
+    expect(result.paragraphs_modified).toBe(1);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('REVISION_METADATA_MISSING')]),
+    );
+  });
+
+  test('successful add_comment surfaces non-blocking validator warnings (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        `<w:p><w:r><w:t>Alpha Beta</w:t></w:r>` +
+        `<w:del w:id="905" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+      ),
+    });
+
+    const result = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      anchor_text: 'Beta',
+      author: 'Reviewer',
+      text: 'Please double-check this.',
+    });
+
+    assertSuccess(result);
+    expect(result.mode).toBe('root');
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('REVISION_METADATA_MISSING')]),
+    );
+  });
+
+  test('formatAiRevisionWarning renders code, message, and any location fields (#686)', async () => {
+    const { formatAiRevisionWarning } = await import('./ai_revision_guard.js');
+    expect(
+      formatAiRevisionWarning({ severity: 'warning', code: 'SOME_CODE', message: 'something odd' }),
+    ).toBe('SOME_CODE: something odd');
+    expect(
+      formatAiRevisionWarning({
+        severity: 'warning',
+        code: 'SOME_CODE',
+        message: 'something odd',
+        part: 'word/document.xml',
+        element: 'w:del',
+        id: '9',
+        author: 'Human',
+      }),
+    ).toBe('SOME_CODE: something odd (word/document.xml, w:del, id=9, author=Human)');
   });
 
   test('introduced instances of a pre-existing structural error still fail (count-based baseline)', async () => {

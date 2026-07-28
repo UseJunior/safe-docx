@@ -372,7 +372,7 @@ export async function formatLayout(
         }
       },
     );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     const paragraphSpacingResult = paragraphSpacing ? session.doc.setParagraphSpacing(paragraphSpacing, ctx) : null;
     const rowHeightResult = rowHeight ? session.doc.setTableRowHeight(rowHeight, ctx) : null;

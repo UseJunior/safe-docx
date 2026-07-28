@@ -568,7 +568,7 @@ export async function batchEdit(
       ctx,
       (previewDoc, previewCtx) => executeStepsOnDoc(previewDoc, steps, previewCtx),
     );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     const result = await executeSteps(manager, manager.normalizePath(session.originalPath), steps, ctx);
     if (result.failed_step_id !== undefined) {

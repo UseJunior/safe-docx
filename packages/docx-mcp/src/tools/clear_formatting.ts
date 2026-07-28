@@ -145,7 +145,7 @@ export async function clearFormatting(
       revisionCtx,
       (doc, activeCtx) => { mutate(doc, activeCtx); },
     );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     const modifiedCount = mutate(session.doc, revisionCtx);
 
@@ -157,6 +157,7 @@ export async function clearFormatting(
       success: true,
       file_path: manager.normalizePath(session.originalPath),
       paragraphs_modified: modifiedCount,
+      ...(revisionPreflight.warnings.length > 0 ? { warnings: revisionPreflight.warnings } : {}),
     }, metadata));
   } catch (e: any) {
     return err('CLEAR_FORMATTING_ERROR', `Failed to clear formatting: ${e.message}`);

@@ -215,7 +215,7 @@ export async function insertParagraph(
           revisionCtx,
           (doc, activeCtx) => { mutate(doc, activeCtx); },
         );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight?.blocked) return revisionPreflight.blocked;
 
     const res = mutate(session.doc, revisionCtx);
 
