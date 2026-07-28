@@ -584,6 +584,76 @@ export interface DocumentIntegrityNoteScope {
   reconstructionMode: 'inplace';
 }
 
+export interface DocumentIntegrityCommentRelationshipIdentity {
+  relationshipId: string;
+  relationshipRecordOrdinal: number;
+  normalizedPartPath: string;
+}
+
+export type DocumentIntegrityCommentStatus =
+  | 'absent'
+  | 'passed'
+  | 'failed'
+  | 'not_evaluated';
+
+export interface DocumentIntegrityCommentStorySide {
+  status: DocumentIntegrityCommentStatus;
+  relationship: DocumentIntegrityCommentRelationshipIdentity | null;
+  partPresent: boolean;
+}
+
+export interface DocumentIntegrityCommentStory {
+  status: Exclude<DocumentIntegrityCommentStatus, 'absent'>;
+  original: DocumentIntegrityCommentStorySide;
+  revised: DocumentIntegrityCommentStorySide;
+  compared: DocumentIntegrityCommentStorySide;
+  parsedTokenCounts: { original: number; revised: number; compared: number };
+}
+
+export interface DocumentIntegrityCommentInventory {
+  side: DocumentIntegrityVerifierSide;
+  status: Exclude<DocumentIntegrityCommentStatus, 'absent'>;
+  relationship: DocumentIntegrityCommentRelationshipIdentity | null;
+  referenceOccurrences: number;
+  uniqueReferenceIds: number;
+  definitions: number;
+  nonDirectDefinitions: number;
+  unreferencedDefinitions: number;
+}
+
+export interface DocumentIntegrityCommentFailure {
+  code: string;
+  side: DocumentIntegrityVerifierSide;
+  kind: 'comments';
+  detail: string;
+  ordinalSpace: 'relationship' | 'source' | 'definition' | 'reference' | 'aggregate';
+  firstOccurrenceOrdinal: number;
+  occurrenceCount: number;
+  source?: {
+    sourceStory: 'main' | 'header' | 'footer' | 'footnotes' | 'endnotes' | 'comments';
+    sourceStoryOrdinal: number;
+  };
+  canonicalId?: string;
+  rawId?: string;
+  rawIdByteLength?: number;
+  relationshipId?: string;
+  rawTarget?: string;
+  rawTargetByteLength?: number;
+  targetMode?: string;
+  normalizedPartPath?: string;
+}
+
+export interface DocumentIntegrityCommentScope {
+  selection: 'fixed-word-document-main-relationships';
+  mainDocumentPart: 'word/document.xml';
+  relationshipsPart: 'word/_rels/document.xml.rels';
+  referenceStories: 'admitted-main-note-header-footer-stories';
+  namespaces: 'transitional';
+  reconstructionMode: 'inplace';
+  rangeTopology: false;
+  threadedComments: false;
+}
+
 export interface DocumentIntegrityCertificate {
   /** Overall result from the separately compiled Lean verifier. */
   status: DocumentIntegrityCertificateStatus;
@@ -617,7 +687,7 @@ export interface DocumentIntegrityCertificate {
   /** Stable v1 main-story token counts. */
   parsedTokenCounts?: { original: number; revised: number; compared: number };
   /** Internal executable protocol used for package-level verification. */
-  checkerProtocolVersion?: 3 | 4 | 5;
+  checkerProtocolVersion?: 3 | 4 | 5 | 6;
   fixedStoryScope?: readonly ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml'];
   inputPackageSha256?: { originalDocx: string; revisedDocx: string; comparedDocx: string };
   stories?: DocumentIntegrityStoryCertificate[];
@@ -637,6 +707,10 @@ export interface DocumentIntegrityCertificate {
   noteStories?: DocumentIntegrityNoteStory[];
   noteInventories?: DocumentIntegrityNoteInventory[];
   noteIntegrityFailures?: DocumentIntegrityNoteFailure[];
+  commentStoryScope?: DocumentIntegrityCommentScope;
+  commentStory?: DocumentIntegrityCommentStory;
+  commentInventories?: DocumentIntegrityCommentInventory[];
+  commentIntegrityFailures?: DocumentIntegrityCommentFailure[];
   /** Important surfaces this certificate does not claim to validate. */
   exclusions?: string[];
   reason?: string;

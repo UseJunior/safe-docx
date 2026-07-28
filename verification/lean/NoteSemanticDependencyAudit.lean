@@ -118,21 +118,21 @@ run_cmd do
       ``LeanSpike.inv_field_001, ``LeanSpike.inv_rt_001]
   for required in [
       ``runRequestCore, ``semanticRequestOfCore, ``packageViewOfRecord,
-      ``semanticProtocolV5Projection, ``SemanticProtocolV5ProjectionOf,
+      ``semanticProtocolV6Projection, ``SemanticProtocolV6ProjectionOf,
       ``Tier2.ConventionalMainNoteSelector.selectConventionalMainNoteRecords,
       ``productionParseEvidenceCheck,
       ``Tier2.NoteReferenceIntegrity.productionNoteScanBounded,
       ``Tier2.NoteReferenceIntegrity.checkProductionNoteIntegrity,
       ``productionSemanticInventoriesPass,
       ``Tier2.NoteReferenceIntegrity.productionAggregatePass,
-      ``Tier2.NoteReferenceIntegrity.protocolV5ResponseJson,
-      ``Tier2.NoteReferenceIntegrity.canonicalResponseBytes,
-      ``Tier2.NoteReferenceIntegrity.finalizeProtocolV5Response] do
+      ``SemanticProtocolSpec.fields,
+      ``SemanticProtocolSpec.encode,
+      ``finalizeProtocolV6Response] do
     unless productionClosure.contains required do
       throwError "production refinement theorem does not reach required executable constant {required}"
   let projectionClosure :=
-    valueDependencyClosure environment [``semanticProtocolV5Projection]
-  rejectForbidden ``semanticProtocolV5Projection projectionClosure
+    valueDependencyClosure environment [``semanticProtocolV6Projection]
+  rejectForbidden ``semanticProtocolV6Projection projectionClosure
     [``buildRunRequestCoreJson, ``buildRunRequestCoreResponse, ``runRequestCore,
       ``protocolV5ResponseJson, ``storyReportJson,
       ``Tier2.XmlTripleChecker.storyReportToJson,
