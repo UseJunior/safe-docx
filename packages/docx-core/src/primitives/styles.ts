@@ -164,6 +164,14 @@ export function extractParagraphFormatting(
 export type RunFormatting = {
   bold: boolean;
   italic: boolean;
+  caps: boolean;
+  smallCaps: boolean;
+  strike: boolean;
+  emboss: boolean;
+  imprint: boolean;
+  outline: boolean;
+  shadow: boolean;
+  vanish: boolean;
   underline: boolean;
   highlightVal: string | null;
   fontName: string;
@@ -210,6 +218,33 @@ function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null
   const v = getWAttr(el, 'val');
   if (v === '0' || v === 'false' || v === 'off') return false;
   return true;
+}
+
+type ToggleStep = {
+  rPr: Element | null;
+  kind: 'style' | 'direct';
+};
+
+/**
+ * Evaluate a toggle property in hierarchy order. Style-level true values
+ * invert the accumulated state while style-level false values preserve it;
+ * direct formatting sets an absolute value.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.3
+ * @see https://github.com/UseJunior/safe-docx/issues/737
+ */
+function resolveToggleProperty(steps: ToggleStep[], tagLocal: string): boolean {
+  let effective = false;
+  for (const { rPr, kind } of steps) {
+    const declaration = parseBoolProp(rPr, tagLocal);
+    if (declaration === null) continue;
+    if (kind === 'direct') {
+      effective = declaration;
+    } else if (declaration) {
+      effective = !effective;
+    }
+  }
+  return effective;
 }
 
 function parseUnderline(parent: Element | null): boolean | null {
@@ -260,32 +295,21 @@ function parseHighlightVal(parent: Element | null): string | null {
 
 /**
  * Resolve the run formatting a reader actually sees, not merely the formatting
- * the run declares. Each property is taken from the first layer that specifies
- * it: direct `w:rPr` on the run, then the `w:rStyle` character-style `basedOn`
- * chain, then the paragraph mark's `w:rPr` inside `pPr`, then the paragraph
- * style's `basedOn` chain. A property specified nowhere resolves to the
- * neutral value (`false`, `''`, `0`, or `null`).
+ * the run declares. Ordinary properties are taken from the first layer that
+ * specifies them: direct `w:rPr` on the run, then the `w:rStyle`
+ * character-style `basedOn` chain, then the paragraph mark's `w:rPr` inside
+ * `pPr`, then the paragraph style's `basedOn` chain. A property specified
+ * nowhere resolves to the neutral value (`false`, `''`, `0`, or `null`).
  *
  * Each property is resolved independently down the chain — a style that
  * specifies only color does not mask an ancestor's bold.
  *
- * OOXML toggle properties (`w:b`, `w:i`) are resolved as a
- * nearest-declaration cascade: the first tier that specifies the property
- * wins, and an explicit off (`w:val` of `0`/`false`/`off`) at a nearer tier
- * defeats a more distant on. This is deliberately simpler than full OOXML
- * toggle-property evaluation, in which a style-level true XORs against the
- * accumulated state and a style-level false leaves it unchanged — repeated
- * toggle declarations across style levels can therefore resolve differently
- * here than in Word. The previous container-level resolver applied the same
- * nearest-value rule, but at container granularity: it could skip an
- * ancestor's toggle declaration entirely when a nearer chain member carried
- * an unrelated `rPr`, and in some of those shapes it happened to agree with
- * Word where this cascade does not — e.g. a paragraph-style bold combined
- * with a character-chain ancestor's explicit off: full toggle evaluation
- * XORs the levels to bold, this cascade resolves off. Per-property
- * resolution therefore WIDENS where the simplification is visible; the
- * divergence shape is pinned in scripts/check_docx_formatting_loss.test.mjs
- * so any change to toggle handling is a decision, not drift.
+ * Toggle properties are evaluated in hierarchy order rather than by ordinary
+ * nearest-wins inheritance. At style level, an on declaration inverts the
+ * accumulated state and an off declaration preserves it. Direct formatting
+ * is absolute. This parity rule applies independently to `w:b`, `w:i`,
+ * `w:caps`, `w:smallCaps`, `w:strike`, `w:emboss`, `w:imprint`, `w:outline`,
+ * `w:shadow`, and `w:vanish`.
  *
  * Not resolved: `w:docDefaults`, table-style run properties, numbering-level
  * `rPr`, and theme font references (`w:asciiTheme` etc., which would need
@@ -302,6 +326,9 @@ function parseHighlightVal(parent: Element | null): string | null {
  * @param params.paragraphPPr the owning paragraph's `w:pPr`, or null
  * @param params.paragraphStyleId the `w:val` of `pPr/w:pStyle`, or null
  * @param params.styles the model produced by {@link parseStylesXml}
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.7.3
+ * @see https://github.com/UseJunior/safe-docx/issues/737
  */
 export function extractEffectiveRunFormatting(params: {
   run: Element;
@@ -317,6 +344,8 @@ export function extractEffectiveRunFormatting(params: {
   // Resolve w:rStyle character style chain (e.g. "Strong" → bold via style definition).
   const rStyleEl = rPr ? getFirstChild(rPr, OOXML.W_NS, W.rStyle) : null;
   const rStyleId = rStyleEl ? (getWAttr(rStyleEl, 'val') ?? null) : null;
+  const rStyleChain = resolveStyleChain(styles, rStyleId);
+  const paragraphStyleChain = resolveStyleChain(styles, paragraphStyleId);
 
   // Priority: direct rPr → rStyle chain rPrs → paragraph mark rPr → paragraph
   // style chain rPrs. Each property resolves independently down this list: a
@@ -326,16 +355,35 @@ export function extractEffectiveRunFormatting(params: {
   // above already resolved per property).
   const sources: Array<Element | null> = [
     rPr,
-    ...resolveStyleChain(styles, rStyleId).map((s) => s.rPr),
+    ...rStyleChain.map((s) => s.rPr),
     pRPr,
-    ...resolveStyleChain(styles, paragraphStyleId).map((s) => s.rPr),
+    ...paragraphStyleChain.map((s) => s.rPr),
   ];
   const resolve = <T>(parse: (el: Element | null) => T | null): T | null =>
     firstNonNull(sources.map(parse));
 
+  // Apply from the least specific style ancestor to direct run formatting.
+  // Paragraph-mark rPr is direct formatting at its hierarchy level; a
+  // character style can still contribute above it before the run's own rPr
+  // supplies the final absolute override.
+  const toggleSteps: ToggleStep[] = [
+    ...[...paragraphStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),
+    { rPr: pRPr, kind: 'direct' },
+    ...[...rStyleChain].reverse().map((style) => ({ rPr: style.rPr, kind: 'style' as const })),
+    { rPr, kind: 'direct' },
+  ];
+
   return {
-    bold: resolve((el) => parseBoolProp(el, W.b)) ?? false,
-    italic: resolve((el) => parseBoolProp(el, W.i)) ?? false,
+    bold: resolveToggleProperty(toggleSteps, W.b),
+    italic: resolveToggleProperty(toggleSteps, W.i),
+    caps: resolveToggleProperty(toggleSteps, W.caps),
+    smallCaps: resolveToggleProperty(toggleSteps, W.smallCaps),
+    strike: resolveToggleProperty(toggleSteps, W.strike),
+    emboss: resolveToggleProperty(toggleSteps, W.emboss),
+    imprint: resolveToggleProperty(toggleSteps, W.imprint),
+    outline: resolveToggleProperty(toggleSteps, W.outline),
+    shadow: resolveToggleProperty(toggleSteps, W.shadow),
+    vanish: resolveToggleProperty(toggleSteps, W.vanish),
     underline: resolve(parseUnderline) ?? false,
     highlightVal: resolve(parseHighlightVal),
     fontName: resolve(parseFontName) ?? '',
