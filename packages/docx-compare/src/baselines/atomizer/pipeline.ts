@@ -90,7 +90,6 @@ import { runLeanXmlTripleVerifier } from './leanXmlVerifier.js';
 import {
   acceptAllChanges,
   rejectAllChanges,
-  extractTextWithParagraphs,
   compareTexts,
 } from './trackChangesAcceptorAst.js';
 import { detectUnrepresentedChanges } from './unrepresentedChanges.js';
@@ -123,6 +122,8 @@ import {
   evaluateAncillaryFieldSafety,
 } from './ancillaryFieldSafety.js';
 import { assertTextBoxContentUnchanged } from './textBoxRevisionSafety.js';
+import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
+import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 
 /**
  * Options for the atomizer pipeline.
@@ -476,8 +477,8 @@ function evaluateSafetyChecks(
 } {
   const acceptedXml = acceptAllChanges(candidateXml);
   const rejectedXml = rejectAllChanges(candidateXml);
-  const acceptedText = extractTextWithParagraphs(acceptedXml);
-  const rejectedText = extractTextWithParagraphs(rejectedXml);
+  const acceptedText = extractRoundTripComparisonText(acceptedXml);
+  const rejectedText = extractRoundTripComparisonText(rejectedXml);
   const acceptedBookmarkDiagnostics = collectBookmarkDiagnostics(acceptedXml);
   const rejectedBookmarkDiagnostics = collectBookmarkDiagnostics(rejectedXml);
   const acceptTextComparison = compareTexts(revisedTextForRoundTrip, acceptedText);
@@ -683,8 +684,12 @@ export async function compareDocumentsAtomizer(
   // input already carries its own tracked changes (pre-tracked w:ins / w:del,
   // comment anchors, multi-author stacks). For a clean input these equal the raw
   // extraction, so behavior on the common case is unchanged. (#347)
-  const originalTextForRoundTrip = extractTextWithParagraphs(rejectAllChanges(originalXml));
-  const revisedTextForRoundTrip = extractTextWithParagraphs(acceptAllChanges(revisedXml));
+  const originalTextForRoundTrip = extractRoundTripComparisonText(
+    rejectAllChanges(originalXml),
+  );
+  const revisedTextForRoundTrip = extractRoundTripComparisonText(
+    acceptAllChanges(revisedXml),
+  );
   const originalBookmarkDiagnostics = collectBookmarkDiagnostics(originalXml);
   const revisedBookmarkDiagnostics = collectBookmarkDiagnostics(revisedXml);
 
@@ -806,6 +811,7 @@ export async function compareDocumentsAtomizer(
         mergedAtoms,
         { author, date, preservedRoots: [originalTree] }
       );
+      newDocumentXml = suppressVolatileTocPagerefCacheRevisions(newDocumentXml);
     } else {
       // Rebuild mode: reconstruct from atoms using original as the structural base.
       // Ship a resolvable relationship for any inserted/retargeted link whose
