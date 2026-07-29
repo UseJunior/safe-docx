@@ -569,6 +569,7 @@ export function addFormatChange(
 
   // Create rPrChange
   const id = allocateRevisionId(state);
+  state.generatedFormatChangeIds.add(String(id));
   const rPrChange = createEl('w:rPrChange', {
     'w:id': String(id),
     'w:author': author,
