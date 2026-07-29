@@ -1,0 +1,272 @@
+---
+layout: layouts/base.njk
+title: Capabilities | Safe DOCX
+description: Evidence-backed Safe DOCX capabilities for reading, editing, comparing, preserving, and exporting Word documents.
+---
+<section class="hero capability-hero">
+  <p class="eyebrow">Capabilities</p>
+  <h1>Native tracked changes for agent-driven Word workflows.</h1>
+  <p>
+    Read, edit, compare, comment on, and review existing document files with explicit
+    boundaries around what Safe DOCX edits, redlines, or only preserves.
+  </p>
+  <div class="hero-actions">
+    <a class="cta" href="#capability-matrix">Explore capabilities</a>
+    <a class="cta cta-ghost" href="../index.html#install">Install Safe DOCX</a>
+  </div>
+</section>
+
+<section class="capability-principle reveal" aria-labelledby="claim-model-heading">
+  <div>
+    <p class="eyebrow">How to read this page</p>
+    <h2 id="claim-model-heading">Preserved does not automatically mean compared.</h2>
+  </div>
+  <p>
+    Word documents contain independent stories and package parts. Safe DOCX may preserve a
+    header, field, or endnote safely without yet turning changes inside it into tracked
+    revisions. This page names those boundaries instead of collapsing them into one
+    “supported” claim.
+  </p>
+</section>
+
+<section class="capability-legend reveal" aria-label="Capability status legend">
+  <div>
+    <span class="status status-available">Available</span>
+    <p>Supported as described today.</p>
+  </div>
+  <div>
+    <span class="status status-partial">Guardrailed</span>
+    <p>Supported within a stated boundary.</p>
+  </div>
+  <div>
+    <span class="status status-unavailable">Not offered</span>
+    <p>Outside the current product surface.</p>
+  </div>
+</section>
+
+<section id="capability-matrix" class="capability-section reveal">
+  <div class="capability-section-heading">
+    <p class="eyebrow">Document formats</p>
+    <h2>Inputs and outputs</h2>
+  </div>
+  <div class="capability-grid">
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Word documents</h3>
+        <span class="status status-available">Available</span>
+      </div>
+      <p>Read, search, edit, compare, and save DOCX files as clean or native tracked-changes documents.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Read</li><li>Edit</li><li>Compare</li><li>Preserve</li><li>Tracked output</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>OpenDocument</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>Read, edit, comment on, and compare ODT files. DOCX-to-ODT conversion is semantic and reports downgraded constructs.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Read</li><li>Edit</li><li>Compare</li><li>Convert</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Google Docs</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>Read and make targeted text or paragraph edits through the Google Docs provider. Snapshot export is available as DOCX.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Read</li><li>Edit</li><li>DOCX snapshot</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>PDF and scanned files</h3>
+        <span class="status status-unavailable">Not offered</span>
+      </div>
+      <p>Safe DOCX does not currently compare PDFs, run OCR, or export full-document or changed-pages-only PDF redlines.</p>
+    </article>
+  </div>
+</section>
+
+<section class="capability-section reveal">
+  <div class="capability-section-heading">
+    <p class="eyebrow">Main document</p>
+    <h2>Paragraphs, tables, and fields</h2>
+  </div>
+  <div class="capability-grid">
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Words and characters</h3>
+        <span class="status status-available">Available</span>
+      </div>
+      <p>Target text across fragmented Word runs, preserve surrounding formatting, and emit native insertions, deletions, and formatting revisions.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Read</li><li>Edit</li><li>Compare</li><li>Preserve</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Whole paragraphs</h3>
+        <span class="status status-available">Available</span>
+      </div>
+      <p>Insert and delete ordinary body paragraphs and compare paragraph-level additions, removals, moves, and property changes.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Edit</li><li>Compare</li><li>Accept/reject</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Numbering</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>Change direct paragraph numbering using existing definitions and track the property change. Broad numbering-definition comparison remains a bounded surface.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Edit existing definitions</li><li>Tracked property change</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Tables</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>Read and compare text inside cells, preserve table structure, and edit row height or cell padding. Row, column, cell, and merged-cell topology changes are not yet a general editing or redlining claim.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Cell text</li><li>Layout</li><li>Structure preservation</li>
+      </ul>
+    </article>
+    <article class="capability-card capability-card-wide">
+      <div class="capability-card-heading">
+        <h3>Fields, cross-references, and tables of contents</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>
+        Safe DOCX preserves supported field structures, hyperlinks, and substantive TOC entry edits.
+        It deliberately ignores volatile cached page-number changes. It does not yet act as a Word
+        layout engine or evaluate fields such as REF, PAGEREF, and TOC.
+      </p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Preserve</li><li>Compare authored entry text</li><li>Ignore page caches</li><li>No field evaluation</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="capability-section reveal">
+  <div class="capability-section-heading">
+    <p class="eyebrow">Document stories</p>
+    <h2>Comments, notes, headers, and footers</h2>
+  </div>
+  <div class="capability-grid">
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Comments and threads</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>Read, add, reply to, and delete DOCX comments. Two-file comparison preserves and can publish comment graphs, but arbitrary comment-body and thread diffs are not yet comprehensively redlined.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Read</li><li>Edit</li><li>Threads</li><li>Preserve</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Footnotes</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>Read structured footnotes and add, update, or delete them with tracked references and note text. Arbitrary two-file note-body comparison remains incomplete.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Read</li><li>Edit</li><li>Tracked changes</li><li>Preserve</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Endnotes</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>Preserve endnote references, definitions, and relationship integrity. Dedicated endnote editing and comprehensive endnote-body comparison are not yet exposed.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Preserve</li><li>Integrity checks</li>
+      </ul>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Headers and footers</h3>
+        <span class="status status-partial">Guardrailed</span>
+      </div>
+      <p>Inspect section bindings, preserve header/footer relationships, and report differences that are not represented in the redline. General content editing and tracked comparison are planned gaps.</p>
+      <ul class="capability-tags" aria-label="Supported operations">
+        <li>Inspect</li><li>Preserve</li><li>Difference warning</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="capability-section reveal">
+  <div class="capability-section-heading">
+    <p class="eyebrow">Review workflow</p>
+    <h2>Tracked changes and review outputs</h2>
+  </div>
+  <div class="capability-grid">
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Native tracked changes</h3>
+        <span class="status status-available">Available</span>
+      </div>
+      <p>Produce tracked DOCX output from targeted edits or from a two-file comparison, with clean output available separately.</p>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Revision review</h3>
+        <span class="status status-available">Available</span>
+      </div>
+      <p>Extract revisions as structured JSON and accept or reject all changes—or selected AI-authored changes—without silently consuming unrelated reviewer work.</p>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Semantic exports</h3>
+        <span class="status status-available">Available</span>
+      </div>
+      <p>Export DOCX content as Markdown, semantic HTML, or plain text. These exports are intentionally lossy and are not visual renderings.</p>
+    </article>
+    <article class="capability-card">
+      <div class="capability-card-heading">
+        <h3>Changes summary page</h3>
+        <span class="status status-unavailable">Not offered</span>
+      </div>
+      <p>Safe DOCX exposes structured revision data rather than appending a human-readable summary page to the document.</p>
+    </article>
+  </div>
+</section>
+
+<section class="capability-roadmap reveal" aria-labelledby="roadmap-heading">
+  <div class="capability-roadmap-intro">
+    <p class="eyebrow">Where the surface grows next</p>
+    <h2 id="roadmap-heading">The hardest document structures deserve explicit engineering.</h2>
+    <p>These are product priorities, not shipped claims.</p>
+  </div>
+  <ol class="roadmap-list">
+    <li>
+      <span class="roadmap-number">01</span>
+      <div><strong>Field-aware comparison and evaluation</strong><p>Evaluate supported fields while separating authored changes from pagination and other volatile caches.</p></div>
+    </li>
+    <li>
+      <span class="roadmap-number">02</span>
+      <div><strong>Headers, footers, footnotes, and endnotes</strong><p>Compare each story independently, then prove accept/reject and relationship integrity across the assembled package.</p></div>
+    </li>
+    <li>
+      <span class="roadmap-number">03</span>
+      <div><strong>Structural table changes</strong><p>Add rows, columns, and cells with deterministic rules for grid spans, vertical merges, and ambiguous merged-cell transformations.</p></div>
+    </li>
+  </ol>
+</section>
+
+<section class="callout reveal">
+  <h2>Claims you can inspect</h2>
+  <p>Safe DOCX is open source, tested in public, and explicit about the boundary between implemented behavior and future work.</p>
+  <div class="hero-actions">
+    <a class="cta" href="https://usejunior.com/engineering/safe-docx/conformance">Open Conformance Explorer</a>
+    <a class="cta cta-ghost" href="https://github.com/usejunior/safe-docx/blob/main/packages/docx-mcp/docs/tool-reference.generated.md">Read Tool Reference</a>
+    <a class="cta cta-ghost" href="https://github.com/UseJunior/safe-docx/issues/761">Follow the capability roadmap</a>
+  </div>
+</section>
