@@ -112,7 +112,7 @@
 - [x] 4.4 Run strict OpenSpec, spec coverage, citation, conformance-document,
   generated-projection, Lean build/audit, focused, full non-LibreOffice, and
   real-DOCX tests.
-- [ ] 4.5 Obtain independent implementation review and post-merge real-document
+- [x] 4.5 Obtain independent implementation review and post-merge real-document
   smoke before closing #672.
 - [x] 4.6 Re-run focused TypeScript tests, full Lean builds and audits, strict
   OpenSpec/spec/conformance checks, and record wall-time/peak-RSS measurements
@@ -123,9 +123,12 @@
   3.32 seconds / 1,314,979,840 bytes peak RSS. The executable acceptance gate
   retains the 120-second timeout and rejects peak RSS at or above 1.5 GiB.
 
-Independent review findings were repaired by #709, but its exact-merge smoke
-found that full-document comment scanning exhausts the native stack. Issue #672
-was reopened, and #710 tracks the stack-safe full-document acceptance work.
+Independent review findings were repaired by #709. The stack-safe
+full-document implementation landed in #722, the complete Lean CI workflow
+passed under the corrected job cap in #725, and independent post-merge smoke on
+exact merged `main` exercised the 41,621-atom production path plus
+missing/malformed/overlong definition mutations. Issues #710 and #672 are
+closed.
 
 Archive is deferred to #706 so formal Lean theorem evidence is not
 misrepresented as TypeScript runtime-test coverage.
