@@ -20,6 +20,7 @@ import {
   createRevisionIdState,
   suppressNoOpChangePairs,
   mergeWhitespaceBridgedTrackChanges,
+  suppressDuplicatedFormatChangesInTextReplacements,
   coalesceDelInsPairChains,
   runHasVisibleContent,
   getContainerPath,
@@ -34,6 +35,12 @@ const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: 'Inplace Modifier' })
   .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.13' });
+const formatRevisionTest = test.conformance({
+  spec: 'ECMA-376',
+  edition: 5,
+  part: 1,
+  section: '17.13.5.31',
+});
 
 /**
  * Create a mock atom for testing.
@@ -141,6 +148,76 @@ describe('inPlaceModifier', () => {
         expect(second.getAttribute('w:id')).toBe('2');
       });
     });
+  });
+
+  describe('duplicated format snapshots in text replacements', () => {
+    formatRevisionTest(
+      'removes the generated del/ins pair while preserving input-authored history',
+      async ({ given, when, then }: AllureBddContext) => {
+        let paragraph: Element;
+        let state: ReturnType<typeof createRevisionIdState>;
+
+        await given('a generated snapshot on whitespace between two replacement pairs and an older snapshot', () => {
+          const generated = el(
+            'w:rPrChange',
+            { 'w:id': '7', 'w:author': author, 'w:date': dateStr },
+            [el('w:rPr', {}, [el('w:spacing', { 'w:val': '1' })])],
+          );
+          const prior = el(
+            'w:rPrChange',
+            { 'w:id': '44', 'w:author': 'Prior Author' },
+            [el('w:rPr', {}, [el('w:i')])],
+          );
+          const whitespaceRun = el('w:r', {}, [
+            el('w:rPr', {}, [generated]),
+            el('w:t', { 'xml:space': 'preserve' }, undefined, ' '),
+          ]);
+          const preservedRun = el('w:r', {}, [
+            el('w:rPr', {}, [prior]),
+            el('w:t', {}, undefined, 'history'),
+          ]);
+          const currentAttrs = { 'w:author': author, 'w:date': dateStr };
+          paragraph = el('w:p', {}, [
+            el('w:del', currentAttrs, [
+              el('w:r', {}, [el('w:delText', {}, undefined, 'old-one')]),
+            ]),
+            el('w:ins', currentAttrs, [
+              el('w:r', {}, [el('w:t', {}, undefined, 'new-one')]),
+            ]),
+            whitespaceRun,
+            el('w:del', currentAttrs, [
+              el('w:r', {}, [el('w:delText', {}, undefined, 'old-two')]),
+            ]),
+            el('w:ins', currentAttrs, [
+              el('w:r', {}, [el('w:t', {}, undefined, 'new-two')]),
+            ]),
+            el('w:ins', { 'w:author': 'Prior Author' }, [preservedRun]),
+          ]);
+          state = createRevisionIdState([paragraph]);
+          state.generatedFormatChangeIds.add('7');
+        });
+
+        await when('coalescing clones the whitespace into both wrappers and suppression follows', () => {
+          coalesceDelInsPairChains(paragraph);
+          const cloned = findAllByTagName(paragraph, 'w:rPrChange')
+            .filter((change) => change.getAttribute('w:id') === '7');
+          expect(cloned).toHaveLength(2);
+
+          suppressDuplicatedFormatChangesInTextReplacements(
+            paragraph,
+            state.generatedFormatChangeIds,
+            author,
+          );
+        });
+
+        await then('only the input-authored format snapshot remains', () => {
+          const changes = findAllByTagName(paragraph, 'w:rPrChange');
+          expect(changes).toHaveLength(1);
+          expect(changes[0]?.getAttribute('w:id')).toBe('44');
+          expect(changes[0]?.getAttribute('w:author')).toBe('Prior Author');
+        });
+      },
+    );
   });
 
   describe('wrapAsDeleted', () => {

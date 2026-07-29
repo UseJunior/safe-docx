@@ -71,6 +71,7 @@ import {
   groupDeletionsBeforeInsertions,
   mergeAdjacentTrackChangeSiblings,
   mergeWhitespaceBridgedTrackChanges,
+  suppressDuplicatedFormatChangesInTextReplacements,
   suppressNoOpChangePairs,
 } from './inPlaceModifier-postprocess.js';
 
@@ -136,6 +137,15 @@ export function modifyRevisedDocument(
   // Merge whitespace-bridged track change siblings (issue #42, Bug 2).
   // Runs AFTER coalesce — handles ins+ws+ins and moveTo+ws+moveTo bridging.
   mergeWhitespaceBridgedTrackChanges(ctx.body);
+
+  // Whitespace coalescing can clone one generated format snapshot into both
+  // sides of a text replacement. The wrappers already carry their live old/new
+  // properties, so remove only that duplicate current-comparison pair (#724).
+  suppressDuplicatedFormatChangesInTextReplacements(
+    ctx.body,
+    state.generatedFormatChangeIds,
+    author,
+  );
 
   // Coalesce duplicate move-range markers to one Start/End pair per move group
   // across the document (issue #446). The moveFrom clone path emits a range pair per
@@ -1132,5 +1142,6 @@ export {
   groupDeletionsBeforeInsertions,
   isNoOpPair,
   mergeWhitespaceBridgedTrackChanges,
+  suppressDuplicatedFormatChangesInTextReplacements,
   suppressNoOpChangePairs,
 } from './inPlaceModifier-postprocess.js';
