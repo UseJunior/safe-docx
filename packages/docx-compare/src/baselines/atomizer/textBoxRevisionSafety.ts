@@ -14,6 +14,14 @@ import {
 } from './trackChangesAcceptorAst.js';
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { parseDocumentXml } from './xmlToWmlElement.js';
+import {
+  createRevisionIdState,
+  formatDate,
+} from './inPlaceModifier-shared.js';
+import {
+  addParagraphMarkRevisionMarker,
+  wrapRunWithTrackChange,
+} from './inPlaceModifier-wrappers.js';
 
 const WORD_2010_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 const VML_NS = 'urn:schemas-microsoft-com:vml';
@@ -61,6 +69,7 @@ export class UnsupportedTextBoxRevisionError extends Error {
 export interface TextBoxStoryInput {
   index: number;
   partPath: string;
+  container: 'textBox' | 'ancillaryPart';
   original: Buffer;
   revised: Buffer;
 }
@@ -72,6 +81,14 @@ export interface TextBoxStoryComparisonPlan {
   revisedDocumentXml: string;
   stories: TextBoxStoryInput[];
   validateAncillaryProjection: boolean;
+  hasAncillaryTextBoxStories: boolean;
+  representedAncillaryChanges: Array<{
+    scope: 'header' | 'footer';
+    kind: 'added';
+    sectionIndex: number;
+    role: 'default' | 'first' | 'even';
+    partPath: string;
+  }>;
 }
 
 function textBoxParagraphId(textBox: Element): string | undefined {
@@ -234,6 +251,37 @@ function storyDocumentXmlFromPart(
   return serializer.serializeToString(document);
 }
 
+function copyNamespaceDeclarations(source: Element, target: Element): void {
+  for (let index = 0; index < source.attributes.length; index += 1) {
+    const attribute = source.attributes.item(index);
+    if (
+      attribute &&
+      (attribute.name === 'xmlns' || attribute.name.startsWith('xmlns:')) &&
+      !target.hasAttribute(attribute.name)
+    ) {
+      target.setAttribute(attribute.name, attribute.value);
+    }
+  }
+}
+
+function storyDocumentXmlFromPartRoot(
+  documentXml: string,
+  partXml: string | null,
+): string {
+  const document = parseXml(documentXml);
+  const body = document.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0);
+  if (!body) throw new Error('Could not isolate relationship-selected story');
+  while (body.firstChild) body.removeChild(body.firstChild);
+  if (partXml) {
+    const part = parseXml(partXml);
+    copyNamespaceDeclarations(part.documentElement, document.documentElement);
+    for (const child of Array.from(part.documentElement.childNodes)) {
+      body.appendChild(document.importNode(child, true));
+    }
+  }
+  return serializer.serializeToString(document);
+}
+
 function owningRelationshipsPath(partPath: string): string {
   const slash = partPath.lastIndexOf('/');
   const directory = slash >= 0 ? partPath.slice(0, slash) : '';
@@ -254,6 +302,7 @@ interface SelectedAncillaryStory {
 
 interface SelectedAncillaryState {
   documentXml: string;
+  bindingAuditValid: boolean;
   sectionCount: number;
   auditBindings: SectPrBinding[];
   stories: SelectedAncillaryStory[];
@@ -279,6 +328,20 @@ function partScaffoldFingerprint(xml: string): string {
     root.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
   )) {
     while (textBox.firstChild) textBox.removeChild(textBox.firstChild);
+  }
+  for (const propertyName of ['rPr', 'pPr']) {
+    const properties = Array.from(
+      root.getElementsByTagNameNS(OOXML.W_NS, propertyName),
+    ).reverse();
+    for (const property of properties) {
+      if (
+        property.attributes.length === 0 &&
+        directChildElements(property).length === 0 &&
+        !(property.textContent ?? '').trim()
+      ) {
+        property.parentNode?.removeChild(property);
+      }
+    }
   }
   return canonicalNode(root);
 }
@@ -316,6 +379,7 @@ async function selectedAncillaryState(
     // narrower text-box error merely because this preparatory scan runs first.
     return {
       documentXml,
+      bindingAuditValid: false,
       sectionCount: 0,
       auditBindings: [],
       stories: [],
@@ -333,6 +397,7 @@ async function selectedAncillaryState(
   if (!audit.ok) {
     return {
       documentXml,
+      bindingAuditValid: false,
       sectionCount: 0,
       auditBindings: [],
       stories: [],
@@ -366,6 +431,7 @@ async function selectedAncillaryState(
 
   return {
     documentXml,
+    bindingAuditValid: true,
     sectionCount: audit.stats.totalSectPrCount,
     auditBindings: audit.bindings,
     stories,
@@ -397,8 +463,8 @@ function pairSelectedAncillaryStories(
   unpairedOriginal: SelectedAncillaryStory[];
   unpairedRevised: SelectedAncillaryStory[];
 } {
-  const originalCandidates = original.filter((story) => story.textBoxes.length > 0);
-  const revisedCandidates = revised.filter((story) => story.textBoxes.length > 0);
+  const originalCandidates = original;
+  const revisedCandidates = revised;
   const matchedOriginal = new Set<SelectedAncillaryStory>();
   const matchedRevised = new Set<SelectedAncillaryStory>();
   const pairs: PairedAncillaryStory[] = [];
@@ -572,8 +638,8 @@ function assertLifecycleStoriesAreSectionBound(
   pairs: PairedAncillaryStory[],
   unpairedOriginal: SelectedAncillaryStory[],
   unpairedRevised: SelectedAncillaryStory[],
-): void {
-  if (unpairedOriginal.length === 0 && unpairedRevised.length === 0) return;
+): SelectedAncillaryStory[] {
+  if (unpairedOriginal.length === 0 && unpairedRevised.length === 0) return [];
   const originalPairIds = new Map(
     pairs.map((pair) => [pair.original.targetPath, pair.id]),
   );
@@ -586,7 +652,9 @@ function assertLifecycleStoriesAreSectionBound(
   );
   const changes: TextBoxRevisionChange[] = [];
 
-  for (const story of unpairedOriginal) {
+  for (const story of unpairedOriginal.filter(
+    (candidate) => candidate.textBoxes.length > 0,
+  )) {
     const lifecycle =
       originalState.sectionCount > revisedState.sectionCount &&
       story.bindings.every((binding) =>
@@ -601,7 +669,9 @@ function assertLifecycleStoriesAreSectionBound(
       });
     }
   }
-  for (const story of unpairedRevised) {
+  for (const story of unpairedRevised.filter(
+    (candidate) => candidate.textBoxes.length > 0,
+  )) {
     const lifecycle =
       revisedState.sectionCount > originalState.sectionCount &&
       story.bindings.every((binding) =>
@@ -617,6 +687,12 @@ function assertLifecycleStoriesAreSectionBound(
     }
   }
   if (changes.length > 0) throw new UnsupportedTextBoxRevisionError(changes);
+  return unpairedRevised.filter((story) =>
+    revisedState.sectionCount > originalState.sectionCount &&
+    story.bindings.every((binding) =>
+      unmatched.revised.has(binding.sectionOrdinal),
+    ),
+  );
 }
 
 async function ancillaryStoryInputs(
@@ -627,16 +703,26 @@ async function ancillaryStoryInputs(
 ): Promise<{
   stories: TextBoxStoryInput[];
   validateProjection: boolean;
+  hasTextBoxStories: boolean;
+  representedChanges: TextBoxStoryComparisonPlan['representedAncillaryChanges'];
 }> {
   const [originalState, revisedState] = await Promise.all([
     selectedAncillaryState(originalArchive),
     selectedAncillaryState(revisedArchive),
   ]);
+  if (!originalState.bindingAuditValid || !revisedState.bindingAuditValid) {
+    return {
+      stories: [],
+      validateProjection: false,
+      hasTextBoxStories: false,
+      representedChanges: [],
+    };
+  }
   const paired = pairSelectedAncillaryStories(
     originalState.stories,
     revisedState.stories,
   );
-  assertLifecycleStoriesAreSectionBound(
+  const insertedPartStories = assertLifecycleStoriesAreSectionBound(
     originalState,
     revisedState,
     paired.pairs,
@@ -720,22 +806,75 @@ async function ancillaryStoryInputs(
       stories.push({
         index,
         partPath: pair.revised.targetPath,
+        container: 'textBox',
         original: await storyOriginalArchive.save(),
         revised: await storyRevisedArchive.save(),
       });
     }
   }
 
+  for (const story of insertedPartStories) {
+    const storyOriginalArchive = await originalArchive.clone();
+    const storyRevisedArchive = await revisedArchive.clone();
+    storyOriginalArchive.setDocumentXml(
+      storyDocumentXmlFromPartRoot(originalDocumentXml, null),
+    );
+    storyRevisedArchive.setDocumentXml(
+      storyDocumentXmlFromPartRoot(revisedDocumentXml, story.xml),
+    );
+    storyOriginalArchive.setFile(
+      'word/_rels/document.xml.rels',
+      `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+    );
+    storyRevisedArchive.setFile(
+      'word/_rels/document.xml.rels',
+      story.relationshipsXml ??
+        `<Relationships xmlns="${PACKAGE_RELATIONSHIPS_NS}"/>`,
+    );
+    stories.push({
+      index: 0,
+      partPath: story.targetPath,
+      container: 'ancillaryPart',
+      original: await storyOriginalArchive.save(),
+      revised: await storyRevisedArchive.save(),
+    });
+  }
+
   return {
     stories,
     validateProjection:
       paired.pairs.some(
-        (pair) => pair.original.targetPath !== pair.revised.targetPath,
+        (pair) =>
+          pair.original.textBoxes.length > 0 &&
+          pair.original.targetPath !== pair.revised.targetPath,
       ) ||
-      paired.unpairedOriginal.length > 0 ||
-      paired.unpairedRevised.length > 0 ||
+      paired.unpairedOriginal.some((story) => story.textBoxes.length > 0) ||
+      paired.unpairedRevised.some((story) => story.textBoxes.length > 0) ||
       stories.length > 0,
+    hasTextBoxStories: stories.some((story) => story.container === 'textBox'),
+    representedChanges: insertedPartStories.flatMap((story) =>
+      story.bindings.map((binding) => ({
+        scope: binding.kind,
+        kind: 'added' as const,
+        sectionIndex: binding.sectionOrdinal,
+        role: binding.role,
+        partPath: story.targetPath,
+      })),
+    ),
   };
+}
+
+export async function rejectedSelectedAncillaryStoryPaths(
+  compared: Buffer,
+): Promise<Set<string>> {
+  const archive = await DocxArchive.load(compared);
+  const documentXml = rejectAllChanges(await archive.getDocumentXml());
+  const relationshipsXml = await archive.getFile('word/_rels/document.xml.rels');
+  return new Set(
+    auditSectPr(documentXml, relationshipsXml).bindings.map(
+      (binding) => binding.targetPath,
+    ),
+  );
 }
 
 /**
@@ -835,6 +974,7 @@ export async function prepareTextBoxStoryComparison(
     stories.push({
       index,
       partPath: 'word/document.xml',
+      container: 'textBox',
       original: await storyOriginalArchive.save(),
       revised: await storyRevisedArchive.save(),
     });
@@ -856,6 +996,8 @@ export async function prepareTextBoxStoryComparison(
     revisedDocumentXml,
     stories,
     validateAncillaryProjection: ancillary.validateProjection,
+    hasAncillaryTextBoxStories: ancillary.hasTextBoxStories,
+    representedAncillaryChanges: ancillary.representedChanges,
   };
 }
 
@@ -868,6 +1010,7 @@ export async function assembleTextBoxStoryComparison(
   storyResults: ReadonlyArray<{
     index: number;
     partPath: string;
+    container: 'textBox' | 'ancillaryPart';
     document: Buffer;
   }>,
 ): Promise<Buffer> {
@@ -887,6 +1030,32 @@ export async function assembleTextBoxStoryComparison(
       }
       targetDocument = parseXml(targetXml);
     }
+    const storyArchive = await DocxArchive.load(storyResult.document);
+    const storyDocument = parseXml(await storyArchive.getDocumentXml());
+    const storyBody = storyDocument
+      .getElementsByTagNameNS(OOXML.W_NS, 'body')
+      .item(0);
+    if (!storyBody) {
+      throw new Error(`Compared nested story ${storyResult.index} has no w:body`);
+    }
+    if (storyResult.container === 'ancillaryPart') {
+      const target = targetDocument.documentElement;
+      while (target.firstChild) target.removeChild(target.firstChild);
+      for (const child of directChildElements(storyBody)) {
+        if (
+          child.namespaceURI === OOXML.W_NS &&
+          child.localName === 'sectPr'
+        ) {
+          continue;
+        }
+        target.appendChild(targetDocument.importNode(child, true));
+      }
+      outerArchive.setFile(
+        storyResult.partPath,
+        serializer.serializeToString(targetDocument),
+      );
+      continue;
+    }
     const target = targetDocument
       .getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')
       .item(storyResult.index);
@@ -896,14 +1065,6 @@ export async function assembleTextBoxStoryComparison(
         partPath: storyResult.partPath,
         reason: 'the outer comparison changed text-box story topology',
       }]);
-    }
-    const storyArchive = await DocxArchive.load(storyResult.document);
-    const storyDocument = parseXml(await storyArchive.getDocumentXml());
-    const storyBody = storyDocument
-      .getElementsByTagNameNS(OOXML.W_NS, 'body')
-      .item(0);
-    if (!storyBody) {
-      throw new Error(`Compared text-box story ${storyResult.index} has no w:body`);
     }
     while (target.firstChild) target.removeChild(target.firstChild);
     for (const child of directChildElements(storyBody)) {
@@ -925,6 +1086,87 @@ export async function assembleTextBoxStoryComparison(
 
   outerArchive.setDocumentXml(serializer.serializeToString(outerDocument));
   return outerArchive.save();
+}
+
+/**
+ * Mark every paragraph boundary in a relationship-selected story owned by an
+ * inserted section. Paragraph-mark revisions make empty paragraphs and
+ * drawing/text-box carrier paragraphs visible without wrapping an unchanged
+ * VML/DrawingML object in a run-level revision.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.20
+ * @see https://github.com/UseJunior/safe-docx/issues/648
+ */
+export async function markInsertedAncillaryStoryParagraphs(
+  storyDocument: Buffer,
+  preservedPackage: Buffer,
+  author: string,
+  date: Date,
+): Promise<{ document: Buffer; directParagraphs: number }> {
+  const archive = await DocxArchive.load(storyDocument);
+  const document = parseXml(await archive.getDocumentXml());
+  const body = document.getElementsByTagNameNS(OOXML.W_NS, 'body').item(0);
+  if (!body) throw new Error('Compared ancillary story has no w:body');
+  const preservedArchive = await DocxArchive.load(preservedPackage);
+  const preservedRoots: Element[] = [document.documentElement];
+  for (const path of preservedArchive.listFiles()) {
+    if (!/^word\/.*\.xml$/u.test(path)) continue;
+    const xml = await preservedArchive.getFile(path);
+    if (!xml) continue;
+    try {
+      preservedRoots.push(parseXml(xml).documentElement);
+    } catch {
+      // Non-WordprocessingML extension parts are irrelevant to revision IDs.
+    }
+  }
+  const state = createRevisionIdState(preservedRoots);
+  const dateString = formatDate(date);
+  const directParagraphs = directChildElements(body).filter(
+    (element) =>
+      element.namespaceURI === OOXML.W_NS && element.localName === 'p',
+  );
+  const markParagraph = (paragraph: Element): void => {
+    addParagraphMarkRevisionMarker(
+      paragraph,
+      'w:ins',
+      author,
+      dateString,
+      state,
+    );
+    for (const run of directChildElements(paragraph).filter(
+      (element) =>
+        element.namespaceURI === OOXML.W_NS &&
+        element.localName === 'r' &&
+        element.getElementsByTagNameNS(OOXML.W_NS, 'drawing').length === 0 &&
+        element.getElementsByTagNameNS(OOXML.W_NS, 'pict').length === 0 &&
+        element.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent').length === 0,
+    )) {
+      wrapRunWithTrackChange({
+        run,
+        tagName: 'w:ins',
+        author,
+        dateStr: dateString,
+        state,
+      });
+    }
+  };
+  for (const paragraph of directParagraphs) {
+    markParagraph(paragraph);
+    for (const textBox of Array.from(
+      paragraph.getElementsByTagNameNS(OOXML.W_NS, 'txbxContent'),
+    )) {
+      for (const nestedParagraph of Array.from(
+        textBox.getElementsByTagNameNS(OOXML.W_NS, 'p'),
+      )) {
+        markParagraph(nestedParagraph);
+      }
+    }
+  }
+  archive.setDocumentXml(serializer.serializeToString(document));
+  return {
+    document: await archive.save(),
+    directParagraphs: directParagraphs.length,
+  };
 }
 
 async function selectedStoryProjectionInventory(

@@ -12,6 +12,9 @@ running content changed.
 - Add structured `CompareResult.unrepresentedChanges` diagnostics.
 - Detect section-property and relationship-selected header/footer differences
   that are present in the inputs but not represented by emitted revisions.
+- When the selecting section is itself a tracked insertion, represent its
+  footer with tracked paragraph and safe run insertions, leaving only the
+  section-property change in `unrepresentedChanges`.
 - Keep existing revision statistics unchanged; the new field makes their scope
   explicit instead of counting non-text changes as insertions or deletions.
 
@@ -19,5 +22,4 @@ running content changed.
 
 - Affected specs: `docx-comparison`
 - Affected code: atomizer package inspection, public comparison result types,
-  and comparison integration tests
-
+  relationship-selected story assembly, and comparison integration tests
