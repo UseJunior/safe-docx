@@ -83,7 +83,7 @@ describe('Editing Features', () => {
       const node = responseNodes[0];
 
       expect(node.body_run_formatting, 'body_run_formatting should be defined').toBeDefined();
-      expect(node.body_run_formatting.bold).toBe(false);
+      expect(node.body_run_formatting.bold).toBeNull();
       expect(node.body_run_formatting.highlightVal).toBeNull();
     });
   });

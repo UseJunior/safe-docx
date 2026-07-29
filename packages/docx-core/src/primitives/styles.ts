@@ -238,22 +238,29 @@ export function extractParagraphFormatting(
   };
 }
 
+/**
+ * Effective formatting established by the resolver's supported inheritance
+ * layers. `null` means unresolved, never a rendered default. Explicit default
+ * declarations remain representable as `false` (toggle/underline/highlight)
+ * or `'auto'` (color), so consumers cannot confuse missing resolver coverage
+ * with a known value.
+ */
 export type RunFormatting = {
-  bold: boolean;
-  italic: boolean;
-  caps: boolean;
-  smallCaps: boolean;
-  strike: boolean;
-  emboss: boolean;
-  imprint: boolean;
-  outline: boolean;
-  shadow: boolean;
-  vanish: boolean;
-  underline: boolean;
-  highlightVal: string | null;
-  fontName: string;
-  fontSizePt: number;
-  colorHex: string | null;
+  bold: boolean | null;
+  italic: boolean | null;
+  caps: boolean | null;
+  smallCaps: boolean | null;
+  strike: boolean | null;
+  emboss: boolean | null;
+  imprint: boolean | null;
+  outline: boolean | null;
+  shadow: boolean | null;
+  vanish: boolean | null;
+  underline: boolean | null;
+  highlightVal: string | false | null;
+  fontName: string | null;
+  fontSizePt: number | null;
+  colorHex: string | 'auto' | null;
 };
 
 /**
@@ -310,18 +317,20 @@ type ToggleStep = {
  * @conformance ECMA-376 edition 5, Part 1 § 17.7.3
  * @see https://github.com/UseJunior/safe-docx/issues/737
  */
-function resolveToggleProperty(steps: ToggleStep[], tagLocal: string): boolean {
+function resolveToggleProperty(steps: ToggleStep[], tagLocal: string): boolean | null {
   let effective = false;
+  let resolved = false;
   for (const { rPr, kind } of steps) {
     const declaration = parseBoolProp(rPr, tagLocal);
     if (declaration === null) continue;
+    resolved = true;
     if (kind === 'direct') {
       effective = declaration;
     } else if (declaration) {
       effective = !effective;
     }
   }
-  return effective;
+  return resolved ? effective : null;
 }
 
 function parseUnderline(parent: Element | null): boolean | null {
@@ -399,13 +408,29 @@ function parseHighlightVal(parent: Element | null): string | null {
   return v;
 }
 
+function parseEffectiveColorHex(parent: Element | null, theme: ThemeModel | null): string | 'auto' | null {
+  if (!parent) return null;
+  const el = getFirstChild(parent, OOXML.W_NS, W.color);
+  if (!el) return null;
+  return parseColorHex(parent, theme) ?? 'auto';
+}
+
+function parseEffectiveHighlightVal(parent: Element | null): string | false | null {
+  if (!parent) return null;
+  const el = getFirstChild(parent, OOXML.W_NS, W.highlight);
+  if (!el) return null;
+  return parseHighlightVal(parent) ?? false;
+}
+
 /**
  * Resolve the run formatting a reader actually sees, not merely the formatting
  * the run declares. Ordinary properties are taken from the first layer that
  * specifies them: direct `w:rPr` on the run, then the `w:rStyle`
  * character-style `basedOn` chain, then the paragraph mark's `w:rPr` inside
  * `pPr`, then the paragraph style's `basedOn` chain. A property specified
- * nowhere resolves to the neutral value (`false`, `''`, `0`, or `null`).
+ * nowhere in the consulted layers resolves to `null`. This tri-state contract
+ * keeps an unresolved property distinct from a known off/default value such
+ * as `false`, `false` for `highlightVal`, or `'auto'` for `colorHex`.
  *
  * Each property is resolved independently down the chain — a style that
  * specifies only color does not mask an ancestor's bold.
@@ -417,9 +442,9 @@ function parseHighlightVal(parent: Element | null): string | null {
  * `w:caps`, `w:smallCaps`, `w:strike`, `w:emboss`, `w:imprint`, `w:outline`,
  * `w:shadow`, and `w:vanish`.
  *
- * Not resolved: `w:docDefaults`, table-style run properties, and
- * numbering-level `rPr`. A formatting change confined to one of those layers
- * is invisible to this resolver.
+ * The resolver reports `null` when a property's only declaration is in one of
+ * the layers it does not consult: `w:docDefaults`, table-style run properties,
+ * or numbering-level `rPr`.
  *
  * Part of docx-core's public surface (see `src/index.ts`) so external
  * diagnostics — `scripts/check_docx_formatting_loss.mjs` today, the planned
@@ -492,10 +517,10 @@ export function extractEffectiveRunFormatting(params: {
     outline: resolveToggleProperty(toggleSteps, W.outline),
     shadow: resolveToggleProperty(toggleSteps, W.shadow),
     vanish: resolveToggleProperty(toggleSteps, W.vanish),
-    underline: resolve(parseUnderline) ?? false,
-    highlightVal: resolve(parseHighlightVal),
-    fontName: resolve((el) => parseFontName(el, theme)) ?? '',
-    fontSizePt: resolve(parseFontSizePt) ?? 0,
-    colorHex: resolve((el) => parseColorHex(el, theme)),
+    underline: resolve(parseUnderline),
+    highlightVal: resolve(parseEffectiveHighlightVal),
+    fontName: resolve((el) => parseFontName(el, theme)),
+    fontSizePt: resolve(parseFontSizePt),
+    colorHex: resolve((el) => parseEffectiveColorHex(el, theme)),
   };
 }
