@@ -19,7 +19,7 @@ import { compareDocuments } from '@usejunior/docx-compare';
 import { DocxArchive, DOCX_PATHS } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
-  extractTextWithParagraphs,
+  extractRoundTripComparisonText,
   compareTexts,
   rejectAllChanges,
 } from '@usejunior/docx-compare';
@@ -202,13 +202,13 @@ async function expectReadTextParity(
   expectedArchive: DocxArchive,
   context: string
 ): Promise<void> {
-  // `extractTextWithParagraphs` is the docx-comparison package's semantic
-  // read_text-equivalent surface used by round-trip validation.
+  // Round-trip parity treats TOC PAGEREF caches as pagination output while
+  // preserving ordinary visible text everywhere else.
   const actualDocumentXml = await actualArchive.getDocumentXml();
   const expectedDocumentXml = await expectedArchive.getDocumentXml();
 
-  const actualReadText = extractTextWithParagraphs(actualDocumentXml);
-  const expectedReadText = extractTextWithParagraphs(expectedDocumentXml);
+  const actualReadText = extractRoundTripComparisonText(actualDocumentXml);
+  const expectedReadText = extractRoundTripComparisonText(expectedDocumentXml);
   const comparison = compareTexts(expectedReadText, actualReadText);
   if (!comparison.normalizedIdentical) {
     const expectedParas = expectedReadText.split('\n');

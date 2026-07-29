@@ -22,6 +22,7 @@ import {
   acceptAllChanges,
   rejectAllChanges,
   extractTextWithParagraphs,
+  extractRoundTripComparisonText,
   compareTexts,
 } from '@usejunior/docx-compare';
 import {
@@ -200,12 +201,12 @@ describe('Round-Trip Tests - Accept All Changes', () => {
         const resultArchive = await DocxArchive.load(comparisonResult.document);
         const resultXml = await resultArchive.getDocumentXml();
         const acceptedXml = acceptAllChanges(resultXml);
-        acceptedText = extractTextWithParagraphs(acceptedXml);
+        acceptedText = extractRoundTripComparisonText(acceptedXml);
 
         // Extract text from revised document
         const revisedArchive = await DocxArchive.load(revisedBuffer);
         const revisedXml = await revisedArchive.getDocumentXml();
-        revisedText = extractTextWithParagraphs(revisedXml);
+        revisedText = extractRoundTripComparisonText(revisedXml);
 
         // Save for debugging
         await writeIntegrationArtifact('accepted_text.txt', acceptedText);
@@ -393,12 +394,12 @@ describe('Round-Trip Tests - Reject All Changes', () => {
         // Save rejected XML for debugging
         await writeIntegrationArtifact('rejected.xml', rejectedXml);
 
-        rejectedText = extractTextWithParagraphs(rejectedXml);
+        rejectedText = extractRoundTripComparisonText(rejectedXml);
 
         // Extract text from original document
         const originalArchive = await DocxArchive.load(originalBuffer);
         const originalXml = await originalArchive.getDocumentXml();
-        originalText = extractTextWithParagraphs(originalXml);
+        originalText = extractRoundTripComparisonText(originalXml);
 
         // Save for debugging
         await writeIntegrationArtifact('rejected_text.txt', rejectedText);

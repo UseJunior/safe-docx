@@ -63,7 +63,7 @@ structure TypedEocd where
 structure TypedXmlAttribute where
   namespaceUri : BoundedBytes
   localName : BoundedBytes
-  value : BoundedBytes
+  value : BoundedByteArray
   deriving DecidableEq
 
 inductive TypedXmlEvent
@@ -113,6 +113,252 @@ def typedByteAt? (bytes : ByteArray) (offset : Nat) : Option Nat :=
   if offset < bytes.size then
     (bytes.extract offset (offset + 1)).data.toList.head?.map UInt8.toNat
   else none
+
+set_option backward.match.sparseCases false in
+def typedNatEqCheck : Nat → Nat → Bool
+  | 0, 0 => true
+  | left + 1, right + 1 => typedNatEqCheck left right
+  | _, _ => false
+
+set_option backward.match.sparseCases false in
+def typedBoolEqCheck : Bool → Bool → Bool
+  | false, false => true
+  | true, true => true
+  | _, _ => false
+
+def typedNativeNatEqCheck (left right : Nat) : Bool :=
+  if left = right then true else false
+
+def typedNativeUInt8EqCheck (left right : UInt8) : Bool :=
+  if left = right then true else false
+
+set_option backward.match.sparseCases false in
+def typedNatListEqCheck : List Nat → List Nat → Bool
+  | [], [] => true
+  | left :: leftRest, right :: rightRest =>
+      typedNatEqCheck left right && typedNatListEqCheck leftRest rightRest
+  | _, _ => false
+
+set_option backward.match.sparseCases false in
+def typedByteListEqCheck : List UInt8 → List UInt8 → Bool
+  | [], [] => true
+  | left :: leftRest, right :: rightRest =>
+      typedNatEqCheck left.toNat right.toNat &&
+        typedByteListEqCheck leftRest rightRest
+  | _, _ => false
+
+def typedByteArrayGetFast (bytes : ByteArray) (index : Nat)
+    (_inBounds : index < bytes.size) : UInt8 :=
+  bytes.get! index
+
+set_option backward.match.sparseCases false in
+@[implemented_by typedByteArrayGetFast]
+def typedByteArrayGet (bytes : ByteArray) (index : Nat)
+    (inBounds : index < bytes.size) : UInt8 :=
+  bytes.data[index]'(by
+    simpa only [ByteArray.size_data] using inBounds)
+
+set_option backward.match.sparseCases false in
+def typedByteArrayEqLoop (left right : ByteArray) : Nat → Bool
+  | 0 => true
+  | index + 1 =>
+      if leftInBounds : index < left.size then
+        if rightInBounds : index < right.size then
+          typedNativeUInt8EqCheck
+              (typedByteArrayGet left index leftInBounds)
+              (typedByteArrayGet right index rightInBounds) &&
+            typedByteArrayEqLoop left right index
+        else false
+      else false
+
+def typedByteArrayEqCheck (left right : ByteArray) : Bool :=
+  typedNativeNatEqCheck left.size right.size &&
+    typedByteArrayEqLoop left right left.size
+
+theorem typedBoolAndTrueParts :
+    ∀ left right : Bool, (left && right) = true →
+      left = true ∧ right = true
+  | false, false, h => nomatch h
+  | false, true, h => nomatch h
+  | true, false, h => nomatch h
+  | true, true, _ => ⟨rfl, rfl⟩
+
+theorem typedNatEqCheck_refl : ∀ value,
+    typedNatEqCheck value value = true
+  | 0 => rfl
+  | Nat.succ value => typedNatEqCheck_refl value
+
+theorem typedNatEqCheck_sound : ∀ left right,
+    typedNatEqCheck left right = true → left = right
+  | 0, 0, _ => rfl
+  | 0, _ + 1, h => nomatch h
+  | _ + 1, 0, h => nomatch h
+  | left + 1, right + 1, h =>
+      congrArg Nat.succ (typedNatEqCheck_sound left right h)
+
+theorem typedNatEqCheck_true_iff (left right : Nat) :
+    typedNatEqCheck left right = true ↔ left = right := by
+  constructor
+  · exact typedNatEqCheck_sound left right
+  · intro h
+    subst right
+    exact typedNatEqCheck_refl left
+
+theorem typedNativeNatEqCheck_refl (value : Nat) :
+    typedNativeNatEqCheck value value = true := by
+  unfold typedNativeNatEqCheck
+  split
+  · rfl
+  · contradiction
+
+theorem typedNativeNatEqCheck_sound (left right : Nat)
+    (h : typedNativeNatEqCheck left right = true) : left = right := by
+  unfold typedNativeNatEqCheck at h
+  split at h
+  · assumption
+  · contradiction
+
+theorem typedNativeUInt8EqCheck_refl (value : UInt8) :
+    typedNativeUInt8EqCheck value value = true := by
+  unfold typedNativeUInt8EqCheck
+  split
+  · rfl
+  · contradiction
+
+theorem typedNativeUInt8EqCheck_sound (left right : UInt8)
+    (h : typedNativeUInt8EqCheck left right = true) : left = right := by
+  unfold typedNativeUInt8EqCheck at h
+  split at h
+  · assumption
+  · contradiction
+
+set_option backward.match.sparseCases false in
+theorem typedBoolEqCheck_refl : ∀ value,
+    typedBoolEqCheck value value = true
+  | false => rfl
+  | true => rfl
+
+set_option backward.match.sparseCases false in
+theorem typedBoolEqCheck_sound : ∀ left right,
+    typedBoolEqCheck left right = true → left = right
+  | false, false, _ => rfl
+  | false, true, h => nomatch h
+  | true, false, h => nomatch h
+  | true, true, _ => rfl
+
+theorem typedByteListEqCheck_refl : ∀ values,
+    typedByteListEqCheck values values = true
+  | [] => rfl
+  | _ :: rest => by
+      rw [typedByteListEqCheck, typedNatEqCheck_refl,
+        typedByteListEqCheck_refl rest]
+      rfl
+
+theorem typedByteListEqCheck_sound : ∀ left right,
+    typedByteListEqCheck left right = true → left = right
+  | [], [], _ => rfl
+  | [], _ :: _, h => nomatch h
+  | _ :: _, [], h => nomatch h
+  | left :: leftRest, right :: rightRest, h => by
+      have parts := typedBoolAndTrueParts _ _ h
+      have headEq : left = right :=
+        UInt8.toNat_inj.mp
+          (typedNatEqCheck_sound left.toNat right.toNat parts.1)
+      have restEq :=
+        typedByteListEqCheck_sound leftRest rightRest parts.2
+      rw [headEq, restEq]
+
+theorem typedByteListEqCheck_true_iff (left right : List UInt8) :
+    typedByteListEqCheck left right = true ↔ left = right := by
+  constructor
+  · exact typedByteListEqCheck_sound left right
+  · intro h
+    subst right
+    exact typedByteListEqCheck_refl left
+
+theorem typedByteArrayEqLoop_refl (value : ByteArray) :
+    ∀ count, count ≤ value.size →
+      typedByteArrayEqLoop value value count = true
+  | 0, _ => rfl
+  | count + 1, countLe => by
+      have countLt : count < value.size := countLe
+      rw [typedByteArrayEqLoop, dif_pos countLt, dif_pos countLt,
+        typedNativeUInt8EqCheck_refl,
+        typedByteArrayEqLoop_refl value count (Nat.le_of_lt countLt)]
+      rfl
+
+theorem typedByteArrayEqLoop_sound (left right : ByteArray) :
+    ∀ count, typedByteArrayEqLoop left right count = true →
+      ∀ index, index < count →
+        ∀ (leftInBounds : index < left.size)
+          (rightInBounds : index < right.size),
+          typedByteArrayGet left index leftInBounds =
+            typedByteArrayGet right index rightInBounds
+  | 0, _, _, h, _, _ => nomatch h
+  | count + 1, h, index, indexLt, leftInBounds, rightInBounds => by
+      have countLeftInBounds : count < left.size := by
+        unfold typedByteArrayEqLoop at h
+        split at h
+        · assumption
+        · contradiction
+      have countRightInBounds : count < right.size := by
+        unfold typedByteArrayEqLoop at h
+        rw [dif_pos countLeftInBounds] at h
+        split at h
+        · assumption
+        · contradiction
+      rw [typedByteArrayEqLoop, dif_pos countLeftInBounds,
+        dif_pos countRightInBounds] at h
+      have parts := typedBoolAndTrueParts _ _ h
+      by_cases indexEq : index = count
+      · subst index
+        exact typedNativeUInt8EqCheck_sound _ _ parts.1
+      · exact typedByteArrayEqLoop_sound left right count parts.2 index
+          (Nat.lt_of_le_of_ne (Nat.le_of_lt_succ indexLt) indexEq)
+          leftInBounds rightInBounds
+
+theorem typedByteArrayEqCheck_sound (left right : ByteArray)
+    (h : typedByteArrayEqCheck left right = true) :
+    left.data.toList = right.data.toList := by
+  have parts := typedBoolAndTrueParts _ _ h
+  have sizeEq := typedNativeNatEqCheck_sound _ _ parts.1
+  have elementEq := typedByteArrayEqLoop_sound left right left.size parts.2
+  have dataEq : left.data = right.data := by
+    apply Array.ext
+    · simpa only [ByteArray.size_data] using sizeEq
+    · intro index leftLt rightLt
+      have leftByteLt : index < left.size := by
+        simpa only [ByteArray.size_data] using leftLt
+      have rightByteLt : index < right.size := by
+        simpa only [ByteArray.size_data] using rightLt
+      simpa only [typedByteArrayGet] using
+        elementEq index leftByteLt leftByteLt rightByteLt
+  exact congrArg Array.toList dataEq
+
+theorem typedByteArrayEqCheck_refl (value : ByteArray) :
+    typedByteArrayEqCheck value value = true := by
+  unfold typedByteArrayEqCheck
+  rw [typedNativeNatEqCheck_refl,
+    typedByteArrayEqLoop_refl value value.size (Nat.le_refl _)]
+  rfl
+
+theorem typedByteArrayEqCheck_true_iff (left right : ByteArray) :
+    typedByteArrayEqCheck left right = true ↔
+      left.data.toList = right.data.toList := by
+  constructor
+  · exact typedByteArrayEqCheck_sound left right
+  · intro h
+    cases left with
+    | mk leftData =>
+        cases right with
+        | mk rightData =>
+            cases leftData with
+            | mk leftBytes =>
+                cases rightData with
+                | mk rightBytes =>
+                    change leftBytes = rightBytes at h
+                    subst rightBytes
+                    exact typedByteArrayEqCheck_refl _
 
 def typedUInt16At? (bytes : ByteArray) (offset : Nat) : Option Nat := do
   let low ← typedByteAt? bytes offset
@@ -444,13 +690,12 @@ def typedSelectedEntryCheck
 def typedExtractionCheck (packageBytes : ByteArray) (index : TypedPackageIndex)
     (entry : TypedEntry) (extraction : TypedExtraction) : Bool :=
   typedBinaryIndexCheck packageBytes index &&
-  decide (extraction.packageBytes.data.toList = packageBytes.data.toList) &&
-  decide (extraction.snapshotBytes.data.toList = packageBytes.data.toList) &&
+  typedByteArrayEqCheck extraction.packageBytes packageBytes &&
+  typedByteArrayEqCheck extraction.snapshotBytes packageBytes &&
   typedSelectedEntryCheck index entry.name entry &&
   typedEntryMetadataCheck extraction.entry entry &&
-  decide (extraction.compressedSlice.data.toList =
-    (byteArraySlice packageBytes
-      entry.dataOffset entry.localSpanEnd).data.toList) &&
+  typedByteArrayEqCheck extraction.compressedSlice
+    (byteArraySlice packageBytes entry.dataOffset entry.localSpanEnd) &&
   decide (extraction.compressedSlice.size = entry.compressedSize) &&
   decide (extraction.expandedBytes.size = entry.expandedSize) &&
   decide (entry.localHeaderOffset ≤ entry.dataOffset) &&
@@ -484,23 +729,393 @@ def typedXmlEventIdentity : TypedXmlEvent → TypedXmlEventIdentity
       .startElement namespaceUri.bytes localName.bytes
         (attributes.map fun attr =>
           (attr.namespaceUri.bytes, attr.localName.bytes,
-            attr.value.bytes))
+            attr.value.bytes.data.toList))
         depth selfClosing ordinal
   | .endElement namespaceUri localName depth ordinal =>
       .endElement namespaceUri.bytes localName.bytes depth ordinal
   | .text value depth ordinal =>
       .text value.bytes.data.toList depth ordinal
 
+def typedXmlAttributeEqCheck
+    (left right : TypedXmlAttribute) : Bool :=
+  typedByteListEqCheck left.namespaceUri.bytes right.namespaceUri.bytes &&
+  typedByteListEqCheck left.localName.bytes right.localName.bytes &&
+  typedByteArrayEqCheck left.value.bytes right.value.bytes
+
+set_option backward.match.sparseCases false in
+def typedXmlAttributeListEqCheck :
+    List TypedXmlAttribute → List TypedXmlAttribute → Bool
+  | [], [] => true
+  | left :: leftRest, right :: rightRest =>
+      typedXmlAttributeEqCheck left right &&
+        typedXmlAttributeListEqCheck leftRest rightRest
+  | _, _ => false
+
+set_option backward.match.sparseCases false in
+def typedXmlEventEqCheck : TypedXmlEvent → TypedXmlEvent → Bool
+  | .startElement leftUri leftName leftAttributes leftDepth
+        leftSelfClosing leftOrdinal,
+      .startElement rightUri rightName rightAttributes rightDepth
+        rightSelfClosing rightOrdinal =>
+      typedByteListEqCheck leftUri.bytes rightUri.bytes &&
+      typedByteListEqCheck leftName.bytes rightName.bytes &&
+      typedXmlAttributeListEqCheck leftAttributes rightAttributes &&
+      typedNatEqCheck leftDepth rightDepth &&
+      typedBoolEqCheck leftSelfClosing rightSelfClosing &&
+      typedNatEqCheck leftOrdinal rightOrdinal
+  | .endElement leftUri leftName leftDepth leftOrdinal,
+      .endElement rightUri rightName rightDepth rightOrdinal =>
+      typedByteListEqCheck leftUri.bytes rightUri.bytes &&
+      typedByteListEqCheck leftName.bytes rightName.bytes &&
+      typedNatEqCheck leftDepth rightDepth &&
+      typedNatEqCheck leftOrdinal rightOrdinal
+  | .text leftValue leftDepth leftOrdinal,
+      .text rightValue rightDepth rightOrdinal =>
+      typedByteArrayEqCheck leftValue.bytes rightValue.bytes &&
+      typedNatEqCheck leftDepth rightDepth &&
+      typedNatEqCheck leftOrdinal rightOrdinal
+  | _, _ => false
+
+set_option backward.match.sparseCases false in
+def typedXmlEventListEqCheck :
+    List TypedXmlEvent → List TypedXmlEvent → Bool
+  | [], [] => true
+  | left :: leftRest, right :: rightRest =>
+      typedXmlEventEqCheck left right &&
+        typedXmlEventListEqCheck leftRest rightRest
+  | _, _ => false
+
+theorem typedXmlAttributeEqCheck_sound
+    (left right : TypedXmlAttribute)
+    (h : typedXmlAttributeEqCheck left right = true) :
+    left.namespaceUri.bytes = right.namespaceUri.bytes ∧
+      left.localName.bytes = right.localName.bytes ∧
+      left.value.bytes.data.toList = right.value.bytes.data.toList := by
+  have outer := typedBoolAndTrueParts _ _ h
+  have inner := typedBoolAndTrueParts _ _ outer.1
+  exact ⟨
+    typedByteListEqCheck_sound _ _ inner.1,
+    typedByteListEqCheck_sound _ _ inner.2,
+    typedByteArrayEqCheck_sound _ _ outer.2⟩
+
+theorem typedXmlAttributeEqCheck_complete
+    (left right : TypedXmlAttribute)
+    (h : left.namespaceUri.bytes = right.namespaceUri.bytes ∧
+      left.localName.bytes = right.localName.bytes ∧
+      left.value.bytes.data.toList = right.value.bytes.data.toList) :
+    typedXmlAttributeEqCheck left right = true := by
+  unfold typedXmlAttributeEqCheck
+  rw [h.1, h.2.1, typedByteListEqCheck_refl,
+    typedByteListEqCheck_refl,
+    (typedByteArrayEqCheck_true_iff _ _).mpr h.2.2]
+  rfl
+
+theorem typedXmlAttributeEqCheck_true_iff
+    (left right : TypedXmlAttribute) :
+    typedXmlAttributeEqCheck left right = true ↔
+      left.namespaceUri.bytes = right.namespaceUri.bytes ∧
+      left.localName.bytes = right.localName.bytes ∧
+      left.value.bytes.data.toList = right.value.bytes.data.toList :=
+  ⟨typedXmlAttributeEqCheck_sound left right,
+    typedXmlAttributeEqCheck_complete left right⟩
+
+theorem typedXmlAttributeListEqCheck_sound : ∀ left right,
+    typedXmlAttributeListEqCheck left right = true →
+      left.map (fun item =>
+        (item.namespaceUri.bytes, item.localName.bytes,
+          item.value.bytes.data.toList)) =
+      right.map (fun item =>
+        (item.namespaceUri.bytes, item.localName.bytes,
+          item.value.bytes.data.toList)) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right
+      cases right with
+      | nil => intro; rfl
+      | cons _ _ => intro h; nomatch h
+  | cons item rest ih =>
+      intro right
+      cases right with
+      | nil => intro h; nomatch h
+      | cons rightAttribute rightRest =>
+          intro h
+          have parts := typedBoolAndTrueParts _ _ h
+          have head :=
+            typedXmlAttributeEqCheck_sound item rightAttribute parts.1
+          have tail := ih rightRest parts.2
+          change
+            (item.namespaceUri.bytes, item.localName.bytes,
+                item.value.bytes.data.toList) ::
+                rest.map (fun candidate =>
+                  (candidate.namespaceUri.bytes, candidate.localName.bytes,
+                    candidate.value.bytes.data.toList)) =
+              (rightAttribute.namespaceUri.bytes,
+                rightAttribute.localName.bytes,
+                rightAttribute.value.bytes.data.toList) ::
+                rightRest.map (fun candidate =>
+                  (candidate.namespaceUri.bytes, candidate.localName.bytes,
+                    candidate.value.bytes.data.toList))
+          rw [head.1, head.2.1, head.2.2, tail]
+
+theorem typedXmlAttributeListEqCheck_complete : ∀ left right,
+    left.map (fun item =>
+      (item.namespaceUri.bytes, item.localName.bytes,
+        item.value.bytes.data.toList)) =
+    right.map (fun item =>
+      (item.namespaceUri.bytes, item.localName.bytes,
+        item.value.bytes.data.toList)) →
+    typedXmlAttributeListEqCheck left right = true := by
+  intro left
+  induction left with
+  | nil =>
+      intro right h
+      cases right with
+      | nil => rfl
+      | cons _ _ => nomatch h
+  | cons item rest ih =>
+      intro right
+      cases right with
+      | nil => intro h; nomatch h
+      | cons rightAttribute rightRest =>
+          intro h
+          injection h with head tail
+          injection head with namespaceEq remainingEq
+          injection remainingEq with localNameEq valueEq
+          have headCheck :=
+            typedXmlAttributeEqCheck_complete item rightAttribute
+              ⟨namespaceEq, localNameEq, valueEq⟩
+          have tailCheck := ih rightRest tail
+          rw [typedXmlAttributeListEqCheck, headCheck, tailCheck]
+          rfl
+
+theorem typedXmlAttributeListEqCheck_true_iff (left right) :
+    typedXmlAttributeListEqCheck left right = true ↔
+      left.map (fun item =>
+        (item.namespaceUri.bytes, item.localName.bytes,
+          item.value.bytes.data.toList)) =
+      right.map (fun item =>
+        (item.namespaceUri.bytes, item.localName.bytes,
+          item.value.bytes.data.toList)) :=
+  ⟨typedXmlAttributeListEqCheck_sound left right,
+    typedXmlAttributeListEqCheck_complete left right⟩
+
+theorem typedXmlEventEqCheck_sound
+    (left right : TypedXmlEvent)
+    (h : typedXmlEventEqCheck left right = true) :
+    typedXmlEventIdentity left = typedXmlEventIdentity right := by
+  cases left with
+  | startElement leftUri leftName leftAttributes leftDepth
+      leftSelfClosing leftOrdinal =>
+      cases right with
+      | startElement rightUri rightName rightAttributes rightDepth
+          rightSelfClosing rightOrdinal =>
+          have part6 := typedBoolAndTrueParts _ _ h
+          have part5 := typedBoolAndTrueParts _ _ part6.1
+          have part4 := typedBoolAndTrueParts _ _ part5.1
+          have part3 := typedBoolAndTrueParts _ _ part4.1
+          have part2 := typedBoolAndTrueParts _ _ part3.1
+          have uriEq := typedByteListEqCheck_sound _ _ part2.1
+          have nameEq := typedByteListEqCheck_sound _ _ part2.2
+          have attributesEq :=
+            typedXmlAttributeListEqCheck_sound _ _ part3.2
+          have depthEq := typedNatEqCheck_sound _ _ part4.2
+          have selfClosingEq := typedBoolEqCheck_sound _ _ part5.2
+          have ordinalEq := typedNatEqCheck_sound _ _ part6.2
+          change TypedXmlEventIdentity.startElement leftUri.bytes leftName.bytes
+              (leftAttributes.map fun item =>
+                (item.namespaceUri.bytes, item.localName.bytes,
+                  item.value.bytes.data.toList))
+              leftDepth leftSelfClosing leftOrdinal =
+            TypedXmlEventIdentity.startElement rightUri.bytes rightName.bytes
+              (rightAttributes.map fun item =>
+                (item.namespaceUri.bytes, item.localName.bytes,
+                  item.value.bytes.data.toList))
+              rightDepth rightSelfClosing rightOrdinal
+          rw [uriEq, nameEq, attributesEq, depthEq, selfClosingEq, ordinalEq]
+      | endElement _ _ _ _ => nomatch h
+      | text _ _ _ => nomatch h
+  | endElement leftUri leftName leftDepth leftOrdinal =>
+      cases right with
+      | startElement _ _ _ _ _ _ => nomatch h
+      | endElement rightUri rightName rightDepth rightOrdinal =>
+          have part4 := typedBoolAndTrueParts _ _ h
+          have part3 := typedBoolAndTrueParts _ _ part4.1
+          have part2 := typedBoolAndTrueParts _ _ part3.1
+          have uriEq := typedByteListEqCheck_sound _ _ part2.1
+          have nameEq := typedByteListEqCheck_sound _ _ part2.2
+          have depthEq := typedNatEqCheck_sound _ _ part3.2
+          have ordinalEq := typedNatEqCheck_sound _ _ part4.2
+          change TypedXmlEventIdentity.endElement leftUri.bytes leftName.bytes
+              leftDepth leftOrdinal =
+            TypedXmlEventIdentity.endElement rightUri.bytes rightName.bytes
+              rightDepth rightOrdinal
+          rw [uriEq, nameEq, depthEq, ordinalEq]
+      | text _ _ _ => nomatch h
+  | text leftValue leftDepth leftOrdinal =>
+      cases right with
+      | startElement _ _ _ _ _ _ => nomatch h
+      | endElement _ _ _ _ => nomatch h
+      | text rightValue rightDepth rightOrdinal =>
+          have part3 := typedBoolAndTrueParts _ _ h
+          have part2 := typedBoolAndTrueParts _ _ part3.1
+          have valueEq := typedByteArrayEqCheck_sound _ _ part2.1
+          have depthEq := typedNatEqCheck_sound _ _ part2.2
+          have ordinalEq := typedNatEqCheck_sound _ _ part3.2
+          change TypedXmlEventIdentity.text leftValue.bytes.data.toList
+              leftDepth leftOrdinal =
+            TypedXmlEventIdentity.text rightValue.bytes.data.toList
+              rightDepth rightOrdinal
+          rw [valueEq, depthEq, ordinalEq]
+
+theorem typedXmlEventEqCheck_complete
+    (left right : TypedXmlEvent)
+    (h : typedXmlEventIdentity left = typedXmlEventIdentity right) :
+    typedXmlEventEqCheck left right = true := by
+  cases left with
+  | startElement leftUri leftName leftAttributes leftDepth
+      leftSelfClosing leftOrdinal =>
+      cases right with
+      | startElement rightUri rightName rightAttributes rightDepth
+          rightSelfClosing rightOrdinal =>
+          injection h with uriEq nameEq attributesEq depthEq
+            selfClosingEq ordinalEq
+          have uriCheck :=
+            typedByteListEqCheck_true_iff _ _ |>.mpr uriEq
+          have nameCheck :=
+            typedByteListEqCheck_true_iff _ _ |>.mpr nameEq
+          have attributesCheck :=
+            typedXmlAttributeListEqCheck_complete _ _ attributesEq
+          have depthCheck :=
+            typedNatEqCheck_true_iff _ _ |>.mpr depthEq
+          have selfClosingCheck : typedBoolEqCheck leftSelfClosing
+              rightSelfClosing = true := by
+            subst rightSelfClosing
+            exact typedBoolEqCheck_refl leftSelfClosing
+          have ordinalCheck :=
+            typedNatEqCheck_true_iff _ _ |>.mpr ordinalEq
+          change
+            (typedByteListEqCheck leftUri.bytes rightUri.bytes &&
+                typedByteListEqCheck leftName.bytes rightName.bytes &&
+                typedXmlAttributeListEqCheck leftAttributes rightAttributes &&
+                typedNatEqCheck leftDepth rightDepth &&
+                typedBoolEqCheck leftSelfClosing rightSelfClosing &&
+                typedNatEqCheck leftOrdinal rightOrdinal) = true
+          rw [uriCheck, nameCheck, attributesCheck, depthCheck,
+            selfClosingCheck, ordinalCheck]
+          rfl
+      | endElement _ _ _ _ => nomatch h
+      | text _ _ _ => nomatch h
+  | endElement leftUri leftName leftDepth leftOrdinal =>
+      cases right with
+      | startElement _ _ _ _ _ _ => nomatch h
+      | endElement rightUri rightName rightDepth rightOrdinal =>
+          injection h with uriEq nameEq depthEq ordinalEq
+          have uriCheck :=
+            typedByteListEqCheck_true_iff _ _ |>.mpr uriEq
+          have nameCheck :=
+            typedByteListEqCheck_true_iff _ _ |>.mpr nameEq
+          have depthCheck :=
+            typedNatEqCheck_true_iff _ _ |>.mpr depthEq
+          have ordinalCheck :=
+            typedNatEqCheck_true_iff _ _ |>.mpr ordinalEq
+          change
+            (typedByteListEqCheck leftUri.bytes rightUri.bytes &&
+                typedByteListEqCheck leftName.bytes rightName.bytes &&
+                typedNatEqCheck leftDepth rightDepth &&
+                typedNatEqCheck leftOrdinal rightOrdinal) = true
+          rw [uriCheck, nameCheck, depthCheck, ordinalCheck]
+          rfl
+      | text _ _ _ => nomatch h
+  | text leftValue leftDepth leftOrdinal =>
+      cases right with
+      | startElement _ _ _ _ _ _ => nomatch h
+      | endElement _ _ _ _ => nomatch h
+      | text rightValue rightDepth rightOrdinal =>
+          injection h with valueEq depthEq ordinalEq
+          have valueCheck : typedByteArrayEqCheck leftValue.bytes
+              rightValue.bytes = true := by
+            exact (typedByteArrayEqCheck_true_iff _ _).mpr valueEq
+          have depthCheck :=
+            typedNatEqCheck_true_iff _ _ |>.mpr depthEq
+          have ordinalCheck :=
+            typedNatEqCheck_true_iff _ _ |>.mpr ordinalEq
+          change
+            (typedByteArrayEqCheck leftValue.bytes rightValue.bytes &&
+                typedNatEqCheck leftDepth rightDepth &&
+                typedNatEqCheck leftOrdinal rightOrdinal) = true
+          rw [valueCheck, depthCheck, ordinalCheck]
+          rfl
+
+theorem typedXmlEventEqCheck_true_iff
+    (left right : TypedXmlEvent) :
+    typedXmlEventEqCheck left right = true ↔
+      typedXmlEventIdentity left = typedXmlEventIdentity right :=
+  ⟨typedXmlEventEqCheck_sound left right,
+    typedXmlEventEqCheck_complete left right⟩
+
+theorem typedXmlEventListEqCheck_sound : ∀ left right,
+    typedXmlEventListEqCheck left right = true →
+      left.map typedXmlEventIdentity = right.map typedXmlEventIdentity := by
+  intro left
+  induction left with
+  | nil =>
+      intro right
+      cases right with
+      | nil => intro; rfl
+      | cons _ _ => intro h; nomatch h
+  | cons event rest ih =>
+      intro right
+      cases right with
+      | nil => intro h; nomatch h
+      | cons rightEvent rightRest =>
+          intro h
+          have parts := typedBoolAndTrueParts _ _ h
+          have head := typedXmlEventEqCheck_sound event rightEvent parts.1
+          have tail := ih rightRest parts.2
+          change typedXmlEventIdentity event ::
+              rest.map typedXmlEventIdentity =
+            typedXmlEventIdentity rightEvent ::
+              rightRest.map typedXmlEventIdentity
+          rw [head, tail]
+
+theorem typedXmlEventListEqCheck_complete : ∀ left right,
+    left.map typedXmlEventIdentity = right.map typedXmlEventIdentity →
+      typedXmlEventListEqCheck left right = true := by
+  intro left
+  induction left with
+  | nil =>
+      intro right h
+      cases right with
+      | nil => rfl
+      | cons _ _ => nomatch h
+  | cons event rest ih =>
+      intro right
+      cases right with
+      | nil => intro h; nomatch h
+      | cons rightEvent rightRest =>
+          intro h
+          injection h with head tail
+          have headCheck :=
+            typedXmlEventEqCheck_complete event rightEvent head
+          have tailCheck := ih rightRest tail
+          rw [typedXmlEventListEqCheck, headCheck, tailCheck]
+          rfl
+
+theorem typedXmlEventListEqCheck_true_iff (left right) :
+    typedXmlEventListEqCheck left right = true ↔
+      left.map typedXmlEventIdentity = right.map typedXmlEventIdentity :=
+  ⟨typedXmlEventListEqCheck_sound left right,
+    typedXmlEventListEqCheck_complete left right⟩
+
 def typedParsedPartCheck (extraction : TypedExtraction)
     (expectedRootUri expectedRootLocalName : BoundedBytes)
     (expectedEvents : List TypedXmlEvent)
     (parsed : TypedParsedPart) : Bool :=
-  decide (parsed.rawBytes.data.toList =
-    extraction.expandedBytes.data.toList) &&
+  typedByteArrayEqCheck parsed.rawBytes extraction.expandedBytes &&
   decide (parsed.expectedRootUri.bytes = expectedRootUri.bytes) &&
   decide (parsed.expectedRootLocalName.bytes = expectedRootLocalName.bytes) &&
-  decide (parsed.events.map typedXmlEventIdentity =
-    expectedEvents.map typedXmlEventIdentity) &&
+  typedXmlEventListEqCheck parsed.events expectedEvents &&
   decide (parsed.events.length ≤ parsed.eventLimit)
 
 def TypedParsedPartOf (extraction : TypedExtraction)
@@ -854,12 +1469,6 @@ def sourceOrdinals (sources : List TypedStorySource) : List Nat :=
   sources.map (·.sourceOrdinal)
 
 set_option backward.match.sparseCases false in
-def typedNatEqCheck : Nat → Nat → Bool
-  | 0, 0 => true
-  | left + 1, right + 1 => typedNatEqCheck left right
-  | _, _ => false
-
-set_option backward.match.sparseCases false in
 def typedNatLeCheck : Nat → Nat → Bool
   | 0, _ => true
   | _ + 1, 0 => false
@@ -867,13 +1476,6 @@ def typedNatLeCheck : Nat → Nat → Bool
 
 def typedNatLtCheck (left right : Nat) : Bool :=
   typedNatLeCheck (left + 1) right
-
-set_option backward.match.sparseCases false in
-def typedNatListEqCheck : List Nat → List Nat → Bool
-  | [], [] => true
-  | left :: leftRest, right :: rightRest =>
-      typedNatEqCheck left right && typedNatListEqCheck leftRest rightRest
-  | _, _ => false
 
 def typedNatMemCheck (needle : Nat) (values : List Nat) : Bool :=
   values.any fun value => typedNatEqCheck value needle
@@ -1153,7 +1755,12 @@ def typedAttributeValue? (input : TypedScanInput)
     (attributes : List TypedXmlAttribute) : Option BoundedBytes :=
   (attributes.find? fun item =>
     decide (item.namespaceUri.bytes = input.wmlNamespace.bytes) &&
-    decide (item.localName.bytes = input.idLocalName.bytes)).map (·.value)
+    decide (item.localName.bytes = input.idLocalName.bytes)).map fun item =>
+      { bytes := item.value.bytes.data.toList
+        limit := item.value.limit
+        admitted := by
+          simpa only [Array.length_toList, ByteArray.size_data] using
+            item.value.admitted }
 
 def typedReferenceCandidate? (input : TypedScanInput) :
     TypedXmlEvent → Option (Option BoundedBytes)

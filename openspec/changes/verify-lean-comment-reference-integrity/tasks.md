@@ -87,6 +87,18 @@
   overflow.
 - [x] 3.10 Close checker/decoder issue-shape drift for malformed non-direct
   definitions and reject source or optional extras on terminal comment issues.
+- [x] 3.11 Run selected legacy-comment scanning on the complete checked-in
+  approximately 41,000-atom NVCA-derived package through the production
+  TypeScript-to-compiled-Lean boundary; cover a passing baseline plus
+  missing/malformed/overlong nested definition IDs as structured failures under
+  the fixed 8 MiB stack.
+- [x] 3.12 Replace derived byte/event equality with custom tail-recursive
+  checks, prove byte-array and event-sequence equivalence without axioms, and
+  execute native plus production-boundary 400,000-byte text/attribute witnesses.
+- [x] 3.13 Keep text and attribute values packed as bounded byte arrays through
+  typed admission, remove whole-part list conversions from XML/extraction
+  scanning, and enforce checker-only near-limit text and attribute peak RSS
+  below 1.5 GiB with a 120-second ceiling.
 
 ## 4. Coverage and acceptance
 
@@ -100,12 +112,23 @@
 - [x] 4.4 Run strict OpenSpec, spec coverage, citation, conformance-document,
   generated-projection, Lean build/audit, focused, full non-LibreOffice, and
   real-DOCX tests.
-- [ ] 4.5 Obtain independent implementation review and post-merge real-document
+- [x] 4.5 Obtain independent implementation review and post-merge real-document
   smoke before closing #672.
+- [x] 4.6 Re-run focused TypeScript tests, full Lean builds and audits, strict
+  OpenSpec/spec/conformance checks, and record wall-time/peak-RSS measurements
+  for #710 without raising stack limits. Complete-NVCA checker-only evidence:
+  1.31 seconds wall time and 306,937,856-byte peak RSS at
+  `ulimit -s = 8176` KiB. Near-limit checker-only evidence at an 8192 KiB
+  stack: text 1.45 seconds / 1,277,116,416 bytes peak RSS; attribute
+  3.32 seconds / 1,314,979,840 bytes peak RSS. The executable acceptance gate
+  retains the 120-second timeout and rejects peak RSS at or above 1.5 GiB.
 
-Independent review findings were repaired by #709, but its exact-merge smoke
-found that full-document comment scanning exhausts the native stack. Issue #672
-was reopened, and #710 tracks the stack-safe full-document acceptance work.
+Independent review findings were repaired by #709. The stack-safe
+full-document implementation landed in #722, the complete Lean CI workflow
+passed under the corrected job cap in #725, and independent post-merge smoke on
+exact merged `main` exercised the 41,621-atom production path plus
+missing/malformed/overlong definition mutations. Issues #710 and #672 are
+closed.
 
 Archive is deferred to #706 so formal Lean theorem evidence is not
 misrepresented as TypeScript runtime-test coverage.

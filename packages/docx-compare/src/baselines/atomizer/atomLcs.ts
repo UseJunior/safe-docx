@@ -82,7 +82,7 @@ export function computeAtomLcs(
   }
 
   // Backtrack to find the actual LCS matches
-  const matches: AtomMatch[] = [];
+  let matches: AtomMatch[] = [];
   let i = n;
   let j = m;
 
@@ -97,6 +97,32 @@ export function computeAtomLcs(
       j--;
     }
   }
+
+  // Word tokenization deliberately preserves whitespace as standalone atoms.
+  // Those atoms all have the same identity, so an LCS can otherwise align an
+  // isolated source space with an unrelated revised space inside a replacement.
+  // In-place reconstruction then treats that space as Equal and may omit the
+  // source-side separator from the reject projection. A split whitespace match
+  // is meaningful only when it is diagonally adjacent to another matched atom;
+  // explicit whitespace-only runs are not affected. (#720)
+  const matchedPairs = new Set(
+    matches.map((match) => `${match.originalIndex}:${match.revisedIndex}`),
+  );
+  const isSplitWhitespace = (atom: ComparisonUnitAtom): boolean =>
+    atom.splitFromAtom !== undefined &&
+    atom.contentElement.tagName === 'w:t' &&
+    /^\s+$/u.test(atom.contentElement.textContent ?? '');
+  matches = matches.filter((match) => {
+    const originalAtom = original[match.originalIndex]!;
+    const revisedAtom = revised[match.revisedIndex]!;
+    if (!isSplitWhitespace(originalAtom) || !isSplitWhitespace(revisedAtom)) {
+      return true;
+    }
+    return (
+      matchedPairs.has(`${match.originalIndex - 1}:${match.revisedIndex - 1}`) ||
+      matchedPairs.has(`${match.originalIndex + 1}:${match.revisedIndex + 1}`)
+    );
+  });
 
   // Find deleted and inserted indices
   const matchedOriginal = new Set(matches.map((m) => m.originalIndex));

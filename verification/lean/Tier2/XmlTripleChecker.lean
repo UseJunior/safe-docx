@@ -60,6 +60,42 @@ def isLegalXmlChar (value : Nat) : Bool :=
     (0xE000 ≤ value && value ≤ 0xFFFD) ||
     (0x10000 ≤ value && value ≤ 0x10FFFF)
 
+def asciiXmlLiteralByte (value : UInt8) : Bool :=
+  value.toNat == 0x9 || value.toNat == 0xA || value.toNat == 0xD ||
+    (0x20 ≤ value.toNat && value.toNat ≤ 0x7F)
+
+set_option backward.match.sparseCases false in
+def asciiXmlLiteralFastLoop (bytes : ByteArray) : Nat → Bool
+  | 0 => true
+  | index + 1 =>
+      asciiXmlLiteralByte (bytes.get! index) &&
+        asciiXmlLiteralFastLoop bytes index
+
+def asciiXmlLiteralFast (value : String) : Bool :=
+  asciiXmlLiteralFastLoop value.toUTF8 value.toUTF8.size
+
+set_option backward.match.sparseCases false in
+def asciiXmlTextFastLoop (bytes : ByteArray) : Nat → Bool
+  | 0 => true
+  | index + 1 =>
+      let value := bytes.get! index
+      asciiXmlLiteralByte value && value.toNat != 0x26 &&
+        asciiXmlTextFastLoop bytes index
+
+def asciiXmlTextFast (value : String) : Bool :=
+  asciiXmlTextFastLoop value.toUTF8 value.toUTF8.size
+
+set_option backward.match.sparseCases false in
+def asciiXmlAttributeFastLoop (bytes : ByteArray) : Nat → Bool
+  | 0 => true
+  | index + 1 =>
+      let value := (bytes.get! index).toNat
+      0x20 ≤ value && value ≤ 0x7F && value != 0x26 &&
+        asciiXmlAttributeFastLoop bytes index
+
+def asciiXmlAttributeFast (value : String) : Bool :=
+  asciiXmlAttributeFastLoop value.toUTF8 value.toUTF8.size
+
 def decodeXmlReference (reference : List Char) : Except String Char := do
   let value ← match reference with
     | ['l', 't'] => pure 0x3C
@@ -91,6 +127,8 @@ partial def decodeXmlTextAux : List Char → List Char → Except String (List C
     decodeXmlTextAux rest (c :: acc)
 
 def decodeXmlText (s : String) : Except String String := do
+  if asciiXmlTextFast s then
+    return s
   return String.ofList (← decodeXmlTextAux s.toList [])
 
 partial def decodeXmlAttributeValueAux : List Char → List Char → Except String (List Char)
@@ -109,6 +147,8 @@ partial def decodeXmlAttributeValueAux : List Char → List Char → Except Stri
     decodeXmlAttributeValueAux rest (c :: acc)
 
 def decodeXmlAttributeValue (s : String) : Except String String := do
+  if asciiXmlAttributeFast s then
+    return s
   return String.ofList (← decodeXmlAttributeValueAux s.toList [])
 
 def wmlNamespace : String :=
@@ -131,18 +171,35 @@ def isStartTag (tag name : String) : Bool :=
 def isEndTag (tag name : String) : Bool :=
   tag.startsWith ("/" ++ name)
 
-def tagPayloadAux : List Char → Option Char → List Char → Except String (String × String)
-  | [], _, _ => throw "malformed XML tag without closing >"
-  | c :: rest, some quote, acc =>
-    if c == quote then tagPayloadAux rest none (c :: acc)
-    else tagPayloadAux rest (some quote) (c :: acc)
-  | c :: rest, none, acc =>
-    if c == '"' || c == '\'' then tagPayloadAux rest (some c) (c :: acc)
-    else if c == '>' then return (String.ofList acc.reverse, String.ofList rest)
-    else tagPayloadAux rest none (c :: acc)
+structure TagPayloadScanState where
+  quote : Option Char := none
+  index : Nat := 0
+  delimiter : Option Nat := none
+
+def scanTagPayloadChar
+    (state : TagPayloadScanState) (c : Char) : TagPayloadScanState :=
+  if state.delimiter.isSome then state
+  else
+    match state.quote with
+    | some quote =>
+        { state with
+          quote := if c == quote then none else some quote
+          index := state.index + 1 }
+    | none =>
+        if c == '"' || c == '\'' then
+          { state with quote := some c, index := state.index + 1 }
+        else if c == '>' then
+          { state with delimiter := some state.index }
+        else
+          { state with index := state.index + 1 }
 
 def tagPayload (segment : String) : Except String (String × String) :=
-  tagPayloadAux segment.toList none []
+  let final := segment.foldl scanTagPayloadChar {}
+  match final.delimiter with
+  | none => throw "malformed XML tag without closing >"
+  | some index =>
+      pure (segment.take index |>.toString,
+        segment.drop (index + 1) |>.toString)
 
 def isXmlNameStartChar (c : Char) : Bool :=
   let value := c.toNat
@@ -247,11 +304,10 @@ def scanAttributeChar (state : AttributeScanState) (c : Char) : AttributeScanSta
     if isXmlSpace c then state else { state with valid := false }
 
 def attributeSuffix (tag : String) : String :=
-  let chars := tag.toList.dropWhile (fun c => !isXmlSpace c)
-  String.ofList chars
+  tag.dropWhile (fun c => !isXmlSpace c) |>.toString
 
 def parseTagAttributes (tag : String) : Except String XmlAttributes := do
-  let final := (attributeSuffix tag).toList.foldl scanAttributeChar {}
+  let final := (attributeSuffix tag).foldl scanAttributeChar {}
   let complete := final.mode == .between || final.mode == .afterValue ||
     final.mode == .trailingSlash
   if !final.valid || !complete then throw "malformed XML attributes"
@@ -441,14 +497,19 @@ def parseXmlDeclaration (trimmed : String) : Except String Unit := do
   | _ => throw "unsupported or malformed XML declaration"
 
 def finishXmlSegment (state : XmlParseState) (payload : String) : Except String XmlParseState := do
-  if state.stack.isEmpty && !payload.toList.all isXmlSpace then
+  if state.stack.isEmpty && !payload.all isXmlSpace then
     throw "non-whitespace content outside the XML root"
   return state
 
 def stripLeadingUtf8Bom (xml : String) : String :=
-  match xml.toList with
-  | first :: rest => if first.toNat == 0xFEFF then String.ofList rest else xml
-  | [] => xml
+  let bytes := xml.toUTF8
+  if bytes.size ≥ 3 &&
+      (bytes.get! 0).toNat == 0xEF &&
+      (bytes.get! 1).toNat == 0xBB &&
+      (bytes.get! 2).toNat == 0xBF then
+    xml.drop 1 |>.toString
+  else
+    xml
 
 def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : String) :
     Except String XmlParseState := do
@@ -466,7 +527,7 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
     throw "comments, CDATA, and markup declarations are outside the accepted XML subset"
   if trimmed.startsWith "/" then
     let rawName := (trimmed.drop 1).toString
-    if rawName.toList.any isXmlSpace || rawName.endsWith "/" then
+    if rawName.any isXmlSpace || rawName.endsWith "/" then
       throw "malformed closing tag"
     let some top := state.stack.head? | throw "unexpected closing tag"
     let (uri, localName) ← resolveQName top.namespaces rawName
@@ -507,12 +568,13 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
   return { next with stack := { uri, localName, namespaces := bindings } :: next.stack }
 
 def parseXmlTokensForRoot (xml expectedRoot : String) : Except String (List XmlTok) := do
-  if !xml.toList.all (fun c => isLegalXmlChar c.toNat) then
+  if !asciiXmlLiteralFast xml &&
+      !xml.toList.all (fun c => isLegalXmlChar c.toNat) then
     throw "XML contains a disallowed literal character"
   let normalizedXml := stripLeadingUtf8Bom xml
   let pieces := normalizedXml.splitOn "<"
   let leadingText := List.getD pieces 0 ""
-  if !leadingText.toList.all isXmlSpace then throw "non-whitespace content before the XML root"
+  if !leadingText.all isXmlSpace then throw "non-whitespace content before the XML root"
   let segments := pieces.drop 1
   if segments.isEmpty then throw "XML has no root element"
   let initial : XmlParseState := { declarationAllowed := leadingText.isEmpty }
@@ -562,7 +624,7 @@ def liftXmlEventFailure (state : XmlEventParseState) (result : Except String α)
 
 def finishXmlEventSegment (state : XmlEventParseState) (payload : String) :
     Except String XmlEventParseState := do
-  if state.stack.isEmpty && !payload.toList.all isXmlSpace then
+  if state.stack.isEmpty && !payload.all isXmlSpace then
     throw "non-whitespace content outside the XML root"
   let decoded ← decodeXmlText payload
   let whitespaceIsSemantic :=
@@ -571,7 +633,7 @@ def finishXmlEventSegment (state : XmlEventParseState) (payload : String) :
       top.uri == wmlNamespace &&
         ["t", "delText", "instrText", "delInstrText"].contains top.localName
     | none => false
-  if decoded.toList.all isXmlSpace && !whitespaceIsSemantic then return state
+  if decoded.all isXmlSpace && !whitespaceIsSemantic then return state
   return { state with
     events := .text decoded state.stack.length :: state.events
     eventCount := state.eventCount + 1 }
@@ -598,7 +660,7 @@ def parseXmlEventSegment (expectedRootUri expectedRootLocalName : String)
       "comments, CDATA, and markup declarations are outside the accepted XML subset")
   if trimmed.startsWith "/" then
     let rawName := (trimmed.drop 1).toString
-    if rawName.toList.any isXmlSpace || rawName.endsWith "/" then
+    if rawName.any isXmlSpace || rawName.endsWith "/" then
       throw (xmlEventParseFailure state .invalidXml "malformed closing tag")
     let some top := state.stack.head? |
       throw (xmlEventParseFailure state .invalidXml "unexpected closing tag")
@@ -652,13 +714,14 @@ def parseXmlEventSegment (expectedRootUri expectedRootLocalName : String)
 def parseXmlEventsForRootBoundedTyped (xml expectedRootUri expectedRootLocalName : String)
     (eventLimit depthLimit : Nat) : Except XmlEventParseFailure XmlEventParseState := do
   let empty : XmlEventParseState := {}
-  if !xml.toList.all (fun c => isLegalXmlChar c.toNat) then
+  if !asciiXmlLiteralFast xml &&
+      !xml.toList.all (fun c => isLegalXmlChar c.toNat) then
     throw (xmlEventParseFailure empty .invalidXml
       "XML contains a disallowed literal character")
   let normalizedXml := stripLeadingUtf8Bom xml
   let pieces := normalizedXml.splitOn "<"
   let leadingText := List.getD pieces 0 ""
-  if !leadingText.toList.all isXmlSpace then
+  if !leadingText.all isXmlSpace then
     throw (xmlEventParseFailure empty .invalidXml
       "non-whitespace content before the XML root")
   let segments := pieces.drop 1

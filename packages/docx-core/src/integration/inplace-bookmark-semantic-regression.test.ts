@@ -7,7 +7,7 @@ import { DocxArchive } from '../shared/docx/DocxArchive.js';
 import {
   acceptAllChanges,
   compareTexts,
-  extractTextWithParagraphs,
+  extractRoundTripComparisonText,
   rejectAllChanges,
 } from '@usejunior/docx-compare';
 import { parseDocumentXml } from '@usejunior/docx-compare';
@@ -130,8 +130,8 @@ function bookmarkDiagnostics(documentXml: string): BookmarkSemanticDiagnostics {
 }
 
 function assertReadTextParity(expectedXml: string, actualXml: string, context: string): void {
-  const expectedReadText = extractTextWithParagraphs(expectedXml);
-  const actualReadText = extractTextWithParagraphs(actualXml);
+  const expectedReadText = extractRoundTripComparisonText(expectedXml);
+  const actualReadText = extractRoundTripComparisonText(actualXml);
   const comparison = compareTexts(expectedReadText, actualReadText);
   const hint = comparison.differences.slice(0, 3).join('\n');
   expect(

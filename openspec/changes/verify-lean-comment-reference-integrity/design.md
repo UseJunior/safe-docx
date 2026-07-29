@@ -1099,6 +1099,32 @@ v5/v6 serialization helpers.
 extraction, parser, source-scan, comment-scan, and inherited semantic
 evaluation records into typed inputs. It never decodes `result.response` or
 uses `protocolV6Projection` as an expected typed response.
+Request-bound package, snapshot, compressed-slice, and expanded-part bytes are
+compared by a reverse indexed, tail-recursive `ByteArray` check without
+conversion to `List UInt8`. Text and attribute values in typed XML events use
+bounded `ByteArray` storage; only a namespace-selected `w:id` value is converted
+to the bounded list consumed by decimal semantics. Parsed XML events,
+attributes, bounded name lists, and packed payloads are compared by custom
+lockstep tail recursion with sparse-case generation disabled. Production
+attribute conversion uses `List.mapTR`, and the two retained views of one
+parsed Comments event list share the same typed conversion. The selected
+Comments branch MUST NOT use derived `List UInt8` equality, whole-payload
+`ByteArray.toList`, or ordinary recursive `List.map` on any package-, part-,
+event-, attribute-, or payload-sized value: those forms consume native stack or
+heap proportional to a legal part with excessive representation amplification.
+Axiom-free equivalence theorems relate indexed byte-array equality and the
+custom event-sequence equality to the prior structural identities. Native
+400,000-byte text/attribute witnesses and a production
+TypeScript-to-checker regression exercise the compiled implementation under
+the normal fixed 8 MiB macOS process stack.
+
+The common XML/extraction path also avoids large transient lists: BOM detection
+examines the first three UTF-8 bytes, ordinary ASCII legality and entity-free
+decoding use indexed byte loops, XML tag boundaries are scanned without
+whole-input `List Char` conversion,
+decompressor output is collected as bounded chunks into one preallocated
+`ByteArray`, and CRC-32 walks the array by forward index. Entity-bearing and
+non-ASCII inputs retain the original fail-closed decoder semantics.
 `ProtocolV6JsonProjectionOf` then requires
 `response.compress.toUTF8.data.toList =
 independentProtocolV6Projection typedResponse`. Thus the production response
@@ -1134,6 +1160,36 @@ before any mutation. Relocation changes both relationship target and ZIP entry.
 Compared-only mutations cover every issue family while asserting unrelated
 story identities and original/revised evidence remain stable. LibreOffice is
 not invoked.
+
+The operational acceptance fixture additionally uses the complete checked-in
+NVCA-derived package, whose `word/document.xml` exceeds 350,000 characters and
+whose comparison path produces approximately 41,000 atoms. It enables one
+selected valid Comments part on every side, then applies compared-only missing,
+malformed, and over-64-byte nested `w:comment` ID mutations. Every run crosses
+the production TypeScript supervisor and compiled protocol-v6 executable under
+the normal fixed 8 MiB stack; baseline must pass and each mutation must return
+structured `failed` evidence rather than `not_run` or abnormal process exit.
+
+The July 28, 2026 complete-NVCA checker-only measurement used the normal macOS
+`ulimit -s` value of 8176 KiB and piped one protocol-v6 JSON request directly
+to `verification/lean/.lake/build/bin/leanDocxChecker`, with stdout redirected
+away from `/usr/bin/time -l`. The request referenced the complete real
+NVCA-derived original/revised/compared triple with selected comments and a
+nested-definition mutation. The checker completed in 1.31 seconds wall time
+with a 306,937,856-byte maximum resident set and returned structured protocol-v6
+issues. The production supervisor and both fixed-stack regressions enforce a
+120-second ceiling per checker invocation.
+
+Near-limit memory acceptance is separately executable through
+`npm run check:lean-comment-memory`. Each case invokes only the compiled checker
+under an 8192 KiB stack with one selected 16,775,168-byte Comments payload and
+two small valid sides, excluding fixture generation, Node, Vitest, and repeated
+checker invocations from the measured process. `/usr/bin/time -l` on macOS and
+GNU `time` on Linux supply checker wall time and maximum RSS. The test fails at
+or above 1.5 GiB (1,610,612,736 bytes) or after 120 seconds. On July 28, 2026,
+the near-limit text case completed in 1.45 seconds at 1,277,116,416 bytes peak
+RSS, and the near-limit attribute case completed in 3.32 seconds at
+1,314,979,840 bytes peak RSS.
 
 ## Risks / Trade-offs
 
