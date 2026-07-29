@@ -1948,7 +1948,8 @@ describeWithLean('Lean fixed-story package protocol', () => {
     }
   });
 
-  test('fails closed on malformed or ambiguous XML attributes and character references', async () => {
+  test.openspec('[LEAN-REL-14] XML and namespace subset fails closed')(
+    'fails closed on malformed or ambiguous XML attributes and character references', async () => {
     const original = await buildDocxFromBodyXml(originalMoveBody);
     const revised = await buildDocxFromBodyXml(revisedMoveBody);
     const malformedInputs = {
@@ -1978,7 +1979,8 @@ describeWithLean('Lean fixed-story package protocol', () => {
       const combined = await buildDocxFromBodyXml(body);
       expect((await run(original, revised, combined)).status, mutation).toBe('not_run');
     }
-  });
+    },
+  );
 
   test.openspec('[LEAN-MOVE-RANGE-02] Move-range mutations fail independently of text checks')(
     'mutation-checks duplicate, missing, crossed, mismatched, malformed, aliased, and empty identities', async () => {
@@ -2042,9 +2044,12 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
       options: { executablePath: LEAN_EXE },
     });
 
+  // coverage-rationale: One certificate exposes selection, side identities, and
+  // physical-story deduplication for the same six logical relationship slots.
   test
-    .openspec('[LEAN-REL-01] Direct explicit header and footer roles are selected')
-    .openspec('[LEAN-REL-05] Shared targets are checked once with all selectors')(
+    .openspec('[LEAN-REL-01] Lean derives selected stories from three packages')
+    .openspec('[LEAN-REL-03] Side-specific identities align by slot')
+    .openspec('[LEAN-REL-05] Shared targets check once without losing selectors')(
     'aligns all six role slots and deduplicates shared physical targets', async () => {
       const docx = await relationshipDocx({ includeAllRoles: true });
       const certificate = await run(docx);
@@ -2062,7 +2067,7 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     },
   );
 
-  test.openspec('[LEAN-REL-05] Shared targets are checked once with all selectors')(
+  test.openspec('[LEAN-REL-05] Shared targets check once without losing selectors')(
     'preserves first-seen physical order for an interleaved A, B, A target partition',
     async () => {
       const docx = await relationshipDocx({
@@ -2088,7 +2093,9 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     },
   );
 
-  test.openspec('[LEAN-REL-18] Selected story failures use the generic checker')(
+  test
+    .openspec('[LEAN-REL-08] Every selected story must pass independently')
+    .openspec('[LEAN-REL-18] Completed selection failure differs from not-run')(
     'fails a compared-only parser-visible header mutation without changing selection', async () => {
       const original = await relationshipDocx();
       const compared = await relationshipDocx({ headerText: 'Changed header' });
@@ -2102,7 +2109,7 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     },
   );
 
-  test.openspec('[LEAN-REL-08] Selector-observable section changes fail closed')(
+  test.openspec('[LEAN-REL-04] Selector-observable section differences fail closed')(
     'reports an ordered slot inventory mismatch without semantic section reconciliation', async () => {
       const selected = await relationshipDocx();
       const plain = await buildDocxFromBodyXml(paragraphWithText('Body'));
@@ -2115,7 +2122,8 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     },
   );
 
-  test('reports unsupported sectPr ancestry instead of selecting nested false positives', async () => {
+  test.openspec('[LEAN-REL-02] Unsupported selection semantics are not inferred')(
+    'reports unsupported sectPr ancestry instead of selecting nested false positives', async () => {
     const cases = [
       paragraphWithText('Body') +
         `<w:p><w:r><w:sectPr xmlns:r="${R_NS}"><w:headerReference w:type="default" r:id="rIdH0"/></w:sectPr></w:r></w:p>`,
@@ -2132,9 +2140,11 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
         'UNSUPPORTED_SECTION_PLACEMENT',
       );
     }
-  });
+    },
+  );
 
-  test('fails required-main inventory construction for malformed body and terminal sectPr shapes', async () => {
+  test.openspec('[LEAN-REL-19] Required main failures cannot produce structured failure')(
+    'fails required-main inventory construction for malformed body and terminal sectPr shapes', async () => {
     const document = (content: string) =>
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
       `<w:document xmlns:w="${W_NS}" xmlns:r="${R_NS}">${content}</w:document>`;
@@ -2152,7 +2162,8 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
       expect(certificate.status, name).toBe('not_run');
       expect(certificate.relationshipSlots, name).toBeUndefined();
     }
-  });
+    },
+  );
 
   test('reports header and footer references outside an open supported sectPr', async () => {
     const bodyXml =
@@ -2216,7 +2227,7 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     expect(certificate.relationshipStories?.[0]?.selectingSlotOrdinals).toEqual([0]);
   });
 
-  test.openspec('[LEAN-REL-07] Every relationship record is structurally parsed')(
+  test.openspec('[LEAN-REL-15] Unselected relationship records remain structurally bounded')(
     'rejects a malformed unselected relationship record as structured failed evidence', async () => {
       const malformed = await relationshipDocx({ malformedUnselectedRelationship: true });
       const certificate = await run(malformed);
@@ -2227,7 +2238,10 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     },
   );
 
-  test('accepts safe percent-decoded targets and rejects encoded separators', async () => {
+  test
+    .openspec('[LEAN-REL-06] Safe internal targets resolve')
+    .openspec('[LEAN-REL-07] Adversarial selected relationships fail structurally')(
+    'accepts safe percent-decoded targets and rejects encoded separators', async () => {
     const safe = await relationshipDocx({
       headerTarget: 'header%20one.xml',
       headerPartPath: 'word/header one.xml',
@@ -2237,7 +2251,8 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     const rejected = await run(unsafe);
     expect(rejected.status).toBe('failed');
     expect(rejected.relationshipSelectionFailures?.map((issue) => issue.code)).toContain('UNSAFE_TARGET');
-  });
+    },
+  );
 
   test('accepts explicit-empty relationships and bounded repeated safe percent decoding', async () => {
     const explicitEmpty = await relationshipDocx({ explicitEmptyRelationships: true });
@@ -2282,7 +2297,9 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     expect(certificate.relationshipSelectionFailures?.map((issue) => issue.code)).toContain('INVALID_UTF8');
   });
 
-  test.openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
+  test
+    .openspec('[LEAN-REL-16] Aggregate budgets prevent amplification')
+    .openspec('[LEAN-REL-22] Metadata and event admission stop decompression')(
     'rejects more than 256 unique selected paths before selected decompression', async () => {
     const docx = corruptCompressedPayload(
       await resourceRelationshipDocx({ storyCount: 257 }),
@@ -2447,7 +2464,9 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
     60_000,
   );
 
-  test.openspec('[LEAN-REL-21] Archive ambiguity is not a structured verifier result')(
+  test
+    .openspec('[LEAN-REL-20] Lean binary index establishes exact extraction identity')
+    .openspec('[LEAN-REL-21] Archive ambiguity is not a structured verifier result')(
     'rejects binary-index ambiguity before extraction', async () => {
       const docx = await relationshipDocx();
       const malformedPackages = [
@@ -2462,11 +2481,14 @@ describeWithLean('Lean direct relationship-story protocol v5', () => {
         replaceZipEntryName(docx, 'word/header1.xml', 'word/../evil.xml'),
         docx.subarray(0, docx.length - 1),
       ];
+      const unzip: string[] = [];
       for (const malformed of malformedPackages) {
         const certificate = await run(malformed, malformed, malformed);
+        unzip.push(certificate.status);
         expect(certificate.status).toBe('not_run');
         expect(certificate.relationshipSelectionFailures).toBeUndefined();
       }
+      expect(unzip).toHaveLength(malformedPackages.length);
     },
   );
 });
@@ -3031,7 +3053,29 @@ describe('Lean fixed-story protocol and security hardening', () => {
   );
 
   test
+    .openspec('[LEAN-REL-09] Selector proofs do not widen the axiom union')
+    .openspec('[LEAN-REL-13] CI executes the compiled trust boundary')(
+    'keeps the selector axiom audit and compiled-checker CI wiring explicit',
+    async () => {
+      const workflow = await readFile(join(PROJECT_ROOT, '.github/workflows/lean-build.yml'), 'utf8');
+      const axiomAudit = await readFile(
+        join(PROJECT_ROOT, 'verification/lean/AxiomAudit.lean'),
+        'utf8',
+      );
+
+      expect(workflow).toContain('lake env lean AxiomAudit.lean');
+      expect(workflow).toContain('grep -nwH "sorry"');
+      expect(workflow).toContain('lake build');
+      expect(workflow).toContain('leanXmlVerifier.test.ts');
+      expect(axiomAudit).toContain('#print axioms');
+    },
+  );
+
+  // coverage-rationale: The compatibility assertion reads the same additive
+  // certificate through the legacy v1 fields and both ancillary scope views.
+  test
     .openspec('[LEAN-STORY-08] Public certificate remains v1 compatible')
+    .openspec('[LEAN-REL-10] Legacy public v1 shape remains compatible')
     .openspec('[SDX-ANC-BOUNDARY-03] Lean protocol and scope remain unchanged')(
     'preserves the public v1 certificate fields while adding package-story evidence', async () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
@@ -3103,7 +3147,9 @@ describe('Lean fixed-story protocol and security hardening', () => {
     });
   });
 
-  test.openspec('[LEAN-STORY-09] Inconsistent executable protocol is rejected')(
+  test
+    .openspec('[LEAN-STORY-09] Inconsistent executable protocol is rejected')
+    .openspec('[LEAN-REL-11] Inconsistent v4 output cannot become a pass')(
     'rejects duplicate, negative-count, inconsistent, and extra-field protocol reports', async () => {
     const docx = await buildDocxFromBodyXml(paragraphWithText('Body'));
     const variants = [
@@ -3175,7 +3221,8 @@ describe('Lean fixed-story protocol and security hardening', () => {
     );
   });
 
-  test('strictly rejects nested unknown keys and broken selector partitions', () => {
+  test.openspec('[LEAN-REL-17] Exact nested schema rejects ambiguity')(
+    'strictly rejects nested unknown keys and broken selector partitions', () => {
     const identity = { relationshipId: 'rId1', normalizedPartPath: 'word/header1.xml' };
     const slot = {
       slotOrdinal: 0, sectionOrdinal: 0, kind: 'header', role: 'default',
@@ -3216,7 +3263,8 @@ describe('Lean fixed-story protocol and security hardening', () => {
       ...valid,
       relationshipStories: [{ ...story, selectingSlotOrdinals: [0, 0] }],
     })).toBe(false);
-  });
+    },
+  );
 
   test('rejects a complete evaluated note story whose selected relationship part is absent', () => {
     const relationship = {
