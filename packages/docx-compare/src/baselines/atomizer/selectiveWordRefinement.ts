@@ -11,6 +11,7 @@ import {
   countWords,
   getAtomText,
   jaccardWordSimilarity,
+  wordContainmentSimilarity,
 } from '../../move-detection.js';
 import { hierarchicalCompare } from './hierarchicalLcs.js';
 import type { LcsResult } from './atomLcs.js';
@@ -23,6 +24,14 @@ export interface SelectiveWordRefinementResult {
 }
 
 /**
+ * Aligned paragraphs already have exact atom evidence establishing their
+ * correspondence, so refining their changed runs does not need the stricter
+ * threshold used to infer a move between otherwise unrelated locations.
+ */
+export const ALIGNED_RUN_REFINEMENT_SIMILARITY_THRESHOLD = 0.5;
+export const ALIGNED_RUN_REFINEMENT_CONTAINMENT_THRESHOLD = 0.8;
+
+/**
  * Refine fuzzy changed runs only inside paragraph pairs already established by
  * exact atom matches. This is the run-level precision escape hatch: it avoids
  * applying word atomization to unrelated paragraphs while preserving unchanged
@@ -32,6 +41,7 @@ export interface SelectiveWordRefinementResult {
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.1
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.6.2
  * @see https://github.com/UseJunior/safe-docx/issues/717
+ * @see https://github.com/UseJunior/safe-docx/issues/734
  */
 export function refineFuzzyRunsWithinAlignedParagraphs(
   originalAtoms: ComparisonUnitAtom[],
@@ -80,13 +90,25 @@ export function refineFuzzyRunsWithinAlignedParagraphs(
       ) {
         continue;
       }
-      const similarity = jaccardWordSimilarity(
+      const jaccardSimilarity = jaccardWordSimilarity(
         originalText,
         revisedText,
         moveSettings.caseInsensitiveMove,
       );
-      if (similarity >= moveSettings.moveSimilarityThreshold) {
-        candidates.push({ originalIndex, revisedIndex, similarity });
+      const containmentSimilarity = wordContainmentSimilarity(
+        originalText,
+        revisedText,
+        moveSettings.caseInsensitiveMove,
+      );
+      if (
+        jaccardSimilarity >= ALIGNED_RUN_REFINEMENT_SIMILARITY_THRESHOLD ||
+        containmentSimilarity >= ALIGNED_RUN_REFINEMENT_CONTAINMENT_THRESHOLD
+      ) {
+        candidates.push({
+          originalIndex,
+          revisedIndex,
+          similarity: Math.max(jaccardSimilarity, containmentSimilarity),
+        });
       }
     }
   }

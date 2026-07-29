@@ -72,6 +72,11 @@ export function countWords(text: string): number {
   return words.length;
 }
 
+function normalizedWordSet(text: string, caseInsensitive: boolean): Set<string> {
+  const normalized = caseInsensitive ? text.toLowerCase() : text;
+  return new Set(normalized.split(/\s+/).filter(Boolean));
+}
+
 // =============================================================================
 // Jaccard Similarity
 // =============================================================================
@@ -100,20 +105,8 @@ export function jaccardWordSimilarity(
   text2: string,
   caseInsensitive = true
 ): number {
-  const normalize = caseInsensitive
-    ? (s: string) => s.toLowerCase()
-    : (s: string) => s;
-
-  const words1 = new Set(
-    normalize(text1)
-      .split(/\s+/)
-      .filter(Boolean)
-  );
-  const words2 = new Set(
-    normalize(text2)
-      .split(/\s+/)
-      .filter(Boolean)
-  );
+  const words1 = normalizedWordSet(text1, caseInsensitive);
+  const words2 = normalizedWordSet(text2, caseInsensitive);
 
   if (words1.size === 0 && words2.size === 0) {
     return 1; // Both empty = identical
@@ -135,6 +128,29 @@ export function jaccardWordSimilarity(
   const unionSize = words1.size + words2.size - intersectionSize;
 
   return intersectionSize / unionSize;
+}
+
+/**
+ * Calculate how completely the smaller word set is contained in the larger.
+ *
+ * Unlike Jaccard similarity, containment remains high when an aligned run keeps
+ * all of its old vocabulary but adds substantial new text.
+ */
+export function wordContainmentSimilarity(
+  text1: string,
+  text2: string,
+  caseInsensitive = true,
+): number {
+  const words1 = normalizedWordSet(text1, caseInsensitive);
+  const words2 = normalizedWordSet(text2, caseInsensitive);
+  if (words1.size === 0 && words2.size === 0) return 1;
+  if (words1.size === 0 || words2.size === 0) return 0;
+
+  let intersectionSize = 0;
+  for (const word of words1) {
+    if (words2.has(word)) intersectionSize++;
+  }
+  return intersectionSize / Math.min(words1.size, words2.size);
 }
 
 // =============================================================================
