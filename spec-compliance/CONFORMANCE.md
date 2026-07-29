@@ -13,6 +13,10 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 
 | ID | Title | Edition | Part | Section | Schema reference | Verified by |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ECMA-PART4-14-9-1-1` | VML rich text-box content (w:txbxContent) | 5 | 4 | 14.9.1.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent` | packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts |
+| `ECMA-PART4-19-1-2-22` | VML text-box host (v:textbox) | 5 | 4 | 19.1.2.22 | `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox` | packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts |
+| `ECMA-PART1-17-13-5-14` | Deleted run content | 5 | 1 | 17.13.5.14 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del` | packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts |
+| `ECMA-PART1-17-13-5-18` | Inserted run content | 5 | 1 | 17.13.5.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins` | packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts |
 | `ECMA-PART1-17-16-13` | w:delInstrText containment in tracked deletions | 5 | 1 | 17.16.13 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:delInstrText` | packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/inPlaceModifier-deletion.ts; packages/docx-compare/src/baselines/atomizer/pipeline.field-validation.test.ts; packages/docx-core/src/integration/lean-spec-bridge.test.ts; verification/lean/Tier2/XmlTripleChecker.lean; verification/registry/lean-xml-checker-coverage.json |
 | `ECMA-PART1-17-13-5` | Paragraph-level OOXML markers | 5 | 1 | 17.13.5 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:pPrChange` | packages/docx-compare/src/atomizer.ts; packages/docx-core/src/integration/cross-implementation-suite.test.ts; packages/docx-core/src/integration/libreoffice-oracle-trust-boundary.test.ts |
 | `ECMA-PART1-17-13-6-1` | Bookmark end | 5 | 1 | 17.13.6.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:bookmarkEnd` | packages/docx-core/src/integration/advanced-revision-classification.test.ts |
@@ -131,6 +135,62 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-13-5-34` | Table-property revisions (w:tblPrChange) | 5 | 1 | 17.13.5.34 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tblPrChange` | packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-36` | Table-cell-property revisions (w:tcPrChange) | 5 | 1 | 17.13.5.36 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:tcPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
 | `ECMA-PART1-17-13-5-37` | Table-row-property revisions (w:trPrChange) | 5 | 1 | 17.13.5.37 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:trPrChange` | packages/docx-core/src/primitives/track-changes-emitter.ts; packages/docx-core/src/primitives/accept_changes.ts; packages/docx-core/src/primitives/reject_changes.ts; packages/docx-core/src/integration/advanced-revision-classification.test.ts |
+
+### ECMA-PART4-14-9-1-1 — VML rich text-box content (w:txbxContent)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 4 § 14.9.1.1
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+
+Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
+WordprocessingML-content container inside a VML drawing object. It prohibits
+references to comments, footnotes, and endnotes, as well as nested
+`w:txbxContent`. safe-docx compares a bounded main-document subset as an
+independent story, preserves its surrounding VML scaffold, and rejects those
+prohibited nested forms before comparison. This claim does not cover
+DrawingML text boxes, ancillary-part text boxes, inserted/deleted text-box
+topology, or changes to the containing VML scaffold or relationship closure.
+
+### ECMA-PART4-19-1-2-22 — VML text-box host (v:textbox)
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 4 § 19.1.2.22
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+
+Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. For the
+accepted comparison subset, safe-docx requires a stable containing
+`v:shape`/`v:textbox` scaffold and places tracked changes only in the hosted
+WordprocessingML story, never around the drawing object.
+
+### ECMA-PART1-17-13-5-14 — Deleted run content
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.14
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+
+Part 1 §17.13.5.14 defines `w:del` as deleted inline run content.
+safe-docx emits this ordinary run-level revision form inside supported VML
+text-box stories and validates that rejecting the assembled comparison
+recovers the original story text.
+
+### ECMA-PART1-17-13-5-18 — Inserted run content
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.13.5.18
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins`
+- **Verified by:** packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+
+Part 1 §17.13.5.18 defines `w:ins` as inserted inline run content.
+safe-docx emits this ordinary run-level revision form inside supported VML
+text-box stories and validates that accepting the assembled comparison
+recovers the revised story text.
 
 ### ECMA-PART1-17-16-13 — w:delInstrText containment in tracked deletions
 

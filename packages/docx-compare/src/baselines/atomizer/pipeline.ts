@@ -121,9 +121,13 @@ import {
   AncillaryStorySafetyError,
   evaluateAncillaryFieldSafety,
 } from './ancillaryFieldSafety.js';
-import { assertTextBoxContentUnchanged } from './textBoxRevisionSafety.js';
 import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.js';
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
+import {
+  assembleTextBoxStoryComparison,
+  prepareTextBoxStoryComparison,
+  UnsupportedTextBoxRevisionError,
+} from './textBoxRevisionSafety.js';
 
 /**
  * Options for the atomizer pipeline.
@@ -588,7 +592,152 @@ function evaluateSafetyChecks(
  * @param options - Pipeline options
  * @returns Comparison result with track changes document
  */
+/**
+ * Compare supported VML text-box content as independent nested stories.
+ *
+ * @conformance ECMA-376 edition 5, Part 4 § 14.9.1.1
+ * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
+ * @see https://github.com/UseJunior/safe-docx/issues/713
+ */
 export async function compareDocumentsAtomizer(
+  original: Buffer,
+  revised: Buffer,
+  options: AtomizerOptions = {},
+): Promise<CompareResult> {
+  const textBoxPlan = await prepareTextBoxStoryComparison(original, revised);
+  if (!textBoxPlan) {
+    return compareDocumentsAtomizerCore(original, revised, options);
+  }
+  if (options.reconstructionMode !== 'inplace') {
+    throw new UnsupportedTextBoxRevisionError([{
+      index: textBoxPlan.stories[0]?.index ?? 0,
+      partPath: 'word/document.xml',
+      reason: 'changed text-box stories currently require reconstructionMode=inplace',
+    }]);
+  }
+
+  const nestedOptions: AtomizerOptions = {
+    ...options,
+    reconstructionMode: 'inplace',
+    leanXmlVerifier: undefined,
+  };
+  const outerResult = await compareDocumentsAtomizerCore(
+    textBoxPlan.outerOriginal,
+    textBoxPlan.outerRevised,
+    nestedOptions,
+  );
+  if (outerResult.reconstructionModeUsed !== 'inplace') {
+    throw new UnsupportedTextBoxRevisionError([{
+      index: textBoxPlan.stories[0]?.index ?? 0,
+      partPath: 'word/document.xml',
+      reason: 'the outer document required rebuild fallback',
+    }]);
+  }
+
+  const storyResults: Array<{ index: number; result: CompareResult }> = [];
+  for (const story of textBoxPlan.stories) {
+    const result = await compareDocumentsAtomizerCore(
+      story.original,
+      story.revised,
+      nestedOptions,
+    );
+    if (result.reconstructionModeUsed !== 'inplace') {
+      throw new UnsupportedTextBoxRevisionError([{
+        index: story.index,
+        partPath: 'word/document.xml',
+        reason: 'the nested story required rebuild fallback',
+      }]);
+    }
+    storyResults.push({ index: story.index, result });
+  }
+
+  const document = await assembleTextBoxStoryComparison(
+    outerResult.document,
+    storyResults.map(({ index, result }) => ({
+      index,
+      document: result.document,
+    })),
+  );
+  const comparedArchive = await DocxArchive.load(document);
+  const comparedDocumentXml = await comparedArchive.getDocumentXml();
+  const acceptedComparison = compareTexts(
+    extractRoundTripComparisonText(textBoxPlan.revisedDocumentXml),
+    extractRoundTripComparisonText(acceptAllChanges(comparedDocumentXml)),
+  );
+  const rejectedComparison = compareTexts(
+    extractRoundTripComparisonText(textBoxPlan.originalDocumentXml),
+    extractRoundTripComparisonText(rejectAllChanges(comparedDocumentXml)),
+  );
+  if (
+    !acceptedComparison.normalizedIdentical ||
+    !rejectedComparison.normalizedIdentical
+  ) {
+    throw new UnsupportedTextBoxRevisionError([{
+      index: textBoxPlan.stories[0]?.index ?? 0,
+      partPath: 'word/document.xml',
+      reason: 'assembled nested stories failed accept/reject round-trip validation',
+    }]);
+  }
+
+  const results = [outerResult, ...storyResults.map(({ result }) => result)];
+  const stats = results.reduce<CompareStats>(
+    (combined, result) => ({
+      insertions: combined.insertions + result.stats.insertions,
+      deletions: combined.deletions + result.stats.deletions,
+      modifications: combined.modifications + result.stats.modifications,
+      insertedRanges: combined.insertedRanges + result.stats.insertedRanges,
+      deletedRanges: combined.deletedRanges + result.stats.deletedRanges,
+      insertedAtoms: combined.insertedAtoms + result.stats.insertedAtoms,
+      deletedAtoms: combined.deletedAtoms + result.stats.deletedAtoms,
+      modifiedParagraphs:
+        combined.modifiedParagraphs + result.stats.modifiedParagraphs,
+      formatChanges: combined.formatChanges + result.stats.formatChanges,
+      formatChangeAtoms:
+        combined.formatChangeAtoms + result.stats.formatChangeAtoms,
+    }),
+    {
+      insertions: 0,
+      deletions: 0,
+      modifications: 0,
+      insertedRanges: 0,
+      deletedRanges: 0,
+      insertedAtoms: 0,
+      deletedAtoms: 0,
+      modifiedParagraphs: 0,
+      formatChanges: 0,
+      formatChangeAtoms: 0,
+    },
+  );
+  const documentIntegrity = options.leanXmlVerifier?.enabled
+    ? await runLeanXmlTripleVerifier({
+        originalDocx: original,
+        revisedDocx: revised,
+        comparedDocx: document,
+        legacyDocumentXml: {
+          original: textBoxPlan.originalDocumentXml,
+          revised: textBoxPlan.revisedDocumentXml,
+          compared: comparedDocumentXml,
+        },
+        reconstructionMode: 'inplace',
+        options: options.leanXmlVerifier,
+      }).then((certificate) => ({
+        ...certificate,
+        exclusions: [
+          ...(certificate.exclusions ?? []),
+          'Nested w:txbxContent stories are not independently enumerated by the compiled verifier.',
+        ],
+      }))
+    : undefined;
+
+  return {
+    ...outerResult,
+    document,
+    stats,
+    documentIntegrity,
+  };
+}
+
+async function compareDocumentsAtomizerCore(
   original: Buffer,
   revised: Buffer,
   options: AtomizerOptions = {}
@@ -642,7 +791,6 @@ export async function compareDocumentsAtomizer(
   // Step 2: Extract document.xml
   const originalXml = canonicalizeWordprocessingPrefixes(await originalArchive.getDocumentXml());
   const revisedXml = canonicalizeWordprocessingPrefixes(await revisedArchive.getDocumentXml());
-  assertTextBoxContentUnchanged(originalXml, revisedXml);
 
   // Extract numbering.xml if available
   const originalNumberingXml = await originalArchive.getNumberingXml() ?? undefined;
