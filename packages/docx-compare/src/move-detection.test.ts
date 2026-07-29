@@ -690,6 +690,46 @@ describe('detectMovesInAtomList', () => {
       expect(atom1.correlationStatus).toBe(CorrelationStatus.Inserted);
     });
   });
+
+  test('honors a caller guard for fuzzy candidates inside aligned paragraphs', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let atoms: ComparisonUnitAtom[];
+
+    await given('a fuzzy deleted/inserted pair that otherwise meets the move threshold', () => {
+      atoms = [
+        createTestAtom(
+          'the annual allocation shall remain 10,000 units for each period',
+          CorrelationStatus.Deleted,
+        ),
+        createTestAtom(
+          'the annual allocation will remain 10,000 units for each period',
+          CorrelationStatus.Inserted,
+        ),
+      ];
+    });
+
+    await when('the caller rejects that candidate as an in-place edit', () => {
+      detectMovesInAtomList(
+        atoms,
+        {
+          detectMoves: true,
+          moveSimilarityThreshold: 0.8,
+          moveMinimumWordCount: 5,
+          caseInsensitiveMove: true,
+        },
+        new Set(),
+        () => false,
+      );
+    });
+
+    await then('the candidate remains an ordinary deletion and insertion', () => {
+      expect(atoms[0]?.correlationStatus).toBe(CorrelationStatus.Deleted);
+      expect(atoms[1]?.correlationStatus).toBe(CorrelationStatus.Inserted);
+    });
+  });
 });
 
 describe('generateMoveSourceMarkup', () => {

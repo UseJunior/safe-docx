@@ -57,7 +57,10 @@ import {
   type HyperlinkRelEntry,
 } from '@usejunior/docx-core';
 import { OOXML } from '@usejunior/docx-core';
-import { collectPreservedMoveNames, detectMovesInAtomList } from '../../move-detection.js';
+import {
+  collectPreservedMoveNames,
+  detectMovesInAtomList,
+} from '../../move-detection.js';
 import { detectFormatChangesInAtomList } from '../../format-detection.js';
 import { detectParagraphStyleChanges } from '../../paragraph-style-detection.js';
 import {
@@ -75,6 +78,7 @@ import {
   hierarchicalCompare,
   markHierarchicalCorrelationStatus,
 } from './hierarchicalLcs.js';
+import { refineFuzzyRunsWithinAlignedParagraphs } from './selectiveWordRefinement.js';
 import {
   reconstructDocument,
   type HyperlinkRelResolver,
@@ -892,8 +896,8 @@ async function compareDocumentsAtomizerCore(
           captureComplexFieldPassthrough: reconstructionMode === 'rebuild',
         }
       : atomizeOptions;
-    const { atoms: originalAtoms } = atomizeTree(originalBody, [], originalPart, effectiveAtomizeOptions);
-    const { atoms: revisedAtoms } = atomizeTree(revisedBody, [], revisedPart, effectiveAtomizeOptions);
+    let { atoms: originalAtoms } = atomizeTree(originalBody, [], originalPart, effectiveAtomizeOptions);
+    let { atoms: revisedAtoms } = atomizeTree(revisedBody, [], revisedPart, effectiveAtomizeOptions);
 
     // Assign paragraph indices for proper grouping during reconstruction
     assignParagraphIndices(originalAtoms);
@@ -928,7 +932,26 @@ async function compareDocumentsAtomizerCore(
     assignIdentityIds(revisedAtoms, identityInterner);
 
     // Step 6: Run hierarchical LCS (paragraph-level first, then atom-level within)
-    const lcsResult = hierarchicalCompare(originalAtoms, revisedAtoms);
+    let lcsResult = hierarchicalCompare(originalAtoms, revisedAtoms);
+
+    // Run-level atomization normally preserves formatting boundaries best, but
+    // a single long changed run can contain mostly-equal prose. Refine only
+    // fuzzy deleted/inserted run pairs inside paragraphs that the first LCS
+    // already aligned, then rerun the comparison. This obtains word precision
+    // without exposing unrelated paragraphs to the global word-split strategy.
+    // (#717)
+    if (!effectiveAtomizeOptions?.splitTextIntoWords) {
+      const refined = refineFuzzyRunsWithinAlignedParagraphs(
+        originalAtoms,
+        revisedAtoms,
+        lcsResult,
+        moveSettings,
+        identityInterner,
+      );
+      originalAtoms = refined.originalAtoms;
+      revisedAtoms = refined.revisedAtoms;
+      lcsResult = refined.lcsResult;
+    }
 
     // Step 7: Mark correlation status using hierarchical result
     markHierarchicalCorrelationStatus(originalAtoms, revisedAtoms, lcsResult);
@@ -940,7 +963,36 @@ async function compareDocumentsAtomizerCore(
       // and original atoms with Deleted status
       const allAtoms = [...originalAtoms, ...revisedAtoms];
       const preservedMoveNames = collectPreservedMoveNames([originalTree, revisedTree]);
-      detectMovesInAtomList(allAtoms, moveSettings, preservedMoveNames);
+      const alignedParagraphPairs = new Set<string>();
+      for (const match of lcsResult.matches) {
+        const originalParagraph = originalAtoms[match.originalIndex]?.paragraphIndex;
+        const revisedParagraph = revisedAtoms[match.revisedIndex]?.paragraphIndex;
+        if (originalParagraph !== undefined && revisedParagraph !== undefined) {
+          alignedParagraphPairs.add(`${originalParagraph}:${revisedParagraph}`);
+        }
+      }
+      detectMovesInAtomList(
+        allAtoms,
+        moveSettings,
+        preservedMoveNames,
+        (deleted, inserted) => {
+          // A fuzzy source/destination pair inside an already-aligned paragraph
+          // is an edit, not evidence that text moved. Exact text can still be a
+          // genuine within-paragraph relocation. This preserves move detection
+          // across paragraphs while preventing broad changed runs from dragging
+          // unchanged inline content into moveFrom/moveTo wrappers. (#717)
+          if (deleted.text === inserted.text) return true;
+          return !deleted.atoms.some((originalAtom) =>
+            inserted.atoms.some((revisedAtom) =>
+              originalAtom.paragraphIndex !== undefined &&
+              revisedAtom.paragraphIndex !== undefined &&
+              alignedParagraphPairs.has(
+                `${originalAtom.paragraphIndex}:${revisedAtom.paragraphIndex}`,
+              ),
+            ),
+          );
+        },
+      );
     }
 
     // Step 9: Run format detection

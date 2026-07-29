@@ -213,6 +213,19 @@ interface MatchResult {
 }
 
 /**
+ * Optional candidate-level guard supplied by the comparison pipeline.
+ *
+ * Move detection remains usable as a standalone post-processing step, while
+ * callers that know paragraph correspondence can prevent a fuzzy edit from
+ * being relabeled as a relocation.
+ */
+export type MoveCandidateGuard = (
+  deleted: AtomBlock,
+  inserted: AtomBlock,
+  similarity: number,
+) => boolean;
+
+/**
  * Find the best matching inserted block for a deleted block.
  *
  * @param deleted - The deleted block to match
@@ -223,7 +236,8 @@ interface MatchResult {
 export function findBestMatch(
   deleted: AtomBlock,
   insertedBlocks: AtomBlock[],
-  settings: MoveDetectionSettings
+  settings: MoveDetectionSettings,
+  candidateGuard?: MoveCandidateGuard,
 ): MatchResult | undefined {
   let bestMatch: MatchResult | undefined;
 
@@ -242,6 +256,10 @@ export function findBestMatch(
       inserted.text,
       settings.caseInsensitiveMove
     );
+
+    if (candidateGuard && !candidateGuard(deleted, inserted, similarity)) {
+      continue;
+    }
 
     if (similarity >= settings.moveSimilarityThreshold) {
       if (!bestMatch || similarity > bestMatch.similarity) {
@@ -302,6 +320,7 @@ export function detectMovesInAtomList(
   atoms: ComparisonUnitAtom[],
   settings: MoveDetectionSettings = DEFAULT_MOVE_DETECTION_SETTINGS,
   reservedMoveNames: ReadonlySet<string> = new Set(),
+  candidateGuard?: MoveCandidateGuard,
 ): void {
   if (!settings.detectMoves) {
     return;
@@ -327,7 +346,7 @@ export function detectMovesInAtomList(
   let moveGroupId = 1;
 
   for (const deleted of deletedBlocks) {
-    const bestMatch = findBestMatch(deleted, insertedBlocks, settings);
+    const bestMatch = findBestMatch(deleted, insertedBlocks, settings, candidateGuard);
 
     if (bestMatch) {
       // 4. Convert to moves
