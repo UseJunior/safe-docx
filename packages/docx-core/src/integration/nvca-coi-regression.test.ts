@@ -386,7 +386,7 @@ describeWithCompiledLean('NVCA COI Lean relationship-story evidence', () => {
     300_000,
   );
 
-  test.openspec('[LEAN-REL-19] Real NVCA compared-only selected-story mutations fail')(
+  test.openspec('[LEAN-REL-12] Real NVCA selected-story mutations fail')(
     'keeps selection stable and fails every deduplicated selected header/footer mutation',
     async () => {
       testAllure.conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.2' });

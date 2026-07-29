@@ -10,6 +10,9 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Scenario | Status | Test Files | Notes |
 |---|---|---|---|
 | Accept-side round-trip lemma is closed | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
+| Adversarial selected relationships fail structurally | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Aggregate budgets prevent amplification | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Archive ambiguity is not a structured verifier result | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Atom from deleted revision | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Atom from inserted revision | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Atom marked as format-changed | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -23,7 +26,9 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Bridge case provides a falsifiability layer for the new axiom | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Bridge file self-description stays accurate | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Building footnote mapping | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| CI executes the compiled trust boundary | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Compiled checker certifies structurally valid move ranges | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Completed selection failure differs from not-run | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Continuation pattern inherits formatting | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Creating atom with revision detection | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Creating atom without revision context | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -33,6 +38,9 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Element with attributes | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Element with text content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Empty properties equal | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Every legal response fits the output cap | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Every selected story must pass independently | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Exact nested schema rejects ambiguity | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Fallback is falsification and coverage is floored, not silently filtered | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Field-bearing arbitrary drives INV-FIELD-001 across operations | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Field-bearing arbitrary drives INV-RT-001 round-trip | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
@@ -44,8 +52,13 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Get format change revisions | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Hash calculation for content identity | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Identical text returns 1.0 | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Inconsistent v4 output cannot become a pass | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Inplace emission produces one range pair per logical move | covered | `packages/docx-compare/src/baselines/atomizer/inplace-move-range-coalesce.test.ts` |  |
 | Inplace reconstruction reports the pass that produced the output | covered | `packages/docx-core/src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
+| Lean binary index establishes exact extraction identity | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Lean derives selected stories from three packages | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Legacy public v1 shape remains compatible | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Metadata and event admission stop decompression | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Move destination markup structure | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Move detected between similar blocks | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Move detection disabled | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -61,16 +74,23 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Per-operation assertion strength matches the post-#217 engine | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Proper nested list renders hierarchically | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Range IDs properly paired | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Real NVCA selected-story mutations fail | covered | `packages/docx-core/src/integration/nvca-coi-regression.test.ts` |  |
 | Rebuild fallback only after all inplace passes fail | covered | `packages/docx-core/src/integration/field-cross-story-pipeline.test.ts` |  |
 | Reject-side round-trip lemma is closed | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Remove existing revision tracking | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Required main failures cannot produce structured failure | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Reserved footnote IDs excluded from numbering | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Residual obligations and the normalizeText modeling gap are documented | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 | Run with properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Run without properties | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Safe internal targets resolve | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Same properties different order | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Selector proofs do not widen the axiom union | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Selector-observable section differences fail closed | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Sequential numbering ignores XML IDs | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Shared targets check once without losing selectors | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Short blocks ignored | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Side-specific identities align by slot | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | Status assigned during comparison | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Status for deleted content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Status for format-changed content | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
@@ -80,6 +100,9 @@ This matrix maps docx-core OpenSpec `#### Scenario:` entries to scenario mapping
 | Table-heavy run-fragmented templates preserve tracked table structure | covered | `packages/docx-core/src/integration/table-heavy-run-fragmented-inplace.test.ts` |  |
 | Text becomes bold | covered | `packages/docx-compare/src/openspec.priority-scenarios.test.ts`, `packages/docx-compare/src/openspec.traceability.test.ts` |  |
 | Unknown property name | covered | `packages/docx-compare/src/openspec.traceability.test.ts` |  |
+| Unselected relationship records remain structurally bounded | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| Unsupported selection semantics are not inferred | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
+| XML and namespace subset fails closed | covered | `packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.test.ts` |  |
 | `inv_rt_001` sorry is replaced by a proof composing the named residual axiom and the lemmas | covered | `packages/docx-core/src/integration/lean-spec-bridge.test.ts` |  |
 
 ## Cross-Implementation Conformance
