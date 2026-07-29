@@ -52,7 +52,7 @@ export async function deleteComment(
       doc.deleteComment({ commentId: params.comment_id! }, activeCtx);
 
     const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, COMMENT_TOUCHED_CONTEXT);
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     // Resolve root-vs-reply before mutating: an anchored (root) comment removes
     // structural range markers from document.xml, a reply does not.

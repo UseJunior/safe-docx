@@ -85,6 +85,48 @@ export function splitIntroducedDiagnostics(
   return { introduced, demoted };
 }
 
+/**
+ * Renders one non-blocking diagnostic as a plain string, matching the
+ * plain-string `warnings` channels tool success responses already use
+ * (format_layout and read_file expose `warnings` as human-readable strings;
+ * batch_edit wraps the same human-readable strings with step metadata as
+ * `{ step_id, warning }` entries). Location fields are appended when present
+ * so an agent can act on the warning without re-running validation.
+ */
+export function formatAiRevisionWarning(d: AiRevisionDiagnostic): string {
+  const location = [
+    d.part,
+    d.element,
+    d.id ? `id=${d.id}` : undefined,
+    d.author ? `author=${d.author}` : undefined,
+  ]
+    .filter((x): x is string => Boolean(x))
+    .join(', ');
+  return location ? `${d.code}: ${d.message} (${location})` : `${d.code}: ${d.message}`;
+}
+
+/**
+ * Outcome of {@link preflightAiRevisionMutation}.
+ *
+ * `blocked` is the historical `ToolResponse | null` contract: non-null means
+ * validation rejected the mutation and the caller must return that response
+ * without applying the edit. `warnings` carries the non-blocking diagnostics
+ * that used to be structurally dropped on the success path (issue #686);
+ * callers should surface them on their success response as an optional
+ * `warnings?: string[]` field. When `blocked` is set, `warnings` is empty —
+ * the blocking response already carries the full diagnostics
+ * (errors + warnings) in its `diagnostics` field.
+ */
+export type AiRevisionPreflightResult = {
+  blocked: ToolResponse | null;
+  warnings: string[];
+};
+
+const PREFLIGHT_PROCEED: AiRevisionPreflightResult = Object.freeze({
+  blocked: null,
+  warnings: [],
+});
+
 const sessionBaselineDiagnostics = new WeakMap<DocxSession, Promise<Map<string, number>>>();
 
 /**
@@ -111,14 +153,16 @@ export async function preflightAiRevisionMutation(
   ctx: RevisionContext | undefined,
   mutatePreview: (doc: DocxDocument, ctx: RevisionContext | undefined) => Promise<void> | void,
   touched?: AiRevisionValidationTouchedContext,
-): Promise<ToolResponse | null> {
-  if (!session.aiAuthor) return null;
+): Promise<AiRevisionPreflightResult> {
+  if (!session.aiAuthor) return PREFLIGHT_PROCEED;
 
   const snapshot = await session.doc.toBuffer({ cleanBookmarks: false });
   const previewDoc = await DocxDocument.load(snapshot.buffer);
   await mutatePreview(previewDoc, cloneRevisionContext(ctx));
   const validation = await previewDoc.validateAiRevisions(session.aiAuthor, touched);
-  if (validation.errors.length === 0) return null;
+  if (validation.errors.length === 0) {
+    return { blocked: null, warnings: validation.warnings.map(formatAiRevisionWarning) };
+  }
 
   // AI-attributed errors always fail. Unattributable errors (field structure,
   // package invariants — no w:author to classify by) fail only when this
@@ -136,10 +180,21 @@ export async function preflightAiRevisionMutation(
     ));
   }
   const failing = [...attributed, ...introduced];
-  if (failing.length === 0) return null;
+  if (failing.length === 0) {
+    // Demoted diagnostics are pre-existing anomalies this mutation did not
+    // introduce; they must not block the write but they are still findings —
+    // merge them into the surfaced warnings exactly as the failure path does.
+    return {
+      blocked: null,
+      warnings: [...validation.warnings, ...demoted].map(formatAiRevisionWarning),
+    };
+  }
 
-  return aiRevisionValidationFailure({
-    errors: failing,
-    warnings: [...validation.warnings, ...demoted],
-  });
+  return {
+    blocked: aiRevisionValidationFailure({
+      errors: failing,
+      warnings: [...validation.warnings, ...demoted],
+    }),
+    warnings: [],
+  };
 }

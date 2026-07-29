@@ -2,11 +2,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect } from 'vitest';
 import { SessionManager, type DocxSession } from '../session/manager.js';
+import { addComment } from './add_comment.js';
+import { addFootnote } from './add_footnote.js';
+import { clearFormatting } from './clear_formatting.js';
+import { deleteComment } from './delete_comment.js';
+import { deleteFootnote } from './delete_footnote.js';
 import { formatLayout } from './format_layout.js';
+import { formatNumbering } from './format_numbering.js';
+import { formatSection } from './format_section.js';
 import { getFileStatus } from './get_file_status.js';
+import { insertParagraph } from './insert_paragraph.js';
+import { insertSectionBreakTool } from './insert_section_break.js';
 import { readFile } from './read_file.js';
 import { replaceText } from './replace_text.js';
 import { save } from './save.js';
+import { updateFootnote } from './update_footnote.js';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import {
   assertFailure,
@@ -273,6 +283,12 @@ describe('AI revision validation guard', () => {
       instruction: 'replace Beta',
     });
     assertSuccess(writeResult);
+    // The pre-existing anomaly is demoted rather than blocking, but it is
+    // still a finding: the success response must surface it (#686) instead of
+    // silently dropping the demoted diagnostics.
+    expect(writeResult.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('FIELD_BEGIN_END_MISMATCH')]),
+    );
 
     const outPath = path.join(opened.tmpDir, 'preexisting-anomaly.docx');
     const saveResult = await save(opened.mgr, {
@@ -287,6 +303,147 @@ describe('AI revision validation guard', () => {
       ]),
     });
     await expect(fs.access(outPath)).resolves.toBeUndefined();
+  });
+
+  test('successful replace_text surfaces non-blocking validator warnings (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        // Foreign del intentionally lacks w:date: schema-valid, but the AI
+        // revision validator flags it as a non-blocking warning. Before #686
+        // the success path returned bare null from the preflight and this
+        // warning was structurally unreachable.
+        `<w:p><w:r><w:t>Alpha Beta</w:t></w:r>` +
+        `<w:del w:id="903" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+      ),
+    });
+
+    const result = await replaceText(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      old_string: 'Beta',
+      new_string: 'Gamma',
+      instruction: 'replace Beta',
+    });
+
+    assertSuccess(result);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('REVISION_METADATA_MISSING')]),
+    );
+  });
+
+  test('successful replace_text with no validator findings omits the warnings field (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(`<w:p><w:r><w:t>Alpha Beta</w:t></w:r></w:p>`),
+    });
+
+    const result = await replaceText(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      old_string: 'Beta',
+      new_string: 'Gamma',
+      instruction: 'replace Beta',
+    });
+
+    assertSuccess(result);
+    expect('warnings' in result).toBe(false);
+  });
+
+  test('successful clear_formatting surfaces non-blocking validator warnings (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Alpha</w:t></w:r>` +
+        `<w:del w:id="904" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+      ),
+    });
+
+    const result = await clearFormatting(opened.mgr, {
+      file_path: opened.filePath,
+      paragraph_ids: [opened.firstParaId],
+      clear_bold: true,
+    });
+
+    assertSuccess(result);
+    expect(result.paragraphs_modified).toBe(1);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('REVISION_METADATA_MISSING')]),
+    );
+  });
+
+  test('successful add_comment surfaces non-blocking validator warnings (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        `<w:p><w:r><w:t>Alpha Beta</w:t></w:r>` +
+        `<w:del w:id="905" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+      ),
+    });
+
+    const result = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      anchor_text: 'Beta',
+      author: 'Reviewer',
+      text: 'Please double-check this.',
+    });
+
+    assertSuccess(result);
+    expect(result.mode).toBe('root');
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('REVISION_METADATA_MISSING')]),
+    );
+  });
+
+  test('successful add_comment reply surfaces non-blocking validator warnings (#686)', async () => {
+    const opened = await openSession([], {
+      mgr: manager(),
+      xml: documentXml(
+        `<w:p><w:r><w:t>Alpha Beta</w:t></w:r>` +
+        `<w:del w:id="906" w:author="Human"><w:r><w:delText>Old</w:delText></w:r></w:del></w:p>`,
+      ),
+    });
+
+    const root = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      anchor_text: 'Beta',
+      author: 'Reviewer',
+      text: 'Root comment.',
+    });
+    assertSuccess(root);
+
+    const reply = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      parent_comment_id: root.comment_id as number,
+      author: 'Reviewer',
+      text: 'Reply comment.',
+    });
+
+    assertSuccess(reply);
+    expect(reply.mode).toBe('reply');
+    expect(reply.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('REVISION_METADATA_MISSING')]),
+    );
+  });
+
+  test('formatAiRevisionWarning renders code, message, and any location fields (#686)', async () => {
+    const { formatAiRevisionWarning } = await import('./ai_revision_guard.js');
+    expect(
+      formatAiRevisionWarning({ severity: 'warning', code: 'SOME_CODE', message: 'something odd' }),
+    ).toBe('SOME_CODE: something odd');
+    expect(
+      formatAiRevisionWarning({
+        severity: 'warning',
+        code: 'SOME_CODE',
+        message: 'something odd',
+        part: 'word/document.xml',
+        element: 'w:del',
+        id: '9',
+        author: 'Human',
+      }),
+    ).toBe('SOME_CODE: something odd (word/document.xml, w:del, id=9, author=Human)');
   });
 
   test('introduced instances of a pre-existing structural error still fail (count-based baseline)', async () => {
@@ -330,6 +487,215 @@ describe('AI revision validation guard', () => {
         new_string: 'Gamma',
         instruction: 'replace Beta',
       }],
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Blocked-path coverage for every preflight-guarded tool (#686).
+  //
+  // The { blocked, warnings } reshape touched the rejection check of every
+  // call site, so every tool must demonstrably still refuse to mutate when
+  // validation fails. Tools whose blocked path was already pinned elsewhere
+  // (replace_text, format_layout, batch_edit) are not repeated here.
+  // -------------------------------------------------------------------------
+
+  const MALFORMED_AI_INS =
+    `<w:ins w:id="21" w:author="${AI}"><w:r><w:t>Bad</w:t></w:r></w:ins>`;
+
+  const MALFORMED_BODY =
+    `<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="10"/></w:numPr></w:pPr>` +
+    `<w:r><w:rPr><w:b/></w:rPr><w:t>Alpha Beta</w:t></w:r>${MALFORMED_AI_INS}</w:p>`;
+
+  const MALFORMED_SECTION_XML =
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:document xmlns:w="${W_NS}"><w:body>` +
+    `<w:p><w:r><w:t>First section text</w:t></w:r>${MALFORMED_AI_INS}</w:p>` +
+    `<w:p><w:r><w:t>Second paragraph</w:t></w:r></w:p>` +
+    `<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>` +
+    `<w:pgMar w:top="1440" w:right="720" w:bottom="1440" w:left="720" w:header="360" w:footer="360" w:gutter="0"/>` +
+    `</w:sectPr></w:body></w:document>`;
+
+  async function openMalformedSession(xml: string = documentXml(MALFORMED_BODY)) {
+    return openSession([], { mgr: manager(), xml });
+  }
+
+  /**
+   * Injects malformed AI-authored revision markup (w:ins missing w:date) into
+   * an already-open session's live DOM. Used by tools that need a valid
+   * pre-seeded artifact (footnote/comment) before the document can go bad:
+   * documents reach that state in the wild when an earlier valid AI edit is
+   * followed by markup corruption.
+   */
+  async function corruptSessionWithMalformedAiIns(
+    mgr: SessionManager,
+    filePath: string,
+    pid: string,
+  ): Promise<void> {
+    const session = await docxSession(mgr, filePath);
+    const pEl = session.doc.getParagraphElementById(pid);
+    if (!pEl) throw new Error(`paragraph ${pid} not found for corruption`);
+    const dom = pEl.ownerDocument!;
+    const ins = dom.createElementNS(W_NS, 'w:ins');
+    ins.setAttributeNS(W_NS, 'w:id', '9999');
+    ins.setAttributeNS(W_NS, 'w:author', AI);
+    const run = dom.createElementNS(W_NS, 'w:r');
+    const text = dom.createElementNS(W_NS, 'w:t');
+    text.appendChild(dom.createTextNode('Bad'));
+    run.appendChild(text);
+    ins.appendChild(run);
+    pEl.appendChild(ins);
+    (session.doc as unknown as { dirty?: boolean; documentViewCache?: unknown }).dirty = true;
+    (session.doc as unknown as { dirty?: boolean; documentViewCache?: unknown }).documentViewCache = null;
+  }
+
+  test('clear_formatting is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openMalformedSession();
+    const result = await clearFormatting(opened.mgr, {
+      file_path: opened.filePath,
+      paragraph_ids: [opened.firstParaId],
+      clear_bold: true,
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('add_comment root mode is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openMalformedSession();
+    const result = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      author: 'Reviewer',
+      text: 'Should not land.',
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('add_footnote is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openMalformedSession();
+    const result = await addFootnote(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      text: 'Should not land.',
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('insert_paragraph is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openMalformedSession();
+    const result = await insertParagraph(opened.mgr, {
+      file_path: opened.filePath,
+      positional_anchor_node_id: opened.firstParaId,
+      new_string: 'Should not land.',
+      instruction: 'blocked-path coverage',
+      position: 'AFTER',
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('format_numbering is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openMalformedSession();
+    const result = await formatNumbering(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      remove: true,
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('format_section is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openMalformedSession(MALFORMED_SECTION_XML);
+    const result = await formatSection(opened.mgr, {
+      file_path: opened.filePath,
+      section_index: 0,
+      page_number_start: 3,
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('insert_section_break is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openMalformedSession(MALFORMED_SECTION_XML);
+    const result = await insertSectionBreakTool(opened.mgr, {
+      file_path: opened.filePath,
+      paragraph_id: opened.firstParaId,
+      break_type: 'nextPage',
+      new_section: { page_number_start: 1 },
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('add_comment reply mode is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openSession(['Seed paragraph for reply-blocking.'], { mgr: manager() });
+    const root = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      author: 'Reviewer',
+      text: 'Root comment.',
+    });
+    assertSuccess(root);
+
+    await corruptSessionWithMalformedAiIns(opened.mgr, opened.filePath, opened.firstParaId);
+
+    const reply = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      parent_comment_id: root.comment_id as number,
+      author: 'Reviewer',
+      text: 'Should not land.',
+    });
+    assertFailure(reply, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('delete_comment is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openSession(['Seed paragraph for delete-comment blocking.'], { mgr: manager() });
+    const root = await addComment(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      author: 'Reviewer',
+      text: 'Root comment.',
+    });
+    assertSuccess(root);
+
+    await corruptSessionWithMalformedAiIns(opened.mgr, opened.filePath, opened.firstParaId);
+
+    const result = await deleteComment(opened.mgr, {
+      file_path: opened.filePath,
+      comment_id: root.comment_id as number,
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('delete_footnote is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openSession(['Seed paragraph for delete-footnote blocking.'], { mgr: manager() });
+    const created = await addFootnote(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      text: 'Seed note.',
+    });
+    assertSuccess(created);
+
+    await corruptSessionWithMalformedAiIns(opened.mgr, opened.filePath, opened.firstParaId);
+
+    const result = await deleteFootnote(opened.mgr, {
+      file_path: opened.filePath,
+      note_id: created.note_id as number,
+    });
+    assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
+  });
+
+  test('update_footnote is blocked when AI revision validation fails (#686)', async () => {
+    const opened = await openSession(['Seed paragraph for update-footnote blocking.'], { mgr: manager() });
+    const created = await addFootnote(opened.mgr, {
+      file_path: opened.filePath,
+      target_paragraph_id: opened.firstParaId,
+      text: 'Seed note.',
+    });
+    assertSuccess(created);
+
+    await corruptSessionWithMalformedAiIns(opened.mgr, opened.filePath, opened.firstParaId);
+
+    const result = await updateFootnote(opened.mgr, {
+      file_path: opened.filePath,
+      note_id: created.note_id as number,
+      new_text: 'Should not land.',
     });
     assertFailure(result, 'AI_REVISION_VALIDATION_FAILED');
   });

@@ -45,7 +45,7 @@ export async function updateFootnote(
     }, activeCtx);
 
     const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, FOOTNOTE_TOUCHED_CONTEXT);
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     await mutate(session.doc, ctx);
 

@@ -64,7 +64,7 @@ export async function addFootnote(
       async (doc, activeCtx) => { await mutate(doc, activeCtx); },
       FOOTNOTE_TOUCHED_CONTEXT,
     );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     const result = await mutate(session.doc, ctx);
 

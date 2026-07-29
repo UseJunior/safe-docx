@@ -300,7 +300,8 @@ export async function replaceText(
     const revisionPreflight = params.skip_ai_revision_preflight
       ? null
       : await preflightAiRevisionMutation(session, revisionCtx, mutate);
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight?.blocked) return revisionPreflight.blocked;
+    const warnings = revisionPreflight?.warnings ?? [];
 
     mutate(session.doc, revisionCtx);
     manager.markEdited(session);
@@ -313,6 +314,7 @@ export async function replaceText(
       replacements_made: 1,
       before_text: previewText(paraText.trim(), RESULT_PREVIEW_CHARS),
       after_text: previewText((session.doc.getParagraphTextById(pid) ?? '').trim(), RESULT_PREVIEW_CHARS),
+      ...(warnings.length > 0 ? { warnings } : {}),
     }, metadata));
   } catch (e: unknown) {
     if (e instanceof SafeDocxError) {

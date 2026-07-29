@@ -31,7 +31,7 @@ export async function deleteFootnote(
       doc.deleteFootnote({ noteId: params.note_id! }, activeCtx);
 
     const revisionPreflight = await preflightAiRevisionMutation(session, ctx, mutate, FOOTNOTE_TOUCHED_CONTEXT);
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     await mutate(session.doc, ctx);
 

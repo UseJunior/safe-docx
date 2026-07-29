@@ -264,7 +264,7 @@ export async function formatSection(
         previewDoc.updateSectionProperties(mutation, previewCtx);
       },
     );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     const result = session.doc.updateSectionProperties(mutation, ctx);
     const sectionsAfter = session.doc.getSections();

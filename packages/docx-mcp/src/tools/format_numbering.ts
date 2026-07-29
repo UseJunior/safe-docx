@@ -181,7 +181,7 @@ export async function formatNumbering(
         );
       },
     );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     const paragraphCountBefore = session.doc.getParagraphs().length;
     const result = session.doc.setDirectParagraphNumbering(

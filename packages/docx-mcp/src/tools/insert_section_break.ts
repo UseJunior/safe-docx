@@ -202,7 +202,7 @@ export async function insertSectionBreakTool(
         previewDoc.insertSectionBreak(mutation, previewCtx);
       },
     );
-    if (revisionPreflight) return revisionPreflight;
+    if (revisionPreflight.blocked) return revisionPreflight.blocked;
 
     const result = session.doc.insertSectionBreak(mutation, ctx);
     const sectionsAfter = session.doc.getSections();
