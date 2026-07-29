@@ -1,7 +1,9 @@
 import { describe, expect } from 'vitest';
 import { testAllure, type AllureBddContext } from '../testing/allure-test.js';
 import { DocxDocument } from '../primitives/document.js';
-import { parseStylesXml, extractEffectiveRunFormatting } from '../primitives/styles.js';
+// Imported from the package entry point deliberately: these two are public
+// surface (issue #684) and this import breaks if they fall off the barrel.
+import { parseStylesXml, extractEffectiveRunFormatting } from '../index.js';
 import { getDirectChildrenByName, childElements } from '../primitives/dom-helpers.js';
 import { readZipText } from '../primitives/zip.js';
 import { parseXml } from '../primitives/xml.js';

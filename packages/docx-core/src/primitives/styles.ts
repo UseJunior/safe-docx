@@ -204,9 +204,11 @@ function parseBoolProp(parent: Element | null, tagLocal: string): boolean | null
   if (!parent) return null;
   const el = getFirstChild(parent, OOXML.W_NS, tagLocal);
   if (!el) return null;
-  // <w:b/> implies true. <w:b w:val="0"/> implies false.
+  // <w:b/> implies true. <w:b w:val="0"/> implies false. 'off' is the
+  // transitional OOXML ST_OnOff spelling; documents produced by older writers
+  // still carry it, and reading it as "on" would invert the property.
   const v = getWAttr(el, 'val');
-  if (v === '0' || v === 'false') return false;
+  if (v === '0' || v === 'false' || v === 'off') return false;
   return true;
 }
 
@@ -256,6 +258,51 @@ function parseHighlightVal(parent: Element | null): string | null {
   return v;
 }
 
+/**
+ * Resolve the run formatting a reader actually sees, not merely the formatting
+ * the run declares. Each property is taken from the first layer that specifies
+ * it: direct `w:rPr` on the run, then the `w:rStyle` character-style `basedOn`
+ * chain, then the paragraph mark's `w:rPr` inside `pPr`, then the paragraph
+ * style's `basedOn` chain. A property specified nowhere resolves to the
+ * neutral value (`false`, `''`, `0`, or `null`).
+ *
+ * Each property is resolved independently down the chain — a style that
+ * specifies only color does not mask an ancestor's bold.
+ *
+ * OOXML toggle properties (`w:b`, `w:i`) are resolved as a
+ * nearest-declaration cascade: the first tier that specifies the property
+ * wins, and an explicit off (`w:val` of `0`/`false`/`off`) at a nearer tier
+ * defeats a more distant on. This is deliberately simpler than full OOXML
+ * toggle-property evaluation, in which a style-level true XORs against the
+ * accumulated state and a style-level false leaves it unchanged — repeated
+ * toggle declarations across style levels can therefore resolve differently
+ * here than in Word. The previous container-level resolver applied the same
+ * nearest-value rule, but at container granularity: it could skip an
+ * ancestor's toggle declaration entirely when a nearer chain member carried
+ * an unrelated `rPr`, and in some of those shapes it happened to agree with
+ * Word where this cascade does not — e.g. a paragraph-style bold combined
+ * with a character-chain ancestor's explicit off: full toggle evaluation
+ * XORs the levels to bold, this cascade resolves off. Per-property
+ * resolution therefore WIDENS where the simplification is visible; the
+ * divergence shape is pinned in scripts/check_docx_formatting_loss.test.mjs
+ * so any change to toggle handling is a decision, not drift.
+ *
+ * Not resolved: `w:docDefaults`, table-style run properties, numbering-level
+ * `rPr`, and theme font references (`w:asciiTheme` etc., which would need
+ * `theme1.xml`). A formatting change confined to one of those layers is
+ * invisible to this resolver.
+ *
+ * Part of docx-core's public surface (see `src/index.ts`) so external
+ * diagnostics — `scripts/check_docx_formatting_loss.mjs` today, the planned
+ * formatting-convention detector (#687) — consume this one implementation
+ * instead of growing declared-properties re-implementations that drift.
+ *
+ * @param params.run the `w:r` element (a non-run element yields style/paragraph
+ *   contributions only)
+ * @param params.paragraphPPr the owning paragraph's `w:pPr`, or null
+ * @param params.paragraphStyleId the `w:val` of `pPr/w:pStyle`, or null
+ * @param params.styles the model produced by {@link parseStylesXml}
+ */
 export function extractEffectiveRunFormatting(params: {
   run: Element;
   paragraphPPr: Element | null;
@@ -270,28 +317,29 @@ export function extractEffectiveRunFormatting(params: {
   // Resolve w:rStyle character style chain (e.g. "Strong" → bold via style definition).
   const rStyleEl = rPr ? getFirstChild(rPr, OOXML.W_NS, W.rStyle) : null;
   const rStyleId = rStyleEl ? (getWAttr(rStyleEl, 'val') ?? null) : null;
-  const rStyleChain = resolveStyleChain(styles, rStyleId);
-  const rStyleRPr = firstNonNull(rStyleChain.map((s) => s.rPr));
 
-  const paraChain = resolveStyleChain(styles, paragraphStyleId);
-  const styleRPr = firstNonNull(paraChain.map((s) => s.rPr));
-
-  // Priority: direct rPr → rStyle chain rPr → paragraph rPr → paragraph style chain rPr
-  const bold = firstNonNull([parseBoolProp(rPr, W.b), parseBoolProp(rStyleRPr, W.b), parseBoolProp(pRPr, W.b), parseBoolProp(styleRPr, W.b)]) ?? false;
-  const italic = firstNonNull([parseBoolProp(rPr, W.i), parseBoolProp(rStyleRPr, W.i), parseBoolProp(pRPr, W.i), parseBoolProp(styleRPr, W.i)]) ?? false;
-  const underline = firstNonNull([parseUnderline(rPr), parseUnderline(rStyleRPr), parseUnderline(pRPr), parseUnderline(styleRPr)]) ?? false;
-  const highlightVal = firstNonNull([parseHighlightVal(rPr), parseHighlightVal(rStyleRPr), parseHighlightVal(pRPr), parseHighlightVal(styleRPr)]);
-  const fontName = firstNonNull([parseFontName(rPr), parseFontName(rStyleRPr), parseFontName(pRPr), parseFontName(styleRPr)]) ?? '';
-  const fontSizePt = firstNonNull([parseFontSizePt(rPr), parseFontSizePt(rStyleRPr), parseFontSizePt(pRPr), parseFontSizePt(styleRPr)]) ?? 0;
-  const colorHex = firstNonNull([parseColorHex(rPr), parseColorHex(rStyleRPr), parseColorHex(pRPr), parseColorHex(styleRPr)]);
+  // Priority: direct rPr → rStyle chain rPrs → paragraph mark rPr → paragraph
+  // style chain rPrs. Each property resolves independently down this list: a
+  // chain member that specifies only color must not mask an ancestor's bold,
+  // so the sources are the individual rPr containers, never "the first chain
+  // member that has an rPr" (peer review on #684; extractStyleRunFormatting
+  // above already resolved per property).
+  const sources: Array<Element | null> = [
+    rPr,
+    ...resolveStyleChain(styles, rStyleId).map((s) => s.rPr),
+    pRPr,
+    ...resolveStyleChain(styles, paragraphStyleId).map((s) => s.rPr),
+  ];
+  const resolve = <T>(parse: (el: Element | null) => T | null): T | null =>
+    firstNonNull(sources.map(parse));
 
   return {
-    bold,
-    italic,
-    underline,
-    highlightVal: highlightVal ?? null,
-    fontName,
-    fontSizePt,
-    colorHex: colorHex ?? null,
+    bold: resolve((el) => parseBoolProp(el, W.b)) ?? false,
+    italic: resolve((el) => parseBoolProp(el, W.i)) ?? false,
+    underline: resolve(parseUnderline) ?? false,
+    highlightVal: resolve(parseHighlightVal),
+    fontName: resolve(parseFontName) ?? '',
+    fontSizePt: resolve(parseFontSizePt) ?? 0,
+    colorHex: resolve(parseColorHex),
   };
 }
