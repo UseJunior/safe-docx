@@ -416,6 +416,22 @@ def productionAllowedRoots : List Name := [
 
 run_cmd do
   let environment ← getEnv
+  for (target, roots) in [
+      ( ``Tier2.CommentReferenceIntegrity.Typed.typedByteArrayEqCheck_true_iff
+      , [ ``Tier2.CommentReferenceIntegrity.Typed.typedByteArrayEqCheck
+        , ``Tier2.CommentReferenceIntegrity.Typed.typedByteArrayEqCheck_sound
+        , ``Tier2.CommentReferenceIntegrity.Typed.typedByteArrayEqCheck_refl ])
+    , ( ``Tier2.CommentReferenceIntegrity.Typed.typedXmlEventListEqCheck_true_iff
+      , [ ``Tier2.CommentReferenceIntegrity.Typed.typedXmlEventListEqCheck
+        , ``Tier2.CommentReferenceIntegrity.Typed.typedXmlEventListEqCheck_sound
+        , ``Tier2.CommentReferenceIntegrity.Typed.typedXmlEventListEqCheck_complete ])
+    ] do
+    requireNoNamespace target (completeClosure environment [target])
+      [`String, `Lean.Json, `IO, `propext, `Quot.sound,
+       `Classical.choice]
+    requireExactClosure environment target roots
+    requireAuditSelfTests environment target roots
+
   for (target, signature, roots) in semanticTargets do
     requireExactSignature environment target signature
     requireNoNamespace target (completeClosure environment [target])
@@ -472,6 +488,8 @@ run_cmd do
 
 end CommentSemanticDependencyAudit
 
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typedByteArrayEqCheck_true_iff
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typedXmlEventListEqCheck_true_iff
 #print axioms Tier2.CommentReferenceIntegrity.Typed.typed_comment_selector_result_sound
 #print axioms Tier2.CommentReferenceIntegrity.Typed.typed_comment_selection_to_realization_sound
 #print axioms Tier2.CommentReferenceIntegrity.Typed.typed_admitted_comment_source_set_complete

@@ -106,10 +106,10 @@ def typedXmlEventOfProduction (eventOrdinal : Nat) : XmlEvent → TypedXmlEvent
   | .startElement uri localName attributes depth selfClosing =>
       .startElement (typedBoundedBytesOfString uri)
         (typedBoundedBytesOfString localName)
-        (attributes.map fun item => {
+        (attributes.mapTR fun item => {
           namespaceUri := typedBoundedBytesOfString item.uri
           localName := typedBoundedBytesOfString item.localName
-          value := typedBoundedBytesOfString item.value
+          value := typedBoundedByteArrayOfString item.value
         })
         depth selfClosing eventOrdinal
   | .endElement uri localName depth =>
@@ -381,7 +381,8 @@ def typedBoundedIdentityBytes (value : BoundedBytes) : List UInt8 :=
 def typedAttributeIdentityBytes (attr : TypedXmlAttribute) : List UInt8 :=
   typedBoundedIdentityBytes attr.namespaceUri ++
   typedBoundedIdentityBytes attr.localName ++
-  typedBoundedIdentityBytes attr.value
+  encodeNatDigits attr.value.bytes.size ++ [UInt8.ofNat 58] ++
+  attr.value.bytes.data.toList
 
 def typedXmlEventIdentityBytes : TypedXmlEvent → List UInt8
   | .startElement namespaceUri localName attributes depth selfClosing ordinal =>
@@ -677,13 +678,19 @@ structure BoundedOutput where
   stdout : ByteArray
   stderr : ByteArray
 
-partial def readBounded (handle : IO.FS.Handle) (limit : Nat) (acc : ByteArray := .empty) :
-    IO ByteArray := do
+partial def readBoundedChunks (handle : IO.FS.Handle) (limit total : Nat)
+    (chunks : List ByteArray) : IO (Nat × List ByteArray) := do
   let chunk ← handle.read 4096
-  if chunk.isEmpty then return acc
-  let next := acc ++ chunk
-  if next.size > limit then throw (IO.userError s!"process output exceeds {limit} bytes")
-  readBounded handle limit next
+  if chunk.isEmpty then return (total, chunks)
+  let nextTotal := total + chunk.size
+  if nextTotal > limit then
+    throw (IO.userError s!"process output exceeds {limit} bytes")
+  readBoundedChunks handle limit nextTotal (chunk :: chunks)
+
+def readBounded (handle : IO.FS.Handle) (limit : Nat) : IO ByteArray := do
+  let (total, reversedChunks) ← readBoundedChunks handle limit 0 []
+  return reversedChunks.reverse.foldl ByteArray.append
+    (ByteArray.emptyWithCapacity total)
 
 def runBounded (cmd : String) (args : Array String) (stdoutLimit : Nat) : IO BoundedOutput := do
   let child ← IO.Process.spawn {
@@ -700,14 +707,28 @@ def runBounded (cmd : String) (args : Array String) (stdoutLimit : Nat) : IO Bou
     discard child.wait
     throw error
 
+def crc32Bit (value : Nat) : Nat :=
+  if value % 2 == 1 then Nat.xor (value / 2) 0xedb88320 else value / 2
+
 def crc32Step (crc byte : Nat) : Nat :=
-  (List.range 8).foldl (fun value _ =>
-    if value % 2 == 1 then Nat.xor (value / 2) 0xedb88320 else value / 2)
-    (Nat.xor crc byte)
+  let bit0 := crc32Bit (Nat.xor crc byte)
+  let bit1 := crc32Bit bit0
+  let bit2 := crc32Bit bit1
+  let bit3 := crc32Bit bit2
+  let bit4 := crc32Bit bit3
+  let bit5 := crc32Bit bit4
+  let bit6 := crc32Bit bit5
+  crc32Bit bit6
+
+set_option backward.match.sparseCases false in
+def crc32Loop (bytes : ByteArray) : Nat → Nat → Nat → Nat
+  | 0, _, crc => crc
+  | remaining + 1, index, crc =>
+      crc32Loop bytes remaining (index + 1)
+        (crc32Step crc (bytes.get! index).toNat)
 
 def crc32 (bytes : ByteArray) : Nat :=
-  Nat.xor (bytes.toList.foldl (fun crc byte => crc32Step crc byte.toNat) 0xffffffff)
-    0xffffffff
+  Nat.xor (crc32Loop bytes bytes.size 0 0xffffffff) 0xffffffff
 
 def crc32Hex (bytes : ByteArray) : String :=
   let digits := Nat.toDigits 16 (crc32 bytes)
@@ -6818,15 +6839,15 @@ def typedExtractionOfProduction
 }
 
 def typedCommentRealizationOfProduction
-    (part : LoadedCommentPart) : TypedCommentRealization := {
-  selected := typedSelectedCommentOfProduction part.identity
-  entry := typedEntryOfProduction part.parseEvidence.extraction.entry
-  extraction := typedExtractionOfProduction part.parseEvidence.extraction
-  retainedParsedEvents :=
-    part.parseEvidence.parsed.events.zipIdx.map fun item =>
-      typedXmlEventOfProduction item.2 item.1
-  parsed := typedParsedPartOfProduction part.parseEvidence
-}
+    (part : LoadedCommentPart) : TypedCommentRealization :=
+  let parsed := typedParsedPartOfProduction part.parseEvidence
+  {
+    selected := typedSelectedCommentOfProduction part.identity
+    entry := typedEntryOfProduction part.parseEvidence.extraction.entry
+    extraction := typedExtractionOfProduction part.parseEvidence.extraction
+    retainedParsedEvents := parsed.events
+    parsed
+  }
 
 def typedCanonicalIdOfRaw (raw : Option String) :
     Option TypedCanonicalId :=

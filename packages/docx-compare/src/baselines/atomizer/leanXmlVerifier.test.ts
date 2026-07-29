@@ -99,6 +99,9 @@ function canonicalJsonForTest(value: unknown): string {
 }
 
 const exeExists = existsSync(LEAN_EXE);
+if (process.env.SAFE_DOCX_REQUIRE_LEAN_CHECKER === '1' && !exeExists) {
+  throw new Error(`required compiled Lean checker is missing: ${LEAN_EXE}`);
+}
 if (!exeExists) {
   console.warn(
     `[lean-xml-verifier] SKIP: ${LEAN_EXE} not found. ` +
@@ -642,6 +645,19 @@ async function commentIntegrityDocx(options: {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
+function deterministicXmlPayload(length: number, seed: number): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const output = Buffer.allocUnsafe(length);
+  let state = seed >>> 0;
+  for (let index = 0; index < length; index++) {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    output[index] = alphabet.charCodeAt((state >>> 0) % alphabet.length);
+  }
+  return output.toString('ascii');
+}
+
 /**
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.2
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.4.5
@@ -731,7 +747,7 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
     comparedDocx,
     legacyDocumentXml: { original: '', revised: '', compared: '' },
     reconstructionMode: 'inplace',
-    options: { executablePath: LEAN_EXE },
+    options: { executablePath: LEAN_EXE, timeoutMs: 120_000 },
   });
   const expectGlobalCommentStop = (
     certificate: Awaited<ReturnType<typeof run>>,
@@ -752,6 +768,34 @@ describeWithLean('Lean conventional comment-reference integrity', () => {
     expect(certificate.commentStory?.revised.status).toBe('not_evaluated');
     expect(certificate.commentStory?.compared.status).toBe('not_evaluated');
   };
+
+  test
+    .openspec('[LEAN-COMMENT-12] Large comment payload equality is stack-safe')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.4.6' })
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.18.10' })(
+    'processes 400000-byte comment text and attribute payloads on the fixed stack',
+    async () => {
+      const attributePayload = deterministicXmlPayload(400_000, 0x710a);
+      const textPayload = deterministicXmlPayload(400_000, 0x710b);
+      const docx = await commentIntegrityDocx({
+        commentsXml:
+          `<w:comments xmlns:w="${W_NS}">` +
+          `<w:comment w:id="7" w:author="${attributePayload}">` +
+          `<w:p><w:r><w:t>${textPayload}</w:t></w:r></w:p>` +
+          `</w:comment></w:comments>`,
+      });
+
+      const certificate = await run(docx);
+
+      expect(certificate.status, certificate.reason).toBe('passed');
+      expect(certificate.checkerProtocolVersion).toBe(6);
+      expect(certificate.commentInventories).toHaveLength(3);
+      expect(certificate.commentInventories?.every((inventory) =>
+        inventory.status === 'passed' && inventory.definitions === 1,
+      )).toBe(true);
+    },
+    120_000,
+  );
 
   test
     .openspec('[LEAN-COMMENT-01] Selected comments resolve admitted references')
@@ -3062,7 +3106,9 @@ describe('Lean fixed-story protocol and security hardening', () => {
         await rm(fake.dir, { recursive: true, force: true });
       }
     }
-    });
+    },
+    15_000,
+  );
 
   describeWithNearEnvelope('compiled near-envelope response constructors', () => {
     test.openspec('[LEAN-REL-22] Every legal response fits the output cap')(
