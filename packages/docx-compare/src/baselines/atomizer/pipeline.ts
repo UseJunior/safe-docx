@@ -130,7 +130,9 @@ import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 import {
   assembleTextBoxStoryComparison,
   assertAncillaryTextBoxStoryProjection,
+  markInsertedAncillaryStoryParagraphs,
   prepareTextBoxStoryComparison,
+  rejectedSelectedAncillaryStoryPaths,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
 
@@ -642,12 +644,22 @@ export async function compareDocumentsAtomizer(
   const storyResults: Array<{
     index: number;
     partPath: string;
+    container: 'textBox' | 'ancillaryPart';
     result: CompareResult;
   }> = [];
+  const rejectedSelectedStoryPaths =
+    await rejectedSelectedAncillaryStoryPaths(outerResult.document);
+  const representedPartPaths = new Set<string>();
   for (const story of textBoxPlan.stories) {
-    const result = await compareDocumentsAtomizerCore(
+    if (
+      story.container === 'ancillaryPart' &&
+      rejectedSelectedStoryPaths.has(story.partPath)
+    ) {
+      continue;
+    }
+    let result = await compareDocumentsAtomizerCore(
       story.original,
-      story.revised,
+      story.container === 'ancillaryPart' ? story.original : story.revised,
       nestedOptions,
     );
     if (result.reconstructionModeUsed !== 'inplace') {
@@ -657,18 +669,43 @@ export async function compareDocumentsAtomizer(
         reason: 'the nested story required rebuild fallback',
       }]);
     }
+    if (story.container === 'ancillaryPart') {
+      const marked = await markInsertedAncillaryStoryParagraphs(
+        story.revised,
+        outerResult.document,
+        options.author ?? 'Comparison',
+        options.date ?? new Date(),
+      );
+      const insertionRanges = marked.directParagraphs;
+      result = {
+        ...result,
+        document: marked.document,
+        stats: {
+          ...result.stats,
+          insertions: insertionRanges,
+          insertedRanges: insertionRanges,
+          insertedAtoms: Math.max(
+            result.stats.insertedAtoms,
+            marked.directParagraphs,
+          ),
+        },
+      };
+      representedPartPaths.add(story.partPath);
+    }
     storyResults.push({
       index: story.index,
       partPath: story.partPath,
+      container: story.container,
       result,
     });
   }
 
   const document = await assembleTextBoxStoryComparison(
     outerResult.document,
-    storyResults.map(({ index, partPath, result }) => ({
+    storyResults.map(({ index, partPath, container, result }) => ({
       index,
       partPath,
+      container,
       document: result.document,
     })),
   );
@@ -692,7 +729,10 @@ export async function compareDocumentsAtomizer(
       reason: 'assembled nested stories failed accept/reject round-trip validation',
     }]);
   }
-  if (textBoxPlan.validateAncillaryProjection) {
+  if (
+    textBoxPlan.hasAncillaryTextBoxStories ||
+    representedPartPaths.size > 0
+  ) {
     await assertAncillaryTextBoxStoryProjection(original, revised, document);
   }
 
@@ -742,7 +782,7 @@ export async function compareDocumentsAtomizer(
         exclusions: [
           ...(certificate.exclusions ?? []),
           'Nested w:txbxContent stories are not independently enumerated by the compiled verifier.',
-          ...(textBoxPlan.validateAncillaryProjection
+          ...(textBoxPlan.hasAncillaryTextBoxStories
             ? [
                 'Relationship-selected header/footer w:txbxContent stories are not independently enumerated by the compiled verifier.',
               ]
@@ -751,11 +791,26 @@ export async function compareDocumentsAtomizer(
       }))
     : undefined;
 
+  const unrepresentedChanges = outerResult.unrepresentedChanges?.filter(
+    (change) => !textBoxPlan.representedAncillaryChanges.some(
+      (represented) =>
+        representedPartPaths.has(represented.partPath) &&
+        change.scope === represented.scope &&
+        change.kind === represented.kind &&
+        change.sectionIndex === represented.sectionIndex &&
+        change.role === represented.role,
+    ),
+  );
+
   return {
     ...outerResult,
     document,
     stats,
     documentIntegrity,
+    unrepresentedChanges:
+      unrepresentedChanges && unrepresentedChanges.length > 0
+        ? unrepresentedChanges
+        : undefined,
   };
 }
 

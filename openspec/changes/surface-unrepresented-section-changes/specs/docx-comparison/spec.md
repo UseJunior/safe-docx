@@ -20,3 +20,11 @@ statistics SHALL retain their existing meaning.
 - **GIVEN** identical original and revised DOCX packages
 - **WHEN** they are compared
 - **THEN** `unrepresentedChanges` SHALL be absent
+
+#### Scenario: [SDX-CMP-UNREP-03] Footer selected by a tracked inserted section is represented
+
+- **GIVEN** a revised DOCX whose tracked inserted section exclusively selects a new relationship-addressed footer
+- **WHEN** the pair is successfully compared in place
+- **THEN** every paragraph in the inserted footer story SHALL carry tracked insertion evidence
+- **AND** text insertions SHALL NOT wrap VML or DrawingML carrier objects
+- **AND** the represented footer SHALL NOT also appear in `unrepresentedChanges`
