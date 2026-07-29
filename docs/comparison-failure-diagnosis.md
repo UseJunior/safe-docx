@@ -21,14 +21,17 @@ The last class is the one that hides. It passes text-level checks by constructio
 
 `scripts/check_docx_formatting_loss.mjs` compares a before/after `.docx` pair and reports two detectors:
 
-- **D1 — run-formatting flattening.** Each character of a paragraph is projected onto its `(bold, italic, underline)` triple. When a paragraph's text is unchanged but that projection changed, emphasis was flattened. The projection is compared rather than a multiset of runs so that a run boundary moving without changing any character's emphasis — which token splitting and rsid churn produce routinely — is not reported as loss.
+- **D1 — run-formatting flattening.** Each character of a paragraph is projected onto its *effective* formatting tuple — the supported toggle properties, underline, highlight, font, size, color — resolved through `word/styles.xml` by docx-core's `extractEffectiveRunFormatting`, the same resolver the document views use. When a paragraph's text is unchanged but that projection changed, formatting was lost. The projection is compared rather than a multiset of runs so that a run boundary moving without changing any character's formatting — which token splitting and rsid churn produce routinely — is not reported as loss. Resolving rather than reading declarations means editing a style *definition* while every reference stays put is caught, emphasis inherited from a paragraph style is visible, and replacing a style reference with equivalent direct properties is correctly not reported — a reader sees the same page either way.
 - **D2 — emptied-but-retained paragraphs.** Paragraphs are matched on `w14:paraId` and flagged when they carried content before and carry none after, including the case where the emptied paragraph kept its `w:numPr`. Both halves are transitions: a paragraph that was already empty is a property of the input, not damage the comparison caused, and is reported separately as hygiene. "Empty" means no text *and* no renderable payload, so an image-only or field-only paragraph does not count as empty.
 
 ```bash
+npm run build                                                  # the script consumes the built @usejunior/docx-core
 npm run check:docx-formatting-loss -- before.docx after.docx   # 0 clean, 1 findings, 2 inconclusive
 npm run check:docx-formatting-loss -- --json before.docx after.docx
 npm run test:docx-formatting-loss                              # unit tests + self-test
 ```
+
+The build step is a real dependency, not hygiene: formatting resolution comes from the built workspace package so the detector and the library cannot drift, and an unbuilt tree fails at import with instructions rather than running against stale behavior.
 
 Both inputs must be clean documents. The tool refuses a redline, because in a document carrying `w:del` the deleted text is still present and "empty" does not mean what D2 assumes.
 
@@ -36,10 +39,10 @@ Both inputs must be clean documents. The tool refuses a redline, because in a do
 
 What the detectors do not see, stated rather than hidden:
 
-- **D1 compares declared formatting, not resolved formatting.** It reads direct `w:rPr` plus the `w:rStyle` reference. Dropping a style that carried the emphasis is caught, because the reference changes. Editing that style's definition in `styles.xml`, or emphasis arriving through paragraph-style inheritance, is not. Consolidating onto docx-core's effective-formatting resolver is tracked in [#684](https://github.com/UseJunior/safe-docx/issues/684).
+- **D1 resolves what the resolver resolves.** `extractEffectiveRunFormatting` layers direct `w:rPr`, the `w:rStyle` chain, the paragraph mark's `w:rPr`, and the paragraph style's `basedOn` chain, each property independently. Theme fonts and theme colors resolve through `word/theme/theme1.xml`, including `themeTint` and `themeShade`; a missing theme part retains direct font/color fallbacks. It does not reach `w:docDefaults`, table-style run properties, or numbering-level `rPr`. Toggle properties use style-level parity and absolute direct-formatting semantics; D1 includes the full supported toggle set in its character projection. Underline is reduced to on/off, so an underline style-to-style change (single to dotted) is no longer a finding — the declared-properties projection this replaced ([#684](https://github.com/UseJunior/safe-docx/issues/684)) caught that corner but missed every style-carried loss. Color hex compares case-insensitively.
 - **D1 requires identical text.** Formatting loss that co-occurs with a text edit in the same paragraph is out of reach.
-- **The emphasis key is deliberately narrow** — bold, italic, underline, character style — so losses confined to other run properties pass unreported.
 - **Paragraphs without a `w14:paraId`, and paragraphs sharing a duplicate one, are not compared.** Duplicates are dropped from the match set rather than resolved by last write; both are counted in the coverage line.
+- **A side with no `word/styles.xml` degrades to direct properties only** for that side, with a note on stderr. Real documents always carry the part; the note exists so the degradation is never silent.
 
 The tool emits counts, `w14:paraId` values, and element names in its detector reports, and the projection holds a digest of each paragraph's text rather than the text, so results from a run over material that cannot be shared are still reportable. Usage and IO errors do echo the paths you passed in.
 

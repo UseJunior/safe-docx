@@ -8,7 +8,7 @@
 import { CorrelationStatus, type ComparisonUnitAtom } from '@usejunior/docx-core';
 import { areRunPropertiesEqual } from '../../format-detection.js';
 import { childElements, findChildByTagName, unwrapElement } from '@usejunior/docx-core';
-import { createEl } from './inPlaceModifier-shared.js';
+import { createEl, W_NS } from './inPlaceModifier-shared.js';
 import { TRACK_CHANGE_WRAPPERS, type TrackChangeTag } from './inPlaceModifier-wrappers.js';
 
 export const DELETION_LIKE_STATUSES: ReadonlySet<CorrelationStatus> = new Set([
@@ -197,6 +197,69 @@ export function suppressNoOpChangePairs(root: Element): void {
   }
 
   traverse(root);
+}
+
+/**
+ * Remove cloned current-comparison format snapshots from both sides of a text
+ * replacement.
+ *
+ * Word-level run splitting can clone one generated `w:rPrChange` into a
+ * `w:del` run and a `w:ins` run with the same revision ID. The replacement
+ * wrappers already preserve the old and new live run properties, so both
+ * snapshots are redundant; retaining them creates duplicate IDs and noisy
+ * formatting revisions. A single format snapshot, a snapshot outside a text
+ * wrapper, and any input-authored snapshot are left untouched.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @see https://github.com/UseJunior/safe-docx/issues/724
+ */
+export function suppressDuplicatedFormatChangesInTextReplacements(
+  root: Element,
+  generatedFormatChangeIds: ReadonlySet<string>,
+  comparisonAuthor: string,
+): void {
+  interface Occurrence {
+    change: Element;
+    wrapper: Element | null;
+  }
+
+  const occurrences = new Map<string, Occurrence[]>();
+
+  const visit = (element: Element, activeWrapper: Element | null): void => {
+    const wrapper =
+      element.tagName === 'w:ins' || element.tagName === 'w:del'
+        ? element
+        : activeWrapper;
+
+    if (element.namespaceURI === W_NS && element.localName === 'rPrChange') {
+      const id = element.getAttribute('w:id');
+      if (id && generatedFormatChangeIds.has(id)) {
+        const group = occurrences.get(id) ?? [];
+        group.push({ change: element, wrapper });
+        occurrences.set(id, group);
+      }
+    }
+
+    for (const child of childElements(element)) {
+      visit(child, wrapper);
+    }
+  };
+
+  visit(root, null);
+
+  for (const group of occurrences.values()) {
+    const currentTextWrappers = group.filter(({ wrapper }) =>
+      wrapper !== null
+      && (wrapper.tagName === 'w:ins' || wrapper.tagName === 'w:del')
+      && wrapper.getAttribute('w:author') === comparisonAuthor,
+    );
+    const wrapperKinds = new Set(currentTextWrappers.map(({ wrapper }) => wrapper!.tagName));
+    if (!wrapperKinds.has('w:ins') || !wrapperKinds.has('w:del')) continue;
+
+    for (const { change } of currentTextWrappers) {
+      change.parentNode?.removeChild(change);
+    }
+  }
 }
 
 // =============================================================================

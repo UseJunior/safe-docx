@@ -12,8 +12,10 @@
  *   D1 run-formatting flattening — a replacement whose span crosses a run
  *      boundary collapses the boundary and drops bold/italic from the affected
  *      span. Detected per paragraph by projecting each character of the
- *      paragraph onto its (bold, italic, underline, character style) tuple: if
- *      the text is unchanged but that projection changed, emphasis was lost.
+ *      paragraph onto its *effective* formatting tuple (the supported toggle
+ *      properties, underline, highlight, font, size, color), resolved through
+ *      word/styles.xml by docx-core's extractEffectiveRunFormatting: if the
+ *      text is unchanged but that projection changed, formatting was lost.
  *
  *      Issue #682 sketched D1 as a multiset of runs keyed on
  *      (text, bold, italic, underline). That formulation fires on any run
@@ -39,16 +41,37 @@
  * pass. Coverage below --min-coverage is therefore reported as INCONCLUSIVE and
  * exits 2. A detector that cannot see the document must not be able to bless it.
  *
- * Scope of D1. It compares *declared* formatting — direct w:rPr plus the
- * w:rStyle reference — not formatting resolved through styles.xml. Removing a
- * style that carried bold is caught, because the reference changes. Editing the
- * definition of that style, or a change expressed only through paragraph-style
- * inheritance, is not. Consolidating onto docx-core's effective-formatting
- * resolver is tracked in #684; until then this limit is stated rather than
- * papered over.
+ * Scope of D1. It compares formatting *resolved* through word/styles.xml, not
+ * merely the properties a run declares: each character's tuple is
+ * docx-core's `extractEffectiveRunFormatting` — direct w:rPr, then the
+ * w:rStyle chain, then the paragraph mark's rPr, then the paragraph style's
+ * basedOn chain (issue #684). Three consequences, all deliberate:
+ *
+ *   - Editing a style *definition* while every reference stays put is caught,
+ *     because the resolved formatting changes even though no run changed.
+ *   - Emphasis arriving through paragraph-style inheritance is visible, so
+ *     dropping the w:pStyle that carried it is caught.
+ *   - Replacing a style reference with equivalent direct properties resolves
+ *     identically and is NOT reported — that is a representation difference,
+ *     not a loss a reader can see.
+ *   - Toggle properties use style-level parity and absolute direct-formatting
+ *     semantics, matching the Word differential pinned for issue #737.
+ *
+ * What the resolver does not reach, this check does not reach: w:docDefaults,
+ * table-style run properties, and numbering-level rPr. Theme fonts and colors
+ * are resolved through word/theme/theme1.xml, including tint/shade transforms.
+ * Because the resolver reduces w:u to on/off, an underline
+ * style-to-style change (single to dotted) is no longer reported; the old
+ * declared-properties projection caught it, and trading that corner for one
+ * shared implementation instead of two that drift is the point of #684.
  *
  * D1 also requires the two paragraphs to carry identical text. Formatting loss
  * that co-occurs with a text edit in the same paragraph is out of its reach.
+ *
+ * Build order: this script consumes the *built* @usejunior/docx-core workspace
+ * package. Run `npm run build` (or `npm run build -w @usejunior/docx-core`)
+ * first; an unbuilt tree fails loudly at import rather than resolving stale
+ * behavior.
  *
  * Output discipline: this runs over confidential documents. Detector reports
  * emit only counts, w14:paraId values, and element names, and the projection
@@ -77,14 +100,26 @@ import { fileURLToPath } from 'node:url';
 import { DOMParser } from '@xmldom/xmldom';
 import JSZip from 'jszip';
 
+// Loaded dynamically so an unbuilt workspace produces this actionable message
+// instead of a bare ERR_MODULE_NOT_FOUND pointing at a dist/ path.
+let parseStylesXml;
+let parseThemeXml;
+let extractEffectiveRunFormatting;
+try {
+  ({ parseStylesXml, parseThemeXml, extractEffectiveRunFormatting } = await import('@usejunior/docx-core'));
+} catch (error) {
+  throw new Error(
+    `check_docx_formatting_loss: @usejunior/docx-core failed to load (${error.message}). ` +
+      `This script consumes the built workspace package so formatting resolution cannot drift ` +
+      `from the library — run \`npm run build\` (or \`npm run build -w @usejunior/docx-core\`) first.`,
+  );
+}
+
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const W14_NS = 'http://schemas.microsoft.com/office/word/2010/wordml';
 
 /** Maximum paraIds listed per detector line before the tail is summarized. */
 const MAX_LISTED_IDS = 20;
-
-/** ST_OnOff values that turn a toggle property off. ECMA-376 Part 1 § 17.17.4. */
-const OFF_VALUES = new Set(['0', 'false', 'off']);
 
 /**
  * Fraction of the larger side's paragraphs that must be matched by paraId
@@ -137,37 +172,6 @@ function attributeValue(element, namespaceUri, localName) {
   return value === null || value === '' ? undefined : value;
 }
 
-/** A toggle property is on when present unless w:val says otherwise. */
-function toggleIsOn(runProperties, localName) {
-  if (!runProperties) return false;
-  const property = directChild(runProperties, localName);
-  if (!property) return false;
-  const value = attributeValue(property, W_NS, 'val');
-  return value === undefined ? true : !OFF_VALUES.has(value.toLowerCase());
-}
-
-/**
- * w:u is not a toggle — it carries an underline style. The raw value is kept so
- * a single-to-dotted change counts as a formatting change, not just on/off.
- */
-function underlineValue(runProperties) {
-  if (!runProperties) return 'none';
-  const underline = directChild(runProperties, 'u');
-  if (!underline) return 'none';
-  return attributeValue(underline, W_NS, 'val') ?? 'unspecified';
-}
-
-/**
- * The character style reference. Included so that dropping a style that carried
- * the emphasis is visible: without it, removing w:rStyle="Strong" changes no
- * direct property and the loss is silent.
- */
-function characterStyleId(runProperties) {
-  if (!runProperties) return '';
-  const style = directChild(runProperties, 'rStyle');
-  return style ? (attributeValue(style, W_NS, 'val') ?? '') : '';
-}
-
 function runText(run, paragraph) {
   let text = '';
   for (const node of elementsByTag(run, 't')) {
@@ -185,13 +189,33 @@ function runHasRenderableContent(run, paragraph) {
   return false;
 }
 
-function runEmphasis(run) {
-  const runProperties = directChild(run, 'rPr');
+/**
+ * The tuple D1 projects each character onto: every field of docx-core's
+ * effective run formatting, resolved through styles.xml. Two runs whose
+ * declarations differ but resolve identically produce the same tuple, and a
+ * style-definition edit changes the tuple with no change to the run at all.
+ * Nullable fields are pinned to sentinel strings so tuple positions compare
+ * by value. Color hex is compared case-insensitively — ff0000 and FF0000 are
+ * the same ink, and the raw casing is a property of the writer, not the page.
+ */
+function runEmphasis(run, paragraphPPr, paragraphStyleId, styles, theme) {
+  const formatting = extractEffectiveRunFormatting({ run, paragraphPPr, paragraphStyleId, styles, theme });
   return [
-    toggleIsOn(runProperties, 'b'),
-    toggleIsOn(runProperties, 'i'),
-    underlineValue(runProperties),
-    characterStyleId(runProperties),
+    formatting.bold,
+    formatting.italic,
+    formatting.caps,
+    formatting.smallCaps,
+    formatting.strike,
+    formatting.emboss,
+    formatting.imprint,
+    formatting.outline,
+    formatting.shadow,
+    formatting.vanish,
+    formatting.underline,
+    formatting.highlightVal ?? 'none',
+    formatting.fontName,
+    formatting.fontSizePt,
+    formatting.colorHex === null ? 'auto' : formatting.colorHex.toUpperCase(),
   ];
 }
 
@@ -242,6 +266,57 @@ function parseDocumentPart(documentXml) {
   return document;
 }
 
+/**
+ * Parse word/styles.xml into docx-core's StylesModel. A missing part yields an
+ * empty model — resolution degrades to direct properties only — but a part
+ * that is present and does not parse fails loudly: silently resolving nothing
+ * would make every style-carried loss invisible while reading as a clean pass.
+ */
+export function parseStylesPart(stylesXml) {
+  if (stylesXml === null || stylesXml === undefined) return parseStylesXml(null);
+  const errors = [];
+  let document;
+  try {
+    document = new DOMParser({
+      onError: (level, message) => {
+        if (level === 'error' || level === 'fatalError') errors.push(String(message));
+      },
+    }).parseFromString(stylesXml, 'application/xml');
+  } catch (error) {
+    throw new Error(`word/styles.xml did not parse: ${error.message}`);
+  }
+  if (errors.length > 0) throw new Error(`word/styles.xml did not parse: ${errors[0]}`);
+  // A well-formed part with the wrong root would parse to zero styles, and an
+  // empty model makes every style-carried loss invisible while reading clean.
+  const root = document.documentElement;
+  if (!root || root.namespaceURI !== W_NS || root.localName !== 'styles') {
+    throw new Error('word/styles.xml is not a WordprocessingML w:styles part');
+  }
+  return parseStylesXml(document);
+}
+
+/** Parse and validate word/theme/theme1.xml for effective font/color resolution. */
+export function parseThemePart(themeXml) {
+  if (themeXml === null || themeXml === undefined) return parseThemeXml(null);
+  const errors = [];
+  let document;
+  try {
+    document = new DOMParser({
+      onError: (level, message) => {
+        if (level === 'error' || level === 'fatalError') errors.push(String(message));
+      },
+    }).parseFromString(themeXml, 'application/xml');
+  } catch (error) {
+    throw new Error(`word/theme/theme1.xml did not parse: ${error.message}`);
+  }
+  if (errors.length > 0) throw new Error(`word/theme/theme1.xml did not parse: ${errors[0]}`);
+  const root = document.documentElement;
+  if (!root || root.namespaceURI !== 'http://schemas.openxmlformats.org/drawingml/2006/main' || root.localName !== 'theme') {
+    throw new Error('word/theme/theme1.xml is not a DrawingML a:theme part');
+  }
+  return parseThemeXml(document);
+}
+
 /** Revision markup means this is a redline, where "empty" means something else. */
 export function findRevisionMarkers(documentXml) {
   const document = parseDocumentPart(documentXml);
@@ -256,9 +331,15 @@ export function findRevisionMarkers(documentXml) {
  * would report a comparison the tool did not actually make.
  *
  * @param {string} documentXml raw word/document.xml
+ * @param {string | null} [stylesXml] raw word/styles.xml; omitted or null
+ *   resolves formatting from direct properties only
+ * @param {string | null} [themeXml] raw word/theme/theme1.xml; omitted or null
+ *   leaves unresolved theme references on their direct fallbacks
  */
-export function projectParagraphs(documentXml) {
+export function projectParagraphs(documentXml, stylesXml = null, themeXml = null) {
   const document = parseDocumentPart(documentXml);
+  const styles = parseStylesPart(stylesXml);
+  const theme = parseThemePart(themeXml);
 
   const byParaId = new Map();
   const duplicateParaIds = new Set();
@@ -280,6 +361,10 @@ export function projectParagraphs(documentXml) {
       continue;
     }
 
+    const paragraphProperties = directChild(paragraph, 'pPr');
+    const paragraphStyle = paragraphProperties ? directChild(paragraphProperties, 'pStyle') : undefined;
+    const paragraphStyleId = paragraphStyle ? (attributeValue(paragraphStyle, W_NS, 'val') ?? null) : null;
+
     const emphasisSpans = [];
     let text = '';
     let hasRenderableContent = false;
@@ -289,11 +374,14 @@ export function projectParagraphs(documentXml) {
       text += ownText;
       // Empty runs (bookmarks, field characters, breaks) span no characters, so
       // they carry no emphasis that could be lost.
-      appendEmphasisSpan(emphasisSpans, ownText.length, runEmphasis(run));
+      appendEmphasisSpan(
+        emphasisSpans,
+        ownText.length,
+        runEmphasis(run, paragraphProperties ?? null, paragraphStyleId, styles, theme),
+      );
       if (!hasRenderableContent && runHasRenderableContent(run, paragraph)) hasRenderableContent = true;
     }
 
-    const paragraphProperties = directChild(paragraph, 'pPr');
     byParaId.set(paraId, {
       emphasisSpans,
       textDigest: createHash('sha256').update(text).digest('hex'),
@@ -423,20 +511,31 @@ export function formatReport(result) {
   return lines;
 }
 
-export async function readDocumentXml(docxPath) {
+/**
+ * Read the parts the projection needs. `stylesXml` is null when the package
+ * carries no word/styles.xml — the caller decides whether that degradation is
+ * worth telling the user about.
+ */
+export async function readDocxParts(docxPath) {
   let archive;
   try {
     archive = await JSZip.loadAsync(readFileSync(docxPath));
   } catch (error) {
     throw new Error(`${docxPath} is not a readable .docx package: ${error.message}`);
   }
-  const entry = archive.file('word/document.xml');
-  if (!entry) throw new Error(`${docxPath} has no word/document.xml`);
-  return entry.async('string');
+  const documentEntry = archive.file('word/document.xml');
+  if (!documentEntry) throw new Error(`${docxPath} has no word/document.xml`);
+  const stylesEntry = archive.file('word/styles.xml');
+  const themeEntry = archive.file('word/theme/theme1.xml');
+  return {
+    documentXml: await documentEntry.async('string'),
+    stylesXml: stylesEntry ? await stylesEntry.async('string') : null,
+    themeXml: themeEntry ? await themeEntry.async('string') : null,
+  };
 }
 
 /** Minimal OOXML package used by --self-test and the unit tests. */
-export async function buildMinimalDocx(bodyXml) {
+export async function buildMinimalDocx(bodyXml, stylesXml = null, themeXml = null) {
   const zip = new JSZip();
   zip.file(
     '[Content_Types].xml',
@@ -445,6 +544,12 @@ export async function buildMinimalDocx(bodyXml) {
       `<Default Extension="xml" ContentType="application/xml"/>` +
       `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
       `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+      (stylesXml === null
+        ? ''
+        : `<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>`) +
+      (themeXml === null
+        ? ''
+        : `<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`) +
       `</Types>`,
   );
   zip.file(
@@ -455,6 +560,8 @@ export async function buildMinimalDocx(bodyXml) {
       `</Relationships>`,
   );
   zip.file('word/document.xml', wrapBodyXml(bodyXml));
+  if (stylesXml !== null) zip.file('word/styles.xml', stylesXml);
+  if (themeXml !== null) zip.file('word/theme/theme1.xml', themeXml);
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
@@ -467,11 +574,53 @@ export function wrapBodyXml(bodyXml) {
   );
 }
 
+/** Wrap style definitions into a minimal word/styles.xml part for tests. */
+export function wrapStylesXml(styleDefinitionsXml) {
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<w:styles xmlns:w="${W_NS}">${styleDefinitionsXml}</w:styles>`
+  );
+}
+
+export function wrapThemeXml(themeElementsXml) {
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Test Theme">` +
+    `<a:themeElements>${themeElementsXml}<a:fmtScheme name="Test"/></a:themeElements></a:theme>`
+  );
+}
+
 /**
- * Known-good and known-bad body XML for the self-test. The bad side is the two
+ * Known-good and known-bad fixtures for the self-test. The bad side is the
  * shapes this check exists for: a defined term whose cross-run bold was
- * flattened into a single plain run, and a numbered paragraph emptied but kept.
+ * flattened into a single plain run (11111111), a numbered paragraph emptied
+ * but kept (22222222), and a heading whose bold arrives only through its
+ * paragraph style, lost by editing the style *definition* while the document
+ * part stays byte-identical (33333333) — the case a declared-properties
+ * projection cannot see. Paragraph 44444444 swaps a character-style reference
+ * for equivalent direct bold; it resolves identically on both sides and MUST
+ * NOT be reported, proving the detector distinguishes representation
+ * differences from losses.
  */
+export const SELF_TEST_BEFORE_STYLES = wrapStylesXml(
+  `<w:style w:type="paragraph" w:styleId="EmphaticHeading">` +
+    `<w:name w:val="Emphatic Heading"/><w:rPr><w:b/></w:rPr>` +
+    `</w:style>` +
+    `<w:style w:type="character" w:styleId="Strong">` +
+    `<w:name w:val="Strong"/><w:rPr><w:b/></w:rPr>` +
+    `</w:style>`,
+);
+
+/** Identical except the paragraph style's bold is gone from the definition. */
+export const SELF_TEST_AFTER_STYLES = wrapStylesXml(
+  `<w:style w:type="paragraph" w:styleId="EmphaticHeading">` +
+    `<w:name w:val="Emphatic Heading"/>` +
+    `</w:style>` +
+    `<w:style w:type="character" w:styleId="Strong">` +
+    `<w:name w:val="Strong"/><w:rPr><w:b/></w:rPr>` +
+    `</w:style>`,
+);
+
 export const SELF_TEST_BEFORE_BODY =
   `<w:p w14:paraId="11111111">` +
   `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Term</w:t></w:r>` +
@@ -480,6 +629,13 @@ export const SELF_TEST_BEFORE_BODY =
   `<w:p w14:paraId="22222222">` +
   `<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr>` +
   `<w:r><w:t>A numbered obligation.</w:t></w:r>` +
+  `</w:p>` +
+  `<w:p w14:paraId="33333333">` +
+  `<w:pPr><w:pStyle w:val="EmphaticHeading"/></w:pPr>` +
+  `<w:r><w:t>Article heading.</w:t></w:r>` +
+  `</w:p>` +
+  `<w:p w14:paraId="44444444">` +
+  `<w:r><w:rPr><w:rStyle w:val="Strong"/></w:rPr><w:t>Notwithstanding</w:t></w:r>` +
   `</w:p>`;
 
 export const SELF_TEST_AFTER_BODY =
@@ -488,13 +644,23 @@ export const SELF_TEST_AFTER_BODY =
   `</w:p>` +
   `<w:p w14:paraId="22222222">` +
   `<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr></w:pPr>` +
+  `</w:p>` +
+  `<w:p w14:paraId="33333333">` +
+  `<w:pPr><w:pStyle w:val="EmphaticHeading"/></w:pPr>` +
+  `<w:r><w:t>Article heading.</w:t></w:r>` +
+  `</w:p>` +
+  `<w:p w14:paraId="44444444">` +
+  `<w:r><w:rPr><w:b/></w:rPr><w:t>Notwithstanding</w:t></w:r>` +
   `</w:p>`;
 
 async function runSelfTest() {
-  const before = projectParagraphs(wrapBodyXml(SELF_TEST_BEFORE_BODY));
-  const after = projectParagraphs(wrapBodyXml(SELF_TEST_AFTER_BODY));
+  const before = projectParagraphs(wrapBodyXml(SELF_TEST_BEFORE_BODY), SELF_TEST_BEFORE_STYLES);
+  const after = projectParagraphs(wrapBodyXml(SELF_TEST_AFTER_BODY), SELF_TEST_AFTER_STYLES);
 
-  const unchanged = detectFormattingLoss(before, projectParagraphs(wrapBodyXml(SELF_TEST_BEFORE_BODY)));
+  const unchanged = detectFormattingLoss(
+    before,
+    projectParagraphs(wrapBodyXml(SELF_TEST_BEFORE_BODY), SELF_TEST_BEFORE_STYLES),
+  );
   const damaged = detectFormattingLoss(before, after);
 
   const failures = [];
@@ -504,8 +670,13 @@ async function runSelfTest() {
   if (unchanged.inconclusive || damaged.inconclusive) {
     failures.push('self-test fixtures did not reach full coverage — the harness itself is broken');
   }
-  if (damaged.flattenedParagraphIds.length !== 1) {
-    failures.push(`D1 did not fire on the known-bad pair (got ${damaged.flattenedParagraphIds.length}, expected 1)`);
+  const expectedFlattened = ['11111111', '33333333'];
+  if (JSON.stringify(damaged.flattenedParagraphIds) !== JSON.stringify(expectedFlattened)) {
+    failures.push(
+      `D1 misfired on the known-bad pair (got [${damaged.flattenedParagraphIds.join(' ')}], ` +
+        `expected [${expectedFlattened.join(' ')}]: direct flattening plus a style-definition edit, ` +
+        `and never the equivalent style-to-direct representation swap)`,
+    );
   }
   if (damaged.emptiedParagraphIds.length !== 1) {
     failures.push(`D2 emptied did not fire on the known-bad pair (got ${damaged.emptiedParagraphIds.length}, expected 1)`);
@@ -521,7 +692,10 @@ async function runSelfTest() {
     return 1;
   }
 
-  console.log('self-test: known-good pair clean, known-bad pair caught by D1 and both D2 checks');
+  console.log(
+    'self-test: known-good pair clean, known-bad pair caught by D1 (direct and style-resolved) and both D2 checks, ' +
+      'style-vs-direct representation swap correctly not reported',
+  );
   for (const line of formatReport(damaged)) console.log(`self-test known-bad ${line}`);
   return 0;
 }
@@ -564,9 +738,9 @@ export async function main(argv) {
 
   let result;
   try {
-    const [beforeXml, afterXml] = await Promise.all(positional.map(readDocumentXml));
-    for (const [path, xml] of [[positional[0], beforeXml], [positional[1], afterXml]]) {
-      const markers = findRevisionMarkers(xml);
+    const [beforeParts, afterParts] = await Promise.all(positional.map(readDocxParts));
+    for (const [path, parts] of [[positional[0], beforeParts], [positional[1], afterParts]]) {
+      const markers = findRevisionMarkers(parts.documentXml);
       if (markers.length > 0) {
         throw new Error(
           `${path} carries revision markup (${markers.map((name) => `w:${name}`).join(', ')}). ` +
@@ -574,8 +748,20 @@ export async function main(argv) {
             `and "empty" does not mean what D2 assumes. Accept or reject the revisions first.`,
         );
       }
+      if (parts.stylesXml === null) {
+        // Degraded, not fatal: without styles.xml every style resolves to
+        // nothing, so a loss carried by a style definition cannot be seen.
+        console.error(
+          `check_docx_formatting_loss: note — ${path} has no word/styles.xml; ` +
+            `formatting is resolved from direct properties only for that side`,
+        );
+      }
     }
-    result = detectFormattingLoss(projectParagraphs(beforeXml), projectParagraphs(afterXml), { minCoverage });
+    result = detectFormattingLoss(
+      projectParagraphs(beforeParts.documentXml, beforeParts.stylesXml, beforeParts.themeXml),
+      projectParagraphs(afterParts.documentXml, afterParts.stylesXml, afterParts.themeXml),
+      { minCoverage },
+    );
   } catch (error) {
     console.error(`check_docx_formatting_loss: ${error.message}`);
     return 2;

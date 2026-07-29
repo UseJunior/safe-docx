@@ -43,6 +43,24 @@ export type {
   RevisionIdState,
 } from './primitives/track-changes-emitter.js';
 
+// Effective run-formatting resolution (issue #684). These names already reach
+// the entry point through the star exports above; they are restated explicitly
+// because they are a deliberate public surface, not incidental barrel spillage:
+// external consumers — scripts/check_docx_formatting_loss.mjs today, the
+// formatting-convention detector planned in #687 — resolve formatting through
+// this one implementation instead of re-reading declared w:rPr and drifting.
+// The set is the minimum coherent surface: the resolver, the parsers that
+// build its styles/theme inputs, and the types its signature references.
+export {
+  parseStylesXml,
+  parseThemeXml,
+  extractEffectiveRunFormatting,
+  type StylesModel,
+  type ThemeModel,
+  type StyleDef,
+  type RunFormatting,
+} from './primitives/styles.js';
+
 // Re-export the LibreOffice accept/reject oracle (gated reference voter; callers skip when
 // `resolveSoffice()` is null or `probeSofficeUsable()` is false — the binary can exist yet
 // abort on launch under a restricted shell). odf-core's round-trip tests drive it with `.odt` jobs.

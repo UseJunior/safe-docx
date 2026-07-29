@@ -13,13 +13,26 @@
 
 import JSZip from 'jszip';
 import { describe, expect } from 'vitest';
-import { compareDocuments } from '../../index.js';
+import {
+  acceptAllChanges,
+  compareDocuments,
+  extractTextWithParagraphs,
+  normalizeText,
+  rejectAllChanges,
+} from '../../index.js';
+import { findAllByTagName, parseXml } from '@usejunior/docx-core';
 import { testAllure, type AllureBddContext } from '../../testing/allure-test.js';
 import { buildDocxFromBodyXml } from '../../testing/ooxml-fixtures.js';
 
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({ feature: 'Inplace Modifier Handlers' });
+const formatTest = test.conformance({
+  spec: 'ECMA-376',
+  edition: 5,
+  part: 1,
+  section: '17.13.5.31',
+});
 
 function para(text: string): string {
   return `<w:p><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
@@ -195,6 +208,52 @@ describe('inPlaceModifier handlers (inplace reconstruction path)', () => {
       expect(count(xml, 'w:delText')).toBe(0);
     });
   });
+
+  formatTest(
+    'text replacements do not clone one format revision into both change wrappers',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      let xml: string;
+      let result: InplaceResult;
+
+      await given('one run with surrounding text edits and a character-spacing change', () => {});
+
+      await when('the documents are compared in inplace mode', async () => {
+        ({ xml, result } = await inplaceCompareFull(
+          '<w:p><w:r><w:rPr><w:spacing w:val="1"/></w:rPr><w:t>Alpha legacy stable middle Omega ending</w:t></w:r></w:p>',
+          '<w:p><w:r><w:t>Intro Alpha stable middle Omega revised</w:t></w:r></w:p>',
+        ));
+      });
+
+      await then('genuine equal-text formatting changes remain tracked', () => {
+        expect(result.stats.formatChanges).toBeGreaterThan(0);
+        expect(count(xml, 'w:rPrChange')).toBeGreaterThan(0);
+      });
+
+      await and('inserted and deleted text do not inherit redundant format snapshots', () => {
+        const doc = parseXml(xml);
+        for (const wrapper of [
+          ...findAllByTagName(doc.documentElement, 'w:ins'),
+          ...findAllByTagName(doc.documentElement, 'w:del'),
+        ]) {
+          expect(findAllByTagName(wrapper, 'w:rPrChange')).toHaveLength(0);
+        }
+      });
+
+      await and('format revision IDs are unique after word-level run splitting', () => {
+        const doc = parseXml(xml);
+        const ids = findAllByTagName(doc.documentElement, 'w:rPrChange')
+          .map((change) => change.getAttribute('w:id'));
+        expect(new Set(ids).size).toBe(ids.length);
+      });
+
+      await and('accept and reject recover the revised and original text exactly', () => {
+        const accepted = normalizeText(extractTextWithParagraphs(acceptAllChanges(xml)));
+        const rejected = normalizeText(extractTextWithParagraphs(rejectAllChanges(xml)));
+        expect(accepted).toBe('Intro Alpha stable middle Omega revised');
+        expect(rejected).toBe('Alpha legacy stable middle Omega ending');
+      });
+    },
+  );
 
   test('handleMovedSource/Destination: a reordered paragraph is bracketed by move markers', async ({
     given,

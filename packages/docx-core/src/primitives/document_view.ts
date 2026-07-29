@@ -10,7 +10,15 @@ import {
   computeListLabelForParagraph,
   getNumberingLevel,
 } from './numbering.js';
-import { parseStylesXml, type StylesModel, extractParagraphFormatting, extractEffectiveRunFormatting, type RunFormatting } from './styles.js';
+import {
+  parseStylesXml,
+  parseThemeXml,
+  type StylesModel,
+  type ThemeModel,
+  extractParagraphFormatting,
+  extractEffectiveRunFormatting,
+  type RunFormatting,
+} from './styles.js';
 import { HIGHLIGHT_TAG } from './semantic_tags.js';
 import { type AnnotatedRun, type FormattingBaseline, type FormattingMode, computeModalBaseline, computeParagraphFontBaseline, emitFormattingTags, mergeAdjacentTags } from './formatting_tags.js';
 import type { RelsMap } from './relationships.js';
@@ -138,18 +146,20 @@ export function collectViewParagraphs(
 export function buildDocumentView(params: {
   documentXml: Document;
   stylesXml: Document | null;
+  themeXml?: Document | null;
   numberingXml: Document | null;
   footnotesXml?: Document | null;
   relsMap?: RelsMap;
   opts?: BuildDocumentViewOptions & { show_formatting?: boolean; formatting_mode?: FormattingMode };
 }): { nodes: DocumentViewNode[]; styles: DocumentStyles } {
-  const { documentXml, stylesXml, numberingXml, footnotesXml, relsMap, opts } = params;
+  const { documentXml, stylesXml, themeXml, numberingXml, footnotesXml, relsMap, opts } = params;
 
   const paragraphs = collectViewParagraphs(documentXml);
 
   return buildNodesForDocumentView({
     paragraphs,
     stylesXml,
+    themeXml: themeXml ?? null,
     numberingXml,
     include_semantic_tags: opts?.include_semantic_tags ?? true,
     show_formatting: opts?.show_formatting ?? false,
@@ -185,9 +195,10 @@ function buildAnnotatedRuns(params: {
   paragraphPPr: Element | null;
   paragraphStyleId: string | null;
   stylesModel: StylesModel;
+  themeModel: ThemeModel;
   relsMap?: RelsMap;
 }): AnnotatedRun[] {
-  const { p, paragraphPPr, paragraphStyleId, stylesModel, relsMap } = params;
+  const { p, paragraphPPr, paragraphStyleId, stylesModel, themeModel, relsMap } = params;
   const textRuns = getParagraphRuns(p);
   const annotated: AnnotatedRun[] = [];
 
@@ -210,6 +221,7 @@ function buildAnnotatedRuns(params: {
       paragraphPPr,
       paragraphStyleId,
       styles: stylesModel,
+      theme: themeModel,
     });
     const hyperlinkUrl = resolveRunHyperlinkUrl(tr.r, relsMap);
 
@@ -430,6 +442,7 @@ function injectFootnoteMarkers(
 export function buildNodesForDocumentView(params: {
   paragraphs: Array<{ id: string; p: Element; tableContext?: TableContext }>;
   stylesXml: Document | null;
+  themeXml?: Document | null;
   numberingXml: Document | null;
   include_semantic_tags?: boolean;
   show_formatting?: boolean;
@@ -449,6 +462,7 @@ export function buildNodesForDocumentView(params: {
     : new Map<number, number>();
 
   const stylesModel = parseStylesXml(stylesXml);
+  const themeModel = parseThemeXml(params.themeXml ?? null);
   const numberingModel = parseNumberingXml(numberingXml);
   const counters: NumberingCounters = new Map();
 
@@ -467,6 +481,7 @@ export function buildNodesForDocumentView(params: {
         paragraphPPr: paraPPr ?? null,
         paragraphStyleId: paraFmt.styleId,
         stylesModel,
+        themeModel,
         relsMap,
       });
 
@@ -477,6 +492,7 @@ export function buildNodesForDocumentView(params: {
           paragraphPPr: paraPPr ?? null,
           paragraphStyleId: paraFmt.styleId,
           styles: stylesModel,
+          theme: themeModel,
         });
         if (hdr && hdr.headerCharCount > 0) {
           let seen = 0;
@@ -600,7 +616,13 @@ export function buildNodesForDocumentView(params: {
       // extractHeaderInfo below.
       const hdr = tableContext
         ? null
-        : detectRunInHeader({ paragraph: p, paragraphPPr: paraPPr ?? null, paragraphStyleId: paraFmt.styleId, styles: stylesModel });
+        : detectRunInHeader({
+            paragraph: p,
+            paragraphPPr: paraPPr ?? null,
+            paragraphStyleId: paraFmt.styleId,
+            styles: stylesModel,
+            theme: themeModel,
+          });
       if (hdr) {
         headerText = hdr.raw_text.replace(/[.:\-]+$/g, '');
         headerStyle = 'run_in_header';
@@ -627,6 +649,7 @@ export function buildNodesForDocumentView(params: {
           alignment: paraFmt.alignment,
           cleanTextNoLabel,
           styles: stylesModel,
+          theme: themeModel,
         });
         if (titleHdr) {
           headerText = titleHdr.raw_text;
@@ -749,6 +772,7 @@ export function buildNodesForDocumentView(params: {
           paragraphPPr: paraPPr ?? null,
           paragraphStyleId: paraFmt.styleId,
           styles: stylesModel,
+          theme: themeModel,
         });
         // v0.3: Improved body detection. 
         // If there is a header, we want the first run that IS NOT the header.
@@ -767,6 +791,7 @@ export function buildNodesForDocumentView(params: {
           paragraphPPr: paraPPr ?? null,
           paragraphStyleId: paraFmt.styleId,
           styles: stylesModel,
+          theme: themeModel,
         });
       }
     } catch {

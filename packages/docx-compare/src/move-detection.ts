@@ -72,6 +72,11 @@ export function countWords(text: string): number {
   return words.length;
 }
 
+function normalizedWordSet(text: string, caseInsensitive: boolean): Set<string> {
+  const normalized = caseInsensitive ? text.toLowerCase() : text;
+  return new Set(normalized.split(/\s+/).filter(Boolean));
+}
+
 // =============================================================================
 // Jaccard Similarity
 // =============================================================================
@@ -100,20 +105,8 @@ export function jaccardWordSimilarity(
   text2: string,
   caseInsensitive = true
 ): number {
-  const normalize = caseInsensitive
-    ? (s: string) => s.toLowerCase()
-    : (s: string) => s;
-
-  const words1 = new Set(
-    normalize(text1)
-      .split(/\s+/)
-      .filter(Boolean)
-  );
-  const words2 = new Set(
-    normalize(text2)
-      .split(/\s+/)
-      .filter(Boolean)
-  );
+  const words1 = normalizedWordSet(text1, caseInsensitive);
+  const words2 = normalizedWordSet(text2, caseInsensitive);
 
   if (words1.size === 0 && words2.size === 0) {
     return 1; // Both empty = identical
@@ -135,6 +128,29 @@ export function jaccardWordSimilarity(
   const unionSize = words1.size + words2.size - intersectionSize;
 
   return intersectionSize / unionSize;
+}
+
+/**
+ * Calculate how completely the smaller word set is contained in the larger.
+ *
+ * Unlike Jaccard similarity, containment remains high when an aligned run keeps
+ * all of its old vocabulary but adds substantial new text.
+ */
+export function wordContainmentSimilarity(
+  text1: string,
+  text2: string,
+  caseInsensitive = true,
+): number {
+  const words1 = normalizedWordSet(text1, caseInsensitive);
+  const words2 = normalizedWordSet(text2, caseInsensitive);
+  if (words1.size === 0 && words2.size === 0) return 1;
+  if (words1.size === 0 || words2.size === 0) return 0;
+
+  let intersectionSize = 0;
+  for (const word of words1) {
+    if (words2.has(word)) intersectionSize++;
+  }
+  return intersectionSize / Math.min(words1.size, words2.size);
 }
 
 // =============================================================================
@@ -213,6 +229,19 @@ interface MatchResult {
 }
 
 /**
+ * Optional candidate-level guard supplied by the comparison pipeline.
+ *
+ * Move detection remains usable as a standalone post-processing step, while
+ * callers that know paragraph correspondence can prevent a fuzzy edit from
+ * being relabeled as a relocation.
+ */
+export type MoveCandidateGuard = (
+  deleted: AtomBlock,
+  inserted: AtomBlock,
+  similarity: number,
+) => boolean;
+
+/**
  * Find the best matching inserted block for a deleted block.
  *
  * @param deleted - The deleted block to match
@@ -223,7 +252,8 @@ interface MatchResult {
 export function findBestMatch(
   deleted: AtomBlock,
   insertedBlocks: AtomBlock[],
-  settings: MoveDetectionSettings
+  settings: MoveDetectionSettings,
+  candidateGuard?: MoveCandidateGuard,
 ): MatchResult | undefined {
   let bestMatch: MatchResult | undefined;
 
@@ -242,6 +272,10 @@ export function findBestMatch(
       inserted.text,
       settings.caseInsensitiveMove
     );
+
+    if (candidateGuard && !candidateGuard(deleted, inserted, similarity)) {
+      continue;
+    }
 
     if (similarity >= settings.moveSimilarityThreshold) {
       if (!bestMatch || similarity > bestMatch.similarity) {
@@ -302,6 +336,7 @@ export function detectMovesInAtomList(
   atoms: ComparisonUnitAtom[],
   settings: MoveDetectionSettings = DEFAULT_MOVE_DETECTION_SETTINGS,
   reservedMoveNames: ReadonlySet<string> = new Set(),
+  candidateGuard?: MoveCandidateGuard,
 ): void {
   if (!settings.detectMoves) {
     return;
@@ -327,7 +362,7 @@ export function detectMovesInAtomList(
   let moveGroupId = 1;
 
   for (const deleted of deletedBlocks) {
-    const bestMatch = findBestMatch(deleted, insertedBlocks, settings);
+    const bestMatch = findBestMatch(deleted, insertedBlocks, settings, candidateGuard);
 
     if (bestMatch) {
       // 4. Convert to moves

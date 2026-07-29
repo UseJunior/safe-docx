@@ -12,6 +12,7 @@ import {
   generateMoveDestinationMarkup,
   createRevisionIdState,
   allocateMoveIds,
+  wordContainmentSimilarity,
 } from './move-detection.js';
 import { assertDefined } from './testing/test-utils.js';
 import {
@@ -129,6 +130,41 @@ describe('jaccardWordSimilarity', () => {
     await then('similarity is 1 because unique word sets are the same', () => {
       // "the the the" and "the" should have similarity 1 (same unique word set)
       expect(jaccardWordSimilarity('the the the', 'the')).toBe(1);
+    });
+  });
+});
+
+describe('wordContainmentSimilarity', () => {
+  test('stays high when the larger run preserves every source word', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const original = await given('a short source run', () => 'alpha beta gamma delta');
+    const revised = await given(
+      'an expanded run containing every source word',
+      () => 'alpha beta gamma delta epsilon zeta eta theta',
+    );
+    const similarity = await when('word containment is computed', () =>
+      wordContainmentSimilarity(original, revised),
+    );
+    await then('the smaller word set is fully contained', () => {
+      expect(similarity).toBe(1);
+    });
+  });
+
+  test('returns the contained fraction of the smaller unique word set', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const original = await given('a four-word source', () => 'alpha beta gamma delta');
+    const revised = await given('a four-word revision sharing two words', () => 'alpha beta one two');
+    const similarity = await when('word containment is computed', () =>
+      wordContainmentSimilarity(original, revised),
+    );
+    await then('the result is one half', () => {
+      expect(similarity).toBe(0.5);
     });
   });
 });
@@ -688,6 +724,46 @@ describe('detectMovesInAtomList', () => {
       assertDefined(atom1, 'atoms[1]');
       expect(atom0.correlationStatus).toBe(CorrelationStatus.Deleted);
       expect(atom1.correlationStatus).toBe(CorrelationStatus.Inserted);
+    });
+  });
+
+  test('honors a caller guard for fuzzy candidates inside aligned paragraphs', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let atoms: ComparisonUnitAtom[];
+
+    await given('a fuzzy deleted/inserted pair that otherwise meets the move threshold', () => {
+      atoms = [
+        createTestAtom(
+          'the annual allocation shall remain 10,000 units for each period',
+          CorrelationStatus.Deleted,
+        ),
+        createTestAtom(
+          'the annual allocation will remain 10,000 units for each period',
+          CorrelationStatus.Inserted,
+        ),
+      ];
+    });
+
+    await when('the caller rejects that candidate as an in-place edit', () => {
+      detectMovesInAtomList(
+        atoms,
+        {
+          detectMoves: true,
+          moveSimilarityThreshold: 0.8,
+          moveMinimumWordCount: 5,
+          caseInsensitiveMove: true,
+        },
+        new Set(),
+        () => false,
+      );
+    });
+
+    await then('the candidate remains an ordinary deletion and insertion', () => {
+      expect(atoms[0]?.correlationStatus).toBe(CorrelationStatus.Deleted);
+      expect(atoms[1]?.correlationStatus).toBe(CorrelationStatus.Inserted);
     });
   });
 });

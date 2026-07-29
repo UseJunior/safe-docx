@@ -11,21 +11,47 @@ import {
   hasFindings,
   main,
   projectParagraphs,
-  readDocumentXml,
+  readDocxParts,
   SELF_TEST_AFTER_BODY,
+  SELF_TEST_AFTER_STYLES,
   SELF_TEST_BEFORE_BODY,
+  SELF_TEST_BEFORE_STYLES,
   wrapBodyXml,
+  wrapStylesXml,
+  wrapThemeXml,
 } from './check_docx_formatting_loss.mjs';
 
-function compare(beforeBody, afterBody, options) {
+/**
+ * `styles.shared` applies one styles.xml to both sides; `styles.before` /
+ * `styles.after` differ the sides, which is how a style-definition edit is
+ * expressed — the document parts stay identical.
+ */
+function compare(beforeBody, afterBody, options, styles = {}, themes = {}) {
   return detectFormattingLoss(
-    projectParagraphs(wrapBodyXml(beforeBody)),
-    projectParagraphs(wrapBodyXml(afterBody)),
+    projectParagraphs(
+      wrapBodyXml(beforeBody),
+      styles.before ?? styles.shared ?? null,
+      themes.before ?? themes.shared ?? null,
+    ),
+    projectParagraphs(
+      wrapBodyXml(afterBody),
+      styles.after ?? styles.shared ?? null,
+      themes.after ?? themes.shared ?? null,
+    ),
     options,
   );
 }
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function theme(fonts = { major: 'Aptos Display', minor: 'Aptos' }, accent1 = 'C0504D') {
+  return wrapThemeXml(
+    `<a:clrScheme name="Test"><a:dk1><a:srgbClr val="000000"/></a:dk1>` +
+      `<a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:accent1><a:srgbClr val="${accent1}"/></a:accent1></a:clrScheme>` +
+      `<a:fontScheme name="Test"><a:majorFont><a:latin typeface="${fonts.major}"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>` +
+      `<a:minorFont><a:latin typeface="${fonts.minor}"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme>`,
+  );
+}
 
 function paragraph(paraId, inner, properties = '') {
   return `<w:p w14:paraId="${paraId}">${properties}${inner}</w:p>`;
@@ -34,6 +60,15 @@ function paragraph(paraId, inner, properties = '') {
 function run(text, runProperties = '') {
   const wrapped = runProperties ? `<w:rPr>${runProperties}</w:rPr>` : '';
   return `<w:r>${wrapped}<w:t xml:space="preserve">${text}</w:t></w:r>`;
+}
+
+function styleDef(styleId, type, rPrInner, basedOn = null) {
+  return (
+    `<w:style w:type="${type}" w:styleId="${styleId}"><w:name w:val="${styleId}"/>` +
+    (basedOn ? `<w:basedOn w:val="${basedOn}"/>` : '') +
+    (rPrInner ? `<w:rPr>${rPrInner}</w:rPr>` : '') +
+    `</w:style>`
+  );
 }
 
 function captureConsole(callback) {
@@ -81,13 +116,21 @@ test('D1 stays silent when the text itself changed, which is a content edit rath
   assert.deepEqual(result.flattenedParagraphIds, []);
 });
 
-test('D1 distinguishes underline styles rather than collapsing them to on/off', () => {
-  const result = compare(
+test('D1 reduces underline to on/off through the resolver: removal is caught, style-to-style is not', () => {
+  // The declared-properties projection kept the raw w:u value, so single to
+  // dotted counted as a change. The resolver reduces w:u to on/off, and #684
+  // trades that corner deliberately for a single shared implementation.
+  const removed = compare(
+    paragraph('AAAA0004', run('Signature', '<w:u w:val="single"/>')),
+    paragraph('AAAA0004', run('Signature')),
+  );
+  assert.deepEqual(removed.flattenedParagraphIds, ['AAAA0004']);
+
+  const restyled = compare(
     paragraph('AAAA0004', run('Signature', '<w:u w:val="single"/>')),
     paragraph('AAAA0004', run('Signature', '<w:u w:val="dotted"/>')),
   );
-
-  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0004']);
+  assert.deepEqual(restyled.flattenedParagraphIds, []);
 });
 
 test('D1 reads w:val on toggle properties, so an explicit on-value is not a change', () => {
@@ -102,17 +145,245 @@ test('D1 reads w:val on toggle properties, so an explicit on-value is not a chan
     paragraph('AAAA0006', run('Term', '<w:b w:val="0"/>')),
   );
   assert.deepEqual(turnedOff.flattenedParagraphIds, ['AAAA0006']);
+
+  // 'off' is the transitional ST_OnOff spelling. Reading it as "on" would both
+  // miss a real de-bolding and report a spurious change against w:val="0".
+  const transitionalOff = compare(
+    paragraph('AAAA0006', run('Term', '<w:b/>')),
+    paragraph('AAAA0006', run('Term', '<w:b w:val="off"/>')),
+  );
+  assert.deepEqual(transitionalOff.flattenedParagraphIds, ['AAAA0006']);
+
+  const equivalentSpellings = compare(
+    paragraph('AAAA0006', run('Term', '<w:b w:val="0"/>')),
+    paragraph('AAAA0006', run('Term', '<w:b w:val="off"/>')),
+  );
+  assert.deepEqual(equivalentSpellings.flattenedParagraphIds, []);
 });
 
-test('D1 sees emphasis dropped by removing a character style, not only direct properties', () => {
-  // Without w:rStyle in the tuple this loss is silent: no direct property
-  // changed, so the projection would compare equal.
+test('D1 sees emphasis dropped by removing a character style, because the resolved bold changes', () => {
+  const styles = { shared: wrapStylesXml(styleDef('Strong', 'character', '<w:b/>')) };
   const result = compare(
     paragraph('AAAA0007', run('Term', '<w:rStyle w:val="Strong"/>')),
     paragraph('AAAA0007', run('Term')),
+    undefined,
+    styles,
   );
 
   assert.deepEqual(result.flattenedParagraphIds, ['AAAA0007']);
+});
+
+test('D1 stays silent when a style reference is replaced by equivalent direct properties', () => {
+  // A reader sees identical formatting on both sides. The declared-properties
+  // projection flagged this representation difference as a loss (issue #684).
+  const styles = { shared: wrapStylesXml(styleDef('Strong', 'character', '<w:b/>')) };
+  const result = compare(
+    paragraph('AAAA0008', run('Term', '<w:rStyle w:val="Strong"/>')),
+    paragraph('AAAA0008', run('Term', '<w:b/>')),
+    undefined,
+    styles,
+  );
+
+  assert.deepEqual(result.flattenedParagraphIds, []);
+  assert.equal(hasFindings(result), false);
+});
+
+test('a run inheriting bold from its paragraph style projects as bold, so dropping the w:pStyle is caught', () => {
+  const styles = wrapStylesXml(styleDef('EmphaticHeading', 'paragraph', '<w:b/>'));
+  const pStyle = '<w:pPr><w:pStyle w:val="EmphaticHeading"/></w:pPr>';
+
+  const projection = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0009', run('Heading text.'), pStyle)),
+    styles,
+  );
+  // Span tuple: length, ten toggles, underline, highlight, font, size, color.
+  assert.equal(projection.byParaId.get('AAAA0009').emphasisSpans[0][1], true);
+
+  const result = compare(
+    paragraph('AAAA0009', run('Heading text.'), pStyle),
+    paragraph('AAAA0009', run('Heading text.')),
+    undefined,
+    { shared: styles },
+  );
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0009']);
+});
+
+test('D1 sees a style-definition edit even though the document part is byte-identical', () => {
+  // The declared-properties projection could not see this at all: no run and
+  // no reference changed, only the definition the reference points at.
+  const body = paragraph('AAAA0010', run('Heading text.'), '<w:pPr><w:pStyle w:val="EmphaticHeading"/></w:pPr>');
+  const result = compare(body, body, undefined, {
+    before: wrapStylesXml(styleDef('EmphaticHeading', 'paragraph', '<w:b/>')),
+    after: wrapStylesXml(styleDef('EmphaticHeading', 'paragraph', '')),
+  });
+
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0010']);
+});
+
+test('D1 resolves through a basedOn chain, so editing an ancestor style is caught', () => {
+  const body = paragraph('AAAA0011', run('Term', '<w:rStyle w:val="Derived"/>'));
+  const result = compare(body, body, undefined, {
+    before: wrapStylesXml(styleDef('Base', 'character', '<w:i/>') + styleDef('Derived', 'character', '', 'Base')),
+    after: wrapStylesXml(styleDef('Base', 'character', '') + styleDef('Derived', 'character', '', 'Base')),
+  });
+
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0011']);
+});
+
+test('basedOn resolution is per property: a derived style adding color does not mask inherited bold', () => {
+  // Peer review on #684 caught the resolver reading every property from the
+  // first chain member that had ANY rPr, so Derived(color) hid Base(bold).
+  const withBold = wrapStylesXml(
+    styleDef('Base', 'character', '<w:b/>') + styleDef('Derived', 'character', '<w:color w:val="FF0000"/>', 'Base'),
+  );
+  const body = paragraph('AAAA0013', run('Term', '<w:rStyle w:val="Derived"/>'));
+
+  const projection = projectParagraphs(wrapBodyXml(body), withBold);
+  assert.deepEqual(projection.byParaId.get('AAAA0013').emphasisSpans, [
+    [4, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'FF0000'],
+  ]);
+
+  // And a de-bolding of the ancestor is therefore a finding, color intact.
+  const withoutBold = wrapStylesXml(
+    styleDef('Base', 'character', '') + styleDef('Derived', 'character', '<w:color w:val="FF0000"/>', 'Base'),
+  );
+  const result = compare(body, body, undefined, { before: withBold, after: withoutBold });
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0013']);
+});
+
+test('toggle evaluation distinguishes style parity from absolute direct formatting', () => {
+  const chain = wrapStylesXml(
+    styleDef('Base', 'character', '<w:b/>') + styleDef('Derived', 'character', '<w:b w:val="0"/>', 'Base'),
+  );
+  const viaChain = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0016', run('Term', '<w:rStyle w:val="Derived"/>'))),
+    chain,
+  );
+  assert.equal(viaChain.byParaId.get('AAAA0016').emphasisSpans[0][1], true);
+
+  const boldParagraphStyle = wrapStylesXml(styleDef('Emphatic', 'paragraph', '<w:b/>'));
+  const directOff = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0017', run('Term', '<w:b w:val="0"/>'), '<w:pPr><w:pStyle w:val="Emphatic"/></w:pPr>')),
+    boldParagraphStyle,
+  );
+  assert.equal(directOff.byParaId.get('AAAA0017').emphasisSpans[0][1], false);
+
+  const mixedTiers = wrapStylesXml(
+    styleDef('Quiet', 'character', '<w:b w:val="0"/>') + styleDef('Emphatic', 'paragraph', '<w:b/>'),
+  );
+  const characterOff = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0018', run('Term', '<w:rStyle w:val="Quiet"/>'), '<w:pPr><w:pStyle w:val="Emphatic"/></w:pPr>')),
+    mixedTiers,
+  );
+  assert.equal(characterOff.byParaId.get('AAAA0018').emphasisSpans[0][1], true);
+
+  // Style-level off is a no-op, while the nearer on toggles the inherited off.
+  const onOverOff = wrapStylesXml(
+    styleDef('Base', 'character', '<w:b w:val="0"/>') + styleDef('Derived', 'character', '<w:b/>', 'Base'),
+  );
+  const viaOn = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0019', run('Term', '<w:rStyle w:val="Derived"/>'))),
+    onOverOff,
+  );
+  assert.equal(viaOn.byParaId.get('AAAA0019').emphasisSpans[0][1], true);
+});
+
+test('Word differential from PR #691: style-level off preserves paragraph-style bold', () => {
+  // This is the exact fixture Word rendered bold during the round-2 review of
+  // PR #691. It used to pin a documented divergence (resolver false versus
+  // Word true); it now pins agreement with the observed Word result.
+  const styles = wrapStylesXml(
+    styleDef('Emphatic', 'paragraph', '<w:b/>') +
+      styleDef('Base', 'character', '<w:b w:val="0"/>') +
+      styleDef('Derived', 'character', '<w:color w:val="FF0000"/>', 'Base'),
+  );
+  const projection = projectParagraphs(
+    wrapBodyXml(
+      paragraph('AAAA0020', run('Term', '<w:rStyle w:val="Derived"/>'), '<w:pPr><w:pStyle w:val="Emphatic"/></w:pPr>'),
+    ),
+    styles,
+  );
+  assert.deepEqual(projection.byParaId.get('AAAA0020').emphasisSpans, [
+    [4, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'FF0000'],
+  ]);
+});
+
+test('color hex compares case-insensitively, because casing is a writer artifact rather than ink', () => {
+  const result = compare(
+    paragraph('AAAA0014', run('Term', '<w:color w:val="ff0000"/>')),
+    paragraph('AAAA0014', run('Term', '<w:color w:val="FF0000"/>')),
+  );
+
+  assert.deepEqual(result.flattenedParagraphIds, []);
+  assert.equal(hasFindings(result), false);
+});
+
+test('D1 resolves the default Word theme-font shape and reports a theme-font substitution', () => {
+  const body = paragraph('AAAA0021', run('Term', '<w:rFonts w:asciiTheme="minorHAnsi"/>'));
+  const beforeTheme = theme({ major: 'Aptos Display', minor: 'Aptos' });
+  const afterTheme = theme({ major: 'Aptos Display', minor: 'Arial' });
+
+  const projection = projectParagraphs(wrapBodyXml(body), null, beforeTheme);
+  assert.equal(projection.byParaId.get('AAAA0021').emphasisSpans[0][13], 'Aptos');
+
+  const result = compare(body, body, undefined, {}, { before: beforeTheme, after: afterTheme });
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0021']);
+});
+
+test('theme colors, tint, and shade resolve to concrete hex values used by D1', () => {
+  const sharedTheme = theme();
+  const tinted = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0022', run('Tint', '<w:color w:themeColor="accent1" w:themeTint="99"/>'))),
+    null,
+    sharedTheme,
+  );
+  assert.equal(tinted.byParaId.get('AAAA0022').emphasisSpans[0][15], 'D99694');
+
+  const shaded = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0023', run('Shade', '<w:color w:themeColor="accent1" w:themeShade="80"/>'))),
+    null,
+    sharedTheme,
+  );
+  assert.equal(shaded.byParaId.get('AAAA0023').emphasisSpans[0][15], '602827');
+});
+
+test('documents without a theme part retain direct font and color fallbacks', () => {
+  const body = paragraph(
+    'AAAA0024',
+    run(
+      'Fallback',
+      '<w:rFonts w:ascii="Georgia" w:asciiTheme="minorHAnsi"/><w:color w:val="123456" w:themeColor="accent1"/>',
+    ),
+  );
+  const projection = projectParagraphs(wrapBodyXml(body));
+  assert.deepEqual(projection.byParaId.get('AAAA0024').emphasisSpans, [
+    [8, false, false, false, false, false, false, false, false, false, false, false, 'none', 'Georgia', 0, '123456'],
+  ]);
+});
+
+test('a present styles part that is not w:styles is rejected rather than read as an empty model', () => {
+  // An empty model resolves every style to nothing, which silently blinds D1
+  // to style-carried loss while the run reads as a clean pass.
+  assert.throws(
+    () => projectParagraphs(wrapBodyXml(paragraph('AAAA0015', run('Text.'))), '<foo/>'),
+    /not a WordprocessingML w:styles part/,
+  );
+});
+
+test('D1 covers the full resolved tuple: a dropped highlight is a finding', () => {
+  const result = compare(
+    paragraph('AAAA0012', run('Payment is due.', '<w:highlight w:val="yellow"/>')),
+    paragraph('AAAA0012', run('Payment is due.')),
+  );
+
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0012']);
+});
+
+test('the resolver consumed here is docx-core public surface, importable the way a consumer would', async () => {
+  const core = await import('@usejunior/docx-core');
+  assert.equal(typeof core.extractEffectiveRunFormatting, 'function');
+  assert.equal(typeof core.parseStylesXml, 'function');
+  assert.equal(typeof core.parseThemeXml, 'function');
 });
 
 test('D2 flags a paragraph that carried text before and carries none after', () => {
@@ -187,7 +458,10 @@ test('a paragraph nested in a text box is projected separately from the paragrap
 
   const projection = projectParagraphs(wrapBodyXml(before));
   assert.equal(projection.totalParagraphs, 2);
-  assert.deepEqual(projection.byParaId.get('CCCC0001').emphasisSpans, [[5, true, false, 'none', '']]);
+  // Span tuple: length, ten toggles, underline, highlight, font, size, color.
+  assert.deepEqual(projection.byParaId.get('CCCC0001').emphasisSpans, [
+    [5, true, false, false, false, false, false, false, false, false, false, false, 'none', '', 0, 'auto'],
+  ]);
 
   const result = compare(before, after);
   assert.deepEqual(result.flattenedParagraphIds, ['CCCC0002']);
@@ -302,20 +576,24 @@ test('the CLI reads real .docx packages and exits 1 on findings, 0 when clean, 2
   try {
     const beforePath = join(directory, 'before.docx');
     const afterPath = join(directory, 'after.docx');
-    writeFileSync(beforePath, await buildMinimalDocx(SELF_TEST_BEFORE_BODY));
-    writeFileSync(afterPath, await buildMinimalDocx(SELF_TEST_AFTER_BODY));
+    writeFileSync(beforePath, await buildMinimalDocx(SELF_TEST_BEFORE_BODY, SELF_TEST_BEFORE_STYLES));
+    writeFileSync(afterPath, await buildMinimalDocx(SELF_TEST_AFTER_BODY, SELF_TEST_AFTER_STYLES));
 
-    assert.ok((await readDocumentXml(beforePath)).includes('w:document'));
+    const parts = await readDocxParts(beforePath);
+    assert.ok(parts.documentXml.includes('w:document'));
+    assert.ok(parts.stylesXml.includes('w:styles'));
 
     const damaged = await captureConsole(() => main([beforePath, afterPath]));
     assert.equal(damaged.value, 1);
-    assert.ok(damaged.lines.some((line) => line.startsWith('D1 run-formatting flattened paragraphs: 1')));
+    // Two flattened paragraphs: the direct cross-run flattening and the
+    // style-definition edit that only the resolved projection can see.
+    assert.ok(damaged.lines.some((line) => line.startsWith('D1 run-formatting flattened paragraphs: 2')));
 
     const clean = await captureConsole(() => main([beforePath, beforePath]));
     assert.equal(clean.value, 0);
 
     const asJson = await captureConsole(() => main(['--json', beforePath, afterPath]));
-    assert.equal(JSON.parse(asJson.lines.join('\n')).flattenedParagraphIds.length, 1);
+    assert.equal(JSON.parse(asJson.lines.join('\n')).flattenedParagraphIds.length, 2);
 
     const misuse = await captureConsole(() => main([beforePath]));
     assert.equal(misuse.value, 2);
@@ -377,5 +655,6 @@ test('the self-test proves the detectors fire before any run is believed', async
 
   assert.equal(value, 0);
   assert.ok(lines.some((line) => line.includes('known-good pair clean')));
-  assert.ok(lines.some((line) => line.includes('self-test known-bad D1 run-formatting flattened paragraphs: 1')));
+  assert.ok(lines.some((line) => line.includes('representation swap correctly not reported')));
+  assert.ok(lines.some((line) => line.includes('self-test known-bad D1 run-formatting flattened paragraphs: 2')));
 });
