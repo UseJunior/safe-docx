@@ -57,9 +57,9 @@
  *   - Toggle properties use style-level parity and absolute direct-formatting
  *     semantics, matching the Word differential pinned for issue #737.
  *
- * What the resolver does not reach, this check does not reach: w:docDefaults,
- * table-style run properties, and numbering-level rPr. Theme fonts and colors
- * are resolved through word/theme/theme1.xml, including tint/shade transforms.
+ * What the resolver does not reach, this check does not reach: table-style run
+ * properties and numbering-level rPr. Document defaults, theme fonts, and
+ * colors are resolved, including tint/shade transforms.
  * Because the resolver reduces w:u to on/off, an underline
  * style-to-style change (single to dotted) is no longer reported; the old
  * declared-properties projection caught it, and trading that corner for one
