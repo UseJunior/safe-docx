@@ -12,8 +12,8 @@
  *   D1 run-formatting flattening — a replacement whose span crosses a run
  *      boundary collapses the boundary and drops bold/italic from the affected
  *      span. Detected per paragraph by projecting each character of the
- *      paragraph onto its *effective* formatting tuple (bold, italic,
- *      underline, highlight, font, size, color), resolved through
+ *      paragraph onto its *effective* formatting tuple (the supported toggle
+ *      properties, underline, highlight, font, size, color), resolved through
  *      word/styles.xml by docx-core's extractEffectiveRunFormatting: if the
  *      text is unchanged but that projection changed, formatting was lost.
  *
@@ -54,6 +54,8 @@
  *   - Replacing a style reference with equivalent direct properties resolves
  *     identically and is NOT reported — that is a representation difference,
  *     not a loss a reader can see.
+ *   - Toggle properties use style-level parity and absolute direct-formatting
+ *     semantics, matching the Word differential pinned for issue #737.
  *
  * What the resolver does not reach, this check does not reach: w:docDefaults,
  * table-style run properties, numbering-level rPr, and theme font references
@@ -201,6 +203,14 @@ function runEmphasis(run, paragraphPPr, paragraphStyleId, styles) {
   return [
     formatting.bold,
     formatting.italic,
+    formatting.caps,
+    formatting.smallCaps,
+    formatting.strike,
+    formatting.emboss,
+    formatting.imprint,
+    formatting.outline,
+    formatting.shadow,
+    formatting.vanish,
     formatting.underline,
     formatting.highlightVal ?? 'none',
     formatting.fontName,
