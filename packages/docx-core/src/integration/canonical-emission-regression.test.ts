@@ -21,6 +21,12 @@ const numberingTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.18' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.3' },
 );
+const sectionTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.12' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.11' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
+);
 
 const AI_AUTHOR = 'SafeDocX';
 const FIXED_DATE = '2026-05-07T12:00:00Z';
@@ -133,7 +139,7 @@ type RevisionTuple = {
 
 function revisionTuples(xml: string, requiredAuthor?: string): RevisionTuple[] {
   const out: RevisionTuple[] = [];
-  for (const kind of ['ins', 'del', 'pPrChange', 'rPrChange', 'trPrChange', 'tcPrChange']) {
+  for (const kind of ['ins', 'del', 'pPrChange', 'rPrChange', 'sectPrChange', 'trPrChange', 'tcPrChange']) {
     for (const el of elementsByName(xml, kind)) {
       const author = wordAttr(el, 'author');
       if (requiredAuthor && author !== requiredAuthor) continue;
@@ -247,6 +253,104 @@ describe('Canonical emission catalog', () => {
       const change = elementsByName(documentXml, 'pPrChange')[0]!;
       const priorIlvl = change.getElementsByTagNameNS(W_NS, 'ilvl')[0] as Element;
       expect(wordAttr(priorIlvl, 'val')).toBe('0');
+    });
+  });
+
+  sectionTest('Table A: sections.ts setSectionPageNumberStart emits w:sectPrChange', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let documentXml: string;
+
+    await given('a final section with an existing page-number restart', async () => {
+      const { doc } = await loadIndexedDoc(
+        await makeMinimalDocx('<w:p><w:r><w:t>Section body</w:t></w:r></w:p>'),
+      );
+      doc.setSectionPageNumberStart({ sectionIndex: 0, pageNumberStart: 3 });
+
+      await when('the restart is changed with a revision context', async () => {
+        doc.setSectionPageNumberStart(
+          { sectionIndex: 0, pageNumberStart: 1 },
+          createCtx(),
+        );
+        ({ parts: { 'word/document.xml': documentXml } } = await toPartMap(
+          doc,
+          ['word/document.xml'],
+        ));
+      });
+    });
+
+    await then('the prior restart is captured with canonical revision metadata', () => {
+      expectTrackedElementsWithFixedMetadata(documentXml, ['sectPrChange']);
+      const change = elementsByName(documentXml, 'sectPrChange')[0]!;
+      const priorPgNumType = change.getElementsByTagNameNS(
+        W_NS,
+        'pgNumType',
+      )[0] as Element;
+      expect(wordAttr(priorPgNumType, 'start')).toBe('3');
+      expect(change.getElementsByTagNameNS(W_NS, 'sectPrChange')).toHaveLength(0);
+    });
+  });
+
+  sectionTest('Table A: sections.ts updateSectionProperties emits atomic page setup', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let documentXml: string;
+
+    await given('a final section with explicit portrait page setup', async () => {
+      const { doc } = await loadIndexedDoc(
+        await makeMinimalDocx('<w:p><w:r><w:t>Section body</w:t></w:r></w:p>'),
+      );
+      doc.updateSectionProperties({
+        sectionIndex: 0,
+        pageSize: { widthTwips: 12240, heightTwips: 15840 },
+        margins: {
+          topTwips: 1440,
+          rightTwips: 1440,
+          bottomTwips: 1440,
+          leftTwips: 1440,
+          headerTwips: 720,
+          footerTwips: 720,
+          gutterTwips: 0,
+        },
+      });
+
+      await when('paper geometry and margins change with one revision context', async () => {
+        doc.updateSectionProperties(
+          {
+            sectionIndex: 0,
+            pageSize: {
+              widthTwips: 15840,
+              heightTwips: 12240,
+              orientation: 'landscape',
+            },
+            margins: { topTwips: 720, leftTwips: 720 },
+          },
+          createCtx(),
+        );
+        ({ parts: { 'word/document.xml': documentXml } } = await toPartMap(
+          doc,
+          ['word/document.xml'],
+        ));
+      });
+    });
+
+    await then('current page setup and one canonical prior snapshot are emitted', () => {
+      expectTrackedElementsWithFixedMetadata(documentXml, ['sectPrChange']);
+      const doc = parseXml(documentXml);
+      const currentPgSz = doc.getElementsByTagNameNS(W_NS, 'pgSz')[0] as Element;
+      const currentPgMar = doc.getElementsByTagNameNS(W_NS, 'pgMar')[0] as Element;
+      expect(wordAttr(currentPgSz, 'w')).toBe('15840');
+      expect(wordAttr(currentPgSz, 'h')).toBe('12240');
+      expect(wordAttr(currentPgSz, 'orient')).toBe('landscape');
+      expect(wordAttr(currentPgMar, 'top')).toBe('720');
+      expect(wordAttr(currentPgMar, 'left')).toBe('720');
+      const change = elementsByName(documentXml, 'sectPrChange')[0]!;
+      expect(change.getElementsByTagNameNS(W_NS, 'pgSz')).toHaveLength(1);
+      expect(change.getElementsByTagNameNS(W_NS, 'pgMar')).toHaveLength(1);
     });
   });
 

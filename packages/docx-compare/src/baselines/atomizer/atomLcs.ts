@@ -82,7 +82,7 @@ export function computeAtomLcs(
   }
 
   // Backtrack to find the actual LCS matches
-  const matches: AtomMatch[] = [];
+  let matches: AtomMatch[] = [];
   let i = n;
   let j = m;
 
@@ -97,6 +97,32 @@ export function computeAtomLcs(
       j--;
     }
   }
+
+  // Word tokenization deliberately preserves whitespace as standalone atoms.
+  // Those atoms all have the same identity, so an LCS can otherwise align an
+  // isolated source space with an unrelated revised space inside a replacement.
+  // In-place reconstruction then treats that space as Equal and may omit the
+  // source-side separator from the reject projection. A split whitespace match
+  // is meaningful only when it is diagonally adjacent to another matched atom;
+  // explicit whitespace-only runs are not affected. (#720)
+  const matchedPairs = new Set(
+    matches.map((match) => `${match.originalIndex}:${match.revisedIndex}`),
+  );
+  const isSplitWhitespace = (atom: ComparisonUnitAtom): boolean =>
+    atom.splitFromAtom !== undefined &&
+    atom.contentElement.tagName === 'w:t' &&
+    /^\s+$/u.test(atom.contentElement.textContent ?? '');
+  matches = matches.filter((match) => {
+    const originalAtom = original[match.originalIndex]!;
+    const revisedAtom = revised[match.revisedIndex]!;
+    if (!isSplitWhitespace(originalAtom) || !isSplitWhitespace(revisedAtom)) {
+      return true;
+    }
+    return (
+      matchedPairs.has(`${match.originalIndex - 1}:${match.revisedIndex - 1}`) ||
+      matchedPairs.has(`${match.originalIndex + 1}:${match.revisedIndex + 1}`)
+    );
+  });
 
   // Find deleted and inserted indices
   const matchedOriginal = new Set(matches.map((m) => m.originalIndex));
@@ -407,7 +433,9 @@ export function assignUnifiedParagraphIndices(
 
   // Assign unified paragraph indices to merged atoms
   let emptyParagraphsWithoutMapping = 0;
+  const remappedAtoms = new Set<ComparisonUnitAtom>();
   for (const atom of merged) {
+    remappedAtoms.add(atom);
     if (atom.paragraphIndex === undefined) continue;
 
     const isEmptyPara = atom.contentElement.tagName === EMPTY_PARAGRAPH_TAG;
@@ -438,6 +466,22 @@ export function assignUnifiedParagraphIndices(
       } else if (isEmptyPara) {
         emptyParagraphsWithoutMapping++;
       }
+    }
+  }
+  // Remap revised-side atoms that are NOT represented in the merged list.
+  // For Equal empty-paragraph pairs, createMergedAtomList keeps the ORIGINAL
+  // atom, so the revised twin never flows through the loop above and would
+  // otherwise keep its raw revised-tree paragraph index. Downstream consumers
+  // key revised paragraphs by unified index (inPlaceModifier's
+  // unifiedParaToElement), so a raw index either misses the lookup (stale
+  // insertion anchor) or collides with a different paragraph's unified index,
+  // mis-anchoring neighboring deleted paragraphs.
+  for (const atom of revised) {
+    if (remappedAtoms.has(atom)) continue;
+    if (atom.paragraphIndex === undefined) continue;
+    const outputPara = revisedToOutputPara.get(atom.paragraphIndex);
+    if (outputPara !== undefined) {
+      atom.paragraphIndex = outputPara;
     }
   }
   if (emptyParagraphsWithoutMapping > 0) {

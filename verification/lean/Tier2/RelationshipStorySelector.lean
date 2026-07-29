@@ -133,13 +133,13 @@ structure ZipEntry where
   dataOffset : Nat
   localSpanEnd : Nat
   isDirectory : Bool
-  deriving BEq, Repr, Inhabited
+  deriving BEq, DecidableEq, Repr, Inhabited
 
 structure ZipIndex where
   entries : List ZipEntry
   centralOffset : Nat
   centralSize : Nat
-  deriving Repr, Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 structure Eocd where
   offset : Nat

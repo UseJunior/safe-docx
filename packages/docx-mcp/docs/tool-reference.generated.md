@@ -39,6 +39,18 @@ Get a compact structural map of a document's headings (DOCX only). Each entry is
 | `format` | `enum("json", "markdown")` | no | Output format: 'json' (default, structured outline array) or 'markdown' (indented ATX outline under `content`). |
 | `include_heuristic_headings` | `boolean` | no | When true, also include heuristic title/run-in/centered-caps headings alongside deterministic word_style, list_metadata, and outline_level headings. Default: false (all deterministic sources only). |
 
+## `get_sections`
+
+Read DOCX main-document sections in document order. Returns zero-based session-relative section_index values, paragraph/body boundary metadata, page numbering, page size, margins, and header/footer relationship references. Call again after any operation that changes section topology. Read-only.
+
+- readOnly: `true`
+- destructive: `false`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+
 ## `grep`
 
 Search paragraphs with regex. Use file_path for session-based search, file_paths for stateless multi-file search, or google_doc_id for Google Docs. ODT supported via file_path (single-file) only.
@@ -189,6 +201,37 @@ Change one DOCX body paragraph’s direct numbering reference. Use remove=true t
 | `match_paragraph_id` | `string` | no | Copy this paragraph’s complete direct num_id and ilvl to the target. |
 | `num_id` | `string` | no | Existing positive decimal w:numId from this DOCX; requires ilvl. |
 | `ilvl` | `integer` | no | Existing numbering level for num_id; requires num_id. |
+
+## `format_section`
+
+Partially update one DOCX section’s page-number restart, page dimensions/orientation, or margins using a zero-based section_index from get_sections. Effective calls emit one native w:sectPrChange and preserve section topology, page-number format, columns, break type, and header/footer references. Orientation is literal and does not automatically swap dimensions. This tool does not create sections or edit header/footer content.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `google_doc_id` | `string` | no | Google Doc ID or URL (alternative to file_path). Extract from URL: docs.google.com/document/d/{ID}/edit |
+| `section_index` | `integer` | yes | Zero-based session-relative index returned by get_sections. |
+| `page_number_start` | `integer` | no | Non-negative page number at which this section starts. |
+| `page_size` | `object` | no | Partial page-size update. Both dimensions are required when w:pgSz is absent. |
+| `margins` | `object` | no | Partial margin update in twips. All seven values are required when w:pgMar is absent. |
+
+## `insert_section_break`
+
+Insert a tracked DOCX section break after a stable direct-body paragraph. The new boundary preserves the containing section’s page setup and header/footer relationship references. The following section inherits current properties by default; set inherit_properties=false to reset non-relationship properties, and optionally provide page-number/page-size/margin overrides in new_section. Call get_sections again after success because section indexes change.
+
+- readOnly: `false`
+- destructive: `true`
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_path` | `string` | no | Path to the DOCX or ODT file. |
+| `paragraph_id` | `string` | yes | Stable paragraph id returned by read_file; must identify a direct main-body paragraph that does not already end a section. |
+| `break_type` | `enum("nextPage", "nextColumn", "continuous", "evenPage", "oddPage")` | yes | OOXML start behavior for the following section. |
+| `inherit_properties` | `boolean` | no | Whether the following section retains current non-relationship properties. Default: true. Header/footer references are always preserved. |
+| `new_section` | `object` | no | Optional page-number and page-setup overrides for the following section. Complete page size/margins are required when reset removes those elements. |
 
 ## `accept_changes`
 

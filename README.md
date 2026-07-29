@@ -63,7 +63,9 @@ See [Installation and verification](docs/installation.md) for locating the execu
 
 ## Standards Conformance
 
-See the generated [ECMA-376 conformance report](spec-compliance/CONFORMANCE.md) for targeted sections, explicit non-goals, and verification references.
+Browse the [Safe Docx Conformance Explorer](https://usejunior.com/engineering/safe-docx/conformance) to navigate ECMA-376 sections, OOXML schema declarations, capability claims, explicit non-goals, and measured cross-implementation outcomes.
+
+The generated [repository conformance report](spec-compliance/CONFORMANCE.md) remains the source-controlled record of targeted sections, non-goals, and verification references.
 
 ## What Safe Docx Is Not Optimized For
 

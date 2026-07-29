@@ -8,18 +8,35 @@ const leanPath = join(root, 'verification/lean/Tier2/XmlTripleChecker.lean');
 const selectorPath = join(root, 'verification/lean/Tier2/RelationshipStorySelector.lean');
 const noteIntegrityPath = join(root,
   'verification/lean/Tier2/NoteReferenceIntegrity/Semantics.lean');
+const commentIntegrityPath = join(root,
+  'verification/lean/Tier2/CommentReferenceIntegrity/Semantics.lean');
+const typedCommentIntegrityPath = join(root,
+  'verification/lean/Tier2/CommentReferenceIntegrity/TypedSemantics.lean');
+const typedCommentStackWitnessPath = join(root,
+  'verification/lean/TypedCommentStackSafetyWitnesses.lean');
+const typedCommentAxiomAuditPath = join(root,
+  'verification/lean/TypedCommentAxiomAudit.lean');
+const commentMemoryPath = join(root,
+  'scripts/check_lean_comment_memory.mjs');
+const leanWorkflowPath = join(root, '.github/workflows/lean-build.yml');
 const noteWitnessesPath = join(root, 'verification/lean/Tier2/NoteReferenceIntegrityWitnesses.lean');
 const executablePath = join(root, 'verification/lean/LeanDocxChecker.lean');
-const maximumShapePath = join(root, 'verification/lean/ProtocolV5MaximumOrdinaryShape.lean');
+const ordinaryEnvelopePath = join(root, 'verification/lean/ProtocolV6OrdinaryEnvelopeWitness.lean');
 const decoderPath = join(root, 'packages/docx-compare/src/baselines/atomizer/leanXmlVerifier.ts');
 
 const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8'));
 const lean = readFileSync(leanPath, 'utf8');
 const selector = readFileSync(selectorPath, 'utf8');
 const noteIntegrity = readFileSync(noteIntegrityPath, 'utf8');
+const commentIntegrity = readFileSync(commentIntegrityPath, 'utf8');
+const typedCommentIntegrity = readFileSync(typedCommentIntegrityPath, 'utf8');
+const typedCommentStackWitness = readFileSync(typedCommentStackWitnessPath, 'utf8');
+const typedCommentAxiomAudit = readFileSync(typedCommentAxiomAuditPath, 'utf8');
+const commentMemory = readFileSync(commentMemoryPath, 'utf8');
+const leanWorkflow = readFileSync(leanWorkflowPath, 'utf8');
 const noteWitnesses = readFileSync(noteWitnessesPath, 'utf8');
 const executable = readFileSync(executablePath, 'utf8');
-const maximumShape = readFileSync(maximumShapePath, 'utf8');
+const ordinaryEnvelope = readFileSync(ordinaryEnvelopePath, 'utf8');
 const decoder = readFileSync(decoderPath, 'utf8');
 
 const errors = [];
@@ -62,7 +79,8 @@ for (const element of ledger.parsedWordprocessingML?.elements ?? []) {
   if (!lean.includes(`localName == "${localName}"`) &&
       !selector.includes(`localName == "${localName}"`) &&
       !noteIntegrity.includes(`localName == "${localName}"`) &&
-      !noteIntegrity.includes(`=> "${localName}"`)) {
+      !noteIntegrity.includes(`=> "${localName}"`) &&
+      !commentIntegrity.includes(`localName == "${localName}"`)) {
     errors.push(`ledger element ${element} is not referenced by the Lean parser or selector`);
   }
 }
@@ -115,8 +133,8 @@ if (!ledger.scope?.reconstructionModes?.outOfScope?.includes('rebuild')) {
   errors.push('ledger must mark rebuild as out of scope');
 }
 
-if (ledger.protocolVersion !== 5 || !executable.includes('protocolVersion != 5')) {
-  errors.push('ledger and Lean executable must agree on protocol version 5');
+if (ledger.protocolVersion !== 6 || !executable.includes('protocolVersion != 6')) {
+  errors.push('ledger and Lean executable must agree on protocol version 6');
 }
 if (!executable.includes('String.fromUTF8?')) {
   errors.push('accepted XML subset requires strict UTF-8 package-part decoding');
@@ -127,6 +145,8 @@ for (const required of [
   'maxCumulativeExpandedBytes',
   'buildNoteSideEvidence',
   'selectConventionalMainNote',
+  'selectConventionalMainComment',
+  'buildCommentSideEvidence',
 ]) {
   if (!executable.includes(required)) {
     errors.push(`canonical resource admission requires ${required}`);
@@ -222,11 +242,11 @@ if (selector.includes('selectionCompleteProof') || selector.includes('structure 
 if (!selector.includes('if isDirectory then throw')) {
   errors.push('classic ZIP policy must explicitly reject directory records');
 }
-if (ledger.limits?.maximumShapeEvidence?.producer !==
-    'verification/lean/ProtocolV5MaximumOrdinaryShape.lean' ||
-    !maximumShape.includes('maximumOrdinaryResponseBytes') ||
+if (ledger.limits?.ordinaryEnvelopeEvidence?.producer !==
+    'verification/lean/ProtocolV6OrdinaryEnvelopeWitness.lean' ||
+    !ordinaryEnvelope.includes('ordinaryLegalUpperEnvelope') ||
     !decoder.includes('.size > 256')) {
-  errors.push('maximum-shape ledger evidence must match the compiled producer and strict 256-path decoder');
+  errors.push('ordinary-envelope ledger evidence must match the compiled producer and strict 256-path decoder');
 }
 
 for (const required of [
@@ -258,17 +278,139 @@ for (const required of [
   'maxPoisonReferences',
 ]) {
   if (!noteIntegrity.includes(required)) {
-    errors.push(`protocol v5 note-integrity coverage requires ${required}`);
+    errors.push(`protocol v6 note-integrity coverage requires ${required}`);
   }
 }
 
-if (!executable.includes('production_run_request_core_refinement_sound')) {
-  errors.push('protocol v5 production refinement theorem is missing from LeanDocxChecker');
+for (const required of [
+  'comment_selector_result_sound',
+  'comment_selection_to_realization_sound',
+  'admitted_comment_source_set_complete',
+  'parsed_comment_inventory_evidence_exact',
+  'package_comment_reference_integrity_sound',
+  'incomplete_comment_partition_zero_evidence_sound',
+  'comment_integrity_aggregate_pass_sound',
+]) {
+  if (!commentIntegrity.includes(required)) {
+    errors.push(`protocol v6 comment-integrity coverage requires ${required}`);
+  }
+}
+
+const typedExtractionBody = typedCommentIntegrity.slice(
+  typedCommentIntegrity.indexOf('def typedExtractionCheck'),
+  typedCommentIntegrity.indexOf('def TypedExtractionOf'),
+);
+const typedParsedPartBody = typedCommentIntegrity.slice(
+  typedCommentIntegrity.indexOf('def typedParsedPartCheck'),
+  typedCommentIntegrity.indexOf('def TypedParsedPartOf'),
+);
+const typedProductionEventBody = executable.slice(
+  executable.indexOf('def typedXmlEventOfProduction'),
+  executable.indexOf('def typedJsonOfProductionFuel'),
+);
+if (/\.data\.toList\s*=\s*/u.test(typedExtractionBody) ||
+    /\.data\.toList\s*=\s*/u.test(typedParsedPartBody)) {
+  errors.push('typed package/part admission must not use structural List equality');
+}
+if (/\.events\.(?:map|mapTR)\s+typedXmlEventIdentity/u.test(typedParsedPartBody)) {
+  errors.push('typed parsed-part admission must use the custom event-sequence comparator');
+}
+if (/attributes\.map\s/u.test(typedProductionEventBody) ||
+    !/attributes\.mapTR\s/u.test(typedProductionEventBody)) {
+  errors.push('production XML attribute conversion must use List.mapTR');
+}
+for (const comparator of [
+  'typedByteArrayEqLoop',
+  'typedByteListEqCheck',
+  'typedXmlAttributeListEqCheck',
+  'typedXmlEventEqCheck',
+  'typedXmlEventListEqCheck',
+]) {
+  const guarded = new RegExp(
+    `set_option backward\\.match\\.sparseCases false in\\s+def ${comparator}\\b`,
+    'u',
+  );
+  if (!guarded.test(typedCommentIntegrity)) {
+    errors.push(`${comparator} must disable sparse-case code generation`);
+  }
+}
+if (!typedCommentIntegrity.includes('value : BoundedByteArray') ||
+    !typedProductionEventBody.includes(
+      'value := typedBoundedByteArrayOfString item.value')) {
+  errors.push('typed XML attribute values must remain ByteArray-backed on admission');
+}
+if (!typedCommentIntegrity.includes(
+  'typedByteArrayEqLoop left right left.size') ||
+    typedCommentIntegrity.includes(
+      'typedByteListEqCheck left.data.toList right.data.toList')) {
+  errors.push('typed ByteArray equality must use the indexed comparator without List conversion');
+}
+if (!/def typedByteArrayGetFast[\s\S]{0,180}bytes\.get! index/u
+    .test(typedCommentIntegrity) ||
+    !/@\[implemented_by typedByteArrayGetFast\][\s\S]{0,100}def typedByteArrayGet\b/u
+      .test(typedCommentIntegrity)) {
+  errors.push('typed ByteArray equality must compile to the bounded constant-time accessor');
+}
+for (const required of [
+  'asciiXmlLiteralFast',
+  'xml.drop 1 |>.toString',
+]) {
+  if (!lean.includes(required)) {
+    errors.push(`large XML parser path requires ${required}`);
+  }
+}
+if (/def stripLeadingUtf8Bom[\s\S]{0,180}xml\.toList/u.test(lean)) {
+  errors.push('BOM handling must not convert the complete XML input to List');
+}
+for (const required of [
+  'readBoundedChunks',
+  'ByteArray.emptyWithCapacity total',
+  'crc32Loop bytes bytes.size 0',
+]) {
+  if (!executable.includes(required)) {
+    errors.push(`bounded extraction path requires ${required}`);
+  }
+}
+for (const required of [
+  'PAYLOAD_BYTES = 16_775_168',
+  'MAX_RSS_BYTES = 1.5 * 1024 * 1024 * 1024',
+  'TIMEOUT_MS = 120_000',
+  "['text', 'attribute']",
+]) {
+  if (!commentMemory.includes(required)) {
+    errors.push(`near-limit memory acceptance requires ${required}`);
+  }
+}
+for (const theorem of [
+  'typedByteArrayEqCheck_true_iff',
+  'typedXmlEventListEqCheck_true_iff',
+]) {
+  if (!typedCommentAxiomAudit.includes(`#print axioms Tier2.CommentReferenceIntegrity.Typed.${theorem}`)) {
+    errors.push(`typed comment axiom audit omits ${theorem}`);
+  }
+}
+if (!typedCommentStackWitness.includes('stackWitnessPayloadSize : Nat := 400000') ||
+    !typedCommentStackWitness.includes('native_decide')) {
+  errors.push('native typed comment stack witness must execute 400000-byte payloads');
+}
+for (const command of [
+  'lake env lean TypedCommentStackSafetyWitnesses.lean',
+  'npm run check:lean-comment-memory',
+  'src/integration/nvca-structural-regression.test.ts',
+  "SAFE_DOCX_REQUIRE_LEAN_CHECKER: '1'",
+]) {
+  if (!leanWorkflow.includes(command)) {
+    errors.push(`Lean CI workflow omits required stack-safety gate: ${command}`);
+  }
+}
+
+if (!executable.includes('production_run_request_core_v6_refinement_sound')) {
+  errors.push('protocol v6 production refinement theorem is missing from LeanDocxChecker');
 }
 
 for (const required of [
-  'semanticProtocolV5Projection',
-  'SemanticProtocolV5ProjectionOf',
+  'semanticProtocolV6Projection',
+  'SemanticProtocolV6ProjectionOf',
   'packageReadCount',
   'parseInvocationCount',
   'scanInvocationCount',

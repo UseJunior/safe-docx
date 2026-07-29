@@ -66,6 +66,37 @@ Running only the suspect input establishes what happened to that input. It does 
 
 A comparison run needs its own control — a known-bad document put through the same harness. When a control has to be reconstructed rather than staged, treat the reconstruction as a hypothesis. If it does not reproduce the expected failure, record that as a negative result and stop. A control iterated until something finally breaks is not a control.
 
+**No independently occurring document-level control is currently available for
+the run-split abort.** A 2026-07-27 reconstruction attempt for
+[#693](https://github.com/UseJunior/safe-docx/issues/693) scrubbed the public
+NVCA indemnification agreement in place, preserving its package structure and
+109 `w:instrText` field instructions. The revised side changed one character of
+a 17-character scrubbed text run and split that run in two. The public
+`compareDocuments` entry point succeeded in both requested modes: `inplace`
+reported `reconstructionModeUsed: 'inplace'`, and `rebuild` reported
+`reconstructionModeUsed: 'rebuild'`.
+
+Later review established the limit of that result: the chosen run followed the
+end of a `SEQ` field and therefore sat outside the field range. Rebuild still
+correlated all 108 captured `REF` boundaries, but success proved only that the
+mutation perturbed none of them. Because the split landed outside every opaque
+descriptor, their stability says nothing about the guard's sensitivity to a
+run split. The authoritative comparison is in
+`packages/docx-compare/src/baselines/atomizer/opaquePassthrough.ts`.
+
+An equivalent pure run split deliberately placed inside a supported `REF` field
+result does make `rebuild` throw the expected `OpaquePassthroughError` while
+`inplace` succeeds. That targeted probe validates the guard path, but it is not
+a control for the original real-world abort: its failure was manufactured by
+placing the split inside a construct known to be guarded.
+
+No fixture was therefore committed. Until an independently occurring known-bad
+pair can be staged and pinned through `compareDocuments`, a diagnostic run can
+prove the detector self-tests ran, but it cannot prove that its comparison
+harness can surface this abort. The reconstruction retained field codes and
+bookmark names only because its source was a public standard form; the same
+scrub would not be sufficient redaction for a confidential document.
+
 ## Reproducing A Defect Outside The Original Document
 
 When the document that triggered a defect cannot be shared, the repro is built in this order.

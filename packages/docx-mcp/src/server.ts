@@ -8,6 +8,7 @@ import { SAFE_DOCX_MCP_TOOLS } from './tool_catalog.js';
 import { readFile } from './tools/read_file.js';
 import { grep } from './tools/grep.js';
 import { getDocumentOutline } from './tools/get_document_outline.js';
+import { getSections } from './tools/get_sections.js';
 import { replaceText } from './tools/replace_text.js';
 import { insertParagraph } from './tools/insert_paragraph.js';
 import { batchEdit } from './tools/batch_edit.js';
@@ -19,6 +20,8 @@ import { hasTrackedChanges_tool } from './tools/has_tracked_changes.js';
 import { closeFile } from './tools/close_file.js';
 import { formatLayout } from './tools/format_layout.js';
 import { formatNumbering } from './tools/format_numbering.js';
+import { formatSection } from './tools/format_section.js';
+import { insertSectionBreakTool } from './tools/insert_section_break.js';
 import { acceptChanges } from './tools/accept_changes.js';
 import { acceptAiEdits } from './tools/accept_ai_edits.js';
 import { rejectAiEdits } from './tools/reject_ai_edits.js';
@@ -165,6 +168,10 @@ export async function dispatchToolCall(
       return await grep(sessions, args as Parameters<typeof grep>[1]);
     case 'get_document_outline':
       return await getDocumentOutline(sessions, args as Parameters<typeof getDocumentOutline>[1]);
+    case 'get_sections':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'get_sections');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'get_sections');
+      return await getSections(sessions, args as Parameters<typeof getSections>[1]);
     case 'batch_edit':
       return await batchEdit(sessions, args as Parameters<typeof batchEdit>[1]);
     case 'replace_text':
@@ -190,6 +197,17 @@ export async function dispatchToolCall(
       if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'format_numbering');
       if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'format_numbering');
       return await formatNumbering(sessions, args as Parameters<typeof formatNumbering>[1]);
+    case 'format_section':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'format_section');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'format_section');
+      return await formatSection(sessions, args as Parameters<typeof formatSection>[1]);
+    case 'insert_section_break':
+      if (isGDocsRequest(args)) return await dispatchGDocs(sessions, args, 'insert_section_break');
+      if (isOdfRequest(args)) return await dispatchOdf(sessions, args, 'insert_section_break');
+      return await insertSectionBreakTool(
+        sessions,
+        args as Parameters<typeof insertSectionBreakTool>[1],
+      );
     case 'accept_changes':
       return await acceptChanges(sessions, args as Parameters<typeof acceptChanges>[1]);
     case 'accept_ai_edits':

@@ -34,6 +34,13 @@ export type {
   DocumentIntegrityCheckStatus,
   DocumentIntegrityFixedStoryFailure,
   DocumentIntegrityFixedStoryIssueCode,
+  DocumentIntegrityCommentFailure,
+  DocumentIntegrityCommentInventory,
+  DocumentIntegrityCommentRelationshipIdentity,
+  DocumentIntegrityCommentScope,
+  DocumentIntegrityCommentStatus,
+  DocumentIntegrityCommentStory,
+  DocumentIntegrityCommentStorySide,
   DocumentIntegrityRelationshipKind,
   DocumentIntegrityRelationshipRole,
   DocumentIntegrityRelationshipScope,
@@ -125,6 +132,8 @@ export async function compareDocuments(
 export * from './atomizer.js';
 export * from './move-detection.js';
 export * from './format-detection.js';
+export * from './paragraph-style-detection.js';
+export { extractRoundTripComparisonText } from './fieldComparisonSemantics.js';
 export * from './baselines/atomizer/formattingFidelity.js';
 export {
   acceptAllChanges,

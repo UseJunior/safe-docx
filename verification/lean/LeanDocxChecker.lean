@@ -1,9 +1,51 @@
 import Lean.Data.Json
+import Tier2.CommentReferenceIntegrity
+import Tier2.CommentReferenceIntegrity.TypedSemantics
 import Tier2.NoteReferenceIntegrity
 import Tier2.RelationshipStorySelector
 
 open Lean Tier2.XmlTripleChecker Tier2.RelationshipStorySelector
   Tier2.ConventionalMainNoteSelector
+  Tier2.CommentReferenceIntegrity.Typed
+
+set_option linter.unusedSimpArgs false
+set_option linter.unusedVariables false
+set_option linter.unnecessarySimpa false
+
+abbrev SelectedCommentIdentity :=
+  Tier2.CommentReferenceIntegrity.SelectedCommentIdentity
+abbrev CommentSelectionFailure :=
+  Tier2.CommentReferenceIntegrity.CommentSelectionFailure
+abbrev CommentReferenceOccurrence :=
+  Tier2.CommentReferenceIntegrity.CommentReferenceOccurrence
+abbrev CommentDefinitionOccurrence :=
+  Tier2.CommentReferenceIntegrity.CommentDefinitionOccurrence
+abbrev CommentScanInput :=
+  Tier2.CommentReferenceIntegrity.CommentScanInput
+abbrev CommentScan :=
+  Tier2.CommentReferenceIntegrity.CommentScan
+abbrev BoundedCommentScan :=
+  Tier2.CommentReferenceIntegrity.BoundedCommentScan
+abbrev RetainedCommentScan :=
+  Tier2.CommentReferenceIntegrity.RetainedCommentScan
+abbrev ParsedCommentEvidence :=
+  Tier2.CommentReferenceIntegrity.ParsedCommentEvidence
+abbrev PackageCommentInventory :=
+  Tier2.CommentReferenceIntegrity.PackageCommentInventory
+def selectConventionalMainCommentRecords :=
+  Tier2.CommentReferenceIntegrity.selectConventionalMainCommentRecords
+def checkPackageCommentIntegrity :=
+  Tier2.CommentReferenceIntegrity.checkPackageCommentIntegrity
+def packageCommentInventory :=
+  Tier2.CommentReferenceIntegrity.packageCommentInventory
+def PackageCommentIntegrity :=
+  Tier2.CommentReferenceIntegrity.PackageCommentIntegrity
+def retainCommentScanEvidence :=
+  Tier2.CommentReferenceIntegrity.retainCommentScanEvidence
+def scanCommentEvidence :=
+  Tier2.CommentReferenceIntegrity.scanCommentEvidence
+def commentReferenceCandidate? :=
+  Tier2.CommentReferenceIntegrity.commentReferenceCandidate?
 
 abbrev ReferenceOccurrence := Tier2.NoteReferenceIntegrity.ReferenceOccurrence
 abbrev DefinitionOccurrence := Tier2.NoteReferenceIntegrity.DefinitionOccurrence
@@ -49,6 +91,535 @@ def protocolV5ResponseJson :=
 def finalizeProtocolV5Response :=
   Tier2.NoteReferenceIntegrity.finalizeProtocolV5Response
 
+def maxProtocolV6JsonResponseBytes : Nat := 2626368
+def maxProtocolV6ResponseBytes : Nat := 2626369
+
+def typedBoundedBytesOfString (value : String) : BoundedBytes :=
+  let bytes := value.toUTF8.toList
+  { bytes, limit := bytes.length, admitted := Nat.le_refl _ }
+
+def typedBoundedByteArrayOfString (value : String) : BoundedByteArray :=
+  let bytes := value.toUTF8
+  { bytes, limit := bytes.size, admitted := Nat.le_refl _ }
+
+def typedXmlEventOfProduction (eventOrdinal : Nat) : XmlEvent → TypedXmlEvent
+  | .startElement uri localName attributes depth selfClosing =>
+      .startElement (typedBoundedBytesOfString uri)
+        (typedBoundedBytesOfString localName)
+        (attributes.mapTR fun item => {
+          namespaceUri := typedBoundedBytesOfString item.uri
+          localName := typedBoundedBytesOfString item.localName
+          value := typedBoundedByteArrayOfString item.value
+        })
+        depth selfClosing eventOrdinal
+  | .endElement uri localName depth =>
+      .endElement (typedBoundedBytesOfString uri)
+        (typedBoundedBytesOfString localName) depth eventOrdinal
+  | .text value depth =>
+      .text (typedBoundedByteArrayOfString value) depth eventOrdinal
+
+def typedJsonOfProductionFuel : Nat → Json → TypedJson
+  | 0, _ => .null
+  | _ + 1, .null => .null
+  | _ + 1, .bool value => .bool value
+  | _ + 1, .num value =>
+      .numberBytes (typedBoundedBytesOfString value.toString)
+  | _ + 1, .str value => .bytes (typedBoundedBytesOfString value)
+  | fuel + 1, .arr values =>
+      .array (values.toList.map (typedJsonOfProductionFuel fuel))
+  | fuel + 1, .obj fields => .object (fields.toList.map fun field =>
+      (typedBoundedBytesOfString field.1,
+        typedJsonOfProductionFuel fuel field.2))
+
+def typedJsonOfProduction (value : Json) : TypedJson :=
+  typedJsonOfProductionFuel 2626369 value
+
+def jsonFieldOrNull (response : Json) (field : String) : Json :=
+  (response.getObjVal? field).toOption.getD .null
+
+def typedProtocolV6ResponseOfJson
+    (response : Json) (passed : Bool) :
+    Except String TypedProtocolV6Response := do
+  return {
+    protocolVersion := .nat 6
+    checker := typedJsonOfProduction (jsonFieldOrNull response "checker")
+    passed := .bool passed
+    fixedStories := typedJsonOfProduction
+      (jsonFieldOrNull response "fixedStories")
+    presenceMismatches := typedJsonOfProduction
+      (jsonFieldOrNull response "presenceMismatches")
+    fixedStoryIssues := typedJsonOfProduction
+      (jsonFieldOrNull response "fixedStoryIssues")
+    relationshipSlots := typedJsonOfProduction
+      (jsonFieldOrNull response "relationshipSlots")
+    relationshipStories := typedJsonOfProduction
+      (jsonFieldOrNull response "relationshipStories")
+    selectionIssues := typedJsonOfProduction
+      (jsonFieldOrNull response "selectionIssues")
+    referenceSourcePartitions := typedJsonOfProduction
+      (jsonFieldOrNull response "referenceSourcePartitions")
+    noteStories := typedJsonOfProduction
+      (jsonFieldOrNull response "noteStories")
+    noteInventories := typedJsonOfProduction
+      (jsonFieldOrNull response "noteInventories")
+    noteIntegrityIssues := typedJsonOfProduction
+      (jsonFieldOrNull response "noteIntegrityIssues")
+    commentStory := typedJsonOfProduction
+      (jsonFieldOrNull response "commentStory")
+    commentInventories := typedJsonOfProduction
+      (jsonFieldOrNull response "commentInventories")
+    commentIntegrityIssues := typedJsonOfProduction
+      (jsonFieldOrNull response "commentIntegrityIssues")
+  }
+
+def ProtocolV6JsonProjectionOf (response : Json) (passed : Bool)
+    (typedResponse : TypedProtocolV6Response) : Prop :=
+  ∃ converted,
+    typedProtocolV6ResponseOfJson response passed = .ok converted ∧
+    independentProtocolV6Projection converted =
+      independentProtocolV6Projection typedResponse ∧
+    response.compress.toUTF8.data.toList =
+      independentProtocolV6Projection typedResponse
+
+instance protocolV6JsonProjectionOfDecidable
+    (response : Json) (passed : Bool)
+    (typedResponse : TypedProtocolV6Response) :
+    Decidable (ProtocolV6JsonProjectionOf response passed typedResponse) := by
+  unfold ProtocolV6JsonProjectionOf
+  match hConversion : typedProtocolV6ResponseOfJson response passed with
+  | .error _ =>
+      exact isFalse fun ⟨converted, h, _⟩ => by
+        cases h
+  | .ok converted =>
+      if hProjection :
+          independentProtocolV6Projection converted =
+            independentProtocolV6Projection typedResponse ∧
+          response.compress.toUTF8.data.toList =
+            independentProtocolV6Projection typedResponse then
+        exact isTrue ⟨converted, rfl, hProjection⟩
+      else
+        exact isFalse fun ⟨candidate, hCandidate, hRest⟩ => by
+          cases hCandidate
+          exact hProjection hRest
+
+def protocolV6JsonProjectionCheck (response : Json) (passed : Bool) : Bool :=
+  match typedProtocolV6ResponseOfJson response passed with
+  | .error _ => false
+  | .ok typedResponse =>
+      decide (response.compress.toUTF8.data.toList =
+        independentProtocolV6Projection typedResponse)
+
+theorem executable_protocol_utf8_json_refines_typed
+    (response : Json) (passed : Bool)
+    (h : protocolV6JsonProjectionCheck response passed = true) :
+    ∃ typedResponse,
+      ProtocolV6JsonProjectionOf response passed typedResponse := by
+  unfold protocolV6JsonProjectionCheck at h
+  split at h
+  · contradiction
+  · rename_i typedResponse hTyped
+    exact ⟨typedResponse, typedResponse, hTyped, rfl, of_decide_eq_true h⟩
+
+theorem typed_protocol_response_pass_of_conversion
+    (response : Json) (typedResponse : TypedProtocolV6Response)
+    (hConversion :
+      typedProtocolV6ResponseOfJson response true = .ok typedResponse) :
+    typedResponse.protocolVersion = .nat 6 ∧
+    typedResponse.passed = .bool true := by
+  unfold typedProtocolV6ResponseOfJson at hConversion
+  cases hConversion
+  exact ⟨rfl, rfl⟩
+
+def ExecutableSelectorRefinesTyped
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (typedCommentType : BoundedBytes)
+    (typedRelationships : List TypedRelationship) : Prop :=
+  typedCommentType.bytes =
+      Tier2.CommentReferenceIntegrity.commentsRelationshipType.toUTF8.toList ∧
+  (typedRelationships.map fun relationship =>
+      (relationship.ordinal, relationship.relationshipType.bytes,
+        relationship.relationshipId.bytes, relationship.rawTarget.bytes,
+        relationship.rawTargetMode.map (·.bytes))) =
+    (pkg.relationshipRecords.zipIdx.map fun item =>
+      (item.2, item.1.relationshipType.toUTF8.toList,
+        item.1.id.toUTF8.toList, item.1.rawTarget.toUTF8.toList,
+        item.1.targetMode.map (·.toUTF8.toList))) ∧
+  match Tier2.CommentReferenceIntegrity.selectConventionalMainComment pkg,
+      selectTypedComment typedCommentType typedRelationships with
+  | .ok none, .ok none => True
+  | .ok (some selected), .ok (some typedSelected) =>
+      typedSelected.relationshipOrdinal =
+          selected.relationshipRecordOrdinal ∧
+      typedSelected.relationshipId.bytes =
+          selected.relationshipId.toUTF8.toList ∧
+      typedSelected.normalizedPartPath.bytes =
+          selected.normalizedPartPath.toUTF8.toList
+  | .error (.ambiguous left), .error (.ambiguous right) => left = right
+  | .error (.external left), .error (.external right) => left = right
+  | .error (.invalidTargetMode left), .error (.invalidMode right) =>
+      left = right
+  | .error (.targetLimit left), .error (.targetLimit right) => left = right
+  | .error (.unsafeTarget left), .error (.unsafeTarget right) => left = right
+  | _, _ => False
+
+instance executableSelectorRefinesTypedDecidable
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (typedCommentType : BoundedBytes)
+    (typedRelationships : List TypedRelationship) :
+    Decidable (ExecutableSelectorRefinesTyped pkg typedCommentType
+      typedRelationships) := by
+  unfold ExecutableSelectorRefinesTyped
+  split <;> infer_instance
+
+def executableSelectorRefinementCheck
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (typedCommentType : BoundedBytes)
+    (typedRelationships : List TypedRelationship) : Bool :=
+  decide (ExecutableSelectorRefinesTyped pkg typedCommentType
+    typedRelationships)
+
+theorem executable_comment_selector_refines_typed
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (typedCommentType : BoundedBytes)
+    (typedRelationships : List TypedRelationship)
+    (h : executableSelectorRefinementCheck pkg typedCommentType
+      typedRelationships = true) :
+    ExecutableSelectorRefinesTyped pkg typedCommentType
+      typedRelationships := by
+  exact of_decide_eq_true h
+
+def ExecutableRealizationValueOf
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typed : TypedCommentRealization) : Prop :=
+  typed.selected.relationshipOrdinal =
+      realization.selected.relationshipRecordOrdinal ∧
+  typed.selected.relationshipId.bytes =
+      realization.selected.relationshipId.toUTF8.toList ∧
+  typed.selected.normalizedPartPath.bytes =
+      realization.selected.normalizedPartPath.toUTF8.toList ∧
+  typed.extraction.packageBytes =
+      realization.extraction.packageBytes ∧
+  typed.extraction.snapshotBytes =
+      realization.extraction.snapshotBytes ∧
+  typed.extraction.expandedBytes =
+      realization.extraction.decompressedBytes ∧
+  typed.entry.name.bytes =
+      realization.entry.normalizedPartPath.toUTF8.toList ∧
+  typed.entry.compressedSize = realization.entry.compressedSize ∧
+  typed.entry.expandedSize = realization.entry.expandedSize ∧
+  typed.entry.localHeaderOffset = realization.entry.localHeaderOffset ∧
+  typed.entry.dataOffset = realization.entry.dataOffset ∧
+  typed.entry.localSpanEnd = realization.entry.localSpanEnd ∧
+  typed.extraction.entry = typed.entry ∧
+  typed.extraction.compressedSlice =
+      realization.extraction.compressedPayload ∧
+  typed.parsed.rawBytes = realization.extraction.decompressedBytes ∧
+  typed.parsed.expectedRootUri.bytes =
+      realization.parsed.rootUri.toUTF8.toList ∧
+  typed.parsed.expectedRootLocalName.bytes =
+      realization.parsed.rootLocalName.toUTF8.toList ∧
+  typed.parsed.depthLimit = realization.parsed.depth ∧
+  typed.parsed.eventLimit = realization.parsed.eventLimit ∧
+  typed.parsed.events =
+      (realization.parsed.events.zipIdx.map fun item =>
+        typedXmlEventOfProduction item.2 item.1) ∧
+  typed.retainedParsedEvents =
+      (realization.retainedParsedEvidence.events.zipIdx.map fun item =>
+        typedXmlEventOfProduction item.2 item.1)
+
+def ExecutableRealizationRefinesTyped
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (prior : Tier2.CommentReferenceIntegrity.GlobalResourceUsage)
+    (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation : Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typed : TypedCommentRealization) : Prop :=
+  Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+      pkg side prior selected = .ok realization ∧
+  Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+      pkg side note = evaluation ∧
+  ExecutableRealizationValueOf realization typed
+
+instance executableRealizationRefinesTypedDecidable
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typed : TypedCommentRealization) :
+    Decidable (ExecutableRealizationValueOf realization typed) := by
+  unfold ExecutableRealizationValueOf
+  infer_instance
+
+def executableRealizationRefinementCheck
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typed : TypedCommentRealization) : Bool :=
+  decide (ExecutableRealizationValueOf realization typed)
+
+theorem executable_comment_realization_refines_typed
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (prior : Tier2.CommentReferenceIntegrity.GlobalResourceUsage)
+    (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation :
+      Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typed : TypedCommentRealization)
+    (hRun :
+      Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+        pkg side prior selected = .ok realization)
+    (hEvaluation :
+      Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+        pkg side note = evaluation)
+    (h : executableRealizationRefinementCheck realization typed = true) :
+    ExecutableRealizationRefinesTyped pkg side prior selected note evaluation
+      realization typed := by
+  exact ⟨hRun, hEvaluation, of_decide_eq_true h⟩
+
+def typedBoundedIdentityBytes (value : BoundedBytes) : List UInt8 :=
+  encodeNatDigits value.bytes.length ++ [UInt8.ofNat 58] ++ value.bytes
+
+def typedAttributeIdentityBytes (attr : TypedXmlAttribute) : List UInt8 :=
+  typedBoundedIdentityBytes attr.namespaceUri ++
+  typedBoundedIdentityBytes attr.localName ++
+  encodeNatDigits attr.value.bytes.size ++ [UInt8.ofNat 58] ++
+  attr.value.bytes.data.toList
+
+def typedXmlEventIdentityBytes : TypedXmlEvent → List UInt8
+  | .startElement namespaceUri localName attributes depth selfClosing ordinal =>
+      [UInt8.ofNat 83] ++ typedBoundedIdentityBytes namespaceUri ++
+      typedBoundedIdentityBytes localName ++
+      encodeNatDigits attributes.length ++ [UInt8.ofNat 58] ++
+      (attributes.flatMap typedAttributeIdentityBytes) ++
+      encodeNatDigits depth ++ [UInt8.ofNat 58] ++
+      [if selfClosing then UInt8.ofNat 49 else UInt8.ofNat 48] ++
+      encodeNatDigits ordinal
+  | .endElement namespaceUri localName depth ordinal =>
+      [UInt8.ofNat 69] ++ typedBoundedIdentityBytes namespaceUri ++
+      typedBoundedIdentityBytes localName ++ encodeNatDigits depth ++
+      [UInt8.ofNat 58] ++ encodeNatDigits ordinal
+  | .text value depth ordinal =>
+      [UInt8.ofNat 84] ++ encodeNatDigits value.bytes.size ++
+      [UInt8.ofNat 58] ++ value.bytes.data.toList ++
+      encodeNatDigits depth ++ [UInt8.ofNat 58] ++ encodeNatDigits ordinal
+
+def ExecutableSourceSetRefinesTyped
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (evaluation :
+      Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typedSources : List TypedStorySource) : Prop :=
+  Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      pkg side note = set ∧
+  Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+      pkg side note = evaluation ∧
+  (typedSources.map fun typed =>
+      (typed.sourceOrdinal, typed.partPath.bytes)) =
+    (set.sources.map fun source =>
+      (source.ordinal, source.normalizedPartPath.toUTF8.toList)) ∧
+  (typedSources.map fun typed =>
+      (typed.sourceOrdinal,
+        typed.parsed.events.map typedXmlEventIdentityBytes)) =
+    (set.sourceEvents.map fun eventSource =>
+      (eventSource.1,
+        eventSource.2.zipIdx.map fun item =>
+          typedXmlEventIdentityBytes
+            (typedXmlEventOfProduction item.2 item.1)))
+
+def executableSourceSetRefinementCheck
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (typedSources : List TypedStorySource) : Bool :=
+  decide (
+    (typedSources.map fun typed =>
+        (typed.sourceOrdinal, typed.partPath.bytes)) =
+      (set.sources.map fun source =>
+        (source.ordinal, source.normalizedPartPath.toUTF8.toList))) &&
+  decide (
+    (typedSources.map fun typed =>
+        (typed.sourceOrdinal,
+          typed.parsed.events.map typedXmlEventIdentityBytes)) =
+      (set.sourceEvents.map fun eventSource =>
+        (eventSource.1,
+          eventSource.2.zipIdx.map fun item =>
+            typedXmlEventIdentityBytes
+              (typedXmlEventOfProduction item.2 item.1))))
+
+theorem executable_comment_source_set_refines_typed
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (evaluation :
+      Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typedSources : List TypedStorySource)
+    (hSet :
+      Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+        pkg side note = set)
+    (hEvaluation :
+      Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+        pkg side note = evaluation)
+    (h : executableSourceSetRefinementCheck set typedSources = true) :
+    ExecutableSourceSetRefinesTyped pkg side note set evaluation
+      typedSources := by
+  unfold executableSourceSetRefinementCheck at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  exact ⟨hSet, hEvaluation, h⟩
+
+def ExecutableIncompleteValueOf
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation :
+      Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typed : TypedSideEvaluation) : Prop :=
+  evaluation.status =
+      Tier2.CommentReferenceIntegrity.CommentEvaluationStatus.notEvaluated ↔
+    ∃ cause,
+      Tier2.CommentReferenceIntegrity.concreteCommentIncompleteCause
+          pkg side note evaluation = some cause ∧
+      typed.status = .notEvaluated ∧ evaluation.commentRealization = none ∧
+      evaluation.parsedEvidence = none ∧
+      evaluation.internalReferences = [] ∧
+      evaluation.internalDefinitions = [] ∧
+      evaluation.inventory =
+        Tier2.CommentReferenceIntegrity.emptyPackageCommentInventory ∧
+      typed.realization = none ∧ typed.sources = [] ∧
+      typed.scan.references = [] ∧ typed.scan.definitions = [] ∧
+      typed.scan.nonDirectDefinitions = [] ∧ typed.scan.crossing = none
+
+def ExecutableIncompleteRefinesTyped
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation :
+      Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typed : TypedSideEvaluation) : Prop :=
+  Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+      pkg side note = evaluation ∧
+  ExecutableIncompleteValueOf pkg side note evaluation typed
+
+instance executableIncompleteRefinesTypedDecidable
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation :
+      Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typed : TypedSideEvaluation) :
+    Decidable (ExecutableIncompleteValueOf pkg side note evaluation typed) := by
+  unfold ExecutableIncompleteValueOf
+  infer_instance
+
+def executableIncompleteRefinementCheck
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation :
+      Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typed : TypedSideEvaluation) : Bool :=
+  decide (ExecutableIncompleteValueOf pkg side note evaluation typed)
+
+theorem executable_comment_incomplete_refines_typed
+    (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation :
+      Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typed : TypedSideEvaluation)
+    (hEvaluation :
+      Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+        pkg side note = evaluation)
+    (h : executableIncompleteRefinementCheck
+      pkg side note evaluation typed = true) :
+    ExecutableIncompleteRefinesTyped pkg side note evaluation typed := by
+  exact ⟨hEvaluation, of_decide_eq_true h⟩
+
+def executableCommentSelectorRefinesTypedSignature : Prop :=
+  ∀ (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (typedCommentType : BoundedBytes)
+    (typedRelationships : List TypedRelationship),
+    executableSelectorRefinementCheck pkg typedCommentType
+      typedRelationships = true →
+    ExecutableSelectorRefinesTyped pkg typedCommentType typedRelationships
+
+def executableCommentRealizationRefinesTypedSignature : Prop :=
+  ∀ (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (prior : Tier2.CommentReferenceIntegrity.GlobalResourceUsage)
+    (selected : Tier2.CommentReferenceIntegrity.SelectedCommentIdentity)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation : Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (realization : Tier2.CommentReferenceIntegrity.CommentStoryRealization)
+    (typed : TypedCommentRealization),
+    Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+      pkg side prior selected = .ok realization →
+    Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+      pkg side note = evaluation →
+    executableRealizationRefinementCheck realization typed = true →
+    ExecutableRealizationRefinesTyped pkg side prior selected note evaluation
+      realization typed
+
+def executableCommentSourceSetRefinesTypedSignature : Prop :=
+  ∀ (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (set : Tier2.CommentReferenceIntegrity.CommentSourceSet)
+    (evaluation : Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typedSources : List TypedStorySource),
+    Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      pkg side note = set →
+    Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+      pkg side note = evaluation →
+    executableSourceSetRefinementCheck set typedSources = true →
+    ExecutableSourceSetRefinesTyped pkg side note set evaluation typedSources
+
+def executableCommentIncompleteRefinesTypedSignature : Prop :=
+  ∀ (pkg : Tier2.CommentReferenceIntegrity.PackageView)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (note : Tier2.CommentReferenceIntegrity.SideNoteEvaluationV5)
+    (evaluation : Tier2.CommentReferenceIntegrity.SideCommentEvaluationV6)
+    (typed : TypedSideEvaluation),
+    Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+      pkg side note = evaluation →
+    executableIncompleteRefinementCheck
+      pkg side note evaluation typed = true →
+    ExecutableIncompleteRefinesTyped pkg side note evaluation typed
+
+def executableProtocolUtf8JsonRefinesTypedSignature : Prop :=
+  ∀ (response : Json) (passed : Bool),
+    protocolV6JsonProjectionCheck response passed = true →
+    ∃ typedResponse,
+      ProtocolV6JsonProjectionOf response passed typedResponse
+
+def protocolV6LineFeed : ByteArray := ⟨#[UInt8.ofNat 10]⟩
+
+def finalizeProtocolV6ResponseUnchecked
+    (response : Json) : Except String ByteArray :=
+  let jsonBytes := response.compress.toUTF8
+  if jsonBytes.size > maxProtocolV6JsonResponseBytes then
+    .error "protocol v6 JSON response exceeds legal envelope"
+  else
+    let stdout := jsonBytes ++ protocolV6LineFeed
+    if stdout.size > maxProtocolV6ResponseBytes then
+      .error "protocol v6 stdout response exceeds legal envelope"
+    else .ok stdout
+
+def finalizeProtocolV6Response
+    (response : Json) (passed : Bool) : Except String ByteArray :=
+  if protocolV6JsonProjectionCheck response passed then
+    finalizeProtocolV6ResponseUnchecked response
+  else
+    .error "protocol v6 production JSON diverges from typed byte projection"
+
+theorem protocol_v6_projection_check_of_finalize_ok
+    (response : Json) (passed : Bool) (stdout : ByteArray)
+    (hFinalize : finalizeProtocolV6Response response passed = .ok stdout) :
+    protocolV6JsonProjectionCheck response passed = true := by
+  unfold finalizeProtocolV6Response at hFinalize
+  split at hFinalize
+  · assumption
+  · contradiction
+
 structure Request where
   originalDocxPath : String
   revisedDocxPath : String
@@ -58,9 +629,9 @@ def requestFromJson (j : Json) : Except String Request := do
   let object ← j.getObj?
   if object.keys != ["comparedDocxPath", "originalDocxPath", "protocolVersion",
       "revisedDocxPath"] then
-    throw "protocol v5 request has unknown or missing keys"
+    throw "protocol v6 request has unknown or missing keys"
   let protocolVersion ← j.getObjValAs? Nat "protocolVersion"
-  if protocolVersion != 5 then throw s!"unsupported protocolVersion: {protocolVersion}"
+  if protocolVersion != 6 then throw s!"unsupported protocolVersion: {protocolVersion}"
   return {
     originalDocxPath := (← j.getObjValAs? String "originalDocxPath")
     revisedDocxPath := (← j.getObjValAs? String "revisedDocxPath")
@@ -107,13 +678,19 @@ structure BoundedOutput where
   stdout : ByteArray
   stderr : ByteArray
 
-partial def readBounded (handle : IO.FS.Handle) (limit : Nat) (acc : ByteArray := .empty) :
-    IO ByteArray := do
+partial def readBoundedChunks (handle : IO.FS.Handle) (limit total : Nat)
+    (chunks : List ByteArray) : IO (Nat × List ByteArray) := do
   let chunk ← handle.read 4096
-  if chunk.isEmpty then return acc
-  let next := acc ++ chunk
-  if next.size > limit then throw (IO.userError s!"process output exceeds {limit} bytes")
-  readBounded handle limit next
+  if chunk.isEmpty then return (total, chunks)
+  let nextTotal := total + chunk.size
+  if nextTotal > limit then
+    throw (IO.userError s!"process output exceeds {limit} bytes")
+  readBoundedChunks handle limit nextTotal (chunk :: chunks)
+
+def readBounded (handle : IO.FS.Handle) (limit : Nat) : IO ByteArray := do
+  let (total, reversedChunks) ← readBoundedChunks handle limit 0 []
+  return reversedChunks.reverse.foldl ByteArray.append
+    (ByteArray.emptyWithCapacity total)
 
 def runBounded (cmd : String) (args : Array String) (stdoutLimit : Nat) : IO BoundedOutput := do
   let child ← IO.Process.spawn {
@@ -130,14 +707,28 @@ def runBounded (cmd : String) (args : Array String) (stdoutLimit : Nat) : IO Bou
     discard child.wait
     throw error
 
+def crc32Bit (value : Nat) : Nat :=
+  if value % 2 == 1 then Nat.xor (value / 2) 0xedb88320 else value / 2
+
 def crc32Step (crc byte : Nat) : Nat :=
-  (List.range 8).foldl (fun value _ =>
-    if value % 2 == 1 then Nat.xor (value / 2) 0xedb88320 else value / 2)
-    (Nat.xor crc byte)
+  let bit0 := crc32Bit (Nat.xor crc byte)
+  let bit1 := crc32Bit bit0
+  let bit2 := crc32Bit bit1
+  let bit3 := crc32Bit bit2
+  let bit4 := crc32Bit bit3
+  let bit5 := crc32Bit bit4
+  let bit6 := crc32Bit bit5
+  crc32Bit bit6
+
+set_option backward.match.sparseCases false in
+def crc32Loop (bytes : ByteArray) : Nat → Nat → Nat → Nat
+  | 0, _, crc => crc
+  | remaining + 1, index, crc =>
+      crc32Loop bytes remaining (index + 1)
+        (crc32Step crc (bytes.get! index).toNat)
 
 def crc32 (bytes : ByteArray) : Nat :=
-  Nat.xor (bytes.toList.foldl (fun crc byte => crc32Step crc byte.toNat) 0xffffffff)
-    0xffffffff
+  Nat.xor (crc32Loop bytes bytes.size 0 0xffffffff) 0xffffffff
 
 def crc32Hex (bytes : ByteArray) : String :=
   let digits := Nat.toDigits 16 (crc32 bytes)
@@ -149,10 +740,13 @@ structure Package where
   packageReadCount : Nat
   index : ZipIndex
   indexExact : buildZipIndex bytes = .ok index
+  independentIndexExact :
+    Tier2.CommentReferenceIntegrity.IndependentBinaryIndexOf bytes index
   snapshotDirectory : String
   snapshotPath : String
   snapshotBytes : ByteArray
   snapshotWriteCount : Nat
+  snapshotWriteCountExact : snapshotWriteCount = 1
   snapshotBytesExact : snapshotBytes = bytes
 
 structure SnapshotRoot where
@@ -224,17 +818,27 @@ def loadPackage (root : SnapshotRoot) (path : String) : IO Package := do
   match hIndex : buildZipIndex bytes with
   | .error detail => throw (IO.userError s!"package index failed for {path}: {detail}")
   | .ok index =>
+    if hIndependent :
+        Tier2.CommentReferenceIntegrity.independentBinaryIndexCheck
+          bytes index = true then
     let (snapshotDirectory, snapshotPath) ← createPrivateSnapshot root bytes
     return {
       path, bytes, index
       packageReadCount := 1
       indexExact := hIndex
+      independentIndexExact :=
+        Tier2.CommentReferenceIntegrity.independent_binary_index_check_sound
+          bytes index hIndependent
       snapshotDirectory
       snapshotPath
       snapshotBytes := bytes
       snapshotWriteCount := 1
+      snapshotWriteCountExact := rfl
       snapshotBytesExact := rfl
     }
+    else
+      throw (IO.userError
+        "package index failed independent retained-evidence validation")
 
 structure SnapshotExtractionEvidence where
   packageBytes : ByteArray
@@ -696,6 +1300,40 @@ structure ProductionParseEvidence where
   parseResultExact :
     parseXmlEventsForRootBoundedTyped text expectedRootUri expectedRootLocalName
       eventLimit depthLimit = .ok parsed
+
+def semanticCommentEntryOfProduction
+    (evidence : ProductionParseEvidence) :
+    Tier2.CommentReferenceIntegrity.CommentPartEntry :=
+  { normalizedPartPath := evidence.normalizedPartPath
+    compressedSize := evidence.extraction.entry.compressedSize
+    expandedSize := evidence.extraction.entry.expandedSize
+    regularEntryCount := 1
+    localHeaderOffset := evidence.extraction.entry.localHeaderOffset
+    dataOffset := evidence.extraction.entry.dataOffset
+    localSpanEnd := evidence.extraction.entry.localSpanEnd
+    crc32 := evidence.extraction.entry.crc32 }
+
+def semanticCommentExtractionOfProduction
+    (evidence : ProductionParseEvidence) :
+    Tier2.CommentReferenceIntegrity.CommentExtractionEvidence :=
+  { packageBytes := evidence.extraction.packageBytes
+    snapshotBytes := evidence.extraction.snapshotBytes
+    snapshotPath := evidence.extraction.snapshotPath
+    snapshotWriteInvocationCount := evidence.extraction.snapshotWriteCount
+    compressedPayload := evidence.extraction.compressedPayload
+    decompressedBytes := evidence.extraction.decompressedBytes
+    invocationCount := evidence.extraction.extractionInvocationCount }
+
+def semanticCommentParsedPartOfProduction
+    (evidence : ProductionParseEvidence) :
+    Tier2.CommentReferenceIntegrity.CommentParsedPart :=
+  { sourceText := evidence.text
+    events := evidence.parsed.events
+    rootUri := evidence.expectedRootUri
+    rootLocalName := evidence.expectedRootLocalName
+    depth := evidence.depthLimit
+    eventLimit := evidence.eventLimit
+    invocationCount := evidence.parseInvocationCount }
 
 def productionParseEvidence (package : Package) (normalizedPartPath : String)
     (extraction : SnapshotExtractionEvidence) (text expectedRootUri
@@ -1907,12 +2545,752 @@ def noteStoryJson (kind : NoteKind) (sides : List NoteSideEvidence) : Json :=
         ])
     ] ++ (report.map fun value => [("report", reportToJson value.report)]).getD []
 
+structure LoadedCommentPart where
+  identity : SelectedCommentIdentity
+  parseEvidence : ProductionParseEvidence
+
+def semanticCommentRealizationOfProduction
+    (part : LoadedCommentPart) :
+    Tier2.CommentReferenceIntegrity.CommentStoryRealization :=
+  let parsed := semanticCommentParsedPartOfProduction part.parseEvidence
+  { selected := part.identity
+    entry := semanticCommentEntryOfProduction part.parseEvidence
+    extraction := semanticCommentExtractionOfProduction part.parseEvidence
+    text := part.parseEvidence.text
+    retainedParsedEvidence := parsed
+    parsed }
+
+structure CommentInventoryEvidence where
+  side : VerifierSide
+  status : String
+  identity : Option SelectedCommentIdentity
+  referenceOccurrences : Nat
+  uniqueReferenceIds : Nat
+  definitions : Nat
+  unreferencedDefinitions : Nat
+  nonDirectDefinitions : Nat
+  deriving BEq, DecidableEq
+
+structure CommentTripleResourceUsage where
+  selectedParts : Nat := 0
+  compressedBytes : Nat := 0
+  expandedBytes : Nat := 0
+  xmlEvents : Nat := 0
+  deriving Repr, Inhabited
+
+structure CommentSideEvidence where
+  side : VerifierSide
+  sources : List NoteSource
+  sourcePartitionAdmitted : Bool
+  realizationFailureCode : Option String
+  realizationFailureDetail : Option String
+  identity : Option SelectedCommentIdentity
+  partPresent : Bool
+  part : Option LoadedCommentPart
+  retainedScan : Option RetainedCommentScan
+  complete : Bool
+  semanticLimitCrossed : Bool
+  productionIntegrityPassed : Bool
+  usage : SideResourceUsage
+  tripleUsage : CommentTripleResourceUsage
+  issues : List Json
+  inventory : CommentInventoryEvidence
+
+def commentIdentityJson (identity : SelectedCommentIdentity) : Json :=
+  Json.mkObj
+    [ ("relationshipId", toJson identity.relationshipId)
+    , ("relationshipRecordOrdinal", toJson identity.relationshipRecordOrdinal)
+    , ("normalizedPartPath", toJson identity.normalizedPartPath)
+    ]
+
+def commentSourceJson (source : NoteSource) : Json :=
+  Json.mkObj <|
+    [ ("sourceOrdinal", toJson source.sourceOrdinal)
+    , ("sourceStory", toJson source.sourceStory)
+    ] ++
+    (if source.sourceStory == "main" ||
+        source.sourceStory == "footnotes" ||
+        source.sourceStory == "endnotes" then []
+     else [("physicalStoryOrdinal", toJson source.sourceStoryOrdinal)]) ++
+    [("normalizedPartPath", toJson source.normalizedPartPath)]
+
+def commentIssueJson (code detail : String) (side : VerifierSide)
+    (ordinalSpace : String) (ordinal : Nat) (sourceStory : String)
+    (sourceStoryOrdinal : Nat)
+    (optional : List (String × Json) := []) : Json :=
+  Json.mkObj <|
+    [ ("code", toJson code)
+    , ("side", toJson side.toString)
+    , ("kind", toJson "comments")
+    , ("detail", toJson (boundUtf8 detail 256))
+    , ("ordinalSpace", toJson ordinalSpace)
+    , ("firstOccurrenceOrdinal", toJson ordinal)
+    , ("occurrenceCount", toJson (1 : Nat))
+    , ("source", noteSourceJson sourceStory sourceStoryOrdinal)
+    ] ++ optional
+
+def commentSelectionIssue (side : VerifierSide)
+    (records : List RelationshipRecord)
+    (failure : CommentSelectionFailure) : Json :=
+  let ordinal := match failure with
+    | .ambiguous value | .external value | .invalidTargetMode value
+    | .targetLimit value | .unsafeTarget value => value
+  let record := records[ordinal]?
+  let relationshipFields := record.map (fun value =>
+    [("relationshipId", toJson value.id),
+      ("rawTarget", toJson value.rawTarget)]) |>.getD []
+  match failure with
+  | .ambiguous _ =>
+    commentIssueJson "COMMENT_RELATIONSHIP_AMBIGUOUS"
+      "multiple exact Transitional comments relationships exist"
+      side "relationship" ordinal "main" 0
+  | .external _ =>
+    commentIssueJson "COMMENT_RELATIONSHIP_EXTERNAL"
+      "the sole exact Transitional comments relationship is external"
+      side "relationship" ordinal "main" 0 relationshipFields
+  | .invalidTargetMode _ =>
+    let fields := record.map (fun value =>
+      [("relationshipId", toJson value.id),
+       ("rawTarget", toJson value.rawTarget),
+       ("targetMode", toJson (value.targetMode.getD ""))]) |>.getD []
+    commentIssueJson "COMMENT_RELATIONSHIP_INVALID_TARGET_MODE"
+      "the sole exact Transitional comments relationship has an invalid TargetMode"
+      side "relationship" ordinal "main" 0 fields
+  | .targetLimit _ =>
+    let fields := record.map (fun value =>
+      [("relationshipId", toJson value.id),
+       ("rawTargetByteLength", toJson value.rawTarget.toUTF8.size)]) |>.getD []
+    commentIssueJson "COMMENT_RELATIONSHIP_TARGET_LIMIT_EXCEEDED"
+      "the comments relationship target exceeds its bounded locator limit"
+      side "relationship" ordinal "main" 0 fields
+  | .unsafeTarget _ =>
+    commentIssueJson "COMMENT_RELATIONSHIP_UNSAFE_TARGET"
+      "the comments relationship target is unsafe"
+      side "relationship" ordinal "main" 0 relationshipFields
+
+def zeroCommentInventory (side : VerifierSide)
+    (identity : Option SelectedCommentIdentity) : CommentInventoryEvidence :=
+  { side, status := "not_evaluated", identity, referenceOccurrences := 0
+    uniqueReferenceIds := 0, definitions := 0, unreferencedDefinitions := 0
+    nonDirectDefinitions := 0 }
+
+def globallyStoppedCommentEvidence
+    (evidence : CommentSideEvidence) : CommentSideEvidence :=
+  { evidence with
+    sourcePartitionAdmitted := false
+    realizationFailureCode := none
+    realizationFailureDetail := none
+    identity := none
+    partPresent := false
+    part := none
+    retainedScan := none
+    complete := false
+    semanticLimitCrossed := false
+    productionIntegrityPassed := false
+    issues := []
+    inventory := zeroCommentInventory evidence.side none }
+
+def applyCommentGlobalStop
+    (sides : List CommentSideEvidence) : List CommentSideEvidence :=
+  match sides with
+  | original :: revised :: compared :: [] =>
+      let revised' :=
+        if original.complete then revised
+        else globallyStoppedCommentEvidence revised
+      let compared' :=
+        if original.complete && revised.complete then compared
+        else globallyStoppedCommentEvidence compared
+      [original, revised', compared']
+  | other => other
+
+def commentInventoryJson (inventory : CommentInventoryEvidence) : Json :=
+  Json.mkObj <|
+    [ ("side", toJson inventory.side.toString)
+    , ("status", toJson inventory.status)
+    , ("relationship", inventory.identity.map commentIdentityJson |>.getD Json.null)
+    ] ++
+    [ ("referenceOccurrences", toJson inventory.referenceOccurrences)
+    , ("uniqueReferenceIds", toJson inventory.uniqueReferenceIds)
+    , ("definitions", toJson inventory.definitions)
+    , ("unreferencedDefinitions", toJson inventory.unreferencedDefinitions)
+    , ("nonDirectDefinitions", toJson inventory.nonDirectDefinitions)
+    ]
+
+def selectedCommentStoryJson (sides : List CommentSideEvidence) : Json :=
+  let sideRecord := fun side =>
+    match sides.find? (·.side == side) with
+    | some evidence =>
+      let status :=
+        if !evidence.complete then "not_evaluated"
+        else if evidence.identity.isNone then "absent"
+        else if evidence.inventory.status == "failed" then "failed"
+        else "passed"
+      Json.mkObj
+        [ ("status", toJson status)
+        , ("relationship",
+            evidence.identity.map commentIdentityJson |>.getD Json.null)
+        , ("partPresent", toJson evidence.partPresent)
+        ]
+    | none => Json.mkObj
+        [ ("status", toJson "not_evaluated")
+        , ("relationship", Json.null)
+        , ("partPresent", toJson false)
+        ]
+  let status :=
+    if sides.length != 3 || sides.any (fun side => !side.complete) then
+      "not_evaluated"
+    else if sides.any (fun side => side.inventory.status == "failed") then
+      "failed"
+    else "passed"
+  Json.mkObj
+    [ ("status", toJson status)
+    , ("original", sideRecord .original)
+    , ("revised", sideRecord .revised)
+    , ("compared", sideRecord .compared)
+    , ("parsedTokenCounts", Json.mkObj
+        [ ("original", toJson <| (sides.find? (·.side == .original)).bind
+              (fun evidence => evidence.part.map (·.parseEvidence.parsed.eventCount))
+              |>.getD 0)
+        , ("revised", toJson <| (sides.find? (·.side == .revised)).bind
+              (fun evidence => evidence.part.map (·.parseEvidence.parsed.eventCount))
+              |>.getD 0)
+        , ("combined", toJson <| (sides.find? (·.side == .compared)).bind
+              (fun evidence => evidence.part.map (·.parseEvidence.parsed.eventCount))
+              |>.getD 0)
+        ])
+    ]
+
+def appendCommentNoteSources (evidence : NoteSideEvidence) : List NoteSource :=
+  let base := evidence.sources
+  let withFootnotes := match evidence.footnotesPart with
+    | none => base
+    | some part => base ++ [{
+        sourceOrdinal := base.length
+        sourceStory := "footnotes"
+        sourceStoryOrdinal := 0
+        normalizedPartPath := part.identity.normalizedPartPath
+        parseEvidence := part.parseEvidence
+      }]
+  match evidence.endnotesPart with
+  | none => withFootnotes
+  | some part => withFootnotes ++ [{
+      sourceOrdinal := withFootnotes.length
+      sourceStory := "endnotes"
+      sourceStoryOrdinal := 0
+      normalizedPartPath := part.identity.normalizedPartPath
+      parseEvidence := part.parseEvidence
+    }]
+
+def firstCommentReferenceSource?
+    (sources : List NoteSource) : Option (NoteSource × Nat) :=
+  sources.findSome? fun source =>
+    (source.parseEvidence.parsed.events.zipIdx.findSome? fun pair =>
+      if commentReferenceCandidate? pair.1 |>.isSome then some pair.2
+      else none).map (source, ·)
+
+structure LoadedCommentPartAttempt where
+  result : Except Json LoadedCommentPart
+  failureCode : Option String
+  failureDetail : Option String
+  usage : SideResourceUsage
+  tripleSelectedParts : Nat
+  tripleCompressedBytes : Nat
+  tripleExpandedBytes : Nat
+  tripleXmlEvents : Nat
+  partPresent : Bool
+  globalStop : Bool
+
+def commentSelectedPartsBefore (evidence : NoteSideEvidence) : Nat :=
+  (evidence.sources.drop 1).length +
+    (if evidence.footnotesPart.isSome then 1 else 0) +
+    (if evidence.endnotesPart.isSome then 1 else 0)
+
+def loadSelectedCommentPart (package : Package) (side : VerifierSide)
+    (identity : SelectedCommentIdentity) (usage : SideResourceUsage)
+    (tripleSelectedParts tripleCompressedBytes tripleExpandedBytes
+      tripleXmlEvents sideSelectedParts : Nat) :
+    IO LoadedCommentPartAttempt := do
+  let some entry := package.index.find? identity.normalizedPartPath |
+    return {
+      result := .error <| commentIssueJson "COMMENT_PART_MISSING"
+        "the selected comments part is missing" side "relationship"
+        identity.relationshipRecordOrdinal "comments" 0
+        [("relationshipId", toJson identity.relationshipId),
+         ("normalizedPartPath", toJson identity.normalizedPartPath)]
+      failureCode := some "COMMENT_PART_MISSING"
+      failureDetail := some "the selected comments part is missing"
+      usage
+      tripleSelectedParts, tripleCompressedBytes, tripleExpandedBytes,
+      tripleXmlEvents
+      partPresent := false
+      globalStop := true
+    }
+  if entry.isDirectory then
+    return {
+      result := .error <| commentIssueJson "COMMENT_PART_MISSING"
+        "the selected comments target is not a regular binary part"
+        side "relationship" identity.relationshipRecordOrdinal "comments" 0
+        [("relationshipId", toJson identity.relationshipId),
+         ("normalizedPartPath", toJson identity.normalizedPartPath)]
+      failureCode := some "COMMENT_PART_MISSING"
+      failureDetail := some "the selected comments target is not a regular binary part"
+      usage
+      tripleSelectedParts, tripleCompressedBytes, tripleExpandedBytes,
+      tripleXmlEvents
+      partPresent := false
+      globalStop := true
+    }
+  let limitIssue := if sideSelectedParts + 1 > maxSelectedParts then
+      some ("COMMENT_SELECTED_PART_LIMIT_EXCEEDED",
+        "the selected comments part crosses the side selected-part limit")
+    else if tripleSelectedParts + 1 > maxTripleSelectedParts then
+      some ("COMMENT_TRIPLE_SELECTED_PART_LIMIT_EXCEEDED",
+        "the selected comments part crosses the three-package selected-part limit")
+    else if entry.compressedSize > maxPartCompressedBytes then
+      some ("COMMENT_PART_COMPRESSED_LIMIT_EXCEEDED",
+        "the selected comments part crosses the compressed-byte limit")
+    else if entry.expandedSize > maxPartExpandedBytes then
+      some ("COMMENT_PART_EXPANDED_LIMIT_EXCEEDED",
+        "the selected comments part crosses the expanded-byte limit")
+    else if (entry.compressedSize == 0 && entry.expandedSize != 0) ||
+        entry.expandedSize > entry.compressedSize * 100 then
+      some ("COMMENT_PART_RATIO_LIMIT_EXCEEDED",
+        "the selected comments part crosses the expansion-ratio limit")
+    else if usage.compressedBytes + entry.compressedSize >
+        maxCumulativeCompressedBytes then
+      some ("COMMENT_CUMULATIVE_COMPRESSED_LIMIT_EXCEEDED",
+        "the selected comments part crosses the side compressed-byte limit")
+    else if usage.expandedBytes + entry.expandedSize >
+        maxCumulativeExpandedBytes then
+      some ("COMMENT_CUMULATIVE_EXPANDED_LIMIT_EXCEEDED",
+        "the selected comments part crosses the side expanded-byte limit")
+    else if tripleCompressedBytes + entry.compressedSize >
+        maxTripleCumulativeCompressedBytes then
+      some ("COMMENT_TRIPLE_COMPRESSED_LIMIT_EXCEEDED",
+        "the selected comments part crosses the three-package compressed-byte limit")
+    else if tripleExpandedBytes + entry.expandedSize >
+        maxTripleCumulativeExpandedBytes then
+      some ("COMMENT_TRIPLE_EXPANDED_LIMIT_EXCEEDED",
+        "the selected comments part crosses the three-package expanded-byte limit")
+    else none
+  if let some (code, detail) := limitIssue then
+    return {
+      result := .error <| commentIssueJson code detail
+        side "relationship" identity.relationshipRecordOrdinal "comments" 0
+        [("relationshipId", toJson identity.relationshipId),
+         ("normalizedPartPath", toJson identity.normalizedPartPath)]
+      failureCode := some code
+      failureDetail := some detail
+      usage
+      tripleSelectedParts, tripleCompressedBytes, tripleExpandedBytes,
+      tripleXmlEvents
+      partPresent := true
+      globalStop := true
+    }
+  let admittedUsage := {
+    usage with
+    compressedBytes := usage.compressedBytes + entry.compressedSize
+    expandedBytes := usage.expandedBytes + entry.expandedSize
+  }
+  let admittedTripleSelectedParts := tripleSelectedParts + 1
+  let admittedTripleCompressedBytes := tripleCompressedBytes + entry.compressedSize
+  let admittedTripleExpandedBytes := tripleExpandedBytes + entry.expandedSize
+  let extracted ←
+    try
+      extractPart package identity.normalizedPartPath
+    catch _ =>
+      pure .missing
+  let .present extraction := extracted |
+    return {
+      result := .error <| commentIssueJson "COMMENT_PART_EXTRACTION_FAILED"
+        "the indexed comments part failed retained extraction"
+        side "relationship" identity.relationshipRecordOrdinal "comments" 0
+        [("relationshipId", toJson identity.relationshipId),
+         ("normalizedPartPath", toJson identity.normalizedPartPath)]
+      failureCode := some "COMMENT_PART_EXTRACTION_FAILED"
+      failureDetail := some "the indexed comments part failed retained extraction"
+      usage := admittedUsage
+      tripleSelectedParts := admittedTripleSelectedParts
+      tripleCompressedBytes := admittedTripleCompressedBytes
+      tripleExpandedBytes := admittedTripleExpandedBytes
+      tripleXmlEvents
+      partPresent := false
+      globalStop := true
+    }
+  let some xml := String.fromUTF8? extraction.decompressedBytes |
+    return {
+      result := .error <| commentIssueJson "COMMENT_PART_INVALID_UTF8"
+        "the selected comments part is not valid UTF-8"
+        side "relationship" identity.relationshipRecordOrdinal "comments" 0
+        [("relationshipId", toJson identity.relationshipId),
+         ("normalizedPartPath", toJson identity.normalizedPartPath)]
+      failureCode := some "COMMENT_PART_INVALID_UTF8"
+      failureDetail := some "the selected comments part is not valid UTF-8"
+      usage := admittedUsage
+      tripleSelectedParts := admittedTripleSelectedParts
+      tripleCompressedBytes := admittedTripleCompressedBytes
+      tripleExpandedBytes := admittedTripleExpandedBytes
+      tripleXmlEvents
+      partPresent := true
+      globalStop := true
+    }
+  let sideRemaining := maxCumulativeXmlEvents -
+    min maxCumulativeXmlEvents admittedUsage.xmlEvents
+  let tripleRemaining := 3 * maxCumulativeXmlEvents -
+    min (3 * maxCumulativeXmlEvents) tripleXmlEvents
+  let eventLimit := min maxXmlEventsPerPart (min sideRemaining tripleRemaining)
+  match parseProductionEvidence package identity.normalizedPartPath extraction
+      xml wmlNamespace "comments" eventLimit maxXmlDepth with
+  | .error failure =>
+    let code := match failure.kind with
+      | .unexpectedRoot => "COMMENT_PART_ROOT_MISMATCH"
+      | .depthLimit => "COMMENT_PART_XML_DEPTH_LIMIT_EXCEEDED"
+      | .eventLimit =>
+        if sideRemaining <= maxXmlEventsPerPart &&
+            sideRemaining <= tripleRemaining then
+          "COMMENT_CUMULATIVE_XML_EVENT_LIMIT_EXCEEDED"
+        else if tripleRemaining <= maxXmlEventsPerPart then
+          "COMMENT_TRIPLE_XML_EVENT_LIMIT_EXCEEDED"
+        else "COMMENT_PART_XML_EVENT_LIMIT_EXCEEDED"
+      | .invalidXml => "COMMENT_PART_INVALID_XML"
+    return {
+      result := .error <| commentIssueJson code failure.detail
+        side "relationship" identity.relationshipRecordOrdinal "comments" 0
+        [("relationshipId", toJson identity.relationshipId),
+         ("normalizedPartPath", toJson identity.normalizedPartPath)]
+      failureCode := some code
+      failureDetail := some failure.detail
+      usage := admittedUsage
+      tripleSelectedParts := admittedTripleSelectedParts
+      tripleCompressedBytes := admittedTripleCompressedBytes
+      tripleExpandedBytes := admittedTripleExpandedBytes
+      tripleXmlEvents
+      partPresent := true
+      globalStop := true
+    }
+  | .ok parseEvidence =>
+    return {
+      result := .ok { identity, parseEvidence }
+      failureCode := none
+      failureDetail := none
+      usage := { admittedUsage with xmlEvents :=
+        admittedUsage.xmlEvents + parseEvidence.parsed.eventCount }
+      tripleSelectedParts := admittedTripleSelectedParts
+      tripleCompressedBytes := admittedTripleCompressedBytes
+      tripleExpandedBytes := admittedTripleExpandedBytes
+      tripleXmlEvents := tripleXmlEvents + parseEvidence.parsed.eventCount
+      partPresent := true
+      globalStop := false
+    }
+
+def commentCanonicalReferencePairs
+    (references : List CommentReferenceOccurrence) :
+    List (CommentReferenceOccurrence × CanonicalDecimal) :=
+  references.filterMap fun reference =>
+    reference.rawId.bind fun raw =>
+      (parseDecimalId raw).toOption.map (reference, ·)
+
+def commentCanonicalDefinitionPairs
+    (definitions : List CommentDefinitionOccurrence) :
+    List (CommentDefinitionOccurrence × CanonicalDecimal) :=
+  definitions.filterMap fun definition =>
+    definition.rawId.bind fun raw =>
+      (parseDecimalId raw).toOption.map (definition, ·)
+
+def commentSourceIdentity (sources : List NoteSource) (ordinal : Nat) :
+    String × Nat :=
+  match sources.find? (·.sourceOrdinal == ordinal) with
+  | some source => (source.sourceStory, source.sourceStoryOrdinal)
+  | none => ("main", 0)
+
+def malformedCommentReferenceIssues (side : VerifierSide)
+    (sources : List NoteSource)
+    (references : List CommentReferenceOccurrence) : List Json :=
+  references.filterMap fun reference =>
+    let source := commentSourceIdentity sources reference.sourceOrdinal
+    match reference.rawId with
+    | none => some <| commentIssueJson "COMMENT_REFERENCE_ID_MISSING"
+        "comment reference has no w:id" side "reference"
+        reference.occurrenceOrdinal source.1 source.2
+    | some raw =>
+      match parseDecimalId raw with
+      | .ok _ => none
+      | .error "lexical_limit" =>
+        some <| commentIssueJson "COMMENT_REFERENCE_ID_TOO_LONG"
+          "comment reference w:id exceeds 64 UTF-8 bytes"
+          side "reference" reference.occurrenceOrdinal source.1 source.2
+          [("rawIdByteLength", toJson raw.toUTF8.size)]
+      | .error _ =>
+        some <| commentIssueJson "COMMENT_REFERENCE_ID_MALFORMED"
+          "comment reference w:id is not an ST_DecimalNumber"
+          side "reference" reference.occurrenceOrdinal source.1 source.2
+          [("rawId", toJson raw)]
+
+def commentDefinitionIssues (side : VerifierSide)
+    (definitions : List CommentDefinitionOccurrence) : List Json :=
+  definitions.flatMap fun definition =>
+    match definition.rawId with
+    | none => [commentIssueJson "COMMENT_DEFINITION_ID_MISSING"
+        "direct comment definition has no w:id" side "definition"
+        definition.occurrenceOrdinal "comments" 0]
+    | some raw =>
+      match parseDecimalId raw with
+      | .ok _ => []
+      | .error "lexical_limit" =>
+        [commentIssueJson "COMMENT_DEFINITION_ID_TOO_LONG"
+          "direct comment definition w:id exceeds 64 UTF-8 bytes"
+          side "definition" definition.occurrenceOrdinal "comments" 0
+          [("rawIdByteLength", toJson raw.toUTF8.size)]]
+      | .error _ =>
+        [commentIssueJson "COMMENT_DEFINITION_ID_MALFORMED"
+          "direct comment definition w:id is not an ST_DecimalNumber"
+          side "definition" definition.occurrenceOrdinal "comments" 0
+          [("rawId", toJson raw)]]
+
+def duplicateCommentDefinitionIssues (side : VerifierSide)
+    (definitions : List (CommentDefinitionOccurrence × CanonicalDecimal)) :
+    List Json :=
+  definitions.filterMap fun pair =>
+    if definitions.any fun earlier =>
+        earlier.1.occurrenceOrdinal < pair.1.occurrenceOrdinal &&
+        earlier.2.text == pair.2.text then
+      some <| commentIssueJson "COMMENT_DEFINITION_DUPLICATE"
+        "multiple direct comment definitions have the same canonical w:id"
+        side "definition" pair.1.occurrenceOrdinal "comments" 0
+        [("canonicalId", toJson pair.2.text)]
+    else none
+
+def missingCommentDefinitionIssues (side : VerifierSide)
+    (sources : List NoteSource)
+    (references : List (CommentReferenceOccurrence × CanonicalDecimal))
+    (definitions : List (CommentDefinitionOccurrence × CanonicalDecimal)) :
+    List Json :=
+  references.filterMap fun pair =>
+    if (definitions.filter fun definition =>
+        definition.2.text == pair.2.text).length == 1 then none
+    else
+      let source := commentSourceIdentity sources pair.1.sourceOrdinal
+      some <| commentIssueJson "COMMENT_DEFINITION_MISSING"
+        "comment reference does not resolve to exactly one direct definition"
+        side "reference" pair.1.occurrenceOrdinal source.1 source.2
+        [("canonicalId", toJson pair.2.text)]
+
+def skippedCommentSideEvidence (side : VerifierSide)
+    (noteEvidence : NoteSideEvidence)
+    (tripleUsage : CommentTripleResourceUsage) : CommentSideEvidence :=
+  { side
+    sources := appendCommentNoteSources noteEvidence
+    sourcePartitionAdmitted := false
+    realizationFailureCode := none
+    realizationFailureDetail := none
+    identity := none
+    partPresent := false
+    part := none
+    retainedScan := none
+    complete := false
+    semanticLimitCrossed := false
+    productionIntegrityPassed := false
+    usage := noteEvidence.usage
+    tripleUsage
+    issues := []
+    inventory := zeroCommentInventory side none }
+
+def buildCommentSideEvidence (package : Package) (side : VerifierSide)
+    (relationships : List RelationshipRecord)
+    (noteEvidence : NoteSideEvidence)
+    (tripleUsage : CommentTripleResourceUsage) : IO CommentSideEvidence := do
+  let sources := appendCommentNoteSources noteEvidence
+  if !noteEvidence.complete then
+    return {
+      side, sources, sourcePartitionAdmitted := false
+      realizationFailureCode := none
+      realizationFailureDetail := none
+      identity := none, partPresent := false, part := none
+      retainedScan := none, complete := false, semanticLimitCrossed := true
+      productionIntegrityPassed := false, usage := noteEvidence.usage
+      tripleUsage
+      issues := [commentIssueJson "COMMENT_SOURCE_PARTITION_INCOMPLETE"
+        "the admitted main/note/header/footer source partition is incomplete"
+        side "source" 0 "main" 0]
+      inventory := zeroCommentInventory side none
+    }
+  let selection := selectConventionalMainCommentRecords relationships
+  match selection with
+  | .error failure =>
+    return {
+      side, sources, sourcePartitionAdmitted := true
+      realizationFailureCode := none
+      realizationFailureDetail := none
+      identity := none, partPresent := false, part := none
+      retainedScan := none, complete := false, semanticLimitCrossed := true
+      productionIntegrityPassed := false, usage := noteEvidence.usage
+      tripleUsage
+      issues := [commentSelectionIssue side relationships failure]
+      inventory := zeroCommentInventory side none
+    }
+  | .ok none =>
+    match firstCommentReferenceSource? sources with
+    | some (source, ordinal) =>
+      return {
+        side, sources, sourcePartitionAdmitted := true
+        realizationFailureCode := none
+        realizationFailureDetail := none
+        identity := none, partPresent := false, part := none
+        retainedScan := none, complete := false, semanticLimitCrossed := true
+        productionIntegrityPassed := false, usage := noteEvidence.usage
+        tripleUsage
+        issues := [commentIssueJson "COMMENT_RELATIONSHIP_REQUIRED"
+          "a w:commentReference requires one exact internal comments relationship"
+          side "reference" ordinal source.sourceStory source.sourceStoryOrdinal]
+        inventory := zeroCommentInventory side none
+      }
+    | none =>
+      let input : CommentScanInput := {
+        sourceEvents := sources.map fun source =>
+          (source.sourceOrdinal, source.parseEvidence.parsed.events)
+        definitionEvents := []
+      }
+      let retained := retainCommentScanEvidence input
+      return {
+        side, sources, sourcePartitionAdmitted := true
+        realizationFailureCode := none
+        realizationFailureDetail := none
+        identity := none, partPresent := false, part := none
+        retainedScan := some retained, complete := true
+        semanticLimitCrossed := false, productionIntegrityPassed := true
+        usage := noteEvidence.usage, tripleUsage, issues := []
+        inventory := {
+          side := side
+          status := "passed"
+          identity := none
+          referenceOccurrences := 0
+          uniqueReferenceIds := 0
+          definitions := 0
+          unreferencedDefinitions := 0
+          nonDirectDefinitions := 0
+        }
+      }
+  | .ok (some selected) =>
+    let loaded ← loadSelectedCommentPart package side selected noteEvidence.usage
+      tripleUsage.selectedParts tripleUsage.compressedBytes
+      tripleUsage.expandedBytes tripleUsage.xmlEvents
+      (commentSelectedPartsBefore noteEvidence)
+    let loadedTripleUsage : CommentTripleResourceUsage := {
+      selectedParts := loaded.tripleSelectedParts
+      compressedBytes := loaded.tripleCompressedBytes
+      expandedBytes := loaded.tripleExpandedBytes
+      xmlEvents := loaded.tripleXmlEvents
+    }
+    match loaded.result with
+    | .error issue =>
+      return {
+        side := side
+        sources := sources
+        sourcePartitionAdmitted := true
+        realizationFailureCode := loaded.failureCode
+        realizationFailureDetail := loaded.failureDetail
+        identity := some selected
+        partPresent := loaded.partPresent
+        part := none
+        retainedScan := none
+        complete := false
+        semanticLimitCrossed := loaded.globalStop
+        productionIntegrityPassed := false
+        usage := loaded.usage
+        tripleUsage := loadedTripleUsage
+        issues := [issue]
+        inventory := zeroCommentInventory side (some selected)
+      }
+    | .ok part =>
+      let input : CommentScanInput := {
+        sourceEvents := sources.map fun source =>
+          (source.sourceOrdinal, source.parseEvidence.parsed.events)
+        definitionEvents := part.parseEvidence.parsed.events
+      }
+      let retained := retainCommentScanEvidence input
+      let scan := retained.output.scan
+      let references := commentCanonicalReferencePairs scan.references
+      let definitions := commentCanonicalDefinitionPairs scan.definitions
+      let malformed := malformedCommentReferenceIssues side sources scan.references ++
+        commentDefinitionIssues side scan.definitions
+      let duplicates := duplicateCommentDefinitionIssues side definitions
+      let missing := missingCommentDefinitionIssues side sources references definitions
+      let nonDirect := scan.nonDirectDefinitions.map fun definition =>
+        let canonicalId := definition.rawId.bind fun raw =>
+          (parseDecimalId raw).toOption.map (·.text)
+        commentIssueJson "COMMENT_DEFINITION_NOT_DIRECT"
+          "w:comment definitions must be direct children of w:comments"
+          side "definition" definition.occurrenceOrdinal "comments" 0
+          (canonicalId.map (fun value => ("canonicalId", toJson value))).toList
+      let crossingIssues := match retained.output.crossing with
+        | none => []
+        | some (.references sourceOrdinal ordinal) =>
+          let source := commentSourceIdentity sources sourceOrdinal
+          [commentIssueJson "COMMENT_REFERENCE_OCCURRENCE_LIMIT_EXCEEDED"
+            "comment reference occurrence limit exceeded"
+            side "reference" ordinal source.1 source.2]
+        | some (.uniqueIds sourceOrdinal ordinal canonicalId) =>
+          let source := commentSourceIdentity sources sourceOrdinal
+          [commentIssueJson "COMMENT_UNIQUE_REFERENCE_ID_LIMIT_EXCEEDED"
+            "unique canonical comment reference ID limit exceeded"
+            side "reference" ordinal source.1 source.2
+            [("canonicalId", toJson canonicalId)]]
+        | some (.definitions ordinal) =>
+          [commentIssueJson "COMMENT_DEFINITION_LIMIT_EXCEEDED"
+            "direct comment definition limit exceeded"
+            side "definition" ordinal "comments" 0]
+        | some (.nonDirectDefinitions ordinal) =>
+          [commentIssueJson "COMMENT_NON_DIRECT_DEFINITION_LIMIT_EXCEEDED"
+            "non-direct comment definition limit exceeded"
+            side "definition" ordinal "comments" 0]
+      let issues := crossingIssues ++ malformed ++ duplicates ++ missing ++ nonDirect
+      let uniqueReferenceIds := references.map (·.2.text) |>.eraseDups.length
+      let referencedIds := references.map (·.2.text) |>.eraseDups
+      let unreferenced := definitions.filter fun definition =>
+        !referencedIds.contains definition.2.text
+      let integrityPassed := checkPackageCommentIntegrity
+        (packageCommentInventory scan)
+      let complete := retained.output.crossing.isNone
+      return {
+        side, sources, sourcePartitionAdmitted := true
+        realizationFailureCode := none
+        realizationFailureDetail := none
+        identity := some selected, partPresent := true
+        part := some part, retainedScan := some retained, complete
+        semanticLimitCrossed := retained.output.crossing.isSome
+        productionIntegrityPassed := integrityPassed, usage := loaded.usage
+        tripleUsage := loadedTripleUsage
+        issues
+        inventory := {
+          side
+          status := if !complete then "not_evaluated"
+            else if issues.isEmpty then "passed" else "failed"
+          identity := some selected
+          referenceOccurrences := if complete then references.length else 0
+          uniqueReferenceIds := if complete then uniqueReferenceIds else 0
+          definitions := if complete then definitions.length else 0
+          unreferencedDefinitions := if complete then unreferenced.length else 0
+          nonDirectDefinitions :=
+            if complete then scan.nonDirectDefinitions.length else 0
+        }
+      }
+
 structure RunRequestPackageRecord where
   packagePath : String
   packageBytes : ByteArray
   packageReadCount : Nat
+  packageIndex : ZipIndex
+  packageIndexExact :
+    Tier2.CommentReferenceIntegrity.IndependentBinaryIndexOf
+      packageBytes packageIndex
+  snapshotPath : String
+  snapshotBytes : ByteArray
+  snapshotWriteCount : Nat
+  snapshotWriteCountExact : snapshotWriteCount = 1
+  snapshotBytesExact : snapshotBytes = packageBytes
   relationships : List RelationshipRecord
   noteEvidence : NoteSideEvidence
+  commentEvidence : CommentSideEvidence
 
 structure RunRequestCoreRequest where
   fixedTriples : List NamedStoryTriple
@@ -1973,7 +3351,8 @@ def typedNoteRelationshipRecords (records : List RelationshipRecord) :
         normalizedPartPath := (normalizeTarget record.rawTarget).toOption.getD ""
         internal := record.targetMode.isNone || record.targetMode == some "Internal" }
 
-def packageViewOfRecord (record : RunRequestPackageRecord) : PackageView :=
+def packageViewOfRecord (record : RunRequestPackageRecord) :
+    Tier2.ConventionalMainNoteSelector.PackageView :=
   let evidence := record.noteEvidence
   let noteParts :=
     (evidence.footnotesPart.map (proofPartOfNote .footnotes) |>.toList) ++
@@ -1984,6 +3363,127 @@ def packageViewOfRecord (record : RunRequestPackageRecord) : PackageView :=
       { story := source.sourceStory
         ordinal := source.sourceStoryOrdinal
         normalizedPartPath := source.normalizedPartPath } }
+
+def selectedStoriesOfRecord (record : RunRequestPackageRecord) :
+    Tier2.NoteReferenceIntegrity.SelectedStories :=
+  let pkg := packageViewOfRecord record
+  { physical := pkg.physicalStories.filterMap
+      Tier2.NoteReferenceIntegrity.physicalStorySlot?
+    footnotes := (Tier2.ConventionalMainNoteSelector.selectConventionalMainNote
+      pkg .footnotes).toOption.join
+    endnotes := (Tier2.ConventionalMainNoteSelector.selectConventionalMainNote
+      pkg .endnotes).toOption.join }
+
+def retainedCommentSourceScansOfRecord (record : RunRequestPackageRecord) :
+    Tier2.NoteReferenceIntegrity.SideScanEvidence :=
+  Tier2.NoteReferenceIntegrity.canonicalScans
+    (packageViewOfRecord record) (selectedStoriesOfRecord record)
+
+def noteSideOfCommentSide :
+    Tier2.CommentReferenceIntegrity.VerifierSide →
+      Tier2.NoteReferenceIntegrity.VerifierSide
+  | .original => .original
+  | .revised => .revised
+  | .compared => .compared
+
+def commentResourceUsageOfCore (request : RunRequestCoreRequest) :
+    Tier2.CommentReferenceIntegrity.GlobalResourceUsage :=
+  { side := fun side =>
+      { xmlEvents :=
+          (request.packageRecord (noteSideOfCommentSide side)).noteEvidence.usage.xmlEvents }
+    tripleXmlEvents :=
+      request.original.noteEvidence.usage.xmlEvents +
+      request.revised.noteEvidence.usage.xmlEvents +
+      request.compared.noteEvidence.usage.xmlEvents }
+
+def commentPackageViewOfCore (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Tier2.CommentReferenceIntegrity.PackageView :=
+  let record := request.packageRecord (noteSideOfCommentSide side)
+  { packageBytes := record.packageBytes
+    index := record.packageIndex
+    relationshipRecords := record.relationships
+    noteView := packageViewOfRecord record
+    fixedMainSource :=
+      { story := .main, ordinal := 0, normalizedPartPath := "word/document.xml" }
+    retainedSourceScans := retainedCommentSourceScansOfRecord record
+    retainedCommentRealization :=
+      record.commentEvidence.part.map semanticCommentRealizationOfProduction
+    resourceUsageBeforeComments := commentResourceUsageOfCore request }
+
+def retainedCommentPackageRecordOfCore (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Tier2.CommentReferenceIntegrity.RetainedPackageRecordV6 :=
+  let pkg := commentPackageViewOfCore request side
+  { view := pkg, packageBytes := pkg.packageBytes, index := pkg.index }
+
+def parsedCommentEvidenceOfProduction
+    (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Tier2.CommentReferenceIntegrity.ParsedCommentEvidence :=
+  let record := request.packageRecord (noteSideOfCommentSide side)
+  let pkg := commentPackageViewOfCore request side
+  let note := Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+    (packageViewOfRecord record) (noteSideOfCommentSide side)
+      (selectedStoriesOfRecord record)
+  let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+    pkg side note
+  let comment := pkg.retainedCommentRealization
+  let raw := Tier2.CommentReferenceIntegrity.scanCommentEvidence {
+    sourceEvents :=
+      Tier2.CommentReferenceIntegrity.scanCommentReferenceEvents set
+        (Tier2.CommentReferenceIntegrity.reuseRetainedCommentScans pkg)
+    definitionEvents :=
+      Tier2.CommentReferenceIntegrity.scanDirectCommentDefinitions comment }
+  Tier2.CommentReferenceIntegrity.parsedCommentEvidenceOfBoundedScan
+    pkg side set comment {
+      raw with
+      crossing := record.commentEvidence.retainedScan.bind (·.output.crossing) }
+
+def retainedParsedCommentEvidenceOfProduction
+    (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Except String Tier2.CommentReferenceIntegrity.ParsedCommentEvidence :=
+  let record := request.packageRecord (noteSideOfCommentSide side)
+  match record.commentEvidence.retainedScan with
+  | none => .error "retained comment scan is absent"
+  | some retained =>
+      let pkg := commentPackageViewOfCore request side
+      let note := Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+        (packageViewOfRecord record) (noteSideOfCommentSide side)
+        (selectedStoriesOfRecord record)
+      let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+        pkg side note
+      let comment := pkg.retainedCommentRealization
+      .ok (Tier2.CommentReferenceIntegrity.parsedCommentEvidenceOfBoundedScan
+        pkg side set comment retained.output)
+
+def semanticCommentScanInputOfCore
+    (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Tier2.CommentReferenceIntegrity.CommentScanInput :=
+  let record := request.packageRecord (noteSideOfCommentSide side)
+  let pkg := commentPackageViewOfCore request side
+  let note := Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+    (packageViewOfRecord record) (noteSideOfCommentSide side)
+    (selectedStoriesOfRecord record)
+  let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+    pkg side note
+  { sourceEvents :=
+      Tier2.CommentReferenceIntegrity.scanCommentReferenceEvents set
+        (Tier2.CommentReferenceIntegrity.reuseRetainedCommentScans pkg)
+    definitionEvents :=
+      Tier2.CommentReferenceIntegrity.scanDirectCommentDefinitions
+        pkg.retainedCommentRealization }
+
+def retainedCommentScanInputOfProduction
+    (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    Except String Tier2.CommentReferenceIntegrity.CommentScanInput :=
+  let record := request.packageRecord (noteSideOfCommentSide side)
+  match record.commentEvidence.retainedScan with
+  | none => .error "retained comment scan is absent"
+  | some retained => .ok retained.input
 
 def productionScanInputOfRecord (record : RunRequestPackageRecord) :
     ProductionNoteScanInput :=
@@ -2011,6 +3511,7 @@ def SnapshotExtractionEvidenceOf (record : RunRequestPackageRecord)
     (evidence : SnapshotExtractionEvidence) : Prop :=
   evidence.packageBytes = record.packageBytes ∧
   evidence.snapshotBytes = evidence.packageBytes ∧
+  evidence.snapshotPath = record.snapshotPath ∧
   evidence.snapshotWriteCount = 1 ∧
   buildZipIndex evidence.packageBytes = .ok evidence.zipIndex ∧
   evidence.zipIndex.find? evidence.selectedPartPath = some evidence.entry ∧
@@ -2030,6 +3531,7 @@ def SnapshotExtractionEvidenceOf (record : RunRequestPackageRecord)
 def snapshotExtractionEvidenceCheck (record : RunRequestPackageRecord)
     (evidence : SnapshotExtractionEvidence) : Bool :=
   decide (evidence.packageBytes = record.packageBytes) &&
+  decide (evidence.snapshotPath = record.snapshotPath) &&
   decide (evidence.snapshotWriteCount = 1) &&
   decide (evidence.centralOffset = evidence.zipIndex.centralOffset) &&
   decide (evidence.centralSize = evidence.zipIndex.centralSize) &&
@@ -2054,6 +3556,10 @@ def ProductionParseEvidenceOf (record : RunRequestPackageRecord)
   evidence.parsed.rootSeen = true ∧
   evidence.parsed.stack = [] ∧
   evidence.parsed.eventCount = evidence.parsed.events.length ∧
+  (∃ attributes selfClosing,
+    evidence.parsed.events.head? =
+      some (.startElement evidence.expectedRootUri
+        evidence.expectedRootLocalName attributes 0 selfClosing)) ∧
   parseXmlEventsForRootBoundedTyped evidence.text evidence.expectedRootUri
       evidence.expectedRootLocalName evidence.eventLimit evidence.depthLimit =
     .ok evidence.parsed
@@ -2062,7 +3568,8 @@ def productionParseEvidencesOfRecord (record : RunRequestPackageRecord) :
     List ProductionParseEvidence :=
   record.noteEvidence.sources.map (·.parseEvidence) ++
   (record.noteEvidence.footnotesPart.map (·.parseEvidence)).toList ++
-  (record.noteEvidence.endnotesPart.map (·.parseEvidence)).toList
+  (record.noteEvidence.endnotesPart.map (·.parseEvidence)).toList ++
+  (record.commentEvidence.part.map (·.parseEvidence)).toList
 
 def productionParseProvenanceCheck (record : RunRequestPackageRecord)
     (evidence : ProductionParseEvidence) : Bool :=
@@ -2118,6 +3625,453 @@ def productionInventoryEvidencePass (record : RunRequestPackageRecord) : Bool :=
   decide (record.noteEvidence.endnotesInventory =
       expectedPassedInventoryJson record .endnotes)
 
+def productionCommentScanInput (record : RunRequestPackageRecord) :
+    CommentScanInput :=
+  { sourceEvents := record.commentEvidence.sources.map fun source =>
+      (source.sourceOrdinal, source.parseEvidence.parsed.events)
+    definitionEvents := record.commentEvidence.part.map
+      (·.parseEvidence.parsed.events) |>.getD [] }
+
+def expectedPassedCommentInventory
+    (record : RunRequestPackageRecord) : CommentInventoryEvidence :=
+  let evidence := record.commentEvidence
+  let scan := evidence.retainedScan.map (·.output.scan) |>.getD {
+    references := [], definitions := [], nonDirectDefinitions := []
+  }
+  let references := commentCanonicalReferencePairs scan.references
+  let definitions := commentCanonicalDefinitionPairs scan.definitions
+  let referencedIds := references.map (·.2.text) |>.eraseDups
+  { side := evidence.side
+    status := "passed"
+    identity := evidence.identity
+    referenceOccurrences := references.length
+    uniqueReferenceIds := references.map (·.2.text) |>.eraseDups.length
+    definitions := definitions.length
+    unreferencedDefinitions := (definitions.filter fun definition =>
+      !referencedIds.contains definition.2.text).length
+    nonDirectDefinitions := scan.nonDirectDefinitions.length }
+
+structure CommentSourceIdentity where
+  sourceOrdinal : Nat
+  sourceStory : String
+  sourceStoryOrdinal : Nat
+  normalizedPartPath : String
+  deriving BEq, DecidableEq
+
+structure CommentSourceRetainedProjection where
+  identity : CommentSourceIdentity
+  packageBytes : ByteArray
+  decompressedBytes : ByteArray
+  text : String
+  expectedRootUri : String
+  expectedRootLocalName : String
+  events : List XmlEvent
+  parseInvocationCount : Nat
+  extractionInvocationCount : Nat
+  deriving DecidableEq
+
+def commentSourceIdentityProjection (source : NoteSource) :
+    CommentSourceIdentity :=
+  { sourceOrdinal := source.sourceOrdinal
+    sourceStory := source.sourceStory
+    sourceStoryOrdinal := source.sourceStoryOrdinal
+    normalizedPartPath := source.normalizedPartPath }
+
+def commentSourceRetainedProjection (source : NoteSource) :
+    CommentSourceRetainedProjection :=
+  { identity := commentSourceIdentityProjection source
+    packageBytes := source.parseEvidence.packageBytes
+    decompressedBytes := source.parseEvidence.extraction.decompressedBytes
+    text := source.parseEvidence.text
+    expectedRootUri := source.parseEvidence.expectedRootUri
+    expectedRootLocalName := source.parseEvidence.expectedRootLocalName
+    events := source.parseEvidence.parsed.events
+    parseInvocationCount := source.parseEvidence.parseInvocationCount
+    extractionInvocationCount :=
+      source.parseEvidence.extraction.extractionInvocationCount }
+
+def canonicalCommentSourceIdentities (record : RunRequestPackageRecord) :
+    List CommentSourceIdentity :=
+  (appendCommentNoteSources record.noteEvidence).map
+    commentSourceIdentityProjection
+
+def retainedCommentSourceIdentities (record : RunRequestPackageRecord) :
+    List CommentSourceIdentity :=
+  record.commentEvidence.sources.map commentSourceIdentityProjection
+
+def canonicalCommentSourceProjections (record : RunRequestPackageRecord) :
+    List CommentSourceRetainedProjection :=
+  (appendCommentNoteSources record.noteEvidence).map
+    commentSourceRetainedProjection
+
+def retainedCommentSourceProjections (record : RunRequestPackageRecord) :
+    List CommentSourceRetainedProjection :=
+  record.commentEvidence.sources.map commentSourceRetainedProjection
+
+def productionCommentPartAdmissionCheck (record : RunRequestPackageRecord)
+    (part : LoadedCommentPart) : Bool :=
+  let evidence := part.parseEvidence
+  let entry := evidence.extraction.entry
+  decide ((record.packageIndex.entries.filter
+      (·.name == part.identity.normalizedPartPath)).length = 1) &&
+  decide (evidence.extraction.zipIndex = record.packageIndex) &&
+  decide (entry.name = part.identity.normalizedPartPath) &&
+  decide (evidence.normalizedPartPath = entry.name) &&
+  !evidence.extraction.snapshotPath.isEmpty &&
+  decide (entry.compressedSize ≤ maxPartCompressedBytes) &&
+  decide (entry.expandedSize ≤ maxPartExpandedBytes) &&
+  decide (entry.compressedSize ≠ 0 ∨ entry.expandedSize = 0) &&
+  decide (entry.expandedSize ≤ entry.compressedSize * 100) &&
+  decide (evidence.expectedRootUri = wmlNamespace) &&
+  decide (evidence.expectedRootLocalName = "comments") &&
+  decide (evidence.depthLimit ≤ maxXmlDepth) &&
+  decide (evidence.eventLimit ≤ maxXmlEventsPerPart) &&
+  decide (evidence.parsed.events.length ≤ evidence.eventLimit)
+
+def productionCommentEvidencePass (record : RunRequestPackageRecord) : Bool :=
+  let evidence := record.commentEvidence
+  let selected := selectConventionalMainCommentRecords record.relationships
+  let sourceSetExact :=
+    decide (retainedCommentSourceProjections record =
+      canonicalCommentSourceProjections record) &&
+    decide (retainedCommentSourceIdentities record =
+      canonicalCommentSourceIdentities record)
+  let selectionExact := match selected with
+    | .error _ => false
+    | .ok none =>
+      evidence.identity.isNone && evidence.part.isNone && !evidence.partPresent
+    | .ok (some identity) =>
+      decide (evidence.identity = some identity) &&
+      evidence.partPresent &&
+      evidence.part.any fun part =>
+        decide (part.identity = identity) &&
+        productionCommentPartAdmissionCheck record part
+  let retainedExact := evidence.retainedScan.any fun retained =>
+    decide (retained.scanInvocationCount = 1) &&
+    decide (retained.input = productionCommentScanInput record) &&
+    retained.output.crossing.isNone &&
+    checkPackageCommentIntegrity (packageCommentInventory retained.output.scan)
+  sourceSetExact &&
+  selectionExact &&
+  retainedExact &&
+  evidence.complete &&
+  !evidence.semanticLimitCrossed &&
+  evidence.productionIntegrityPassed &&
+  evidence.issues.isEmpty &&
+  decide (evidence.inventory = expectedPassedCommentInventory record)
+
+def commentSelectionResultEq
+    (left right : Except CommentSelectionFailure
+      (Option SelectedCommentIdentity)) : Bool :=
+  match left, right with
+  | .error leftFailure, .error rightFailure => leftFailure == rightFailure
+  | .ok leftSelected, .ok rightSelected => leftSelected == rightSelected
+  | _, _ => false
+
+theorem comment_selection_result_eq_sound
+    (left right : Except CommentSelectionFailure
+      (Option SelectedCommentIdentity))
+    (h : commentSelectionResultEq left right = true) :
+    left = right := by
+  cases left <;> cases right <;>
+    simp [commentSelectionResultEq, beq_iff_eq] at h ⊢ <;>
+    assumption
+
+def productionCommentGlobalAdmissionCheck
+    (request : RunRequestCoreRequest) : Bool :=
+  let selectorCheck := fun side =>
+    let record := request.packageRecord (noteSideOfCommentSide side)
+    commentSelectionResultEq
+      (Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+        (commentPackageViewOfCore request side))
+      (selectConventionalMainCommentRecords record.relationships)
+  let sourceCheck := fun side =>
+    let record := request.packageRecord (noteSideOfCommentSide side)
+    Tier2.CommentReferenceIntegrity.completeCommentSourceSetCheck
+      (commentPackageViewOfCore request side) side
+      (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+        (packageViewOfRecord record) (noteSideOfCommentSide side)
+        (selectedStoriesOfRecord record))
+  let scanCheck := fun side =>
+    match retainedParsedCommentEvidenceOfProduction request side with
+    | .error _ => false
+    | .ok actual =>
+        decide (actual = parsedCommentEvidenceOfProduction request side)
+  let scanInputCheck := fun side =>
+    match retainedCommentScanInputOfProduction request side with
+    | .error _ => false
+    | .ok actual =>
+        decide (actual = semanticCommentScanInputOfCore request side)
+  let sides : List Tier2.CommentReferenceIntegrity.VerifierSide :=
+    [.original, .revised, .compared]
+  decide ((commentResourceUsageOfCore request).tripleXmlEvents ≤
+    3 * maxCumulativeXmlEvents) &&
+  sides.all selectorCheck &&
+  sides.all sourceCheck &&
+  sides.all scanCheck &&
+  sides.all scanInputCheck
+
+def ProductionCommentEvidenceOf (record : RunRequestPackageRecord) : Prop :=
+  let evidence := record.commentEvidence
+  retainedCommentSourceProjections record =
+      canonicalCommentSourceProjections record ∧
+  retainedCommentSourceIdentities record =
+      canonicalCommentSourceIdentities record ∧
+  (match selectConventionalMainCommentRecords record.relationships with
+    | .error _ => False
+    | .ok none =>
+      evidence.identity = none ∧ evidence.part = none ∧
+      evidence.partPresent = false
+    | .ok (some identity) =>
+      evidence.identity = some identity ∧ evidence.partPresent = true ∧
+      ∃ part, evidence.part = some part ∧ part.identity = identity ∧
+        productionCommentPartAdmissionCheck record part = true) ∧
+  ∃ retained,
+    evidence.retainedScan = some retained ∧
+    retained.scanInvocationCount = 1 ∧
+    retained.input = productionCommentScanInput record ∧
+    retained.output = scanCommentEvidence retained.input ∧
+    retained.output.crossing = none ∧
+    PackageCommentIntegrity (packageCommentInventory retained.output.scan) ∧
+    evidence.inventory = expectedPassedCommentInventory record ∧
+    evidence.complete = true ∧
+    evidence.semanticLimitCrossed = false ∧
+    evidence.issues = []
+
+theorem production_comment_evidence_pass_sound
+    (record : RunRequestPackageRecord)
+    (hPass : productionCommentEvidencePass record = true) :
+    ProductionCommentEvidenceOf record := by
+  unfold productionCommentEvidencePass at hPass
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hPass
+  rcases hPass with
+    ⟨⟨⟨⟨⟨⟨⟨⟨hSourceRecords, hSources⟩, hSelection⟩, hRetained⟩, hComplete⟩,
+      hNoCrossing⟩, _hIntegrityFlag⟩, hIssues⟩, hInventory⟩
+  cases hRetainedOption : record.commentEvidence.retainedScan with
+  | none => simp [hRetainedOption] at hRetained
+  | some retained =>
+    simp only [hRetainedOption, Option.any, Bool.and_eq_true,
+      decide_eq_true_eq, Option.isNone_iff_eq_none] at hRetained
+    rcases hRetained with ⟨⟨⟨hCount, hInput⟩, hCrossing⟩, hIntegrity⟩
+    have hSelectionProp :
+        match selectConventionalMainCommentRecords record.relationships with
+        | .error _ => False
+        | .ok none =>
+          record.commentEvidence.identity = none ∧
+          record.commentEvidence.part = none ∧
+          record.commentEvidence.partPresent = false
+        | .ok (some identity) =>
+          record.commentEvidence.identity = some identity ∧
+          record.commentEvidence.partPresent = true ∧
+          ∃ part, record.commentEvidence.part = some part ∧
+            part.identity = identity ∧
+            productionCommentPartAdmissionCheck record part = true := by
+      cases hSelected : selectConventionalMainCommentRecords record.relationships with
+      | error failure =>
+          simp only [hSelected] at hSelection
+          contradiction
+      | ok selected =>
+        cases selected with
+        | none =>
+          simp only [hSelected, Bool.and_eq_true,
+            Option.isNone_iff_eq_none] at hSelection
+          cases hPresent : record.commentEvidence.partPresent <;>
+            simp_all
+        | some identity =>
+          simp only [hSelected, Bool.and_eq_true, decide_eq_true_eq,
+            Option.any_eq_true] at hSelection
+          exact ⟨hSelection.1.1, hSelection.1.2, hSelection.2⟩
+    have hNoCrossingValue :
+        record.commentEvidence.semanticLimitCrossed = false := by
+      cases hCrossed : record.commentEvidence.semanticLimitCrossed <;>
+        simp_all
+    exact ⟨hSourceRecords, hSources, hSelectionProp, retained,
+      hRetainedOption, hCount, hInput,
+      retained.outputExact, hCrossing,
+      Tier2.CommentReferenceIntegrity.package_comment_reference_integrity_sound
+        _ hIntegrity,
+      hInventory, hComplete,
+      hNoCrossingValue, List.isEmpty_iff.mp hIssues⟩
+
+theorem production_comment_part_admitted_sound
+    (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (part : LoadedCommentPart)
+    (hPart :
+      (request.packageRecord (noteSideOfCommentSide side)).commentEvidence.part =
+        some part)
+    (hParser : ∀ evidence,
+      evidence ∈ productionParseEvidencesOfRecord
+        (request.packageRecord (noteSideOfCommentSide side)) →
+      ProductionParseEvidenceOf
+        (request.packageRecord (noteSideOfCommentSide side)) evidence)
+    (hAdmission : productionCommentPartAdmissionCheck
+      (request.packageRecord (noteSideOfCommentSide side)) part = true)
+    (hPrior : (commentResourceUsageOfCore request).tripleXmlEvents ≤ 3000000) :
+    Tier2.CommentReferenceIntegrity.AdmittedCommentPartOf
+      (commentPackageViewOfCore request side) side
+      (commentResourceUsageOfCore request) part.identity
+      (semanticCommentRealizationOfProduction part) := by
+  let record := request.packageRecord (noteSideOfCommentSide side)
+  have hParse : ProductionParseEvidenceOf record part.parseEvidence := by
+    apply hParser
+    simp [productionParseEvidencesOfRecord, record, hPart]
+  dsimp [record] at hParse
+  unfold productionCommentPartAdmissionCheck at hAdmission
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hAdmission
+  unfold Tier2.CommentReferenceIntegrity.AdmittedCommentPartOf
+    Tier2.CommentReferenceIntegrity.ExactlyOneRegularBinaryEntryAt
+    Tier2.CommentReferenceIntegrity.CommentMetadataAdmittedSpec
+    Tier2.CommentReferenceIntegrity.BoundedExtractionEvidenceSpec
+    Tier2.CommentReferenceIntegrity.RetainedSnapshotExtractionOf
+    Tier2.CommentReferenceIntegrity.RetainedTypedCommentXmlOf
+    semanticCommentRealizationOfProduction
+    semanticCommentEntryOfProduction semanticCommentExtractionOfProduction
+    semanticCommentParsedPartOfProduction commentPackageViewOfCore
+  dsimp only
+  rcases hParse with ⟨_, hPackage, hExtraction, hExtracted, hBytes,
+    hUtf8, hEntryName, hExpanded, hInvocation, _, _, hEvents,
+    hRoot, _⟩
+  rcases hExtraction with ⟨hExtractionPackage, hSnapshot, _hSnapshotPathExact,
+    hSnapshotCount, _, hSelectedEntry, _, _, hSelectedName,
+    hDataOrder, hSpanPackage,
+    hPayload, hPayloadSize, hDecompressedSize, _, hExtractionCount, _⟩
+  obtain ⟨hAdmission, hParsedEvents⟩ := hAdmission
+  obtain ⟨hAdmission, hEventLimit⟩ := hAdmission
+  obtain ⟨hAdmission, hDepth⟩ := hAdmission
+  obtain ⟨hAdmission, hRootLocal⟩ := hAdmission
+  obtain ⟨hAdmission, hRootUri⟩ := hAdmission
+  obtain ⟨hAdmission, hRatio⟩ := hAdmission
+  obtain ⟨hAdmission, hRatioZero⟩ := hAdmission
+  obtain ⟨hAdmission, hExpandedLimit⟩ := hAdmission
+  obtain ⟨hAdmission, hCompressed⟩ := hAdmission
+  obtain ⟨hAdmission, hSnapshotPathBool⟩ := hAdmission
+  obtain ⟨hAdmission, hNormalizedPath⟩ := hAdmission
+  obtain ⟨hAdmission, hIdentityPath⟩ := hAdmission
+  obtain ⟨hMultiplicity, hIndex⟩ := hAdmission
+  have hSnapshotPath :
+      part.parseEvidence.extraction.snapshotPath ≠ "" := by
+    intro hEmpty
+    rw [hEmpty] at hSnapshotPathBool
+    contradiction
+  have hIndexIndependent :=
+    (request.packageRecord (noteSideOfCommentSide side)).packageIndexExact
+  have hTypedBounds := hIndexIndependent.2.2.2.2
+  have hEntryMember :
+      part.parseEvidence.extraction.entry ∈
+        part.parseEvidence.extraction.zipIndex.entries := by
+    have := part.parseEvidence.extraction.selectedEntryExact
+    simpa [Tier2.RelationshipStorySelector.ZipIndex.find?] using
+      List.mem_of_find?_eq_some this
+  have hBounds := hTypedBounds part.parseEvidence.extraction.entry
+    (by simpa [hIndex] using hEntryMember)
+  have hRatioZeroImp :
+      part.parseEvidence.extraction.entry.compressedSize = 0 →
+      part.parseEvidence.extraction.entry.expandedSize = 0 := by
+    intro hZero
+    cases hRatioZero with
+    | inl hNonzero => exact False.elim (hNonzero hZero)
+    | inr hExpandedZero => exact hExpandedZero
+  have hSelectedPartIdentity :
+      part.parseEvidence.extraction.selectedPartPath =
+        part.identity.normalizedPartPath :=
+    hSelectedName.symm.trans hIdentityPath
+  have hSelectedEntryAtIdentity :
+      part.parseEvidence.extraction.zipIndex.find?
+          part.identity.normalizedPartPath =
+        some part.parseEvidence.extraction.entry := by
+    simpa [hSelectedPartIdentity] using hSelectedEntry
+  refine ⟨hMultiplicity, ?_, ?_,
+    hExtracted.trans (hBytes.trans hUtf8), ?_,
+    Nat.le_trans hParsedEvents hEventLimit⟩
+  · exact ⟨hNormalizedPath.trans hIdentityPath, rfl, hCompressed,
+      hExpandedLimit, hRatioZeroImp, hRatio, hPrior⟩
+  · refine ⟨?_, ?_, hSnapshotCount, hSnapshotPath, hExtractionCount,
+      hIndexIndependent, ?_, hDecompressedSize⟩
+    · exact hExtractionPackage
+    · exact hSnapshot.trans hExtractionPackage
+    · refine ⟨?_, part.parseEvidence.extraction.entry, ?_,
+        hNormalizedPath, rfl, rfl, rfl, rfl, rfl,
+        rfl, hBounds.1, hBounds.2.1, hBounds.2.2.1,
+        hBounds.2.2.2.1, ?_, hBounds.2.2.2.2, ?_, hPayloadSize⟩
+      · simpa [hExtractionPackage, hPackage] using hPayload
+      · simpa [hIndex] using hSelectedEntryAtIdentity
+      · exact hIndexIndependent.2.2.1
+      · simpa [hExtractionPackage, hPackage] using hPayload
+  · refine ⟨rfl, rfl, hRootUri, hRootLocal, hDepth, ?_,
+      hInvocation, ?_, ?_⟩
+    · exact hEventLimit
+    · exact Nat.le_trans hParsedEvents hEventLimit
+    · simpa [hRootUri, hRootLocal] using hRoot
+
+def ProductionCommentSemanticProjectionOf
+    (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) : Prop :=
+  let record := request.packageRecord (noteSideOfCommentSide side)
+  let pkg := commentPackageViewOfCore request side
+  let note := Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+    (packageViewOfRecord record) (noteSideOfCommentSide side)
+      (selectedStoriesOfRecord record)
+  let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+    pkg side note
+  let evidence := parsedCommentEvidenceOfProduction request side
+  pkg.packageBytes = record.packageBytes ∧
+  pkg.index = record.packageIndex ∧
+  Tier2.CommentReferenceIntegrity.IndependentBinaryIndexOf
+    pkg.packageBytes pkg.index ∧
+  pkg.retainedSourceScans = retainedCommentSourceScansOfRecord record ∧
+  pkg.retainedCommentRealization =
+    record.commentEvidence.part.map semanticCommentRealizationOfProduction ∧
+  Tier2.CommentReferenceIntegrity.CommentSelectionResultOf pkg
+    (Tier2.CommentReferenceIntegrity.selectConventionalMainComment pkg) ∧
+  Tier2.CommentReferenceIntegrity.ParsedCommentEvidenceOf
+    pkg side set pkg.retainedCommentRealization evidence ∧
+  ∃ retained,
+    record.commentEvidence.retainedScan = some retained ∧
+    retained.scanInvocationCount = 1 ∧
+    retained.input = productionCommentScanInput record ∧
+    retained.output =
+      Tier2.CommentReferenceIntegrity.scanCommentEvidence retained.input
+
+theorem production_comment_semantic_projection_sound
+    (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hProduction : ProductionCommentEvidenceOf
+      (request.packageRecord (noteSideOfCommentSide side))) :
+    ProductionCommentSemanticProjectionOf request side := by
+  let record := request.packageRecord (noteSideOfCommentSide side)
+  let pkg := commentPackageViewOfCore request side
+  let note := Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+    (packageViewOfRecord record) (noteSideOfCommentSide side)
+      (selectedStoriesOfRecord record)
+  let set := Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+    pkg side note
+  let evidence := parsedCommentEvidenceOfProduction request side
+  unfold ProductionCommentSemanticProjectionOf
+  change pkg.packageBytes = record.packageBytes ∧
+    pkg.index = record.packageIndex ∧
+    Tier2.CommentReferenceIntegrity.IndependentBinaryIndexOf
+      pkg.packageBytes pkg.index ∧
+    pkg.retainedSourceScans = retainedCommentSourceScansOfRecord record ∧
+    pkg.retainedCommentRealization =
+      record.commentEvidence.part.map semanticCommentRealizationOfProduction ∧
+    Tier2.CommentReferenceIntegrity.CommentSelectionResultOf pkg
+      (Tier2.CommentReferenceIntegrity.selectConventionalMainComment pkg) ∧
+    Tier2.CommentReferenceIntegrity.ParsedCommentEvidenceOf
+      pkg side set pkg.retainedCommentRealization evidence ∧
+    ∃ retained,
+      record.commentEvidence.retainedScan = some retained ∧
+      retained.scanInvocationCount = 1 ∧
+      retained.input = productionCommentScanInput record ∧
+      retained.output =
+        Tier2.CommentReferenceIntegrity.scanCommentEvidence retained.input
+  rcases hProduction with ⟨_hSourceRecords, _hSources, _hSelection, retained,
+    hRetained, hInvocation, hInput, hOutput, _⟩
+  refine ⟨rfl, rfl, record.packageIndexExact, rfl, rfl,
+    Tier2.CommentReferenceIntegrity.comment_selector_result_sound pkg, ?_,
+    retained, hRetained, hInvocation, hInput, hOutput⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
 def productionRecordIntegrityPass (record : RunRequestPackageRecord) : Bool :=
   match record.noteEvidence.retainedScan with
   | none => false
@@ -2145,6 +4099,8 @@ def productionSemanticInventoriesPass (request : RunRequestCoreRequest)
 
 def ProductionPackageRecordOf (record : RunRequestPackageRecord) : Prop :=
   record.packageReadCount = 1 ∧
+  record.snapshotWriteCount = 1 ∧
+  record.snapshotBytes = record.packageBytes ∧
   (∀ evidence, evidence ∈ productionParseEvidencesOfRecord record →
     ProductionParseEvidenceOf record evidence) ∧
   record.noteEvidence.footnotesIdentity =
@@ -2201,13 +4157,23 @@ theorem production_parse_evidence_check_sound
     evidence.parseInvocationCount = 1 ∧
     evidence.parsed.rootSeen = true ∧
     evidence.parsed.stack = [] ∧
-    evidence.parsed.eventCount = evidence.parsed.events.length := by
+    evidence.parsed.eventCount = evidence.parsed.events.length ∧
+    ∃ attributes selfClosing,
+      evidence.parsed.events.head? =
+        some (.startElement evidence.expectedRootUri
+          evidence.expectedRootLocalName attributes 0 selfClosing) := by
   unfold productionParseEvidenceCheck at hCheck
   simp only [Bool.and_eq_true, decide_eq_true_eq, List.isEmpty_iff] at hCheck
   rcases hCheck with
     ⟨⟨⟨⟨⟨⟨hExtracted, hParserBytes⟩, hInvocation⟩,
-      hRootSeen⟩, hStack⟩, hCompleted⟩, _hRoot⟩
-  exact ⟨hExtracted, hParserBytes, hInvocation, hRootSeen, hStack, hCompleted⟩
+      hRootSeen⟩, hStack⟩, hCompleted⟩, hRoot⟩
+  refine ⟨hExtracted, hParserBytes, hInvocation, hRootSeen, hStack,
+    hCompleted, ?_⟩
+  split at hRoot
+  · rename_i uri localName attributes selfClosing hHead
+    simp only [Bool.and_eq_true, beq_iff_eq] at hRoot
+    exact ⟨attributes, selfClosing, by simpa [hRoot.1, hRoot.2] using hHead⟩
+  · contradiction
 
 theorem production_package_record_of_checks (record : RunRequestPackageRecord)
     (hRead : record.packageReadCount = 1)
@@ -2217,8 +4183,8 @@ theorem production_package_record_of_checks (record : RunRequestPackageRecord)
     (hInventory : productionInventoryEvidencePass record = true) :
     ProductionPackageRecordOf record := by
   unfold ProductionPackageRecordOf
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · exact hRead
+  refine ⟨hRead, record.snapshotWriteCountExact, record.snapshotBytesExact,
+    ?_, ?_, ?_, ?_⟩
   · intro evidence hMember
     unfold productionPackageParserEvidencePass at hParser
     simp only [List.all_eq_true] at hParser
@@ -2230,7 +4196,8 @@ theorem production_package_record_of_checks (record : RunRequestPackageRecord)
     exact ⟨hProvenance.1, hProvenance.2.1, hProvenance.2.2.1,
       hProvenance.2.2.2.1, hParsed.1, hParsed.2.1,
       hProvenance.2.2.2.2.1, hProvenance.2.2.2.2.2.1, hParsed.2.2.1,
-      hParsed.2.2.2.1, hParsed.2.2.2.2.1, hParsed.2.2.2.2.2,
+      hParsed.2.2.2.1, hParsed.2.2.2.2.1, hParsed.2.2.2.2.2.1,
+      hParsed.2.2.2.2.2.2,
       evidence.parseResultExact⟩
   · unfold productionSelectorEvidencePass selectedIdentityOptionEq at hSelector
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hSelector
@@ -2266,6 +4233,46 @@ theorem production_package_record_of_checks (record : RunRequestPackageRecord)
         simp only [Bool.and_eq_true, decide_eq_true_eq] at hInventory
         exact hInventory.2
 
+theorem production_retained_comment_part_admitted
+    (request : RunRequestCoreRequest)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (part : LoadedCommentPart)
+    (hPart :
+      (request.packageRecord (noteSideOfCommentSide side)).commentEvidence.part =
+        some part)
+    (hPackage : ProductionPackageRecordOf
+      (request.packageRecord (noteSideOfCommentSide side)))
+    (hComment : ProductionCommentEvidenceOf
+      (request.packageRecord (noteSideOfCommentSide side)))
+    (hPrior : (commentResourceUsageOfCore request).tripleXmlEvents ≤ 3000000) :
+    Tier2.CommentReferenceIntegrity.AdmittedCommentPartOf
+      (commentPackageViewOfCore request side) side
+      (commentResourceUsageOfCore request) part.identity
+      (semanticCommentRealizationOfProduction part) := by
+  have hSelection := hComment.2.2.1
+  cases hSelected :
+      selectConventionalMainCommentRecords
+        (request.packageRecord
+          (noteSideOfCommentSide side)).relationships with
+  | error failure =>
+      simp only [hSelected] at hSelection
+  | ok selected? =>
+      cases selected? with
+      | none =>
+          simp only [hSelected] at hSelection
+          have hImpossible := hPart.symm.trans hSelection.2.1
+          cases hImpossible
+      | some identity =>
+          simp only [hSelected] at hSelection
+          rcases hSelection.2.2 with
+            ⟨selectedPart, hSelectedPart, hIdentity, hAdmission⟩
+          have hSamePart : selectedPart = part :=
+            Option.some.inj (hSelectedPart.symm.trans hPart)
+          subst selectedPart
+          subst identity
+          exact production_comment_part_admitted_sound request side part hPart
+            hPackage.2.2.2.1 hAdmission hPrior
+
 def semanticRequestOfCore (request : RunRequestCoreRequest) : VerifierRequestV5 :=
   let packageView := fun side => packageViewOfRecord (request.packageRecord side)
   let selectedStories := fun side =>
@@ -2290,6 +4297,7 @@ structure RunRequestCoreResult where
   semanticRequest : VerifierRequestV5
   semanticResponse : VerifierResponseV5
   semanticStdout : ByteArray
+  typedProjectionCheck : Bool
 
 def runRequestOperationalChecks (request : RunRequestCoreRequest)
     (semanticResponse : VerifierResponseV5) : ProductionAggregateChecks :=
@@ -2298,24 +4306,32 @@ def runRequestOperationalChecks (request : RunRequestCoreRequest)
   let noteEvidence :=
     [request.original.noteEvidence, request.revised.noteEvidence,
       request.compared.noteEvidence]
+  let commentEvidence := applyCommentGlobalStop
+    [request.original.commentEvidence, request.revised.commentEvidence,
+      request.compared.commentEvidence]
   let selectionIssues := request.selectionIssues.eraseDups.mergeSort issueLess
   let noteIssues :=
     coalesceNoteIssues (noteEvidence.flatMap (·.issues)) |>.mergeSort noteIssueLess
+  let commentIssues :=
+    coalesceNoteIssues (commentEvidence.flatMap (·.issues)) |>.mergeSort noteIssueLess
   let ordinaryPartitions := noteEvidence.map partitionJson
   let ordinaryNoteStories :=
     [noteStoryJson .footnotes noteEvidence, noteStoryJson .endnotes noteEvidence]
   let ordinaryInventories := noteEvidence.flatMap fun evidence =>
     [inventoryJson evidence.footnotesInventory,
       inventoryJson evidence.endnotesInventory]
+  let ordinaryCommentStory := selectedCommentStoryJson commentEvidence
+  let ordinaryCommentInventories :=
+    commentEvidence.map fun evidence => commentInventoryJson evidence.inventory
   let ordinaryOtherEvidence :=
     (fixedReports.map storyReportJson) ++ ordinaryPartitions ++ ordinaryNoteStories ++
-      ordinaryInventories
+      ordinaryInventories ++ [ordinaryCommentStory] ++ ordinaryCommentInventories
   let nonIssueStringBytes :=
     evidenceStringBytes [] [] request.relationshipSlots request.relationshipStories
       ordinaryOtherEvidence []
   let terminalIssue := (firstAggregateIssueCrossing nonIssueStringBytes
     (selectionIssues.map selectionIssueStringBytes)
-    (noteIssues.map jsonEvidenceStringBytes)).isSome
+    ((noteIssues ++ commentIssues).map jsonEvidenceStringBytes)).isSome
   let effectiveNoteEvidence := if terminalIssue then
     [ skippedNoteSideEvidence .original (request.original.noteEvidence.sources.take 1) []
     , skippedNoteSideEvidence .revised (request.revised.noteEvidence.sources.take 1) []
@@ -2330,20 +4346,26 @@ def runRequestOperationalChecks (request : RunRequestCoreRequest)
   {
     noTerminalIssue := !terminalIssue
     noSelectionIssues := !terminalIssue && selectionIssues.isEmpty
-    noNoteIssues := !terminalIssue && noteIssues.isEmpty
+    noNoteIssues := !terminalIssue && noteIssues.isEmpty && commentIssues.isEmpty
     fixedStoriesPass := storyCollectionPassed
       (if terminalIssue then fixedReports.take 1 else fixedReports)
     relationshipStoriesPass := storyCollectionPassed selectedReports
     semanticPartitionsComplete := noteEvidence.all (·.complete)
     semanticNoteStoriesPass := emittedNoteStories.all fun story =>
       jsonStringField story "status" == "passed"
-    inventoriesPass := emittedInventories.all fun inventory =>
-      jsonStringField inventory "status" == "passed"
+    inventoriesPass := (emittedInventories.all fun inventory =>
+      jsonStringField inventory "status" == "passed") &&
+      commentEvidence.all fun evidence =>
+        evidence.complete && evidence.inventory.status == "passed"
     productionNoteIntegrityPass :=
       productionRecordIntegrityPass request.original &&
       productionRecordIntegrityPass request.revised &&
       productionRecordIntegrityPass request.compared &&
-      productionSemanticInventoriesPass request semanticResponse
+      productionSemanticInventoriesPass request semanticResponse &&
+      productionCommentEvidencePass request.original &&
+      productionCommentEvidencePass request.revised &&
+      productionCommentEvidencePass request.compared &&
+      productionCommentGlobalAdmissionCheck request
     semanticModelPass := semanticResponse.passed
   }
 
@@ -2367,6 +4389,8 @@ structure Fields where
   selectionIssues : List SelectionIssue
   noteSides : List NoteSideEvidence
   noteIssues : List Json
+  commentSides : List CommentSideEvidence
+  commentIssues : List Json
   terminalCode : Option String
 
 def boundedUtf8 (value : String) (limit : Nat) : String :=
@@ -2719,13 +4743,16 @@ def firstCrossing (nonIssue : Nat) (selection : List SelectionIssue)
       (note.map escapedEvidenceBytes))
 
 def terminalIssue (code : String) : Json :=
+  let v6Code := if code == "NOTE_ISSUE_LIMIT_EXCEEDED" then
+    "COMMENT_ISSUE_LIMIT_EXCEEDED"
+  else "COMMENT_EVIDENCE_STRING_BUDGET_EXCEEDED"
   Json.mkObj
-    [ ("code", toJson code)
+    [ ("code", toJson v6Code)
     , ("side", toJson "original")
-    , ("kind", toJson "footnotes")
+    , ("kind", toJson "comments")
     , ("detail", toJson <| if code == "NOTE_ISSUE_LIMIT_EXCEEDED" then
-        "protocol v5 aggregate ordinary issue limit exceeded"
-      else "protocol v5 escaped evidence string budget exceeded")
+        "protocol v6 aggregate ordinary issue limit exceeded"
+      else "protocol v6 escaped evidence string budget exceeded")
     , ("ordinalSpace", toJson "aggregate")
     , ("firstOccurrenceOrdinal", toJson (0 : Nat))
     , ("occurrenceCount", toJson (1 : Nat))
@@ -2768,37 +4795,66 @@ def terminalInventory (side : VerifierSide) (kind : NoteKind) : Json :=
     , ("forbiddenDefinitionStoryReferences", toJson (0 : Nat))
     ]
 
+def terminalCommentStory : Json :=
+  Json.mkObj
+    [ ("status", toJson "not_evaluated")
+    , ("original", Json.mkObj
+        [ ("status", toJson "not_evaluated"), ("relationship", Json.null)
+        , ("partPresent", toJson false)])
+    , ("revised", Json.mkObj
+        [ ("status", toJson "not_evaluated"), ("relationship", Json.null)
+        , ("partPresent", toJson false)])
+    , ("compared", Json.mkObj
+        [ ("status", toJson "not_evaluated"), ("relationship", Json.null)
+        , ("partPresent", toJson false)])
+    , ("parsedTokenCounts", Json.mkObj
+        [ ("original", toJson (0 : Nat)), ("revised", toJson (0 : Nat))
+        , ("combined", toJson (0 : Nat)) ])
+    ]
+
+def terminalCommentInventory (side : VerifierSide) : Json :=
+  commentInventoryJson (zeroCommentInventory side none)
+
 def fields (request : RunRequestCoreRequest)
     (semanticResponse : VerifierResponseV5) : Fields :=
   let fixed := semanticResponse.genericStoryReports.take request.fixedTriples.length
   let selected := semanticResponse.genericStoryReports.drop request.fixedTriples.length
   let sides := [request.original.noteEvidence, request.revised.noteEvidence,
     request.compared.noteEvidence]
+  let commentSides := applyCommentGlobalStop
+    [request.original.commentEvidence, request.revised.commentEvidence,
+      request.compared.commentEvidence]
   let selections := request.selectionIssues.eraseDups.mergeSort selectionIssueBefore
   let notes := coalesceIssues (sides.flatMap (·.issues)) |>.mergeSort issueBefore
+  let comments :=
+    coalesceIssues (commentSides.flatMap (·.issues)) |>.mergeSort issueBefore
   let nonIssueJson :=
     (fixed.map fixedStoryJson) ++
     (sides.map partitionJsonSpec) ++
     [noteStoryJsonSpec .footnotes sides, noteStoryJsonSpec .endnotes sides] ++
     (sides.flatMap fun side =>
       [inventoryJsonSpec side.footnotesInventory,
-        inventoryJsonSpec side.endnotesInventory])
+        inventoryJsonSpec side.endnotesInventory]) ++
+    [selectedCommentStoryJson commentSides] ++
+    (commentSides.map fun side => commentInventoryJson side.inventory)
   let crossing := firstCrossing
     ((nonIssueJson.map escapedEvidenceBytes |>.sum) +
       (request.relationshipSlots.map slotEvidenceBytes |>.sum) +
       (request.relationshipStories.map storyEvidenceBytes |>.sum))
-    selections notes
+    selections (notes ++ comments)
   { passed := semanticResponse.passed && crossing.isNone &&
-      selections.isEmpty && notes.isEmpty
+      selections.isEmpty && notes.isEmpty && comments.isEmpty
     fixedStories := fixed
     relationshipSlots := request.relationshipSlots
     relationshipStories := List.zip request.relationshipStories selected
     selectionIssues := selections
     noteSides := sides
     noteIssues := notes
+    commentSides
+    commentIssues := comments
     terminalCode := crossing }
 
-def encode (fields : Fields) : Json :=
+def encodeFields (fields : Fields) : List (String × Json) :=
   let terminal := fields.terminalCode.isSome
   let fixed := if terminal then fields.fixedStories.take 1 else fields.fixedStories
   let slots := if terminal then [] else fields.relationshipSlots
@@ -2818,11 +4874,19 @@ def encode (fields : Fields) : Json :=
       [inventoryJsonSpec side.footnotesInventory,
         inventoryJsonSpec side.endnotesInventory]
   let issues := match fields.terminalCode with
-    | some code => [terminalIssue code]
+    | some _ => []
     | none => fields.noteIssues
-  Json.mkObj
-    [ ("protocolVersion", toJson (5 : Nat))
-    , ("checker", toJson "safe-docx-lean-conventional-main-note-integrity-checker")
+  let commentStory := if terminal then terminalCommentStory
+    else selectedCommentStoryJson fields.commentSides
+  let commentInventories := if terminal then
+    [.original, .revised, .compared].map terminalCommentInventory
+    else fields.commentSides.map fun side => commentInventoryJson side.inventory
+  let commentIssues := match fields.terminalCode with
+    | some code => [terminalIssue code]
+    | none => fields.commentIssues
+  [ ("protocolVersion", toJson (6 : Nat))
+    , ("checker", toJson
+        "safe-docx-lean-conventional-main-comment-integrity-checker")
     , ("passed", toJson fields.passed)
     , ("fixedStories", Json.arr (fixed.map fixedStoryJson).toArray)
     , ("presenceMismatches", Json.arr #[])
@@ -2834,7 +4898,13 @@ def encode (fields : Fields) : Json :=
     , ("noteStories", Json.arr noteStories.toArray)
     , ("noteInventories", Json.arr inventories.toArray)
     , ("noteIntegrityIssues", Json.arr issues.toArray)
-    ]
+    , ("commentStory", commentStory)
+    , ("commentInventories", Json.arr commentInventories.toArray)
+  , ("commentIntegrityIssues", Json.arr commentIssues.toArray)
+  ]
+
+def encode (fields : Fields) : Json :=
+  Json.mkObj (encodeFields fields)
 
 theorem boundedUtf8_eq (value : String) (limit : Nat) :
     boundedUtf8 value limit = boundUtf8 value limit := by
@@ -3247,7 +5317,7 @@ theorem terminalInventory_eq (side : VerifierSide) (kind : NoteKind) :
 
 end SemanticProtocolSpec
 
-def semanticProtocolV5Projection (request : RunRequestCoreRequest)
+def semanticProtocolV6Projection (request : RunRequestCoreRequest)
     (semanticResponse : VerifierResponseV5) : Json :=
   SemanticProtocolSpec.encode (SemanticProtocolSpec.fields request semanticResponse)
 
@@ -3259,41 +5329,38 @@ def buildRunRequestCoreJson (request : RunRequestCoreRequest)
   let noteEvidence :=
     [request.original.noteEvidence, request.revised.noteEvidence,
       request.compared.noteEvidence]
+  let commentEvidence := applyCommentGlobalStop
+    [request.original.commentEvidence, request.revised.commentEvidence,
+      request.compared.commentEvidence]
   let selectionIssues := request.selectionIssues.eraseDups.mergeSort issueLess
   let noteIssues :=
     coalesceNoteIssues (noteEvidence.flatMap (·.issues)) |>.mergeSort noteIssueLess
+  let commentIssues :=
+    coalesceNoteIssues (commentEvidence.flatMap (·.issues)) |>.mergeSort noteIssueLess
   let ordinaryPartitions := noteEvidence.map partitionJson
   let ordinaryNoteStories :=
     [noteStoryJson .footnotes noteEvidence, noteStoryJson .endnotes noteEvidence]
   let ordinaryInventories := noteEvidence.flatMap fun evidence =>
     [inventoryJson evidence.footnotesInventory,
       inventoryJson evidence.endnotesInventory]
+  let ordinaryCommentStory := selectedCommentStoryJson commentEvidence
+  let ordinaryCommentInventories :=
+    commentEvidence.map fun evidence => commentInventoryJson evidence.inventory
   let ordinaryOtherEvidence :=
     (fixedReports.map storyReportJson) ++ ordinaryPartitions ++ ordinaryNoteStories ++
-      ordinaryInventories
+      ordinaryInventories ++ [ordinaryCommentStory] ++ ordinaryCommentInventories
   let nonIssueStringBytes :=
     evidenceStringBytes [] [] request.relationshipSlots request.relationshipStories
       ordinaryOtherEvidence []
   let crossing := firstAggregateIssueCrossing nonIssueStringBytes
     (selectionIssues.map selectionIssueStringBytes)
-    (noteIssues.map jsonEvidenceStringBytes)
+    ((noteIssues ++ commentIssues).map jsonEvidenceStringBytes)
   let terminalIssue := crossing.isSome
   let emittedSelectionIssues := if terminalIssue then [] else selectionIssues
-  let emittedNoteIssues := match crossing with
-    | some terminalCode =>
-      let detail := if terminalCode == "NOTE_ISSUE_LIMIT_EXCEEDED" then
-        "protocol v5 aggregate ordinary issue limit exceeded"
-      else "protocol v5 escaped evidence string budget exceeded"
-      [Json.mkObj
-        [ ("code", toJson terminalCode)
-        , ("side", toJson "original")
-        , ("kind", toJson "footnotes")
-        , ("detail", toJson detail)
-        , ("ordinalSpace", toJson "aggregate")
-        , ("firstOccurrenceOrdinal", toJson (0 : Nat))
-        , ("occurrenceCount", toJson (1 : Nat))
-        ]]
-    | none => noteIssues
+  let emittedNoteIssues := if terminalIssue then [] else noteIssues
+  let emittedCommentIssues := match crossing with
+    | some terminalCode => [SemanticProtocolSpec.terminalIssue terminalCode]
+    | none => commentIssues
   let emittedSlots := if terminalIssue then [] else request.relationshipSlots
   let physicalJson := if terminalIssue then [] else
     (List.zip request.relationshipStories selectedReports).map fun pair =>
@@ -3311,15 +5378,34 @@ def buildRunRequestCoreJson (request : RunRequestCoreRequest)
   let emittedInventories := effectiveNoteEvidence.flatMap fun evidence =>
     [inventoryJson evidence.footnotesInventory,
       inventoryJson evidence.endnotesInventory]
-  protocolV5ResponseJson passed
-    (emittedFixedReports.map storyReportJson)
-    (emittedSlots.map slotJson)
-    physicalJson
-    (emittedSelectionIssues.map selectionIssueJson)
-    emittedPartitions
-    emittedNoteStories
-    emittedInventories
-    emittedNoteIssues
+  let emittedCommentStory := if terminalIssue then
+    SemanticProtocolSpec.terminalCommentStory
+    else selectedCommentStoryJson commentEvidence
+  let emittedCommentInventories := if terminalIssue then
+    [.original, .revised, .compared].map
+      SemanticProtocolSpec.terminalCommentInventory
+    else commentEvidence.map fun evidence => commentInventoryJson evidence.inventory
+  Json.mkObj
+    [ ("protocolVersion", toJson (6 : Nat))
+    , ("checker", toJson
+        "safe-docx-lean-conventional-main-comment-integrity-checker")
+    , ("passed", toJson passed)
+    , ("fixedStories", Json.arr
+        (emittedFixedReports.map storyReportJson).toArray)
+    , ("presenceMismatches", Json.arr #[])
+    , ("fixedStoryIssues", Json.arr #[])
+    , ("relationshipSlots", Json.arr (emittedSlots.map slotJson).toArray)
+    , ("relationshipStories", Json.arr physicalJson.toArray)
+    , ("selectionIssues", Json.arr
+        (emittedSelectionIssues.map selectionIssueJson).toArray)
+    , ("referenceSourcePartitions", Json.arr emittedPartitions.toArray)
+    , ("noteStories", Json.arr emittedNoteStories.toArray)
+    , ("noteInventories", Json.arr emittedInventories.toArray)
+    , ("noteIntegrityIssues", Json.arr emittedNoteIssues.toArray)
+    , ("commentStory", emittedCommentStory)
+    , ("commentInventories", Json.arr emittedCommentInventories.toArray)
+    , ("commentIntegrityIssues", Json.arr emittedCommentIssues.toArray)
+    ]
 
 theorem check_story_collection_append (left right : List NamedStoryTriple) :
     checkStoryCollection (left ++ right) =
@@ -3339,7 +5425,7 @@ theorem build_run_request_core_json_refines_semantic_projection
     (hRevisedSide : request.revised.noteEvidence.side = .revised)
     (hComparedSide : request.compared.noteEvidence.side = .compared) :
     buildRunRequestCoreJson request semanticResponse =
-      semanticProtocolV5Projection request semanticResponse := by
+      semanticProtocolV6Projection request semanticResponse := by
   have hFixed : semanticResponse.genericStoryReports.take request.fixedTriples.length =
       checkStoryCollection request.fixedTriples := by
     rw [hReports]
@@ -3350,9 +5436,10 @@ theorem build_run_request_core_json_refines_semantic_projection
     rw [hReports]
     unfold checkStoryCollection
     simp
-  unfold buildRunRequestCoreJson semanticProtocolV5Projection
+  unfold buildRunRequestCoreJson semanticProtocolV6Projection
   rw [hPassed]
   unfold SemanticProtocolSpec.fields SemanticProtocolSpec.encode
+    SemanticProtocolSpec.encodeFields
   rw [hFixed, hSelected]
   simp only [
     SemanticProtocolSpec.fixedStoryJson_eq,
@@ -3476,12 +5563,21 @@ theorem semantic_protocol_fields_pass_of_core_pass
         SemanticProtocolSpec.issueBefore).isEmpty = true := by
     rw [hNoteOrder]
     simpa [SemanticProtocolSpec.coalesceIssues_eq,
+      List.flatMap_cons, List.flatMap_nil] using hNoNotes.1.2
+  have hCommentEmpty :
+      ((SemanticProtocolSpec.coalesceIssues
+          ((applyCommentGlobalStop
+            [request.original.commentEvidence, request.revised.commentEvidence,
+              request.compared.commentEvidence]).flatMap (·.issues))).mergeSort
+        SemanticProtocolSpec.issueBefore).isEmpty = true := by
+    rw [hNoteOrder]
+    simpa [SemanticProtocolSpec.coalesceIssues_eq,
       List.flatMap_cons, List.flatMap_nil] using hNoNotes.2
   unfold SemanticProtocolSpec.fields
   rw [hFixed]
   simp only [hSemantic, Bool.true_and, Bool.and_eq_true,
     Option.isNone_iff_eq_none]
-  exact ⟨⟨hTerminalConcrete, hSelectionEmpty⟩, hNoteEmpty⟩
+  exact ⟨⟨⟨hTerminalConcrete, hSelectionEmpty⟩, hNoteEmpty⟩, hCommentEmpty⟩
 
 def buildRunRequestCoreResponse (request : RunRequestCoreRequest)
     (semanticResponse : VerifierResponseV5) : Bool × Json :=
@@ -3520,12 +5616,204 @@ theorem run_request_core_pass_semantic_inventories
     have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
       (runRequestOperationalChecks request semanticResponse) hPass
     have hProduction := hChecks.2.2.2.2.2.2.2.2.1
-    change (((productionRecordIntegrityPass request.original &&
+    change ((((productionRecordIntegrityPass request.original &&
       productionRecordIntegrityPass request.revised) &&
       productionRecordIntegrityPass request.compared) &&
-      productionSemanticInventoriesPass request semanticResponse) = true at hProduction
-    exact
-      (Tier2.NoteReferenceIntegrity.and_true_components _ _ hProduction).2
+      productionSemanticInventoriesPass request semanticResponse) &&
+      productionCommentEvidencePass request.original &&
+      productionCommentEvidencePass request.revised &&
+      productionCommentEvidencePass request.compared &&
+      productionCommentGlobalAdmissionCheck request) = true at hProduction
+    simp only [Bool.and_eq_true] at hProduction
+    exact hProduction.1.1.1.1.2
+
+theorem run_request_core_pass_comment_evidence
+    (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
+    (hPass : runRequestCorePass request semanticResponse = true) :
+    productionCommentEvidencePass request.original = true ∧
+    productionCommentEvidencePass request.revised = true ∧
+    productionCommentEvidencePass request.compared = true := by
+  unfold runRequestCorePass at hPass
+  cases hSemantic : semanticResponse.passed
+  · simp only [hSemantic, Bool.false_eq_true, ↓reduceIte] at hPass
+  · simp only [hSemantic, ↓reduceIte] at hPass
+    unfold runRequestOperationalPass at hPass
+    have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
+      (runRequestOperationalChecks request semanticResponse) hPass
+    have hProduction := hChecks.2.2.2.2.2.2.2.2.1
+    change ((((productionRecordIntegrityPass request.original &&
+      productionRecordIntegrityPass request.revised) &&
+      productionRecordIntegrityPass request.compared) &&
+      productionSemanticInventoriesPass request semanticResponse) &&
+      productionCommentEvidencePass request.original &&
+      productionCommentEvidencePass request.revised &&
+      productionCommentEvidencePass request.compared &&
+      productionCommentGlobalAdmissionCheck request) = true at hProduction
+    simp only [Bool.and_eq_true] at hProduction
+    exact ⟨hProduction.1.1.1.2, hProduction.1.1.2, hProduction.1.2⟩
+
+theorem run_request_core_pass_comment_global_admission
+    (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
+    (hPass : runRequestCorePass request semanticResponse = true) :
+    (commentResourceUsageOfCore request).tripleXmlEvents ≤ 3000000 := by
+  unfold runRequestCorePass at hPass
+  cases hSemantic : semanticResponse.passed
+  · simp only [hSemantic, Bool.false_eq_true, ↓reduceIte] at hPass
+  · simp only [hSemantic, ↓reduceIte] at hPass
+    unfold runRequestOperationalPass at hPass
+    have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
+      (runRequestOperationalChecks request semanticResponse) hPass
+    have hProduction := hChecks.2.2.2.2.2.2.2.2.1
+    change ((((productionRecordIntegrityPass request.original &&
+      productionRecordIntegrityPass request.revised) &&
+      productionRecordIntegrityPass request.compared) &&
+      productionSemanticInventoriesPass request semanticResponse) &&
+      productionCommentEvidencePass request.original &&
+      productionCommentEvidencePass request.revised &&
+      productionCommentEvidencePass request.compared &&
+      productionCommentGlobalAdmissionCheck request) = true at hProduction
+    simp only [Bool.and_eq_true] at hProduction
+    unfold productionCommentGlobalAdmissionCheck at hProduction
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
+      List.all_eq_true]
+      at hProduction
+    simpa [maxCumulativeXmlEvents] using hProduction.2.1.1.1.1
+
+theorem run_request_core_pass_comment_selector_exact
+    (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hPass : runRequestCorePass request semanticResponse = true) :
+    Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+        (commentPackageViewOfCore request side) =
+      selectConventionalMainCommentRecords
+        (request.packageRecord (noteSideOfCommentSide side)).relationships := by
+  unfold runRequestCorePass at hPass
+  cases hSemantic : semanticResponse.passed
+  · simp only [hSemantic, Bool.false_eq_true, ↓reduceIte] at hPass
+  · simp only [hSemantic, ↓reduceIte] at hPass
+    unfold runRequestOperationalPass at hPass
+    have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
+      (runRequestOperationalChecks request semanticResponse) hPass
+    have hProduction := hChecks.2.2.2.2.2.2.2.2.1
+    change ((((productionRecordIntegrityPass request.original &&
+      productionRecordIntegrityPass request.revised) &&
+      productionRecordIntegrityPass request.compared) &&
+      productionSemanticInventoriesPass request semanticResponse) &&
+      productionCommentEvidencePass request.original &&
+      productionCommentEvidencePass request.revised &&
+      productionCommentEvidencePass request.compared &&
+      productionCommentGlobalAdmissionCheck request) = true at hProduction
+    simp only [Bool.and_eq_true] at hProduction
+    unfold productionCommentGlobalAdmissionCheck at hProduction
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
+      List.all_eq_true] at hProduction
+    apply comment_selection_result_eq_sound
+    exact hProduction.2.1.1.1.2 side (by cases side <;> simp)
+
+theorem run_request_core_pass_comment_source_set
+    (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hPass : runRequestCorePass request semanticResponse = true) :
+    Tier2.CommentReferenceIntegrity.completeCommentSourceSetCheck
+      (commentPackageViewOfCore request side) side
+      (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+        (packageViewOfRecord
+          (request.packageRecord (noteSideOfCommentSide side)))
+        (noteSideOfCommentSide side)
+        (selectedStoriesOfRecord
+          (request.packageRecord (noteSideOfCommentSide side)))) = true := by
+  unfold runRequestCorePass at hPass
+  cases hSemantic : semanticResponse.passed
+  · simp only [hSemantic, Bool.false_eq_true, ↓reduceIte] at hPass
+  · simp only [hSemantic, ↓reduceIte] at hPass
+    unfold runRequestOperationalPass at hPass
+    have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
+      (runRequestOperationalChecks request semanticResponse) hPass
+    have hProduction := hChecks.2.2.2.2.2.2.2.2.1
+    change ((((productionRecordIntegrityPass request.original &&
+      productionRecordIntegrityPass request.revised) &&
+      productionRecordIntegrityPass request.compared) &&
+      productionSemanticInventoriesPass request semanticResponse) &&
+      productionCommentEvidencePass request.original &&
+      productionCommentEvidencePass request.revised &&
+      productionCommentEvidencePass request.compared &&
+      productionCommentGlobalAdmissionCheck request) = true at hProduction
+    simp only [Bool.and_eq_true] at hProduction
+    unfold productionCommentGlobalAdmissionCheck at hProduction
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
+      List.all_eq_true]
+      at hProduction
+    exact hProduction.2.1.1.2 side (by cases side <;> simp)
+
+theorem run_request_core_pass_retained_comment_scan
+    (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hPass : runRequestCorePass request semanticResponse = true) :
+    retainedParsedCommentEvidenceOfProduction request side =
+      .ok (parsedCommentEvidenceOfProduction request side) := by
+  unfold runRequestCorePass at hPass
+  cases hSemantic : semanticResponse.passed
+  · simp only [hSemantic, Bool.false_eq_true, ↓reduceIte] at hPass
+  · simp only [hSemantic, ↓reduceIte] at hPass
+    unfold runRequestOperationalPass at hPass
+    have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
+      (runRequestOperationalChecks request semanticResponse) hPass
+    have hProduction := hChecks.2.2.2.2.2.2.2.2.1
+    change ((((productionRecordIntegrityPass request.original &&
+      productionRecordIntegrityPass request.revised) &&
+      productionRecordIntegrityPass request.compared) &&
+      productionSemanticInventoriesPass request semanticResponse) &&
+      productionCommentEvidencePass request.original &&
+      productionCommentEvidencePass request.revised &&
+      productionCommentEvidencePass request.compared &&
+      productionCommentGlobalAdmissionCheck request) = true at hProduction
+    simp only [Bool.and_eq_true] at hProduction
+    unfold productionCommentGlobalAdmissionCheck at hProduction
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
+      List.all_eq_true]
+      at hProduction
+    have hValue := hProduction.2.1.2 side (by cases side <;> simp)
+    cases hRetained :
+        retainedParsedCommentEvidenceOfProduction request side with
+    | error detail => simp [hRetained] at hValue
+    | ok actual =>
+        simp only [hRetained, decide_eq_true_eq] at hValue
+        simpa [hValue] using hRetained
+
+theorem run_request_core_pass_retained_comment_scan_input
+    (request : RunRequestCoreRequest) (semanticResponse : VerifierResponseV5)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide)
+    (hPass : runRequestCorePass request semanticResponse = true) :
+    retainedCommentScanInputOfProduction request side =
+      .ok (semanticCommentScanInputOfCore request side) := by
+  unfold runRequestCorePass at hPass
+  cases hSemantic : semanticResponse.passed
+  · simp only [hSemantic, Bool.false_eq_true, ↓reduceIte] at hPass
+  · simp only [hSemantic, ↓reduceIte] at hPass
+    unfold runRequestOperationalPass at hPass
+    have hChecks := Tier2.NoteReferenceIntegrity.production_aggregate_pass_exact
+      (runRequestOperationalChecks request semanticResponse) hPass
+    have hProduction := hChecks.2.2.2.2.2.2.2.2.1
+    change ((((productionRecordIntegrityPass request.original &&
+      productionRecordIntegrityPass request.revised) &&
+      productionRecordIntegrityPass request.compared) &&
+      productionSemanticInventoriesPass request semanticResponse) &&
+      productionCommentEvidencePass request.original &&
+      productionCommentEvidencePass request.revised &&
+      productionCommentEvidencePass request.compared &&
+      productionCommentGlobalAdmissionCheck request) = true at hProduction
+    simp only [Bool.and_eq_true] at hProduction
+    unfold productionCommentGlobalAdmissionCheck at hProduction
+    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
+      List.all_eq_true]
+      at hProduction
+    have hValue := hProduction.2.2 side (by cases side <;> simp)
+    cases hRetained :
+        retainedCommentScanInputOfProduction request side with
+    | error detail => simp [hRetained] at hValue
+    | ok actual =>
+        simp only [hRetained, decide_eq_true_eq] at hValue
+        simpa [hValue] using hRetained
 
 def coreSemanticAdmissionReady (request : RunRequestCoreRequest) : Bool :=
   request.selectionIssues.isEmpty &&
@@ -3535,6 +5823,12 @@ def coreSemanticAdmissionReady (request : RunRequestCoreRequest) : Bool :=
   request.original.noteEvidence.issues.isEmpty &&
   request.revised.noteEvidence.issues.isEmpty &&
   request.compared.noteEvidence.issues.isEmpty &&
+  request.original.commentEvidence.complete &&
+  request.revised.commentEvidence.complete &&
+  request.compared.commentEvidence.complete &&
+  request.original.commentEvidence.issues.isEmpty &&
+  request.revised.commentEvidence.issues.isEmpty &&
+  request.compared.commentEvidence.issues.isEmpty &&
   productionPackageParserEvidencePass request.original &&
   productionPackageParserEvidencePass request.revised &&
   productionPackageParserEvidencePass request.compared &&
@@ -3650,7 +5944,7 @@ def finishRunRequestCore (request : RunRequestCoreRequest)
     (semanticRequest : VerifierRequestV5) (semanticResponse : VerifierResponseV5)
     (semanticStdout : ByteArray) : Except String RunRequestCoreResult :=
   let built := buildRunRequestCoreResponse request semanticResponse
-  match finalizeProtocolV5Response built.2 with
+  match finalizeProtocolV6Response built.2 built.1 with
   | .error detail => .error detail
   | .ok stdout => .ok {
       responsePassed := built.1
@@ -3659,6 +5953,7 @@ def finishRunRequestCore (request : RunRequestCoreRequest)
       semanticRequest
       semanticResponse
       semanticStdout
+      typedProjectionCheck := protocolV6JsonProjectionCheck built.2 built.1
     }
 
 def runRequestCore (request : RunRequestCoreRequest) :
@@ -3673,24 +5968,52 @@ def runRequestCore (request : RunRequestCoreRequest) :
     finishRunRequestCore request semanticRequest
       (failedSemanticResponse semanticRequest) ByteArray.empty
 
-def protocolV5FieldNames : List String :=
+def protocolV6FieldNames : List String :=
   [ "protocolVersion", "checker", "passed", "fixedStories",
     "presenceMismatches", "fixedStoryIssues", "relationshipSlots",
     "relationshipStories", "selectionIssues", "referenceSourcePartitions",
-    "noteStories", "noteInventories", "noteIntegrityIssues" ]
+    "noteStories", "noteInventories", "noteIntegrityIssues",
+    "commentStory", "commentInventories", "commentIntegrityIssues" ]
 
-def ProtocolV5EveryFieldOf (expected actual : Json) : Prop :=
+def ProtocolV6EveryFieldOf (expected actual : Json) : Prop :=
   actual = expected ∧
-  ∀ field, field ∈ protocolV5FieldNames →
+  ∀ field, field ∈ protocolV6FieldNames →
     actual.getObjVal? field = expected.getObjVal? field
 
-def SemanticProtocolV5ProjectionOf (request : RunRequestCoreRequest)
+def SemanticProtocolV6ProjectionOf (request : RunRequestCoreRequest)
     (semanticResponse : VerifierResponseV5) (actual : Json) : Prop :=
-  ProtocolV5EveryFieldOf
-    (semanticProtocolV5Projection request semanticResponse) actual
+  ProtocolV6EveryFieldOf
+    (semanticProtocolV6Projection request semanticResponse) actual
 
-theorem protocol_v5_every_field_exact (expected actual : Json)
-    (hExact : actual = expected) : ProtocolV5EveryFieldOf expected actual := by
+def FinalizedProtocolV6ResponseOf (response : Json) (passed : Bool)
+    (stdout : ByteArray) : Prop :=
+  stdout = response.compress.toUTF8 ++ protocolV6LineFeed ∧
+  response.compress.toUTF8.size ≤ maxProtocolV6JsonResponseBytes ∧
+  stdout.size ≤ maxProtocolV6ResponseBytes ∧
+  protocolV6JsonProjectionCheck response passed = true
+
+theorem finalized_protocol_v6_response_exact (response : Json) (passed : Bool)
+    (stdout : ByteArray)
+    (hFinalize : finalizeProtocolV6Response response passed = .ok stdout) :
+    FinalizedProtocolV6ResponseOf response passed stdout := by
+  simp only [finalizeProtocolV6Response] at hFinalize
+  split at hFinalize
+  · rename_i hProjection
+    unfold finalizeProtocolV6ResponseUnchecked at hFinalize
+    dsimp only at hFinalize
+    split at hFinalize
+    · contradiction
+    · rename_i hJson
+      split at hFinalize
+      · contradiction
+      · rename_i hStdout
+        cases hFinalize
+        exact ⟨rfl, Nat.le_of_not_gt hJson, Nat.le_of_not_gt hStdout,
+          hProjection⟩
+  · contradiction
+
+theorem protocol_v6_every_field_exact (expected actual : Json)
+    (hExact : actual = expected) : ProtocolV6EveryFieldOf expected actual := by
   subst actual
   exact ⟨rfl, fun _ _ => rfl⟩
 
@@ -3699,6 +6022,9 @@ def ProductionRunRequestRefinesSemanticOf (request : RunRequestCoreRequest)
   ProductionPackageRecordOf request.original ∧
   ProductionPackageRecordOf request.revised ∧
   ProductionPackageRecordOf request.compared ∧
+  ProductionCommentEvidenceOf request.original ∧
+  ProductionCommentEvidenceOf request.revised ∧
+  ProductionCommentEvidenceOf request.compared ∧
   result.semanticRequest = semanticRequestOfCore request ∧
   result.semanticRequest.packageView .original = packageViewOfRecord request.original ∧
   result.semanticRequest.packageView .revised = packageViewOfRecord request.revised ∧
@@ -3713,10 +6039,10 @@ def ProductionRunRequestRefinesSemanticOf (request : RunRequestCoreRequest)
     Tier2.NoteReferenceIntegrity.derivedPackageInventory result.semanticRequest side) ∧
   productionSemanticInventoriesPass request result.semanticResponse = true ∧
   result.responsePassed = result.semanticResponse.passed ∧
-  SemanticProtocolV5ProjectionOf
+  SemanticProtocolV6ProjectionOf
     request result.semanticResponse result.response ∧
-  Tier2.NoteReferenceIntegrity.FinalizedProductionResponseOf
-    result.response result.stdout
+  FinalizedProtocolV6ResponseOf result.response result.responsePassed
+    result.stdout
 
 namespace Tier2.NoteReferenceIntegrity
 
@@ -3738,8 +6064,9 @@ theorem production_run_request_core_refinement_sound (request : RunRequestCoreRe
     have hBuiltFailed :=
       build_run_request_core_response_failed_semantic request semanticResponse hFailed
     dsimp only [semanticResponse, semanticRequest] at hBuiltFailed
-    cases hFinalize : _root_.finalizeProtocolV5Response
-        (buildRunRequestCoreResponse request semanticResponse).2 with
+    cases hFinalize : _root_.finalizeProtocolV6Response
+        (buildRunRequestCoreResponse request semanticResponse).2
+        (buildRunRequestCoreResponse request semanticResponse).1 with
     | error detail =>
       dsimp only [semanticResponse, semanticRequest] at hFinalize
       simp [runRequestCore, hReady, finishRunRequestCore, hFinalize] at hRun
@@ -3754,8 +6081,9 @@ theorem production_run_request_core_refinement_sound (request : RunRequestCoreRe
       simp [runRequestCore, hReady, hVerify] at hRun
     | ok semanticResult =>
       rcases semanticResult with ⟨semanticResponse, semanticStdout⟩
-      cases hFinalize : _root_.finalizeProtocolV5Response
-          (buildRunRequestCoreResponse request semanticResponse).2 with
+      cases hFinalize : _root_.finalizeProtocolV6Response
+          (buildRunRequestCoreResponse request semanticResponse).2
+          (buildRunRequestCoreResponse request semanticResponse).1 with
       | error detail =>
         simp [runRequestCore, hReady, hVerify, finishRunRequestCore,
           hFinalize] at hRun
@@ -3769,6 +6097,15 @@ theorem production_run_request_core_refinement_sound (request : RunRequestCoreRe
             productionSemanticInventoriesPass request semanticResponse = true := by
           apply run_request_core_pass_semantic_inventories request semanticResponse
           exact hPass
+        have hCommentChecks :=
+          run_request_core_pass_comment_evidence request semanticResponse hPass
+        have hComments :
+            ProductionCommentEvidenceOf request.original ∧
+            ProductionCommentEvidenceOf request.revised ∧
+            ProductionCommentEvidenceOf request.compared :=
+          ⟨production_comment_evidence_pass_sound _ hCommentChecks.1,
+           production_comment_evidence_pass_sound _ hCommentChecks.2.1,
+           production_comment_evidence_pass_sound _ hCommentChecks.2.2⟩
         have hSemantic :=
           Tier2.NoteReferenceIntegrity.note_integrity_aggregate_pass_sound
           (semanticRequestOfCore request)
@@ -3785,20 +6122,1417 @@ theorem production_run_request_core_refinement_sound (request : RunRequestCoreRe
           checkStoryCollection
             (request.fixedTriples ++ request.relationshipTriples) at hReportExact
         refine ⟨hPackages.1, hPackages.2.1, hPackages.2.2,
+          hComments.1, hComments.2.1, hComments.2.2,
           rfl, rfl, rfl, rfl, hVerify, hSemantic.1,
           hFields.1, hFields.2, hProductionInventories, ?_, ?_, ?_⟩
         · exact hPass.trans hSemanticPass.symm
-        · unfold SemanticProtocolV5ProjectionOf
-          apply protocol_v5_every_field_exact
+        · unfold SemanticProtocolV6ProjectionOf
+          apply protocol_v6_every_field_exact
           exact build_run_request_core_json_refines_semantic_projection
             request semanticResponse hReportExact
             (hPass.trans
               (semantic_protocol_fields_pass_of_core_pass
                 request semanticResponse hReportExact hPass).symm)
             hSides.1 hSides.2.1 hSides.2.2
-        · exact
-            Tier2.NoteReferenceIntegrity.production_protocol_v5_serialization_exact
-              _ _ hFinalize
+        · exact finalized_protocol_v6_response_exact _ _ _ hFinalize
+
+abbrev RunRequestCoreRequestV6 := RunRequestCoreRequest
+abbrev RunRequestCoreResultV6 := RunRequestCoreResult
+
+def productionPackageRecordAt
+    (request : RunRequestCoreRequestV6)
+    (evidence :
+      ProductionPackageRecordOf request.original ∧
+      ProductionPackageRecordOf request.revised ∧
+      ProductionPackageRecordOf request.compared)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    ProductionPackageRecordOf
+      (request.packageRecord (noteSideOfCommentSide side)) := by
+  cases side with
+  | original => exact evidence.1
+  | revised => exact evidence.2.1
+  | compared => exact evidence.2.2
+
+def productionCommentEvidenceAt
+    (request : RunRequestCoreRequestV6)
+    (evidence :
+      ProductionCommentEvidenceOf request.original ∧
+      ProductionCommentEvidenceOf request.revised ∧
+      ProductionCommentEvidenceOf request.compared)
+    (side : Tier2.CommentReferenceIntegrity.VerifierSide) :
+    ProductionCommentEvidenceOf
+      (request.packageRecord (noteSideOfCommentSide side)) := by
+  cases side with
+  | original => exact evidence.1
+  | revised => exact evidence.2.1
+  | compared => exact evidence.2.2
+
+noncomputable def semanticRequestOfCoreV6
+    (request : RunRequestCoreRequestV6)
+    (packageEvidence :
+      ProductionPackageRecordOf request.original ∧
+      ProductionPackageRecordOf request.revised ∧
+      ProductionPackageRecordOf request.compared)
+    (commentEvidence :
+      ProductionCommentEvidenceOf request.original ∧
+      ProductionCommentEvidenceOf request.revised ∧
+      ProductionCommentEvidenceOf request.compared)
+    (hPrior : (commentResourceUsageOfCore request).tripleXmlEvents ≤ 3000000)
+    (hSources : ∀ side,
+      Tier2.CommentReferenceIntegrity.completeCommentSourceSetCheck
+        (commentPackageViewOfCore request side) side
+        (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+          (packageViewOfRecord
+            (request.packageRecord (noteSideOfCommentSide side)))
+          (noteSideOfCommentSide side)
+          (selectedStoriesOfRecord
+            (request.packageRecord (noteSideOfCommentSide side)))) = true) :
+    Tier2.CommentReferenceIntegrity.VerifierRequestV6 :=
+  let record := fun side =>
+    request.packageRecord (noteSideOfCommentSide side)
+  let pkg := commentPackageViewOfCore request
+  let note := fun side =>
+    Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+      (packageViewOfRecord (record side)) (noteSideOfCommentSide side)
+      (selectedStoriesOfRecord (record side))
+  let set := fun side =>
+    Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+      (pkg side) side (note side)
+  let scans := fun side => retainedCommentSourceScansOfRecord (record side)
+  let part := fun side => (record side).commentEvidence.part
+  let retainedScan := fun side => (record side).commentEvidence.retainedScan
+  {
+    packageView := pkg
+    retainedPackageRecord := retainedCommentPackageRecordOfCore request
+    packageBytes := fun side => (record side).packageBytes
+    noteEvaluation := note
+    retainedSourceScans := scans
+    retainedSnapshotBytes := fun side => (record side).snapshotBytes
+    snapshotWriteInvocationCount := fun side =>
+      (record side).snapshotWriteCount
+    privateSnapshotPath := fun side => (record side).snapshotPath
+    retainedCommentExtraction := fun side =>
+      (part side).map fun loaded =>
+        semanticCommentExtractionOfProduction loaded.parseEvidence
+    commentExtractionInvocationCount := fun side =>
+      (part side).map (·.parseEvidence.extraction.extractionInvocationCount)
+        |>.getD 0
+    commentParseInvocationCount := fun side =>
+      (part side).map (·.parseEvidence.parseInvocationCount) |>.getD 0
+    retainedCommentScanRealization := fun side =>
+      (pkg side).retainedCommentRealization
+    retainedCommentScanSourceSet := fun side => some (set side)
+    retainedCommentScanSourceScans := fun side => some (scans side)
+    commentScanInvocationCount := fun side =>
+      (retainedScan side).map (·.scanInvocationCount) |>.getD 0
+    retainedCommentScanResult := fun side =>
+      Tier2.CommentReferenceIntegrity.scanCommentEvidenceV6
+        (pkg side) side (set side) (scans side)
+        (pkg side).retainedCommentRealization
+    resourceUsageBeforeComments := commentResourceUsageOfCore request
+    packageRecordExact := by
+      intro side
+      rfl
+    packageBytesExact := by
+      intro side
+      rfl
+    packageIndexExact := by
+      intro side
+      rfl
+    requestBytesExact := by
+      intro side
+      rfl
+    binaryIndexExact := by
+      intro side
+      exact (record side).packageIndexExact
+    snapshotBytesExact := by
+      intro side
+      exact (record side).snapshotBytesExact
+    snapshotWriteExact := by
+      intro side
+      exact (record side).snapshotWriteCountExact
+    sourceScansExact := by
+      intro side
+      rfl
+    resourceUsageExact := by
+      intro side
+      rfl
+    realizationEvidenceExact := by
+      intro side selected realization hRealization hSelected
+      cases hPart : part side with
+      | none =>
+          simp [pkg, commentPackageViewOfCore, record, part, hPart] at hRealization
+      | some loaded =>
+          have hRealizationExact :
+              semanticCommentRealizationOfProduction loaded = realization := by
+            simpa [pkg, commentPackageViewOfCore, record, part, hPart]
+              using hRealization
+          subst realization
+          have hIdentity : loaded.identity = selected := hSelected
+          subst selected
+          have hPackage := productionPackageRecordAt request
+            packageEvidence side
+          have hComment := productionCommentEvidenceAt request
+            commentEvidence side
+          have hParse : ProductionParseEvidenceOf (record side)
+              loaded.parseEvidence := by
+            apply hPackage.2.2.2.1
+            simp [productionParseEvidencesOfRecord, record, part, hPart]
+          rcases hParse with ⟨_, _, hExtraction, _, _, _, _, _, hParseCount, _⟩
+          rcases hExtraction with
+            ⟨_, _, hSnapshotPath, _, _, _, _, _, _, _, _, _, _, _, _,
+              hExtractionCount, _⟩
+          refine ⟨hSnapshotPath, ?_, ?_, hParseCount, ?_⟩
+          · rfl
+          · simp [part, hPart, hExtractionCount]
+          · exact production_retained_comment_part_admitted request side loaded
+              (by simpa [record, part] using hPart)
+              hPackage hComment hPrior
+    retainedScanEvidenceExact := by
+      intro side realization evidence _hRealization _hSet _hScans
+        _hInvocation hResult
+      have hComplete :=
+        Tier2.CommentReferenceIntegrity.complete_comment_source_set_check_sound
+          (pkg side) side (note side) (hSources side)
+      rw [_hRealization] at hResult
+      have hParsed :=
+        Tier2.CommentReferenceIntegrity.parsed_comment_inventory_evidence_exact
+          (pkg side) side (note side) (set side) (scans side)
+          (some realization) evidence hComplete hResult
+      exact ⟨hComplete, hParsed⟩
+    selectedScanBindingsExact := by
+      intro side realization evidence hRealization hScan
+      have hComment := productionCommentEvidenceAt request
+        commentEvidence side
+      rcases hComment with ⟨_, _, _, retained, hRetained,
+        hInvocation, _⟩
+      refine ⟨hRealization, rfl, rfl, ?_, ?_⟩
+      · simp [retainedScan, record, hRetained, hInvocation]
+      · rw [hRealization]
+        exact hScan
+  }
+
+set_option maxHeartbeats 1000000 in
+theorem semantic_request_of_core_v6_all_comment_sides_pass
+    (request : RunRequestCoreRequestV6)
+    (packageEvidence :
+      ProductionPackageRecordOf request.original ∧
+      ProductionPackageRecordOf request.revised ∧
+      ProductionPackageRecordOf request.compared)
+    (commentEvidence :
+      ProductionCommentEvidenceOf request.original ∧
+      ProductionCommentEvidenceOf request.revised ∧
+      ProductionCommentEvidenceOf request.compared)
+    (hPrior : (commentResourceUsageOfCore request).tripleXmlEvents ≤ 3000000)
+    (hSources : ∀ side,
+      Tier2.CommentReferenceIntegrity.completeCommentSourceSetCheck
+        (commentPackageViewOfCore request side) side
+        (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+          (packageViewOfRecord
+            (request.packageRecord (noteSideOfCommentSide side)))
+          (noteSideOfCommentSide side)
+          (selectedStoriesOfRecord
+            (request.packageRecord (noteSideOfCommentSide side)))) = true)
+    (hSelectors : ∀ side,
+      Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+          (commentPackageViewOfCore request side) =
+        selectConventionalMainCommentRecords
+          (request.packageRecord
+            (noteSideOfCommentSide side)).relationships)
+    (hParsed : ∀ side,
+      retainedParsedCommentEvidenceOfProduction request side =
+        .ok (parsedCommentEvidenceOfProduction request side))
+    (hScanInputs : ∀ side,
+      retainedCommentScanInputOfProduction request side =
+        .ok (semanticCommentScanInputOfCore request side)) :
+    Tier2.CommentReferenceIntegrity.allCommentSidesPass
+      (Tier2.CommentReferenceIntegrity.evaluateAllCommentSidesV6
+        (semanticRequestOfCoreV6 request packageEvidence commentEvidence
+          hPrior hSources)) = true := by
+  have hSide : ∀ side,
+      Tier2.CommentReferenceIntegrity.sideCommentPassV6
+        (Tier2.CommentReferenceIntegrity.evaluateAllCommentSidesV6
+          (semanticRequestOfCoreV6 request packageEvidence commentEvidence
+            hPrior hSources)) side = true := by
+    intro side
+    unfold Tier2.CommentReferenceIntegrity.sideCommentPassV6
+    simp only [Tier2.CommentReferenceIntegrity.evaluateAllCommentSidesV6]
+    change (decide (
+      (Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+        (commentPackageViewOfCore request side) side
+        (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+          (packageViewOfRecord
+            (request.packageRecord (noteSideOfCommentSide side)))
+          (noteSideOfCommentSide side)
+          (selectedStoriesOfRecord
+            (request.packageRecord
+              (noteSideOfCommentSide side))))).status =
+        .passed) &&
+      Tier2.CommentReferenceIntegrity.checkPackageCommentIntegrity
+        (Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+          (commentPackageViewOfCore request side) side
+          (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+            (packageViewOfRecord
+              (request.packageRecord (noteSideOfCommentSide side)))
+            (noteSideOfCommentSide side)
+            (selectedStoriesOfRecord
+              (request.packageRecord
+                (noteSideOfCommentSide side))))).inventory) = true
+    unfold Tier2.CommentReferenceIntegrity.evaluateCommentSideV6
+    simp only [hSources side, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+    rw [hSelectors side]
+    have hComment := productionCommentEvidenceAt request commentEvidence side
+    rcases hComment with
+      ⟨hSourceProjection, hSourceIdentity, hSelectionEvidence,
+        retained, hRetained, hInvocation, hInput, hOutput, hCrossing,
+        hIntegrity, hInventory, hComplete, hSemanticLimit, hIssues⟩
+    have hParsedExact := hParsed side
+    have hScanInputExact := hScanInputs side
+    simp only [retainedParsedCommentEvidenceOfProduction, hRetained,
+      retainedCommentScanInputOfProduction, Except.ok.injEq]
+      at hParsedExact hScanInputExact
+    have hWireExact := congrArg
+      Tier2.CommentReferenceIntegrity.ParsedCommentEvidence.wireCounts
+      hParsedExact
+    have hReferencesExact := congrArg
+      Tier2.CommentReferenceIntegrity.ParsedCommentEvidence.references
+      hParsedExact
+    have hDefinitionsExact := congrArg
+      Tier2.CommentReferenceIntegrity.ParsedCommentEvidence.definitions
+      hParsedExact
+    have hNonDirectExact := congrArg
+      Tier2.CommentReferenceIntegrity.ParsedCommentEvidence.nonDirectDefinitions
+      hParsedExact
+    have hIssuesExact := congrArg
+      Tier2.CommentReferenceIntegrity.ParsedCommentEvidence.issues
+      hParsedExact
+    have hCrossingExact := congrArg
+      Tier2.CommentReferenceIntegrity.ParsedCommentEvidence.crossing
+      hParsedExact
+    have hIntegrityCheck :
+        Tier2.CommentReferenceIntegrity.checkPackageCommentIntegrity
+          (Tier2.CommentReferenceIntegrity.packageCommentInventory
+            retained.output.scan) = true :=
+      Tier2.CommentReferenceIntegrity.package_comment_reference_integrity_complete
+        _ hIntegrity
+    have hRetainedOutputExact :
+        Tier2.CommentReferenceIntegrity.scanCommentEvidence
+            (semanticCommentScanInputOfCore request side) =
+          retained.output := by
+      rw [← hScanInputExact]
+      simpa [scanCommentEvidence] using hOutput.symm
+    have hSemanticScan :
+        Tier2.CommentReferenceIntegrity.scanCommentEvidenceV6
+          (commentPackageViewOfCore request side) side
+          (Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+            (commentPackageViewOfCore request side) side
+            (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+              (packageViewOfRecord
+                (request.packageRecord (noteSideOfCommentSide side)))
+              (noteSideOfCommentSide side)
+              (selectedStoriesOfRecord
+                (request.packageRecord (noteSideOfCommentSide side)))))
+          (Tier2.CommentReferenceIntegrity.reuseRetainedCommentScans
+            (commentPackageViewOfCore request side))
+          (commentPackageViewOfCore request side).retainedCommentRealization =
+        .ok (parsedCommentEvidenceOfProduction request side) := by
+      unfold Tier2.CommentReferenceIntegrity.scanCommentEvidenceV6
+      change Except.ok
+          (Tier2.CommentReferenceIntegrity.parsedCommentEvidenceOfBoundedScan
+            (commentPackageViewOfCore request side) side
+            (Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+              (commentPackageViewOfCore request side) side
+              (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+                (packageViewOfRecord
+                  (request.packageRecord (noteSideOfCommentSide side)))
+                (noteSideOfCommentSide side)
+                (selectedStoriesOfRecord
+                  (request.packageRecord (noteSideOfCommentSide side)))))
+            (commentPackageViewOfCore request side).retainedCommentRealization
+            (Tier2.CommentReferenceIntegrity.scanCommentEvidence
+              (semanticCommentScanInputOfCore request side))) =
+        Except.ok (parsedCommentEvidenceOfProduction request side)
+      rw [hRetainedOutputExact]
+      exact congrArg Except.ok hParsedExact
+    have hWireInventory :
+        Tier2.CommentReferenceIntegrity.packageCommentInventory
+            retained.output.scan =
+          (parsedCommentEvidenceOfProduction request side).wireCounts := by
+      simpa [Tier2.CommentReferenceIntegrity.commentCountProjectionSpec]
+        using hWireExact
+    cases hSelection :
+        selectConventionalMainCommentRecords
+          (request.packageRecord
+            (noteSideOfCommentSide side)).relationships with
+    | error failure =>
+        rw [hSelection] at hSelectionEvidence
+        exact False.elim hSelectionEvidence
+    | ok selected =>
+        cases selected with
+        | none =>
+            rw [hSelection] at hSelectionEvidence
+            have hSemanticSelector :
+                Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+                    (commentPackageViewOfCore request side) =
+                  .ok none := by
+              rw [hSelectors side, hSelection]
+            have hSemanticScanNone :
+                Tier2.CommentReferenceIntegrity.scanCommentEvidenceV6
+                    (commentPackageViewOfCore request side) side
+                    (Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+                      (commentPackageViewOfCore request side) side
+                      (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+                        (packageViewOfRecord
+                          (request.packageRecord (noteSideOfCommentSide side)))
+                        (noteSideOfCommentSide side)
+                        (selectedStoriesOfRecord
+                          (request.packageRecord
+                            (noteSideOfCommentSide side)))))
+                    (Tier2.CommentReferenceIntegrity.reuseRetainedCommentScans
+                      (commentPackageViewOfCore request side)) none =
+                  .ok (parsedCommentEvidenceOfProduction request side) := by
+              simpa [commentPackageViewOfCore, hSelectionEvidence.2.1]
+                using hSemanticScan
+            have hRawDefinitions :
+                retained.output.scan.definitions = [] := by
+              rw [← hRetainedOutputExact]
+              apply Tier2.CommentReferenceIntegrity.scan_comment_evidence_definitions_empty
+              rw [← hScanInputExact, hInput]
+              simp [productionCommentScanInput, hSelectionEvidence.2.1]
+            have hInventoryDefinitions :
+                (Tier2.CommentReferenceIntegrity.packageCommentInventory
+                  retained.output.scan).definitions = [] := by
+              simp [Tier2.CommentReferenceIntegrity.packageCommentInventory,
+                hRawDefinitions]
+            have hActualEmpty :=
+              Tier2.CommentReferenceIntegrity.package_comment_integrity_without_definitions_is_empty
+                _ hIntegrity hInventoryDefinitions
+            have hSemanticEmpty :
+                (parsedCommentEvidenceOfProduction request side).wireCounts =
+                  Tier2.CommentReferenceIntegrity.emptyPackageCommentInventory := by
+              rw [← hWireInventory]
+              exact hActualEmpty
+            have hPass :=
+              Tier2.CommentReferenceIntegrity.evaluate_comment_side_v6_absent_pass
+                  (commentPackageViewOfCore request side) side
+                  (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+                    (packageViewOfRecord
+                      (request.packageRecord (noteSideOfCommentSide side)))
+                    (noteSideOfCommentSide side)
+                    (selectedStoriesOfRecord
+                      (request.packageRecord (noteSideOfCommentSide side))))
+                  (parsedCommentEvidenceOfProduction request side)
+                  (hSources side) hSemanticSelector hSemanticScanNone
+                  hSemanticEmpty
+            unfold Tier2.CommentReferenceIntegrity.evaluateCommentSideV6 at hPass
+            dsimp only at hPass
+            simp only [hSources side, Bool.not_true, Bool.false_eq_true,
+              ↓reduceIte] at hPass
+            rw [hSemanticSelector] at hPass
+            simp only [Bool.and_eq_true]
+            exact ⟨decide_eq_true hPass.1, hPass.2⟩
+        | some selected =>
+            rw [hSelection] at hSelectionEvidence
+            rcases hSelectionEvidence with
+              ⟨hIdentity, hPresent, part, hPart, hPartIdentity, hAdmission⟩
+            have hSemanticSelector :
+                Tier2.CommentReferenceIntegrity.selectConventionalMainComment
+                    (commentPackageViewOfCore request side) =
+                  .ok (some selected) := by
+              rw [hSelectors side, hSelection]
+            have hAdmit :
+                Tier2.CommentReferenceIntegrity.admitCommentPartMetadata
+                    (commentPackageViewOfCore request side) side
+                    (commentResourceUsageOfCore request) selected
+                    (semanticCommentRealizationOfProduction part) = true := by
+              unfold productionCommentPartAdmissionCheck at hAdmission
+              simp only [Bool.and_eq_true, decide_eq_true_eq,
+                Bool.not_eq_true, Bool.or_eq_true] at hAdmission
+              unfold Tier2.CommentReferenceIntegrity.admitCommentPartMetadata
+              simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq,
+                bne_iff_ne, Bool.or_eq_true]
+              simp_all [semanticCommentRealizationOfProduction,
+                semanticCommentEntryOfProduction, commentPackageViewOfCore,
+                maxPartCompressedBytes, maxPartExpandedBytes]
+            have hRealization :
+                Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+                    (commentPackageViewOfCore request side) side
+                    (commentResourceUsageOfCore request) selected =
+                  .ok (semanticCommentRealizationOfProduction part) := by
+              unfold Tier2.CommentReferenceIntegrity.realizeSelectedCommentV6
+              simp [commentPackageViewOfCore, hPart, hPartIdentity, hAdmit,
+                semanticCommentRealizationOfProduction,
+                Tier2.CommentReferenceIntegrity.retainCommentSnapshotEvidence,
+                Tier2.CommentReferenceIntegrity.extractRetainedCommentPart,
+                Tier2.CommentReferenceIntegrity.retainCommentExtractionEvidence,
+                Tier2.CommentReferenceIntegrity.parseRetainedCommentPart]
+              simpa [commentPackageViewOfCore, hPart,
+                semanticCommentRealizationOfProduction, hPartIdentity]
+                using hAdmit
+            have hSemanticScanSome :
+                Tier2.CommentReferenceIntegrity.scanCommentEvidenceV6
+                    (commentPackageViewOfCore request side) side
+                    (Tier2.CommentReferenceIntegrity.canonicalCommentSourceSet
+                      (commentPackageViewOfCore request side) side
+                      (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+                        (packageViewOfRecord
+                          (request.packageRecord (noteSideOfCommentSide side)))
+                        (noteSideOfCommentSide side)
+                        (selectedStoriesOfRecord
+                          (request.packageRecord
+                            (noteSideOfCommentSide side)))))
+                    (Tier2.CommentReferenceIntegrity.reuseRetainedCommentScans
+                      (commentPackageViewOfCore request side))
+                    (some (semanticCommentRealizationOfProduction part)) =
+                  .ok (parsedCommentEvidenceOfProduction request side) := by
+              simpa [commentPackageViewOfCore, hPart] using hSemanticScan
+            have hSemanticIntegrity :
+                Tier2.CommentReferenceIntegrity.PackageCommentIntegrity
+                  (parsedCommentEvidenceOfProduction request side).wireCounts := by
+              rw [← hWireInventory]
+              exact hIntegrity
+            have hPass :=
+              Tier2.CommentReferenceIntegrity.evaluate_comment_side_v6_selected_pass
+                (commentPackageViewOfCore request side) side
+                (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+                  (packageViewOfRecord
+                    (request.packageRecord (noteSideOfCommentSide side)))
+                  (noteSideOfCommentSide side)
+                  (selectedStoriesOfRecord
+                    (request.packageRecord (noteSideOfCommentSide side))))
+                selected (semanticCommentRealizationOfProduction part)
+                (parsedCommentEvidenceOfProduction request side)
+                (hSources side) hSemanticSelector hRealization
+                hSemanticScanSome hSemanticIntegrity
+            unfold Tier2.CommentReferenceIntegrity.evaluateCommentSideV6 at hPass
+            dsimp only at hPass
+            simp only [hSources side, Bool.not_true, Bool.false_eq_true,
+              ↓reduceIte] at hPass
+            rw [hSemanticSelector] at hPass
+            simp only [Bool.and_eq_true]
+            exact ⟨decide_eq_true hPass.1, hPass.2⟩
+  unfold Tier2.CommentReferenceIntegrity.allCommentSidesPass
+  simp only [Bool.and_eq_true]
+  exact ⟨⟨hSide .original, hSide .revised⟩, hSide .compared⟩
+
+def semanticNoteRequestOfCoreV6 (request : RunRequestCoreRequestV6) :
+    VerifierRequestV5 :=
+  semanticRequestOfCore request
+
+def buildRunRequestCoreV6Response (request : RunRequestCoreRequestV6)
+    (semanticResponse : VerifierResponseV5) : Bool × Json :=
+  buildRunRequestCoreResponse request semanticResponse
+
+def finishRunRequestCoreV6 (request : RunRequestCoreRequestV6)
+    (semanticRequest : VerifierRequestV5)
+    (semanticResponse : VerifierResponseV5) (semanticStdout : ByteArray) :
+    Except String RunRequestCoreResultV6 :=
+  let (responsePassed, response) :=
+    buildRunRequestCoreV6Response request semanticResponse
+  match finalizeProtocolV6Response response responsePassed with
+  | .error detail => .error detail
+  | .ok stdout =>
+      .ok {
+        responsePassed := responsePassed
+        response := response
+        stdout := stdout
+        semanticRequest := semanticRequest
+        semanticResponse := semanticResponse
+        semanticStdout := semanticStdout
+        typedProjectionCheck :=
+          protocolV6JsonProjectionCheck response responsePassed }
+
+def protocolV6Projection (request : RunRequestCoreRequestV6)
+    (semanticResponse : VerifierResponseV5) : Json :=
+  semanticProtocolV6Projection request semanticResponse
+
+def typedBoundedBytesOfByteArray (value : ByteArray) : BoundedBytes :=
+  let bytes := value.toList
+  { bytes, limit := bytes.length, admitted := Nat.le_refl _ }
+
+def typedEntryOfProduction (entry : ZipEntry) : TypedEntry := {
+  name := typedBoundedBytesOfString entry.name
+  flags := entry.flags
+  method := entry.method
+  crc32 := entry.crc32
+  compressedSize := entry.compressedSize
+  expandedSize := entry.expandedSize
+  localHeaderOffset := entry.localHeaderOffset
+  dataOffset := entry.dataOffset
+  localSpanEnd := entry.localSpanEnd
+  isDirectory := entry.isDirectory
+}
+
+def typedIndexOfProduction (index : ZipIndex) : TypedPackageIndex := {
+  entries := index.entries.map typedEntryOfProduction
+  centralOffset := index.centralOffset
+  centralSize := index.centralSize
+}
+
+def typedRelationshipModeOfProduction
+    (record : RelationshipRecord) : RelationshipMode :=
+  if record.targetMode == some "External" then .external
+  else if record.targetMode.isNone ||
+      record.targetMode == some "Internal" then .internal
+  else .invalid
+
+def typedRelationshipOfProduction
+    (record : RelationshipRecord) (ordinal : Nat) : TypedRelationship := {
+  ordinal
+  relationshipType := typedBoundedBytesOfString record.relationshipType
+  relationshipId := typedBoundedBytesOfString record.id
+  rawTarget := typedBoundedBytesOfString record.rawTarget
+  rawTargetMode := record.targetMode.map typedBoundedBytesOfString
+  normalizedTarget :=
+    (Tier2.CommentReferenceIntegrity.normalizeRelationshipTarget
+      record.rawTarget).toOption.map typedBoundedBytesOfString
+  mode := typedRelationshipModeOfProduction record
+}
+
+def typedRelationshipsOfProduction
+    (records : List RelationshipRecord) : List TypedRelationship :=
+  records.zipIdx.map fun pair =>
+    typedRelationshipOfProduction pair.1 pair.2
+
+def typedParsedPartOfProduction
+    (evidence : ProductionParseEvidence) : TypedParsedPart := {
+  rawBytes := evidence.bytes
+  expectedRootUri := typedBoundedBytesOfString evidence.expectedRootUri
+  expectedRootLocalName :=
+    typedBoundedBytesOfString evidence.expectedRootLocalName
+  events := evidence.parsed.events.zipIdx.map fun item =>
+    typedXmlEventOfProduction item.2 item.1
+  depthLimit := evidence.depthLimit
+  eventLimit := evidence.eventLimit
+}
+
+def typedStorySourceOfProduction (side : Side)
+    (source : NoteSource) : TypedStorySource := {
+  side
+  sourceOrdinal := source.sourceOrdinal
+  partPath := typedBoundedBytesOfString source.normalizedPartPath
+  parsed := typedParsedPartOfProduction source.parseEvidence
+}
+
+def emptyTypedParsedPart : TypedParsedPart := {
+  rawBytes := ByteArray.empty
+  expectedRootUri := typedBoundedBytesOfString ""
+  expectedRootLocalName := typedBoundedBytesOfString ""
+  events := []
+  depthLimit := 0
+  eventLimit := 0
+}
+
+def missingTypedMainSource (side : Side) : TypedStorySource := {
+  side
+  sourceOrdinal := 0
+  partPath := typedBoundedBytesOfString ""
+  parsed := emptyTypedParsedPart
+}
+
+def typedSourceKindOfProduction (source : NoteSource) : TypedSourceKind :=
+  if source.sourceStory == "header" then .header
+  else if source.sourceStory == "footer" then .footer
+  else if source.sourceStory == "footnotes" then .footnotes
+  else if source.sourceStory == "endnotes" then .endnotes
+  else .main
+
+def typedSourceSlotOfProduction (side : Side)
+    (source : NoteSource) : TypedSourceSlot := {
+  kind := typedSourceKindOfProduction source
+  physicalStoryOrdinal := source.sourceStoryOrdinal
+  source := typedStorySourceOfProduction side source
+}
+
+def typedHeaderFooterKindOfProduction :
+    Tier2.RelationshipStorySelector.StoryKind → TypedSourceKind
+  | .header => .header
+  | .footer => .footer
+
+def typedHeaderFooterSlotOfProduction
+    (slot : AlignedSlot) : TypedHeaderFooterSlot := {
+  slotOrdinal := slot.slotOrdinal
+  physicalStoryOrdinal := slot.physicalStoryOrdinal
+  kind := typedHeaderFooterKindOfProduction slot.kind
+  originalPartPath := typedBoundedBytesOfString
+    slot.original.normalizedPartPath
+  revisedPartPath := typedBoundedBytesOfString
+    slot.revised.normalizedPartPath
+  comparedPartPath := typedBoundedBytesOfString
+    slot.compared.normalizedPartPath
+}
+
+def physicalStoryPathForTypedSide
+    (story : PhysicalStory) : Side → String
+  | .original => story.originalPartPath
+  | .revised => story.revisedPartPath
+  | .compared => story.comparedPartPath
+
+def typedHeaderFooterStoryOfProduction
+    (side : Side) (sources : List NoteSource)
+    (story : PhysicalStory) : TypedHeaderFooterStory := {
+  physicalStoryOrdinal := story.physicalStoryOrdinal
+  kind := typedHeaderFooterKindOfProduction story.kind
+  partPath := typedBoundedBytesOfString
+    (physicalStoryPathForTypedSide story side)
+  originalPartPath := typedBoundedBytesOfString story.originalPartPath
+  revisedPartPath := typedBoundedBytesOfString story.revisedPartPath
+  comparedPartPath := typedBoundedBytesOfString story.comparedPartPath
+  selectingSlotOrdinals := story.selectingSlotOrdinals
+  source := (sources.find? fun source =>
+    source.sourceStoryOrdinal = story.physicalStoryOrdinal &&
+    source.sourceStory = story.kind.toString).map
+      (typedStorySourceOfProduction side)
+}
+
+def typedNoteSelectionOfProduction
+    (side : Side) (evidence : NoteSideEvidence)
+    (sources : List NoteSource) (kind : NoteKind) : TypedNoteSelection :=
+  let identity := if kind == .footnotes then
+    evidence.footnotesIdentity else evidence.endnotesIdentity
+  let present := if kind == .footnotes then
+    evidence.footnotesPartPresent else evidence.endnotesPartPresent
+  {
+    kind := if kind == .footnotes then .footnotes else .endnotes
+    relationshipSelected := identity.isSome
+    referencePresent := evidence.retainedScan.map
+      (fun retained =>
+        retained.output.scan.references.any
+          (fun reference => reference.kind == kind)) |>.getD false
+    selectedPartPath := identity.map fun value =>
+      typedBoundedBytesOfString value.normalizedPartPath
+    partPresent := present
+    source := (sources.find? fun source =>
+      source.sourceStory = kind.toString).map
+        (typedStorySourceOfProduction side)
+  }
+
+def typedPriorSourceAdmissionOfProduction
+    (request : RunRequestCoreRequestV6)
+    (evidence : NoteSideEvidence) : TypedPriorSourceAdmission :=
+  if !request.selectionIssues.isEmpty then
+    .relationshipSelectionFailure
+  else if evidence.retainedScan.isNone then
+    .storyRealizationFailure
+  else if evidence.semanticLimitCrossed then
+    .resourceFailure
+  else if !evidence.complete then
+    .noteSemanticFailure
+  else
+    .admitted
+
+def typedSelectedCommentOfProduction
+    (selected : SelectedCommentIdentity) : TypedSelectedComment := {
+  relationshipOrdinal := selected.relationshipRecordOrdinal
+  relationshipId := typedBoundedBytesOfString selected.relationshipId
+  normalizedPartPath :=
+    typedBoundedBytesOfString selected.normalizedPartPath
+}
+
+def typedExtractionOfProduction
+    (evidence : SnapshotExtractionEvidence) : TypedExtraction := {
+  packageBytes := evidence.packageBytes
+  snapshotBytes := evidence.snapshotBytes
+  entry := typedEntryOfProduction evidence.entry
+  compressedSlice := evidence.compressedPayload
+  expandedBytes := evidence.decompressedBytes
+}
+
+def typedCommentRealizationOfProduction
+    (part : LoadedCommentPart) : TypedCommentRealization :=
+  let parsed := typedParsedPartOfProduction part.parseEvidence
+  {
+    selected := typedSelectedCommentOfProduction part.identity
+    entry := typedEntryOfProduction part.parseEvidence.extraction.entry
+    extraction := typedExtractionOfProduction part.parseEvidence.extraction
+    retainedParsedEvents := parsed.events
+    parsed
+  }
+
+def typedCanonicalIdOfRaw (raw : Option String) :
+    Option TypedCanonicalId :=
+  raw.bind Tier2.CommentReferenceIntegrity.parseBoundedDecimalId |>.map
+    fun key => { negative := key.negative, digits := key.digits }
+
+def typedReferenceOfProduction
+    (reference : CommentReferenceOccurrence) : TypedReference := {
+  sourceOrdinal := reference.sourceOrdinal
+  occurrenceOrdinal := reference.occurrenceOrdinal
+  rawId := reference.rawId.map typedBoundedBytesOfString
+  canonicalId := typedCanonicalIdOfRaw reference.rawId
+}
+
+def typedDefinitionOfProduction
+    (definition : CommentDefinitionOccurrence) : TypedDefinition := {
+  occurrenceOrdinal := definition.occurrenceOrdinal
+  rawId := definition.rawId.map typedBoundedBytesOfString
+  canonicalId := typedCanonicalIdOfRaw definition.rawId
+  direct := definition.direct
+}
+
+def typedScanCrossingOfProduction :
+    Tier2.CommentReferenceIntegrity.CommentScanCrossing → TypedScanCrossing
+  | Tier2.CommentReferenceIntegrity.CommentScanCrossing.references
+      sourceOrdinal occurrenceOrdinal =>
+      TypedScanCrossing.references sourceOrdinal occurrenceOrdinal
+  | Tier2.CommentReferenceIntegrity.CommentScanCrossing.uniqueIds
+      sourceOrdinal occurrenceOrdinal canonicalId =>
+      TypedScanCrossing.uniqueIds sourceOrdinal occurrenceOrdinal
+        ((typedCanonicalIdOfRaw (some canonicalId)).getD
+          { negative := false, digits := [] })
+  | Tier2.CommentReferenceIntegrity.CommentScanCrossing.definitions
+      occurrenceOrdinal =>
+      TypedScanCrossing.definitions occurrenceOrdinal
+  | Tier2.CommentReferenceIntegrity.CommentScanCrossing.nonDirectDefinitions
+      occurrenceOrdinal =>
+      TypedScanCrossing.nonDirectDefinitions occurrenceOrdinal
+
+def typedCommentScanOfProduction
+    (evidence : CommentSideEvidence) : TypedCommentScan :=
+  match evidence.retainedScan with
+  | none => emptyTypedCommentScan
+  | some retained => {
+      references := retained.output.scan.references.map
+        typedReferenceOfProduction
+      definitions := retained.output.scan.definitions.map
+        typedDefinitionOfProduction
+      nonDirectDefinitions :=
+        retained.output.scan.nonDirectDefinitions.map
+          typedDefinitionOfProduction
+      crossing := retained.output.crossing.map typedScanCrossingOfProduction
+    }
+
+def typedScanInputOfRecord (record : RunRequestPackageRecord) :
+    TypedScanInput :=
+  let admittedScan := record.commentEvidence.retainedScan.isSome
+  {
+    wmlNamespace := typedBoundedBytesOfString wmlNamespace
+    idLocalName := typedBoundedBytesOfString "id"
+    referenceLocalName := typedBoundedBytesOfString "commentReference"
+    definitionLocalName := typedBoundedBytesOfString "comment"
+    sourceEvents := if admittedScan then
+      record.commentEvidence.sources.map fun source =>
+        (source.sourceOrdinal,
+          source.parseEvidence.parsed.events.zipIdx.map fun item =>
+            typedXmlEventOfProduction item.2 item.1)
+      else []
+    definitionEvents := if admittedScan then
+      record.commentEvidence.part.map (fun part =>
+        part.parseEvidence.parsed.events.zipIdx.map fun item =>
+          typedXmlEventOfProduction item.2 item.1) |>.getD []
+      else []
+  }
+
+def productionTypedCommentScanCheck
+    (record : RunRequestPackageRecord) : Bool :=
+  decide (typedCommentScanOfProduction record.commentEvidence =
+    scanTypedCommentEvidence (typedScanInputOfRecord record))
+
+theorem production_typed_comment_scan_check_sound
+    (record : RunRequestPackageRecord)
+    (h : productionTypedCommentScanCheck record = true) :
+    typedCommentScanOfProduction record.commentEvidence =
+      scanTypedCommentEvidence (typedScanInputOfRecord record) := by
+  exact of_decide_eq_true h
+
+theorem typedCommentScanOfProduction_reference_length
+    (evidence : CommentSideEvidence) :
+    (typedCommentScanOfProduction evidence).references.length =
+      (evidence.retainedScan.map
+        (·.output.scan.references.length)).getD 0 := by
+  unfold typedCommentScanOfProduction
+  cases evidence.retainedScan <;> simp [emptyTypedCommentScan]
+
+def typedPackageViewOfRecord (side : Side)
+    (request : RunRequestCoreRequestV6)
+    (record : RunRequestPackageRecord) : TypedPackageView := {
+  packageBytes := record.packageBytes
+  index := typedIndexOfProduction record.packageIndex
+  commentType :=
+    typedBoundedBytesOfString
+      Tier2.CommentReferenceIntegrity.commentsRelationshipType
+  commentsRootNamespace := typedBoundedBytesOfString wmlNamespace
+  commentsRootLocalName := typedBoundedBytesOfString "comments"
+  relationships := typedRelationshipsOfProduction record.relationships
+  mainSource := (record.commentEvidence.sources.find?
+      (fun source => source.sourceStory == "main")).map
+      (typedStorySourceOfProduction side) |>.getD
+        (missingTypedMainSource side)
+  headerFooterSlots :=
+    request.relationshipSlots.map typedHeaderFooterSlotOfProduction
+  headerFooterStories := request.relationshipStories.map
+    (typedHeaderFooterStoryOfProduction side record.commentEvidence.sources)
+  noteSelections :=
+    [ typedNoteSelectionOfProduction side record.noteEvidence
+        record.commentEvidence.sources .footnotes
+    , typedNoteSelectionOfProduction side record.noteEvidence
+        record.commentEvidence.sources .endnotes
+    ]
+  priorSourceAdmission :=
+    typedPriorSourceAdmissionOfProduction request record.noteEvidence
+  realizationFailure := record.commentEvidence.realizationFailureCode.bind
+    fun code =>
+      if code == "COMMENT_PART_MISSING" then some .partMissing
+      else if code == "COMMENT_SELECTED_PART_LIMIT_EXCEEDED" then some .selectedPartLimit
+      else if code == "COMMENT_TRIPLE_SELECTED_PART_LIMIT_EXCEEDED" then some .tripleSelectedPartLimit
+      else if code == "COMMENT_PART_COMPRESSED_LIMIT_EXCEEDED" then some .partCompressedLimit
+      else if code == "COMMENT_PART_EXPANDED_LIMIT_EXCEEDED" then some .partExpandedLimit
+      else if code == "COMMENT_PART_RATIO_LIMIT_EXCEEDED" then some .partRatioLimit
+      else if code == "COMMENT_CUMULATIVE_COMPRESSED_LIMIT_EXCEEDED" then some .cumulativeCompressedLimit
+      else if code == "COMMENT_CUMULATIVE_EXPANDED_LIMIT_EXCEEDED" then some .cumulativeExpandedLimit
+      else if code == "COMMENT_TRIPLE_COMPRESSED_LIMIT_EXCEEDED" then some .tripleCompressedLimit
+      else if code == "COMMENT_TRIPLE_EXPANDED_LIMIT_EXCEEDED" then some .tripleExpandedLimit
+      else if code == "COMMENT_PART_EXTRACTION_FAILED" then some .extractionFailed
+      else if code == "COMMENT_PART_INVALID_UTF8" then some .invalidUtf8
+      else if code == "COMMENT_PART_INVALID_XML" then some .invalidXml
+      else if code == "COMMENT_PART_XML_DEPTH_LIMIT_EXCEEDED" then some .xmlDepthLimit
+      else if code == "COMMENT_PART_XML_EVENT_LIMIT_EXCEEDED" then some .xmlEventLimit
+      else if code == "COMMENT_CUMULATIVE_XML_EVENT_LIMIT_EXCEEDED" then some .cumulativeXmlEventLimit
+      else if code == "COMMENT_TRIPLE_XML_EVENT_LIMIT_EXCEEDED" then some .tripleXmlEventLimit
+      else if code == "COMMENT_PART_ROOT_MISMATCH" then some .rootMismatch
+      else none
+  realizationFailureDetail :=
+    record.commentEvidence.realizationFailureDetail.map
+      typedBoundedBytesOfString
+  selectedPartPresent := record.commentEvidence.partPresent
+  realization := record.commentEvidence.part.map
+    typedCommentRealizationOfProduction
+  retainedScan := typedCommentScanOfProduction record.commentEvidence
+}
+
+def typedInheritedV5OfJson (response : Json) (passed : Bool) :
+    TypedInheritedV5Evaluation := {
+  passed
+  fixedStories := typedJsonOfProduction
+    (jsonFieldOrNull response "fixedStories")
+  presenceMismatches := typedJsonOfProduction
+    (jsonFieldOrNull response "presenceMismatches")
+  fixedStoryIssues := typedJsonOfProduction
+    (jsonFieldOrNull response "fixedStoryIssues")
+  relationshipSlots := typedJsonOfProduction
+    (jsonFieldOrNull response "relationshipSlots")
+  relationshipStories := typedJsonOfProduction
+    (jsonFieldOrNull response "relationshipStories")
+  selectionIssues := typedJsonOfProduction
+    (jsonFieldOrNull response "selectionIssues")
+  referenceSourcePartitions := typedJsonOfProduction
+    (jsonFieldOrNull response "referenceSourcePartitions")
+  noteStories := typedJsonOfProduction
+    (jsonFieldOrNull response "noteStories")
+  noteInventories := typedJsonOfProduction
+    (jsonFieldOrNull response "noteInventories")
+  noteIntegrityIssues := typedJsonOfProduction
+    (jsonFieldOrNull response "noteIntegrityIssues")
+}
+
+def typedInheritedV5OfSemanticEvaluation
+    (request : RunRequestCoreRequestV6)
+    (semanticResponse : VerifierResponseV5) : TypedInheritedV5Evaluation :=
+  let fields := SemanticProtocolSpec.fields request semanticResponse
+  typedInheritedV5OfJson (SemanticProtocolSpec.encode fields) fields.passed
+
+def typedInheritedV5OfOperationalRequest
+    (request : RunRequestCoreRequestV6)
+    (semanticResponse : VerifierResponseV5) : TypedInheritedV5Evaluation :=
+  let fixedReports := checkStoryCollection request.fixedTriples
+  let selectedReports := checkStoryCollection request.relationshipTriples
+  let noteSides := [request.original.noteEvidence,
+    request.revised.noteEvidence, request.compared.noteEvidence]
+  let noteIssues :=
+    coalesceNoteIssues (noteSides.flatMap (·.issues)) |>.mergeSort noteIssueLess
+  {
+    passed := runRequestCorePass request semanticResponse
+    fixedStories := typedJsonOfProduction <| Json.arr
+      (fixedReports.map storyReportJson).toArray
+    presenceMismatches := .array []
+    fixedStoryIssues := .array []
+    relationshipSlots := typedJsonOfProduction <| Json.arr
+      (request.relationshipSlots.map slotJson).toArray
+    relationshipStories := typedJsonOfProduction <| Json.arr
+      ((List.zip request.relationshipStories selectedReports).map fun pair =>
+        physicalStoryJson pair.1 pair.2).toArray
+    selectionIssues := typedJsonOfProduction <| Json.arr
+      (request.selectionIssues.eraseDups.mergeSort issueLess
+        |>.map selectionIssueJson).toArray
+    referenceSourcePartitions := typedJsonOfProduction <| Json.arr
+      (noteSides.map partitionJson).toArray
+    noteStories := typedJsonOfProduction <| Json.arr
+      [noteStoryJson .footnotes noteSides,
+       noteStoryJson .endnotes noteSides].toArray
+    noteInventories := typedJsonOfProduction <| Json.arr
+      (noteSides.flatMap fun evidence =>
+        [inventoryJson evidence.footnotesInventory,
+         inventoryJson evidence.endnotesInventory]).toArray
+    noteIntegrityIssues := typedJsonOfProduction <| Json.arr
+      noteIssues.toArray
+  }
+
+def typedRequestOfProduction (request : RunRequestCoreRequestV6)
+    (result : RunRequestCoreResultV6) : Except String TypedRequestV6 := do
+  return {
+    original := typedPackageViewOfRecord .original request request.original
+    revised := typedPackageViewOfRecord .revised request request.revised
+    compared := typedPackageViewOfRecord .compared request request.compared
+    inherited :=
+      typedInheritedV5OfOperationalRequest request result.semanticResponse
+  }
+
+def TypedRequestOfProduction (request : RunRequestCoreRequestV6)
+    (result : RunRequestCoreResultV6) (typedRequest : TypedRequestV6) : Prop :=
+  typedRequestOfProduction request result = .ok typedRequest ∧
+  typedRequest.original =
+    typedPackageViewOfRecord .original request request.original ∧
+  typedRequest.revised =
+    typedPackageViewOfRecord .revised request request.revised ∧
+  typedRequest.compared =
+    typedPackageViewOfRecord .compared request request.compared ∧
+  typedRequest.inherited =
+    typedInheritedV5OfOperationalRequest request result.semanticResponse ∧
+  typedRequest.original.packageBytes = request.original.packageBytes ∧
+  typedRequest.revised.packageBytes = request.revised.packageBytes ∧
+  typedRequest.compared.packageBytes = request.compared.packageBytes ∧
+  typedRequest.original.index =
+    typedIndexOfProduction request.original.packageIndex ∧
+  typedRequest.revised.index =
+    typedIndexOfProduction request.revised.packageIndex ∧
+  typedRequest.compared.index =
+    typedIndexOfProduction request.compared.packageIndex ∧
+  typedRequest.original.retainedScan.references.length =
+    (request.original.commentEvidence.retainedScan.map
+      (·.output.scan.references.length)).getD 0 ∧
+  typedRequest.revised.retainedScan.references.length =
+    (request.revised.commentEvidence.retainedScan.map
+      (·.output.scan.references.length)).getD 0 ∧
+  typedRequest.compared.retainedScan.references.length =
+    (request.compared.commentEvidence.retainedScan.map
+      (·.output.scan.references.length)).getD 0 ∧
+  typedRequest.original.retainedScan =
+    scanTypedCommentEvidence (typedScanInputOfRecord request.original) ∧
+  typedRequest.revised.retainedScan =
+    scanTypedCommentEvidence (typedScanInputOfRecord request.revised) ∧
+  typedRequest.compared.retainedScan =
+    scanTypedCommentEvidence (typedScanInputOfRecord request.compared)
+
+def ProductionRunRequestV6RefinesSemanticOf
+    (request : RunRequestCoreRequestV6)
+    (result : RunRequestCoreResultV6) : Prop :=
+  ProductionRunRequestRefinesSemanticOf request result ∧
+  ∃ (packageEvidence :
+        ProductionPackageRecordOf request.original ∧
+        ProductionPackageRecordOf request.revised ∧
+        ProductionPackageRecordOf request.compared)
+      (commentEvidence :
+        ProductionCommentEvidenceOf request.original ∧
+        ProductionCommentEvidenceOf request.revised ∧
+        ProductionCommentEvidenceOf request.compared)
+      (hPrior :
+        (commentResourceUsageOfCore request).tripleXmlEvents ≤ 3000000)
+      (hSources : ∀ side,
+        Tier2.CommentReferenceIntegrity.completeCommentSourceSetCheck
+          (commentPackageViewOfCore request side) side
+          (Tier2.NoteReferenceIntegrity.evaluateNoteSideV5
+            (packageViewOfRecord
+              (request.packageRecord (noteSideOfCommentSide side)))
+            (noteSideOfCommentSide side)
+            (selectedStoriesOfRecord
+              (request.packageRecord (noteSideOfCommentSide side)))) = true),
+    let semanticRequest := semanticRequestOfCoreV6 request packageEvidence
+      commentEvidence hPrior hSources
+    let global :=
+      Tier2.CommentReferenceIntegrity.evaluateAllCommentSidesV6 semanticRequest
+    let response :=
+      Tier2.CommentReferenceIntegrity.canonicalVerifierResponseV6 semanticRequest
+    (∀ side,
+      semanticRequest.packageView side =
+        (semanticRequest.retainedPackageRecord side).view ∧
+      (semanticRequest.packageView side).packageBytes =
+        (semanticRequest.retainedPackageRecord side).packageBytes ∧
+      (semanticRequest.packageView side).index =
+        (semanticRequest.retainedPackageRecord side).index) ∧
+    (∀ side,
+      ProductionCommentSemanticProjectionOf request side) ∧
+    (∀ side,
+      retainedParsedCommentEvidenceOfProduction request side =
+        .ok (parsedCommentEvidenceOfProduction request side)) ∧
+    (∀ side,
+      retainedCommentScanInputOfProduction request side =
+        .ok (semanticCommentScanInputOfCore request side)) ∧
+    Tier2.CommentReferenceIntegrity.allCommentSidesPass global = true ∧
+    response.global = global ∧
+    (∀ side,
+      Tier2.CommentReferenceIntegrity.SelectionToCommentRealizationOf
+        semanticRequest side (response.commentOutcome side)
+        (response.commentRealization side)
+        (response.commentParsedEvidence side)) ∧
+    (∀ side,
+      Tier2.CommentReferenceIntegrity.ResponseRetainedCommentEvidenceOf
+        semanticRequest response side) ∧
+    Tier2.CommentReferenceIntegrity.CommentAggregatePassOf
+      semanticRequest response ∧
+    result.response =
+      protocolV6Projection request result.semanticResponse ∧
+    SemanticProtocolV6ProjectionOf
+      request result.semanticResponse result.response ∧
+    FinalizedProtocolV6ResponseOf result.response result.responsePassed
+      result.stdout ∧
+    ∃ typedRequest typedResponse canonicalBytes,
+      TypedRequestOfProduction request result typedRequest ∧
+      typedResponse = canonicalTypedResponseV6 typedRequest ∧
+      TypedCommentAggregatePassOf typedRequest typedResponse ∧
+      TypedSerializedResponseV6Of typedResponse canonicalBytes ∧
+      ProtocolV6JsonProjectionOf result.response result.responsePassed
+        typedResponse ∧
+      result.response.compress.toUTF8.data.toList = canonicalBytes ∧
+      result.stdout.data.toList = canonicalBytes ++ [UInt8.ofNat 10]
+
+def productionTypedCommentChecks
+    (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6) : Bool :=
+  productionTypedCommentScanCheck request.original &&
+  productionTypedCommentScanCheck request.revised &&
+  productionTypedCommentScanCheck request.compared &&
+  match typedRequestOfProduction request result with
+  | .error _ => false
+  | .ok typedRequest =>
+      let typedResponse := canonicalTypedResponseV6 typedRequest
+      let canonicalBytes := independentProtocolV6Projection typedResponse
+      let canonicalByteArray : ByteArray := ⟨canonicalBytes.toArray⟩
+      match typedProtocolV6ResponseOfJson
+          result.response result.responsePassed with
+      | .error _ => false
+      | .ok projected =>
+          decide (independentProtocolV6Projection projected =
+            independentProtocolV6Projection typedResponse) &&
+          decide (result.response.compress.toUTF8 = canonicalByteArray) &&
+          decide (result.stdout = canonicalByteArray.push (UInt8.ofNat 10))
+
+def firstByteMismatch : List UInt8 → List UInt8 → Nat →
+    Option (Nat × Option UInt8 × Option UInt8)
+  | [], [], _ => none
+  | [], right :: _, ordinal => some (ordinal, none, some right)
+  | left :: _, [], ordinal => some (ordinal, some left, none)
+  | left :: leftRest, right :: rightRest, ordinal =>
+      if left == right then firstByteMismatch leftRest rightRest (ordinal + 1)
+      else some (ordinal, some left, some right)
+
+def typedEntryAdmissionDiagnostic (pkg : TypedPackageView)
+    (entry : TypedEntry) : String :=
+  let nameLength := typedUInt16At? pkg.packageBytes
+    (entry.localHeaderOffset + 26)
+  let extraLength := typedUInt16At? pkg.packageBytes
+    (entry.localHeaderOffset + 28)
+  s!"name={String.fromUTF8? ⟨entry.name.bytes.toArray⟩}; " ++
+  s!"directory={entry.isDirectory}; safe={typedSafeEntryNameCheck entry.name entry.isDirectory}; " ++
+  s!"signature={typedLocalHeaderSignatureCheck pkg.packageBytes entry.localHeaderOffset}; " ++
+  s!"localFlags={typedUInt16At? pkg.packageBytes (entry.localHeaderOffset + 6)} centralFlags={entry.flags}; " ++
+  s!"localMethod={typedUInt16At? pkg.packageBytes (entry.localHeaderOffset + 8)} centralMethod={entry.method}; " ++
+  s!"localNameLength={nameLength} centralNameLength={entry.name.bytes.length}; " ++
+  s!"localExtraLength={extraLength}; dataOffset={entry.dataOffset}; " ++
+  s!"spanEnd={entry.localSpanEnd}; compressed={entry.compressedSize}; centralOffset={pkg.index.centralOffset}"
+
+def typedPackageAdmissionDiagnostic (pkg : TypedPackageView) : String :=
+  let invalidEntry := pkg.index.entries.find? fun entry =>
+    !typedEntryLocalHeaderCheck pkg.packageBytes pkg.index entry
+  match selectTypedComment pkg.commentType pkg.relationships, pkg.realization with
+  | .ok (some selected), some realization =>
+      s!"index={typedBinaryIndexCheck pkg.packageBytes pkg.index}; " ++
+      s!"entries={pkg.index.entries.length}; invalidEntry=({invalidEntry.map (typedEntryAdmissionDiagnostic pkg)}); " ++
+      s!"selected={typedSelectedEntryCheck pkg.index selected.normalizedPartPath realization.entry}; " ++
+      s!"extraction={typedExtractionCheck pkg.packageBytes pkg.index realization.entry realization.extraction}; " ++
+      s!"parsed={typedParsedPartCheck realization.extraction pkg.commentsRootNamespace pkg.commentsRootLocalName realization.retainedParsedEvents realization.parsed}"
+  | _, realization =>
+      s!"selectedAdmission=false; realizationPresent={realization.isSome}"
+
+def productionTypedMismatchDetail
+    (request : RunRequestCoreRequestV6)
+    (result : RunRequestCoreResultV6) : String :=
+  match typedRequestOfProduction request result with
+  | .error detail => s!"typed request construction failed: {detail}"
+  | .ok typedRequest =>
+      let expected :=
+        independentProtocolV6Projection
+          (canonicalTypedResponseV6 typedRequest)
+      let actual := result.response.compress.toUTF8.data.toList
+      match firstByteMismatch actual expected 0 with
+      | none => "stdout differs after canonical JSON equality"
+      | some (ordinal, left, right) =>
+          let start := ordinal - min ordinal 32
+          let actualContext :=
+            String.fromUTF8? ⟨(actual.drop start |>.take 96).toArray⟩
+          let typedContext :=
+            String.fromUTF8? ⟨(expected.drop start |>.take 96).toArray⟩
+          s!"canonical JSON differs at byte {ordinal}; actual={left.map UInt8.toNat}; typed={right.map UInt8.toNat}; actualLength={actual.length}; typedLength={expected.length}; actualContext={actualContext}; typedContext={typedContext}; originalAdmission=({typedPackageAdmissionDiagnostic typedRequest.original}); revisedAdmission=({typedPackageAdmissionDiagnostic typedRequest.revised}); comparedAdmission=({typedPackageAdmissionDiagnostic typedRequest.compared})"
+
+def runRequestCoreV6 (request : RunRequestCoreRequestV6) :
+    Except String RunRequestCoreResultV6 :=
+  match runRequestCore request with
+  | .error detail => .error detail
+  | .ok result =>
+      if productionTypedCommentChecks request result then .ok result
+      else .error
+        (productionTypedMismatchDetail request result)
+
+theorem run_request_core_v6_base
+    (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6)
+    (hRun : runRequestCoreV6 request = .ok result) :
+    runRequestCore request = .ok result := by
+  unfold runRequestCoreV6 at hRun
+  cases hBase : runRequestCore request with
+  | error detail =>
+      simp [hBase] at hRun
+  | ok base =>
+      cases hChecks : productionTypedCommentChecks request base
+      · simp only [hBase, hChecks, ↓reduceIte] at hRun
+        contradiction
+      · simp only [hBase, hChecks, ↓reduceIte] at hRun
+        change (Except.ok base :
+          Except String RunRequestCoreResultV6) = .ok result at hRun
+        cases hRun
+        rfl
+
+theorem run_request_core_v6_typed_scans
+    (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6)
+    (hRun : runRequestCoreV6 request = .ok result) :
+    productionTypedCommentChecks request result = true := by
+  unfold runRequestCoreV6 at hRun
+  cases hBase : runRequestCore request with
+  | error detail =>
+      simp [hBase] at hRun
+  | ok base =>
+      cases hChecks : productionTypedCommentChecks request base
+      · simp only [hBase, hChecks, ↓reduceIte] at hRun
+        contradiction
+      · simp only [hBase, hChecks, ↓reduceIte] at hRun
+        cases hRun
+        exact hChecks
+
+set_option maxHeartbeats 1000000 in
+theorem run_request_core_v6_ok_operational_pass
+    (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6)
+    (hRun : runRequestCoreV6 request = .ok result) :
+    runRequestCorePass request result.semanticResponse =
+      result.responsePassed := by
+  have hBase := run_request_core_v6_base request result hRun
+  cases hReady : coreSemanticAdmissionReady request
+  · let semanticRequest := semanticRequestOfCore request
+    let semanticResponse := failedSemanticResponse semanticRequest
+    cases hFinalize : _root_.finalizeProtocolV6Response
+        (buildRunRequestCoreResponse request semanticResponse).2
+        (buildRunRequestCoreResponse request semanticResponse).1 with
+    | error detail =>
+        dsimp only [semanticResponse, semanticRequest] at hFinalize
+        simp [semanticNoteRequestOfCoreV6, hReady,
+          runRequestCore, finishRunRequestCore, hFinalize] at hBase
+    | ok stdout =>
+        dsimp only [semanticResponse, semanticRequest] at hFinalize
+        simp [semanticNoteRequestOfCoreV6, hReady,
+          runRequestCore, finishRunRequestCore, hFinalize] at hBase
+        cases hBase
+        rfl
+  · cases hVerify : Tier2.NoteReferenceIntegrity.canonicalSemanticResponse
+        (semanticRequestOfCore request) with
+    | error detail =>
+        simp [semanticNoteRequestOfCoreV6, hReady,
+          runRequestCore, hVerify] at hBase
+    | ok semanticResult =>
+        rcases semanticResult with ⟨semanticResponse, semanticStdout⟩
+        cases hFinalize : _root_.finalizeProtocolV6Response
+            (buildRunRequestCoreResponse request semanticResponse).2
+            (buildRunRequestCoreResponse request semanticResponse).1 with
+        | error detail =>
+            simp [semanticNoteRequestOfCoreV6, hReady,
+              hVerify, runRequestCore, finishRunRequestCore, hFinalize] at hBase
+        | ok stdout =>
+            simp [semanticNoteRequestOfCoreV6, hReady,
+              hVerify, runRequestCore, finishRunRequestCore, hFinalize] at hBase
+            cases hBase
+            rfl
+
+theorem production_run_request_core_v6_refinement_sound
+    (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6)
+    (hRun : runRequestCoreV6 request = .ok result)
+    (hPass : result.responsePassed = true) :
+    ProductionRunRequestV6RefinesSemanticOf request result := by
+  have hOld := production_run_request_core_refinement_sound request result
+    (run_request_core_v6_base request result hRun) hPass
+  let packageEvidence :
+      ProductionPackageRecordOf request.original ∧
+      ProductionPackageRecordOf request.revised ∧
+      ProductionPackageRecordOf request.compared :=
+    ⟨hOld.1, hOld.2.1, hOld.2.2.1⟩
+  let commentEvidence :
+      ProductionCommentEvidenceOf request.original ∧
+      ProductionCommentEvidenceOf request.revised ∧
+      ProductionCommentEvidenceOf request.compared :=
+    ⟨hOld.2.2.2.1, hOld.2.2.2.2.1, hOld.2.2.2.2.2.1⟩
+  have hCorePass : runRequestCorePass request result.semanticResponse = true := by
+    exact (run_request_core_v6_ok_operational_pass request result hRun).trans hPass
+  have hPrior :=
+    run_request_core_pass_comment_global_admission request
+      result.semanticResponse hCorePass
+  have hSources := fun side =>
+    run_request_core_pass_comment_source_set request result.semanticResponse
+      side hCorePass
+  have hSelectors := fun side =>
+    run_request_core_pass_comment_selector_exact request
+      result.semanticResponse side hCorePass
+  have hParsed := fun side =>
+    run_request_core_pass_retained_comment_scan request
+      result.semanticResponse side hCorePass
+  have hScanInputs := fun side =>
+    run_request_core_pass_retained_comment_scan_input request
+      result.semanticResponse side hCorePass
+  let semanticRequest := semanticRequestOfCoreV6 request packageEvidence
+    commentEvidence hPrior hSources
+  let global :=
+    Tier2.CommentReferenceIntegrity.evaluateAllCommentSidesV6 semanticRequest
+  let response :=
+    Tier2.CommentReferenceIntegrity.canonicalVerifierResponseV6 semanticRequest
+  have hAllPass :=
+    semantic_request_of_core_v6_all_comment_sides_pass request packageEvidence
+      commentEvidence hPrior hSources hSelectors hParsed hScanInputs
+  have hAggregate :
+      Tier2.CommentReferenceIntegrity.CommentAggregatePassOf
+        semanticRequest response := by
+    exact Tier2.CommentReferenceIntegrity.canonical_verifier_response_v6_aggregate_pass
+      semanticRequest hAllPass
+  have hSelections : ∀ side,
+      Tier2.CommentReferenceIntegrity.SelectionToCommentRealizationOf
+        semanticRequest side (response.commentOutcome side)
+        (response.commentRealization side)
+        (response.commentParsedEvidence side) := by
+    rcases hAggregate with ⟨_, _, _, _, _, hExact, _, _⟩
+    exact hExact
+  have hRetained : ∀ side,
+      Tier2.CommentReferenceIntegrity.ResponseRetainedCommentEvidenceOf
+        semanticRequest response side := by
+    rcases hAggregate with ⟨_, _, _, _, _, _, hExact, _⟩
+    exact hExact
+  have hProtocol :
+      SemanticProtocolV6ProjectionOf
+        request result.semanticResponse result.response := by
+    rcases hOld with
+      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hExact, _⟩
+    exact hExact
+  have hFinalized :
+      FinalizedProtocolV6ResponseOf result.response result.responsePassed
+        result.stdout := by
+    rcases hOld with
+      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hExact⟩
+    exact hExact
+  have hTypedChecks :=
+    run_request_core_v6_typed_scans request result hRun
+  unfold productionTypedCommentChecks at hTypedChecks
+  simp only [Bool.and_eq_true] at hTypedChecks
+  let typedRequest : TypedRequestV6 := {
+    original := typedPackageViewOfRecord .original request request.original
+    revised := typedPackageViewOfRecord .revised request request.revised
+    compared := typedPackageViewOfRecord .compared request request.compared
+    inherited :=
+      typedInheritedV5OfOperationalRequest request result.semanticResponse
+  }
+  have hTypedRequest :
+      TypedRequestOfProduction request result typedRequest := by
+    unfold TypedRequestOfProduction typedRequestOfProduction
+    refine ⟨?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · rfl
+    · simp [typedRequest, typedPackageViewOfRecord, typedIndexOfProduction]
+    · simp [typedRequest, typedPackageViewOfRecord, typedIndexOfProduction]
+    · simp [typedRequest, typedPackageViewOfRecord, typedIndexOfProduction]
+    · exact typedCommentScanOfProduction_reference_length
+        request.original.commentEvidence
+    · exact typedCommentScanOfProduction_reference_length
+        request.revised.commentEvidence
+    · exact typedCommentScanOfProduction_reference_length
+        request.compared.commentEvidence
+    · exact production_typed_comment_scan_check_sound request.original
+        hTypedChecks.1.1.1
+    · exact production_typed_comment_scan_check_sound request.revised
+        hTypedChecks.1.1.2
+    · exact production_typed_comment_scan_check_sound request.compared
+        hTypedChecks.1.2
+  let canonicalTypedResponse := canonicalTypedResponseV6 typedRequest
+  let canonicalBytes :=
+    independentProtocolV6Projection canonicalTypedResponse
+  have hProtocolChecks := hTypedChecks.2
+  simp only [hTypedRequest.1] at hProtocolChecks
+  have hProtocolDecoded :
+      ∃ projected,
+        typedProtocolV6ResponseOfJson
+          result.response result.responsePassed = .ok projected ∧
+        (independentProtocolV6Projection projected =
+            independentProtocolV6Projection
+              (canonicalTypedResponseV6 typedRequest) ∧
+          result.response.compress.toUTF8 =
+            (⟨(independentProtocolV6Projection
+              (canonicalTypedResponseV6 typedRequest)).toArray⟩ :
+              ByteArray)) ∧
+        result.stdout =
+          (⟨(independentProtocolV6Projection
+            (canonicalTypedResponseV6 typedRequest)).toArray⟩ :
+              ByteArray).push (UInt8.ofNat 10) := by
+    cases hConversion :
+        typedProtocolV6ResponseOfJson
+          result.response result.responsePassed with
+    | error message =>
+        simp [hConversion] at hProtocolChecks
+    | ok projected =>
+        refine ⟨projected, rfl, ?_⟩
+        simpa [hConversion, Bool.and_eq_true, decide_eq_true_eq] using
+          hProtocolChecks
+  rcases hProtocolDecoded with
+    ⟨projected, hProjected, hProtocolChecks⟩
+  have hTypedAggregate :
+      TypedCommentAggregatePassOf typedRequest
+        (canonicalTypedResponseV6 typedRequest) := by
+    exact (typed_comment_integrity_aggregate_pass_sound typedRequest).1
+  have hTypedSerialized :
+      TypedSerializedResponseV6Of canonicalTypedResponse canonicalBytes := by
+    exact (typed_comment_integrity_aggregate_pass_sound typedRequest).2
+  have hStdout :
+      result.stdout.data.toList =
+        canonicalBytes ++ [UInt8.ofNat 10] := by
+    rw [hProtocolChecks.2]
+    simp [canonicalBytes, canonicalTypedResponse]
+  have hResponseBytes :
+      result.response.compress.toUTF8.data.toList = canonicalBytes := by
+    rw [hProtocolChecks.1.2]
+  have hTypedProjection :
+      ProtocolV6JsonProjectionOf result.response result.responsePassed
+        canonicalTypedResponse := by
+    unfold ProtocolV6JsonProjectionOf
+    exact ⟨projected, hProjected, hProtocolChecks.1.1, hResponseBytes⟩
+  have hTypedContract :
+      ∃ typedRequest typedResponse canonicalBytes,
+        TypedRequestOfProduction request result typedRequest ∧
+        typedResponse = canonicalTypedResponseV6 typedRequest ∧
+        TypedCommentAggregatePassOf typedRequest typedResponse ∧
+        TypedSerializedResponseV6Of typedResponse canonicalBytes ∧
+        ProtocolV6JsonProjectionOf result.response result.responsePassed
+          typedResponse ∧
+        result.response.compress.toUTF8.data.toList = canonicalBytes ∧
+        result.stdout.data.toList =
+          canonicalBytes ++ [UInt8.ofNat 10] := by
+    exact ⟨typedRequest, canonicalTypedResponse, canonicalBytes,
+      hTypedRequest, rfl,
+      hTypedAggregate, hTypedSerialized, hTypedProjection,
+      hResponseBytes, hStdout⟩
+  refine ⟨hOld, packageEvidence, commentEvidence, hPrior, hSources, ?_⟩
+  refine ⟨?_, ?_, hParsed, hScanInputs, hAllPass, rfl,
+    hSelections, hRetained, hAggregate, ?_, hProtocol,
+    ⟨hFinalized, hTypedContract⟩⟩
+  · intro side
+    exact ⟨rfl, rfl, rfl⟩
+  · intro side
+    exact production_comment_semantic_projection_sound request side
+      (productionCommentEvidenceAt request commentEvidence side)
+  · exact hProtocol.1
+
+def productionRunRequestCoreV6RefinementSignature : Prop :=
+  ∀ (request : RunRequestCoreRequestV6) (result : RunRequestCoreResultV6),
+    runRequestCoreV6 request = .ok result →
+    result.responsePassed = true →
+    ProductionRunRequestV6RefinesSemanticOf request result
 
 end Tier2.NoteReferenceIntegrity
 
@@ -3875,28 +7609,88 @@ def runRequestWithPackages (request : Request)
       buildNoteSideEvidence comparedPackage .compared comparedRelationships comparedSources
         usage.compared
     else pure <| skippedNoteSideEvidence .compared comparedSources comparedRelationships
+  let commentTripleUsage : CommentTripleResourceUsage := {
+    selectedParts :=
+      commentSelectedPartsBefore originalNoteEvidence +
+      commentSelectedPartsBefore revisedNoteEvidence +
+      commentSelectedPartsBefore comparedNoteEvidence
+    compressedBytes :=
+      originalNoteEvidence.usage.compressedBytes +
+      revisedNoteEvidence.usage.compressedBytes +
+      comparedNoteEvidence.usage.compressedBytes
+    expandedBytes :=
+      originalNoteEvidence.usage.expandedBytes +
+      revisedNoteEvidence.usage.expandedBytes +
+      comparedNoteEvidence.usage.expandedBytes
+    xmlEvents :=
+      originalNoteEvidence.usage.xmlEvents +
+      revisedNoteEvidence.usage.xmlEvents +
+      comparedNoteEvidence.usage.xmlEvents
+  }
+  let originalCommentEvidence ←
+    buildCommentSideEvidence originalPackage .original originalRelationships
+      originalNoteEvidence commentTripleUsage
+  let revisedCommentEvidence ←
+    if !originalCommentEvidence.semanticLimitCrossed then
+      buildCommentSideEvidence revisedPackage .revised revisedRelationships
+        revisedNoteEvidence originalCommentEvidence.tripleUsage
+    else
+      pure <| skippedCommentSideEvidence .revised revisedNoteEvidence
+        originalCommentEvidence.tripleUsage
+  let comparedCommentEvidence ←
+    if !originalCommentEvidence.semanticLimitCrossed &&
+        !revisedCommentEvidence.semanticLimitCrossed then
+      buildCommentSideEvidence comparedPackage .compared comparedRelationships
+        comparedNoteEvidence revisedCommentEvidence.tripleUsage
+    else
+      pure <| skippedCommentSideEvidence .compared comparedNoteEvidence
+        revisedCommentEvidence.tripleUsage
   let originalCorePackage : RunRequestPackageRecord := {
     packagePath := originalPackage.path
     packageBytes := originalPackage.bytes
     packageReadCount := originalPackage.packageReadCount
+    packageIndex := originalPackage.index
+    packageIndexExact := originalPackage.independentIndexExact
+    snapshotPath := originalPackage.snapshotPath
+    snapshotBytes := originalPackage.snapshotBytes
+    snapshotWriteCount := originalPackage.snapshotWriteCount
+    snapshotWriteCountExact := originalPackage.snapshotWriteCountExact
+    snapshotBytesExact := originalPackage.snapshotBytesExact
     relationships := originalRelationships
     noteEvidence := originalNoteEvidence
+    commentEvidence := originalCommentEvidence
   }
   let revisedCorePackage : RunRequestPackageRecord := {
     packagePath := revisedPackage.path
     packageBytes := revisedPackage.bytes
     packageReadCount := revisedPackage.packageReadCount
+    packageIndex := revisedPackage.index
+    packageIndexExact := revisedPackage.independentIndexExact
+    snapshotPath := revisedPackage.snapshotPath
+    snapshotBytes := revisedPackage.snapshotBytes
+    snapshotWriteCount := revisedPackage.snapshotWriteCount
+    snapshotWriteCountExact := revisedPackage.snapshotWriteCountExact
+    snapshotBytesExact := revisedPackage.snapshotBytesExact
     relationships := revisedRelationships
     noteEvidence := revisedNoteEvidence
+    commentEvidence := revisedCommentEvidence
   }
   let comparedCorePackage : RunRequestPackageRecord := {
     packagePath := comparedPackage.path
     packageBytes := comparedPackage.bytes
     packageReadCount := comparedPackage.packageReadCount
+    packageIndex := comparedPackage.index
+    packageIndexExact := comparedPackage.independentIndexExact
+    snapshotPath := comparedPackage.snapshotPath
+    snapshotBytes := comparedPackage.snapshotBytes
+    snapshotWriteCount := comparedPackage.snapshotWriteCount
+    snapshotWriteCountExact := comparedPackage.snapshotWriteCountExact
+    snapshotBytesExact := comparedPackage.snapshotBytesExact
     relationships := comparedRelationships
     noteEvidence := comparedNoteEvidence
+    commentEvidence := comparedCommentEvidence
   }
-  let core ← IO.ofExcept <| runRequestCore {
+  let coreRequest : RunRequestCoreRequest := {
     fixedTriples
     relationshipSlots := evidenceSlots
     relationshipStories := projectedPhysicalStories
@@ -3906,6 +7700,8 @@ def runRequestWithPackages (request : Request)
     revised := revisedCorePackage
     compared := comparedCorePackage
   }
+  let core ← IO.ofExcept <|
+    Tier2.NoteReferenceIntegrity.runRequestCoreV6 coreRequest
   return core.stdout
 
 def withLoadedPackage {α : Type} (root : SnapshotRoot) (path : String)

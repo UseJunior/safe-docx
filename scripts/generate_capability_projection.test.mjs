@@ -335,7 +335,10 @@ test('the human report retains the exact formal-assurance limitations', async ()
     report,
     /Covered stories: main, footnotes, endnotes, selected headers, selected footers\. Projections: text and field markers only\./
   );
-  assert.match(report, /Exact excluded surfaces: word\/comments\.xml and comment semantics;/);
+  assert.match(
+    report,
+    /Exact excluded surfaces: comment range start\/end pairing, range topology, and Microsoft threaded-comment extensions;/,
+  );
   assert.match(report, /inherited or omitted header\/footer role semantics;/);
   assert.match(report, /unselected header\/footer parts and unselected relationship semantics;/);
   assert.match(report, /Exact known unchecked areas: full ECMA-376 or OPC conformance;/);

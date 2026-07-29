@@ -28,6 +28,7 @@ import {
   sameOpaqueOwner,
   validateSdtNamespaceOwnership,
 } from './baselines/atomizer/opaquePassthrough.js';
+import { canonicalizeParagraphPropertiesForIdentity } from './baselines/atomizer/formattingFidelity.js';
 
 // =============================================================================
 // Shared synthetic document for creating virtual elements
@@ -668,15 +669,41 @@ function isEmptyParagraph(node: WmlElement): boolean {
  * These atoms represent empty paragraphs that have no text content,
  * ensuring they are preserved during document reconstruction.
  *
- * The hash includes a paragraph-level content signature for the previous
- * content-bearing paragraph and a consecutive-empty index. Text fragment
- * boundaries are ignored, while non-text leaves contribute stable tokens.
+ * The hash includes the structural container chain (tables, text boxes), a
+ * paragraph-level content signature for the previous content-bearing
+ * paragraph, a consecutive-empty index, and a canonical projection of the
+ * paragraph's `w:pPr`. Text fragment boundaries are ignored, while
+ * non-text leaves contribute stable tokens.
+ *
+ * `w:pPr` participates through a CANONICAL projection, not its serialized
+ * shape. OOXML `CT_PPrBase` permits no attributes, so the only attributes
+ * that reach a `w:pPr` in practice are namespace declarations (`xmlns:*`),
+ * which record where a prefix is bound, not formatting; likewise bare
+ * `<w:pPr/>` vs absent, inter-element whitespace, child order, and
+ * revision-tracking metadata (`w:pPrChange`, `w:pPr/w:rPr/w:ins|w:del`)
+ * are serialization topology or provenance. Folding those into identity
+ * produced phantom paragraph delete+insert pairs. Direct `w:pStyle` is also
+ * excluded so issue #679's paragraph-level detector can pair the paragraphs
+ * and emit `w:pPrChange`. Other substantive children — including `w:sectPr`,
+ * which is section topology — still distinguish and remain outside that
+ * focused style-reference slice.
+ *
+ * @see https://github.com/UseJunior/safe-docx/issues/678
+ * @see https://github.com/UseJunior/safe-docx/issues/679
  *
  * @param paragraphElement - The w:p element
  * @param ancestors - Ancestor elements from root to parent
  * @param part - The OPC part
  * @param state - Atomization state with context information
  */
+/**
+ * Structural containers that scope empty-paragraph position. An empty
+ * paragraph inside a table cell occupies a different structural position
+ * than one at body level, so its identity must not collide with body-level
+ * empties that share the same content context.
+ */
+const STRUCTURAL_CONTAINER_TAGS = new Set(['w:tbl', 'w:tr', 'w:tc', 'w:txbxContent']);
+
 function createEmptyParagraphAtomWithContext(
   paragraphElement: WmlElement,
   ancestors: WmlElement[],
@@ -692,10 +719,19 @@ function createEmptyParagraphAtomWithContext(
   // Determine initial correlation status
   const correlationStatus = getStatusFromRevisionTracking(revTrackElement);
 
-  const pPr = findChildByTagName(paragraphElement, 'w:pPr');
-  const pPrHash = pPr ? hashElement(pPr) : 'no-pPr';
   const contextHash = state.lastContentHash || 'document-start';
-  const hashContent = `empty-paragraph:${contextHash}:${state.consecutiveEmptyIndex}:${pPrHash}`;
+  // Structural container chain (tables, text boxes) is part of position: a
+  // body-level empty paragraph and a table-cell empty paragraph must never
+  // pair, even when they share the same preceding-content signature. Without
+  // this, coarse identity lets the LCS match empties across container
+  // boundaries, which mis-anchors neighboring deleted paragraphs.
+  const containerChain = ancestors
+    .map((ancestor) => ancestor.tagName)
+    .filter((tag) => STRUCTURAL_CONTAINER_TAGS.has(tag))
+    .join('/');
+  const pPr = findChildByTagName(paragraphElement, 'w:pPr');
+  const pPrIdentity = canonicalizeParagraphPropertiesForIdentity(pPr);
+  const hashContent = `empty-paragraph:${containerChain}:${contextHash}:${state.consecutiveEmptyIndex}:${pPrIdentity}`;
 
   // Empty-paragraph identity is the context signature, not the (empty) element.
   return withAtomIdentity(

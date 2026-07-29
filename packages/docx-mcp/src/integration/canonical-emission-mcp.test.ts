@@ -11,6 +11,8 @@ import { batchEdit } from '../tools/batch_edit.js';
 import { clearFormatting } from '../tools/clear_formatting.js';
 import { formatLayout } from '../tools/format_layout.js';
 import { formatNumbering } from '../tools/format_numbering.js';
+import { formatSection } from '../tools/format_section.js';
+import { insertSectionBreakTool } from '../tools/insert_section_break.js';
 import { addComment } from '../tools/add_comment.js';
 import { deleteComment } from '../tools/delete_comment.js';
 import { addFootnote } from '../tools/add_footnote.js';
@@ -25,6 +27,18 @@ const numberingTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.3.1.19' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.18' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.9.3' },
+);
+const sectionTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.12' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.13' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.11' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
+);
+const sectionBreakTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.18' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.6.22' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.20' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
 );
 
 const AI_AUTHOR = 'SafeDocX';
@@ -372,6 +386,156 @@ describe('Tool integration through SessionManager: canonical revision emission',
       const change = doc.getElementsByTagNameNS(W_NS, 'pPrChange')[0] as Element;
       const priorIlvl = change.getElementsByTagNameNS(W_NS, 'ilvl')[0] as Element;
       expect(wordAttr(priorIlvl, 'val')).toBe('0');
+    });
+  });
+
+  sectionTest('format_section saves a SafeDocX-authored section property change', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let documentXml: string;
+
+    await given('a tracked session with a final section', async () => {
+      opened = await openSession([], {
+        mgr: createManager(),
+        xml: makeDocXml('<w:p><w:r><w:t>Section body</w:t></w:r></w:p>'),
+      });
+    });
+
+    await when('format_section restarts page numbering and saves tracked output', async () => {
+      const formatted = await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 0,
+        page_number_start: 1,
+      });
+      assertSuccess(formatted, 'format_section');
+      const parts = await saveAndReadParts(
+        opened.mgr,
+        opened.inputPath,
+        path.join(opened.tmpDir, 'format-section-regression.docx'),
+        ['word/document.xml'],
+      );
+      documentXml = parts['word/document.xml'];
+    });
+
+    await then('document.xml contains a SafeDocX-authored section property change', () => {
+      expectTrackedElementsWithAuthor(documentXml, ['sectPrChange']);
+      const doc = parseXml(documentXml);
+      const current = doc.getElementsByTagNameNS(W_NS, 'pgNumType')[0] as Element;
+      expect(wordAttr(current, 'start')).toBe('1');
+    });
+  });
+
+  sectionTest('format_section saves atomic page size and margin changes', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let documentXml: string;
+
+    await given('a tracked session whose final section has no explicit page setup', async () => {
+      opened = await openSession([], {
+        mgr: createManager(),
+        xml: makeDocXml('<w:p><w:r><w:t>Page setup body</w:t></w:r></w:p>'),
+      });
+    });
+
+    await when('format_section creates landscape geometry and complete margins', async () => {
+      const formatted = await formatSection(opened.mgr, {
+        file_path: opened.inputPath,
+        section_index: 0,
+        page_size: {
+          width_twips: 15840,
+          height_twips: 12240,
+          orientation: 'landscape',
+        },
+        margins: {
+          top_twips: 720,
+          right_twips: 720,
+          bottom_twips: 720,
+          left_twips: 720,
+          header_twips: 360,
+          footer_twips: 360,
+          gutter_twips: 0,
+        },
+      });
+      assertSuccess(formatted, 'format_section page setup');
+      const parts = await saveAndReadParts(
+        opened.mgr,
+        opened.inputPath,
+        path.join(opened.tmpDir, 'format-section-page-setup-regression.docx'),
+        ['word/document.xml'],
+      );
+      documentXml = parts['word/document.xml'];
+    });
+
+    await then('document.xml contains current geometry and one SafeDocX section snapshot', () => {
+      expectTrackedElementsWithAuthor(documentXml, ['sectPrChange']);
+      const doc = parseXml(documentXml);
+      const pgSz = doc.getElementsByTagNameNS(W_NS, 'pgSz')[0] as Element;
+      const pgMar = doc.getElementsByTagNameNS(W_NS, 'pgMar')[0] as Element;
+      expect(wordAttr(pgSz, 'w')).toBe('15840');
+      expect(wordAttr(pgSz, 'h')).toBe('12240');
+      expect(wordAttr(pgSz, 'orient')).toBe('landscape');
+      expect(wordAttr(pgMar, 'top')).toBe('720');
+      expect(wordAttr(pgMar, 'gutter')).toBe('0');
+    });
+  });
+
+  sectionBreakTest('insert_section_break saves tracked topology and following setup', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let documentXml: string;
+
+    await given('a tracked session with two paragraphs and one final section', async () => {
+      opened = await openSession([], {
+        mgr: createManager(),
+        xml: makeDocXml(
+          '<w:p><w:r><w:t>First section body</w:t></w:r></w:p>'
+          + '<w:p><w:r><w:t>Following body</w:t></w:r></w:p>',
+        ),
+      });
+    });
+
+    await when('insert_section_break splits after the first paragraph and saves tracked output', async () => {
+      const inserted = await insertSectionBreakTool(opened.mgr, {
+        file_path: opened.inputPath,
+        paragraph_id: opened.firstParaId,
+        break_type: 'nextPage',
+        new_section: { page_number_start: 1 },
+      });
+      assertSuccess(inserted, 'insert_section_break');
+      const parts = await saveAndReadParts(
+        opened.mgr,
+        opened.inputPath,
+        path.join(opened.tmpDir, 'insert-section-break-regression.docx'),
+        ['word/document.xml'],
+      );
+      documentXml = parts['word/document.xml'];
+    });
+
+    await then('document.xml contains one inserted boundary mark and following section snapshot', () => {
+      expectTrackedElementsWithAuthor(documentXml, ['ins', 'sectPrChange']);
+      const doc = parseXml(documentXml);
+      const insertedMarks = Array.from(doc.getElementsByTagNameNS(W_NS, 'ins'))
+        .filter((element) =>
+          (element.parentNode as Element | null)?.localName === 'rPr'
+          && (element.parentNode?.parentNode as Element | null)?.localName === 'pPr');
+      expect(insertedMarks).toHaveLength(1);
+      const sections = Array.from(doc.getElementsByTagNameNS(W_NS, 'sectPr'))
+        .filter((element) =>
+          (element.parentNode as Element | null)?.localName !== 'sectPrChange');
+      expect(sections).toHaveLength(2);
+      const type = sections[0]?.getElementsByTagNameNS(W_NS, 'type')[0] as Element;
+      expect(wordAttr(type, 'val')).toBe('nextPage');
+      const currentPageNumber = sections[1]?.getElementsByTagNameNS(W_NS, 'pgNumType')[0] as Element;
+      expect(wordAttr(currentPageNumber, 'start')).toBe('1');
     });
   });
 
