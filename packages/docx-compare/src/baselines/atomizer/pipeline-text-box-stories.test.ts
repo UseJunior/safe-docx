@@ -5,7 +5,10 @@
  * @conformance ECMA-376 edition 5, Part 4 § 19.1.2.22
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
  * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.18
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.5
+ * @conformance ECMA-376 edition 5, Part 1 § 17.10.3
  * @see https://github.com/UseJunior/safe-docx/issues/713
+ * @see https://github.com/UseJunior/safe-docx/issues/726
  */
 
 import { describe, expect } from 'vitest';
@@ -36,6 +39,8 @@ const test = testAllure
     { spec: 'ECMA-376', edition: 5, part: 4, section: '19.1.2.22' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
     { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.18' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.5' },
+    { spec: 'ECMA-376', edition: 5, part: 1, section: '17.10.3' },
   );
 
 const TEXT_BOX_NAMESPACES = {
@@ -43,6 +48,10 @@ const TEXT_BOX_NAMESPACES = {
   o: 'urn:schemas-microsoft-com:office:office',
   r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
 } as const;
+const HEADER_RELATIONSHIP =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/header';
+const FOOTER_RELATIONSHIP =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer';
 
 function paragraph(text: string): string {
   return `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
@@ -88,6 +97,97 @@ function paragraphWithTextBoxStory(
     `</w:txbxContent></v:textbox>` +
     `</v:shape></w:pict></w:r></w:p>`
   );
+}
+
+function ancillaryStory(
+  kind: 'header' | 'footer',
+  text: string,
+  shapeId = 'shape1',
+  hyperlinkId?: string,
+): string {
+  const root = kind === 'header' ? 'hdr' : 'ftr';
+  return (
+    `<?xml version="1.0"?>` +
+    `<w:${root} xmlns:w="${OOXML.W_NS}"` +
+    ` xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"` +
+    ` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"` +
+    ` xmlns:v="urn:schemas-microsoft-com:vml"` +
+    ` xmlns:o="urn:schemas-microsoft-com:office:office">` +
+    paragraphWithTextBox(text, { shapeId, hyperlinkId }) +
+    `</w:${root}>`
+  );
+}
+
+interface SelectedStoryFixtureOptions {
+  text: string;
+  target?: string;
+  shapeId?: string;
+  bodyXml?: string;
+  sectPrXml?: string;
+  storyHyperlinkId?: string;
+  storyHyperlinkTarget?: string;
+}
+
+async function selectedStoryFixture(
+  kind: 'header' | 'footer',
+  options: SelectedStoryFixtureOptions,
+): Promise<Buffer> {
+  const target = options.target ?? `${kind}1.xml`;
+  const relationshipId = kind === 'header' ? 'rIdHeader' : 'rIdFooter';
+  const archive = await DocxArchive.load(
+    await buildDocxFromBodyXml(
+      options.bodyXml ?? paragraph('Body'),
+      [],
+      {
+        namespaces: {
+          r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+        },
+      },
+    ),
+  );
+  archive.setDocumentXml(
+    (await archive.getDocumentXml()).replace(
+      '<w:sectPr/>',
+      options.sectPrXml ??
+        `<w:sectPr><w:${kind}Reference w:type="default" r:id="${relationshipId}"/></w:sectPr>`,
+    ),
+  );
+  archive.setFile(
+    'word/_rels/document.xml.rels',
+    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<Relationship Id="${relationshipId}"` +
+      ` Type="${kind === 'header' ? HEADER_RELATIONSHIP : FOOTER_RELATIONSHIP}"` +
+      ` Target="${target}"/>` +
+      `</Relationships>`,
+  );
+  archive.setFile(
+    `word/${target}`,
+    ancillaryStory(
+      kind,
+      options.text,
+      options.shapeId,
+      options.storyHyperlinkId,
+    ),
+  );
+  if (options.storyHyperlinkId && options.storyHyperlinkTarget) {
+    archive.setFile(
+      `word/_rels/${target}.rels`,
+      `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="${options.storyHyperlinkId}"` +
+        ` Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"` +
+        ` Target="${options.storyHyperlinkTarget}" TargetMode="External"/>` +
+        `</Relationships>`,
+    );
+  }
+  return archive.save();
+}
+
+function selectedHeaderFixture(options: SelectedStoryFixtureOptions): Promise<Buffer> {
+  return selectedStoryFixture('header', options);
+}
+
+function selectedFooterFixture(options: SelectedStoryFixtureOptions): Promise<Buffer> {
+  return selectedStoryFixture('footer', options);
 }
 
 async function documentXml(docx: Buffer): Promise<string> {
@@ -578,7 +678,7 @@ describe('VML text-box story comparison (#713)', () => {
     });
   });
 
-  test('reports changed header text boxes as an explicit scope boundary', async ({
+  test('ignores unselected header text boxes instead of pairing raw filenames', async ({
     given,
     when,
     then,
@@ -605,9 +705,181 @@ describe('VML text-box story comparison (#713)', () => {
     const revised = await given('a revised header text-box story', () =>
       withHeaderStory('Revised header'),
     );
+    const result = await when('comparison resolves only selected stories', () =>
+      compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'inplace',
+      }),
+    );
+
+    await then('the unselected package allocation does not block comparison', () => {
+      expect(result.stats.insertions).toBe(0);
+      expect(result.stats.deletions).toBe(0);
+    });
+  });
+
+  test('compares a same-path selected header text box', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const original = await given('a selected original header story', () =>
+      selectedHeaderFixture({ text: 'Original header' }),
+    );
+    const revised = await given('the same selected scaffold with edited text', () =>
+      selectedHeaderFixture({ text: 'Revised header' }),
+    );
+
+    const result = await when('the selected story is compared in place', () =>
+      compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'inplace',
+        leanXmlVerifier: {
+          enabled: true,
+          executablePath: '/does/not/exist',
+        },
+      }),
+    );
+    const archive = await DocxArchive.load(result.document);
+    const output = await archive.getFile('word/header1.xml');
+
+    await then('revisions live inside the selected header text box', () => {
+      expect(output).not.toBeNull();
+      const textBox = parseXml(output!)
+        .getElementsByTagNameNS(OOXML.W_NS, 'txbxContent')
+        .item(0);
+      expect(textBox?.getElementsByTagNameNS(OOXML.W_NS, 'ins').length).toBeGreaterThan(0);
+      expect(textBox?.getElementsByTagNameNS(OOXML.W_NS, 'del').length).toBeGreaterThan(0);
+      expect(textBoxText(acceptAllChanges(output!))).toBe('Revised header');
+      expect(textBoxText(rejectAllChanges(output!))).toBe('Original header');
+      expect(result.documentIntegrity?.exclusions).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('Relationship-selected header/footer'),
+        ]),
+      );
+    });
+  });
+
+  test('pairs a selected header across physical-part renumbering', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const original = await given('the semantic story at header1.xml', () =>
+      selectedHeaderFixture({ text: 'Original header', target: 'header1.xml' }),
+    );
+    const revised = await given('the edited semantic story at header9.xml', () =>
+      selectedHeaderFixture({ text: 'Revised header', target: 'header9.xml' }),
+    );
+
+    const result = await when('comparison pairs the binding-selected scaffolds', () =>
+      compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'inplace',
+      }),
+    );
+    const output = await (await DocxArchive.load(result.document))
+      .getFile('word/header9.xml');
+
+    await then('the revised selected part carries the nested redline', () => {
+      expect(output).not.toBeNull();
+      expect(textBoxText(acceptAllChanges(output!))).toBe('Revised header');
+      expect(textBoxText(rejectAllChanges(output!))).toBe('Original header');
+    });
+  });
+
+  test('preserves a selected story hyperlink across relationship-id renumbering', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const original = await given('a linked original header story', () =>
+      selectedHeaderFixture({
+        text: 'Original linked header',
+        storyHyperlinkId: 'rIdLink1',
+        storyHyperlinkTarget: 'https://example.test/notice',
+      }),
+    );
+    const revised = await given('the edited story with a reallocated relationship id', () =>
+      selectedHeaderFixture({
+        text: 'Revised linked header',
+        storyHyperlinkId: 'rIdLink9',
+        storyHyperlinkTarget: 'https://example.test/notice',
+      }),
+    );
+
+    const result = await when('the owning relationship table follows the nested story', () =>
+      compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'inplace',
+      }),
+    );
+    const archive = await DocxArchive.load(result.document);
+    const [output, relationships] = await Promise.all([
+      archive.getFile('word/header1.xml'),
+      archive.getFile('word/_rels/header1.xml.rels'),
+    ]);
+
+    await then('the revised relationship closure remains selected and resolvable', () => {
+      expect(output).toContain('r:id="rIdLink9"');
+      expect(output).not.toContain('r:id="rIdLink1"');
+      expect(relationships).toContain('Id="rIdLink9"');
+      expect(textBoxText(acceptAllChanges(output!))).toBe('Revised linked header');
+      expect(textBoxText(rejectAllChanges(output!))).toBe('Original linked header');
+    });
+  });
+
+  test('allows a side-only footer story owned by an inserted section', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const original = await given('one section without a selected header', () =>
+      buildDocxFromBodyXml(paragraph('Body')),
+    );
+    const insertedSection =
+      `<w:p><w:pPr><w:sectPr>` +
+      `<w:footerReference w:type="default" r:id="rIdFooter"/>` +
+      `</w:sectPr></w:pPr><w:r><w:t>Inserted section</w:t></w:r></w:p>`;
+    const revised = await given('an inserted section selecting a new footer story', () =>
+      selectedFooterFixture({
+        text: 'New section footer',
+        target: 'footer9.xml',
+        bodyXml: paragraph('Body') + insertedSection,
+        sectPrXml: '<w:sectPr/>',
+      }),
+    );
+
+    const result = await when('the relationship-aware lifecycle check runs', () =>
+      compareDocumentsAtomizer(original, revised, {
+        reconstructionMode: 'inplace',
+      }),
+    );
+
+    await then('the inserted section lifecycle is publishable', () => {
+      expect(result.reconstructionModeUsed).toBe('inplace');
+      expect(result.stats.insertions).toBeGreaterThan(0);
+    });
+  });
+
+  test('fails closed when a side-only story replaces a corresponding section', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    const original = await given('one selected header scaffold', () =>
+      selectedHeaderFixture({
+        text: 'Original header',
+        target: 'header1.xml',
+        shapeId: 'shape1',
+      }),
+    );
+    const revised = await given('a non-pairable replacement in the same section', () =>
+      selectedHeaderFixture({
+        text: 'Revised header',
+        target: 'header9.xml',
+        shapeId: 'shape9',
+      }),
+    );
     let failure: unknown;
 
-    await when('comparison discovers ancillary text-box stories', async () => {
+    await when('relationship-aware classification refuses to guess', async () => {
       try {
         await compareDocumentsAtomizer(original, revised, {
           reconstructionMode: 'inplace',
@@ -617,16 +889,15 @@ describe('VML text-box story comparison (#713)', () => {
       }
     });
 
-    await then('the typed diagnostic reports the exact unsupported part', () => {
+    await then('a typed non-content-bearing diagnostic identifies the selected part', () => {
       expect(failure).toBeInstanceOf(UnsupportedTextBoxRevisionError);
-      expect(failure).toMatchObject({
-        changes: [
+      expect((failure as UnsupportedTextBoxRevisionError).changes).toEqual(
+        expect.arrayContaining([
           expect.objectContaining({
-            partPath: 'word/header1.xml',
-            reason: expect.stringContaining('ancillary'),
+            reason: expect.stringContaining('exclusively'),
           }),
-        ],
-      });
+        ]),
+      );
     });
   });
 });

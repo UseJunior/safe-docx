@@ -15,15 +15,17 @@ outer drawing object.
 
 - Discover paired `w:txbxContent` stories in the main document and assign each a
   deterministic locator.
+- Resolve selected header/footer stories through `w:sectPr` bindings and pair
+  their physical parts by semantic story identity rather than raw package path.
 - Compare supported text-box paragraph content independently with ordinary
   WordprocessingML tracked insertions and deletions.
 - Keep the containing VML/DrawingML scaffold out of the outer-body diff and
   splice the compared nested story back into the preserved revised scaffold.
 - Require accept-all and reject-all parity for both the outer document and each
   supported text-box story.
-- Retain an explicit fail-closed boundary for inserted, deleted, reordered,
-  nested, ancillary-part, or structurally changed text boxes until those shapes
-  receive separate support.
+- Treat a side-only selected header/footer story as a whole-story lifecycle only
+  when every selector belongs to an inserted/deleted section; reject ambiguous
+  insertion, deletion, reorder, nesting, or scaffold mutation.
 - Report text-box stories as an explicit verifier coverage item; a certificate
   may not silently claim full-story coverage while the compiled verifier does
   not parse them.
@@ -35,3 +37,4 @@ outer drawing object.
   reconstruction, round-trip validation, focused fixtures, verifier coverage
 - Fixes: #713
 - Related: #647, #688, #718
+- Follow-up slice: #726

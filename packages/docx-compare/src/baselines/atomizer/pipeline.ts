@@ -125,6 +125,7 @@ import { extractRoundTripComparisonText } from '../../fieldComparisonSemantics.j
 import { suppressVolatileTocPagerefCacheRevisions } from './tocPagerefCache.js';
 import {
   assembleTextBoxStoryComparison,
+  assertAncillaryTextBoxStoryProjection,
   prepareTextBoxStoryComparison,
   UnsupportedTextBoxRevisionError,
 } from './textBoxRevisionSafety.js';
@@ -611,7 +612,7 @@ export async function compareDocumentsAtomizer(
   if (options.reconstructionMode !== 'inplace') {
     throw new UnsupportedTextBoxRevisionError([{
       index: textBoxPlan.stories[0]?.index ?? 0,
-      partPath: 'word/document.xml',
+      partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
       reason: 'changed text-box stories currently require reconstructionMode=inplace',
     }]);
   }
@@ -629,12 +630,16 @@ export async function compareDocumentsAtomizer(
   if (outerResult.reconstructionModeUsed !== 'inplace') {
     throw new UnsupportedTextBoxRevisionError([{
       index: textBoxPlan.stories[0]?.index ?? 0,
-      partPath: 'word/document.xml',
+      partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
       reason: 'the outer document required rebuild fallback',
     }]);
   }
 
-  const storyResults: Array<{ index: number; result: CompareResult }> = [];
+  const storyResults: Array<{
+    index: number;
+    partPath: string;
+    result: CompareResult;
+  }> = [];
   for (const story of textBoxPlan.stories) {
     const result = await compareDocumentsAtomizerCore(
       story.original,
@@ -644,17 +649,22 @@ export async function compareDocumentsAtomizer(
     if (result.reconstructionModeUsed !== 'inplace') {
       throw new UnsupportedTextBoxRevisionError([{
         index: story.index,
-        partPath: 'word/document.xml',
+        partPath: story.partPath,
         reason: 'the nested story required rebuild fallback',
       }]);
     }
-    storyResults.push({ index: story.index, result });
+    storyResults.push({
+      index: story.index,
+      partPath: story.partPath,
+      result,
+    });
   }
 
   const document = await assembleTextBoxStoryComparison(
     outerResult.document,
-    storyResults.map(({ index, result }) => ({
+    storyResults.map(({ index, partPath, result }) => ({
       index,
+      partPath,
       document: result.document,
     })),
   );
@@ -674,9 +684,12 @@ export async function compareDocumentsAtomizer(
   ) {
     throw new UnsupportedTextBoxRevisionError([{
       index: textBoxPlan.stories[0]?.index ?? 0,
-      partPath: 'word/document.xml',
+      partPath: textBoxPlan.stories[0]?.partPath ?? 'word/document.xml',
       reason: 'assembled nested stories failed accept/reject round-trip validation',
     }]);
+  }
+  if (textBoxPlan.validateAncillaryProjection) {
+    await assertAncillaryTextBoxStoryProjection(original, revised, document);
   }
 
   const results = [outerResult, ...storyResults.map(({ result }) => result)];
@@ -725,6 +738,11 @@ export async function compareDocumentsAtomizer(
         exclusions: [
           ...(certificate.exclusions ?? []),
           'Nested w:txbxContent stories are not independently enumerated by the compiled verifier.',
+          ...(textBoxPlan.validateAncillaryProjection
+            ? [
+                'Relationship-selected header/footer w:txbxContent stories are not independently enumerated by the compiled verifier.',
+              ]
+            : []),
         ],
       }))
     : undefined;
