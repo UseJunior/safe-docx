@@ -31,17 +31,21 @@ export type AnnotatedRun = {
 };
 
 export type FormattingBaseline = {
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
+  // A modal member remains null when the dominant runs leave it unresolved.
+  bold: boolean | null;
+  italic: boolean | null;
+  underline: boolean | null;
   suppressed: boolean; // true when baseline covers >= 60% of body chars
 };
 
 export type FontBaseline = {
+  /** Modal colour hex, or null when the modal run colour is automatic or unresolved. */
   modalColor: string | null;
   colorSuppressed: boolean;
+  /** Modal size in points, or 0 when the modal run size is unresolved. */
   modalFontSizePt: number;
   fontSizeSuppressed: boolean;
+  /** Modal font name, or '' when the modal run font is unresolved. */
   modalFontName: string;
   fontNameSuppressed: boolean;
 };
@@ -50,9 +54,13 @@ export type FontBaseline = {
 
 const SUPPRESSION_THRESHOLD = 0.60;
 
-type FormattingKey = `${boolean}|${boolean}|${boolean}`;
+type FormattingKey = `${boolean | null}|${boolean | null}|${boolean | null}`;
 
-function fmtKey(bold: boolean, italic: boolean, underline: boolean): FormattingKey {
+function fmtKey(
+  bold: boolean | null,
+  italic: boolean | null,
+  underline: boolean | null,
+): FormattingKey {
   return `${bold}|${italic}|${underline}` as FormattingKey;
 }
 
@@ -96,9 +104,11 @@ export function computeModalBaseline(
   }
 
   const [boldStr, italicStr, underlineStr] = bestKey.split('|');
-  const bold = boldStr === 'true';
-  const italic = italicStr === 'true';
-  const underline = underlineStr === 'true';
+  const parseBaselineBoolean = (value: string): boolean | null =>
+    value === 'null' ? null : value === 'true';
+  const bold = parseBaselineBoolean(boldStr!);
+  const italic = parseBaselineBoolean(italicStr!);
+  const underline = parseBaselineBoolean(underlineStr!);
   const suppressed = mode === 'compact' && bestChars / totalChars >= SUPPRESSION_THRESHOLD;
 
   return { bold, italic, underline, suppressed };
@@ -106,52 +116,29 @@ export function computeModalBaseline(
 
 // ── Paragraph-local font baseline ───────────────────────────────────
 
-function computeModalString(
+/**
+ * Character-weighted mode of one font property over a paragraph's body runs.
+ * An unresolved value (`null`) is its own bucket rather than being dropped:
+ * those runs still render in *some* font/size/colour, so excluding them would
+ * make a minority of explicitly formatted runs look like the paragraph norm and
+ * suppress their tags. When the unresolved bucket wins, `modal` is `null`.
+ */
+function computeModal<T extends string | number>(
   runs: AnnotatedRun[],
-  extract: (r: AnnotatedRun) => string | null,
+  extract: (r: AnnotatedRun) => T | null,
   mode: FormattingMode = 'compact',
-): { modal: string | null; suppressed: boolean } {
+): { modal: T | null; suppressed: boolean } {
   const bodyRuns = runs.filter((r) => !r.isHeaderRun && r.charCount > 0);
   const totalChars = bodyRuns.reduce((sum, r) => sum + r.charCount, 0);
   if (totalChars === 0) return { modal: null, suppressed: false };
 
-  const counts = new Map<string, number>();
-  for (const r of bodyRuns) {
-    const val = extract(r) ?? '';
-    counts.set(val, (counts.get(val) ?? 0) + r.charCount);
-  }
-
-  let bestVal = '';
-  let bestChars = 0;
-  for (const [val, chars] of counts) {
-    if (chars > bestChars) {
-      bestVal = val;
-      bestChars = chars;
-    }
-  }
-
-  return {
-    modal: bestVal || null,
-    suppressed: mode === 'compact' && bestChars / totalChars >= SUPPRESSION_THRESHOLD,
-  };
-}
-
-function computeModalNumber(
-  runs: AnnotatedRun[],
-  extract: (r: AnnotatedRun) => number,
-  mode: FormattingMode = 'compact',
-): { modal: number; suppressed: boolean } {
-  const bodyRuns = runs.filter((r) => !r.isHeaderRun && r.charCount > 0);
-  const totalChars = bodyRuns.reduce((sum, r) => sum + r.charCount, 0);
-  if (totalChars === 0) return { modal: 0, suppressed: false };
-
-  const counts = new Map<number, number>();
+  const counts = new Map<T | null, number>();
   for (const r of bodyRuns) {
     const val = extract(r);
     counts.set(val, (counts.get(val) ?? 0) + r.charCount);
   }
 
-  let bestVal = 0;
+  let bestVal: T | null = null;
   let bestChars = 0;
   for (const [val, chars] of counts) {
     if (chars > bestChars) {
@@ -171,14 +158,15 @@ export function computeParagraphFontBaseline(
   options?: { formattingMode?: FormattingMode },
 ): FontBaseline {
   const mode = options?.formattingMode ?? 'compact';
-  const color = computeModalString(runs, (r) => r.formatting.colorHex, mode);
-  const fontSize = computeModalNumber(runs, (r) => r.formatting.fontSizePt, mode);
-  const fontName = computeModalString(runs, (r) => r.formatting.fontName, mode);
+  const color = computeModal(runs, (r) => r.formatting.colorHex, mode);
+  const fontSize = computeModal(runs, (r) => r.formatting.fontSizePt, mode);
+  const fontName = computeModal(runs, (r) => r.formatting.fontName, mode);
 
   return {
-    modalColor: color.modal,
+    // Automatic colour is never emitted, so it is "no modal colour" here.
+    modalColor: color.modal === 'auto' ? null : color.modal,
     colorSuppressed: color.suppressed,
-    modalFontSizePt: fontSize.modal,
+    modalFontSizePt: fontSize.modal ?? 0,
     fontSizeSuppressed: fontSize.suppressed,
     modalFontName: fontName.modal ?? '',
     fontNameSuppressed: fontName.suppressed,
@@ -280,20 +268,28 @@ function desiredTagsForRun(
     };
   }
 
-  const highlightVal = run.formatting.highlightVal;
+  const highlightVal = typeof run.formatting.highlightVal === 'string'
+    ? run.formatting.highlightVal
+    : null;
 
   // BIU
   let bold: boolean;
   let italic: boolean;
   let underline: boolean;
   if (!baseline.suppressed) {
-    bold = run.formatting.bold;
-    italic = run.formatting.italic;
-    underline = run.formatting.underline;
+    bold = run.formatting.bold === true;
+    italic = run.formatting.italic === true;
+    underline = run.formatting.underline === true;
   } else {
-    bold = run.formatting.bold !== baseline.bold ? run.formatting.bold : false;
-    italic = run.formatting.italic !== baseline.italic ? run.formatting.italic : false;
-    underline = run.formatting.underline !== baseline.underline ? run.formatting.underline : false;
+    bold = run.formatting.bold !== null && run.formatting.bold !== baseline.bold
+      ? run.formatting.bold
+      : false;
+    italic = run.formatting.italic !== null && run.formatting.italic !== baseline.italic
+      ? run.formatting.italic
+      : false;
+    underline = run.formatting.underline !== null && run.formatting.underline !== baseline.underline
+      ? run.formatting.underline
+      : false;
   }
 
   // Font properties (paragraph-local baseline)
@@ -304,19 +300,22 @@ function desiredTagsForRun(
   if (fontBaseline) {
     // Color: emit only when suppressed and differs from modal, or not suppressed and has a value
     if (fontBaseline.colorSuppressed) {
-      if (run.formatting.colorHex !== fontBaseline.modalColor) {
+      if (run.formatting.colorHex !== null &&
+          run.formatting.colorHex !== 'auto' &&
+          run.formatting.colorHex !== fontBaseline.modalColor) {
         color = run.formatting.colorHex;
       }
-    } else if (run.formatting.colorHex) {
+    } else if (run.formatting.colorHex && run.formatting.colorHex !== 'auto') {
       color = run.formatting.colorHex;
     }
 
     // Font size: emit only when suppressed and differs from modal, or not suppressed and > 0
     if (fontBaseline.fontSizeSuppressed) {
+      // An unresolved size differs from any modal but has no value to emit.
       if (run.formatting.fontSizePt !== fontBaseline.modalFontSizePt) {
         fontSize = run.formatting.fontSizePt;
       }
-    } else if (run.formatting.fontSizePt > 0) {
+    } else if (run.formatting.fontSizePt !== null && run.formatting.fontSizePt > 0) {
       fontSize = run.formatting.fontSizePt;
     }
 

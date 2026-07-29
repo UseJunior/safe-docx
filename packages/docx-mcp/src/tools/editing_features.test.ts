@@ -84,7 +84,7 @@ describe('Editing Features', () => {
 
       expect(node.body_run_formatting, 'body_run_formatting should be defined').toBeDefined();
       expect(node.body_run_formatting.bold).toBe(false);
-      expect(node.body_run_formatting.highlightVal).toBeNull();
+      expect(node.body_run_formatting.highlightVal).toBe(false);
     });
   });
 });

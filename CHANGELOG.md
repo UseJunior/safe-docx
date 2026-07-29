@@ -23,6 +23,28 @@
   the first `<`) from an XML or `.rels` part, as `DocxZip.readText` already
   did, so the text it returns starts with markup and can go to any XML parser.
   Non-XML entries are unchanged.
+- **Breaking (docx-core public type):** every field of `RunFormatting`, the
+  return type of `extractEffectiveRunFormatting`, is now nullable, and `null`
+  now means only "unresolved": the property is declared in a layer the
+  resolver does not read yet (`w:docDefaults`, or a table style for a run
+  inside a table), or it has no OOXML default and nothing declares it
+  (`fontName`, `fontSizePt`). Previously the resolver returned `''`, `0` and
+  `false` for those cases, indistinguishable from real values. Values for
+  properties the resolver does establish are unchanged. A property declared
+  nowhere resolves to its OOXML default, now spelled explicitly:
+  `highlightVal: false` (was `null`) for no highlight, and `colorHex: 'auto'`
+  (was `null`) for automatic colour. TypeScript callers must handle `null`;
+  `StylesModel` gains optional `docDefaultsRPr` / `tableStyleRPrs` fields, and
+  hand-built `{ byId }` models still type-check. (#752)
+- **Client-visible (MCP):** `read_file` JSON `body_run_formatting` carries the
+  same shape: `fontName` / `fontSizePt` are `null` instead of `""` / `0` when
+  unresolved, `highlightVal` is `false` instead of `null` for an unhighlighted
+  run, and `colorHex` is `"auto"` instead of `null` for automatic colour.
+  Formatting tags in `read_file` output are unchanged for resolved values; an
+  unresolved run inside a paragraph with a resolved modal size no longer gets a
+  `<font size="0">` tag. The inserted-run formatting-convention warning is no
+  longer raised from an unresolved bold/italic/underline value, and names such
+  a member as `unresolved` when it reports a divergence on another one. (#752)
 
 ## 0.22.1
 

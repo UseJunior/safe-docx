@@ -398,6 +398,53 @@ describe('formatting-convention check', () => {
     });
   });
 
+  test('never warns from an unresolved member, but still reports a resolved divergence (#752)', async ({
+    given,
+    when,
+    then,
+    and,
+  }: AllureBddContext) => {
+    // docDefaults turn italic on. The resolver does not read docDefaults, so a
+    // run that does not set italic directly has italic unresolved (null), not
+    // false. The convention's own italic is direct, hence resolved.
+    const docDefaultsItalic =
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<w:styles xmlns:w="${W_NS}"><w:docDefaults><w:rPrDefault><w:rPr><w:i/></w:rPr>` +
+      `</w:rPrDefault></w:docDefaults></w:styles>`;
+    const files = { 'word/styles.xml': docDefaultsItalic };
+    let differsOnlyWhereUnresolved: string[] = [];
+    let differsWhereResolved: string[] = [];
+
+    await given('a bold-italic defined-term convention in a document whose docDefaults turn italic on', async () => {
+      expect(definedTermPopulation(await loadDoc(CONVENTION_BODY))).toBeGreaterThanOrEqual(DEFAULT_MIN_INSTANCES);
+    });
+
+    await when('a bold term with unresolved italic, and a plain term, are inserted', async () => {
+      differsOnlyWhereUnresolved = await check(
+        CONVENTION_BODY + TARGET_PLAIN,
+        CONVENTION_BODY + insertedDefinedTermParagraph({ bold: true }),
+        INSERTED_DEFINED_TERM_TEXT,
+        files,
+      );
+      differsWhereResolved = await check(
+        CONVENTION_BODY + TARGET_PLAIN,
+        CONVENTION_BODY + insertedDefinedTermParagraph({}),
+        INSERTED_DEFINED_TERM_TEXT,
+        files,
+      );
+    });
+
+    await then('a tuple that differs only on the unresolved italic is silent', () => {
+      expect(differsOnlyWhereUnresolved).toEqual([]);
+    });
+
+    await and('the resolved bold divergence is reported, naming italic as unresolved', () => {
+      expect(differsWhereResolved).toHaveLength(1);
+      expect(differsWhereResolved[0]).toContain('is bold=false, italic=unresolved, underline=false');
+      expect(differsWhereResolved[0]).toContain('are bold=true, italic=true, underline=false');
+    });
+  });
+
   test('NEGATIVE CONTROL: the same fixture with an on-convention insertion is silent', async () => {
     expect(
       await check(

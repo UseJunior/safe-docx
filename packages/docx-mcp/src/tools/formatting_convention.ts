@@ -25,7 +25,8 @@ import {
  *
  * 1. **Structural, never textual.** Divergence is decided on the
  *    `(bold, italic, underline)` tuple. Text is used only to *locate*
- *    instances, never to judge them.
+ *    instances, never to judge them. A member the resolver reports as
+ *    unresolved (`null`, #752) is never the basis of a warning.
  * 2. **Effective, not declared, formatting.** Resolution goes through
  *    {@link extractEffectiveRunFormatting}, so a run that inherits bold italic
  *    from a character or paragraph style is not reported as divergent. That is
@@ -60,10 +61,17 @@ const CONSTRUCT_LABELS: Record<ConventionConstruct, string> = {
  * make the mode meaningless.
  */
 export type ConventionTuple = {
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
+  /**
+   * `null` when the resolver could not establish the property (#752): it is
+   * declared only in a layer the resolver does not read. Never compared as
+   * `false`; see {@link divergentMembers}.
+   */
+  bold: boolean | null;
+  italic: boolean | null;
+  underline: boolean | null;
 };
+
+const TUPLE_MEMBERS = ['bold', 'italic', 'underline'] as const;
 
 /** One occurrence of a construct in a document, with its resolved formatting. */
 type ConventionInstance = {
@@ -429,12 +437,29 @@ function collectInstances(
 
 // ── Convention resolution ──────────────────────────────────────────────────
 
+/** Unresolved members key as `?`, so they never collide with a resolved `false`. */
 function tupleKey(tuple: ConventionTuple): string {
-  return `${tuple.bold ? 1 : 0}${tuple.italic ? 1 : 0}${tuple.underline ? 1 : 0}`;
+  return TUPLE_MEMBERS.map((member) => {
+    const value = tuple[member];
+    return value === null ? '?' : value ? '1' : '0';
+  }).join('');
 }
 
 function describeTuple(tuple: ConventionTuple): string {
-  return `bold=${tuple.bold}, italic=${tuple.italic}, underline=${tuple.underline}`;
+  return TUPLE_MEMBERS.map((member) => `${member}=${tuple[member] ?? 'unresolved'}`).join(', ');
+}
+
+/**
+ * The members on which `actual` provably differs from `expected`: both sides
+ * resolved, and unequal. A member unresolved on either side is not evidence of
+ * a divergence (#752), so a tuple that differs only there is not reported.
+ */
+function divergentMembers(actual: ConventionTuple, expected: ConventionTuple): string[] {
+  return TUPLE_MEMBERS.filter((member) => {
+    const a = actual[member];
+    const e = expected[member];
+    return a !== null && e !== null && a !== e;
+  });
 }
 
 /** Identity of one instance for multiset differencing: text plus every tuple. */
@@ -567,7 +592,6 @@ export function checkFormattingConvention(
         remaining.set(fp, (remaining.get(fp) ?? 0) + 1);
       }
 
-      const expected = tupleKey(convention.tuple);
       const share = Math.round((convention.modeCount / convention.total) * 100);
       const reported = new Set<string>();
 
@@ -582,8 +606,8 @@ export function checkFormattingConvention(
         }
 
         for (const tuple of instance.insertedRunTuples) {
+          if (divergentMembers(tuple, convention.tuple).length === 0) continue;
           const actual = tupleKey(tuple);
-          if (actual === expected) continue;
           const dedupeKey = `${instance.key}|${actual}`;
           if (reported.has(dedupeKey)) continue;
           reported.add(dedupeKey);
