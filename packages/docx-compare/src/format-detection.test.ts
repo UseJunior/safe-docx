@@ -439,6 +439,55 @@ describe('detectFormatChangesInAtomList', () => {
     });
   });
 
+  test('skips whitespace-only text atoms with different run properties', async ({ given, when, then }: AllureBddContext) => {
+    let atom: ComparisonUnitAtom;
+
+    await given('a standalone space correlated across plain and underlined runs', () => {
+      atom = createAtomWithAncestors(' ', []);
+      atom.comparisonUnitAtomBefore = createAtomWithAncestors(' ', [
+        el('w:u', { 'w:val': 'single' }),
+      ]);
+    });
+
+    await when('format changes are detected', () => {
+      detectFormatChangesInAtomList([atom], { detectFormatChanges: true });
+    });
+
+    await then('the whitespace atom remains equal without format-change metadata', () => {
+      expect(atom.correlationStatus).toBe(CorrelationStatus.Equal);
+      expect(atom.formatChange).toBeUndefined();
+    });
+  });
+
+  test('keeps whitespace inside a genuine whole-run formatting change', async ({ given, when, then }: AllureBddContext) => {
+    let word: ComparisonUnitAtom;
+    let space: ComparisonUnitAtom;
+
+    await given('word and space atoms split from one run with the same underline removal', () => {
+      const splitFromAtom = createAtomWithAncestors('Word ', []);
+      word = createAtomWithAncestors('Word', []);
+      space = createAtomWithAncestors(' ', []);
+      word.splitFromAtom = splitFromAtom;
+      space.splitFromAtom = splitFromAtom;
+      word.comparisonUnitAtomBefore = createAtomWithAncestors('Word', [
+        el('w:u', { 'w:val': 'single' }),
+      ]);
+      space.comparisonUnitAtomBefore = createAtomWithAncestors(' ', [
+        el('w:u', { 'w:val': 'single' }),
+      ]);
+    });
+
+    await when('format changes are detected', () => {
+      detectFormatChangesInAtomList([word, space], { detectFormatChanges: true });
+    });
+
+    await then('both atoms stay in one homogeneous formatting-change span', () => {
+      expect(word.correlationStatus).toBe(CorrelationStatus.FormatChanged);
+      expect(space.correlationStatus).toBe(CorrelationStatus.FormatChanged);
+      expect(space.formatChange?.changedProperties).toContain('underline');
+    });
+  });
+
   test('detects format change when bold is added', async ({ given, when, then }: AllureBddContext) => {
     let atom: ComparisonUnitAtom;
 

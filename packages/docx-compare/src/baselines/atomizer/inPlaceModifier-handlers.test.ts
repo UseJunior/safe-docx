@@ -48,20 +48,39 @@ function count(xml: string, tag: string): number {
   return (xml.match(new RegExp(`<${tag.replace(':', '\\:')}\\b`, 'g')) ?? []).length;
 }
 
+function owningRun(change: Element): Element | null {
+  let current: Node | null = change.parentNode;
+  while (current) {
+    if (current.nodeType === 1 && (current as Element).tagName === 'w:r') {
+      return current as Element;
+    }
+    current = current.parentNode;
+  }
+  return null;
+}
+
 type InplaceResult = Awaited<ReturnType<typeof compareDocuments>>;
 
-async function inplaceCompareFull(
+async function compareFull(
   originalBody: string,
   revisedBody: string,
+  reconstructionMode: 'inplace' | 'rebuild',
 ): Promise<{ xml: string; result: InplaceResult }> {
   const original = await buildDocxFromBodyXml(originalBody);
   const revised = await buildDocxFromBodyXml(revisedBody);
   const result = await compareDocuments(original, revised, {
     engine: 'atomizer',
-    reconstructionMode: 'inplace',
+    reconstructionMode,
   });
-  expect(result.reconstructionModeUsed).toBe('inplace');
+  expect(result.reconstructionModeUsed).toBe(reconstructionMode);
   return { xml: await documentXml(result.document), result };
+}
+
+async function inplaceCompareFull(
+  originalBody: string,
+  revisedBody: string,
+): Promise<{ xml: string; result: InplaceResult }> {
+  return compareFull(originalBody, revisedBody, 'inplace');
 }
 
 async function inplaceCompare(originalBody: string, revisedBody: string): Promise<string> {
@@ -204,10 +223,86 @@ describe('inPlaceModifier handlers (inplace reconstruction path)', () => {
 
     await and('the revised bold formatting is applied to the run without deleting the text', () => {
       expect(xml).toContain('<w:b/>');
-      expect(xml).toContain('Formatting target text');
+      expect(normalizeText(extractTextWithParagraphs(xml))).toBe('Formatting target text');
       expect(count(xml, 'w:delText')).toBe(0);
     });
   });
+
+  formatTest(
+    'one-word edits do not emit run-property revisions on whitespace-only runs',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      let comparisons: Array<{ xml: string; result: InplaceResult }>;
+      const original =
+        '<w:p><w:r><w:t>Alpha</w:t></w:r><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t xml:space="preserve"> old </w:t></w:r><w:r><w:t>Beta</w:t></w:r></w:p>';
+      const revised =
+        '<w:p><w:r><w:t xml:space="preserve">Alpha </w:t></w:r><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>new</w:t></w:r><w:r><w:t xml:space="preserve"> Beta</w:t></w:r></w:p>';
+
+      await given(
+        'a one-word replacement whose equivalent underline boundaries place adjacent spaces in different runs',
+        () => {},
+      );
+
+      await when('the documents are compared in both reconstruction modes', async () => {
+        comparisons = await Promise.all([
+          compareFull(original, revised, 'inplace'),
+          compareFull(original, revised, 'rebuild'),
+        ]);
+      });
+
+      await then('no generated format revision belongs to a whitespace-only run', () => {
+        for (const { xml } of comparisons) {
+          const doc = parseXml(xml);
+          const whitespaceChanges = findAllByTagName(doc.documentElement, 'w:rPrChange')
+            .filter((change) => (owningRun(change)?.textContent ?? '').trim() === '');
+          expect(whitespaceChanges).toHaveLength(0);
+        }
+      });
+
+      await and('the text replacement remains the only content change', () => {
+        for (const { xml, result } of comparisons) {
+          expect(result.stats.insertions).toBeGreaterThan(0);
+          expect(result.stats.deletions).toBeGreaterThan(0);
+          expect(result.stats.formatChanges).toBe(0);
+          expect(normalizeText(extractTextWithParagraphs(acceptAllChanges(xml)))).toBe(
+            'Alpha new Beta',
+          );
+          expect(normalizeText(extractTextWithParagraphs(rejectAllChanges(xml)))).toBe(
+            'Alpha old Beta',
+          );
+        }
+      });
+    },
+  );
+
+  formatTest(
+    'identical currency text with different run boundaries remains untracked',
+    async ({ given, when, then, and }: AllureBddContext) => {
+      let xml: string;
+      let result: InplaceResult;
+
+      await given('an identical currency amount split differently across runs', () => {});
+
+      await when('the documents are compared in inplace mode', async () => {
+        ({ xml, result } = await inplaceCompareFull(
+          '<w:p><w:r><w:t>$</w:t></w:r><w:r><w:t>1,250.00</w:t></w:r></w:p>',
+          '<w:p><w:r><w:t>$1,</w:t></w:r><w:r><w:t>250.00</w:t></w:r></w:p>',
+        ));
+      });
+
+      await then('the identical amount produces no content or format revisions', () => {
+        expect(result.stats.insertions).toBe(0);
+        expect(result.stats.deletions).toBe(0);
+        expect(result.stats.formatChanges).toBe(0);
+      });
+
+      await and('the combined document contains no tracked-change wrappers', () => {
+        expect(count(xml, 'w:ins')).toBe(0);
+        expect(count(xml, 'w:del')).toBe(0);
+        expect(count(xml, 'w:rPrChange')).toBe(0);
+        expect(normalizeText(extractTextWithParagraphs(xml))).toBe('$1,250.00');
+      });
+    },
+  );
 
   formatTest(
     'text replacements do not clone one format revision into both change wrappers',

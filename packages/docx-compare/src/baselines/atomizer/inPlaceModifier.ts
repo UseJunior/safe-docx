@@ -777,7 +777,11 @@ function handleMovedDestination(atom: ComparisonUnitAtom, ctx: ProcessingContext
  */
 function handleFormatChanged(atom: ComparisonUnitAtom, ctx: ProcessingContext): HandlerResult {
   const run = getAtomRunAtBoundary(atom, 'start');
-  if (run && atom.formatChange?.oldRunProperties) {
+  if (
+    run &&
+    (run.textContent ?? '').trim() !== '' &&
+    atom.formatChange?.oldRunProperties
+  ) {
     addFormatChange(run, atom.formatChange.oldRunProperties, ctx.author, ctx.dateStr, ctx.state);
     resolveRevisedInsCollisionOnRun(atom, run);
     // Equal-text/changed-format content keeps its original-side w:ins lineage

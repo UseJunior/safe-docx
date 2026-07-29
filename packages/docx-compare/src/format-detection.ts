@@ -269,6 +269,64 @@ export function categorizePropertyChanges(
 // Main Algorithm
 // =============================================================================
 
+function isWhitespaceTextAtom(atom: ComparisonUnitAtom): boolean {
+  return (
+    atom.contentElement.tagName === 'w:t' &&
+    (getLeafText(atom.contentElement) ?? '').trim() === ''
+  );
+}
+
+/**
+ * Preserve whitespace inside a genuine whole-run formatting change.
+ *
+ * Word-level splitting gives every word and separator from one source `w:t`
+ * the same `splitFromAtom`. A separator is part of the formatting revision
+ * only when a non-whitespace sibling from that same source atom has the exact
+ * same old/new property pair. Otherwise its LCS match is merely ambiguous
+ * whitespace aligned across unrelated run boundaries.
+ */
+function hasMatchingNonWhitespaceFormatChange(
+  atoms: ComparisonUnitAtom[],
+  atomIndex: number,
+  oldRPr: Element | null,
+  newRPr: Element | null,
+): boolean {
+  const atom = atoms[atomIndex]!;
+  const splitFromAtom = atom.splitFromAtom;
+  if (!splitFromAtom) return false;
+
+  for (const direction of [-1, 1] as const) {
+    for (
+      let candidateIndex = atomIndex + direction;
+      candidateIndex >= 0 && candidateIndex < atoms.length;
+      candidateIndex += direction
+    ) {
+      const candidate = atoms[candidateIndex]!;
+      if (candidate.splitFromAtom !== splitFromAtom) break;
+      if (isWhitespaceTextAtom(candidate)) continue;
+      const hasComparableStatus =
+        candidate.correlationStatus === CorrelationStatus.Equal ||
+        candidate.correlationStatus === CorrelationStatus.FormatChanged;
+      if (hasComparableStatus && candidate.comparisonUnitAtomBefore) {
+        const candidateOldRPr = getRunPropertiesFromAtom(
+          candidate.comparisonUnitAtomBefore,
+        );
+        const candidateNewRPr = getRunPropertiesFromAtom(candidate);
+        if (
+          !areRunPropertiesEqual(candidateOldRPr, candidateNewRPr) &&
+          areRunPropertiesEqual(oldRPr, candidateOldRPr) &&
+          areRunPropertiesEqual(newRPr, candidateNewRPr)
+        ) {
+          return true;
+        }
+      }
+      break;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Detect format changes in a flat list of atoms.
  *
@@ -277,6 +335,9 @@ export function categorizePropertyChanges(
  *
  * @param atoms - The atom list to process (modified in place)
  * @param settings - Format detection settings (optional, uses defaults)
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.31
+ * @see https://github.com/UseJunior/safe-docx/issues/743
  */
 export function detectFormatChangesInAtomList(
   atoms: ComparisonUnitAtom[],
@@ -286,7 +347,8 @@ export function detectFormatChangesInAtomList(
     return;
   }
 
-  for (const atom of atoms) {
+  for (let atomIndex = 0; atomIndex < atoms.length; atomIndex++) {
+    const atom = atoms[atomIndex]!;
     // Only check Equal atoms that have a "before" reference
     if (atom.correlationStatus !== CorrelationStatus.Equal) {
       continue;
@@ -302,6 +364,15 @@ export function detectFormatChangesInAtomList(
 
     // Compare run properties
     if (!areRunPropertiesEqual(oldRPr, newRPr)) {
+      // Standalone whitespace and whitespace whose formatting delta is not
+      // corroborated by text from the same source run are LCS alignment noise.
+      if (
+        isWhitespaceTextAtom(atom) &&
+        !hasMatchingNonWhitespaceFormatChange(atoms, atomIndex, oldRPr, newRPr)
+      ) {
+        continue;
+      }
+
       atom.correlationStatus = CorrelationStatus.FormatChanged;
       atom.formatChange = {
         oldRunProperties: oldRPr,
