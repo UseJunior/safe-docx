@@ -1,6 +1,11 @@
 import { OOXML, W } from './namespaces.js';
 import { getParagraphRuns } from './text.js';
-import { extractEffectiveRunFormatting, type ParagraphAlignment, type StylesModel } from './styles.js';
+import {
+  extractEffectiveRunFormatting,
+  type ParagraphAlignment,
+  type StylesModel,
+  type ThemeModel,
+} from './styles.js';
 import { getBuiltInHeadingLevel } from './heading_styles.js';
 import type {
   DeterministicHeadingSource,
@@ -146,8 +151,9 @@ export function detectRunInHeader(params: {
   paragraphPPr: Element | null;
   paragraphStyleId: string | null;
   styles: StylesModel;
+  theme?: ThemeModel | null;
 }): { raw_text: string; formatting: HeaderFormatting; headerCharCount: number } | null {
-  const { paragraph, paragraphPPr, paragraphStyleId, styles } = params;
+  const { paragraph, paragraphPPr, paragraphStyleId, styles, theme = null } = params;
   const punct = new Set(['.', ':', '-']);
 
   // Use visible runs only (field code text stripped in getParagraphRuns()).
@@ -175,7 +181,7 @@ export function detectRunInHeader(params: {
   let inHeader = true;
 
   for (const r of orderedUniqueRuns) {
-    const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles });
+    const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles, theme });
     const isHeaderStyle = fmt.bold || fmt.underline;
     const ts = Array.from(r.getElementsByTagNameNS(OOXML.W_NS, W.t));
     let runText = '';
@@ -226,8 +232,9 @@ export function detectTitleCapsCentered(params: {
   alignment: ParagraphAlignment;
   cleanTextNoLabel: string;
   styles: StylesModel;
+  theme?: ThemeModel | null;
 }): { raw_text: string; formatting: HeaderFormatting } | null {
-  const { paragraph, paragraphPPr, paragraphStyleId, alignment, cleanTextNoLabel, styles } = params;
+  const { paragraph, paragraphPPr, paragraphStyleId, alignment, cleanTextNoLabel, styles, theme = null } = params;
   if (alignment !== 'CENTER') return null;
   const trimmed = cleanTextNoLabel.trim();
   if (!trimmed) return null;
@@ -264,7 +271,7 @@ export function detectTitleCapsCentered(params: {
       }
     }
     if (!runHasText) continue;
-    const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles });
+    const fmt = extractEffectiveRunFormatting({ run: r, paragraphPPr, paragraphStyleId, styles, theme });
     if (!fmt.bold) return null;
     sawAnyText = true;
     if (!formatting) formatting = { bold: fmt.bold, italic: fmt.italic, underline: fmt.underline };

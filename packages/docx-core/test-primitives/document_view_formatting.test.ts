@@ -36,6 +36,16 @@ function makeStylesXml(styles: string): Document {
   );
 }
 
+function makeThemeXml(): Document {
+  return parseXml(
+    `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Test">` +
+      `<a:themeElements><a:clrScheme name="Test"><a:accent1><a:srgbClr val="4472C4"/></a:accent1></a:clrScheme>` +
+      `<a:fontScheme name="Test"><a:majorFont><a:latin typeface="Aptos Display"/></a:majorFont>` +
+      `<a:minorFont><a:latin typeface="Aptos"/></a:minorFont></a:fontScheme>` +
+      `<a:fmtScheme name="Test"/></a:themeElements></a:theme>`,
+  );
+}
+
 describe('document_view formatting tags', () => {
   test('show_formatting=false produces output identical to legacy path', async ({ given, when, then }: AllureBddContext) => {
     const bodyXml =
@@ -344,6 +354,31 @@ describe('document_view formatting tags', () => {
     await then('strong text is wrapped in <b> tags', async () => {
       expect(nodes.length).toBe(1);
       expect(nodes[0]!.tagged_text).toContain('<b>strong text</b>');
+    });
+  });
+
+  test('document view resolves theme-relative font and color into body formatting', async ({ when, then }: AllureBddContext) => {
+    let nodes: ReturnType<typeof buildNodesForDocumentView>['nodes'];
+
+    await when('a Word-default theme-font run is built with theme1.xml', async () => {
+      const paragraphs = makeParagraphs(
+        `<w:p><w:r><w:rPr><w:rFonts w:asciiTheme="minorHAnsi"/>` +
+          `<w:color w:themeColor="accent1"/></w:rPr><w:t>themed body text</w:t></w:r></w:p>`,
+      );
+      nodes = buildNodesForDocumentView({
+        paragraphs,
+        stylesXml: null,
+        themeXml: makeThemeXml(),
+        numberingXml: null,
+        show_formatting: true,
+      }).nodes;
+    });
+
+    await then('the concrete theme values reach the document-view consumer', async () => {
+      expect(nodes[0]!.body_run_formatting).toMatchObject({
+        fontName: 'Aptos',
+        colorHex: '4472C4',
+      });
     });
   });
 
