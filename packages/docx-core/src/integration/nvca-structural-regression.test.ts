@@ -34,12 +34,18 @@ describe('NVCA Structural Regression', () => {
       // Check that it used inplace mode (meaning it passed all safety checks)
       expect(res.reconstructionModeUsed).toBe('inplace');
       expect(res.fallbackReason).toBeUndefined();
+      expect(res.inplaceSuccessDiagnostics?.passUsed).toBe('inplace_word_split');
+      expect(res.inplaceSuccessDiagnostics?.precedingFailedAttempts).toEqual([]);
     });
 
     await and('stats are within expected ranges', async () => {
-      // Verify stats are within expected ranges (v0.3: improved matching yields lower counts)
-      expect(res.stats.insertions).toBeGreaterThan(100);
-      expect(res.stats.deletions).toBeGreaterThan(200);
+      // Pin a bounded characterization range. A lower-bound-only assertion
+      // accidentally rewarded extra revision noise and failed when #720 let the
+      // higher-fidelity word-split pass reduce insertion ranges from 101+ to 99.
+      expect(res.stats.insertions).toBeGreaterThanOrEqual(90);
+      expect(res.stats.insertions).toBeLessThanOrEqual(110);
+      expect(res.stats.deletions).toBeGreaterThanOrEqual(250);
+      expect(res.stats.deletions).toBeLessThanOrEqual(300);
     });
   }, 60000); // 60 second timeout for large document comparison
 });
