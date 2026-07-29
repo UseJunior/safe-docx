@@ -12,6 +12,74 @@ outlive a future migration off OpenSpec. Entries are parsed by
 
 ## Targeted sections
 
+## [ECMA-PART4-14-9-1-1] VML rich text-box content (w:txbxContent)
+
+```yaml
+edition: 5
+part: 4
+section: "14.9.1.1"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:txbxContent
+verifiedBy: packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+```
+
+Part 4 §14.9.1.1 defines `w:txbxContent` as the rich
+WordprocessingML-content container inside a VML drawing object. It prohibits
+references to comments, footnotes, and endnotes, as well as nested
+`w:txbxContent`. safe-docx compares a bounded main-document subset as an
+independent story, preserves its surrounding VML scaffold, and rejects those
+prohibited nested forms before comparison. This claim does not cover
+DrawingML text boxes, ancillary-part text boxes, inserted/deleted text-box
+topology, or changes to the containing VML scaffold or relationship closure.
+
+## [ECMA-PART4-19-1-2-22] VML text-box host (v:textbox)
+
+```yaml
+edition: 5
+part: 4
+section: "19.1.2.22"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/vml-main.xsd#type:CT_Textbox
+verifiedBy: packages/docx-compare/src/baselines/atomizer/textBoxRevisionSafety.ts; packages/docx-compare/src/baselines/atomizer/pipeline.ts; packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+```
+
+Part 4 §19.1.2.22 defines the Transitional VML `v:textbox` host. For the
+accepted comparison subset, safe-docx requires a stable containing
+`v:shape`/`v:textbox` scaffold and places tracked changes only in the hosted
+WordprocessingML story, never around the drawing object.
+
+## [ECMA-PART1-17-13-5-14] Deleted run content
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.14"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:del
+verifiedBy: packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+```
+
+Part 1 §17.13.5.14 defines `w:del` as deleted inline run content.
+safe-docx emits this ordinary run-level revision form inside supported VML
+text-box stories and validates that rejecting the assembled comparison
+recovers the original story text.
+
+## [ECMA-PART1-17-13-5-18] Inserted run content
+
+```yaml
+edition: 5
+part: 1
+section: "17.13.5.18"
+url: https://ecma-international.org/publications-and-standards/standards/ecma-376/
+schemaRef: spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:ins
+verifiedBy: packages/docx-compare/src/baselines/atomizer/pipeline-text-box-stories.test.ts
+```
+
+Part 1 §17.13.5.18 defines `w:ins` as inserted inline run content.
+safe-docx emits this ordinary run-level revision form inside supported VML
+text-box stories and validates that accepting the assembled comparison
+recovers the revised story text.
+
 ## [ECMA-PART1-17-16-13] w:delInstrText containment in tracked deletions
 
 ```yaml
