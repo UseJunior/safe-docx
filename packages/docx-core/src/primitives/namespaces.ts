@@ -1,6 +1,8 @@
 export const OOXML = {
   // Main WordprocessingML namespace.
   W_NS: 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+  // DrawingML namespace used by theme parts.
+  A_NS: 'http://schemas.openxmlformats.org/drawingml/2006/main',
   // Relationships, package, etc. kept for future parts.
   REL_NS: 'http://schemas.openxmlformats.org/package/2006/relationships',
   // Relationship namespace used inside .rels parts (document relationships).

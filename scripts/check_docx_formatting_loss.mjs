@@ -58,10 +58,9 @@
  *     semantics, matching the Word differential pinned for issue #737.
  *
  * What the resolver does not reach, this check does not reach: w:docDefaults,
- * table-style run properties, numbering-level rPr, and theme font references
- * (w:asciiTheme — swapping a theme reference for the explicit font the theme
- * maps to reads as a font change here, because equivalence would need
- * theme1.xml). And because the resolver reduces w:u to on/off, an underline
+ * table-style run properties, and numbering-level rPr. Theme fonts and colors
+ * are resolved through word/theme/theme1.xml, including tint/shade transforms.
+ * Because the resolver reduces w:u to on/off, an underline
  * style-to-style change (single to dotted) is no longer reported; the old
  * declared-properties projection caught it, and trading that corner for one
  * shared implementation instead of two that drift is the point of #684.
@@ -104,9 +103,10 @@ import JSZip from 'jszip';
 // Loaded dynamically so an unbuilt workspace produces this actionable message
 // instead of a bare ERR_MODULE_NOT_FOUND pointing at a dist/ path.
 let parseStylesXml;
+let parseThemeXml;
 let extractEffectiveRunFormatting;
 try {
-  ({ parseStylesXml, extractEffectiveRunFormatting } = await import('@usejunior/docx-core'));
+  ({ parseStylesXml, parseThemeXml, extractEffectiveRunFormatting } = await import('@usejunior/docx-core'));
 } catch (error) {
   throw new Error(
     `check_docx_formatting_loss: @usejunior/docx-core failed to load (${error.message}). ` +
@@ -198,8 +198,8 @@ function runHasRenderableContent(run, paragraph) {
  * by value. Color hex is compared case-insensitively — ff0000 and FF0000 are
  * the same ink, and the raw casing is a property of the writer, not the page.
  */
-function runEmphasis(run, paragraphPPr, paragraphStyleId, styles) {
-  const formatting = extractEffectiveRunFormatting({ run, paragraphPPr, paragraphStyleId, styles });
+function runEmphasis(run, paragraphPPr, paragraphStyleId, styles, theme) {
+  const formatting = extractEffectiveRunFormatting({ run, paragraphPPr, paragraphStyleId, styles, theme });
   return [
     formatting.bold,
     formatting.italic,
@@ -295,6 +295,28 @@ export function parseStylesPart(stylesXml) {
   return parseStylesXml(document);
 }
 
+/** Parse and validate word/theme/theme1.xml for effective font/color resolution. */
+export function parseThemePart(themeXml) {
+  if (themeXml === null || themeXml === undefined) return parseThemeXml(null);
+  const errors = [];
+  let document;
+  try {
+    document = new DOMParser({
+      onError: (level, message) => {
+        if (level === 'error' || level === 'fatalError') errors.push(String(message));
+      },
+    }).parseFromString(themeXml, 'application/xml');
+  } catch (error) {
+    throw new Error(`word/theme/theme1.xml did not parse: ${error.message}`);
+  }
+  if (errors.length > 0) throw new Error(`word/theme/theme1.xml did not parse: ${errors[0]}`);
+  const root = document.documentElement;
+  if (!root || root.namespaceURI !== 'http://schemas.openxmlformats.org/drawingml/2006/main' || root.localName !== 'theme') {
+    throw new Error('word/theme/theme1.xml is not a DrawingML a:theme part');
+  }
+  return parseThemeXml(document);
+}
+
 /** Revision markup means this is a redline, where "empty" means something else. */
 export function findRevisionMarkers(documentXml) {
   const document = parseDocumentPart(documentXml);
@@ -311,10 +333,13 @@ export function findRevisionMarkers(documentXml) {
  * @param {string} documentXml raw word/document.xml
  * @param {string | null} [stylesXml] raw word/styles.xml; omitted or null
  *   resolves formatting from direct properties only
+ * @param {string | null} [themeXml] raw word/theme/theme1.xml; omitted or null
+ *   leaves unresolved theme references on their direct fallbacks
  */
-export function projectParagraphs(documentXml, stylesXml = null) {
+export function projectParagraphs(documentXml, stylesXml = null, themeXml = null) {
   const document = parseDocumentPart(documentXml);
   const styles = parseStylesPart(stylesXml);
+  const theme = parseThemePart(themeXml);
 
   const byParaId = new Map();
   const duplicateParaIds = new Set();
@@ -352,7 +377,7 @@ export function projectParagraphs(documentXml, stylesXml = null) {
       appendEmphasisSpan(
         emphasisSpans,
         ownText.length,
-        runEmphasis(run, paragraphProperties ?? null, paragraphStyleId, styles),
+        runEmphasis(run, paragraphProperties ?? null, paragraphStyleId, styles, theme),
       );
       if (!hasRenderableContent && runHasRenderableContent(run, paragraph)) hasRenderableContent = true;
     }
@@ -501,14 +526,16 @@ export async function readDocxParts(docxPath) {
   const documentEntry = archive.file('word/document.xml');
   if (!documentEntry) throw new Error(`${docxPath} has no word/document.xml`);
   const stylesEntry = archive.file('word/styles.xml');
+  const themeEntry = archive.file('word/theme/theme1.xml');
   return {
     documentXml: await documentEntry.async('string'),
     stylesXml: stylesEntry ? await stylesEntry.async('string') : null,
+    themeXml: themeEntry ? await themeEntry.async('string') : null,
   };
 }
 
 /** Minimal OOXML package used by --self-test and the unit tests. */
-export async function buildMinimalDocx(bodyXml, stylesXml = null) {
+export async function buildMinimalDocx(bodyXml, stylesXml = null, themeXml = null) {
   const zip = new JSZip();
   zip.file(
     '[Content_Types].xml',
@@ -520,6 +547,9 @@ export async function buildMinimalDocx(bodyXml, stylesXml = null) {
       (stylesXml === null
         ? ''
         : `<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>`) +
+      (themeXml === null
+        ? ''
+        : `<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`) +
       `</Types>`,
   );
   zip.file(
@@ -531,6 +561,7 @@ export async function buildMinimalDocx(bodyXml, stylesXml = null) {
   );
   zip.file('word/document.xml', wrapBodyXml(bodyXml));
   if (stylesXml !== null) zip.file('word/styles.xml', stylesXml);
+  if (themeXml !== null) zip.file('word/theme/theme1.xml', themeXml);
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
@@ -548,6 +579,14 @@ export function wrapStylesXml(styleDefinitionsXml) {
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:styles xmlns:w="${W_NS}">${styleDefinitionsXml}</w:styles>`
+  );
+}
+
+export function wrapThemeXml(themeElementsXml) {
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Test Theme">` +
+    `<a:themeElements>${themeElementsXml}<a:fmtScheme name="Test"/></a:themeElements></a:theme>`
   );
 }
 
@@ -719,8 +758,8 @@ export async function main(argv) {
       }
     }
     result = detectFormattingLoss(
-      projectParagraphs(beforeParts.documentXml, beforeParts.stylesXml),
-      projectParagraphs(afterParts.documentXml, afterParts.stylesXml),
+      projectParagraphs(beforeParts.documentXml, beforeParts.stylesXml, beforeParts.themeXml),
+      projectParagraphs(afterParts.documentXml, afterParts.stylesXml, afterParts.themeXml),
       { minCoverage },
     );
   } catch (error) {

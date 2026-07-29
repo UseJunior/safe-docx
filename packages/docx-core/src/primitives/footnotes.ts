@@ -13,7 +13,13 @@ import { getParagraphBookmarkId } from './bookmarks.js';
 import { findUniqueSubstringMatch } from './matching.js';
 import { childElements, isW } from './dom-helpers.js';
 import { getFirstChild } from './xml-helpers.js';
-import { extractEffectiveRunFormatting, parseStylesXml, type StylesModel } from './styles.js';
+import {
+  extractEffectiveRunFormatting,
+  parseStylesXml,
+  parseThemeXml,
+  type StylesModel,
+  type ThemeModel,
+} from './styles.js';
 import { emitFormattingTags, mergeAdjacentTags, type AnnotatedRun } from './formatting_tags.js';
 import {
   createRevisionContainer,
@@ -276,6 +282,7 @@ export async function getFootnotes(
   zip: DocxZip,
   documentXml: Document,
   styles?: StylesModel,
+  theme?: ThemeModel,
 ): Promise<Footnote[]> {
   const footnotesText = await zip.readTextOrNull('word/footnotes.xml');
   if (!footnotesText) return [];
@@ -286,6 +293,8 @@ export async function getFootnotes(
 
   const displayMap = buildDisplayNumberMap(documentXml, footnotesDoc);
   const stylesModel = styles ?? parseStylesXml(null);
+  const themeText = theme ? null : await zip.readTextOrNull('word/theme/theme1.xml');
+  const themeModel = theme ?? parseThemeXml(themeText ? parseXml(themeText) : null);
 
   // Build map of footnoteReference id → every anchored paragraph bookmark id, in
   // document order (deduplicated). The FIRST entry feeds the legacy
@@ -328,7 +337,7 @@ export async function getFootnotes(
     if (!idStr) continue;
     const id = parseInt(idStr, 10);
 
-    const paragraphs = extractFootnoteParagraphs(el, stylesModel);
+    const paragraphs = extractFootnoteParagraphs(el, stylesModel, themeModel);
     const text = paragraphs.map((p) => p.text).join('\n');
     const displayNumber = displayMap.get(id) ?? 0;
     const refParagraphIds = anchorMap.get(id) ?? [];
@@ -348,8 +357,9 @@ export async function getFootnote(
   documentXml: Document,
   noteId: number,
   styles?: StylesModel,
+  theme?: ThemeModel,
 ): Promise<Footnote | null> {
-  const all = await getFootnotes(zip, documentXml, styles);
+  const all = await getFootnotes(zip, documentXml, styles, theme);
   return all.find((f) => f.id === noteId) ?? null;
 }
 
@@ -369,7 +379,11 @@ function extractFootnoteText(footnoteEl: Element): string {
  * skipped so the footnote number never leaks into the body text. The reserved
  * separator paragraphs are filtered out by the caller (`isReservedFootnote`).
  */
-function extractFootnoteParagraphs(footnoteEl: Element, styles: StylesModel): FootnoteParagraph[] {
+function extractFootnoteParagraphs(
+  footnoteEl: Element,
+  styles: StylesModel,
+  theme?: ThemeModel,
+): FootnoteParagraph[] {
   const paragraphs = footnoteEl.getElementsByTagNameNS(OOXML.W_NS, W.p);
   const out: FootnoteParagraph[] = [];
 
@@ -401,6 +415,7 @@ function extractFootnoteParagraphs(footnoteEl: Element, styles: StylesModel): Fo
         paragraphPPr: paraPPr ?? null,
         paragraphStyleId: style,
         styles,
+        theme,
       });
       annotated.push({ text: runText, formatting, hyperlinkUrl: null, charCount: runText.length, isHeaderRun: false });
     }

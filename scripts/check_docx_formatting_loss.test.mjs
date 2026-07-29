@@ -18,6 +18,7 @@ import {
   SELF_TEST_BEFORE_STYLES,
   wrapBodyXml,
   wrapStylesXml,
+  wrapThemeXml,
 } from './check_docx_formatting_loss.mjs';
 
 /**
@@ -25,15 +26,32 @@ import {
  * `styles.after` differ the sides, which is how a style-definition edit is
  * expressed — the document parts stay identical.
  */
-function compare(beforeBody, afterBody, options, styles = {}) {
+function compare(beforeBody, afterBody, options, styles = {}, themes = {}) {
   return detectFormattingLoss(
-    projectParagraphs(wrapBodyXml(beforeBody), styles.before ?? styles.shared ?? null),
-    projectParagraphs(wrapBodyXml(afterBody), styles.after ?? styles.shared ?? null),
+    projectParagraphs(
+      wrapBodyXml(beforeBody),
+      styles.before ?? styles.shared ?? null,
+      themes.before ?? themes.shared ?? null,
+    ),
+    projectParagraphs(
+      wrapBodyXml(afterBody),
+      styles.after ?? styles.shared ?? null,
+      themes.after ?? themes.shared ?? null,
+    ),
     options,
   );
 }
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+function theme(fonts = { major: 'Aptos Display', minor: 'Aptos' }, accent1 = 'C0504D') {
+  return wrapThemeXml(
+    `<a:clrScheme name="Test"><a:dk1><a:srgbClr val="000000"/></a:dk1>` +
+      `<a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:accent1><a:srgbClr val="${accent1}"/></a:accent1></a:clrScheme>` +
+      `<a:fontScheme name="Test"><a:majorFont><a:latin typeface="${fonts.major}"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>` +
+      `<a:minorFont><a:latin typeface="${fonts.minor}"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme>`,
+  );
+}
 
 function paragraph(paraId, inner, properties = '') {
   return `<w:p w14:paraId="${paraId}">${properties}${inner}</w:p>`;
@@ -300,6 +318,49 @@ test('color hex compares case-insensitively, because casing is a writer artifact
   assert.equal(hasFindings(result), false);
 });
 
+test('D1 resolves the default Word theme-font shape and reports a theme-font substitution', () => {
+  const body = paragraph('AAAA0021', run('Term', '<w:rFonts w:asciiTheme="minorHAnsi"/>'));
+  const beforeTheme = theme({ major: 'Aptos Display', minor: 'Aptos' });
+  const afterTheme = theme({ major: 'Aptos Display', minor: 'Arial' });
+
+  const projection = projectParagraphs(wrapBodyXml(body), null, beforeTheme);
+  assert.equal(projection.byParaId.get('AAAA0021').emphasisSpans[0][13], 'Aptos');
+
+  const result = compare(body, body, undefined, {}, { before: beforeTheme, after: afterTheme });
+  assert.deepEqual(result.flattenedParagraphIds, ['AAAA0021']);
+});
+
+test('theme colors, tint, and shade resolve to concrete hex values used by D1', () => {
+  const sharedTheme = theme();
+  const tinted = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0022', run('Tint', '<w:color w:themeColor="accent1" w:themeTint="99"/>'))),
+    null,
+    sharedTheme,
+  );
+  assert.equal(tinted.byParaId.get('AAAA0022').emphasisSpans[0][15], 'D99694');
+
+  const shaded = projectParagraphs(
+    wrapBodyXml(paragraph('AAAA0023', run('Shade', '<w:color w:themeColor="accent1" w:themeShade="80"/>'))),
+    null,
+    sharedTheme,
+  );
+  assert.equal(shaded.byParaId.get('AAAA0023').emphasisSpans[0][15], '602827');
+});
+
+test('documents without a theme part retain direct font and color fallbacks', () => {
+  const body = paragraph(
+    'AAAA0024',
+    run(
+      'Fallback',
+      '<w:rFonts w:ascii="Georgia" w:asciiTheme="minorHAnsi"/><w:color w:val="123456" w:themeColor="accent1"/>',
+    ),
+  );
+  const projection = projectParagraphs(wrapBodyXml(body));
+  assert.deepEqual(projection.byParaId.get('AAAA0024').emphasisSpans, [
+    [8, false, false, false, false, false, false, false, false, false, false, false, 'none', 'Georgia', 0, '123456'],
+  ]);
+});
+
 test('a present styles part that is not w:styles is rejected rather than read as an empty model', () => {
   // An empty model resolves every style to nothing, which silently blinds D1
   // to style-carried loss while the run reads as a clean pass.
@@ -322,6 +383,7 @@ test('the resolver consumed here is docx-core public surface, importable the way
   const core = await import('@usejunior/docx-core');
   assert.equal(typeof core.extractEffectiveRunFormatting, 'function');
   assert.equal(typeof core.parseStylesXml, 'function');
+  assert.equal(typeof core.parseThemeXml, 'function');
 });
 
 test('D2 flags a paragraph that carried text before and carries none after', () => {

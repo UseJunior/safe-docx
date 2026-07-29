@@ -52,6 +52,8 @@ Allure labels via `testAllure.conformance({…})`; source code carries
 | `ECMA-PART1-17-3-1-20` | w:outlineLvl paragraph outline level | 5 | 1 | 17.3.1.20 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:outlineLvl` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/test-primitives/heading_provenance.traceability.test.ts |
 | `ECMA-PART1-17-3-2-28` | w:rPr direct-property uniqueness | 5 | 1 | 17.3.2.28 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:rPr` | packages/docx-core/src/generation/ordering.ts; packages/docx-core/src/generation/emit/properties.ts; packages/docx-core/src/generation/ordering-schema.test.ts; packages/docx-core/src/generation/generation-styles-formatting.test.ts |
 | `ECMA-PART1-17-7-3` | Toggle-property evaluation | 5 | 1 | 17.7.3 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_RPr` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-toggle.test.ts; scripts/check_docx_formatting_loss.test.mjs |
+| `ECMA-PART1-17-3-2-26` | Run fonts and theme-font references | 5 | 1 | 17.3.2.26 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Fonts` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs |
+| `ECMA-PART1-17-3-2-6` | Run color and theme transforms | 5 | 1 | 17.3.2.6 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Color` | packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs |
 | `ECMA-PART1-17-7-4-18` | w:styles style-definitions part emission | 5 | 1 | 17.7.4.18 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:styles` | — |
 | `ECMA-PART1-17-7-4-17` | w:style style-definition emission | 5 | 1 | 17.7.4.17 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:style` | — |
 | `ECMA-PART1-17-7-5-1` | w:docDefaults document-default properties | 5 | 1 | 17.7.5.1 | `spec-compliance/ecma-376/schemas/transitional/wml.xsd#element:docDefaults` | — |
@@ -673,6 +675,33 @@ off declaration leaves that value unchanged, and direct run formatting sets
 the absolute result. The effective-formatting resolver evaluates the supported
 toggle set independently and retains nearest-declaration resolution for
 ordinary properties.
+
+### ECMA-PART1-17-3-2-26 — Run fonts and theme-font references
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.26
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Fonts`
+- **Verified by:** packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs
+
+`w:rFonts` may select concrete typefaces directly or through the document
+theme's major/minor font scheme. Effective formatting dereferences the supported
+ASCII, high-ANSI, East Asian, and complex-script theme attributes and retains
+direct attributes as the fallback when the theme part or referenced face is
+unavailable.
+
+### ECMA-PART1-17-3-2-6 — Run color and theme transforms
+
+- **Edition:** ECMA-376 5
+- **Part / Section:** Part 1 § 17.3.2.6
+- **Canonical URL:** https://ecma-international.org/publications-and-standards/standards/ecma-376/
+- **Schema reference:** `spec-compliance/ecma-376/schemas/transitional/wml.xsd#type:CT_Color`
+- **Verified by:** packages/docx-core/src/primitives/styles.ts; packages/docx-core/src/primitives/styles-theme.test.ts; scripts/check_docx_formatting_loss.test.mjs
+
+`w:color/@themeColor` selects a color from the document theme. Optional
+`themeTint` and `themeShade` byte transforms produce the concrete display color.
+Effective formatting resolves the theme value and falls back to `w:val` when
+the theme cannot supply it.
 
 ### ECMA-PART1-17-7-4-18 — w:styles style-definitions part emission
 

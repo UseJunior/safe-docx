@@ -21,7 +21,7 @@ import { serializeToMarkdown, type SerializeMarkdownOptions } from './serialize_
 import { serializeToHtml, type SerializeHtmlOptions } from './serialize_html.js';
 import { serializeToPlainText, type SerializePlainTextOptions } from './serialize_plaintext.js';
 import type { FormattingMode } from './formatting_tags.js';
-import { parseStylesXml, type StylesModel } from './styles.js';
+import { parseStylesXml, parseThemeXml, type StylesModel } from './styles.js';
 import { parseNumberingXml, type NumberingModel } from './numbering.js';
 import {
   getDirectParagraphNumbering,
@@ -256,6 +256,7 @@ export class DocxDocument {
   private zip: DocxZip;
   private documentXml: Document;
   private stylesXml: Document | null;
+  private themeXml: Document | null;
   private numberingXml: Document | null;
   private footnotesXml: Document | null;
   private relsMap: RelsMap;
@@ -268,10 +269,11 @@ export class DocxDocument {
    */
   private originalDocumentXmlText: string | null;
 
-  private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap, originalDocumentXmlText: string | null = null) {
+  private constructor(zip: DocxZip, documentXml: Document, stylesXml: Document | null, themeXml: Document | null, numberingXml: Document | null, footnotesXml: Document | null, relsMap: RelsMap, originalDocumentXmlText: string | null = null) {
     this.zip = zip;
     this.documentXml = documentXml;
     this.stylesXml = stylesXml;
+    this.themeXml = themeXml;
     this.numberingXml = numberingXml;
     this.footnotesXml = footnotesXml;
     this.relsMap = relsMap;
@@ -287,8 +289,10 @@ export class DocxDocument {
 
     // Optional parts used for fidelity: list labels + style fingerprints.
     const stylesText = await zip.readTextOrNull('word/styles.xml');
+    const themeText = await zip.readTextOrNull('word/theme/theme1.xml');
     const numberingText = await zip.readTextOrNull('word/numbering.xml');
     const stylesXml = stylesText ? parseXml(stylesText) : null;
+    const themeXml = themeText ? parseXml(themeText) : null;
     const numberingXml = numberingText ? parseXml(numberingText) : null;
 
     // Load footnotes for [^N] marker rendering in document view.
@@ -299,7 +303,7 @@ export class DocxDocument {
     const relsText = await zip.readTextOrNull('word/_rels/document.xml.rels');
     const relsMap = relsText ? parseDocumentRels(parseXml(relsText)) : new Map<string, string>();
 
-    return new DocxDocument(zip, doc, stylesXml, numberingXml, footnotesXml, relsMap, xml);
+    return new DocxDocument(zip, doc, stylesXml, themeXml, numberingXml, footnotesXml, relsMap, xml);
   }
 
   getParagraphs(): Element[] {
@@ -649,6 +653,7 @@ export class DocxDocument {
     const { nodes, styles } = buildNodesForDocumentView({
       paragraphs,
       stylesXml: this.stylesXml,
+      themeXml: this.themeXml,
       numberingXml: this.numberingXml,
       include_semantic_tags: includeSemanticTags,
       show_formatting: showFormatting,
@@ -1134,7 +1139,7 @@ export class DocxDocument {
   }
 
   async getFootnotes(): Promise<Footnote[]> {
-    return getFootnotesImpl(this.zip, this.documentXml, this.getStylesModel());
+    return getFootnotesImpl(this.zip, this.documentXml, this.getStylesModel(), parseThemeXml(this.themeXml));
   }
 
   /**
@@ -1182,7 +1187,7 @@ export class DocxDocument {
   }
 
   async getFootnote(noteId: number): Promise<Footnote | null> {
-    return getFootnoteImpl(this.zip, this.documentXml, noteId, this.getStylesModel());
+    return getFootnoteImpl(this.zip, this.documentXml, noteId, this.getStylesModel(), parseThemeXml(this.themeXml));
   }
 
   /**
