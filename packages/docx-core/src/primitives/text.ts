@@ -379,6 +379,44 @@ function getDirectChild(parent: Element, localName: string): Element | null {
   return null;
 }
 
+/**
+ * Mark the paragraph mark as deleted when a tracked edit removes the
+ * paragraph's entire visible payload. The marker belongs in w:pPr/w:rPr;
+ * accepting it removes the paragraph break while the run-level w:del removes
+ * the old contents.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see https://github.com/UseJunior/safe-docx/issues/741
+ */
+function addParagraphMarkDeletion(p: Element, ctx: RevisionContext): void {
+  const doc = p.ownerDocument;
+  if (!doc) throw new Error('Paragraph has no ownerDocument');
+
+  let pPr = getDirectChild(p, W.pPr);
+  if (!pPr) {
+    pPr = doc.createElementNS(OOXML.W_NS, `w:${W.pPr}`);
+    p.insertBefore(pPr, p.firstChild);
+  }
+
+  let rPr = getDirectChild(pPr, W.rPr);
+  if (!rPr) {
+    rPr = doc.createElementNS(OOXML.W_NS, `w:${W.rPr}`);
+    const sectPr = getDirectChild(pPr, 'sectPr');
+    const pPrChange = getDirectChild(pPr, 'pPrChange');
+    pPr.insertBefore(rPr, sectPr ?? pPrChange);
+  }
+
+  if (getDirectChild(rPr, 'del')) return;
+
+  const marker = createRevisionContainer(doc, 'del', ctx);
+  const insertionMarker = getDirectChild(rPr, 'ins');
+  if (insertionMarker) {
+    rPr.insertBefore(marker, insertionMarker.nextSibling);
+  } else {
+    rPr.insertBefore(marker, rPr.firstChild);
+  }
+}
+
 // OOXML on/off toggle properties (ECMA-376 ST_OnOff). Absence of w:val means
 // "1", and the values "1"/"true"/"on" are equivalent (likewise for the falsy
 // triple). We normalize so semantically-identical inputs hash the same.
@@ -617,8 +655,11 @@ function getContainerBoundaryError(
  * remain nested there, while cross-container ranges are refused before the
  * DOM is changed.
  *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.14
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
  * @conformance ECMA-376 edition 5, Part 1 § 17.16.22
  * @see #652
+ * @see #741
  */
 export function replaceParagraphTextRange(
   p: Element,
@@ -794,6 +835,10 @@ export function replaceParagraphTextRange(
         insertion.appendChild(replacementRun);
       }
       parent.insertBefore(insertion, insertBeforeNode);
+    }
+
+    if (start === 0 && end === fullText.length && replacementRuns.length === 0) {
+      addParagraphMarkDeletion(p, ctx);
     }
   } else {
     for (const replacementRun of replacementRuns) {

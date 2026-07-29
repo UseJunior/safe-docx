@@ -21,6 +21,10 @@ import {
 } from './text.js';
 
 const test = testAllure.epic('Document Comparison').withLabels({ feature: 'Text Primitives' });
+const paragraphDeletionTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' },
+);
 
 const W_NS = OOXML.W_NS;
 
@@ -47,6 +51,15 @@ function paragraphAt(doc: Document, index: number): Element {
 
 function serialize(node: Node): string {
   return new XMLSerializer().serializeToString(node);
+}
+
+function getDirectElement(parent: Element, localName: string): Element | null {
+  return Array.from(parent.childNodes).find(
+    (child): child is Element =>
+      child.nodeType === 1 &&
+      (child as Element).namespaceURI === W_NS &&
+      (child as Element).localName === localName,
+  ) ?? null;
 }
 
 // ── getParagraphRuns — field-code state machine ─────────────────────
@@ -910,6 +923,56 @@ describe('replaceParagraphTextRange tracked-change emission', () => {
       expect(getParagraphText(p)).toBe(' world');
       expect(p.getElementsByTagNameNS(W_NS, 'ins')).toHaveLength(0);
       expect(p.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+    });
+  });
+
+  paragraphDeletionTest('marks the paragraph mark deleted when a tracked replacement empties the paragraph', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let p: Element;
+
+    await given('a numbered paragraph whose entire visible text will be deleted', () => {
+      const doc = makeDoc(
+        '<w:p>' +
+          '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr>' +
+          '<w:r><w:t>Delete this item</w:t></w:r>' +
+        '</w:p>',
+      );
+      p = firstParagraph(doc);
+    });
+
+    await when('the complete text range is replaced with an empty string under tracked changes', () => {
+      replaceParagraphTextRange(
+        p,
+        0,
+        'Delete this item'.length,
+        '',
+        createRevisionContext({
+          author: 'SafeDocX AI',
+          date: '2026-07-29T12:00:00Z',
+          idState: createRevisionIdState(),
+        }),
+      );
+    });
+
+    await then('the content and paragraph mark carry separate deletion revisions', () => {
+      const pPr = getDirectElement(p, W.pPr);
+      const paragraphRPr = getDirectElement(pPr!, W.rPr);
+      const paragraphMarkDeletion = getDirectElement(paragraphRPr!, 'del');
+      const runDeletion = Array.from(p.childNodes).find(
+        (child): child is Element =>
+          child.nodeType === 1 &&
+          (child as Element).namespaceURI === W_NS &&
+          (child as Element).localName === 'del',
+      );
+
+      expect(runDeletion).toBeTruthy();
+      expect(paragraphMarkDeletion).toBeTruthy();
+      expect(paragraphMarkDeletion?.getAttribute('w:author')).toBe('SafeDocX AI');
+      expect(paragraphMarkDeletion?.getAttribute('w:id')).not.toBe(runDeletion?.getAttribute('w:id'));
+      expect(getDirectElement(pPr!, W.numPr)).toBeTruthy();
     });
   });
 
