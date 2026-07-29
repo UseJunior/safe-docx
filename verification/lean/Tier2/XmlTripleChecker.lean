@@ -448,6 +448,10 @@ def tagTokenDecoded (closing : Bool) (localName : String) (attributes : XmlAttri
   else if !closing && localName == "delInstrText" then [.delInstrText payload]
   else []
 
+def balanceSelfClosingTagTokens (localName : String) (selfClosing : Bool)
+    (opening : List XmlTok) : List XmlTok :=
+  if selfClosing then opening ++ tagTokenDecoded true localName [] "" else opening
+
 def tagToken (closing : Bool) (localName : String) (attributes : XmlAttributes)
     (payload : String) : Except String (List XmlTok) := do
   return tagTokenDecoded closing localName attributes (← decodeXmlText payload)
@@ -559,7 +563,10 @@ def parseXmlSegment (expectedRoot : String) (state : XmlParseState) (segment : S
   let canonicalAttributes := canonicalizeAttributes expandedAttributes
   let decodedPayload ← decodeXmlText payload
   let emitted := if uri == wmlNamespace then
-    tagTokenDecoded false localName canonicalAttributes decodedPayload else []
+    balanceSelfClosingTagTokens localName selfClosing
+      (tagTokenDecoded false localName canonicalAttributes
+        (if selfClosing then "" else decodedPayload))
+    else []
   let next := { state with
     tokens := state.tokens ++ emitted
     rootSeen := true
@@ -772,7 +779,8 @@ def tokensFromXmlEvents (events : List XmlEvent) : List XmlTok :=
       let emitted :=
         if ["t", "delText", "instrText", "delInstrText"].contains localName then []
         else if uri == wmlNamespace then
-          tagTokenDecoded false localName (canonicalizeAttributes attributes) ""
+          balanceSelfClosingTagTokens localName selfClosing
+            (tagTokenDecoded false localName (canonicalizeAttributes attributes) "")
         else []
       {
         stack := if selfClosing then state.stack else (uri, localName) :: state.stack

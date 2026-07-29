@@ -168,6 +168,47 @@ describeWithLean('Lean XML triple verifier certificate', () => {
       });
     },
   );
+
+  test
+    .openspec('[LEAN-XML-CHECK-01] Lean verifier accepts a valid inplace comparison triple')
+    .conformance({ spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.20' })(
+    'balances a self-closing paragraph-mark insertion before unchanged text',
+    async () => {
+      const original = await buildDocxFromBodyXml(
+        paragraphWithText('Stable before') + paragraphWithText('Stable after'),
+      );
+      const revised = await buildDocxFromBodyXml(
+        paragraphWithText('Stable before') +
+          paragraphWithText('Inserted paragraph') +
+          paragraphWithText('Stable after'),
+      );
+      const compared = await buildDocxFromBodyXml(
+        paragraphWithText('Stable before') +
+          '<w:p>' +
+            '<w:pPr><w:rPr>' +
+              '<w:ins w:id="1" w:author="Safe DOCX" w:date="2026-07-29T00:00:00Z"/>' +
+            '</w:rPr></w:pPr>' +
+            '<w:ins w:id="2" w:author="Safe DOCX" w:date="2026-07-29T00:00:00Z">' +
+              '<w:r><w:t>Inserted paragraph</w:t></w:r>' +
+            '</w:ins>' +
+          '</w:p>' +
+          paragraphWithText('Stable after'),
+      );
+
+      const certificate = await runLeanXmlTripleVerifier({
+        originalDocx: original,
+        revisedDocx: revised,
+        comparedDocx: compared,
+        legacyDocumentXml: { original: '', revised: '', compared: '' },
+        reconstructionMode: 'inplace',
+        options: { executablePath: LEAN_EXE, timeoutMs: 120_000 },
+      });
+
+      expect(certificate.status, certificate.reason).toBe('passed');
+      expect(certificate.checks.acceptingAllTrackedChangesMatchesRevisedText.status).toBe('passed');
+      expect(certificate.checks.rejectingAllTrackedChangesMatchesOriginalText.status).toBe('passed');
+    },
+  );
 });
 
 describe('Lean XML triple verifier scope boundary', () => {
