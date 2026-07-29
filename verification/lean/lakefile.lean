@@ -56,3 +56,15 @@ lean_exe protocolV6OrdinaryEnvelopeWitness where
 @[default_target]
 lean_exe protocolV6CanonicalTerminalShapes where
   root := `ProtocolV6CanonicalTerminalShapes
+
+lean_lib ProtocolV7StructuralChargeAudit
+
+lean_lib ProtocolV7ProjectionDriftWitnesses
+
+@[default_target]
+lean_exe protocolV7OrdinaryEnvelopeWitness where
+  root := `ProtocolV7OrdinaryEnvelopeWitness
+
+@[default_target]
+lean_exe protocolV7CanonicalTerminalShapes where
+  root := `ProtocolV7CanonicalTerminalShapes

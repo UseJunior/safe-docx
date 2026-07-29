@@ -337,7 +337,7 @@ test('the human report retains the exact formal-assurance limitations', async ()
   );
   assert.match(
     report,
-    /Exact excluded surfaces: comment range start\/end pairing, range topology, and Microsoft threaded-comment extensions;/,
+    /Exact excluded surfaces: Microsoft threaded-comment extensions;/,
   );
   assert.match(report, /inherited or omitted header\/footer role semantics;/);
   assert.match(report, /unselected header\/footer parts and unselected relationship semantics;/);

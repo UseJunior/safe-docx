@@ -1532,6 +1532,12 @@ def presentNoteSourcesSpec
   partition.definitionStories.filter fun source =>
     !source.normalizedPartPath.isEmpty
 
+def indexedVisitedEvents : Nat →
+    List NoteReferenceIntegrity.StoryRealization → List (Nat × List XmlEvent)
+  | _, [] => []
+  | ordinal, realization :: rest =>
+      (ordinal, realization.visitedEvents) :: indexedVisitedEvents (ordinal + 1) rest
+
 def canonicalCommentSourceSet
     (pkg : PackageView) (side : VerifierSide)
     (note : SideNoteEvaluationV5) : CommentSourceSet :=
@@ -1539,8 +1545,7 @@ def canonicalCommentSourceSet
     sources := [fixedMainSourceSpec pkg] ++
       canonicalPhysicalSourcesSpec note.partition ++
       presentNoteSourcesSpec note.partition
-    sourceEvents := pkg.retainedSourceScans.realizations.zipIdx.map fun pair =>
-      (pair.2, pair.1.visitedEvents) }
+    sourceEvents := indexedVisitedEvents 0 pkg.retainedSourceScans.realizations }
 
 def canonicalCommentSourceSetSpec := canonicalCommentSourceSet
 

@@ -62,13 +62,13 @@
         "namespace-resolved footnote/endnote references in main and selected header/footer stories with exactly-one user-definition checks",
         "typed separator, continuationSeparator, and continuationNotice definitions plus definition-story poison-reference rejection",
         "zero or one exact internal Transitional comments relationship selected from fixed main relationships, including relocated safe targets",
-        "direct w:comment definitions and w:commentReference occurrences from admitted main, note, header, and footer stories with exact-one canonical decimal resolution",
+        "direct w:comment definitions plus w:commentReference, w:commentRangeStart, and w:commentRangeEnd occurrences from admitted main, note, header, and footer stories with exact-one canonical decimal resolution and request-bound physical-story/event ordinals",
         "direct package-relationship records in word/_rels/document.xml.rels",
         "direct explicit first/default/even w:headerReference and w:footerReference slots aligned by section ordinal, kind, and role",
         "selected Transitional w:hdr and w:ftr token streams deduplicated by the complete three-side physical key"
       ],
       "excluded": [
-        "comment range start/end pairing, range topology, and Microsoft threaded-comment extensions",
+        "Microsoft threaded-comment extensions",
         "inherited or omitted header/footer role semantics",
         "unselected header/footer parts and unselected relationship semantics",
         "complete OPC, content-type, relationship-graph, XML Schema, pagination, rendering, and field-evaluation validation"
@@ -79,7 +79,7 @@
       "Strict OOXML namespaces",
       "rendering, pagination, inherited roles, and semantic section identity",
       "unselected parts and complete relationship/content-type integrity",
-      "comment range topology and Microsoft threaded-comment extensions",
+      "Microsoft threaded-comment extensions, replies, parent graphs, durable IDs, and resolved state",
       "field instruction evaluation, cached results, and bookmark resolution",
       "general XML canonicalization outside the accepted subset"
     ]
