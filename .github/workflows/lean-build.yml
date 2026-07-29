@@ -13,6 +13,9 @@ on:
       - 'scripts/check_lean_note_semantics_dependencies.mjs'
       - 'scripts/check_lean_comment_semantics_dependencies.mjs'
       - 'scripts/check_lean_production_axiom_target.mjs'
+      - 'scripts/check_lean_xml_checker_coverage.mjs'
+      - 'scripts/check_lean_comment_memory.mjs'
+      - 'package.json'
       - '.github/workflows/lean-build.yml'
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
       # The differential gate guards the production TS LCS against the Lean model,
@@ -29,6 +32,8 @@ on:
       - 'packages/docx-compare/src/compare-types.ts'
       - 'packages/docx-core/src/integration/nvca-coi-regression.test.ts'
       - 'tests/test_documents/nvca-coi-regression/source.docx'
+      - 'packages/docx-core/src/integration/nvca-structural-regression.test.ts'
+      - 'tests/test_documents/nvca-regression/**'
   pull_request:
     branches: [main]
     paths:
@@ -39,6 +44,9 @@ on:
       - 'scripts/check_lean_note_semantics_dependencies.mjs'
       - 'scripts/check_lean_comment_semantics_dependencies.mjs'
       - 'scripts/check_lean_production_axiom_target.mjs'
+      - 'scripts/check_lean_xml_checker_coverage.mjs'
+      - 'scripts/check_lean_comment_memory.mjs'
+      - 'package.json'
       - '.github/workflows/lean-build.yml'
       - 'packages/docx-core/src/integration/lean-differential-lcs.test.ts'
       - 'packages/docx-core/src/baselines/atomizer/atomLcs.ts'
@@ -51,6 +59,8 @@ on:
       - 'packages/docx-compare/src/compare-types.ts'
       - 'packages/docx-core/src/integration/nvca-coi-regression.test.ts'
       - 'tests/test_documents/nvca-coi-regression/source.docx'
+      - 'packages/docx-core/src/integration/nvca-structural-regression.test.ts'
+      - 'tests/test_documents/nvca-regression/**'
   workflow_dispatch:
 
 permissions:
@@ -130,6 +140,7 @@ jobs:
           lake env lean ProtocolV6StructuralChargeAudit.lean
           lake env lean ProtocolV6OrdinaryEnvelopeWitness.lean
           lake env lean ProtocolV6CanonicalTerminalShapes.lean
+          lake env lean TypedCommentStackSafetyWitnesses.lean
           node ../../scripts/check_lean_note_semantics_dependencies.mjs
           node ../../scripts/check_lean_comment_semantics_dependencies.mjs
 
@@ -198,10 +209,23 @@ jobs:
           echo "npm ci failed after 3 attempts"
           exit 1
       - name: Compiled Lean relationship-story protocol v6
+        env:
+          SAFE_DOCX_REQUIRE_LEAN_CHECKER: '1'
         run: npm run test:run -w @usejunior/docx-compare -- src/baselines/atomizer/leanXmlVerifier.test.ts
+
+      - name: Audit Lean checker coverage and stack-safety wiring
+        run: npm run check:lean-xml-checker-coverage
+
+      - name: Near-limit comment payload memory acceptance
+        run: npm run check:lean-comment-memory
 
       - name: Real NVCA compared-only relationship-story mutations
         run: npm run test:run -w @usejunior/docx-core -- src/integration/nvca-coi-regression.test.ts
+
+      - name: Complete NVCA selected-comment fixed-stack acceptance
+        env:
+          SAFE_DOCX_REQUIRE_LEAN_CHECKER: '1'
+        run: npm run test:run -w @usejunior/docx-core -- src/integration/nvca-structural-regression.test.ts
 
       - name: Lean↔TS LCS differential harness (exhaustive)
         env:

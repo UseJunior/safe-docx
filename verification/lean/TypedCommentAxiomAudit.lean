@@ -1,5 +1,7 @@
 import Tier2.CommentReferenceIntegrity.TypedSemantics
 
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typedByteArrayEqCheck_true_iff
+#print axioms Tier2.CommentReferenceIntegrity.Typed.typedXmlEventListEqCheck_true_iff
 #print axioms Tier2.CommentReferenceIntegrity.Typed.typed_comment_selector_result_sound
 #print axioms Tier2.CommentReferenceIntegrity.Typed.typed_comment_selection_to_realization_sound
 #print axioms Tier2.CommentReferenceIntegrity.Typed.typed_admitted_comment_source_set_complete

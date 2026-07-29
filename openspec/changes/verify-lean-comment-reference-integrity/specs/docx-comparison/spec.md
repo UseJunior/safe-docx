@@ -264,3 +264,25 @@ endnote stories before applying compared-only mutations.
 - **WHEN** one referenced definition is removed only from compared
 - **THEN** only the compared comment inventory SHALL fail
 - **AND** unrelated selected-story identities SHALL remain unchanged
+
+#### Scenario: [LEAN-COMMENT-11] Complete NVCA package is stack-safe
+- **GIVEN** the complete checked-in NVCA-derived package with a
+  `word/document.xml` exceeding 350,000 characters and selected valid legacy
+  Comments infrastructure on all three sides
+- **WHEN** the production TypeScript supervisor invokes the compiled
+  protocol-v6 verifier under the normal fixed 8 MiB macOS process stack
+- **THEN** the baseline SHALL return a passing public certificate v1
+- **AND** compared-only nested `w:comment` definitions with a missing,
+  malformed, or over-64-byte `w:id` SHALL each return structured failed
+  evidence
+- **AND** no case SHALL exit abnormally or return `not_run`
+
+#### Scenario: [LEAN-COMMENT-12] Large comment payload equality is stack-safe
+- **GIVEN** a selected Comments part containing one 400,000-byte attribute
+  value and one 400,000-byte text event
+- **WHEN** the production TypeScript supervisor invokes the compiled verifier
+  under the normal fixed 8 MiB process stack
+- **THEN** typed byte, attribute, and event-sequence admission SHALL complete
+  within the 120-second per-invocation ceiling
+- **AND** the verifier SHALL return a structured protocol-v6 result rather than
+  exiting abnormally or returning `not_run`
