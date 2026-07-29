@@ -277,7 +277,15 @@ function parseHighlightVal(parent: Element | null): string | null {
  * accumulated state and a style-level false leaves it unchanged — repeated
  * toggle declarations across style levels can therefore resolve differently
  * here than in Word. The previous container-level resolver applied the same
- * nearest-value rule, so this is a stated limit, not a regression.
+ * nearest-value rule, but at container granularity: it could skip an
+ * ancestor's toggle declaration entirely when a nearer chain member carried
+ * an unrelated `rPr`, and in some of those shapes it happened to agree with
+ * Word where this cascade does not — e.g. a paragraph-style bold combined
+ * with a character-chain ancestor's explicit off: full toggle evaluation
+ * XORs the levels to bold, this cascade resolves off. Per-property
+ * resolution therefore WIDENS where the simplification is visible; the
+ * divergence shape is pinned in scripts/check_docx_formatting_loss.test.mjs
+ * so any change to toggle handling is a decision, not drift.
  *
  * Not resolved: `w:docDefaults`, table-style run properties, numbering-level
  * `rPr`, and theme font references (`w:asciiTheme` etc., which would need

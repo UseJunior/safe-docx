@@ -240,8 +240,10 @@ test('toggle precedence: an explicit off at a nearer tier beats an ancestor or l
   // Scope: these pin the resolver's documented nearest-declaration cascade,
   // NOT full OOXML toggle-property evaluation (where a style-level true XORs
   // against accumulated state and a style-level false leaves it unchanged).
-  // The simplification predates this change and is stated in the resolver's
-  // JSDoc; do not read these tests as a conformance claim.
+  // The nearest-value rule predates this change, but per-property flattening
+  // WIDENS where it applies — see the 'documented divergence' test below —
+  // and the limit is stated in the resolver's JSDoc; do not read these tests
+  // as a conformance claim.
   const chain = wrapStylesXml(
     styleDef('Base', 'character', '<w:b/>') + styleDef('Derived', 'character', '<w:b w:val="0"/>', 'Base'),
   );
@@ -276,6 +278,35 @@ test('toggle precedence: an explicit off at a nearer tier beats an ancestor or l
     onOverOff,
   );
   assert.equal(viaOn.byParaId.get('AAAA0019').emphasisSpans[0][1], true);
+});
+
+test('documented divergence: a nearer style-level toggle off defeats a paragraph-style on, where Word would XOR to on', () => {
+  // Fixture from the round-2 peer review of #691. The paragraph style turns
+  // bold on; the run's character-style chain carries an explicit off in an
+  // ancestor (Base), and the nearer member (Derived) specifies only color.
+  // The nearest-declaration cascade resolves bold OFF — Base's off is the
+  // first toggle declaration in the flattened source order. Full OOXML
+  // toggle evaluation would XOR the character level's false against the
+  // paragraph level's true and land on bold.
+  //
+  // The old container-level resolver skipped Base's rPr entirely (Derived's
+  // color-only rPr won the container race), fell through to the paragraph
+  // style, and happened to match Word on this shape — per-property
+  // resolution EXPANDED the cascade's divergence surface. That expansion is
+  // stated in the resolver JSDoc; this test pins the current simplified
+  // answer so any change to toggle handling is a visible decision, not drift.
+  const styles = wrapStylesXml(
+    styleDef('Emphatic', 'paragraph', '<w:b/>') +
+      styleDef('Base', 'character', '<w:b w:val="0"/>') +
+      styleDef('Derived', 'character', '<w:color w:val="FF0000"/>', 'Base'),
+  );
+  const projection = projectParagraphs(
+    wrapBodyXml(
+      paragraph('AAAA0020', run('Term', '<w:rStyle w:val="Derived"/>'), '<w:pPr><w:pStyle w:val="Emphatic"/></w:pPr>'),
+    ),
+    styles,
+  );
+  assert.deepEqual(projection.byParaId.get('AAAA0020').emphasisSpans, [[4, false, false, false, 'none', '', 0, 'FF0000']]);
 });
 
 test('color hex compares case-insensitively, because casing is a writer artifact rather than ink', () => {
