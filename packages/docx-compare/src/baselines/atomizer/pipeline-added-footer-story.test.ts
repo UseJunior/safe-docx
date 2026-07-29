@@ -25,11 +25,12 @@ import {
 
 const FOOTER_RELATIONSHIP =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer';
+const TEST_FEATURE = 'docx-comparison';
 
 const test = testAllure
   .epic('Document Comparison')
   .withLabels({
-    feature: 'In-Place Reconstruction',
+    feature: TEST_FEATURE,
     story: 'Inserted Section Footer Stories',
     severity: 'critical',
   })
