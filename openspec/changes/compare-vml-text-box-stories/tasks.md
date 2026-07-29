@@ -33,4 +33,17 @@
 
 - [x] 6.1 Run focused tests and the mandatory repository pre-submit command.
 - [x] 6.2 Review the public diff for confidential identifiers and bounded scope.
-- [ ] 6.3 Commit, push, merge through a focused PR, and perform a real-document post-merge smoke.
+- [x] 6.3 Commit, push, merge through a focused PR, and perform a real-document post-merge smoke.
+
+## 7. Relationship-selected header/footer stories (#726)
+
+- [x] 7.1 Resolve selected physical stories with the shared `auditSectPr` primitive.
+- [x] 7.2 Pair same-path and renumbered header/footer stories by canonical content and unique scaffold identity.
+- [x] 7.3 Classify side-only stories only when all selectors belong to an inserted/deleted section.
+- [x] 7.4 Compare paired ancillary text boxes through the shared in-place atomizer pipeline.
+- [x] 7.5 Splice revisions into the selected revised part while preserving scaffold and relationship closure.
+- [x] 7.6 Validate accepted/rejected relationship-selected story inventories against both source packages.
+- [x] 7.7 Add same-path, renumbered-path, new-section lifecycle, and ambiguous-topology fixtures.
+- [x] 7.8 Report covered ancillary text-box stories as explicit compiled-verifier exclusions.
+- [x] 7.9 Re-run the private third-pair oracle and record aggregate-only results.
+- [ ] 7.10 Run mandatory pre-submit checks, publish through a focused PR, and perform a real-document smoke.

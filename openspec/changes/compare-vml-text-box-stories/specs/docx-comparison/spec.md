@@ -31,7 +31,7 @@ The system SHALL compare the paragraph content of `w:txbxContent` as an independ
 
 #### Scenario: [SDX-TXBX-04] Unsupported text-box topology fails closed
 
-- **GIVEN** an inserted, deleted, reordered, nested, scaffold-mutated, header, or footer text box
+- **GIVEN** an inserted, deleted, reordered, nested, scaffold-mutated, or ambiguously paired text box
 - **WHEN** comparison classifies the text-box stories
 - **THEN** it SHALL fail with a typed unsupported text-box story diagnostic
 - **AND** the diagnostic SHALL identify the package part and stable story locator
@@ -43,3 +43,35 @@ The system SHALL compare the paragraph content of `w:txbxContent` as an independ
 - **WHEN** the compiled verifier evaluates the comparison triple
 - **THEN** it SHALL either verify that nested story or report it as an uncovered story
 - **AND** a certificate SHALL NOT claim complete story coverage while any text-box story remains uncovered
+
+#### Scenario: [SDX-TXBX-06] Relationship-selected story survives physical-part renumbering
+
+- **GIVEN** corresponding section slots select semantically paired header/footer stories at different physical package paths
+- **AND** their VML scaffolds match while supported nested paragraph content differs
+- **WHEN** in-place comparison runs
+- **THEN** the stories SHALL be paired through typed section bindings and semantic scaffold identity rather than raw filenames
+- **AND** tracked revisions SHALL be spliced into the revised selected part
+- **AND** the final section selectors and owning-part relationships SHALL remain closed
+
+#### Scenario: [SDX-TXBX-07] New section owns a side-only story lifecycle
+
+- **GIVEN** an inserted or deleted section whose direct selector is the only binding to a side-only header/footer text-box story
+- **WHEN** comparison classifies relationship-selected stories
+- **THEN** the complete story SHALL be treated as lifecycle content of that inserted/deleted section
+- **AND** it SHALL NOT be paired with an unrelated physical story
+- **AND** accepting and rejecting the final package SHALL select the intended revised and original story inventories
+
+#### Scenario: [SDX-TXBX-08] Ambiguous ancillary topology fails closed
+
+- **GIVEN** a changed header/footer text-box story has multiple possible semantic counterparts
+- **OR** a side-only story is selected by a section that corresponds across both inputs
+- **WHEN** comparison classifies relationship-selected stories
+- **THEN** it SHALL fail with a typed non-content-bearing diagnostic
+- **AND** it SHALL NOT publish stale, duplicated, or silently copied ancillary text
+
+#### Scenario: [SDX-TXBX-09] Ancillary text-box projections recover both sources
+
+- **GIVEN** a supported same-path or renumbered-path header/footer text-box edit
+- **WHEN** the compared package is assembled
+- **THEN** accepting all changes in every selected story SHALL recover the revised selector/story inventory
+- **AND** rejecting all changes in every selected story SHALL recover the original selector/story inventory
