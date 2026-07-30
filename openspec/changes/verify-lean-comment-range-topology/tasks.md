@@ -182,7 +182,7 @@
 - [x] 8.3 Obtain independent implementation and normative-boundary review,
   including confirmation that unmatched ECMA anchors are not described as an
   ECMA violation and crossing ranges remain accepted.
-- [ ] 8.4 After merge, run exact-main production smoke over the complete
+- [x] 8.4 After merge, run exact-main production smoke over the complete
   NVCA-derived triple and representative point, ranged, crossing, orphan,
   reverse, cross-story, malformed, overlong, incomplete, and resource-limit
   cases; record results with `Refs #729`, `Refs #672`, `Refs #710`, and
