@@ -23,9 +23,8 @@ timeout does not match its implementation.
 
 ## Impact
 
-- Affected specs: `docx-comparison`
+- Affected specs: `mcp-server`, `docx-comparison`
 - Affected code: CLI comparison parsing and command execution, verifier option
   defaults, Lean ZIP inventory parsing and typed semantics, tests, and CLI help
 - Tracking: GitHub issue #775
 - Privacy: only committed public or sanitized fixtures are permitted
-
