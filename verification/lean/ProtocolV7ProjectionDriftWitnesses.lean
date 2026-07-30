@@ -312,6 +312,64 @@ def terminalShapeMutation (_request : RunRequestCoreRequest)
     (result : RunRequestCoreResult) : Json :=
   replaceField result.response "selectionIssues" (.arr #[selectionIssueJson (issue 0)])
 
+def outcomeShapeWitnesses
+    (requestResult : Except String RunRequestCoreRequest) : List (String × Bool) :=
+  match requestResult with
+  | .error _ => [("outcome-fixture", false)]
+  | .ok request =>
+    let passed := request.original.commentEvidence
+    let evaluatedFailed := {
+      passed with
+      productionIntegrityPassed := false
+      issues := [commentIssueJson "COMMENT_DEFINITION_MISSING"
+        "outcome witness" .original "reference" 0 "main" 0]
+      inventory := { passed.inventory with status := "failed" }
+    }
+    let incompleteBefore := {
+      passed with
+      markerScanRun := none
+      markerScanInvocationCount := 0
+      complete := false
+      productionIntegrityPassed := false
+      issues := [commentIssueJson "COMMENT_PART_MISSING"
+        "outcome witness" .original "relationship" 0 "comments" 0]
+      inventory := zeroCommentInventory passed.side passed.identity
+    }
+    let incompleteAfter := {
+      passed with
+      complete := false
+      semanticLimitCrossed := true
+      productionIntegrityPassed := false
+      issues := [commentIssueJson "COMMENT_RANGE_START_OCCURRENCE_LIMIT_EXCEEDED"
+        "outcome witness" .original "rangeStart" 4096 "main" 0]
+      inventory := zeroCommentInventory passed.side passed.identity
+    }
+    let forgedPass := { passed with markerScanInvocationCount := 0 }
+    let forgedFailed := {
+      evaluatedFailed with
+      inventory := { evaluatedFailed.inventory with status := "not_evaluated" }
+    }
+    let forgedIncomplete := {
+      incompleteAfter with
+      inventory := {
+        incompleteAfter.inventory with referenceOccurrences := 1
+      }
+    }
+    [ ("outcome-pass", productionCommentOutcomeCheckAtV7 passed)
+    , ("outcome-evaluated-fail",
+        productionCommentOutcomeCheckAtV7 evaluatedFailed)
+    , ("outcome-incomplete-before-scan",
+        productionCommentOutcomeCheckAtV7 incompleteBefore)
+    , ("outcome-incomplete-after-scan",
+        productionCommentOutcomeCheckAtV7 incompleteAfter)
+    , ("outcome-forged-pass",
+        !productionCommentOutcomeCheckAtV7 forgedPass)
+    , ("outcome-forged-fail",
+        !productionCommentOutcomeCheckAtV7 forgedFailed)
+    , ("outcome-forged-incomplete",
+        !productionCommentOutcomeCheckAtV7 forgedIncomplete)
+    ]
+
 def witnessResults : List (String × Bool) :=
   [ ("baseline", baselineAgrees ordinaryRequest)
   , ("field-name", mutationDisagrees ordinaryRequest fun _ result =>
@@ -337,7 +395,7 @@ def witnessResults : List (String × Bool) :=
   , ("issue-coalescing", mutationDisagrees ordinaryRequest coalescingMutation)
   , ("issue-budget", mutationDisagrees budgetRequest budgetMutation)
   , ("terminal-shape", mutationDisagrees budgetRequest terminalShapeMutation)
-  ]
+  ] ++ outcomeShapeWitnesses ordinaryRequest
 
 def run : IO Unit := do
   for (name, passed) in witnessResults do
