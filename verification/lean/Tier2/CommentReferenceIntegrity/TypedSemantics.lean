@@ -1478,6 +1478,14 @@ def typedNatLeCheck : Nat → Nat → Bool
   | _ + 1, 0 => false
   | left + 1, right + 1 => typedNatLeCheck left right
 
+theorem typed_nat_le_check_true_of_le :
+    ∀ left right, left ≤ right → typedNatLeCheck left right = true
+  | 0, _, _ => rfl
+  | _ + 1, 0, h => nomatch h
+  | left + 1, right + 1, h =>
+      typed_nat_le_check_true_of_le left right
+        (Nat.le_of_succ_le_succ h)
+
 def typedNatLtCheck (left right : Nat) : Bool :=
   typedNatLeCheck (left + 1) right
 
@@ -4945,8 +4953,7 @@ def evaluateTypedCommentSideV7
   let definitions := typedDefinitionsV7 request side
   let incomplete := !typedCommentPrerequisitesV7 request side
   let status := if incomplete then .notEvaluated
-    else if inheritedEvaluation.status == .failed ||
-        !checkTypedPackageCommentRangeIntegrity definitions markerScan then
+    else if !checkTypedPackageCommentRangeIntegrity definitions markerScan then
       .failed
     else .passed
   { side, status, partPresent := inheritedEvaluation.partPresent
@@ -5745,15 +5752,11 @@ theorem typed_comment_side_pass_integrity_v7
             (retainedOrIndependentTypedMarkerScanV7 request side) with
       | false =>
           have hImpossible :
-              ((evaluateTypedCommentSide side
-                  (typedPackageAt request side)).status == .failed ||
-                !checkTypedPackageCommentRangeIntegrity
-                  (typedDefinitionsV7 request side)
-                  (retainedOrIndependentTypedMarkerScanV7 request side)) = true := by
+              (!checkTypedPackageCommentRangeIntegrity
+                (typedDefinitionsV7 request side)
+                (retainedOrIndependentTypedMarkerScanV7 request side)) = true := by
             rw [hCheck]
-            cases hInherited :
-                ((evaluateTypedCommentSide side
-                  (typedPackageAt request side)).status == .failed) <;> rfl
+            rfl
           exact False.elim (hStatus hImpossible)
       | true => rfl
 
@@ -5761,9 +5764,6 @@ set_option backward.match.sparseCases false in
 theorem typed_comment_side_pass_v7_of_checks
     (request : TypedRequestV7) (side : Side)
     (hPrerequisites : typedCommentPrerequisitesV7 request side = true)
-    (hInherited :
-      (evaluateTypedCommentSide side
-        (typedPackageAt request side)).status ≠ .failed)
     (hIntegrity :
       checkTypedPackageCommentRangeIntegrity
         (typedDefinitionsV7 request side)
@@ -5777,16 +5777,7 @@ theorem typed_comment_side_pass_v7_of_checks
     contradiction
   · split
     · rename_i hFailed
-      have hInheritedCheck :
-          ((evaluateTypedCommentSide side
-            (typedPackageAt request side)).status == .failed) = false := by
-        cases hStatus :
-            (evaluateTypedCommentSide side
-              (typedPackageAt request side)).status with
-        | passed => rfl
-        | failed => exact False.elim (hInherited hStatus)
-        | notEvaluated => rfl
-      rw [hInheritedCheck, hIntegrity] at hFailed
+      rw [hIntegrity] at hFailed
       contradiction
     · rfl
 
@@ -5794,10 +5785,6 @@ theorem typed_all_comment_range_sides_pass_v7_of_checks
     (request : TypedRequestV7)
     (hPrerequisites :
       ∀ side, typedCommentPrerequisitesV7 request side = true)
-    (hInherited :
-      ∀ side,
-        (evaluateTypedCommentSide side
-          (typedPackageAt request side)).status ≠ .failed)
     (hIntegrity :
       ∀ side,
         checkTypedPackageCommentRangeIntegrity
@@ -5808,7 +5795,7 @@ theorem typed_all_comment_range_sides_pass_v7_of_checks
       (evaluateTypedCommentSideV7 request side).status = .passed := by
     intro side
     exact typed_comment_side_pass_v7_of_checks request side
-      (hPrerequisites side) (hInherited side) (hIntegrity side)
+      (hPrerequisites side) (hIntegrity side)
   unfold typedAllCommentRangeSidesPassV7
   rw [hSide .original, hSide .revised, hSide .compared]
   rfl
