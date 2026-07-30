@@ -40,6 +40,10 @@ const sectionBreakTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.20' },
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.32' },
 );
+const paragraphDeletionTest = test.conformance(
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.14' },
+  { spec: 'ECMA-376', edition: 5, part: 1, section: '17.13.5.15' },
+);
 
 const AI_AUTHOR = 'SafeDocX';
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -150,6 +154,69 @@ describe('Tool integration through SessionManager: canonical revision emission',
 
     await then('document.xml contains tracked SafeDocX insertion and deletion metadata', () => {
       expectTrackedElementsWithAuthor(documentXml, ['ins', 'del']);
+    });
+  });
+
+  paragraphDeletionTest('replace_text tracks deletion of an emptied numbered paragraph mark', async ({
+    given,
+    when,
+    then,
+  }: AllureBddContext) => {
+    let opened: Awaited<ReturnType<typeof openSession>>;
+    let trackedXml: string;
+    let cleanXml: string;
+
+    await given('a session with an explicitly configured AI author and a numbered paragraph', async () => {
+      const mgr = new SessionManager({ ttlMs: 60_000, defaultAiAuthor: AI_AUTHOR });
+      opened = await openSession([], {
+        mgr,
+        xml: makeDocXml(
+          '<w:p>' +
+            '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr>' +
+            '<w:r><w:t>Delete this item</w:t></w:r>' +
+          '</w:p>' +
+          '<w:p><w:r><w:t>Keep this paragraph</w:t></w:r></w:p>',
+        ),
+      });
+    });
+
+    await when('replace_text empties the numbered paragraph and saves clean and tracked artifacts', async () => {
+      const replaced = await replaceText(opened.mgr, {
+        file_path: opened.inputPath,
+        target_paragraph_id: opened.firstParaId,
+        old_string: 'Delete this item',
+        new_string: '',
+        instruction: 'Delete the numbered paragraph.',
+      });
+      assertSuccess(replaced, 'replace_text');
+
+      const cleanPath = path.join(opened.tmpDir, 'empty-numbered-clean.docx');
+      const trackedPath = path.join(opened.tmpDir, 'empty-numbered-tracked.docx');
+      const saved = await save(opened.mgr, {
+        file_path: opened.inputPath,
+        save_to_local_path: cleanPath,
+        tracked_save_to_local_path: trackedPath,
+        save_format: 'both',
+      });
+      assertSuccess(saved, 'save');
+      cleanXml = (await readZipText(await fs.readFile(cleanPath), 'word/document.xml'))!;
+      trackedXml = (await readZipText(await fs.readFile(trackedPath), 'word/document.xml'))!;
+    });
+
+    await then('the redline deletes the paragraph mark and acceptance leaves no orphan numbered paragraph', () => {
+      expectTrackedElementsWithAuthor(trackedXml, ['del']);
+
+      const trackedDoc = parseXml(trackedXml);
+      const trackedParagraph = trackedDoc.getElementsByTagNameNS(W_NS, 'p').item(0) as Element;
+      const trackedPPr = trackedParagraph.getElementsByTagNameNS(W_NS, 'pPr').item(0) as Element;
+      const trackedRPr = trackedPPr.getElementsByTagNameNS(W_NS, 'rPr').item(0) as Element;
+      expect(trackedRPr.getElementsByTagNameNS(W_NS, 'del')).toHaveLength(1);
+
+      const cleanDoc = parseXml(cleanXml);
+      const cleanParagraphs = Array.from(cleanDoc.getElementsByTagNameNS(W_NS, 'p')) as Element[];
+      expect(cleanParagraphs).toHaveLength(1);
+      expect(cleanParagraphs[0]!.textContent).toBe('Keep this paragraph');
+      expect(cleanParagraphs[0]!.getElementsByTagNameNS(W_NS, 'numPr')).toHaveLength(0);
     });
   });
 
