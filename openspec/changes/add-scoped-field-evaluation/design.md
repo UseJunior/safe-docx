@@ -28,7 +28,11 @@ implement.
   including numbering/position projections.
 - Non-goals: nested, cross-paragraph, locked, pre-tracked, or simple
   `w:fldSimple` evaluation in the first version.
-- Non-goals: ancillary-story mutation in the first version.
+- Non-goals: bookmark projections carrying tabs, breaks, or paragraph
+  transitions, which Word represents structurally rather than as characters.
+- Non-goals: ancillary-story mutation in the first version. Unread
+  field-bearing parts are named in the result rather than passed over in
+  silence.
 - Non-goals: mandatory Word or LibreOffice runtime dependencies.
 
 ## Decisions
@@ -75,9 +79,19 @@ self-reference are unsupported and do not mutate that field.
 
 Visible bookmarked text is collected strictly between the paired markers in
 document order. Field instructions are excluded and cached field results are
-included. Tabs become `\t`; line breaks become `\n`; paragraph boundaries
-become `\n`. The first version rejects a target range containing tracked
-revisions or the REF field being evaluated.
+included.
+
+The projection must be a single run of characters. Word writes a REF result
+structurally — a tab becomes `w:tab`, a break or paragraph transition becomes
+new run and paragraph content — and this primitive replaces one `w:t` payload.
+Flattening those to literal `\t`/`\n` produces text Word collapses on display,
+so a range carrying a tab, a break, or a paragraph transition is reported
+`unsupported-bookmark-layout` instead. The first version also rejects a target
+range containing tracked revisions or the REF field being evaluated.
+
+`w:fldSimple` is opaque: the element is visible to callers that must refuse it,
+but its subtree is never flattened into the story sequence, so an enclosing
+complex field cannot adopt or overwrite a simple field's cached result.
 
 ### Cached-result replacement preserves the first result run
 
@@ -99,12 +113,28 @@ unchanged. Already-dirty fields are reported as `unchanged`. This is an
 explicit request for a capable host to refresh the result; it is not a claim
 that Safe Docx computed or verified the cache.
 
-### Comparison reuses classification without broadening suppression
+### Comparison reuses classification without narrowing suppression
 
-The existing TOC PAGEREF suppression rule remains intentionally narrow.
-`pagerefComparisonIdentity` delegates instruction recognition and normalization
-to the shared classifier. This removes parser drift but does not suppress
-ordinary PAGEREF or REF cached changes outside the existing TOC rule.
+The existing TOC PAGEREF suppression rule remains intentionally narrow in
+*scope*: it still applies only inside TOC paragraphs, and never to ordinary
+PAGEREF or REF cached changes. But within that scope it must not become
+stricter about which instructions it recognizes.
+
+Evaluation and comparison fail in opposite directions. Evaluation fails closed:
+an instruction it cannot fully model must not be evaluated. Comparison fails
+open: an instruction it cannot classify still has a volatile page-number cache,
+and withholding an identity republishes pagination churn as an authored
+revision. `pagerefComparisonIdentity` therefore uses the shared classifier for
+normalization when it succeeds, and falls back to the keyword floor the
+function has always had when it does not.
+
+Instruction text is read from the surviving revision state. Concatenating
+`w:instrText` inside a `w:del` with the current instruction produces a chimera
+like `PAGEREF _Toc1 \h PAGEREF _Toc1 \h` — a real shape in the committed
+`atomizer_redline.docx` fixture — that parses as neither state. Deleted
+instruction text is tracked separately by ancestry, because Word and our own
+atomizer both emit plain `w:instrText` inside `w:del` rather than
+`w:delInstrText`.
 
 ## Risks / Trade-offs
 

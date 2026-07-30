@@ -14,10 +14,21 @@
 - [x] 2.5 Return structured outcomes and typed fail-closed errors.
 - [x] 2.6 Export the additive public API.
 
-## 3. Evidence
+## 3. Review remediation
 
-- [x] 3.1 Add conformance-tagged unit and integration tests.
-- [x] 3.2 Add ECMA-376 registry entries and verified-by references.
-- [x] 3.3 Add OpenSpec traceability mappings.
-- [x] 3.4 Run focused tests, build, conformance checks, and strict OpenSpec
+- [x] 3.1 Refuse tabbed and cross-paragraph bookmark projections instead of
+  flattening them to literal control characters.
+- [x] 3.2 Make `w:fldSimple` subtrees opaque to complex-field collection.
+- [x] 3.3 Read instructions from the surviving revision state, by ancestry.
+- [x] 3.4 Restore the comparison keyword floor so cache suppression cannot
+  narrow, and pin it with a differential suite.
+- [x] 3.5 Name unread field-bearing stories; drop the `-1` locator sentinel.
+- [x] 3.6 Replace per-field linear scans with a precomputed element index.
+
+## 4. Evidence
+
+- [x] 4.1 Add conformance-tagged unit and integration tests.
+- [x] 4.2 Add ECMA-376 registry entries and verified-by references.
+- [x] 4.3 Add OpenSpec traceability mappings.
+- [x] 4.4 Run focused tests, build, conformance checks, and strict OpenSpec
   validation.

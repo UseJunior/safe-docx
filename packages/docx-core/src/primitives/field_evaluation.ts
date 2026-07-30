@@ -14,8 +14,17 @@ export type FieldRefreshStatus =
   | 'preserved'
   | 'unsupported';
 
+/**
+ * Where a field sits in the story it was read from.
+ *
+ * Both ordinals are document-order positions within a single refresh result.
+ * They are not durable identities: inserting an earlier paragraph shifts every
+ * later `paragraphOrdinal`. Use them to correlate an outcome with the XML that
+ * produced it, not to remember a field across edits. `paragraphOrdinal` is
+ * absent for a field that has no `w:p` ancestor.
+ */
 export interface FieldLocator {
-  paragraphOrdinal: number;
+  paragraphOrdinal?: number;
   fieldOrdinal: number;
 }
 
@@ -44,6 +53,11 @@ export interface FieldXmlRefreshResult extends FieldRefreshReport {
 
 export interface FieldDocxRefreshResult extends FieldRefreshReport {
   document: Buffer;
+  /**
+   * Field-bearing parts present in the package that this operation did not
+   * read, such as `word/header1.xml` or `word/footnotes.xml`.
+   */
+  skippedStories: string[];
 }
 
 export type FieldRefreshErrorCode = 'MALFORMED_FIELD_TOPOLOGY';
@@ -62,11 +76,24 @@ interface ComplexField {
   begin: Element;
   separate?: Element;
   end?: Element;
-  instructionParts: string[];
+  /** Instruction text that survives in the current projection. */
+  currentInstruction: string[];
+  /** Instruction text carried inside a deletion revision. */
+  deletedInstruction: string[];
   resultTexts: Element[];
   nested: boolean;
   hasNested: boolean;
   parent?: ComplexField;
+}
+
+/**
+ * The instruction a reader would act on: the surviving text, or the deleted
+ * text when the whole instruction was struck. Concatenating both views yields a
+ * chimera like `REF Old REF New`, which describes neither revision state.
+ */
+function fieldInstructionView(field: ComplexField): string {
+  const current = field.currentInstruction.join('');
+  return current.trim().length > 0 ? current : field.deletedInstruction.join('');
 }
 
 interface BookmarkRange {
@@ -77,6 +104,7 @@ interface BookmarkRange {
 }
 
 const REVISION_CONTAINERS = new Set(['ins', 'del', 'moveFrom', 'moveTo']);
+const DELETION_CONTAINERS = new Set(['del', 'moveFrom']);
 
 function wAttribute(element: Element, localName: string): string | null {
   return (
@@ -122,16 +150,38 @@ function hasRevisionAncestor(node: Node): boolean {
   return false;
 }
 
+/**
+ * Flatten the story in document order, treating `w:fldSimple` as opaque.
+ *
+ * The simple-field element itself is emitted so callers can recognize and
+ * refuse it, but its subtree is not: a simple field owns its own instruction
+ * and cached result, and letting those descendants surface in the flat
+ * sequence lets an enclosing complex field adopt — and overwrite — them.
+ */
 function enumerateElements(root: Node): Element[] {
   const elements: Element[] = [];
   const visit = (node: Node): void => {
     for (const child of elementChildren(node)) {
       elements.push(child);
+      if (isWordElement(child, 'fldSimple')) continue;
       visit(child);
     }
   };
   visit(root);
   return elements;
+}
+
+function hasDeletionAncestor(node: Node): boolean {
+  for (let current: Node | null = node; current; current = current.parentNode) {
+    if (
+      current.nodeType === 1 &&
+      (current as Element).namespaceURI === W_NS &&
+      DELETION_CONTAINERS.has((current as Element).localName)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -154,7 +204,8 @@ function collectComplexFields(document: Document): ComplexField[] {
         const parent = stack[stack.length - 1];
         const field: ComplexField = {
           begin: element,
-          instructionParts: [],
+          currentInstruction: [],
+          deletedInstruction: [],
           resultTexts: [],
           nested: parent !== undefined,
           hasNested: false,
@@ -193,7 +244,14 @@ function collectComplexFields(document: Document): ComplexField[] {
       !field.separate &&
       (isWordElement(element, 'instrText') || isWordElement(element, 'delInstrText'))
     ) {
-      field.instructionParts.push(element.textContent ?? '');
+      // `w:delInstrText` is the canonical deleted-instruction element, but Word
+      // and our own atomizer both also emit plain `w:instrText` inside a
+      // `w:del`. Ancestry is the only reliable signal.
+      const target =
+        isWordElement(element, 'delInstrText') || hasDeletionAncestor(element)
+          ? field.deletedInstruction
+          : field.currentInstruction;
+      target.push(element.textContent ?? '');
     } else if (field.separate && isWordElement(element, 't')) {
       field.resultTexts.push(element);
     }
@@ -257,13 +315,27 @@ function resolveBookmarkRanges(
   return ranges;
 }
 
+/**
+ * Project a bookmark range to the plain text a REF result should cache.
+ *
+ * Word writes a REF result structurally: a tab becomes `w:tab`, a break or a
+ * paragraph transition becomes new run and paragraph content. This primitive
+ * replaces a single `w:t` payload, so it can only faithfully represent a
+ * projection that is itself a single run of characters. A range carrying tabs,
+ * breaks, or a paragraph transition is therefore refused rather than flattened
+ * into literal U+0009/U+000A, which Word collapses on display.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.16.5.51
+ * @see https://github.com/UseJunior/safe-docx/issues/762
+ */
 function bookmarkText(
+  indexes: ReadonlyMap<Element, number>,
   elements: Element[],
   range: BookmarkRange,
   field: ComplexField,
 ): { value?: string; reason?: string } {
-  const fieldStart = elements.indexOf(field.begin);
-  const fieldEnd = elements.indexOf(field.end!);
+  const fieldStart = indexes.get(field.begin) ?? -1;
+  const fieldEnd = indexes.get(field.end!) ?? -1;
   if (
     range.startIndex <= fieldStart &&
     range.endIndex >= fieldEnd
@@ -284,49 +356,64 @@ function bookmarkText(
     ) {
       return { reason: 'unsupported-bookmark-content' };
     }
-    const isRenderable =
-      isWordElement(element, 't') ||
+    if (
       isWordElement(element, 'tab') ||
       isWordElement(element, 'br') ||
-      isWordElement(element, 'cr');
-    if (!isRenderable) continue;
+      isWordElement(element, 'cr')
+    ) {
+      return { reason: 'unsupported-bookmark-layout' };
+    }
+    if (!isWordElement(element, 't')) continue;
     const paragraph = nearestWordAncestor(element, 'p');
-    if (renderedParagraph && paragraph && paragraph !== renderedParagraph) value += '\n';
+    if (renderedParagraph && paragraph && paragraph !== renderedParagraph) {
+      return { reason: 'unsupported-bookmark-layout' };
+    }
     if (paragraph) renderedParagraph = paragraph;
-    if (isWordElement(element, 't')) value += element.textContent ?? '';
-    else if (isWordElement(element, 'tab')) value += '\t';
-    else value += '\n';
+    value += element.textContent ?? '';
   }
   return { value };
 }
 
-function unsupportedReason(
+/**
+ * Structural reasons a field cannot be refreshed, independent of its
+ * instruction semantics.
+ *
+ * Revision detection is part of this pass and runs *before* the caller trusts
+ * anything the classifier derived: a field whose instruction was edited under
+ * tracked changes has two instruction states, and neither its kind nor its
+ * bookmark target may be asserted from the mixture.
+ */
+function structuralRefreshBlocker(
   field: ComplexField,
-  classification: FieldInstructionClassification,
+  indexes: ReadonlyMap<Element, number>,
   elements: Element[],
 ): string | undefined {
   if (field.nested || field.hasNested) return 'nested-field';
   if (!field.separate || !field.end) return 'incomplete-field';
-  if (
-    classification.evaluationClass === 'deterministic-ref' &&
-    nearestWordAncestor(field.begin, 'p') !== nearestWordAncestor(field.end, 'p')
-  ) {
-    return 'cross-paragraph-field';
-  }
   if (hasRevisionAncestor(field.begin) || hasRevisionAncestor(field.end)) {
     return 'field-contains-revisions';
   }
-  const startIndex = elements.indexOf(field.begin);
-  const endIndex = elements.indexOf(field.end!);
-  if (
-    elements
-      .slice(startIndex, endIndex + 1)
-      .some((element) => hasRevisionAncestor(element))
-  ) {
-    return 'field-contains-revisions';
+  const startIndex = indexes.get(field.begin) ?? 0;
+  const endIndex = indexes.get(field.end) ?? elements.length - 1;
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    if (hasRevisionAncestor(elements[index]!)) return 'field-contains-revisions';
   }
   const locked = wAttribute(field.begin, 'fldLock');
   if (locked === 'true' || locked === '1') return 'locked-field';
+  if (!nearestWordAncestor(field.begin, 'p')) return 'field-outside-paragraph';
+  return undefined;
+}
+
+function semanticRefreshBlocker(
+  field: ComplexField,
+  classification: FieldInstructionClassification,
+): string | undefined {
+  if (
+    classification.evaluationClass === 'deterministic-ref' &&
+    nearestWordAncestor(field.begin, 'p') !== nearestWordAncestor(field.end!, 'p')
+  ) {
+    return 'cross-paragraph-field';
+  }
   return classification.reason;
 }
 
@@ -365,8 +452,11 @@ function fieldLocators(
     const paragraph = nearestWordAncestor(field.begin, 'p');
     const fieldOrdinal = nextFieldOrdinal.get(paragraph) ?? 0;
     nextFieldOrdinal.set(paragraph, fieldOrdinal + 1);
+    const paragraphOrdinal = paragraph
+      ? paragraphOrdinals.get(paragraph)
+      : undefined;
     locators.set(field, {
-      paragraphOrdinal: paragraphOrdinals.get(paragraph!) ?? -1,
+      ...(paragraphOrdinal === undefined ? {} : { paragraphOrdinal }),
       fieldOrdinal,
     });
   }
@@ -394,14 +484,16 @@ export function refreshDocumentFieldsXml(
   const document = parseXml(documentXml);
   const fields = collectComplexFields(document);
   const elements = enumerateElements(document);
+  const indexes = new Map<Element, number>(
+    elements.map((element, index) => [element, index]),
+  );
   const bookmarkRanges = resolveBookmarkRanges(elements);
   const locators = fieldLocators(document, fields);
   const outcomes: FieldRefreshOutcome[] = [];
   let changed = false;
 
   fields.forEach((field, index) => {
-    const instruction = field.instructionParts.join('');
-    const classification = classifyFieldInstruction(instruction);
+    const classification = classifyFieldInstruction(fieldInstructionView(field));
     const base = {
       index,
       locator: locators.get(field)!,
@@ -409,7 +501,9 @@ export function refreshDocumentFieldsXml(
       instruction: classification.normalizedInstruction,
       target: classification.target,
     };
-    const structuralReason = unsupportedReason(field, classification, elements);
+    const structuralReason =
+      structuralRefreshBlocker(field, indexes, elements) ??
+      semanticRefreshBlocker(field, classification);
     if (structuralReason) {
       outcomes.push({ ...base, status: 'unsupported', reason: structuralReason });
       return;
@@ -425,7 +519,7 @@ export function refreshDocumentFieldsXml(
         outcomes.push({ ...base, status: 'unsupported', reason: bookmark });
         return;
       }
-      const projection = bookmarkText(elements, bookmark, field);
+      const projection = bookmarkText(indexes, elements, bookmark, field);
       if (projection.reason) {
         outcomes.push({ ...base, status: 'unsupported', reason: projection.reason });
         return;
@@ -479,20 +573,43 @@ export function refreshDocumentFieldsXml(
   };
 }
 
-/** Refresh supported fields in `word/document.xml` of a DOCX package. */
+const ANCILLARY_STORY_PATTERN =
+  /^word\/(header\d*|footer\d*|footnotes|endnotes|comments)\.xml$/u;
+
+/**
+ * Field-bearing parts this operation does not read.
+ *
+ * Reported rather than ignored: a caller whose cross-references live in a
+ * header cannot tell an empty outcome list from a document without fields.
+ */
+function skippedFieldStories(archive: DocxArchive): string[] {
+  return archive
+    .listFiles()
+    .filter((path) => ANCILLARY_STORY_PATTERN.test(path))
+    .sort();
+}
+
+/**
+ * Refresh supported fields in `word/document.xml` of a DOCX package.
+ *
+ * Only the main story is read. Any other field-bearing part present in the
+ * package is named in `skippedStories`.
+ */
 export async function refreshDocxFields(
   document: Buffer,
   options: FieldRefreshOptions = {},
 ): Promise<FieldDocxRefreshResult> {
   const archive = await DocxArchive.load(document);
+  const skippedStories = skippedFieldStories(archive);
   const result = refreshDocumentFieldsXml(await archive.getDocumentXml(), options);
   if (!result.changed) {
-    return { document, changed: false, outcomes: result.outcomes };
+    return { document, changed: false, outcomes: result.outcomes, skippedStories };
   }
   archive.setDocumentXml(result.documentXml);
   return {
     document: await archive.save(),
     changed: true,
     outcomes: result.outcomes,
+    skippedStories,
   };
 }

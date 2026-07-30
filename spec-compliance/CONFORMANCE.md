@@ -985,8 +985,11 @@ comparison preserves its ordered XML topology as a SafeDocX metamorphic
 invariant. The scoped refresh primitive resolves a unique, ID-paired bookmark
 and refreshes the cached result only for the admitted bookmarked-text
 projection; numbering, position, separator, and unknown projections remain
-unsupported. That separately tested capability does not broaden unchanged
-rebuild preservation into complete field-engine equivalence.
+unsupported. Because Word writes a REF result structurally, the primitive also
+declines any projection carrying a tab, a break, or a paragraph transition
+rather than flattening it into literal characters. That separately tested
+capability does not broaden unchanged rebuild preservation into complete
+field-engine equivalence.
 
 ### ECMA-PART1-17-4-37 — w:tbl table emission
 

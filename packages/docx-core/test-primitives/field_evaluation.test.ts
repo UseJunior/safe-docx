@@ -170,4 +170,131 @@ describe('scoped field evaluation', () => {
     expect(result.outcomes[0]).toMatchObject({ status: 'evaluated' });
     expect(await archive.getDocumentXml()).toContain('<w:t>Fresh</w:t>');
   });
+
+  const refField = (instruction: string, result: string): string =>
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+      + `<w:r><w:instrText xml:space="preserve">${instruction}</w:instrText></w:r>`
+      + '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+      + `<w:r><w:t>${result}</w:t></w:r>`
+      + '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+
+  conformanceTest.openspec('[SDX-FIELD-EVAL-08] Layout-bearing bookmark projection is refused')(
+    'refuses tabbed and multi-paragraph bookmark projections instead of flattening them',
+    () => {
+      const tabbed = documentXml(
+        '<w:p><w:bookmarkStart w:id="1" w:name="bk"/>'
+          + '<w:r><w:t>One</w:t><w:tab/><w:t>Two</w:t></w:r>'
+          + '<w:bookmarkEnd w:id="1"/></w:p>'
+          + `<w:p>${refField(' REF bk \\h ', 'Stale')}</w:p>`,
+      );
+      const spanning = documentXml(
+        '<w:p><w:bookmarkStart w:id="1" w:name="bk"/><w:r><w:t>One</w:t></w:r></w:p>'
+          + '<w:p><w:r><w:t>Two</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>'
+          + `<w:p>${refField(' REF bk \\h ', 'Stale')}</w:p>`,
+      );
+
+      for (const xml of [tabbed, spanning]) {
+        const result = refreshDocumentFieldsXml(xml);
+        expect(result.changed).toBe(false);
+        expect(result.documentXml).toBe(xml);
+        expect(result.outcomes[0]).toMatchObject({
+          status: 'unsupported',
+          reason: 'unsupported-bookmark-layout',
+        });
+      }
+    },
+  );
+
+  conformanceTest.openspec('[SDX-FIELD-EVAL-09] Simple field inside a cached result is opaque')(
+    'leaves a nested simple field cached result untouched',
+    () => {
+      const xml = documentXml(
+        '<w:p><w:bookmarkStart w:id="1" w:name="bk"/>'
+          + '<w:r><w:t>Clause 5</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>'
+          + '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+          + '<w:r><w:instrText xml:space="preserve"> REF bk \\h </w:instrText></w:r>'
+          + '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+          + '<w:r><w:t>Stale</w:t></w:r>'
+          + '<w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple>'
+          + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+      );
+
+      const result = refreshDocumentFieldsXml(xml);
+
+      expect(result.outcomes[0]).toMatchObject({ status: 'evaluated' });
+      expect(result.documentXml).toContain('<w:t>Clause 5</w:t>');
+      expect(result.documentXml).toContain(
+        '<w:fldSimple w:instr=" PAGE "><w:r><w:t>7</w:t></w:r></w:fldSimple>',
+      );
+    },
+  );
+
+  conformanceTest.openspec('[SDX-FIELD-EVAL-10] Revised instruction classifies from the surviving text')(
+    'reports the surviving instruction rather than a deleted and current chimera',
+    () => {
+      const xml = documentXml(
+        '<w:p><w:bookmarkStart w:id="1" w:name="New"/>'
+          + '<w:r><w:t>Fresh</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>'
+          + '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+          + '<w:del w:id="4" w:author="a" w:date="2026-01-01T00:00:00Z">'
+          + '<w:r><w:instrText xml:space="preserve"> REF Old \\h </w:instrText></w:r></w:del>'
+          + '<w:ins w:id="5" w:author="a" w:date="2026-01-01T00:00:00Z">'
+          + '<w:r><w:instrText xml:space="preserve"> REF New \\h </w:instrText></w:r></w:ins>'
+          + '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+          + '<w:r><w:t>Stale</w:t></w:r>'
+          + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+      );
+
+      const result = refreshDocumentFieldsXml(xml);
+
+      expect(result.changed).toBe(false);
+      expect(result.outcomes[0]).toMatchObject({
+        kind: 'REF',
+        instruction: 'REF New \\h',
+        target: 'New',
+        status: 'unsupported',
+        reason: 'field-contains-revisions',
+      });
+    },
+  );
+
+  conformanceTest.openspec('[SDX-FIELD-EVAL-11] Unread field-bearing stories are named')(
+    'names header and footnote parts the main-story refresh did not read',
+    async () => {
+      const source = await buildDocxFromBodyXml(
+        '<w:p><w:bookmarkStart w:id="7" w:name="Clause_1"/>'
+          + '<w:r><w:t>Fresh</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p>'
+          + `<w:p>${completeField(FIELD_INSTRUCTIONS.REF, 'Stale')}</w:p>`,
+      );
+      const archive = await DocxArchive.load(source);
+      archive.setFile(
+        'word/header1.xml',
+        `<w:hdr xmlns:w="${W_NS}"><w:p/></w:hdr>`,
+      );
+      archive.setFile(
+        'word/footnotes.xml',
+        `<w:footnotes xmlns:w="${W_NS}"/>`,
+      );
+
+      const result = await refreshDocxFields(await archive.save());
+
+      expect(result.skippedStories).toEqual([
+        'word/footnotes.xml',
+        'word/header1.xml',
+      ]);
+    },
+  );
+
+  test('omits the paragraph ordinal for a field with no paragraph ancestor', () => {
+    const xml = documentXml(refField(' PAGE ', '1'));
+
+    const result = refreshDocumentFieldsXml(xml, { markLayoutDependentDirty: true });
+
+    expect(result.changed).toBe(false);
+    expect(result.outcomes[0]).toMatchObject({
+      status: 'unsupported',
+      reason: 'field-outside-paragraph',
+    });
+    expect(result.outcomes[0]!.locator).not.toHaveProperty('paragraphOrdinal');
+  });
 });
