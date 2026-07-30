@@ -285,6 +285,199 @@ describe('scoped field evaluation', () => {
     },
   );
 
+  conformanceTest.openspec('[SDX-FIELD-EVAL-04] Ambiguous bookmark does not retarget')(
+    'reports each bookmark-resolution failure without touching the cached result',
+    () => {
+      const ref = `<w:p>${refField(' REF bk \\h ', 'Stale')}</w:p>`;
+      const cases: Array<[string, string]> = [
+        [
+          'duplicate-bookmark-name',
+          '<w:p><w:bookmarkStart w:id="1" w:name="bk"/><w:r><w:t>A</w:t></w:r><w:bookmarkEnd w:id="1"/>'
+            + '<w:bookmarkStart w:id="2" w:name="bk"/><w:r><w:t>B</w:t></w:r><w:bookmarkEnd w:id="2"/></w:p>',
+        ],
+        [
+          'missing-or-duplicate-bookmark-end',
+          '<w:p><w:bookmarkStart w:id="1" w:name="bk"/><w:r><w:t>A</w:t></w:r></w:p>',
+        ],
+        [
+          'reversed-bookmark-range',
+          '<w:p><w:bookmarkEnd w:id="1"/><w:r><w:t>A</w:t></w:r><w:bookmarkStart w:id="1" w:name="bk"/></w:p>',
+        ],
+        [
+          'unsupported-bookmark-content',
+          '<w:p><w:bookmarkStart w:id="1" w:name="bk"/><w:r><w:drawing/></w:r>'
+            + '<w:bookmarkEnd w:id="1"/></w:p>',
+        ],
+        ['bookmark-not-found', '<w:p><w:r><w:t>nothing named bk</w:t></w:r></w:p>'],
+        [
+          'duplicate-or-missing-bookmark-id',
+          '<w:p><w:bookmarkStart w:id="1" w:name="bk"/><w:r><w:t>A</w:t></w:r><w:bookmarkEnd w:id="1"/>'
+            + '<w:bookmarkStart w:id="1" w:name="other"/><w:r><w:t>B</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>',
+        ],
+      ];
+
+      for (const [reason, prelude] of cases) {
+        const xml = documentXml(prelude + ref);
+        const result = refreshDocumentFieldsXml(xml);
+        expect(result.changed, reason).toBe(false);
+        expect(result.documentXml).toBe(xml);
+        expect(result.outcomes.at(-1)).toMatchObject({ status: 'unsupported', reason });
+      }
+    },
+  );
+
+  conformanceTest.openspec('[SDX-FIELD-EVAL-04] Ambiguous bookmark does not retarget')(
+    'refuses a bookmark range that encloses the field referencing it',
+    () => {
+      const xml = documentXml(
+        `<w:p><w:bookmarkStart w:id="1" w:name="bk"/>${refField(' REF bk \\h ', 'Stale')}`
+          + '<w:bookmarkEnd w:id="1"/></w:p>',
+      );
+
+      expect(refreshDocumentFieldsXml(xml).outcomes[0]).toMatchObject({
+        status: 'unsupported',
+        reason: 'self-referential-bookmark',
+      });
+    },
+  );
+
+  conformanceTest.openspec('[SDX-FIELD-EVAL-05] Malformed field topology fails transactionally')(
+    'rejects stray, unknown, and unclosed field characters before mutating',
+    () => {
+      const malformed = [
+        '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+        '<w:p><w:r><w:fldChar w:fldCharType="wat"/></w:r></w:p>',
+        '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r></w:p>',
+        '<w:p><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p>',
+      ];
+
+      for (const body of malformed) {
+        expect(() => refreshDocumentFieldsXml(documentXml(body)), body).toThrow(
+          FieldRefreshError,
+        );
+      }
+    },
+  );
+
+  conformanceTest.openspec('[SDX-FIELD-EVAL-03] Unsupported REF projection is preserved')(
+    'reports nested, locked, cross-paragraph, and result-less fields as unsupported',
+    () => {
+      const bookmark =
+        '<w:p><w:bookmarkStart w:id="1" w:name="bk"/><w:r><w:t>Fresh</w:t></w:r>'
+        + '<w:bookmarkEnd w:id="1"/></w:p>';
+      const cases: Array<[string, string]> = [
+        [
+          'nested-field',
+          `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>`
+            + '<w:r><w:instrText xml:space="preserve"> REF bk \\h </w:instrText></w:r>'
+            + '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            + refField(' PAGE ', '1')
+            + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+        ],
+        [
+          'locked-field',
+          '<w:p><w:r><w:fldChar w:fldCharType="begin" w:fldLock="true"/></w:r>'
+            + '<w:r><w:instrText xml:space="preserve"> REF bk \\h </w:instrText></w:r>'
+            + '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Stale</w:t></w:r>'
+            + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+        ],
+        [
+          'cross-paragraph-field',
+          '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            + '<w:r><w:instrText xml:space="preserve"> REF bk \\h </w:instrText></w:r>'
+            + '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Stale</w:t></w:r></w:p>'
+            + '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+        ],
+        [
+          'incomplete-field',
+          '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            + '<w:r><w:instrText xml:space="preserve"> REF bk \\h </w:instrText></w:r>'
+            + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+        ],
+        [
+          'missing-cached-result-text',
+          '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+            + '<w:r><w:instrText xml:space="preserve"> REF bk \\h </w:instrText></w:r>'
+            + '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+            + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+        ],
+      ];
+
+      for (const [reason, body] of cases) {
+        const result = refreshDocumentFieldsXml(documentXml(bookmark + body));
+        expect(result.changed, reason).toBe(false);
+        expect(result.outcomes.at(-1), reason).toMatchObject({ status: 'unsupported', reason });
+      }
+    },
+  );
+
+  test('reports already-current and already-dirty fields as unchanged', () => {
+    const current = documentXml(
+      '<w:p><w:bookmarkStart w:id="1" w:name="bk"/><w:r><w:t>Fresh</w:t></w:r>'
+        + '<w:bookmarkEnd w:id="1"/></w:p>'
+        + `<w:p>${refField(' REF bk \\h ', 'Fresh')}</w:p>`,
+    );
+    const dirty = documentXml(
+      '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>'
+        + '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
+        + '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r>'
+        + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+    );
+
+    const currentResult = refreshDocumentFieldsXml(current);
+    const dirtyResult = refreshDocumentFieldsXml(dirty, { markLayoutDependentDirty: true });
+
+    expect(currentResult.changed).toBe(false);
+    expect(currentResult.documentXml).toBe(current);
+    expect(currentResult.outcomes[0]).toMatchObject({
+      status: 'unchanged',
+      reason: 'cached-result-current',
+    });
+    expect(dirtyResult.changed).toBe(false);
+    expect(dirtyResult.outcomes[0]).toMatchObject({
+      status: 'unchanged',
+      reason: 'already-dirty',
+    });
+  });
+
+  test('preserves layout-dependent fields when dirty marking is not requested', () => {
+    const xml = documentXml(`<w:p>${refField(' PAGE ', '4')}</w:p>`);
+
+    const result = refreshDocumentFieldsXml(xml);
+
+    expect(result.changed).toBe(false);
+    expect(result.outcomes[0]).toMatchObject({
+      kind: 'PAGE',
+      status: 'preserved',
+      reason: 'layout-refresh-not-requested',
+    });
+  });
+
+  test('sets xml:space only when the refreshed value has edge whitespace', () => {
+    const build = (bookmarked: string): string =>
+      documentXml(
+        `<w:p><w:bookmarkStart w:id="1" w:name="bk"/><w:r><w:t xml:space="preserve">${bookmarked}</w:t></w:r>`
+          + '<w:bookmarkEnd w:id="1"/></w:p>'
+          + `<w:p>${refField(' REF bk \\h ', 'Stale')}</w:p>`,
+      );
+
+    const padded = refreshDocumentFieldsXml(build(' Fresh '));
+    const bare = refreshDocumentFieldsXml(build('Fresh'));
+
+    expect(padded.documentXml).toContain('<w:t xml:space="preserve"> Fresh </w:t>');
+    expect(bare.documentXml).toContain('<w:t>Fresh</w:t>');
+  });
+
+  test('returns the original buffer when no field changed', async () => {
+    const source = await buildDocxFromBodyXml('<w:p><w:r><w:t>no fields here</w:t></w:r></w:p>');
+
+    const result = await refreshDocxFields(source);
+
+    expect(result.changed).toBe(false);
+    expect(result.document).toBe(source);
+    expect(result.outcomes).toEqual([]);
+  });
+
   test('omits the paragraph ordinal for a field with no paragraph ancestor', () => {
     const xml = documentXml(refField(' PAGE ', '1'));
 

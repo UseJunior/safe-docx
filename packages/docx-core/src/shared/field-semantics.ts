@@ -64,10 +64,21 @@ function tokenizeFieldInstruction(instructionText: string): InstructionToken[] |
   return tokens;
 }
 
+/**
+ * Render tokens back to a canonical instruction string.
+ *
+ * The escape must cover the escape character itself, not just the quote.
+ * Escaping only `"` lets `a\` and `a` normalize to strings that differ by a
+ * trailing backslash the reader cannot attribute, and comparison uses this
+ * rendering as a cache identity — an ambiguous identity silently merges two
+ * instructions that are not the same.
+ */
 function normalizeTokens(tokens: InstructionToken[]): string {
   return tokens
     .map(({ value, quoted }) =>
-      quoted || /\s/u.test(value) ? `"${value.replace(/"/gu, '\\"')}"` : value,
+      quoted || /\s/u.test(value)
+        ? `"${value.replace(/[\\"]/gu, (character) => `\\${character}`)}"`
+        : value,
     )
     .join(' ');
 }

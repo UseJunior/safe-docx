@@ -7,8 +7,9 @@ import {
 import { classifyFieldInstruction } from './baselines/atomizer/opaquePassthrough.js';
 
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const TEST_FEATURE = 'add-scoped-field-evaluation';
 const test = testAllure.epic('Document Comparison').withLabels({
-  feature: 'add-scoped-field-evaluation',
+  feature: TEST_FEATURE,
 });
 const conformanceTest = test.conformance(
   { spec: 'ECMA-376', edition: 5, part: 1, section: '17.16.5.45' },
