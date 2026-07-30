@@ -741,6 +741,9 @@ describe('ECMA-376 advanced revision records', () => {
           ],
         }));
       },
+      // Runs two full comparisons per evidence case; borderline against the 5s
+      // default and reliably over it under coverage instrumentation.
+      60000,
     );
 
   test(
