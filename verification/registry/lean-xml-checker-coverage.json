@@ -110,7 +110,7 @@
   "packagePolicy": [
     "Lean constructs a bounded binary classic single-disk ZIP central/local index before extraction",
     "ZIP64, encryption, data descriptors, unsupported methods or flag bits, ambiguous names, duplicate names, unsafe paths, and overlapping local spans reject as not_run",
-    "ZIP directory records are rejected during binary indexing; only regular file entries enter the trusted inventory",
+    "safe zero-byte stored ZIP directory placeholders remain in the trusted inventory for limits and span checks but cannot be selected as XML; ambiguous, non-empty, compressed, symlink, and special entries reject",
     "unzip -p -- is invoked only for one exact indexed safe name; output length and CRC-32 must match the binary index"
   ],
   "checkedProperties": [

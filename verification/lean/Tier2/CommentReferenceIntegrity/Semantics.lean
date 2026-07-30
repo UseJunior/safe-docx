@@ -1335,7 +1335,9 @@ def IndependentBinaryIndexOf
   (∀ entry ∈ index.entries,
     (index.entries.filter (·.name == entry.name)).length = 1) ∧
   ∀ entry ∈ index.entries,
-    entry.isDirectory = false ∧
+    (entry.isDirectory = true →
+      entry.method = 0 ∧ entry.crc32 = 0 ∧
+      entry.compressedSize = 0 ∧ entry.expandedSize = 0) ∧
     entry.localHeaderOffset + 30 ≤ entry.dataOffset ∧
     entry.dataOffset ≤ entry.localSpanEnd ∧
     entry.localSpanEnd ≤ index.centralOffset ∧
@@ -1356,7 +1358,12 @@ def independentBinaryIndexCheck
   index.entries.all (fun entry =>
     decide ((index.entries.filter (·.name == entry.name)).length = 1)) &&
   index.entries.all fun entry =>
-    decide (entry.isDirectory = false) &&
+    (if entry.isDirectory then
+      decide (entry.method = 0) &&
+      decide (entry.crc32 = 0) &&
+      decide (entry.compressedSize = 0) &&
+      decide (entry.expandedSize = 0)
+     else true) &&
     decide (entry.localHeaderOffset + 30 ≤ entry.dataOffset) &&
     decide (entry.dataOffset ≤ entry.localSpanEnd) &&
     decide (entry.localSpanEnd ≤ index.centralOffset) &&
@@ -1373,8 +1380,12 @@ theorem independent_binary_index_check_sound
   have hEntry := h.2 entry hMember
   unfold localFileHeaderSignatureCheck at hEntry
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hEntry
-  refine ⟨hEntry.1.1.1.1, hEntry.1.1.1.2, hEntry.1.1.2,
-    hEntry.1.2, ?_⟩
+  refine ⟨?_, hEntry.1.1.1.2, hEntry.1.1.2, hEntry.1.2, ?_⟩
+  intro hDirectory
+  simp only [hDirectory, ↓reduceIte, Bool.and_eq_true,
+    decide_eq_true_eq] at hEntry
+  rcases hEntry.1.1.1.1 with ⟨⟨⟨hMethod, hCrc⟩, hCompressed⟩, hExpanded⟩
+  exact ⟨hMethod, hCrc, hCompressed, hExpanded⟩
   unfold LocalFileHeaderSignatureAt
   simpa [byteAtEquals, and_assoc] using hEntry.2
 

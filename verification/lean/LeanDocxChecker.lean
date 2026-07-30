@@ -1109,6 +1109,7 @@ structure SnapshotExtractionEvidence where
   selectedPartPath : String
   entry : ZipEntry
   selectedEntryExact : zipIndex.find? selectedPartPath = some entry
+  selectedEntryRegular : entry.isDirectory = false
   centralOffset : Nat
   centralSize : Nat
   compressedPayload : ByteArray
@@ -1132,38 +1133,44 @@ def extractPart (package : Package) (partPath : String) : IO ExtractedPart := do
   match hFind : package.index.find? partPath with
   | none => return .missing
   | some entry =>
-    let output ← runBounded "unzip" #["-p", "--", package.snapshotPath, entry.name]
-      entry.expandedSize
-    if output.exitCode != 0 then
-      throw (IO.userError
-        s!"archive extraction failed for {partPath}: {decodeDiagnostics output.stderr}")
-    if hSize : output.stdout.size = entry.expandedSize then
-      if hCrc : crc32 output.stdout = entry.crc32 then
-        return .present {
-          packageBytes := package.bytes
-          snapshotBytes := package.snapshotBytes
-          snapshotPath := package.snapshotPath
-          snapshotWriteCount := package.snapshotWriteCount
-          zipIndex := package.index
-          zipIndexExact := package.indexExact
-          selectedPartPath := partPath
-          entry
-          selectedEntryExact := hFind
-          centralOffset := package.index.centralOffset
-          centralSize := package.index.centralSize
-          compressedPayload := package.bytes.extract entry.dataOffset entry.localSpanEnd
-          decompressedBytes := output.stdout
-          extractionInvocationCount := 1
-          externalDecompressionTrusted := true
-          snapshotBytesExact := package.snapshotBytesExact
-          compressedPayloadExact := rfl
-          decompressedSizeExact := hSize
-          decompressedCrcExact := hCrc
-        }
-      else
-        throw (IO.userError s!"archive extraction CRC mismatch for {partPath}")
+    if hDirectory : entry.isDirectory then
+      throw (IO.userError s!"archive extraction target is a directory: {partPath}")
     else
-      throw (IO.userError s!"archive extraction size mismatch for {partPath}")
+      have hRegular : entry.isDirectory = false := by
+        simpa using hDirectory
+      let output ← runBounded "unzip" #["-p", "--", package.snapshotPath, entry.name]
+        entry.expandedSize
+      if output.exitCode != 0 then
+        throw (IO.userError
+          s!"archive extraction failed for {partPath}: {decodeDiagnostics output.stderr}")
+      if hSize : output.stdout.size = entry.expandedSize then
+        if hCrc : crc32 output.stdout = entry.crc32 then
+          return .present {
+            packageBytes := package.bytes
+            snapshotBytes := package.snapshotBytes
+            snapshotPath := package.snapshotPath
+            snapshotWriteCount := package.snapshotWriteCount
+            zipIndex := package.index
+            zipIndexExact := package.indexExact
+            selectedPartPath := partPath
+            entry
+            selectedEntryExact := hFind
+            selectedEntryRegular := hRegular
+            centralOffset := package.index.centralOffset
+            centralSize := package.index.centralSize
+            compressedPayload := package.bytes.extract entry.dataOffset entry.localSpanEnd
+            decompressedBytes := output.stdout
+            extractionInvocationCount := 1
+            externalDecompressionTrusted := true
+            snapshotBytesExact := package.snapshotBytesExact
+            compressedPayloadExact := rfl
+            decompressedSizeExact := hSize
+            decompressedCrcExact := hCrc
+          }
+        else
+          throw (IO.userError s!"archive extraction CRC mismatch for {partPath}")
+      else
+        throw (IO.userError s!"archive extraction size mismatch for {partPath}")
 
 def partLimitExceeded (package : Package) (partPath : String) : Bool :=
   match package.index.find? partPath with
@@ -5455,7 +5462,8 @@ theorem production_comment_part_admitted_sound
     · exact hSnapshot.trans hExtractionPackage
     · refine ⟨?_, part.parseEvidence.extraction.entry, ?_,
         hNormalizedPath, rfl, rfl, rfl, rfl, rfl,
-        rfl, hBounds.1, hBounds.2.1, hBounds.2.2.1,
+        rfl, part.parseEvidence.extraction.selectedEntryRegular,
+        hBounds.2.1, hBounds.2.2.1,
         hBounds.2.2.2.1, ?_, hBounds.2.2.2.2, ?_, hPayloadSize⟩
       · simpa [hExtractionPackage, hPackage] using hPayload
       · simpa [hIndex] using hSelectedEntryAtIdentity

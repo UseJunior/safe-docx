@@ -79,6 +79,9 @@ describe('safe-docx CLI routing', () => {
         'Junior',
         '--premerge-runs',
         'true',
+        '--verify',
+        '--certificate',
+        'certificate.json',
       ]);
     });
 
@@ -92,6 +95,8 @@ describe('safe-docx CLI routing', () => {
         mode: 'inplace',
         author: 'Junior',
         premergeRuns: true,
+        verify: true,
+        certificatePath: 'certificate.json',
       });
       expect(serve).not.toHaveBeenCalled();
       expect(output).toHaveLength(1);
@@ -126,6 +131,8 @@ describe('safe-docx CLI routing', () => {
       expect(output[0]).toContain('safe-docx CLI');
       expect(output[0]).toContain('compare <original> <revised> [output]');
       expect(output[0]).toContain('Reconstruction mode (default: inplace)');
+      expect(output[0]).toContain('--verify');
+      expect(output[0]).toContain('--certificate <path>');
       expect(serve).not.toHaveBeenCalled();
       expect(compare).not.toHaveBeenCalled();
     });

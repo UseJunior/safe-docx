@@ -262,8 +262,13 @@ for (const required of [
 if (selector.includes('selectionCompleteProof') || selector.includes('structure SelectorResult')) {
   errors.push('selector theorem results must not carry caller-supplied proof fields');
 }
-if (!selector.includes('if isDirectory then throw')) {
-  errors.push('classic ZIP policy must explicitly reject directory records');
+if (!selector.includes('if isDirectory &&') ||
+    !selector.includes('ZIP directory entry is not an inert placeholder') ||
+    !typedCommentIntegrity.includes('if entry.isDirectory then') ||
+    !executable.includes('archive extraction target is a directory')) {
+  errors.push(
+    'classic ZIP policy must admit only inert directory placeholders and reject them as selected XML',
+  );
 }
 if (ledger.limits?.ordinaryEnvelopeEvidence?.producer !==
     'verification/lean/ProtocolV7OrdinaryEnvelopeWitness.lean' ||

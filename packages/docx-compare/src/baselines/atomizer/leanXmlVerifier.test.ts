@@ -285,6 +285,16 @@ async function replacePart(
   return zip.generateAsync({ type: 'nodebuffer', compression });
 }
 
+async function addInertZipDirectory(docx: Buffer, name = 'word/'): Promise<Buffer> {
+  const zip = await JSZip.loadAsync(docx);
+  zip.file(name, Buffer.alloc(0), {
+    createFolders: false,
+    dir: true,
+    compression: 'STORE',
+  });
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+}
+
 async function readPart(docx: Buffer, path: string): Promise<string> {
   const part = (await JSZip.loadAsync(docx)).file(path);
   if (!part) throw new Error(`missing test part: ${path}`);
@@ -518,6 +528,14 @@ function mutateZipMethod(docx: Buffer, name: string, method: number): Buffer {
   const record = centralRecordFor(mutated, name);
   mutated.writeUInt16LE(method, record.central + 10);
   mutated.writeUInt16LE(method, record.local + 8);
+  return mutated;
+}
+
+function mutateZipCrc32(docx: Buffer, name: string, crc32: number): Buffer {
+  const mutated = Buffer.from(docx);
+  const record = centralRecordFor(mutated, name);
+  mutated.writeUInt32LE(crc32, record.central + 16);
+  mutated.writeUInt32LE(crc32, record.local + 14);
   return mutated;
 }
 
@@ -4128,6 +4146,57 @@ describeWithLean('Lean compiled package extraction limits', () => {
     expect(result.status).toBe('not_run');
     expect(result.reason).toContain('ZIP is too short for EOCD');
     });
+
+  test.openspec('[LEAN-ZIP-DIR-01] Conventional empty directory is inert')(
+    'accepts a safe zero-byte stored ZIP directory placeholder',
+    async () => {
+      const base = await buildDocxFromBodyXml(paragraphWithText('Body'));
+      const withDirectory = await addInertZipDirectory(base);
+      const result = await run(withDirectory);
+      expect(result.status, result.reason).toBe('passed');
+      expect(result.checkerProtocolVersion).toBe(7);
+    },
+  );
+
+  test.openspec('[LEAN-ZIP-DIR-03] Ambiguous or non-empty directory remains rejected')(
+    'rejects directory placeholders with non-inert metadata',
+    async () => {
+      const base = await addInertZipDirectory(
+        await buildDocxFromBodyXml(paragraphWithText('Body')),
+      );
+      for (const malformed of [
+        mutateZipMethod(base, 'word/', 8),
+        mutateZipCrc32(base, 'word/', 1),
+        mutateExpandedSize(base, 'word/', 1),
+      ]) {
+        const result = await run(malformed);
+        expect(result.status).toBe('not_run');
+        expect(result.reason).toContain('ZIP directory entry is not an inert placeholder');
+      }
+    },
+  );
+
+  test.openspec('[LEAN-ZIP-DIR-02] Directory cannot become a selected XML story')(
+    'never extracts an accepted directory placeholder as relationship XML',
+    async () => {
+      const missingTarget = await relationshipDocx({
+        headerTarget: 'header-dir/',
+        headerPartPath: 'word/header-dir/',
+      });
+      const selectedDirectory = await addInertZipDirectory(
+        missingTarget,
+        'word/header-dir/',
+      );
+      const result = await run(selectedDirectory);
+      expect(result.status).toBe('failed');
+      expect(result.relationshipSelectionFailures?.length).toBeGreaterThan(0);
+      expect(result.relationshipStories?.some((story) =>
+        story.originalPartPath === 'word/header-dir/' ||
+        story.revisedPartPath === 'word/header-dir/' ||
+        story.comparedPartPath === 'word/header-dir/'
+      )).toBe(false);
+    },
+  );
 
   test('rejects oversized expanded story output before buffering it', async () => {
     const base = await buildSyntheticDocx({ paragraphs: ['Body'], footnoteOnParagraph: 0 });

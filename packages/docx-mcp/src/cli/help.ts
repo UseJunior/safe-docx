@@ -45,6 +45,8 @@ export function renderTopLevelHelp(): string {
   lines.push('  serve                                       Start the MCP server (default)');
   lines.push('  compare <original> <revised> [output]       Compare two DOCX files and write redline output');
   lines.push('    --mode <inplace|rebuild>                   Reconstruction mode (default: inplace)');
+  lines.push('    --verify                                  Require a passing Lean verifier certificate');
+  lines.push('    --certificate <path>                      Verify and write the certificate as JSON');
   lines.push('                                                Compare stats count revision ranges; atom totals use *Atoms fields');
   lines.push('  edit <file> [--replace ...] [-o output]     Batch edit a DOCX file');
   lines.push('  grep "pattern" <file> [files...]            Search DOCX files for text');

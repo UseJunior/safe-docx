@@ -525,7 +525,10 @@ def typedEntryLocalHeaderCheck
   typedZipNameEncodingCheck entry.name entry.flags &&
   typedZipFlagsAllowed entry.method entry.flags &&
   (entry.method == 0 || entry.method == 8) &&
-  !entry.isDirectory &&
+  (if entry.isDirectory then
+    entry.method == 0 && entry.crc32 == 0 &&
+      entry.compressedSize == 0 && entry.expandedSize == 0
+   else true) &&
   typedLocalHeaderSignatureCheck packageBytes entry.localHeaderOffset &&
   typedUInt16At? packageBytes (entry.localHeaderOffset + 6) =
     some entry.flags &&
@@ -594,9 +597,14 @@ def typedCentralEntriesCheck (bytes : ByteArray) (stop : Nat) :
       (entry.method == 0 || entry.method == 8) &&
       typedSafeEntryNameCheck entry.name entry.isDirectory &&
       typedZipNameEncodingCheck entry.name entry.flags &&
-      !entry.isDirectory &&
-      !typedZipBitSet (externalAttributes.getD 0) 4 &&
-      (unixType == 0 || unixType == 8) &&
+      (if entry.isDirectory then
+        (typedZipBitSet (externalAttributes.getD 0) 4 || unixType == 4) &&
+        (unixType == 0 || unixType == 4) &&
+        entry.method == 0 && entry.crc32 == 0 &&
+        entry.compressedSize == 0 && entry.expandedSize == 0
+       else
+        !typedZipBitSet (externalAttributes.getD 0) 4 &&
+        (unixType == 0 || unixType == 8)) &&
       typedByteSliceEquals bytes (position + 46) entry.name.bytes &&
       typedZipExtraFieldsCheck bytes
         (position + 46 + entry.name.bytes.length) (extraLength.getD 0) &&
