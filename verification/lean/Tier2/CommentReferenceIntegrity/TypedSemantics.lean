@@ -5757,6 +5757,62 @@ theorem typed_comment_side_pass_integrity_v7
           exact False.elim (hStatus hImpossible)
       | true => rfl
 
+set_option backward.match.sparseCases false in
+theorem typed_comment_side_pass_v7_of_checks
+    (request : TypedRequestV7) (side : Side)
+    (hPrerequisites : typedCommentPrerequisitesV7 request side = true)
+    (hInherited :
+      (evaluateTypedCommentSide side
+        (typedPackageAt request side)).status ≠ .failed)
+    (hIntegrity :
+      checkTypedPackageCommentRangeIntegrity
+        (typedDefinitionsV7 request side)
+        (retainedOrIndependentTypedMarkerScanV7 request side) = true) :
+    (evaluateTypedCommentSideV7 request side).status = .passed := by
+  unfold evaluateTypedCommentSideV7
+  dsimp only
+  split
+  · rename_i hIncomplete
+    rw [hPrerequisites] at hIncomplete
+    contradiction
+  · split
+    · rename_i hFailed
+      have hInheritedCheck :
+          ((evaluateTypedCommentSide side
+            (typedPackageAt request side)).status == .failed) = false := by
+        cases hStatus :
+            (evaluateTypedCommentSide side
+              (typedPackageAt request side)).status with
+        | passed => rfl
+        | failed => exact False.elim (hInherited hStatus)
+        | notEvaluated => rfl
+      rw [hInheritedCheck, hIntegrity] at hFailed
+      contradiction
+    · rfl
+
+theorem typed_all_comment_range_sides_pass_v7_of_checks
+    (request : TypedRequestV7)
+    (hPrerequisites :
+      ∀ side, typedCommentPrerequisitesV7 request side = true)
+    (hInherited :
+      ∀ side,
+        (evaluateTypedCommentSide side
+          (typedPackageAt request side)).status ≠ .failed)
+    (hIntegrity :
+      ∀ side,
+        checkTypedPackageCommentRangeIntegrity
+          (typedDefinitionsV7 request side)
+          (retainedOrIndependentTypedMarkerScanV7 request side) = true) :
+    typedAllCommentRangeSidesPassV7 request = true := by
+  have hSide : ∀ side,
+      (evaluateTypedCommentSideV7 request side).status = .passed := by
+    intro side
+    exact typed_comment_side_pass_v7_of_checks request side
+      (hPrerequisites side) (hInherited side) (hIntegrity side)
+  unfold typedAllCommentRangeSidesPassV7
+  rw [hSide .original, hSide .revised, hSide .compared]
+  rfl
+
 theorem typed_side_comment_passed_v7_eq_true
     (status : TypedSideCommentStatusV7)
     (hPass : typedSideCommentPassedV7 status = true) :

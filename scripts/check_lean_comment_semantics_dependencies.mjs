@@ -12,6 +12,8 @@ const semanticTargets = [
   'Tier2.CommentReferenceIntegrity.Typed.typed_comment_marker_scan_evidence_exact',
   'Tier2.CommentReferenceIntegrity.Typed.typed_package_comment_range_integrity_sound',
   'Tier2.CommentReferenceIntegrity.Typed.typed_incomplete_comment_range_zero_evidence_sound',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_comment_side_pass_v7_of_checks',
+  'Tier2.CommentReferenceIntegrity.Typed.typed_all_comment_range_sides_pass_v7_of_checks',
   'Tier2.CommentReferenceIntegrity.Typed.typed_comment_range_aggregate_pass_sound',
   'Tier2.CommentReferenceIntegrity.Typed.typed_invalid_topology_witnesses_are_canonical',
   'Tier2.CommentReferenceIntegrity.Typed.typed_duplicate_reference_aggregate_witness_rejected',
