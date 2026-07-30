@@ -535,7 +535,7 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
 
   test
     .openspec('[SDX-FIELD-CONFORMANCE-01] REF and PAGEREF claims are bounded')(
-    'registers REF and PAGEREF without field-engine claims',
+    'keeps rebuild claims bounded while naming the separate scoped evaluator',
     async ({ given, when, then }: AllureBddContext) => {
       let registry = '';
 
@@ -546,11 +546,12 @@ describe('Forced rebuild preserves unchanged supported complex fields', () => {
           'utf8',
         );
       });
-      await then('both entries state the bounded preservation and evaluation exclusions', () => {
+      await then('the entries distinguish bounded rebuild from scoped refresh', () => {
         expect(registry).toContain('[ECMA-PART1-17-16-5-45]');
         expect(registry).toContain('[ECMA-PART1-17-16-5-51]');
-        expect(registry).toContain('does not claim bookmark resolution');
-        expect(registry).toContain('cached-result correctness, or field evaluation');
+        expect(registry).toContain('unchanged-rebuild invariant does not claim');
+        expect(registry).toContain('scoped refresh primitive');
+        expect(registry).toContain('complete field-engine equivalence');
       });
     },
   );
