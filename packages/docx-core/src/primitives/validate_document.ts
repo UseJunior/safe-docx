@@ -78,6 +78,30 @@ function checkOrphanedBookmarks(body: Element): ValidationWarning[] {
 const TC_LOCALS = ['ins', 'del', 'moveFrom', 'moveTo'];
 const REQUIRED_TC_ATTRS = ['id', 'author', 'date'];
 
+/**
+ * Paragraph-mark revisions are empty marker elements under w:p/w:pPr/w:rPr,
+ * not wrappers around child content.
+ *
+ * @conformance ECMA-376 edition 5, Part 1 § 17.13.5.15
+ * @see https://github.com/UseJunior/safe-docx/issues/741
+ */
+function isParagraphMarkTrackedChange(el: Element): boolean {
+  const rPr = el.parentNode;
+  const pPr = rPr?.parentNode;
+  const paragraph = pPr?.parentNode;
+  return (
+    rPr?.nodeType === 1 &&
+    (rPr as Element).namespaceURI === OOXML.W_NS &&
+    (rPr as Element).localName === W.rPr &&
+    pPr?.nodeType === 1 &&
+    (pPr as Element).namespaceURI === OOXML.W_NS &&
+    (pPr as Element).localName === W.pPr &&
+    paragraph?.nodeType === 1 &&
+    (paragraph as Element).namespaceURI === OOXML.W_NS &&
+    (paragraph as Element).localName === W.p
+  );
+}
+
 function checkTrackedChangeWrappers(body: Element): ValidationWarning[] {
   const warnings: ValidationWarning[] = [];
 
@@ -103,7 +127,7 @@ function checkTrackedChangeWrappers(body: Element): ValidationWarning[] {
         if (c.nodeType === 1) { hasChildElement = true; break; }
         c = c.nextSibling;
       }
-      if (!hasChildElement) {
+      if (!hasChildElement && !isParagraphMarkTrackedChange(el)) {
         const tcId = getWAttr(el, 'id') ?? '?';
         warnings.push({
           code: 'EMPTY_TRACKED_CHANGE',
